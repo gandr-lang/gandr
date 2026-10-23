@@ -151,7 +151,8 @@
 //! [`MotiveHead`]: a function type, the path families `back`, `then` and
 //! `cong` transport in, a datatype over its binder; a telescope transport is
 //! refused as one. Funext, `ua` at a stated stratum, a session equivalence
-//! and a compound endpoint are [`FocusRefusal::ElementPath`]. The in-memory
+//! and a compound endpoint no run reads first — an effect's payload, a native
+//! operation's operand — are [`FocusRefusal::ElementPath`]. The in-memory
 //! bridge mode, higher fields and guarded List observations remain outside
 //! this IL.
 //!
@@ -160,6 +161,32 @@
 //! conversion does not compute would print a value no `checks` row can agree
 //! with. **Reversal.** A motive shape earns its lowering when the normaliser
 //! and the kernel compute its row.
+//!
+//! # A returned value runs before what reads it
+//!
+//! A returned value `⟨c⟩`, a transport or a derived path written where a value
+//! is read, is the computation that returns it, run first: the kernel reads
+//! `E[c]` as `c to x. E[x]`. `𝓡⟦v⟧k` computes a value holding one to `k`:
+//!
+//! ```text
+//! 𝓡⟦⟨c⟩⟧k      = 𝓕⟦c⟧k
+//! 𝓡⟦F(v̄)⟧k     = ⟨build_F |+ force(apply({force(α) ⇒ 𝓡⟦v_i⟧α}, …; k))⟩    F holding one
+//! 𝓡⟦v⟧k        = ⟨𝓥⟦v⟧ |+ k⟩                                          otherwise
+//! 𝓕⟦return v⟧k = 𝓡⟦v⟧k
+//! 𝓕⟦M v⟧k      = ⟨run |+ force(apply({force(α) ⇒ 𝓕⟦M⟧α}, {force(α) ⇒ 𝓡⟦v⟧α}; k))⟩
+//! ```
+//!
+//! The application row holds where `v` holds a returned value. `F` is a tuple,
+//! a constructor, a record, an injection or a list cell, and an ascription is
+//! the value it ascribes. `build_F` is `thunk(λp̄. x̄ ← force p̄; return F(x̄))`
+//! and `run` is `thunk(λf. λa. x ← force a; force f x)`, both closed
+//! ([`Combinator::Build`], [`Combinator::RunArgument`]) and applied to the
+//! parts rather than closing over them, so nothing is read under a binder it
+//! did not have. A field or a frame argument is never a `μ`, but a cut's
+//! producer may be: a scrutinee, a projection's subject or a forced value
+//! holding a returned value is the capture `μα. 𝓡⟦v⟧α`, run against the match
+//! it is cut against. A returned value at a definition's own root is its
+//! constant's `μ`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -180,6 +207,7 @@ use gandr_theory_cell_complexes::Polarity;
 use crate::boundary::NodeCount;
 use crate::boundary::ProducerArity;
 use crate::identity::Combinator;
+use crate::identity::Composite;
 use crate::identity::Direction;
 use crate::identity::MotiveHead;
 use crate::il::CommandArena;
@@ -900,6 +928,13 @@ enum Task
     },
     /// Pop one command and mint the thunk suspending it.
     Thunk,
+    /// Pop one command and push the capture `μα. command`: the producer a cut
+    /// puts against its consumer where the value cut there holds a returned
+    /// value.
+    Capture,
+    /// Schedule the part `thunk(𝓡⟦value⟧)`: `value` computed to a fresh
+    /// return point and suspended.
+    Suspend(ValueId),
     /// Pop one command and mint the recursive thunk suspending it.
     Fixpoint(gandr_kernel_term::FixpointEvidence),
     /// Pop one producer and mint its cut against `consumer`.
@@ -986,6 +1021,27 @@ enum Task
     },
 }
 
+/// Whether a value holds a returned value `⟨c⟩` a run reaches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Holding
+{
+    /// It is one, or a former with a field that holds one.
+    Returned,
+    /// It holds none, so it focuses as a value.
+    Plain,
+}
+
+/// Where a post-order walk stands at a former: about to queue its fields, or
+/// leaving it once they are decided.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Visit
+{
+    /// Queue the former's undecided fields, then leave it.
+    Enter,
+    /// Decide the former from its fields.
+    Leave,
+}
+
 /// The state of one translation.
 struct Focusing<'run>
 {
@@ -1008,6 +1064,8 @@ struct Focusing<'run>
     /// The run matches a combinator's build left, by the placeholder each
     /// stands at.
     run_cases: crate::identity::RunCases,
+    /// Whether each former met holds a returned value, decided once.
+    returning: BTreeMap<ValueId, Holding>,
 }
 
 impl<'run> Focusing<'run>
@@ -1032,6 +1090,7 @@ impl<'run> Focusing<'run>
             prepared: BTreeMap::new(),
             wanted: BTreeSet::new(),
             run_cases: crate::identity::RunCases::new(),
+            returning: BTreeMap::new(),
         }
     }
 
@@ -1108,7 +1167,7 @@ impl<'run> Focusing<'run>
             | &Task::ListCons => self.producers.len() >= 2,
             | &Task::Combinator { combinator, .. } => self.producers.len() >= usize::from(combinator.applied()),
             | &Task::Decompose { .. } | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
-            | &Task::Thunk | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
+            | &Task::Thunk | &Task::Capture | &Task::Fixpoint(_) | &Task::Lambda { .. } | &Task::Bind { .. } | &Task::Name { .. } => !self.commands.is_empty(),
             | &Task::ListFold { .. } | &Task::ListCase => !self.producers.is_empty() && self.commands.len() >= 2,
             | &Task::Case { branches } => !self.producers.is_empty() && self.commands.len() >= usize::from(branches),
             | &Task::RunCase(ref arms) => !self.producers.is_empty() && self.commands.len() >= arms.len(),
@@ -1118,7 +1177,7 @@ impl<'run> Focusing<'run>
             | &Task::Recorded(ref moves) => self.producers.len() >= usize::from(ConstructorTag::Recorded(alloc::sync::Arc::clone(moves)).producer_arity()),
             | &Task::Dialogue(ref turns) => self.producers.len() >= usize::from(ConstructorTag::Dialogue(alloc::sync::Arc::clone(turns)).producer_arity()),
             | &Task::DataCase { branches, .. } => self.producers.len() > usize::from(branches),
-            | &Task::Value(_) | &Task::Computation { .. } => true,
+            | &Task::Value(_) | &Task::Suspend(_) | &Task::Computation { .. } => true,
         },
         ensures: |ret| ret.is_err() || (self.producers.last().is_none_or(|id| self.arena.producer(*id).is_some())
             && self.commands.last().is_none_or(|id| self.arena.command(*id).is_some())),
@@ -1241,6 +1300,17 @@ impl<'run> Focusing<'run>
                 let thunk = self.arena.mint_producer(ProducerNode::Thunk { body })?;
                 self.producers.push(thunk);
                 Ok(())
+            },
+            Task::Capture => {
+                let body = self.pop_command()?;
+                let capture = self.arena.mint_producer(ProducerNode::Mu { body })?;
+                self.producers.push(capture);
+                Ok(())
+            },
+            Task::Suspend(value) => {
+                let return_point = self.innermost_covariable()?;
+                self.tasks.push(Task::Thunk);
+                self.returning(value, return_point)
             },
             Task::Fixpoint(evidence) => {
                 let body = self.pop_command()?;
@@ -2100,10 +2170,11 @@ impl<'run> Focusing<'run>
     /// - ensures: the `𝓕` row for the node's former is scheduled or minted; a
     ///   continuation that is not a tail is placed under no binder; a ride or a
     ///   transport applies its motive's action, as [`crate::identity`]
-    ///   tabulates; an application whose argument is a returned value `⟨c⟩`
-    ///   applies [`Combinator::RunArgument`] to the call and `c`, each
-    ///   suspended, so `c` runs first; a hole other than the placeholder of a
-    ///   run match a combinator's build left is scheduled as the perform of
+    ///   tabulates; a value holding a returned value runs it first, as the
+    ///   module's `𝓡` rows state — returned, applied to through
+    ///   [`Combinator::RunArgument`], or captured where a match, a selection or
+    ///   a force reads it; a hole other than the placeholder of a run match a
+    ///   combinator's build left is scheduled as the perform of
     ///   [`REACHED`](crate::il::REACHED) of
     ///   [`REACHED_HOLE`](crate::il::REACHED_HOLE), its payload the hole's
     ///   name.
@@ -2132,6 +2203,7 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::a_hole_is_reached_and_a_mark_refused_by_name_1881`
     /// - witness: `focus::tests::a_session_action_is_refused_by_name`
     /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
     /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
     #[spec(
         captures: [work = self.tasks.len()],
@@ -2169,7 +2241,7 @@ impl<'run> Focusing<'run>
                 let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
                 self.tasks
                     .push(Task::Split(ProducerArity::from(usize::from(arity))));
-                self.tasks.push(Task::Value(scrutinee));
+                self.subject(scrutinee)?;
                 self.tasks.push(Task::Computation {
                     computation: body,
                     continuation: inner,
@@ -2184,7 +2256,7 @@ impl<'run> Focusing<'run>
             } => {
                 let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
                 self.tasks.push(Task::ListCase);
-                self.tasks.push(Task::Value(list));
+                self.subject(list)?;
                 self.tasks.push(Task::Computation {
                     computation: on_cons,
                     continuation: inner,
@@ -2207,7 +2279,7 @@ impl<'run> Focusing<'run>
                     equations,
                     continuation,
                 });
-                self.tasks.push(Task::Value(scrutinee));
+                self.subject(scrutinee)?;
                 for &branch in branches.iter().rev() {
                     let return_point = self.innermost_covariable()?;
                     self.tasks.push(Task::Thunk);
@@ -2376,7 +2448,7 @@ impl<'run> Focusing<'run>
                     result,
                     continuation,
                 });
-                self.tasks.push(Task::Value(list));
+                self.subject(list)?;
                 self.tasks.push(Task::Computation {
                     computation: on_cons,
                     continuation: return_point,
@@ -2414,43 +2486,24 @@ impl<'run> Focusing<'run>
                 path,
                 value,
             } => {
-                // A returned value, `back(p)` or `p then q` among them, is
-                // the computation that returns it, run first: the kernel
-                // reads `E[c]` as `c to x. E[x]`.
+                // A value holding a returned value, `back(p)` or `p then q`
+                // among them, runs the computations that return them first:
+                // the kernel reads `E[c]` as `c to x. E[x]`.
                 let core = self.core;
-                let held = |operand: ValueId| {
-                    if let Some(&Value::Returned(computation)) = core.value(operand) {
-                        Some(computation)
-                    }
-                    else {
-                        None
-                    }
-                };
-                let (held_path, held_value) = (held(path), held(value));
+                let (held_path, held_value) = (
+                    self.holds_returned(path) == Holding::Returned,
+                    self.holds_returned(value) == Holding::Returned,
+                );
                 // Along a reflexivity the value stays, whatever the motive:
                 // the kernel's first transport row, read before the motive.
                 if let Some(&Value::Here(_)) = core.value(path) {
-                    if let Some(computation) = held_value {
-                        self.tasks.push(Task::Computation {
-                            computation,
-                            continuation,
-                        });
-                    }
-                    else {
-                        self.tasks.push(Task::Cut {
-                            origin: FocusOrigin::Return,
-                            polarity: Polarity::Positive,
-                            consumer: continuation,
-                        });
-                        self.tasks.push(Task::Value(value));
-                    }
-                    return Ok(());
+                    return self.returning(value, continuation);
                 }
                 crate::identity::readable(core, motive).map_err(|unread| match unread {
                     crate::identity::Unread::Head(head) => FocusRefusal::ElementTransport(id, head),
                     crate::identity::Unread::Dangling => FocusRefusal::TranslationInvariant,
                 })?;
-                if held_path.is_none() && held_value.is_none() {
+                if !held_path && !held_value {
                     self.apply_combinator(
                         Combinator::Transport(motive),
                         (path, value),
@@ -2461,13 +2514,19 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Combinator {
                     combinator: Combinator::TransportFrom {
                         motive,
-                        path: held_path.is_some(),
-                        value: held_value.is_some(),
+                        path: held_path,
+                        value: held_value,
                     },
                     continuation,
                 });
-                self.operand(value, held_value)?;
-                self.operand(path, held_path)?;
+                for (operand, held) in [(value, held_value), (path, held_path)] {
+                    self.tasks.push(if held {
+                        Task::Suspend(operand)
+                    }
+                    else {
+                        Task::Value(operand)
+                    });
+                }
             },
             Computation::TelescopeTransport { .. } => {
                 return Err(FocusRefusal::ElementTransport(id, MotiveHead::Telescope));
@@ -2488,7 +2547,7 @@ impl<'run> Focusing<'run>
                 let inner = self.share_or_name(FocusOrigin::Case, continuation)?;
                 self.tasks
                     .push(Task::RunCase(alloc::sync::Arc::clone(&runs)));
-                self.tasks.push(Task::Value(scrutinee));
+                self.subject(scrutinee)?;
                 for &(_, arm) in runs.iter().rev() {
                     self.tasks.push(Task::Computation {
                         computation: arm,
@@ -2528,14 +2587,9 @@ impl<'run> Focusing<'run>
             } => {
                 self.apply_combinator(Combinator::Ride(motive), (flow, value), continuation);
             },
-            Computation::Return(value) => {
-                self.tasks.push(Task::Cut {
-                    origin: FocusOrigin::Return,
-                    polarity: Polarity::Positive,
-                    consumer: continuation,
-                });
-                self.tasks.push(Task::Value(value));
-            },
+            // A value holding a returned value runs it first and returns what
+            // it builds; any other is cut against the continuation.
+            Computation::Return(value) => self.returning(value, continuation)?,
             Computation::Force(value) => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,
@@ -2547,21 +2601,21 @@ impl<'run> Focusing<'run>
                     polarity: Polarity::Positive,
                     consumer: frame,
                 });
-                self.tasks.push(Task::Value(value));
+                self.subject(value)?;
             },
             Computation::Application(head, argument) => {
-                // A returned argument, a transport or a derived path written
-                // as the call's argument, is the computation that returns it,
-                // run first: the kernel reads `E[c]` as `c to x. E[x]`. The
-                // call and `c` are each suspended and applied to a closed
-                // combinator, so neither is read under a binder it did not
-                // have.
-                if let Some(&Value::Returned(held)) = self.core.value(argument) {
+                // An argument holding a returned value, a transport or a
+                // derived path written as the call's argument or inside it,
+                // runs the computations that return them first: the kernel
+                // reads `E[c]` as `c to x. E[x]`. The call and the argument
+                // are each suspended and applied to a closed combinator, so
+                // neither is read under a binder it did not have.
+                if self.holds_returned(argument) == Holding::Returned {
                     self.tasks.push(Task::Combinator {
                         combinator: Combinator::RunArgument,
                         continuation,
                     });
-                    self.suspended(held)?;
+                    self.tasks.push(Task::Suspend(argument));
                     self.suspended(head)?;
                 }
                 else {
@@ -2593,7 +2647,7 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Case {
                     branches: NodeCount::from(branches.len()),
                 });
-                self.tasks.push(Task::Value(scrutinee));
+                self.subject(scrutinee)?;
                 for &branch in branches.iter().rev() {
                     self.tasks.push(Task::Computation {
                         computation: branch,
@@ -2629,8 +2683,7 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::a_projection_selects_by_position_or_label`
     #[spec(
         captures: [work = self.tasks.len()],
-        ensures: |ret| ret.is_err() || (work.checked_add(2) == Some(self.tasks.len())
-            && matches!(self.tasks.last(), Some(&Task::Value(scheduled)) if scheduled == subject)),
+        ensures: |ret| ret.is_err() || work.checked_add(1) < Some(self.tasks.len()),
     )]
     fn select(
         &mut self,
@@ -2648,7 +2701,7 @@ impl<'run> Focusing<'run>
             polarity: Polarity::Positive,
             consumer: select,
         });
-        self.tasks.push(Task::Value(subject));
+        self.subject(subject)?;
         Ok(())
     }
 
@@ -2800,44 +2853,6 @@ impl<'run> Focusing<'run>
         Ok(())
     }
 
-    /// Schedule one operand of a transport: the returned value `⟨c⟩` as the
-    /// suspension `thunk(𝓒⟦c⟧)`, any other value translated.
-    ///
-    /// # Specification
-    /// - requires: `held` is `Some(c)` exactly when `operand` is `⟨c⟩`.
-    /// - ensures: on success [`Self::suspended`] is scheduled for a held
-    ///   computation, and the value's translation otherwise.
-    /// - provides: the operands of [`Combinator::TransportFrom`].
-    /// - fails: a refused mint of the return point.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// As the failure clause states.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a transport along or of `back(p)` or `p then q` runs
-    ///   that transport first, as the kernel does; translating the returned
-    ///   value in place is refused, since the IL has no producer for it.
-    /// - witness: `tests::run::derived_paths_run_as_their_composed_maps`
-    #[spec(
-        captures: work = self.tasks.len(),
-        ensures: |ret| ret.is_err() || work.checked_add(if held.is_some() { 2 } else { 1 }) == Some(self.tasks.len()),
-    )]
-    fn operand(
-        &mut self,
-        operand: ValueId,
-        held: Option<ComputationId>,
-    ) -> Result<(), FocusRefusal>
-    {
-        if let Some(computation) = held {
-            self.suspended(computation)
-        }
-        else {
-            self.tasks.push(Task::Value(operand));
-            Ok(())
-        }
-    }
-
     /// Schedule the suspension `thunk(𝓒⟦computation⟧)`, its body translated to
     /// a fresh return point.
     ///
@@ -2845,8 +2860,7 @@ impl<'run> Focusing<'run>
     /// - requires: nothing.
     /// - ensures: on success the thunk and `computation`'s translation to the
     ///   covariable `0` are scheduled, the translation first.
-    /// - provides: a part a combinator forces where it runs it: a transport's
-    ///   returned operand, and a call and its returned argument.
+    /// - provides: the call a returned argument runs before.
     /// - fails: a refused mint of the return point.
     /// - panics: none.
     ///
@@ -2854,10 +2868,9 @@ impl<'run> Focusing<'run>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a returned transport operand and a returned call
-    ///   argument each run to the value their bind spelling runs to, which a
-    ///   suspension scheduled at the wrong return point would not.
-    /// - witness: `tests::run::derived_paths_run_as_their_composed_maps`
+    /// - hypothesis: L3 — a call whose argument holds a returned transport runs
+    ///   to the value its bind spelling runs to, which a suspension scheduled
+    ///   at the wrong return point would not.
     /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
     #[spec(
         captures: work = self.tasks.len(),
@@ -2876,6 +2889,210 @@ impl<'run> Focusing<'run>
             continuation: return_point,
         });
         Ok(())
+    }
+
+    /// Whether `value` holds a returned value `⟨c⟩` a run reaches: it is one,
+    /// or a [`Composite::Former`] has a field that holds one. Each former is
+    /// decided once per run.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Holding::Returned`] for a returned value;
+    ///   [`Holding::Plain`] for a dangling id and a leaf that is none; a
+    ///   former's answer is kept, so asking again about it, or about a former
+    ///   beneath it, reads no node.
+    /// - panics: none.
+    /// - intension: each node beneath a former is read once per run, however
+    ///   often a former above it is asked about.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned transport as a tuple's component, a
+    ///   constructor's field, a list cell's head and a scrutinee runs first,
+    ///   and every generated former holding none focuses as it did.
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    #[spec(ensures: |ret| !matches!(self.core.value(value), Some(&Value::Returned(_))) || ret == Holding::Returned)]
+    fn holds_returned(
+        &mut self,
+        value: ValueId,
+    ) -> Holding
+    {
+        let core = self.core;
+        let Some(node) = core.value(value)
+        else {
+            return Holding::Plain;
+        };
+        if matches!(*node, Value::Returned(_)) {
+            return Holding::Returned;
+        }
+        if crate::identity::composite(node) == Composite::Leaf {
+            return Holding::Plain;
+        }
+        if let Some(&decided) = self.returning.get(&value) {
+            return decided;
+        }
+        // A field holds one when it is one or is a former decided to; every
+        // former is decided after the formers beneath it.
+        let held = |decided: &BTreeMap<ValueId, Holding>, field: ValueId| {
+            core.value(field).is_some_and(|node| {
+                matches!(*node, Value::Returned(_))
+                    || decided.get(&field) == Some(&Holding::Returned)
+            })
+        };
+        let mut pending = alloc::vec![(value, Visit::Enter)];
+        while let Some((id, visit)) = pending.pop() {
+            let Some(node) = core.value(id)
+            else {
+                continue;
+            };
+            if self.returning.contains_key(&id) {
+                continue;
+            }
+            match visit {
+                Visit::Leave => {
+                    let mut holding = Holding::Plain;
+                    crate::identity::each_field(node, |field| {
+                        if held(&self.returning, field) {
+                            holding = Holding::Returned;
+                        }
+                    });
+                    let _decided = self.returning.insert(id, holding);
+                },
+                Visit::Enter => {
+                    pending.push((id, Visit::Leave));
+                    let decided = &self.returning;
+                    crate::identity::each_field(node, |field| {
+                        let former = core.value(field).is_some_and(|node| {
+                            crate::identity::composite(node) == Composite::Former
+                        });
+                        if former && !decided.contains_key(&field) {
+                            pending.push((field, Visit::Enter));
+                        }
+                    });
+                },
+            }
+        }
+        self.returning
+            .get(&value)
+            .copied()
+            .unwrap_or(Holding::Plain)
+    }
+
+    /// Schedule `𝓡⟦value⟧continuation`: run each returned value `value` holds,
+    /// in written order, then send `value`, built over what they return, to
+    /// `continuation`. `⟨c⟩` is `𝓒⟦c⟧continuation`; a former holding one
+    /// applies [`Combinator::Build`] to its fields, each the part
+    /// `thunk(𝓡⟦field⟧)`; an ascription is the value it ascribes; any other
+    /// value is the cut `⟨𝓥⟦value⟧ |+ continuation⟩`.
+    ///
+    /// # Specification
+    /// - requires: `continuation` was minted for the depth `value` stands at.
+    /// - ensures: on success the tasks leaving the one command that computes
+    ///   `value` to `continuation` are scheduled.
+    /// - provides: `return v`, a returned subject's capture, and every part a
+    ///   combinator runs.
+    /// - fails: [`FocusRefusal::DanglingValue`] for a dangling id.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned transport as a tuple's component, a
+    ///   constructor's field and a list cell's head runs to the value its bind
+    ///   spelling builds, and a former's other fields keep their places.
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+    /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
+    #[spec(captures: work = self.tasks.len(), ensures: |ret| ret.is_err() || self.tasks.len() > work)]
+    fn returning(
+        &mut self,
+        value: ValueId,
+        continuation: ConsumerId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let core = self.core;
+        let mut value = value;
+        while let Some(&Value::Ascribe {
+            value: ascribed, ..
+        }) = core.value(value)
+        {
+            value = ascribed;
+        }
+        let node = core
+            .value(value)
+            .ok_or(FocusRefusal::DanglingValue(value))?;
+        if let Value::Returned(computation) = *node {
+            self.tasks.push(Task::Computation {
+                computation,
+                continuation,
+            });
+            return Ok(());
+        }
+        if self.holds_returned(value) == Holding::Plain {
+            self.tasks.push(Task::Cut {
+                origin: FocusOrigin::Return,
+                polarity: Polarity::Positive,
+                consumer: continuation,
+            });
+            self.tasks.push(Task::Value(value));
+            return Ok(());
+        }
+        let mut fields = 0_usize;
+        crate::identity::each_field(node, |_field| fields = fields.saturating_add(1));
+        self.tasks.push(Task::Combinator {
+            combinator: Combinator::Build {
+                former: value,
+                fields: ProducerArity::from(fields),
+            },
+            continuation,
+        });
+        // The first field's part is translated first.
+        let ready = self.tasks.len();
+        let tasks = &mut self.tasks;
+        crate::identity::each_field(node, |field| tasks.push(Task::Suspend(field)));
+        if let Some(parts) = self.tasks.get_mut(ready ..) {
+            parts.reverse();
+        }
+        Ok(())
+    }
+
+    /// Schedule the producer a cut puts against its consumer: for a value
+    /// holding a returned value the capture `μα. 𝓡⟦value⟧α`, which runs it
+    /// against that consumer; for any other its translation.
+    ///
+    /// # Specification
+    /// - requires: the task that pops the producer cuts it against a consumer
+    ///   and never places it as a field, which no `μ` may be.
+    /// - ensures: on success the tasks leaving one producer are scheduled.
+    /// - provides: the scrutinee of a case, a split, a list case, a fold, a
+    ///   nominal match and a run match, the subject of a projection, and the
+    ///   value a force runs.
+    /// - fails: as [`Self::returning`], or a refused mint of the return point.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a case on a returned transport runs the transport,
+    ///   then the arm its answer selects; a projection of a tuple holding one
+    ///   selects from the built tuple.
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+    #[spec(captures: work = self.tasks.len(), ensures: |ret| ret.is_err() || self.tasks.len() > work)]
+    fn subject(
+        &mut self,
+        value: ValueId,
+    ) -> Result<(), FocusRefusal>
+    {
+        if self.holds_returned(value) == Holding::Returned {
+            let return_point = self.innermost_covariable()?;
+            self.tasks.push(Task::Capture);
+            self.returning(value, return_point)
+        }
+        else {
+            self.tasks.push(Task::Value(value));
+            Ok(())
+        }
     }
 
     /// Mint the covariable `0`.

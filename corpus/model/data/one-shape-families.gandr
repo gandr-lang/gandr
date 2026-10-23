@@ -53,6 +53,28 @@ def relabel = (toFahrenheit, ((toCelsius, celsiusRoundTrip), (toCelsius, fahrenh
 @[ runs("Fah(20)") ]
 def relabelled() -> -F Fahrenheit { transport(\X. X, ua(relabel), Cel(20)) }
 
+/// #2140: the transport written as a tuple's component runs first, and the
+/// other component keeps its place.
+@[ runs("(Fah(20), 1)") ]
+def carriedInTuple() -> -F (Fahrenheit * Integer) { (transport(\X. X, ua(relabel), Cel(20)), 1) }
+
+/// A thermometer reading one Fahrenheit temperature.
+@[ checks ]
+data Thermometer : Type {
+  Reads : (f : Fahrenheit) --> Thermometer;
+}
+
+/// #2140: the transport written as a constructor's field runs before the
+/// constructor is built.
+@[ runs("Reads(Fah(20))") ]
+def carriedInField() -> -F Thermometer { Reads(transport(\X. X, ua(relabel), Cel(20))) }
+
+/// #2140: a case on the transport runs it, then the arm its answer selects.
+@[ runs("20") ]
+def carriedScrutinised() -> -F Integer {
+  case transport(\X. X, ua(relabel), Cel(20)) { Fah(x) => x }
+}
+
 /// The run target carries another Celsius value along the same path. No
 /// signature states its type: the transport's own type is `Fahrenheit`.
 @[ runs("Fah(36)") ]

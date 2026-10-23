@@ -186,8 +186,8 @@ pub enum Combinator
     Transport(ValueTypeId),
     /// `thunk(λp. λv. p' ← force p; v' ← force v; force(M_P) p' v')`: the
     /// transport motive `P`'s action where the path, the moved value or both
-    /// are returned values, each passed suspended and run first; an operand
-    /// that is not one is passed as it is and not forced.
+    /// hold returned values, each passed suspended and run first; an operand
+    /// that holds none is passed as it is and not forced.
     TransportFrom
     {
         /// The motive, a value type under one binder in the arena being
@@ -198,10 +198,22 @@ pub enum Combinator
         /// Whether the moved value is passed suspended.
         value: bool,
     },
-    /// `thunk(λf. λa. x ← force a; force f x)`: a call whose argument is a
-    /// returned value, `⟨c⟩`, the call and `c` each passed suspended and `c`
-    /// run first, as the kernel reads `E[c]` as `c to x. E[x]`.
+    /// `thunk(λf. λa. x ← force a; force f x)`: a call whose argument holds a
+    /// returned value `⟨c⟩`, the call and the argument each passed suspended
+    /// and the argument run first, as the kernel reads `E[c]` as `c to x.
+    /// E[x]`.
     RunArgument,
+    /// `thunk(λp₁. … λpₙ. x₁ ← force p₁; … xₙ ← force pₙ; return F(x₁, …,
+    /// xₙ))`: the former `F` — a tuple, a constructor, a record, an injection
+    /// or a list cell — whose fields hold a returned value, each field passed
+    /// suspended and run in written order before the former is built.
+    Build
+    {
+        /// The former, a value in the arena being focused.
+        former: ValueId,
+        /// How many fields it has.
+        fields: ProducerArity,
+    },
 }
 
 impl Combinator
@@ -211,26 +223,31 @@ impl Combinator
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `0` for the identity, which is a part itself; `1` for the
-    ///   inverse, applied to its record; `2` for every other combinator,
-    ///   applied to two parts or to an image and a moved value.
+    ///   inverse, applied to its record; a built former's field count; `2` for
+    ///   every other combinator, applied to two parts or to an image and a
+    ///   moved value.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a reflexivity, a `ua` and a transport each focus and
     ///   run to the value the kernel's rows compute, which an image applying
-    ///   the wrong number of parts would not.
+    ///   the wrong number of parts would not; so do formers of one, two and
+    ///   three fields holding a returned transport.
     /// - witness: `tests::run::transports_run_by_the_motives_action`
+    /// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
     #[spec(ensures: |ret| usize::from(ret) == match self {
         Self::Identity => 0_usize,
         Self::Inverse => 1_usize,
+        Self::Build { fields, .. } => usize::from(fields),
         Self::Compose | Self::Wrap | Self::Pair | Self::Ride(_) | Self::Both(_) | Self::Forward | Self::Transport(_) | Self::TransportFrom { .. } | Self::RunArgument => 2_usize,
     })]
     #[must_use]
     pub(crate) fn applied(self) -> ProducerArity
     {
-        ProducerArity::from(match self {
-            Self::Identity => 0_usize,
-            Self::Inverse => 1_usize,
+        match self {
+            Self::Identity => ProducerArity::from(0_usize),
+            Self::Inverse => ProducerArity::from(1_usize),
+            Self::Build { fields, .. } => fields,
             Self::Compose
             | Self::Wrap
             | Self::Pair
@@ -239,8 +256,8 @@ impl Combinator
             | Self::Forward
             | Self::Transport(_)
             | Self::TransportFrom { .. }
-            | Self::RunArgument => 2_usize,
-        })
+            | Self::RunArgument => ProducerArity::from(2_usize),
+        }
     }
 }
 
@@ -928,10 +945,11 @@ pub type RunCases = BTreeMap<ComputationId, RunCase>;
 /// - ensures: a closed thunk of `scratch` computing the combinator, as the
 ///   module tables state; the match of every run part the combinator moves
 ///   through is left in `cases`, at the placeholder that stands for it.
-/// - provides: what the focusing focuses and applies to an identity's parts, or
-///   to a call and its returned argument.
+/// - provides: what the focusing focuses and applies to an identity's parts, to
+///   a call and its argument, or to a former's fields.
 /// - fails: [`FocusRefusal::TranslationInvariant`] for a motive naming no type
-///   of `core`, a transport motive no row reads, or an index overflow.
+///   of `core`, a transport motive no row reads, a built former that is none or
+///   a constructor of no declared family, or an index overflow.
 /// - panics: none.
 ///
 /// # Errors
@@ -942,7 +960,8 @@ pub type RunCases = BTreeMap<ComputationId, RunCase>;
 ///   binder, a product, a sum, a list and a run type, and transports along
 ///   `ua`, a reflexivity, a native equivalence and a native product run to the
 ///   values the kernel's rows compute; a call whose argument is a returned
-///   transport runs to what its bind spelling runs to.
+///   transport, and a tuple, a constructor and a list cell holding one, run to
+///   what their bind spelling runs to.
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::a_function_flow_runs_in_variance_order`
 /// - witness: `tests::run::a_flow_product_runs_componentwise`
@@ -950,6 +969,7 @@ pub type RunCases = BTreeMap<ComputationId, RunCase>;
 /// - witness: `tests::run::native_paths_run_as_their_maps`
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
 /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
+/// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => matches!(scratch.value(id), Some(&Value::Thunk(_))),
     | Err(_) => true,
@@ -1112,6 +1132,222 @@ pub fn build(
             let body = scratch.computation_bind(run, applied);
             Ok(closed(scratch, body, Binders::from(2_u32)))
         },
+        Combinator::Build { former, fields } => {
+            let count = u32::try_from(usize::from(fields))
+                .map_err(|_overflow| FocusRefusal::TranslationInvariant)?;
+            // Every bind's part stands `n - 1` out: the binds before it and
+            // the parts after it. Under all `n` binds the `i`-th field's is
+            // `n - 1 - i`.
+            let last = count
+                .checked_sub(1)
+                .ok_or(FocusRefusal::TranslationInvariant)?;
+            let bound: Vec<ValueId> = (0 .. count)
+                .map(|field| variable(scratch, DeBruijnIndex::from(last.saturating_sub(field))))
+                .collect();
+            let built = rebuilt(core, former, bound, scratch)?;
+            let mut body = scratch.computation_return(built);
+            for _part in 0 .. count {
+                let part = variable(scratch, DeBruijnIndex::from(last));
+                let forced = scratch.computation_force(part);
+                body = scratch.computation_bind(forced, body);
+            }
+            Ok(closed(scratch, body, Binders::from(count)))
+        },
+    }
+}
+
+/// The former `former` of `core` rebuilt in `scratch` over `fields`, in the
+/// order [`each_field`] hands them.
+///
+/// # Specification
+/// - requires: `fields` has one value per field of `former`.
+/// - ensures: the same former — the tuple, the injection at its summand, the
+///   list cell, the record under its labels, or the constructor at its tag of
+///   its declared family — over `fields`.
+/// - fails: [`FocusRefusal::TranslationInvariant`] for a value that is no such
+///   former, a field count that differs, or a constructor whose classifier
+///   names no declared family.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a tuple, a constructor and a list cell holding a returned
+///   transport run to the value their bind spelling builds, which a former
+///   rebuilt at another tag, summand or field order would not.
+/// - witness: `tests::run::a_returned_field_or_scrutinee_runs_first_2140`
+#[spec(ensures: |ret| match ret {
+    | Ok(id) => scratch.value(id).zip(core.value(former)).is_some_and(|(built, written)| core::mem::discriminant(built) == core::mem::discriminant(written)),
+    | Err(_) => true,
+})]
+fn rebuilt(
+    core: &CoreArena,
+    former: ValueId,
+    fields: Vec<ValueId>,
+    scratch: &mut CoreArena,
+) -> Result<ValueId, FocusRefusal>
+{
+    let invariant = FocusRefusal::TranslationInvariant;
+    match *core.value(former).ok_or(invariant)? {
+        Value::Tuple(ref components) if components.len() == fields.len() => {
+            Ok(scratch.value_tuple(&fields))
+        },
+        Value::Injection(summand, _) => match *fields.as_slice() {
+            [body] => Ok(scratch.value_injection(summand, body)),
+            _ => Err(invariant),
+        },
+        Value::ListCons(..) => match *fields.as_slice() {
+            [head, tail] => Ok(scratch.value_list_cons(head, tail)),
+            _ => Err(invariant),
+        },
+        Value::Record(ref labels) if labels.len() == fields.len() => {
+            Ok(scratch.value_record(labels.keys().cloned().zip(fields).collect()))
+        },
+        Value::Constructor {
+            datatype,
+            tag,
+            fields: ref written,
+        } if written.len() == fields.len() => {
+            let Some(&ValueType::Data { declaration, .. }) = core.value_type(datatype)
+            else {
+                return Err(invariant);
+            };
+            let family = scratch.value_type_data(declaration, Vec::new());
+            Ok(scratch.value_constructor(family, tag, fields))
+        },
+        Value::Tuple(_)
+        | Value::Record(_)
+        | Value::Constructor { .. }
+        | Value::Primitive { .. }
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::PathEquiv { .. }
+        | Value::Here(_)
+        | Value::Univalence(..)
+        | Value::Funext(..)
+        | Value::Equiv(..)
+        | Value::Ua { .. }
+        | Value::SessionRelated { .. }
+        | Value::Stay(_)
+        | Value::Then(..)
+        | Value::FlowProduct(..)
+        | Value::Forward(_)
+        | Value::FunctionFlow(..)
+        | Value::Recorded(_)
+        | Value::Dialogue(_)
+        | Value::Web(_)
+        | Value::Returned(_)
+        | Value::Nested(_)
+        | Value::Run(_)
+        | Value::Variable { .. }
+        | Value::Constant(_)
+        | Value::Literal(_)
+        | Value::ListNil
+        | Value::Thunk(_)
+        | Value::Ascribe { .. }
+        | Value::Lift { .. }
+        | Value::Quote(_)
+        | Value::QuoteComputation(_)
+        | Value::StaticLambda(_)
+        | Value::StaticApplication(..)
+        | Value::Hole(_)
+        | Value::Mark { .. }
+        | Value::Reify(_) => Err(invariant),
+    }
+}
+
+/// Whether a value is a former a returned value may stand in a field of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Composite
+{
+    /// A tuple, a constructor, a record, an injection, an ascription or a list
+    /// cell: [`each_field`] walks its fields.
+    Former,
+    /// Any other value, which has no field to walk.
+    Leaf,
+}
+
+/// Whether `node` is a former whose fields a returned value may stand in, the
+/// ones [`each_field`] walks.
+///
+/// # Specification
+/// trivial.
+pub const fn composite(node: &Value) -> Composite
+{
+    if matches!(
+        *node,
+        Value::Tuple(_)
+            | Value::Constructor { .. }
+            | Value::Record(_)
+            | Value::Injection(..)
+            | Value::Ascribe { .. }
+            | Value::ListCons(..)
+    ) {
+        Composite::Former
+    }
+    else {
+        Composite::Leaf
+    }
+}
+
+/// Hand each field a returned value may stand in to `each`, in the order the
+/// focusing translates them: a tuple's components, a constructor's fields, a
+/// record's fields in label order, an injection's body, a list cell's head
+/// then tail, and the value an ascription ascribes; nothing for a
+/// [`Composite::Leaf`].
+///
+/// # Specification
+/// trivial.
+pub fn each_field<Each>(
+    node: &Value,
+    mut each: Each,
+) where
+    Each: FnMut(ValueId),
+{
+    match *node {
+        Value::Tuple(ref components) => components.iter().copied().for_each(&mut each),
+        Value::Constructor { ref fields, .. } => fields.iter().copied().for_each(&mut each),
+        Value::Record(ref fields) => fields.values().copied().for_each(&mut each),
+        Value::Injection(_, body) | Value::Ascribe { value: body, .. } => each(body),
+        Value::ListCons(head, tail) => {
+            each(head);
+            each(tail);
+        },
+        Value::Primitive { .. }
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::PathEquiv { .. }
+        | Value::Here(_)
+        | Value::Univalence(..)
+        | Value::Funext(..)
+        | Value::Equiv(..)
+        | Value::Ua { .. }
+        | Value::SessionRelated { .. }
+        | Value::Stay(_)
+        | Value::Then(..)
+        | Value::FlowProduct(..)
+        | Value::Forward(_)
+        | Value::FunctionFlow(..)
+        | Value::Recorded(_)
+        | Value::Dialogue(_)
+        | Value::Web(_)
+        | Value::Returned(_)
+        | Value::Nested(_)
+        | Value::Run(_)
+        | Value::Variable { .. }
+        | Value::Constant(_)
+        | Value::Literal(_)
+        | Value::ListNil
+        | Value::Thunk(_)
+        | Value::Lift { .. }
+        | Value::Quote(_)
+        | Value::QuoteComputation(_)
+        | Value::StaticLambda(_)
+        | Value::StaticApplication(..)
+        | Value::Hole(_)
+        | Value::Mark { .. }
+        | Value::Reify(_) => {},
     }
 }
 
