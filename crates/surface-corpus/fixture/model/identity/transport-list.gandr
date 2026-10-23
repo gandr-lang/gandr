@@ -40,6 +40,13 @@ def flipped_beta = here(cons(+{.1 = unit}, cons(+{.0 = unit}, nil))) ;
 @[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
 def flipped_list() -> -F List(Bool) { become moved_list(both) }
 
+/// #1480: `both` transported along negation as a value, whose computation
+/// runs the first time a run reads it. A declaration computed by a transport
+/// had no producer for the machine to unfold.
+@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
+def flipped_value : List(Bool) ;
+def flipped_value = transport(\X. List(X), negation, both) ;
+
 /// #1064: a list transported along negation written in place, as along the
 /// named `negation`. The kernel read the inline equivalence's type,
 /// `Path_U(Bool, Bool)`, as no path and refused the transport by shape.

@@ -578,6 +578,69 @@ pub fn focus_value(
     })
 }
 
+/// Focus a declaration's body into the producer its constant unfolds to:
+/// `𝓥⟦value⟧`, or for a computed value `⟨c⟩` the capture `μα. 𝓒⟦c⟧α`, which
+/// a run unfolding the constant runs once for its answer.
+///
+/// # Specification
+/// - requires: as [`focus_computation`].
+/// - ensures: on success a `μ` exactly when `value` is a computed value, its
+///   body the computation focused against the `μ`'s covariable; otherwise
+///   [`focus_value`]'s producer.
+/// - provides: the entry a declaration's definition is focused from.
+/// - fails: as [`focus_computation`], with the same rollback.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a computed value focuses to a `μ` whose body runs the
+///   computation against that `μ`'s own covariable, and the value it computes
+///   focuses to itself, no `μ`: a body run against another covariable, a `μ`
+///   dropped, or one added around the plain value renders otherwise.
+/// - witness: `focus::tests::a_computed_value_focuses_to_the_capture_that_runs_it`
+/// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
+#[inline]
+#[spec(
+    captures: [mark = arena.watermark(), recorded = provenance.len()],
+    ensures: |ret| match ret {
+        | Ok(id) => arena.producer(id).is_some_and(|node| matches!(node, &ProducerNode::Mu { .. })
+            == matches!(core.value(value), Some(&Value::Returned(_)))),
+        | Err(_) => arena.watermark() == mark && provenance.len() == recorded,
+    },
+)]
+pub fn focus_definition(
+    core: &CoreArena,
+    value: ValueId,
+    arena: &mut CommandArena,
+    provenance: &mut Provenance,
+) -> Result<ProducerId, FocusRefusal>
+{
+    let Some(&Value::Returned(computation)) = core.value(value)
+    else {
+        return focus_value(core, value, arena, provenance);
+    };
+    transactional(arena, provenance, |arena, provenance| {
+        with_combinators(
+            core,
+            arena,
+            provenance,
+            (
+                |run: &mut Focusing<'_>| {
+                    let continuation = run.innermost_covariable()?;
+                    run.tasks.push(Task::Computation {
+                        computation,
+                        continuation,
+                    });
+                    Ok(())
+                },
+                |run: Focusing<'_>| run.single_capture(),
+            ),
+        )
+    })
+}
+
 /// Focus a declaration's value against `★`: the command `⟨𝓥⟦value⟧ |+ ★⟩`.
 ///
 /// # Specification
@@ -2898,6 +2961,40 @@ impl<'run> Focusing<'run>
         let producer = self.pop_producer()?;
         if self.commands.is_empty() && self.producers.is_empty() {
             Ok(producer)
+        }
+        else {
+            Err(FocusRefusal::TranslationInvariant)
+        }
+    }
+
+    /// The one command a computation's translation leaves, bound as the body of
+    /// a `μ` over its covariable.
+    ///
+    /// # Specification
+    /// - requires: the translation has been driven.
+    /// - ensures: a `μ` over the single command, with no producer left over.
+    /// - provides: the result of a computed definition's entry point.
+    /// - fails: [`FocusRefusal::TranslationInvariant`] for any other shape, or
+    ///   the refused mint.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a computed definition's focusing leaves one command,
+    ///   which the capture binds; a surplus result would be refused.
+    /// - witness: `focus::tests::a_computed_value_focuses_to_the_capture_that_runs_it`
+    #[spec(
+        requires: self.tasks.is_empty(),
+        captures: [single = self.commands.len() == 1 && self.producers.is_empty()],
+        ensures: |ref ret| ret.is_err() || single,
+    )]
+    fn single_capture(mut self) -> Result<ProducerId, FocusRefusal>
+    {
+        let body = self.pop_command()?;
+        if self.commands.is_empty() && self.producers.is_empty() {
+            Ok(self.arena.mint_producer(ProducerNode::Mu { body })?)
         }
         else {
             Err(FocusRefusal::TranslationInvariant)

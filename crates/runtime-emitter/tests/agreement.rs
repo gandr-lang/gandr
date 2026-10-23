@@ -3,15 +3,20 @@
 //! code's compared with the executor's value by value, through the policy's
 //! own entry too, and each with the answer the program states.
 
+use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::Definition;
 use gandr_core_sequent::Definitions;
 use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::Outcome;
+use gandr_core_sequent::Provenance;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::Stuck;
+use gandr_core_sequent::focus_computation;
+use gandr_core_sequent::focus_definition;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
+use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Fuel;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate;
@@ -22,12 +27,15 @@ use gandr_runtime_emitter::lower_unfused;
 use gandr_runtime_emitter::replay;
 
 use crate::support::BUDGET;
+use crate::support::COMPARED;
+use crate::support::Integer;
 use crate::support::Label;
 use crate::support::Program;
 use crate::support::Verdict;
 use crate::support::agree;
 use crate::support::agree_with;
 use crate::support::focus;
+use crate::support::integer;
 use crate::support::named;
 
 /// The named programs — a return, a bind, a case, a constructor, their
@@ -152,4 +160,77 @@ fn an_observed_opaque_constant_is_named_on_both_executors()
             "{name} holds the constant"
         );
     }
+}
+
+/// A computed constant, `⟨x ← return 5; return (x, x)⟩`, runs its
+/// computation the first time a run reads it, and every later read is that
+/// one answer; one whose computation reads its own value sticks as a cycle.
+#[test]
+fn a_computed_constant_unfolds_once_to_its_answer()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Integer(5));
+    let given = core.computation_return(five);
+    let bound = core.value_variable(
+        Zone::Intuitionistic,
+        gandr_kernel_term::DeBruijnIndex::from(0_u32),
+    );
+    let doubled = core.value_tuple(&[bound, bound]);
+    let answer = core.computation_return(doubled);
+    let computation = core.computation_bind(given, answer);
+    let computed = core.value_returned(computation);
+    let first = core.value_constant(ConstantIndex::from(0_usize));
+    let cyclic = core.value_constant(ConstantIndex::from(1_usize));
+    let reads_itself = core.computation_return(cyclic);
+    let cycle = core.value_returned(reads_itself);
+    let mut commands = CommandArena::new();
+    let mut provenance = Provenance::new();
+    let mut definitions = Definitions::new();
+    for value in [computed, cycle] {
+        let producer = focus_definition(&core, value, &mut commands, &mut provenance)
+            .expect("a computed value focuses");
+        definitions.push(Definition::Transparent(producer));
+    }
+    let both = core.value_tuple(&[first, first]);
+    let mut root = |value| {
+        let returned = core.computation_return(value);
+        focus_computation(&core, returned, &mut commands, &mut provenance).expect("closed")
+    };
+    let twice = root(both);
+    let looping = root(cyclic);
+
+    for tier in [COMPARED, Tier::Executor] {
+        let mut store = Store::new();
+        let outcome = evaluate_on(
+            tier,
+            &commands,
+            &definitions,
+            twice,
+            Fuel::from(BUDGET),
+            &mut store,
+        );
+        let Ok(Outcome::Halted(pair)) = outcome
+        else {
+            panic!("{tier:?}: the pair halts: {outcome:?}");
+        };
+        let Some(&HeapValue::Constructed { ref fields, .. }) = store.value(pair)
+        else {
+            panic!("{tier:?}: a pair");
+        };
+        let &[left, right] = &**fields
+        else {
+            panic!("{tier:?}: two fields");
+        };
+        assert_eq!(left, right, "{tier:?}: both reads are the one run");
+    }
+    assert_eq!(
+        Verdict::Halted(Some(String::from("⟨pair(pair(5, 5), pair(5, 5)) |+ ★⟩"))),
+        agree(Label("(c0, c0)"), &commands, &definitions, twice),
+        "the computed constant answers what its computation returns"
+    );
+    assert_eq!(
+        Verdict::Stuck(Stuck::CyclicConstant(ConstantIndex::from(1_usize))),
+        agree(Label("c1"), &commands, &definitions, looping),
+        "a computation reading its own constant is a cycle"
+    );
 }

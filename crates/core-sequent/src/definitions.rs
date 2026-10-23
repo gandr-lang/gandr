@@ -1,7 +1,8 @@
 //! The definitions a run unfolds: what each constant stands for, by its
 //! admission position. A transparent constant's focused, closed value is
-//! evaluated where the constant is met; an opaque one — owed or refused — is
-//! carried as itself, and observing it stops the run at the constant.
+//! evaluated where the constant is first met, and a computed one's `μ` run
+//! there once for its answer; an opaque one — owed or refused — is carried as
+//! itself, and observing it stops the run at the constant.
 
 use alloc::vec::Vec;
 
@@ -14,7 +15,8 @@ use crate::il::ProducerId;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Definition
 {
-    /// A definition with a body: its focused value, closed.
+    /// A definition with a body: its focused value, closed, or the closed `μ`
+    /// whose run computes it.
     Transparent(ProducerId),
     /// A declaration with no body to run, owed or refused, which a run
     /// carries as itself.
