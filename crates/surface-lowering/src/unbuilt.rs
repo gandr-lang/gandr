@@ -546,6 +546,11 @@ impl Unbuilt
             Self::StagedType => TrackingIssue::PLACED_STAGE,
             Self::UnknownType => TrackingIssue::UNKNOWN_TYPE,
             Self::CaseView => TrackingIssue::CASE_VIEW,
+            Self::If => TrackingIssue::IF_EXPRESSION,
+            Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
+            Self::TypeParameter => TrackingIssue::TYPE_PARAMETER,
+            Self::InfixForm => TrackingIssue::INFIX_FORM,
+            Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
             Self::Interpolation
             | Self::Bind
             | Self::Circuit
@@ -555,7 +560,6 @@ impl Unbuilt
             | Self::Derive
             | Self::ExternBlock
             | Self::HostEscape
-            | Self::If
             | Self::LabelledSumPattern
             | Self::LiteralPattern
             | Self::ManifestSort
@@ -576,16 +580,12 @@ impl Unbuilt
             | Self::Subshell
             | Self::VariableExpansion
             | Self::VariableName
-            | Self::ThunkGrade
             | Self::TypeGrade
             | Self::TypeAbstraction
             | Self::Val
             | Self::UnknownConstructor
             | Self::Fractional
-            | Self::TypeParameter
-            | Self::InfixForm
             | Self::PrefixOperator
-            | Self::EmptyCase
             | Self::UnreadPattern
             | Self::StatedType
             | Self::UniverseLevel
