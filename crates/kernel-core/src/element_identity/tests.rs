@@ -3007,7 +3007,7 @@ fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
     // In `(y : Unit, z : Path(Unit, (), y)) => C`, the unit's evidence `()`
     // is a closed path that is no reflexivity. A returned type reading neither
     // entry returns the value along it; one reading the endpoint or the
-    // identity over it sticks.
+    // identity over it, at a carrier other than the unit, sticks.
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let unit = arena.value_type_unit();
@@ -3040,12 +3040,56 @@ fn telescope_transport_in_a_constant_motive_returns_its_value_along_any_path()
     );
 
     let endpoint = arena.value_variable(DeBruijnIndex::from(1_u32));
-    let reads_endpoint = arena.value_type_path(unit, endpoint, endpoint);
+    let over = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let fibre = arena.value_type_path(unit, centre, endpoint);
+    let reads_endpoint = arena.value_type_path(fibre, over, over);
     assert_eq!(step(&mut arena, reads_endpoint), Ok(Reduction::Stuck));
 
-    let over = arena.value_variable(DeBruijnIndex::from(0_u32));
     let reads_over = arena.value_type_path(boolean.ty, over, over);
     assert_eq!(step(&mut arena, reads_over), Ok(Reduction::Stuck));
+}
+
+#[test]
+fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
+{
+    // In `(y : Unit, z : Path(Unit, (), y)) => Path(Unit, y, ())`, the family
+    // of paths back to the centre, every inhabitant of the returned type is
+    // the unit: along the unit's evidence `()`, a closed path that is no
+    // reflexivity, along a variable and along a constant the transport
+    // returns it.
+    let mut arena = TermArena::new();
+    let unit = arena.value_type_unit();
+    let centre = arena.value_unit();
+    let end = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(unit, centre, end);
+    let endpoint = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let back = arena.value_type_path(unit, endpoint, centre);
+    let returns = arena.comp_type_returner(back);
+    let entry = arena.comp_type_pi(singleton, returns);
+    let motive = arena.comp_type_pi(unit, entry);
+    let start = arena.value_here(centre);
+    let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let constant = arena.value_constant(ConstantIndex::from(0_usize));
+    for path in [centre, variable, constant] {
+        let mut table = ContentTable::new();
+        let mut memo = gandr_kernel_check_memo::NullMemo;
+        let Ok(Reduction::Reduced(reduct)) =
+            telescope_beta(&mut arena, &mut table, &mut memo, TelescopeStep {
+                motive,
+                path,
+                start,
+                over: start,
+                value: start,
+            })
+        else {
+            panic!("a transport into the unit fibre reduces");
+        };
+        let Some(&Computation::Return(returned)) = arena.computation(reduct)
+        else {
+            panic!("the reduct returns a value");
+        };
+        assert_eq!(arena.value(returned), Some(&Value::Tuple(Box::default())));
+    }
 }
 
 #[test]

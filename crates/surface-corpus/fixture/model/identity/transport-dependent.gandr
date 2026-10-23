@@ -1,8 +1,9 @@
 // Transport in a family over a point and a path to it from a fixed one, the
 // motive of based path induction (the HoTT book's § 1.12.1): at reflexivity
-// it computes to the element given, it reverses a path when the family is
-// the paths back, and it refuses a family not over the path's own endpoints
-// or one that reads no path.
+// it computes to the element given, along the unit type's evidence it
+// computes into the unit fibre, it reverses a path when the family is the
+// paths back, and it refuses a family not over the path's own endpoints or
+// one that reads no path.
 
 // The free naturals.
 import "./circle-base.gandr" ;
@@ -43,6 +44,22 @@ def carriedUnit : Path(
   Succ(Zero)
 );
 def carriedUnit = here(Succ(Zero));
+
+/// Transport along that evidence in the family of paths back to the point
+/// returns the unit, the one inhabitant of the unit fibre (#1886).
+@[ checks ]
+def backUnit : Path(
+  Path(Unit, unit, unit),
+  transport(
+    +U ((y : Unit) -> (z : Path(Unit, unit, y)) -> -F Path(Unit, y, unit)),
+    unitPath,
+    here(unit),
+    here(unitPath),
+    here(unit)
+  ),
+  unit
+);
+def backUnit = here(unit);
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.

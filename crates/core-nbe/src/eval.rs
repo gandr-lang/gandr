@@ -7495,15 +7495,17 @@ fn move_payloads(
 ///   operand unchanged along any path, the kernel's constant row; otherwise,
 ///   when both identities are reflexivity the operand returns unchanged; when
 ///   only the path is `here(c)` the operand transports along the identity over
-///   it in the fibre `z. C[c, z]`; over a stuck path the transport stacks on
-///   the path's spine.
+///   it in the fibre `z. C[c, z]`; along any other path, into a returned type
+///   `Path(Unit, l, r)`, it returns the unit, that fibre's one inhabitant; over
+///   any other stuck path the transport stacks on the path's spine.
 /// - provides: the telescope transport's computation rules, a subset of the
 ///   kernel's, and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand, or a motive
 ///   closure holding no telescope where the fibre is read;
 ///   [`EvalFault::TransportedNonPath`] for a path that is neither reflexivity
-///   nor stuck in a motive reading an entry; [`EvalFault::DanglingTerm`] for a
-///   returned type naming no core node; domain faults for dangling nodes.
+///   nor stuck in a motive reading an entry, at a returned type that is no
+///   identity at the unit type; [`EvalFault::DanglingTerm`] for a returned type
+///   naming no core node; domain faults for dangling nodes.
 /// - panics: none.
 ///
 /// # Errors
@@ -7511,14 +7513,16 @@ fn move_payloads(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — `here` along both identities, `here` along the path with
-///   a stuck identity over it, a stuck path, and a closed path that is no
-///   reflexivity in a constant motive each reach their own arm; dropping the
-///   fibre's point, the stuck form's start or the constant row changes the
-///   read-back term.
+///   a stuck identity over it, a stuck path, a closed path that is no
+///   reflexivity in a constant motive, and evidence or a stuck path into an
+///   identity at the unit type each reach their own arm; dropping the fibre's
+///   point, the stuck form's start, the constant row or the unit fibre's row
+///   changes the read-back term.
 /// - witness: `identity::tests::telescope_transport_along_here_is_the_identity`
 /// - witness: `identity::tests::telescope_transport_along_here_replays_the_fibre`
 /// - witness: `identity::tests::telescope_transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_value`
+/// - witness: `identity::tests::telescope_transport_into_the_unit_fibre_returns_the_unit_1886`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(4_usize)
@@ -7537,10 +7541,11 @@ fn step_telescope_transport(
     let start = machine.pop_value()?;
     let path = machine.pop_value()?;
     let dangling = EvalFault::Domain(DomainFault::Dangling);
-    if let crate::ValueBody::CompType(telescope) =
-        domain.value_closure(motive).ok_or(dangling)?.body()
-        && let Ok(body) = telescope_body(core, telescope)
-    {
+    let returned = match domain.value_closure(motive).ok_or(dangling)?.body() {
+        crate::ValueBody::CompType(telescope) => telescope_body(core, telescope).ok(),
+        crate::ValueBody::ValueType(_) | crate::ValueBody::Source(_) => None,
+    };
+    if let Some(body) = returned {
         let free = |fault| match fault {
             crate::free::FreeFault::Dangling => EvalFault::DanglingTerm,
             crate::free::FreeFault::MachineInvariant => EvalFault::MachineInvariant,
@@ -7554,7 +7559,24 @@ fn step_telescope_transport(
             return Ok(());
         }
     }
-    match *domain.value(path).ok_or(dangling)? {
+    // Into an identity at the unit type, the transport along any path that is
+    // no reflexivity returns the unit, that fibre's one inhabitant.
+    let carried = *domain.value(path).ok_or(dangling)?;
+    let carrier = match returned.and_then(|body| core.value_type(body)) {
+        Some(&ValueType::Path { carrier, .. }) => core.value_type(carrier),
+        _ => None,
+    };
+    if let Some(&ValueType::Product(ref parts)) = carrier
+        && parts.is_empty()
+        && !matches!(carried, DomainValue::Here { .. })
+    {
+        let centre = domain.value_unit(TermFace::Reduced);
+        machine
+            .comps
+            .push(domain.comp_return(centre, CompTermFace::Reduced));
+        return Ok(());
+    }
+    match carried {
         DomainValue::Here { point, .. } => {
             if let DomainValue::Here { .. } = *domain.value(over).ok_or(dangling)? {
                 machine
