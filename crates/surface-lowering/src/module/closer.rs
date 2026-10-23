@@ -27,6 +27,7 @@
 //! begins a line at or left of the indentation sought settles the opener as
 //! closed where the parser closed it, and the stray keeps its own refusal.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -34,6 +35,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::DelimSpelling;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use quenchant_shape::shape::Maybe;
 
@@ -107,6 +109,33 @@ struct Suspect
     /// The indentation the stray is sought at: its opener's line's, moved out
     /// by each aligned closer after it.
     indent: usize,
+}
+
+/// What a closer written twice on a line makes of one root piece of that line:
+/// the pieces it tore out of the form it closed early are one stray, led by
+/// the line's first piece and refused at the closer.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub(super) enum Tearing<'source>
+{
+    /// The line's first piece: the stray, refused at the closer, owning the
+    /// later pieces of the line.
+    Leads
+    {
+        /// The refusal at the closer.
+        refusal: LoweringRefusal<'source>,
+        /// The later pieces of the line.
+        torn: Vec<Placed>,
+    },
+    /// A later piece of the line, owned by the stray its first piece leads.
+    Follows
+    {
+        /// Whether it is the line's last piece, after which a `;` ends the
+        /// stray.
+        last: bool,
+    },
 }
 
 /// How `label` nests: an opener when it ends in `(`, `[` or `{`, a closer of
@@ -313,5 +342,149 @@ impl<'source> Collector<'_, 'source>
             previous = end;
         }
         None
+    }
+
+    /// The runs of root pieces a closer written twice on one line tore out of
+    /// the form it closed early.
+    ///
+    /// The parser pairs the first closer with the form's opener, so the second
+    /// closes nothing: the form's tiles before it stand at the root as pieces
+    /// of their own, and so does the rest of the form after it. Each piece
+    /// refuses as a form of the wrong sort at its own bytes, ahead of the
+    /// closer that caused them. A closer is written twice when the one before
+    /// it on its line, past any blank, is the same; a closer that follows
+    /// anything else stands for an opener left out, not one written too often.
+    /// A run is every piece that begins on the doubled closer's line after the
+    /// attribute blocks leading it, when a bare tile stands before the closer
+    /// or a piece begins after it; a line of whole forms ended by a closer with
+    /// nothing after it keeps its refusals.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the root pieces of one source, in order.
+    /// - ensures: each run is led by its first piece and followed by the rest;
+    ///   its last piece is at or after a piece beginning with a `)`, `]` or `}`
+    ///   that follows the same closer and is not first on its line, every piece
+    ///   of the run begins on that line, and the run's refusal is a malformed
+    ///   form at that closer, of its family, naming the form of the run's first
+    ///   piece; no piece belongs to two runs.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the pieces.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a codata declaration whose universe's `]` is doubled
+    ///   and an operation whose parameter's `)` is doubled refuse at the second
+    ///   closer; a closer after a word, an opener left out, keeps its own
+    ///   refusal.
+    /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
+    pub(super) fn torn_lines(
+        &self,
+        pieces: &[Placed],
+    ) -> BTreeMap<NodeIndex, Tearing<'source>>
+    {
+        let text = <&str>::from(self.tree.source());
+        let line_of = |at: usize| {
+            text.get(.. at)
+                .and_then(|before| before.rfind('\n'))
+                .map_or(0, |newline| newline.saturating_add(1))
+        };
+        let line = |placed: &Placed| line_of(usize::from(placed.span.start()));
+        let mut tearings = BTreeMap::new();
+        let mut claimed: Option<usize> = None;
+        for (index, stray) in pieces.iter().enumerate() {
+            let start = usize::from(stray.span.start());
+            let Some(written) = text.get(start .. start.saturating_add(1))
+            else {
+                continue;
+            };
+            // Doubled: the closer before it, past any blank, is the same, and
+            // its line opens no more of the family before it than it closes.
+            let opener = match written {
+                ")" => '(',
+                "]" => '[',
+                _ => '{',
+            };
+            let doubled = text.get(line_of(start) .. start).is_some_and(|before| {
+                before.trim_end_matches([' ', '\t']).ends_with(written)
+                    && before.matches(opener).count() <= before.matches(written).count()
+            });
+            let Some(close) =
+                ClosingClass::closing(DelimSpelling::from(written)).filter(|_| doubled)
+            else {
+                continue;
+            };
+            let own = line(stray);
+            let Some(before) = pieces.get(.. index)
+            else {
+                continue;
+            };
+            let first = before
+                .iter()
+                .rposition(|placed| line(placed) != own)
+                .map_or(0, |earlier| earlier.saturating_add(1));
+            let first = (first .. index)
+                .find(|&at| {
+                    pieces.get(at).is_some_and(|placed| {
+                        !text
+                            .get(usize::from(placed.span.start()) ..)
+                            .is_some_and(|rest| rest.starts_with("@["))
+                    })
+                })
+                .unwrap_or(index);
+            if first == index || claimed.is_some_and(|last| last >= first) {
+                continue;
+            }
+            let last = pieces
+                .get(index ..)
+                .and_then(|after| after.iter().position(|placed| line(placed) != own))
+                .map_or(pieces.len(), |later| index.saturating_add(later))
+                .saturating_sub(1);
+            let bare = pieces.get(first .. index).is_some_and(|torn| {
+                torn.iter().any(|placed| {
+                    self.tree
+                        .node(placed.node)
+                        .is_some_and(|node| matches!(node.label(), NodeLabel::Tile(_)))
+                })
+            });
+            if !bare && last == index {
+                continue;
+            }
+            let (Some(lead), Some(rest)) = (
+                pieces.get(first),
+                pieces.get(first.saturating_add(1) ..= last),
+            )
+            else {
+                continue;
+            };
+            let form = self
+                .tree
+                .node(lead.node)
+                .and_then(|node| match shape_of(self.pbg, node) {
+                    Ok(Shape::Form { name, .. }) => Some(name),
+                    Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_) => None,
+                })
+                .unwrap_or(FormName::ROOT);
+            let Ok(span) = ByteSpan::new(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(1)),
+            )
+            else {
+                continue;
+            };
+            claimed = Some(last);
+            let _led = tearings.insert(lead.node, Tearing::Leads {
+                refusal: LoweringRefusal::MalformedForm {
+                    span,
+                    form,
+                    fault: FormFault::ExtraClose(close),
+                },
+                torn: rest.to_vec(),
+            });
+            for (at, placed) in rest.iter().enumerate() {
+                let _followed = tearings.insert(placed.node, Tearing::Follows {
+                    last: at.saturating_add(1) == rest.len(),
+                });
+            }
+        }
+        tearings
     }
 }

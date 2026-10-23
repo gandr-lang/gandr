@@ -330,6 +330,8 @@ use crate::unit::UnitKey;
 
 mod closer;
 
+use closer::Tearing;
+
 mod data;
 
 mod derive;
@@ -2924,6 +2926,10 @@ pub fn collect_source<'source>(
     // declaration out of the fragment: it carries its own refusal, whatever
     // else the source declares. One the parser repaired is malformed instead.
     let mut items_refused = false;
+    // A closer written twice on one line tears the form it closes early into
+    // pieces of that line: the run is one stray, refused at the closer.
+    let placed: Vec<Placed> = pieces.iter().map(|piece| piece.placed()).collect();
+    let mut torn = collector.torn_lines(&placed);
     for piece in pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
@@ -2944,6 +2950,19 @@ pub fn collect_source<'source>(
         }
         if terminates {
             continue;
+        }
+        match torn.remove(&child.node) {
+            Some(Tearing::Leads { refusal, torn }) => {
+                let mut stray = Stray::of(child, refusal, core::mem::take(&mut decorations));
+                stray.torn = torn;
+                strays.push(stray);
+                continue;
+            },
+            Some(Tearing::Follows { last }) => {
+                after_stray = last;
+                continue;
+            },
+            None => {},
         }
         let former = collector.root_former(child)?;
         if former == Maybe::Present(Former::AttributeBlock) {
@@ -3071,7 +3090,8 @@ pub fn collect_source<'source>(
 }
 
 /// A root child that is no declaration, the refusal it raised, the attribute
-/// blocks written before it and the `;` that ends it, when one does.
+/// blocks written before it, the pieces of its line a doubled closer tore from
+/// it and the `;` that ends it, when one does.
 #[derive(Debug)]
 struct Stray<'source>
 {
@@ -3083,6 +3103,8 @@ struct Stray<'source>
     decorations: Vec<Placed>,
     /// The `;` written right after the child, which ends it as a statement.
     terminator: Option<Placed>,
+    /// The later pieces of its line a closer written twice tore from it.
+    torn: Vec<Placed>,
 }
 
 impl<'source> Stray<'source>
@@ -3103,6 +3125,7 @@ impl<'source> Stray<'source>
             refusal,
             decorations,
             terminator: None,
+            torn: Vec::new(),
         }
     }
 }
@@ -3568,12 +3591,14 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `stray.refusal` is what collecting `stray.child` raised;
     ///   `stray.decorations` are attribute blocks standing on their own before
-    ///   it, and `stray.terminator` the `;` written right after it.
+    ///   it, `stray.torn` the later pieces of its line a doubled closer tore
+    ///   from it, and `stray.terminator` the `;` written right after it.
     /// - ensures: one held slot, entered in no name table, named by the child's
-    ///   first word, refused at the child; it owns the child, its decorations
-    ///   and its terminator, and carries the decorations' attributes, so an
-    ///   expectation written before a stray states its refusal. An unreadable
-    ///   decoration refuses the slot instead where it stands first.
+    ///   first word, refused at the child; it owns the child, its decorations,
+    ///   its torn pieces and its terminator, and carries the decorations'
+    ///   attributes, so an expectation written before a stray states its
+    ///   refusal. An unreadable decoration refuses the slot instead where it
+    ///   stands first.
     /// - provides: a refusal for a root child no declaration owns, beside the
     ///   declarations the source keeps.
     /// - fails: never.
@@ -3586,6 +3611,7 @@ impl<'source> Collector<'_, 'source>
     ///   before one states its refusal, and the `;` ending one is no second
     ///   stray.
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+    /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() == before.0.saturating_add(1)
@@ -3601,6 +3627,7 @@ impl<'source> Collector<'_, 'source>
             refusal,
             decorations,
             terminator,
+            torn,
         } = stray;
         let mut attributes = Vec::new();
         let mut attributed = Ok(());
@@ -3619,7 +3646,7 @@ impl<'source> Collector<'_, 'source>
         let top = self.collected.top(child.span.start());
         let held = self.refuse_held(top, SurfaceName::from(name), child, child, refusal);
         self.collected.own(child.node, held);
-        for block in decorations.into_iter().chain(terminator) {
+        for block in decorations.into_iter().chain(torn).chain(terminator) {
             self.collected.own(block.node, held);
         }
         if let Some(slot) = self.collected.slots.get_mut(held.0) {
@@ -10937,6 +10964,74 @@ mod tests
                 }] if *span == at(settled, "\n}", 1)
             ),
             "a declaration at the definition's indentation settles where it closed: {refused:?}"
+        );
+    }
+
+    /// A closer written twice on one line tears the form it closes early into
+    /// pieces of that line, each a form of the wrong sort at its own bytes:
+    /// the line is refused once, at the second closer, as the form its first
+    /// piece begins. A closer that follows anything but its own twin stands
+    /// for an opener left out, and keeps its refusal (#2051).
+    #[test]
+    fn a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051()
+    {
+        let pbg = grammar();
+        let refusals = |text: &'static str| {
+            let tree = repaired(&pbg, SourceText::from(text));
+            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+            collected
+                .slots
+                .iter()
+                .filter_map(|slot| match slot.refusal {
+                    Maybe::Present((_at, refusal)) => Some(refusal),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let second = |text: &str, written: &str| {
+            let start = text.find(written).unwrap().saturating_add(1);
+            span(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(1)),
+            )
+        };
+
+        for (text, doubled, close) in [
+            (
+                "codata Stream : Type[-]] {\n  ω head : Integer;\n}\ndef kept = 1 ;\n",
+                "]]",
+                ClosingClass::Bracket,
+            ),
+            (
+                "oper split : (b : Bit)) --> (_ : Bit, _ : Bit) {\n  node : tee(b) --> (_, _);\n}\ndef kept = 1 ;\n",
+                "))",
+                ClosingClass::Paren,
+            ),
+        ] {
+            let refused = refusals(text);
+            assert!(
+                matches!(
+                    refused.as_slice(),
+                    [LoweringRefusal::MalformedForm {
+                        span,
+                        fault: FormFault::ExtraClose(found),
+                        ..
+                    }] if *span == second(text, doubled) && *found == close
+                ),
+                "the line is refused once, at the second closer: {refused:?}"
+            );
+        }
+
+        let left_out = "checks ]\ndef kept = 1 ;\n";
+        let refused = refusals(left_out);
+        assert!(
+            !refused
+                .iter()
+                .any(|refusal| matches!(refusal, LoweringRefusal::MalformedForm {
+                    fault: FormFault::ExtraClose(_),
+                    ..
+                })),
+            "a closer after a word stands for an opener left out: {refused:?}"
         );
     }
 
