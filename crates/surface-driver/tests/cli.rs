@@ -1011,6 +1011,60 @@ fn the_features_ledger_lists_and_shows_1827()
 #[test]
 fn every_width_prints_the_serial_run()
 {
+    let at = |arguments: &[PathBuf], jobs: &[&str], environment: Option<&str>| {
+        let mut command = gandr(arguments);
+        command.args(jobs);
+        match environment {
+            Some(threads) => command.env("GANDR_JOBS", threads),
+            None => command.env_remove("GANDR_JOBS"),
+        };
+        ran(command)
+    };
+    let agrees = |arguments: &[PathBuf], wider: &[(&str, Output)]| {
+        let serial = at(arguments, &["--jobs", "1"], None);
+        assert!(
+            stdout(&serial).contains("verdict: "),
+            "{arguments:?}: {}",
+            stderr(&serial)
+        );
+        for &(label, ref output) in wider {
+            assert_eq!(
+                (code(output), stdout(output), stderr(output)),
+                (code(&serial), stdout(&serial), stderr(&serial)),
+                "{arguments:?} at {label} prints the serial run"
+            );
+        }
+    };
+    // The corpus roots share out over the three wider widths: every source runs
+    // once serially and once off the serial schedule, and each width is observed
+    // over enough sources to interleave, in two corpus passes rather than four.
+    // Each root settles on its own, so a share prints what its roots print
+    // within a whole run.
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let share = |roots: &[&str]| {
+        roots
+            .iter()
+            .fold(vec![PathBuf::from("test")], |mut run, root| {
+                run.push(corpus.join(root));
+                run
+            })
+    };
+    let model = share(&["corpus/model"]);
+    agrees(&model, &[("--jobs 4", at(&model, &["--jobs", "4"], None))]);
+    let pathological = share(&["corpus/pathological"]);
+    agrees(&pathological, &[(
+        "GANDR_JOBS=3",
+        at(&pathological, &[], Some("3")),
+    )]);
+    let rest = share(&[
+        "crates/surface-corpus/strict",
+        "corpus/classifier",
+        "corpus/fragment",
+        "corpus/pending",
+        "corpus/surface",
+    ]);
+    agrees(&rest, &[("the host's width", at(&rest, &[], None))]);
+
     let scratch = Scratch::new(Path::new("widths"));
     let settled = scratch.file(Path::new("answer.gandr"), Text::from("def answer = 42 ;\n"));
     let broken = scratch.file(
@@ -1019,60 +1073,19 @@ fn every_width_prints_the_serial_run()
     );
     let empty = scratch.0.join("empty");
     std::fs::create_dir_all(&empty).expect("the empty directory is created");
-    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let runs = [
-        [
-            "crates/surface-corpus/strict",
-            "corpus/classifier",
-            "corpus/fragment",
-            "corpus/model",
-            "corpus/pathological",
-            "corpus/pending",
-            "corpus/surface",
-        ]
-        .into_iter()
-        .map(|root| corpus.join(root))
-        .fold(vec![PathBuf::from("test")], |mut run, root| {
-            run.push(root);
-            run
-        }),
-        vec![
-            PathBuf::from("check"),
-            settled,
-            scratch.0.join("absent.gandr"),
-            broken,
-            empty,
-            scratch.0.clone(),
-        ],
+    let check = [
+        PathBuf::from("check"),
+        settled,
+        scratch.0.join("absent.gandr"),
+        broken,
+        empty,
+        scratch.0.clone(),
     ];
-    for arguments in runs {
-        let at = |jobs: &[&str], environment: Option<&str>| {
-            let mut command = gandr(&arguments);
-            command.args(jobs);
-            match environment {
-                Some(threads) => command.env("GANDR_JOBS", threads),
-                None => command.env_remove("GANDR_JOBS"),
-            };
-            ran(command)
-        };
-        let serial = at(&["--jobs", "1"], None);
-        assert!(
-            stdout(&serial).contains("verdict: "),
-            "{arguments:?}: {}",
-            stderr(&serial)
-        );
-        for (label, wider) in [
-            ("--jobs 4", at(&["--jobs", "4"], None)),
-            ("GANDR_JOBS=3", at(&[], Some("3"))),
-            ("the host's width", at(&[], None)),
-        ] {
-            assert_eq!(
-                (code(&wider), stdout(&wider), stderr(&wider)),
-                (code(&serial), stdout(&serial), stderr(&serial)),
-                "{arguments:?} at {label} prints the serial run"
-            );
-        }
-    }
+    agrees(&check, &[
+        ("--jobs 4", at(&check, &["--jobs", "4"], None)),
+        ("GANDR_JOBS=3", at(&check, &[], Some("3"))),
+        ("the host's width", at(&check, &[], None)),
+    ]);
 }
 
 #[test]
