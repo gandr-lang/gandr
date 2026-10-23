@@ -2052,8 +2052,8 @@ fn a_source_lowers_alike_whatever_follows_it_776()
 /// code; behind a block it does not import, and behind one it imports, it takes
 /// that block's code and every declaration of it stands. A source importing
 /// both names the one code, with no ambiguity. The code a later source's block
-/// took answered no name of that source. Each block's forgetting map follows
-/// it under the block's name.
+/// took answered no name of that source. A block no manifest model type names
+/// takes no forgetting map.
 #[test]
 fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
 {
@@ -2090,12 +2090,12 @@ fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
     };
     assert_eq!(
         declared(&[(SourceText::from(counting), &[])]),
-        stood(&["Theory", "Monoid", "Monoid", "count"]),
+        stood(&["Theory", "Monoid", "count"]),
         "alone, the block mints `Theory` and `count` reads it"
     );
     assert_eq!(
         declared(&[(first, &[]), (SourceText::from(counting), &[])]),
-        stood(&["Theory", "Magma", "Magma", "Monoid", "Monoid", "count"]),
+        stood(&["Theory", "Magma", "Monoid", "count"]),
         "behind a block it does not import, the source names that block's `Theory`"
     );
     assert_eq!(
@@ -2105,7 +2105,7 @@ fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
                 ImportTarget::Source(SourceIndex::from(0_usize)),
             ])
         ]),
-        stood(&["Theory", "Magma", "Magma", "Monoid", "Monoid", "count"]),
+        stood(&["Theory", "Magma", "Monoid", "count"]),
         "behind a block it imports, the source names that block's `Theory`"
     );
     assert_eq!(
@@ -2117,9 +2117,7 @@ fn a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078()
                 ImportTarget::Source(SourceIndex::from(1_usize)),
             ])
         ]),
-        stood(&[
-            "Theory", "Magma", "Magma", "Monoid", "Monoid", "count", "pick"
-        ]),
+        stood(&["Theory", "Magma", "Monoid", "count", "pick"]),
         "a source importing both blocks names one `Theory`"
     );
 }

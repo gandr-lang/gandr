@@ -1384,8 +1384,8 @@ pub struct Collected<'source>
     /// Each reduct's plan, by its slot: one per theory a `theory` block
     /// includes, directly or through another.
     pub reducts: BTreeMap<SlotIndex, ReductSlot>,
-    /// Each forgetting map's plan, by its slot: one per theory whose models
-    /// bundle and which declares an unindexed sort.
+    /// Each forgetting map's plan, by its slot: one per set of unindexed sorts
+    /// of one theory that a manifest model type of the unit fixes.
     pub forgets: BTreeMap<SlotIndex, ForgetSlot>,
     /// The theories each `theory` block includes, by its slot: each with the
     /// inclusion composed along the way first reached, in the order reached.
@@ -2847,7 +2847,9 @@ pub fn source_pieces(
 ///   refused alone and decorated by the attribute blocks before it, so `@[
 ///   refuses("DuplicateImportAlias") ] import … as … ;` states it. A stray
 ///   takes its slot where it is written, before the forms after it, so its
-///   refusal is reported ahead of what a later form refuses because of it.
+///   refusal is reported ahead of what a later form refuses because of it. Each
+///   forgetting map the manifest model types of a root child ask for takes its
+///   slot before the child's own.
 /// - provides: the admission order every later pass resolves names against,
 ///   which the lowering builds a source at a time, before its passes over that
 ///   source.
@@ -2948,6 +2950,13 @@ pub fn collect_source<'source>(
     let placed: Vec<Placed> = pieces.iter().map(|piece| piece.placed()).collect();
     let mut torn = collector.torn_lines(&placed);
     collector.torn_forms(&placed, &mut torn);
+    // A manifest model type asks for the map forgetting its sorts, which takes
+    // its slot before the root child writing the type, so every declaration
+    // that crosses by it is judged after it; those minted are counted apart,
+    // since they declare nothing the source writes.
+    let mut manifests = collector.manifest_types().into_iter().peekable();
+    let mut forgotten = collector.forgotten();
+    let mut minted = 0_usize;
     for piece in pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
@@ -2974,6 +2983,13 @@ pub fn collect_source<'source>(
         }
         if terminates {
             continue;
+        }
+        while let Some(at) = manifests.next_if(|at| at.span.start() < child.span.end()) {
+            if at.span.start() >= child.span.start()
+                && collector.forget(at, &mut forgotten)?.is_some()
+            {
+                minted = minted.saturating_add(1);
+            }
         }
         match torn.remove(&child.node) {
             Some(Tearing::Leads { refusal, torn }) => {
@@ -3130,7 +3146,13 @@ pub fn collect_source<'source>(
     // A source that declares nothing, not even an item out of the fragment or
     // a run target, is no list of declarations: its first stray refuses it
     // whole.
-    let declared = collector.collected.slots.len().saturating_sub(filed) > declared_before.0
+    let declared = collector
+        .collected
+        .slots
+        .len()
+        .saturating_sub(filed)
+        .saturating_sub(minted)
+        > declared_before.0
         || collector.collected.structures.len() > declared_before.1
         || items_refused
         || target.is_some();
@@ -4481,8 +4503,7 @@ impl<'source> Collector<'_, 'source>
     ///   before refuses the block as a duplicate. Each `include` the block
     ///   writes is kept among the declared uses, its name tile beside the slot
     ///   owning the theory it includes; a block whose slot stands unrefused
-    ///   takes its reducts' slots after it, then its forgetting map's when its
-    ///   models bundle and it presents an unindexed sort ([`Self::reducts`]).
+    ///   takes its reducts' slots after it ([`Self::reducts`]).
     /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
     ///   is the presentation's value.
     /// - panics: none.
@@ -9974,8 +9995,8 @@ impl<'source> LoweredModule<'source>
     }
 
     /// The forgetting maps this module mints, ascending by position: each
-    /// carries a model of a theory whose unindexed sorts are manifest to a
-    /// model of the theory, and the checker inserts it, at the carriers it
+    /// carries a model of a theory with some of its unindexed sorts manifest to
+    /// a model of the theory, and the checker inserts it, at the carriers it
     /// solves, where the first stands at the second.
     ///
     /// # Specification

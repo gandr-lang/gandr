@@ -10,19 +10,26 @@
 //! way's; the ways compose to one inclusion. The slot is entered in no name
 //! table; the lowering enters it under the block's path, `T'.T`.
 //!
-//! A block whose models bundle and which declares an unindexed sort takes one
-//! more slot after its reducts, the same way: the forgetting map from its
-//! models with every unindexed sort manifest to its models
-//! ([`ForgetSlot`]), `(x : Type, …) -> Model(T) with sort C = x … -> Model(T)`,
-//! which drops the cell each manifest fixes. The slot carries the block's own
-//! name and is entered in no name table.
+//! A model type a source writes with manifest sorts, `Model(T) with sort C₁ =
+//! A₁ … with sort Cₙ = Aₙ`, takes one slot before the top-level form writing
+//! it, the same way: the forgetting map from `T`'s models with those sorts
+//! manifest to its models ([`ForgetSlot`]), `(x₁ : Type, …) -> Model(T) with
+//! sort C₁ = x₁ … -> Model(T)`, which drops the cell each manifest fixes and
+//! keeps every other sort a field. One slot serves every model type of the
+//! unit fixing the same sorts of the same theory, so the maps a unit takes are
+//! as many as the sort sets it writes, each judged before every declaration
+//! that crosses by it. The slot carries the theory's name and is entered in no
+//! name table.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeLabel;
+use gandr_theory_levitation::Name;
 use gandr_theory_levitation::TheoryInclusion;
 use quenchant_shape::shape::Maybe;
 
@@ -35,7 +42,16 @@ use super::Role;
 use super::SlotIndex;
 use super::declaration_half;
 use super::slot_refusal;
+use crate::error::LoweringRefusal;
+use crate::form::Cursor;
+use crate::form::Former;
+use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Run;
+use crate::form::Shape;
+use crate::form::TileName;
+use crate::form::read_pieces;
+use crate::form::shape_of;
 use crate::model::Included;
 use crate::model::ModelForm;
 use crate::model::derive;
@@ -65,31 +81,37 @@ pub struct ReductSlot
     pub inclusion: TheoryInclusion,
 }
 
-/// A slot a theory's forgetting map takes: the theory whose models it
-/// forgets the manifest sorts of.
+/// A slot a forgetting map takes: the theory whose models it forgets the
+/// manifest sorts of, and the sorts it puts back.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: `theory` is the slot of a `theory` block whose models bundle and
-///   whose presentation declares an unindexed sort.
+/// - ensures: `theory` is the slot of a `theory` block whose models bundle, and
+///   `fixed` names at least one unindexed sort of its presentation.
 /// - executable: none — the record is data the lowering reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a counter's models, its carrier manifest at the integers,
-///   stand where a counter's are asked.
+///   stand where a counter's are asked; a pairing's, one sort of two manifest,
+///   stand where a pairing's are.
 /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(transparent)]
+/// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForgetSlot
 {
     /// The theory's slot.
     pub theory: SlotIndex,
+    /// The sorts the map puts back.
+    pub fixed: BTreeSet<Name>,
 }
 
-impl Collector<'_, '_>
+/// Each theory and sort set a forgetting slot puts back.
+pub(super) type Forgotten = BTreeSet<(SlotIndex, BTreeSet<Name>)>;
+
+impl<'source> Collector<'_, 'source>
 {
-    /// Collect the reducts and the forgetting map of the `theory` block
-    /// `block`, which took the slot `theory` and includes `inclusions`.
+    /// Collect the reducts of the `theory` block `block`, which took the slot
+    /// `theory` and includes `inclusions`.
     ///
     /// # Specification
     /// - requires: `theory` is the clean slot `block` took, and `inclusions`
@@ -101,26 +123,21 @@ impl Collector<'_, '_>
     ///   theory whose models are one too takes one [`Role::Derived`] slot, in
     ///   that order, under the included theory's name, its definition the
     ///   reduct the lowering mints, named at the `include` it was reached
-    ///   through. An inclusion naming no collected block is passed over. A
-    ///   block whose models bundle and which declares an unindexed sort then
-    ///   takes one [`Role::Derived`] slot under its own name, its definition
-    ///   the forgetting map the lowering mints.
-    /// - provides: the reduct and forgetting half of the theory collection.
+    ///   through. An inclusion naming no collected block is passed over.
+    /// - provides: the reduct half of the theory collection.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a monoid's semigroup, an extension of the monoid
     ///   reaching the semigroup through it, and two extensions of the semigroup
-    ///   included together, reaching it once. A counter, whose carrier is
-    ///   unindexed, takes a forgetting map.
+    ///   included together, reaching it once.
     /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     /// - witness: `description::theory::tests::the_include_subject_s_ways_round_compose_to_one_inclusion`
-    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before
-            && self.collected.slots.len().saturating_sub(before) <= self.collected.included.get(&theory).map_or(0, Vec::len).saturating_add(1),
+            && self.collected.slots.len().saturating_sub(before) <= self.collected.included.get(&theory).map_or(0, Vec::len),
     )]
     pub(super) fn reducts(
         &mut self,
@@ -178,10 +195,9 @@ impl Collector<'_, '_>
                         .all(|component| component.form.is_ok())
                 })
         };
-        let Some(own) = bundles(self.collected, block.node)
-        else {
+        if bundles(self.collected, block.node).is_none() {
             return;
-        };
+        }
         let container = self.collected.top(block.span.start());
         for (target, inclusion, through) in reached {
             let Some(included) = self.collected.slots.get(usize::from(target))
@@ -216,30 +232,170 @@ impl Collector<'_, '_>
                 inclusion,
             });
         }
-        // A model whose unindexed sorts are manifest is a model of the theory
-        // once the cells the manifests fix are dropped: the forgetting map.
-        let manifests = own.components.iter().any(|component| {
-            matches!(component.form, Ok(ModelForm::Sort { ref indices }) if indices.is_empty())
+    }
+
+    /// The manifest types of the source, in the order their text starts.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every node of the source's tree classified as a manifest
+    ///   type, once, ascending by the start of its span.
+    /// - panics: none.
+    /// - executable: none — the classification is the grammar's, which a
+    ///   predicate would read again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::forget`].
+    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    pub(super) fn manifest_types(&self) -> Vec<Placed>
+    {
+        // A form's mold decides its former, so each mold is classified once.
+        let mut manifest_molds = BTreeMap::new();
+        let mut found = Vec::new();
+        for position in self.tree.positions() {
+            let Some(node) = self.tree.node(position)
+            else {
+                continue;
+            };
+            let NodeLabel::Meld(mold) = node.label()
+            else {
+                continue;
+            };
+            let manifest = *manifest_molds.entry(mold).or_insert_with(|| {
+                matches!(
+                    shape_of(self.pbg, node),
+                    Ok(Shape::Form {
+                        former: Former::ManifestType,
+                        ..
+                    })
+                )
+            });
+            if manifest {
+                found.push(Placed::of(position, node));
+            }
+        }
+        found.sort_by_key(|placed| placed.span.start());
+
+        found
+    }
+
+    /// Each theory and sort set a forgetting slot of the unit already puts
+    /// back.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn forgotten(&self) -> Forgotten
+    {
+        self.collected
+            .forgets
+            .values()
+            .map(|slot| (slot.theory, slot.fixed.clone()))
+            .collect()
+    }
+
+    /// Collect the forgetting map the manifest type `at` asks for: `Model(T)
+    /// with sort C₁ = A₁ … with sort Cₙ = Aₙ` puts back the sorts `C₁ … Cₙ` of
+    /// `T`.
+    ///
+    /// # Specification
+    /// - requires: `at` is a manifest type of the source; `forgotten` holds
+    ///   each theory and sort set a forgetting slot of the unit puts back.
+    /// - ensures: when the left operand of `at` applies `Model` to a theory
+    ///   [`Collected::presented_theory`] resolves where the type is written,
+    ///   whose models bundle, and its bindings fix distinct unindexed sorts of
+    ///   it that no slot of `forgotten` puts back for the theory, one
+    ///   [`Role::Derived`] slot under the theory's name, named at the theory's
+    ///   name in the type, its definition the forgetting map of those sorts the
+    ///   lowering mints, entered in `forgotten` and answered; nothing
+    ///   otherwise, a manifest type of another shape being the lowering's to
+    ///   refuse where it reads it.
+    /// - provides: the forgetting half of the theory collection.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the fails clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's carrier fixed at a type and at a
+    ///   variable, one map between them; a pairing's sorts fixed one, the other
+    ///   and both, a map each; a theory no manifest type names, none.
+    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.forgets.len()),
+        ensures: |ret| match ret {
+            | Ok(Some(minted)) => minted.0 == before.0
+                && self.collected.slots.len() == before.0.saturating_add(1)
+                && self.collected.forgets.len() == before.1.saturating_add(1),
+            | Ok(None) | Err(_) => self.collected.slots.len() == before.0,
+        },
+    )]
+    pub(super) fn forget(
+        &mut self,
+        at: Placed,
+        forgotten: &mut Forgotten,
+    ) -> Result<Option<SlotIndex>, LoweringRefusal<'source>>
+    {
+        self.fuel.spend()?;
+        let mut pieces = core::mem::take(&mut self.pieces);
+        let chain = self.manifest_chain(at, &mut pieces);
+        self.pieces = pieces;
+        let Some((named, fixed)) = chain
+        else {
+            return Ok(None);
+        };
+        let Ok((theory, presentation)) =
+            self.collected
+                .presented_theory(named.span.start(), named.span, self.name_of(named))
+        else {
+            return Ok(None);
+        };
+        let Ok(signature) = derive(presentation)
+        else {
+            return Ok(None);
+        };
+        if !signature
+            .components
+            .iter()
+            .all(|component| component.form.is_ok())
+        {
+            return Ok(None);
+        }
+        let unindexed: BTreeMap<&str, &Name> = signature
+            .components
+            .iter()
+            .filter(|component| {
+                matches!(component.form, Ok(ModelForm::Sort { ref indices }) if indices.is_empty())
+            })
+            .map(|component| (component.name.as_ref(), &component.name))
+            .collect();
+        let mut sorts = BTreeSet::new();
+        let clean = fixed.iter().all(|&sort| {
+            unindexed
+                .get(self.name_of(sort).as_ref())
+                .is_some_and(|&name| sorts.insert(name.clone()))
         });
+        if !clean || forgotten.contains(&(theory, sorts.clone())) {
+            return Ok(None);
+        }
         let Some(held) = self.collected.slots.get(usize::from(theory))
         else {
-            return;
+            return Ok(None);
         };
-        if !manifests {
-            return;
-        }
-        let (name, named) = (held.name, held.named);
+        let name = held.name;
         let minted = SlotIndex(self.collected.slots.len());
         self.collected.slots.push(DeclarationSlot {
             name,
-            container,
+            container: self.collected.top(at.span.start()),
             role: Role::Derived,
             constant: ConstantIndex::from(minted.0),
-            introduced_by: block,
+            introduced_by: at,
             named,
             signature: Maybe::Absent(declaration_half::Absent::Unwritten),
             definition: Maybe::Present(Half {
-                declaration: block,
+                declaration: at,
                 named,
                 operand: Operand::Derived,
             }),
@@ -247,6 +403,182 @@ impl Collector<'_, '_>
             docs: Vec::new(),
             refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
         });
-        let _fresh = self.collected.forgets.insert(minted, ForgetSlot { theory });
+        let _fresh = forgotten.insert((theory, sorts.clone()));
+        let _first = self.collected.forgets.insert(minted, ForgetSlot {
+            theory,
+            fixed: sorts,
+        });
+
+        Ok(Some(minted))
+    }
+
+    /// The theory's name tile and each fixed sort's name tile of the manifest
+    /// type `at`, `Model(T) with sort C₁ = A₁ … with sort Cₙ = Aₙ`, read off
+    /// its tiles with `pieces` as scratch; nothing for a manifest type whose
+    /// left operand is no application of `Model` to one name, and for a chain
+    /// out of shape.
+    ///
+    /// # Specification
+    /// - requires: `at` is a manifest type of the source.
+    /// - ensures: the name tile of `T` and the sort name tiles in written
+    ///   order, at least one, when the type reads as above.
+    /// - panics: none.
+    /// - executable: none — the reading is the tiles', which a predicate would
+    ///   read again.
+    ///
+    /// # Termination
+    /// Every pass descends to the right operand of a `with`, a node strictly
+    /// inside the one before it in the finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::forget`].
+    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    fn manifest_chain(
+        &self,
+        at: Placed,
+        pieces: &mut Pieces,
+    ) -> Option<(Placed, Vec<Placed>)>
+    {
+        let (applied, mut bound) = self.halves(at, pieces)?;
+        let named = self.model_operand(applied, pieces)?;
+        let mut sorts = Vec::new();
+        loop {
+            let node = self.tree.node(bound.node)?;
+            let link = matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::ManifestType,
+                    ..
+                })
+            );
+            let binding = if link {
+                let (first, rest) = self.halves(bound, pieces)?;
+                bound = rest;
+                first
+            }
+            else {
+                bound
+            };
+            read_pieces(self.pbg, self.tree, binding.node, pieces).ok()?;
+            let mut cursor = Cursor::new(&pieces.pieces, binding.span);
+            let Maybe::Present(_) = cursor.tile(TileName::SORT)
+            else {
+                return None;
+            };
+            let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
+            else {
+                return None;
+            };
+            sorts.push(sort);
+            if !link {
+                return Some((named, sorts));
+            }
+        }
+    }
+
+    /// The operands either side of the `with` of the manifest type `at`.
+    ///
+    /// # Specification
+    /// - requires: `at` is a manifest type of the source.
+    /// - ensures: its one left operand and its one right operand, when the form
+    ///   reads `L with R` unrepaired.
+    /// - panics: none.
+    /// - executable: none — as [`Self::manifest_chain`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of two `with`s read link by link, as
+    ///   [`Self::forget`].
+    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    fn halves(
+        &self,
+        at: Placed,
+        pieces: &mut Pieces,
+    ) -> Option<(Placed, Placed)>
+    {
+        read_pieces(self.pbg, self.tree, at.node, pieces).ok()?;
+        if let Maybe::Present(_) = pieces.repair {
+            return None;
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, at.span);
+        let Run::One(left) = cursor.operands()
+        else {
+            return None;
+        };
+        let Maybe::Present(_) = cursor.tile(TileName::WITH)
+        else {
+            return None;
+        };
+        let Run::One(right) = cursor.operands()
+        else {
+            return None;
+        };
+        let Maybe::Absent(_) = cursor.peek()
+        else {
+            return None;
+        };
+
+        Some((left, right))
+    }
+
+    /// The name tile of the theory the application `applied` writes, when it
+    /// is `Model(T)` with `T` one name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the name tile of `T` when `applied` reads `Model ( T )`.
+    /// - panics: none.
+    /// - executable: none — as [`Self::manifest_chain`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Model(Pairing)` read to its theory's name, as
+    ///   [`Self::forget`].
+    /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    fn model_operand(
+        &self,
+        applied: Placed,
+        pieces: &mut Pieces,
+    ) -> Option<Placed>
+    {
+        let node = self.tree.node(applied.node)?;
+        let Ok(Shape::Form {
+            former: Former::TypeApplication,
+            ..
+        }) = shape_of(self.pbg, node)
+        else {
+            return None;
+        };
+        read_pieces(self.pbg, self.tree, applied.node, pieces).ok()?;
+        let mut cursor = Cursor::new(&pieces.pieces, applied.span);
+        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return None;
+        };
+        if self.name_of(head).as_ref() != "Model" {
+            return None;
+        }
+        let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN)
+        else {
+            return None;
+        };
+        let Run::One(theory) = cursor.operands()
+        else {
+            return None;
+        };
+        let theory_node = self.tree.node(theory.node)?;
+        if let NodeLabel::Tile(_) = theory_node.label() {
+            return Some(theory);
+        }
+        read_pieces(self.pbg, self.tree, theory.node, pieces).ok()?;
+        let mut inner = Cursor::new(&pieces.pieces, theory.span);
+        let Maybe::Present(named) = inner.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return None;
+        };
+        let Maybe::Absent(_) = inner.peek()
+        else {
+            return None;
+        };
+
+        Some(named)
     }
 }
