@@ -1459,7 +1459,8 @@ impl Machine<'_, '_>
     ///   is delegated: its slot, read where the send stands, is converted to
     ///   the payload type and consumed, and the endpoint advances; any other
     ///   payload leaves one `SessionSend` frame waiting on its check against
-    ///   the payload type, read where the send stands.
+    ///   the payload type, read where the send stands, which is recorded for
+    ///   `at`.
     /// - fails: as [`Self::live`] and [`Self::admitted`];
     ///   [`CheckRefusal::Linearity`] naming [`LinearityDefect::UsedTwice`] when
     ///   the payload names the endpoint, and [`LinearityDefect::Closed`] when
@@ -1549,6 +1550,7 @@ impl Machine<'_, '_>
                 return self.sent(endpoint, next);
             }
         }
+        self.context.record_payload(at, expected);
         self.wait(Frame::SessionSend { at, endpoint, next });
         Ok(Step::Descend(Goal::Value {
             term: payload,
@@ -1685,8 +1687,9 @@ impl Machine<'_, '_>
     ///   more, at the payload type read where the receive stands: an endpoint
     ///   the receive binds, available, for a payload that is a session type at
     ///   its weak head, and otherwise a received value opened spent, whose
-    ///   reads copy; one `ReceiveBody` frame waits on the body's judgement in
-    ///   the receive's direction.
+    ///   reads copy; the type the slot opened at recorded for `at`; one
+    ///   `ReceiveBody` frame waits on the body's judgement in the receive's
+    ///   direction.
     /// - fails: as [`Self::live`] and [`Self::admitted`].
     /// - panics: none.
     ///
@@ -1701,7 +1704,8 @@ impl Machine<'_, '_>
     #[spec(
         captures: before = self.context.depth(Zone::Linear),
         ensures: |ret| ret.is_err() || (matches!(ret, Ok(Step::Descend(Goal::Computation { .. })))
-            && self.context.depth(Zone::Linear) > before),
+            && self.context.depth(Zone::Linear) > before
+            && self.context.payloads().contains_key(&at)),
     )]
     fn receive(
         &mut self,
@@ -1727,7 +1731,11 @@ impl Machine<'_, '_>
         let head = self.context.whnf_value_type(payload)?;
         let view = value_type_view(self.context.arena(), head)?;
         let depth = self.context.depth(Zone::Intuitionistic);
-        if matches!(view, ValueTypeView::Session(_)) {
+        let endpoint = matches!(view, ValueTypeView::Session(_));
+        let buffer = matches!(view, ValueTypeView::Buffer);
+        let opened = if endpoint || buffer { head } else { payload };
+        self.context.record_payload(at, opened);
+        if endpoint {
             self.context.binders().open(Zone::Linear, head);
             self.sessions.opened.push(Opened {
                 resident: Resident::Endpoint(Endpoint {
@@ -1737,7 +1745,7 @@ impl Machine<'_, '_>
                 depth,
             });
         }
-        else if matches!(view, ValueTypeView::Buffer) {
+        else if buffer {
             // A buffer is live: its slot opens available, and only the send
             // that returns it spends it.
             self.context.binders().open(Zone::Linear, head);

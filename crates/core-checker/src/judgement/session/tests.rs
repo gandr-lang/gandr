@@ -1551,8 +1551,7 @@ fn a_session_code_crosses_re_rooted_at_its_state_1319()
 }
 
 /// A fork crosses as its child, then its parent under the bind that sequences
-/// them, so a parent reading a variable bound outside the fork still reads it;
-/// a receive is still refused, as a session the kernel does not replay yet.
+/// them, so a parent reading a variable bound outside the fork still reads it.
 #[test]
 fn a_fork_crosses_as_its_child_then_its_parent_1319()
 {
@@ -1575,8 +1574,57 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
     let forked = fork(&mut arena, ended, child, parent);
     let lambda = arena.computation_lambda(forked);
     let defined = arena.value_thunk(lambda);
-    // \n. fork (c : !String. end) { send(c, "task") ; close(c) } as d ;
-    //     recv(d) as task ; close(d) ; return n
+    let declarations = alloc::vec![Declaration::new(
+        ConstantIndex::from(0_usize),
+        Maybe::Present(declared),
+        Maybe::Present(defined),
+        OriginToken::from(0_usize),
+    )];
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "the exchange checks: {:?}",
+        report
+            .judged()
+            .iter()
+            .map(crate::Judged::verdict)
+            .collect::<Vec<_>>()
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(bridge::Readmitted::outcome)
+        .collect();
+    assert!(
+        matches!(outcomes.as_slice(), [bridge::Outcome::Defined { .. }]),
+        "the kernel defines the fork: {outcomes:?}"
+    );
+}
+
+/// A received value crosses read from an assumption of its type, and an
+/// offer as a case on an assumed choice among its arms: the kernel defines an
+/// exchange returning the string it received and the whole seat exchange,
+/// each resting only on the assumptions named for the actions it takes, the
+/// seat's two two-armed offers on one. A delegation, whose receive binds an
+/// endpoint that names no value, rests on none. A sent injection, which only
+/// checks, crosses ascribed the payload type it was checked at.
+#[test]
+fn a_received_value_crosses_as_an_assumption_1319()
+{
+    let mut arena = CoreArena::new();
+    let string = arena.value_type_base(BaseType::String);
+    let returns_string = arena.comp_type_returner(string);
+    let returning = arena.value_type_thunk(returns_string);
+    let unit = arena.value_type_unit();
+    let returns_unit = arena.comp_type_returner(unit);
+    let running = arena.value_type_thunk(returns_unit);
+    // fork (c : !String. end) { send(c, "task") ; close(c) } as d ;
+    //     recv(d) as task ; close(d) ; return task
     let sending = session(
         &mut arena,
         alloc::vec![
@@ -1591,9 +1639,11 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
     let mut program = Program::new(&mut arena);
     let closed = program.close();
     let child = program.send(Spelled("task"), closed);
-    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
-    let returned = arena.computation_return(outer);
     let parent = Program::new(&mut arena).receive(|program| {
+        let task = program
+            .arena
+            .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+        let returned = program.arena.computation_return(task);
         program.then(
             SessionAction::Close {
                 endpoint: program.endpoint(),
@@ -1602,33 +1652,80 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
         )
     });
     let forked = fork(&mut arena, sending, child, parent);
-    let lambda = arena.computation_lambda(forked);
-    let receiving = arena.value_thunk(lambda);
-    let declarations: Vec<_> = [defined, receiving]
-        .into_iter()
-        .enumerate()
-        .map(|(position, body)| {
-            Declaration::new(
-                ConstantIndex::from(position),
-                Maybe::Present(declared),
-                Maybe::Present(body),
-                OriginToken::from(position),
-            )
-        })
-        .collect();
+    let received = arena.value_thunk(forked);
+    let protocol = seat_end(&mut arena);
+    let seat = seat(&mut arena);
+    let operator = operator(&mut arena);
+    let exchange = fork(&mut arena, protocol, seat, operator);
+    let exchanged = arena.value_thunk(exchange);
+    // the delegation of `a_delegated_endpoint_leaves_its_sender`
+    let delegating = delegating(&mut arena);
+    let (inner, _) = delegator(&mut arena, AfterSend::Leaves);
+    let parent = Program::new(&mut arena).receive(|program| {
+        let outer = program.close();
+        program.then(
+            SessionAction::Close {
+                endpoint: DeBruijnIndex::from(0_u32),
+            },
+            outer,
+        )
+    });
+    let delegation = fork(&mut arena, delegating, inner, parent);
+    let delegated = arena.value_thunk(delegation);
+    // fork (c : ?(Integer + Unit). end) { recv(c) as order ; close(c) } as d ;
+    //     send(d, inj₀ 1) ; close(d)
+    let integer = arena.value_type_base(BaseType::Integer);
+    let order = arena.value_type_sum(&[integer, unit]);
+    let ordering = session(
+        &mut arena,
+        alloc::vec![
+            ProtocolSyntax::Receive {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(1_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[order],
+    );
+    let child = Program::new(&mut arena).receive(Program::close);
+    let one = arena.value_literal(crate::fixture::integer_literal());
+    let injected = arena.value_injection(gandr_core_term::Summand::from(0_usize), one);
+    let mut program = Program::new(&mut arena);
+    let closed = program.close();
+    let parent = program.then(
+        SessionAction::Send {
+            endpoint: DeBruijnIndex::from(0_u32),
+            payload: injected,
+        },
+        closed,
+    );
+    let ordered = fork(&mut arena, ordering, child, parent);
+    let ordered = arena.value_thunk(ordered);
+    let declarations: Vec<_> = [
+        (returning, received),
+        (running, exchanged),
+        (running, delegated),
+        (running, ordered),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(position, (declared, body))| {
+        Declaration::new(
+            ConstantIndex::from(position),
+            Maybe::Present(declared),
+            Maybe::Present(body),
+            OriginToken::from(position),
+        )
+    })
+    .collect();
     let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
     let report = check_module(&mut context, &declarations);
+    let verdicts: Vec<_> = report.judged().iter().map(crate::Judged::verdict).collect();
     assert!(
-        report
-            .judged()
+        verdicts
             .iter()
-            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
-        "both exchanges check: {:?}",
-        report
-            .judged()
-            .iter()
-            .map(crate::Judged::verdict)
-            .collect::<Vec<_>>()
+            .all(|verdict| matches!(verdict, Verdict::Checked { .. })),
+        "the four exchanges check: {verdicts:?}"
     );
     let readmission = bridge::readmit(&mut arena, &report);
     let outcomes: Vec<_> = readmission
@@ -1636,17 +1733,80 @@ fn a_fork_crosses_as_its_child_then_its_parent_1319()
         .iter()
         .map(bridge::Readmitted::outcome)
         .collect();
+    let &[
+        &bridge::Outcome::Defined {
+            audit: ref returned,
+            ..
+        },
+        &bridge::Outcome::Defined {
+            audit: ref exchanged,
+            ..
+        },
+        &bridge::Outcome::Defined {
+            audit: ref delegated,
+            ..
+        },
+        &bridge::Outcome::Defined {
+            audit: ref sent, ..
+        },
+    ] = outcomes.as_slice()
+    else {
+        panic!("the kernel defines the four exchanges: {outcomes:?}");
+    };
+    let artifact = gandr_kernel_term::decode(
+        readmission
+            .export(alloc::collections::BTreeMap::new())
+            .as_image(),
+    )
+    .expect("the readmission's artifact decodes");
+    // The action each axiom a declaration rests on assumes: `receive` or
+    // `offer` for a session assumption, none for any other axiom.
+    let actions = |axioms: &[ConstantIndex]| {
+        axioms
+            .iter()
+            .map(|&position| {
+                artifact
+                    .declarations()
+                    .get(usize::from(position))
+                    .and_then(|entry| match *entry.declaration().name().segments() {
+                        [ref session, ref action, _] if session.as_ref() == "session" => {
+                            Some(action.as_ref())
+                        },
+                        _ => None,
+                    })
+            })
+            .collect::<Vec<Option<&str>>>()
+    };
+    let returned = actions(returned.axioms());
+    assert_eq!(
+        returned,
+        [Some("receive")],
+        "the returned string rests on the one assumption of what was received"
+    );
+    let exchanged = actions(exchanged.axioms());
     assert!(
-        matches!(
-            outcomes.as_slice(),
-            [
-                bridge::Outcome::Defined { .. },
-                bridge::Outcome::Refused(refusal @ bridge::Refusal::Session { .. })
-            ] if refusal.classify() == gandr_core_term::FailureClass::Unimplemented(
-                gandr_core_term::TrackingIssue::KERNEL_SESSION
-            )
-        ),
-        "the kernel defines the fork and still refuses the receive: {outcomes:?}"
+        exchanged.contains(&Some("receive"))
+            && exchanged
+                .iter()
+                .filter(|&&action| action == Some("offer"))
+                .take(2)
+                .count()
+                == 1
+            && exchanged
+                .iter()
+                .all(|&action| matches!(action, Some("receive" | "offer"))),
+        "the seat exchange rests on its receives' assumptions and one choice between two arms: {exchanged:?}"
+    );
+    assert!(
+        delegated.axioms().is_empty(),
+        "a received endpoint names no value to assume: {:?}",
+        actions(delegated.axioms())
+    );
+    let sent = actions(sent.axioms());
+    assert_eq!(
+        sent,
+        [Some("receive")],
+        "the injection sent crosses ascribed, resting only on its receipt"
     );
 }
 

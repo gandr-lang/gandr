@@ -157,6 +157,106 @@ fn an_abstraction_replaces_its_constant_by_a_variable_under_binders()
     );
 }
 
+/// A variable read: its zone and its index.
+type Read = (Zone, u32);
+
+/// Where a receive's body reads its payload `x` and a free variable `n`:
+/// at the root, past a nested receive and a fork's parent, and inside a
+/// lambda there.
+#[derive(Clone, Copy)]
+struct Reads
+{
+    /// `(held, count)` at the body's root.
+    root: (Read, Read),
+    /// `(held, count)` in the fork's parent.
+    parent: (Read, Read),
+    /// `(held, count)` inside the parent's lambda.
+    lambda: (Read, Read),
+}
+
+/// `return (held, count) to returned. recv(c) as payload ;
+/// fork (e : Integer) { close(e) } as d ;
+/// return (held, payload, count, returned, thunk (\argument. return (held,
+/// count, argument)))`, with `held` and `count` read as `reads` says and `c`
+/// the linear index one past the payload.
+///
+/// # Specification
+/// trivial.
+fn exchange(
+    arena: &mut CoreArena,
+    reads: Reads,
+) -> ComputationId
+{
+    use crate::session::SessionAction;
+    let value = |arena: &mut CoreArena, (zone, index): Read| {
+        arena.value_variable(zone, DeBruijnIndex::from(index))
+    };
+    let pair = [value(arena, reads.root.0), value(arena, reads.root.1)];
+    let pair = arena.value_tuple(&pair);
+    let bound = arena.computation_return(pair);
+    let held = value(arena, reads.lambda.0);
+    let count = value(arena, reads.lambda.1);
+    let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let inner = arena.value_tuple(&[held, count, argument]);
+    let inner = arena.computation_return(inner);
+    let lambda = arena.computation_lambda(inner);
+    let thunk = arena.value_thunk(lambda);
+    let held = value(arena, reads.parent.0);
+    let count = value(arena, reads.parent.1);
+    let payload = arena.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+    let returned = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let outcome = arena.value_tuple(&[held, payload, count, returned, thunk]);
+    let parent = arena.computation_return(outcome);
+    let child = arena.computation_session(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(0_u32),
+    });
+    let protocol = arena.value_type_base(BaseType::Integer);
+    let fork = arena.computation_session(SessionAction::Fork {
+        protocol,
+        child,
+        parent,
+    });
+    let received = arena.computation_session(SessionAction::Receive {
+        endpoint: DeBruijnIndex::from(1_u32),
+        body: fork,
+    });
+    arena.computation_bind(bound, received)
+}
+
+/// #1319: a receive's payload, read at the root, past a nested receive and a
+/// fork's parent, and inside a lambda there, becomes the one intuitionistic
+/// binder outside the body, counted past the intuitionistic binders between;
+/// a free intuitionistic index rises by one; the nested receive's payload and
+/// every action subject stay linear.
+#[test]
+fn a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319()
+{
+    let linear = |index: u32| (Zone::Linear, index);
+    let intuitionistic = |index: u32| (Zone::Intuitionistic, index);
+    let mut arena = CoreArena::new();
+    // Under the bind `returned` is #0 and `count` #1; past the nested receive
+    // and the fork's parent `held` is linear #2; inside the lambda `count` is
+    // #2.
+    let body = exchange(&mut arena, Reads {
+        root: (linear(0), intuitionistic(0)),
+        parent: (linear(2), intuitionistic(1)),
+        lambda: (linear(2), intuitionistic(2)),
+    });
+    // `held` is the new binder: #0 at the root, #1 under the bind, #2 inside
+    // the lambda; `count` rises past it.
+    let expected = exchange(&mut arena, Reads {
+        root: (intuitionistic(0), intuitionistic(1)),
+        parent: (intuitionistic(1), intuitionistic(2)),
+        lambda: (intuitionistic(2), intuitionistic(3)),
+    });
+    let delinearised = super::delinearise(&mut arena, body);
+    let (delinearised, expected) = (arena.value_thunk(delinearised), arena.value_thunk(expected));
+    assert_eq!(
+        crate::syntax::equal_certificate_syntax(&arena, delinearised, expected),
+        crate::syntax::CertificateEquality::Equal
+    );
+}
+
 #[test]
 fn native_motives_preserve_binder_and_field_order()
 {
