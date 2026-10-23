@@ -656,12 +656,14 @@ use crate::namespace::RecognitionSite;
 use crate::namespace::Recognized;
 use crate::namespace::Segment;
 use crate::namespace::Trie;
+use crate::origin::ComponentName;
 use crate::origin::Insertion;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Omitted;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
+use crate::origin::SplitComponent;
 use crate::resolve::Bound;
 use crate::resolve::Frame;
 use crate::resolve::HeadArity;
@@ -15249,15 +15251,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: every node the block names is already minted or absent.
     /// - ensures: `run x1 <- c1 ; … run xn <- cn ; c` mints as `bind(c1, …
     ///   bind(cn, c))`, each bind's origin its statement's `run` tile, and a
-    ///   typed `run x : A <- c ;` binds `c` ascribed the pure `-F A`; a fork
-    ///   `fork (c : S) t as d ;` mints as the fork of `t` at `S` whose parent
-    ///   is the rest of the block, at its `fork` tile's origin; a hold `hold x
-    ///   = e ;` mints as the hold of `e` whose scope is the rest of the block,
-    ///   at its `hold` tile's origin; a `leta x = v ;` mints as the opening of
-    ///   `v` whose body is the rest of the block, at its `leta` tile's origin,
-    ///   binding the name; a block of no statements is its last computation;
-    ///   nothing is minted when any computation, value or protocol of the block
-    ///   did not lower.
+    ///   typed `run x : A <- c ;` binds `c` ascribed the pure `-F A`; a tuple
+    ///   `run (x, …) <- c ;` splits what `c` returns, each component the
+    ///   pattern writes recorded as the name of the split's binder at its place
+    ///   ([`OriginTable::component`]); a fork `fork (c : S) t as d ;` mints as
+    ///   the fork of `t` at `S` whose parent is the rest of the block, at its
+    ///   `fork` tile's origin; a hold `hold x = e ;` mints as the hold of `e`
+    ///   whose scope is the rest of the block, at its `hold` tile's origin; a
+    ///   `leta x = v ;` mints as the opening of `v` whose body is the rest of
+    ///   the block, at its `leta` tile's origin, binding the name; a block of
+    ///   no statements is its last computation; nothing is minted when any
+    ///   computation, value or protocol of the block did not lower.
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
     /// - panics: none.
@@ -15267,6 +15271,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   order, each bind records its run token, and an empty statement prefix
     ///   leaves the existing final computation unchanged.
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::a_tuple_binder_names_each_component_it_writes_2181`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
     #[spec(
@@ -15407,6 +15412,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_value(tuple, origin);
                 let split = sink.arena.computation_split(tuple, arity, chain);
                 sink.origins.record_computation(split, origin);
+                // Each component a tuple pattern writes names the binder the
+                // split opens for it, so a component nothing reads is still
+                // where its pattern writes it.
+                if let StatementBinding::Split { pattern, .. }
+                | StatementBinding::TypedSplit { pattern, .. } = statement.binding
+                {
+                    let mut pieces = Pieces::new();
+                    if read_pieces(self.pbg, self.tree, pattern, &mut pieces).is_ok() {
+                        let written = pieces.pieces.iter().filter_map(|piece| match *piece {
+                            Piece::Operand(operand) => Some(operand),
+                            Piece::Tile { .. } => None,
+                        });
+                        for (component, operand) in written.enumerate() {
+                            if let Maybe::Present(named) = self.origin_at(operand.node) {
+                                sink.origins.place_component(
+                                    split,
+                                    SplitComponent::from(component),
+                                    ComponentName::Written(named),
+                                );
+                            }
+                        }
+                    }
+                }
                 chain = split;
             }
             if let StatementBinding::Placed(name) = statement.binding {
@@ -22064,6 +22092,47 @@ mod tests
                 .collect::<Vec<_>>(),
             [Some(variable(0_u32)), Some(variable(1_u32))],
             "`r` is the innermost binder and `q` the one outside it"
+        );
+    }
+
+    /// #2181: each component a `run` tuple pattern writes names the binder
+    /// its split opens at that place, whether or not the rest of the block
+    /// reads it, a wildcard included.
+    #[test]
+    fn a_tuple_binder_names_each_component_it_writes_2181()
+    {
+        use crate::origin::ComponentName;
+        use crate::origin::SplitComponent;
+
+        let source =
+            SourceText::from("def a = thunk { run (q, _, r) <- pure (1, 2, 3) ; return r } ;");
+        let mut arena = CoreArena::new();
+        let module = lowered(source, &mut arena);
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[0]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(_, split)) = arena.computation(suspended)
+        else {
+            panic!("the statement binds over the rest of the block");
+        };
+        let named: Vec<Option<&str>> = (0_usize .. 3_usize)
+            .map(|component| {
+                match module
+                    .origins()
+                    .component(split, SplitComponent::from(component))
+                {
+                    Maybe::Present(&ComponentName::Written(origin)) => {
+                        source.fragment(origin.span()).ok().map(<&str>::from)
+                    },
+                    Maybe::Present(&ComponentName::Labelled(_)) | Maybe::Absent(_) => None,
+                }
+            })
+            .collect();
+        assert_eq!(
+            named,
+            [Some("q"), Some("_"), Some("r")],
+            "each component is named where the pattern writes it"
         );
     }
 
