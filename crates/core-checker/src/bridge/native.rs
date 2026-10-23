@@ -619,66 +619,154 @@ fn ascription(
     target.computation_bind(bound, forced)
 }
 
-/// The kernel's session graph of `session`'s protocol, node for node, rooted
-/// at the protocol's root.
+/// The kernel's session graph of `session`: its protocol node for node at the
+/// protocol's root, and the protocol unfolded at the state `session` stands
+/// at past it.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one kernel node per protocol node at the same position, its
-///   payload slots, labels and continuations kept, a recursion variable naming
-///   its binder's position; the root is the protocol's.
+/// - ensures: at the protocol's root, one kernel node per protocol node at the
+///   same position, its payload slots, labels and continuations kept, a
+///   recursion variable naming its binder's position, rooted at the root. Past
+///   it, the tree reachable from the state, copied with each recursion variable
+///   whose binder the copy did not pass through replaced by a fresh copy of
+///   that binder, so `S` at a state inside `mu t. B` is `S[t := mu t. B]`,
+///   rooted at the copy of the state.
 /// - provides: the graph the kernel replays a session statement's pairs over,
-///   which the engine computed over the same positions.
+///   which the engine computed over the same positions; a statement relates
+///   sessions at their roots only.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a recursive seat protocol and its widening cross and the
-///   kernel replays the engine's simulation between them.
+///   kernel replays the engine's simulation between them; the seat past its
+///   root, inside its recursion, forms. A copy that kept the free variable or
+///   repeated a node is refused by the kernel's formation.
 /// - witness: `flow::tests::statements_decide_by_the_engine_and_replay`
-#[spec(ensures: |ret| ret.nodes.len() == session.protocol().nodes().len()
-    && ret.root.0 == usize::from(session.protocol().root()))]
+/// - witness: `judgement::session::tests::a_session_code_crosses_re_rooted_at_its_state_1319`
+#[spec(ensures: |ret| session.state() != session.protocol().root()
+    || (ret.nodes.len() == session.protocol().nodes().len()
+        && ret.root.0 == usize::from(session.state())))]
 fn graph(session: &gandr_core_term::session::SessionType) -> gandr_kernel_term::session::Graph
 {
     use gandr_core_term::session::ProtocolNode;
+    use gandr_core_term::session::ProtocolState;
     use gandr_kernel_term::session::Label;
     use gandr_kernel_term::session::Node;
     use gandr_kernel_term::session::PayloadSlot;
     use gandr_kernel_term::session::State;
-    let state = |at: gandr_core_term::session::ProtocolState| State(usize::from(at));
-    let labels = |branches: &alloc::collections::BTreeMap<
-        gandr_kernel_term::FieldLabel,
-        gandr_core_term::session::ProtocolState,
-    >| {
-        branches
+    let protocol = session.protocol();
+    let state = |at: ProtocolState| State(usize::from(at));
+    let label =
+        |label: &gandr_kernel_term::FieldLabel| Label(alloc::string::String::from(label.as_ref()));
+    if session.state() == protocol.root() {
+        let nodes = protocol
+            .nodes()
             .iter()
-            .map(|(label, &next)| {
-                (
-                    Label(alloc::string::String::from(label.as_ref())),
-                    state(next),
-                )
+            .map(|node| match *node {
+                ProtocolNode::Send { payload, next } => {
+                    Node::Send(PayloadSlot(usize::from(payload)), state(next))
+                },
+                ProtocolNode::Receive { payload, next } => {
+                    Node::Receive(PayloadSlot(usize::from(payload)), state(next))
+                },
+                ProtocolNode::Select(ref branches) => Node::Select(
+                    branches
+                        .iter()
+                        .map(|(name, &next)| (label(name), state(next)))
+                        .collect(),
+                ),
+                ProtocolNode::Offer(ref branches) => Node::Offer(
+                    branches
+                        .iter()
+                        .map(|(name, &next)| (label(name), state(next)))
+                        .collect(),
+                ),
+                ProtocolNode::End => Node::End,
+                ProtocolNode::Mu(body) => Node::Mu(state(body)),
+                ProtocolNode::Recur(binder) => Node::Var(state(binder)),
             })
-            .collect()
+            .collect();
+        return gandr_kernel_term::session::Graph {
+            nodes,
+            root: state(protocol.root()),
+        };
+    }
+    // Each task copies one protocol state into one kernel slot, under the
+    // binders the copy passed through: each a protocol position and its
+    // copy's slot.
+    let mut nodes = alloc::vec![Node::End];
+    let mut tasks = alloc::vec![(
+        session.state(),
+        0_usize,
+        alloc::vec::Vec::<(ProtocolState, usize)>::new()
+    )];
+    let slot = |nodes: &mut alloc::vec::Vec<Node>| {
+        nodes.push(Node::End);
+        nodes.len().saturating_sub(1)
     };
-    let nodes = session
-        .protocol()
-        .nodes()
-        .iter()
-        .map(|node| match *node {
-            ProtocolNode::Send { payload, next } => {
-                Node::Send(PayloadSlot(usize::from(payload)), state(next))
+    while let Some((at, into, binders)) = tasks.pop() {
+        let Some(node) = protocol.nodes().get(usize::from(at))
+        else {
+            continue;
+        };
+        let copied = match *node {
+            ProtocolNode::Send { payload, next } | ProtocolNode::Receive { payload, next } => {
+                let next_slot = slot(&mut nodes);
+                tasks.push((next, next_slot, binders));
+                if matches!(*node, ProtocolNode::Send { .. }) {
+                    Node::Send(PayloadSlot(usize::from(payload)), State(next_slot))
+                }
+                else {
+                    Node::Receive(PayloadSlot(usize::from(payload)), State(next_slot))
+                }
             },
-            ProtocolNode::Receive { payload, next } => {
-                Node::Receive(PayloadSlot(usize::from(payload)), state(next))
+            ProtocolNode::Select(ref branches) | ProtocolNode::Offer(ref branches) => {
+                let copied = branches
+                    .iter()
+                    .map(|(name, &next)| {
+                        let next_slot = slot(&mut nodes);
+                        tasks.push((next, next_slot, binders.clone()));
+                        (label(name), State(next_slot))
+                    })
+                    .collect();
+                if matches!(*node, ProtocolNode::Select(_)) {
+                    Node::Select(copied)
+                }
+                else {
+                    Node::Offer(copied)
+                }
             },
-            ProtocolNode::Select(ref branches) => Node::Select(labels(branches)),
-            ProtocolNode::Offer(ref branches) => Node::Offer(labels(branches)),
             ProtocolNode::End => Node::End,
-            ProtocolNode::Mu(body) => Node::Mu(state(body)),
-            ProtocolNode::Recur(binder) => Node::Var(state(binder)),
-        })
-        .collect();
+            ProtocolNode::Mu(body) => {
+                let body_slot = slot(&mut nodes);
+                let mut inner = binders;
+                inner.push((at, into));
+                tasks.push((body, body_slot, inner));
+                Node::Mu(State(body_slot))
+            },
+            ProtocolNode::Recur(binder) => {
+                if let Some(&(_, bound)) = binders
+                    .iter()
+                    .rev()
+                    .find(|&&(position, _)| position == binder)
+                {
+                    Node::Var(State(bound))
+                }
+                else {
+                    // The binder lies above the state: this slot is a fresh
+                    // copy of it, which binds the variables inside it.
+                    tasks.push((binder, into, binders));
+                    continue;
+                }
+            },
+        };
+        if let Some(target) = nodes.get_mut(into) {
+            *target = copied;
+        }
+    }
     gandr_kernel_term::session::Graph {
         nodes,
-        root: state(session.protocol().root()),
+        root: State(0),
     }
 }

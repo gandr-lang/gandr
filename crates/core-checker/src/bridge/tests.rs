@@ -4416,6 +4416,94 @@ fn a_shared_subterm_is_erased_once()
     );
 }
 
+/// A send crosses as its payload returned, then the unit; a select and a close
+/// as the unit returned. A receive and an offer, whose payload or label the
+/// kernel has no value for, are refused as sessions, and a placed buffer as a
+/// memory form.
+#[test]
+fn a_session_action_crosses_as_what_it_computes_1319()
+{
+    use gandr_core_term::session::SessionAction;
+    use gandr_kernel_term::Computation as KernelComputation;
+    let returned_unit = |target: &TermArena, at| {
+        matches!(
+            target.computation(at),
+            Some(&KernelComputation::Return(unit))
+                if matches!(target.value(unit), Some(KernelValue::Tuple(parts)) if parts.is_empty())
+        )
+    };
+    let mut arena = CoreArena::new();
+    let endpoint = DeBruijnIndex::from(0_u32);
+    let label = gandr_kernel_term::FieldLabel::from(String::from("next"));
+    let zero = arena.value_literal(integer_literal());
+    let sent = arena.computation_session(SessionAction::Send {
+        endpoint,
+        payload: zero,
+    });
+    let (target, image) = erase(&mut arena, CoreNode::Term(TermNode::Computation(sent)));
+    let Ok(AnyNode::Computation(image)) = image
+    else {
+        panic!("a send crosses: {image:?}");
+    };
+    let Some(&KernelComputation::Bind(bound, rest)) = target.computation(image)
+    else {
+        panic!("a send crosses as a bind");
+    };
+    assert!(
+        matches!(
+            target.computation(bound),
+            Some(&KernelComputation::Return(payload))
+                if matches!(target.value(payload), Some(KernelValue::Literal(_)))
+        ),
+        "a send returns its payload, so the kernel checks it"
+    );
+    assert!(returned_unit(&target, rest), "then returns the unit");
+    for action in [
+        SessionAction::Select {
+            endpoint,
+            label: label.clone(),
+        },
+        SessionAction::Close { endpoint },
+    ] {
+        let acted = arena.computation_session(action);
+        let (target, image) = erase(&mut arena, CoreNode::Term(TermNode::Computation(acted)));
+        assert!(
+            matches!(image, Ok(AnyNode::Computation(image)) if returned_unit(&target, image)),
+            "a select and a close return the unit: {image:?}"
+        );
+    }
+    let closed = arena.computation_session(SessionAction::Close { endpoint });
+    let received = arena.computation_session(SessionAction::Receive {
+        endpoint,
+        body: closed,
+    });
+    let offered = arena.computation_session(SessionAction::Offer {
+        endpoint,
+        arms: BTreeMap::from([(label, closed)]),
+    });
+    for refused in [received, offered] {
+        let at = CoreNode::Term(TermNode::Computation(refused));
+        assert_eq!(
+            erase(&mut arena, at).1,
+            Err(Refusal::Session { at }),
+            "the kernel has no value for what a peer sends or picks"
+        );
+    }
+    let placed = arena.computation_session(SessionAction::Place {
+        payload: zero,
+        body: closed,
+    });
+    let at = CoreNode::Term(TermNode::Computation(placed));
+    assert_eq!(
+        erase(&mut arena, at).1,
+        Err(Refusal::OutOfFragment {
+            at,
+            former: UnadmittedFormer::Memory,
+        }),
+        "a placed buffer is a memory form"
+    );
+}
+
 #[test]
 fn the_machine_faults_are_refused_exactly()
 {

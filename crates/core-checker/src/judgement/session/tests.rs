@@ -1499,8 +1499,10 @@ fn an_outer_endpoint_an_inner_child_leaves_open_is_its_residue()
     );
 }
 
+/// A session code crosses to the kernel at the state it stands at: its
+/// protocol's root, or the protocol re-rooted at a state past it.
 #[test]
-fn a_session_code_crosses_only_at_its_root()
+fn a_session_code_crosses_re_rooted_at_its_state_1319()
 {
     let mut arena = CoreArena::new();
     let root = seat_end(&mut arena);
@@ -1540,24 +1542,111 @@ fn a_session_code_crosses_only_at_its_root()
         .map(bridge::Readmitted::outcome)
         .collect();
     assert!(
+        matches!(outcomes.as_slice(), [
+            bridge::Outcome::Defined { .. },
+            bridge::Outcome::Defined { .. }
+        ]),
+        "the kernel defines the protocol at its root and re-rooted past it: {outcomes:?}"
+    );
+}
+
+/// A fork crosses as its child, then its parent under the bind that sequences
+/// them, so a parent reading a variable bound outside the fork still reads it;
+/// a receive is still refused, as a session the kernel does not replay yet.
+#[test]
+fn a_fork_crosses_as_its_child_then_its_parent_1319()
+{
+    let mut arena = CoreArena::new();
+    let ended = end(&mut arena);
+    let string = arena.value_type_base(BaseType::String);
+    let returns_string = arena.comp_type_returner(string);
+    let reads_a_string = arena.comp_type_arrow(string, returns_string);
+    let declared = arena.value_type_thunk(reads_a_string);
+    // \n. fork (c : end) { close(c) } as d ; close(d) ; return n
+    let child = Program::new(&mut arena).close();
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let returned = arena.computation_return(outer);
+    let parent = Program::new(&mut arena).then(
+        SessionAction::Close {
+            endpoint: DeBruijnIndex::from(0_u32),
+        },
+        returned,
+    );
+    let forked = fork(&mut arena, ended, child, parent);
+    let lambda = arena.computation_lambda(forked);
+    let defined = arena.value_thunk(lambda);
+    // \n. fork (c : !String. end) { send(c, "task") ; close(c) } as d ;
+    //     recv(d) as task ; close(d) ; return n
+    let sending = session(
+        &mut arena,
+        alloc::vec![
+            ProtocolSyntax::Send {
+                payload: PayloadSlot::from(0_usize),
+                next: ProtocolState::from(1_usize),
+            },
+            ProtocolSyntax::End,
+        ],
+        &[string],
+    );
+    let mut program = Program::new(&mut arena);
+    let closed = program.close();
+    let child = program.send(Spelled("task"), closed);
+    let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let returned = arena.computation_return(outer);
+    let parent = Program::new(&mut arena).receive(|program| {
+        program.then(
+            SessionAction::Close {
+                endpoint: program.endpoint(),
+            },
+            returned,
+        )
+    });
+    let forked = fork(&mut arena, sending, child, parent);
+    let lambda = arena.computation_lambda(forked);
+    let receiving = arena.value_thunk(lambda);
+    let declarations: Vec<_> = [defined, receiving]
+        .into_iter()
+        .enumerate()
+        .map(|(position, body)| {
+            Declaration::new(
+                ConstantIndex::from(position),
+                Maybe::Present(declared),
+                Maybe::Present(body),
+                OriginToken::from(position),
+            )
+        })
+        .collect();
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &declarations);
+    assert!(
+        report
+            .judged()
+            .iter()
+            .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+        "both exchanges check: {:?}",
+        report
+            .judged()
+            .iter()
+            .map(crate::Judged::verdict)
+            .collect::<Vec<_>>()
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(bridge::Readmitted::outcome)
+        .collect();
+    assert!(
         matches!(
             outcomes.as_slice(),
             [
                 bridge::Outcome::Defined { .. },
-                bridge::Outcome::Refused(bridge::Refusal::Session { at })
-            ] if *at == CoreNode::Type(TypeNode::Value(past))
+                bridge::Outcome::Refused(refusal @ bridge::Refusal::Session { .. })
+            ] if refusal.classify() == gandr_core_term::FailureClass::Unimplemented(
+                gandr_core_term::TrackingIssue::KERNEL_SESSION
+            )
         ),
-        "a protocol's root crosses as the kernel's session code; a state past it names an endpoint mid-protocol, which the kernel has no channel for: {outcomes:?}"
-    );
-    assert_eq!(
-        bridge::Refusal::Session {
-            at: CoreNode::Type(TypeNode::Value(past)),
-        }
-        .classify(),
-        gandr_core_term::FailureClass::Unimplemented(
-            gandr_core_term::TrackingIssue::KERNEL_SESSION
-        ),
-        "a session the kernel does not replay is unimplemented, not a fault"
+        "the kernel defines the fork and still refuses the receive: {outcomes:?}"
     );
 }
 
