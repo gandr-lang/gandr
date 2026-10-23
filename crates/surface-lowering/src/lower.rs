@@ -16682,6 +16682,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             row.signature(),
                             row.definition(),
                             row.refused_form(),
+                            row.introduced(),
                             row.outcome(),
                             origins.declaration(row.origin()),
                         )
@@ -16701,6 +16702,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 slot.definition
                                     .map(|half| self.key_at(half.declaration.node)),
                                 self.refused_form_key(slot),
+                                self.key_at(slot.introduced_by.node),
                                 outcome,
                                 Maybe::Present(Origin::new(
                                     slot.introduced_by.node,
@@ -16739,6 +16741,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .definition
                     .map(|half| self.key_at(half.declaration.node)),
                 refused_form: self.refused_form_key(slot),
+                introduced: self.key_at(introduced.node),
                 halves: Halves {
                     signature: slot.signature.map(half_at),
                     definition: slot.definition.map(half_at),

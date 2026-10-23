@@ -1122,6 +1122,7 @@ impl Error for SettleFault
             .iter()
             .any(|lowered| {
                 attributes(module.attributes(), lowered)
+                    .chain(header(module.attributes(), lowered))
                     .any(|entry| entry.span() == span)
             })
     }
@@ -1211,6 +1212,26 @@ pub fn settle_after<'source>(
                 let verdict = answer.verdict();
                 (Produced::Judged(verdict), owed_by(verdicts, answer))
             },
+        };
+        // A name an application or a module's header binds writes no half:
+        // when it is refused, the attributes before that form state its
+        // expectation, and a witness that checks keeps the default.
+        let expectations = match produced {
+            Produced::Unlowered(_) | Produced::Judged(Verdict::Refused(_))
+                if !header(module.attributes(), lowered).is_empty() =>
+            {
+                expectation::read(root, header(module.attributes(), lowered).iter(), arena)?
+            },
+            Produced::Unlowered(_)
+            | Produced::Judged(
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Suspended(_)
+                | Verdict::Refused(_),
+            )
+            | Produced::Guarded(_) => expectations,
         };
         let produced = match expectations.guard {
             Maybe::Present(refusal) => Produced::Guarded(refusal),
@@ -1524,6 +1545,46 @@ fn attributes<'table>(
         }
     };
     first.iter().chain(second.iter())
+}
+
+/// The entries filed under the form that introduced `lowered` when it writes
+/// no half of its own: the attributes written before the application or the
+/// module whose header bound it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the entries under [`LoweredDeclaration::introduced`] when the
+///   declaration has no signature, no definition and no refused form; none
+///   otherwise.
+/// - provides: the expectation of a refused name an application or a header
+///   binds.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an application refused at its binding and one refused at
+///   a witness each settle the attribute written before them, and the witnesses
+///   that check settle the default.
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[spec(ensures: |ret| ret == match (lowered.signature(), lowered.definition(), lowered.refused_form()) {
+    (Maybe::Absent(_), Maybe::Absent(_), Maybe::Absent(_)) => table.entries(lowered.introduced()),
+    _ => &[],
+})]
+fn header<'table>(
+    table: &'table AttributeTable,
+    lowered: &LoweredDeclaration<'_>,
+) -> &'table [AttributeEntry]
+{
+    match (
+        lowered.signature(),
+        lowered.definition(),
+        lowered.refused_form(),
+    ) {
+        (Maybe::Absent(_), Maybe::Absent(_), Maybe::Absent(_)) => {
+            table.entries(lowered.introduced())
+        },
+        _ => &[],
+    }
 }
 
 /// What the declaration `lowered` of `module` states under `root`: the
