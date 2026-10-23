@@ -2227,6 +2227,58 @@ fn a_constructor_argument_reads_the_arguments_before_it_1876()
     );
 }
 
+/// #2126: a constructor written as the argument of a call to a refused
+/// declaration took that declaration's parameter as its classifier, whose
+/// type never lowered, so the caller minted nothing and was dropped as
+/// `Unminted`, an engine fault. A refused callee classifies nothing: the
+/// constructor is refused as unannotated, as one passed to no declaration
+/// is, and a typed argument still leaves its caller lowered.
+#[test]
+fn a_refused_callee_classifies_no_argument_2126()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{MAYBE}def refused(m : Maybe(Integer)) -> -F Integer {{\n\
+           run held <- (Some(1) : Maybe(Integer));\n\
+           return 0\n\
+         }}\n\
+         def bare : () => Integer ;\ndef bare = thunk {{ become refused(None) }} ;\n\
+         def annotated : () => Integer ;\n\
+         def annotated = thunk {{ become refused((None : Maybe(Integer))) }} ;\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("refused")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            }
+        ),
+        "the callee is refused: {:?}",
+        outcome_of(&module, SurfaceName::from("refused"))
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("bare")),
+            LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unannotated,
+                ..
+            }
+        ),
+        "`bare`'s argument is refused unannotated: {:?}",
+        outcome_of(&module, SurfaceName::from("bare"))
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, SurfaceName::from("annotated")),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "`annotated` lowers: {:?}",
+        outcome_of(&module, SurfaceName::from("annotated"))
+    );
+}
+
 /// #1171: a constructor written in a field typed by another family took no
 /// classifier from the field, so `Inline(Some(3))` was refused as
 /// unannotated where `Inline((Some(3) : Maybe(Integer)))` checked. The field's

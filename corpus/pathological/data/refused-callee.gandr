@@ -1,0 +1,22 @@
+// A refused declaration's parameters type no argument: their types never
+// lower, so a bare constructor passed to it is refused as unannotated, never
+// dropped as an engine fault (#2126).
+
+/// A list of any type.
+@[ checks ]
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (head : a, tail : List(a)) --> List(a);
+}
+
+/// A parenthesised value bound where a computation stands is refused.
+@[ refuses("OutOfFragment.WrongSort") ]
+def refused(xs : List(Integer)) -> -F List(Integer) {
+  run held <- (Cons(1, xs) : List(Integer));
+  held
+}
+
+/// A bare constructor passed to the refused declaration takes no type from
+/// its parameter (#2126).
+@[ refuses("OutOfFragment.Unannotated") ]
+def calls() -> -F List(Integer) { become refused(Nil) }

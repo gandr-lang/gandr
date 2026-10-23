@@ -2234,13 +2234,14 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a call read under `frame`, `head` its head and
     ///   `applied` its arguments in the operand store.
     /// - ensures: when `head` is a bare name of a declaration written with a
-    ///   parameter list, each argument at a parameter written with a type maps
-    ///   to that type, the declaration and the call's arguments in
-    ///   [`Lowerer::parameter_typed`], read by a constructor written there as
-    ///   [`Classifier::Parameter`]; an argument written as a thunk or a bare
-    ///   lambda is answered by that type as a signed definition's is
-    ///   ([`Self::signed_answer`]); nothing changes for any other head, a
-    ///   binder's name among them.
+    ///   parameter list and holding no refusal, each argument at a parameter
+    ///   written with a type maps to that type, the declaration and the call's
+    ///   arguments in [`Lowerer::parameter_typed`], read by a constructor
+    ///   written there as [`Classifier::Parameter`]; an argument written as a
+    ///   thunk or a bare lambda is answered by that type as a signed
+    ///   definition's is ([`Self::signed_answer`]); nothing changes for any
+    ///   other head, a binder's name or a refused declaration's among them: a
+    ///   refused declaration's parameter types never lower.
     /// - fails: as [`Self::unwrapped`]; a name the head's own reading refuses
     ///   is refused there.
     /// - panics: none.
@@ -2253,10 +2254,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   a closed parameter type, one passed where the type names the parameter
     ///   before it, and a local function's name, which classifies nothing; a
     ///   lambda passed in a thunk and bare for a parameter typed `Empty =>
-    ///   Integer` matches no arm on its binder.
+    ///   Integer` matches no arm on its binder; a bare constructor passed to a
+    ///   refused declaration is refused unannotated.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
     /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
+    /// - witness: `lower::native::tests::a_refused_callee_classifies_no_argument_2126`
     #[spec(
         captures: before = (self.parameter_typed.len(), self.thunked.len()),
         ensures: |ret| ret.is_err() || (self.parameter_typed.len() >= before.0 && self.thunked.len() >= before.1),
@@ -2288,6 +2291,14 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(());
         };
         let slot = SlotIndex::from(usize::from(constant));
+        let refused = self
+            .collected
+            .slots
+            .get(usize::from(slot))
+            .is_some_and(|declaration| declaration.refused().0);
+        if refused {
+            return Ok(());
+        }
         let Some(parameters) = self.collected.parameters.get(&slot)
         else {
             return Ok(());
