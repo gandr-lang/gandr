@@ -1185,6 +1185,18 @@ pub enum LoweringRefusal<'source>
         span: ByteSpan,
     },
 
+    /// A match pattern of another kind than the first pattern tested at its
+    /// place: a constructor of another data type, or a literal, a tuple, a
+    /// record, an injection or a list pattern where the first is of another
+    /// of those kinds.
+    MismatchedPattern
+    {
+        /// The bytes of the pattern.
+        span: ByteSpan,
+        /// The bytes of the first pattern tested at its place.
+        first: ByteSpan,
+    },
+
     /// A recursive definition's own name written without a claim of how it
     /// recurses.
     UnmarkedSelfReference
@@ -1786,6 +1798,9 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::NonExhaustiveMatch { .. } => {
                 f.write_str("the match leaves a value of its scrutinee that no arm matches")
             },
+            Self::MismatchedPattern { .. } => f.write_str(
+                "the pattern matches another type than the first pattern tested at its place",
+            ),
             Self::UnmarkedSelfReference { name, .. } => write!(
                 f,
                 "`{name}` names its own recursive definition without a claim; write \
@@ -1977,6 +1992,7 @@ impl LoweringRefusal<'_>
             | Self::ViewNotPlace { span }
             | Self::ViewOfNoPlace { span }
             | Self::NonExhaustiveMatch { span }
+            | Self::MismatchedPattern { span, .. }
             | Self::UnmarkedSelfReference { span, .. }
             | Self::UnguardedCorecursion { span, .. }
             | Self::DescentOnSeveralParameters { span, .. }
@@ -2062,7 +2078,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 64_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 65_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2349,6 +2365,10 @@ mod tests
             LoweringRefusal::EntryType {
                 span: s(119_usize, 120_usize),
             },
+            LoweringRefusal::MismatchedPattern {
+                span: s(121_usize, 122_usize),
+                first: s(0_usize, 1_usize),
+            },
         ]
     }
 
@@ -2424,6 +2444,7 @@ mod tests
             s(115_usize, 116_usize),
             s(117_usize, 118_usize),
             s(119_usize, 120_usize),
+            s(121_usize, 122_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

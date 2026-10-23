@@ -2956,21 +2956,13 @@ fn patterns_outside_the_fragment_are_declined_by_name()
 {
     let mut arena = CoreArena::new();
     let source = alloc::format!(
-        "{COLOR}def text(s : String) -> -F Integer {{ case s {{ \"a\" => return 0, _ => return 1 }} }}\ndef mixed(c : Color) -> -F Integer {{ case c {{ Red => return 0, 1 => return 1, _ => return 2 }} }}\ndef bound(c : Color) -> -F Integer {{ case c {{ Red | x => return 0 }} }}\n"
+        "{COLOR}def text(s : String) -> -F Integer {{ case s {{ \"a\" => return 0, _ => return 1 }} }}\ndef bound(c : Color) -> -F Integer {{ case c {{ Red | x => return 0 }} }}\n"
     );
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     assert!(matches!(
         refusal_of(&module, SurfaceName::from("text")),
         LoweringRefusal::OutOfFragment {
             boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::LiteralPattern),
-            ..
-        }
-    ));
-    assert!(matches!(
-        refusal_of(&module, SurfaceName::from("mixed")),
-        LoweringRefusal::OutOfFragment {
-            form: FormName::CASE,
-            boundary: FragmentBoundary::WrongSort,
             ..
         }
     ));
@@ -2982,6 +2974,39 @@ fn patterns_outside_the_fragment_are_declined_by_name()
             ..
         }
     ));
+}
+
+#[test]
+fn a_pattern_of_another_type_is_refused_at_its_arm()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{COLOR}data Box : Type {{ Boxed : (n : Integer) --> Box; }}\ndef foreign(c : Color) -> -F Integer {{ case c {{ Red => return 0, Boxed(n) => return n, _ => return 2 }} }}\ndef literal(c : Color) -> -F Integer {{ case c {{ Red => return 0, 1 => return 1, _ => return 2 }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let at = |name: &str, pattern: &str| {
+        let declared = source
+            .find(&alloc::format!("def {name}"))
+            .unwrap_or_default();
+        let start = source
+            .get(declared ..)
+            .and_then(|rest| rest.find(&alloc::format!("{pattern} =>")))
+            .map_or(0_usize, |offset| declared.saturating_add(offset));
+        crate::fixture::span(
+            gandr_surface_syntax::ByteOffset::from(start),
+            gandr_surface_syntax::ByteOffset::from(start.saturating_add(pattern.len())),
+        )
+    };
+    for (name, written) in [("foreign", "Boxed(n)"), ("literal", "1")] {
+        assert_eq!(
+            refusal_of(&module, SurfaceName::from(name)),
+            LoweringRefusal::MismatchedPattern {
+                span: at(name, written),
+                first: at(name, "Red"),
+            },
+            "`{name}` is refused at its arm of another type, naming the first pattern tested there"
+        );
+    }
 }
 
 #[test]
@@ -3546,10 +3571,7 @@ fn telescope_patterns_split_and_project()
     assert!(
         matches!(
             refusal_of(&module, SurfaceName::from("ragged")),
-            LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::WrongSort,
-                ..
-            }
+            LoweringRefusal::MismatchedPattern { .. }
         ),
         "a tuple pattern wider than the tuple its column splits is refused: {:?}",
         refusal_of(&module, SurfaceName::from("ragged"))

@@ -243,6 +243,7 @@ impl LoweringRefusal<'_>
             | Self::ViewNotPlace { .. }
             | Self::ViewOfNoPlace { .. }
             | Self::NonExhaustiveMatch { .. }
+            | Self::MismatchedPattern { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
             | Self::OutsideLoop { .. }
@@ -305,6 +306,7 @@ impl LoweringRefusal<'_>
             | Self::ViewNotPlace { .. }
             | Self::ViewOfNoPlace { .. }
             | Self::NonExhaustiveMatch { .. }
+            | Self::MismatchedPattern { .. }
             | Self::UnmarkedSelfReference { .. }
             | Self::Unreachable { .. }
             | Self::OutsideLoop { .. }
@@ -689,7 +691,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 65_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 66_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -959,6 +961,10 @@ mod tests
                 fault: crate::derive::DeriveFault::Apart,
             },
             LoweringRefusal::EntryType { span: empty },
+            LoweringRefusal::MismatchedPattern {
+                span: empty,
+                first: empty,
+            },
         ]
     }
 
@@ -1028,6 +1034,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];

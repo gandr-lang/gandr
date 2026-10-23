@@ -10,7 +10,7 @@ def unmatched(xs : List(Integer)) -> -F Integer {
 }
 
 /// A list pattern and a number in one column match no one type.
-@[ refuses("OutOfFragment.WrongSort") ]
+@[ refuses("MismatchedPattern") ]
 def mixed(xs : List(Integer)) -> -F Integer {
   case xs {
     [] => return 0,
