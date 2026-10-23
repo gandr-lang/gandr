@@ -370,6 +370,139 @@ pub struct DocumentIdentifier
     pub uri: DocumentUri,
 }
 
+/// The parameters of `notebookDocument/didOpen`: the notebook opened and the
+/// text of each of its cells.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DidOpenNotebookParams
+{
+    /// The notebook, its cells in order.
+    pub notebook_document: NotebookDocument,
+    /// Each cell's document, with its whole text.
+    pub cell_text_documents: Vec<TextDocumentItem>,
+}
+
+/// A notebook the client opened.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct NotebookDocument
+{
+    /// The notebook's URI.
+    pub uri: DocumentUri,
+    /// The version of its cells.
+    pub version: DocumentVersion,
+    /// Its cells, in order.
+    pub cells: Vec<NotebookCell>,
+}
+
+/// One cell of a notebook: its kind and the document holding its text.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct NotebookCell
+{
+    /// Whether the cell is markup or code.
+    pub kind: CellKind,
+    /// The URI of the cell's text document.
+    pub document: DocumentUri,
+}
+
+/// A notebook cell's kind, as the protocol numbers it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct CellKind(u8);
+
+impl CellKind
+{
+    /// A code cell: gandr source.
+    pub const CODE: Self = Self(2);
+}
+
+/// The parameters of `notebookDocument/didChange`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DidChangeNotebookParams
+{
+    /// The notebook changed, at its new version.
+    pub notebook_document: VersionedDocument,
+    /// What changed.
+    pub change: NotebookChange,
+}
+
+/// A change to a notebook; only its cells are read, its metadata never.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct NotebookChange
+{
+    /// The change to its cells, when they changed.
+    #[serde(default)]
+    pub cells: Option<CellsChange>,
+}
+
+/// A change to a notebook's cells: their sequence, their kinds and their
+/// text, each part present when it changed.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CellsChange
+{
+    /// The cells inserted and removed.
+    #[serde(default)]
+    pub structure: Option<CellStructure>,
+    /// Cells whose kind or metadata changed, each as it now is.
+    #[serde(default)]
+    pub data: Vec<NotebookCell>,
+    /// The cells whose text changed, each with its changes in order.
+    #[serde(default)]
+    pub text_content: Vec<CellTextChange>,
+}
+
+/// A change to a notebook's sequence of cells.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CellStructure
+{
+    /// The cells removed and inserted at one place.
+    pub array: CellSplice,
+    /// The document of each cell the change brings in, with its whole text.
+    #[serde(default)]
+    pub did_open: Vec<TextDocumentItem>,
+    /// The document of each cell the change takes out.
+    #[serde(default)]
+    pub did_close: Vec<DocumentIdentifier>,
+}
+
+/// The cells removed from a notebook at a place, and those put there.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CellSplice
+{
+    /// The index of the first cell removed, or of the place inserted at.
+    pub start: u32,
+    /// How many cells are removed.
+    pub delete_count: u32,
+    /// The cells inserted there, in order.
+    #[serde(default)]
+    pub cells: Vec<NotebookCell>,
+}
+
+/// The changes to one cell's text.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct CellTextChange
+{
+    /// The cell's document, at its new version.
+    pub document: VersionedDocument,
+    /// The changes, in order, each against the text the ones before it left.
+    pub changes: Vec<ContentChange>,
+}
+
+/// The parameters of `notebookDocument/didClose`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct DidCloseNotebookParams
+{
+    /// The notebook closed.
+    pub notebook_document: DocumentIdentifier,
+}
+
 /// The parameters of `initialize` the server reads: the client's `gandr`
 /// settings, passed as its initialization options, the HTML tags its
 /// markdown renderer keeps, whether it takes a definition as a link, whether
@@ -2179,21 +2312,21 @@ impl InitializeResult
     /// # Specification
     /// - requires: nothing.
     /// - ensures: positions counted in UTF-16 code units; incremental document
-    ///   synchronisation with open and close notifications; semantic tokens
-    ///   over the whole document and over a range, under the legend of
-    ///   [`TOKEN_TYPES`] and [`TOKEN_MODIFIERS`]; completion, each item
-    ///   resolved by a second request, and inline completion; document symbols,
-    ///   folding ranges and selection ranges; inlay hints, each label's
-    ///   locations resolved by a second request when the client asks; hover;
-    ///   signature help, asked for as a call's `(` or a `,` is typed and again
-    ///   at a `)`; definition and type definition; formatting over the whole
-    ///   document and over a range; code lenses, code actions, document links
-    ///   and workspace symbols, each whole in its answer and resolved by a
-    ///   second request as it came; linked editing; workspace folders, with a
-    ///   notification as they change; the creation, deletion and renaming of
-    ///   gandr sources and folders on disk, each heard of once done, and a
-    ///   rename asked about before it is done; the server named `gandr` at this
-    ///   crate's version.
+    ///   synchronisation with open and close notifications; the synchronisation
+    ///   of a Jupyter notebook whose cells are gandr; semantic tokens over the
+    ///   whole document and over a range, under the legend of [`TOKEN_TYPES`]
+    ///   and [`TOKEN_MODIFIERS`]; completion, each item resolved by a second
+    ///   request, and inline completion; document symbols, folding ranges and
+    ///   selection ranges; inlay hints, each label's locations resolved by a
+    ///   second request when the client asks; hover; signature help, asked for
+    ///   as a call's `(` or a `,` is typed and again at a `)`; definition and
+    ///   type definition; formatting over the whole document and over a range;
+    ///   code lenses, code actions, document links and workspace symbols, each
+    ///   whole in its answer and resolved by a second request as it came;
+    ///   linked editing; workspace folders, with a notification as they change;
+    ///   the creation, deletion and renaming of gandr sources and folders on
+    ///   disk, each heard of once done, and a rename asked about before it is
+    ///   done; the server named `gandr` at this crate's version.
     /// - provides: the one capabilities answer, written by `initialize` and by
     ///   the driver's `gandr lsp --capabilities` alike.
     /// - fails: never.
@@ -2209,6 +2342,9 @@ impl InitializeResult
         matches!(ret.capabilities.position_encoding.as_bytes(), &[b'u', b't', b'f', b'-', b'1', b'6'])
             && ret.capabilities.text_document_sync.open_close
             && ret.capabilities.text_document_sync.change.0 == SyncKind::INCREMENTAL.0
+            && matches!(ret.capabilities.notebook_document_sync.notebook_selector,
+                [ref selected] if matches!(selected.notebook.notebook_type.as_bytes(), b"jupyter-notebook")
+                    && matches!(selected.cells, [cell] if matches!(cell.language.as_bytes(), b"gandr")))
             && ret.capabilities.semantic_tokens_provider.full.delta
             && ret.capabilities.semantic_tokens_provider.range
             && ret.capabilities.inline_completion_provider.0
@@ -2259,6 +2395,7 @@ impl InitializeResult
                     open_close: true,
                     change: SyncKind::INCREMENTAL,
                 },
+                notebook_document_sync: NotebookSync::JUPYTER,
                 semantic_tokens_provider: SemanticTokensProvider {
                     legend: Legend {
                         token_types: TOKEN_TYPES,
@@ -2353,6 +2490,8 @@ pub struct ServerCapabilities
     pub position_encoding: &'static str,
     /// How the client keeps the server's copy of a document current.
     pub text_document_sync: TextDocumentSync,
+    /// How the client keeps the server's copy of a notebook current.
+    pub notebook_document_sync: NotebookSync,
     /// The semantic tokens the server answers.
     pub semantic_tokens_provider: SemanticTokensProvider,
     /// Completion is answered, each item with its label details, and resolved
@@ -2772,6 +2911,59 @@ impl SyncKind
     /// A change carries the text replacing one range, or the whole document
     /// when it names none.
     pub const INCREMENTAL: Self = Self(2);
+}
+
+/// Notebook synchronisation, as advertised.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct NotebookSync
+{
+    /// The notebooks synchronised: Jupyter notebooks whose cells are gandr.
+    pub notebook_selector: [NotebookSelector; 1],
+}
+
+impl NotebookSync
+{
+    /// A Jupyter notebook whose cells are `gandr`, as its kernelspec names
+    /// them.
+    pub const JUPYTER: Self = Self {
+        notebook_selector: [NotebookSelector {
+            notebook: NotebookFilter {
+                notebook_type: "jupyter-notebook",
+            },
+            cells: [CellLanguage { language: SOURCE }],
+        }],
+    };
+}
+
+/// The notebooks and cells a notebook synchronisation selects.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct NotebookSelector
+{
+    /// The notebooks.
+    pub notebook: NotebookFilter,
+    /// The cells synchronised.
+    pub cells: [CellLanguage; 1],
+}
+
+/// A notebook, by its type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[repr(transparent)]
+pub struct NotebookFilter
+{
+    /// The notebook type, as the client names it.
+    pub notebook_type: &'static str,
+}
+
+/// A cell, by its language.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[repr(transparent)]
+pub struct CellLanguage
+{
+    /// The language.
+    pub language: &'static str,
 }
 
 /// The semantic-token provider, as advertised.
