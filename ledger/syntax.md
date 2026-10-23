@@ -155,7 +155,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
-| [`forall_type`](../corpus/ledger/syntax/forall_type.gandr) | `forall ⦅ ‹type_variable› ⦆* . TYPE` | `type.arrow` | `forall_type` | unadmitted | Keyword, TypeVariable, Other |
+| [`forall_type`](../corpus/ledger/syntax/forall_type.gandr) | `forall ⦅ ‹type_variable› ⦆* . TYPE` | `type.arrow` | `forall_type` | admitted | Keyword, TypeVariable, Other |
 | [`package_type`](../corpus/ledger/syntax/package_type.gandr) | `package [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `package_type` * | unadmitted | Keyword, Other, Type |
 | [`function_type`](../corpus/ledger/syntax/function_type.gandr) | `TYPE -> TYPE` | `type.arrow` | `function_type` | admitted | Operator |
 | [`value_function_type`](../corpus/ledger/syntax/value_function_type.gandr) | `TYPE => TYPE` | `type.arrow` | `value_function_type` * | admitted | Operator |

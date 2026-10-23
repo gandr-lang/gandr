@@ -1,4 +1,5 @@
-/// `forall_type`: a universally quantified type.
-/// The checker does not reach this form yet; #1055 tracks it.
-@[ refuses("OutOfFragment.forall_type") ]
-def identity : forall a . a -> a ;
+/// `forall_type`: a universally quantified type, the dependent arrow over
+/// `Type` per binder.
+@[ checks ]
+def identity : +U (forall a . (x : a) -> -F a) ;
+def identity = thunk { fn (a) { fn (x) { x } } } ;

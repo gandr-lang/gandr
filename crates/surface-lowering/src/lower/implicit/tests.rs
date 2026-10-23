@@ -4,9 +4,11 @@ use alloc::vec::Vec;
 
 use gandr_core_checker::Verdict;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompType;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
@@ -93,6 +95,54 @@ fn plicity_is_metadata_not_type_structure()
         ),
         CertificateEquality::Equal,
         "the implicit declares the type its explicit twin does"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+/// #1055: `forall a b . C` declares the dependent arrow over `Type` its
+/// binders write, one binder per arrow; a binder its codomain never names is
+/// still bound, and the arrow it declares converts with the plain one.
+#[test]
+fn a_forall_is_the_dependent_arrow_over_type_its_binders_write_1055()
+{
+    let source = "\
+def one : +U (forall a . (x : a) -> -F a) ;
+def one = thunk { fn (a) { fn (x) { return x } } } ;
+def oneTwin : +U ((a : Type) -> (x : a) -> -F a) ;
+def oneTwin = one ;
+def two : +U (forall a b . (x : a) -> (y : b) -> -F a) ;
+def two = thunk { fn (a) { fn (b) { fn (x) { fn (y) { return x } } } } } ;
+def twoTwin : +U ((a : Type) -> (b : Type) -> (x : a) -> (y : b) -> -F a) ;
+def twoTwin = two ;
+def unnamed : +U (forall a . -F Integer) ;
+def unnamed = thunk { fn (a) { return 1 } } ;
+def unnamedTwin : +U (Type -> -F Integer) ;
+def unnamedTwin = unnamed ;
+def unnamedBack : +U (forall a . -F Integer) ;
+def unnamedBack = unnamedTwin ;
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    for (written, twin) in [("one", "oneTwin"), ("two", "twoTwin")] {
+        assert_eq!(
+            equal_type_syntax(
+                &arena,
+                declared_type_of(&module, SurfaceName::from(written)),
+                declared_type_of(&module, SurfaceName::from(twin)),
+            ),
+            CertificateEquality::Equal,
+            "`{written}` declares the type `{twin}` writes by hand"
+        );
+    }
+    let unnamed = declared_type_of(&module, SurfaceName::from("unnamed"));
+    let Some(&ValueType::Thunk(arrow)) = arena.value_type(unnamed)
+    else {
+        panic!("`unnamed` declares a thunk type");
+    };
+    assert!(
+        matches!(arena.comp_type(arrow), Some(CompType::Pi { .. })),
+        "an unnamed binder is still bound: {:?}",
+        arena.comp_type(arrow)
     );
     assert_checked(&module, &mut arena);
 }

@@ -441,6 +441,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ThunkType
                 | Former::ReturnerType
                 | Former::ArrowType
+                | Former::Forall
                 | Former::ProductType
                 | Former::SumType
                 | Former::LazyProductType
@@ -556,6 +557,7 @@ impl<'source> Lowerer<'_, 'source>
                         | Former::ThunkType
                         | Former::ReturnerType
                         | Former::ArrowType
+                        | Former::Forall
                         | Former::ProductType
                         | Former::SumType
                         | Former::LazyProductType
@@ -629,6 +631,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::ThunkType
                 | Former::ReturnerType
                 | Former::ArrowType
+                | Former::Forall
                 | Former::ProductType
                 | Former::SumType
                 | Former::LazyProductType

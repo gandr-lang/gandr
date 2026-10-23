@@ -1242,6 +1242,7 @@ pub fn spine_domains<'source>(
             | Former::ThunkType
             | Former::ReturnerType
             | Former::ProductType
+            | Former::Forall
             | Former::SumType
             | Former::LazyProductType
             | Former::TelescopeType

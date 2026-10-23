@@ -511,6 +511,8 @@ impl TileName
     pub const FN: Self = Self("fn");
     /// The force keyword `force`.
     pub const FORCE: Self = Self("force");
+    /// The quantifier keyword `forall`.
+    pub const FORALL: Self = Self("forall");
     /// The fork keyword `fork`, opening a statement.
     pub const FORK: Self = Self("fork");
     /// The equals sign `=` opening a definition tail.
@@ -863,6 +865,9 @@ pub enum Former
     /// The arrow type `A -> C`, or the static Pi `A -> B` where a value type
     /// is read.
     ArrowType,
+    /// The type `forall a b . C`: the dependent arrow over `Type` per binder,
+    /// `(a : Type) -> (b : Type) -> C`.
+    Forall,
     /// The eager product type `A * B`.
     ProductType,
     /// The sum type `A + B`.
@@ -1126,6 +1131,7 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("u_type", Former::ThunkType),
     ("f_type", Former::ReturnerType),
     ("function_type", Former::ArrowType),
+    ("forall_type", Former::Forall),
     ("product_type", Former::ProductType),
     ("sum_type", Former::SumType),
     ("lazy_product_type", Former::LazyProductType),
@@ -1198,7 +1204,6 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
         "file_descriptor",
         Former::Unadmitted(Unbuilt::FileDescriptor),
     ),
-    ("forall_type", Former::Unadmitted(Unbuilt::Forall)),
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
     ("host_escape", Former::Unadmitted(Unbuilt::HostEscape)),
     ("if_expression", Former::If),

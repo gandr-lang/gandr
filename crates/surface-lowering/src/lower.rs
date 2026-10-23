@@ -1319,7 +1319,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::Forall | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1364,6 +1364,7 @@ fn ending(former: Former) -> Ending
         | Former::ThunkType
         | Former::ReturnerType
         | Former::ArrowType
+        | Former::Forall
         | Former::ProductType
         | Former::SumType
         | Former::LazyProductType
@@ -1418,7 +1419,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::Forall | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1512,6 +1513,7 @@ fn iterating(former: Former) -> Ending
                     | Former::ThunkType
                     | Former::ReturnerType
                     | Former::ArrowType
+                    | Former::Forall
                     | Former::ProductType
                     | Former::SumType
                     | Former::LazyProductType
@@ -1596,6 +1598,7 @@ const fn family_of(former: Former) -> Family
         | Former::ThunkType
         | Former::ReturnerType
         | Former::ArrowType
+        | Former::Forall
         | Former::ProductType
         | Former::SumType
         | Former::LazyProductType
@@ -2398,6 +2401,9 @@ enum Plan
     /// A dependent arrow `(x : A) -> C`: its one binder, in the parameter
     /// store, and its codomain.
     DependentArrow(Stretch, NodeIndex),
+    /// A `forall a b . C`: its binders, in the parameter store, each at the
+    /// universe `Type`, and its codomain.
+    Forall(Stretch, NodeIndex),
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// The value at the first node, ascribed the value type at the second:
@@ -6319,6 +6325,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::TypeApplication => self.type_application(site, cursor),
             Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             Former::ArrowType => self.arrow(site, cursor),
+            Former::Forall => self.forall(site, cursor),
             Former::ProductType => self.chain(site, cursor, Former::ProductType),
             Former::SumType => self.chain(site, cursor, Former::SumType),
             Former::LazyProductType => self.chain(site, cursor, Former::LazyProductType),
@@ -13722,7 +13729,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Kept(..)
                 | Plan::Carrier(..)
                 | Plan::FixedCarrier(..) => Some(Produced::ValueType),
-                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
+                | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::Forall(..) | Plan::With(_) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
                 | Plan::Decode(_, _, universe) | Plan::Unquote(_, _, universe) => Some(match universe.sort {
@@ -13915,6 +13922,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::DependentArrow(entries, codomain) => {
                 self.mint_dependent_arrow(entries, codomain, sink, origin)
             },
+            Plan::Forall(binders, codomain) => self.mint_forall(binders, codomain, sink, origin),
             Plan::Transparent(child) => self.lowered_at(child),
             Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
             Plan::Application(head, arguments) => {
@@ -15094,6 +15102,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::ValueFunction(..)
             | Plan::Telescope(..)
             | Plan::DependentArrow(..)
+            | Plan::Forall(..)
             | Plan::Former(..)
             | Plan::Transparent(_)
             | Plan::Application(..)
@@ -19448,6 +19457,7 @@ pub fn parse_literal(
         | Former::ThunkType
         | Former::ReturnerType
         | Former::ArrowType
+        | Former::Forall
         | Former::ProductType
         | Former::SumType
         | Former::LazyProductType

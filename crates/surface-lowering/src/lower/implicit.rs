@@ -61,21 +61,28 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Sort;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
+use super::Lowered;
 use super::Lowerer;
 use super::Parameter;
 use super::Plan;
 use super::Produced;
 use super::Reading;
 use super::Resolved;
+use super::Sink;
 use super::Site;
 use super::Stretch;
+use super::Universe;
 use super::arguments;
 use super::arity;
+use super::lowered;
 use super::stated;
+use super::stretch;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -92,6 +99,7 @@ use crate::module::Plicity;
 use crate::module::SlotIndex;
 use crate::module::TelescopeEntry;
 use crate::module::merged;
+use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
 use crate::unbuilt::Unbuilt;
@@ -757,5 +765,111 @@ impl<'source> Lowerer<'_, 'source>
             })?;
         let _first = self.nominations.insert(hole, nomination);
         Ok(hole)
+    }
+
+    /// Classify `forall a b . C`: the dependent arrow over `Type` per binder,
+    /// `(a : Type) -> (b : Type) -> C`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a forall type; `cursor` stands at its `forall`.
+    /// - ensures: each binder extends the frame before it with no written type,
+    ///   its domain the universe `Type` the mint supplies, and the codomain is
+    ///   read as a computation type under the last; the forall is planned over
+    ///   the binders and the codomain.
+    /// - fails: the wrong-sort refusal where no computation type is read; a
+    ///   binder's own refusal; a fault where the `.` or the codomain is
+    ///   missing.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The forall's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a forall over one binder and over two lower to the
+    ///   dependent arrows over `Type` the binders written out give, and one
+    ///   whose codomain names no binder converts with the plain arrow.
+    /// - witness: `lower::implicit::tests::a_forall_is_the_dependent_arrow_over_type_its_binders_write_1055`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Forall(..))))]
+    pub(super) fn forall(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::CompType)?;
+        super::closed(site, &mut cursor, TileName::FORALL)?;
+        let start = self.parameters.len();
+        let mut bound = frame;
+        while let Maybe::Present(written) = cursor.tile(TileName::TYPE_VARIABLE) {
+            let name = self.name_at(written);
+            self.note_binder(written, name)?;
+            let scope = self.scope.extend(bound, name, Maybe::Present(written.span));
+            self.parameters.push(Parameter {
+                binder: written.node,
+                frame: scope,
+                declared: Maybe::Absent(stated::Absent::Unstated),
+            });
+            bound = Frame::Inner(scope);
+        }
+        super::closed(site, &mut cursor, TileName::DOT)?;
+        let codomain = site.one(cursor.operands())?;
+        super::exhausted(site, &cursor)?;
+        self.read(codomain.node, Reading::CompType(bound));
+        self.plan(
+            site,
+            Plan::Forall(
+                Stretch {
+                    start,
+                    end: self.parameters.len(),
+                },
+                codomain.node,
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Mint a forall: the Π over `Type` per binder into the codomain, the
+    /// innermost binder nearest it.
+    ///
+    /// # Specification
+    /// - requires: the codomain is already minted or absent.
+    /// - ensures: `Π (a : Type). … C` with the written origin, each Π recording
+    ///   where its binder is written, a binder the codomain does not name bound
+    ///   all the same, as an untyped binder counts; nothing when the codomain
+    ///   did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::forall`].
+    /// - witness: `lower::implicit::tests::a_forall_is_the_dependent_arrow_over_type_its_binders_write_1055`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::CompType(_))))]
+    pub(super) fn mint_forall(
+        &self,
+        binders: Stretch,
+        codomain: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut arrow = match self.comp_type_at(codomain) {
+            Maybe::Present(body) => body,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let universe = Universe::FUSS_FREE;
+        let domain = sink
+            .arena
+            .value_type_universe(Sort::Ground(universe.sort), Level::constant(universe.level));
+        sink.origins.record_value_type(domain, origin);
+        for parameter in stretch(&self.parameters, binders).iter().rev() {
+            arrow = sink.arena.comp_type_pi(domain, arrow);
+            if let Maybe::Present(binder) = self.origin_at(parameter.binder) {
+                sink.origins.record_arrow(arrow, binder);
+            }
+            sink.origins.record_comp_type(arrow, origin);
+        }
+
+        Maybe::Present(Lowered::CompType(arrow))
     }
 }

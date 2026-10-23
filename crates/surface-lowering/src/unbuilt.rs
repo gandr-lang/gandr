@@ -113,8 +113,6 @@ pub enum Unbuilt
     ListPattern,
     /// The rest pattern `..p`.
     RestPattern,
-    /// The type `forall a. T`.
-    Forall,
     /// The union type `A | B`.
     Union,
     /// The intersection type `A /\ B`.
@@ -276,7 +274,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 85_usize] = [
+    pub const ALL: [Self; 84_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -290,7 +288,6 @@ impl Unbuilt
         Self::AsPattern,
         Self::ListPattern,
         Self::RestPattern,
-        Self::Forall,
         Self::Union,
         Self::Intersection,
         Self::OperatorDeclaration,
@@ -399,7 +396,7 @@ impl Unbuilt
             Self::AsPattern => "as_pattern",
             Self::ListPattern => "list_pattern",
             Self::RestPattern => "rest_pattern",
-            Self::Forall => "forall_type",
+
             Self::Union => "union_type",
             Self::Intersection => "intersection_type",
             Self::OperatorDeclaration => "operator_declaration",
@@ -504,7 +501,7 @@ impl Unbuilt
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,
-            Self::Forall => TrackingIssue::FORALL,
+
             Self::Union | Self::Intersection => TrackingIssue::UNION_INTERSECTION,
             Self::OperatorDeclaration => TrackingIssue::OPERATOR_DECLARATION,
             Self::RecursiveClaim => TrackingIssue::RECURSIVE_CLAIM,

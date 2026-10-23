@@ -1,0 +1,37 @@
+// The quantifier `forall a . C`: the dependent arrow over `Type` per binder,
+// `(a : Type) -> C`, its binders written with no type (#1055). A forall is a
+// computation type, so a signature holds it under `+U` as it holds any arrow;
+// what it declares and the dependent arrow written out are one type, so each
+// stands where the other is asked.
+
+/// The identity, its type written as the dependent arrow over `Type`.
+@[ checks ]
+def viaArrow(a : Type, x : a) -> -F a { x }
+
+/// The identity, its type written with the quantifier.
+@[ checks ]
+def viaForall : +U (forall a . (x : a) -> -F a) ;
+def viaForall = thunk { fn (a) { fn (x) { x } } } ;
+
+/// The arrow written out stands where the quantifier is asked.
+@[ checks ]
+def forallFromArrow : +U (forall a . (x : a) -> -F a) ;
+def forallFromArrow = viaArrow ;
+
+/// The quantifier stands where the arrow written out is asked.
+@[ checks ]
+def arrowFromForall : (a : Type, a) => a ;
+def arrowFromForall = viaForall ;
+
+/// The quantified identity applied to its type and a value of it.
+@[ runs("3") ]
+def forallRun() -> -F Integer { become viaForall(Integer, 3) }
+
+/// Two binders, one arrow over `Type` each: the first of two values.
+@[ checks ]
+def first : +U (forall a b . (x : a) -> (y : b) -> -F a) ;
+def first = fn (a) { fn (b) { fn (x) { fn (y) { x } } } } ;
+
+/// `first` applied to both types and a value of each.
+@[ runs("5") ]
+def firstRun() -> -F Integer { become first(Integer, Unit, 5, unit) }
