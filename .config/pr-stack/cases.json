@@ -109,7 +109,7 @@
       },
       { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T04:20:00Z" }
     ],
-    "output": "{\"number\":1258,\"head\":\"pending-diag-1248\",\"depth\":2,\"held\":false}"
+    "output": "{\"number\":1258,\"head\":\"pending-diag-1248\",\"depth\":2,\"held\":false,\"landing\":false}"
   },
   {
     "name": "between two chains of one the newest is the top",
@@ -119,10 +119,10 @@
       { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" },
       { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" }
     ],
-    "output": "{\"number\":1262,\"head\":\"theory-solve\",\"depth\":1,\"held\":false}"
+    "output": "{\"number\":1262,\"head\":\"theory-solve\",\"depth\":1,\"held\":false,\"landing\":false}"
   },
   {
-    "name": "a stack in the merge queue is never the top: with nothing else open a new pull request opens on main (#1455)",
+    "name": "a stack in the merge queue with nothing else open is the top: a new pull request opens on its top, unlinked (#1983)",
     "program": "top.jq",
     "args": { "own": "witness-surface-driver", "trunk": "main" },
     "input": [
@@ -148,10 +148,10 @@
         "landing": true
       }
     ],
-    "output": "null"
+    "output": "{\"number\":1446,\"head\":\"triage-1420-retarget\",\"depth\":3,\"held\":false,\"landing\":true}"
   },
   {
-    "name": "beside a landing stack the top is the longest chain not landing (#1455)",
+    "name": "beside a landing stack the top is the longest chain not landing, though the landing one is longer (#1455, #1983)",
     "program": "top.jq",
     "args": { "own": "witness-surface-driver", "trunk": "main" },
     "input": [
@@ -177,10 +177,10 @@
         "landing": false
       }
     ],
-    "output": "{\"number\":1449,\"head\":\"triage-1175-stacks\",\"depth\":1,\"held\":false}"
+    "output": "{\"number\":1449,\"head\":\"triage-1175-stacks\",\"depth\":1,\"held\":false,\"landing\":false}"
   },
   {
-    "name": "a top a pr:land is waiting to queue reads held, so pr:open refuses it (#1556)",
+    "name": "a top a pr:land is waiting to queue reads held, so pr:open waits for the hold to clear (#1556, #1983)",
     "program": "top.jq",
     "args": { "own": "triage-1456-witnessed", "trunk": "main" },
     "input": [
@@ -209,7 +209,36 @@
         "held": false
       }
     ],
-    "output": "{\"number\":1552,\"head\":\"docs-workflow-build-state\",\"depth\":2,\"held\":true}"
+    "output": "{\"number\":1552,\"head\":\"docs-workflow-build-state\",\"depth\":2,\"held\":true,\"landing\":false}"
+  },
+  {
+    "name": "a pull request stacked on a queued top is the top, its chain read down through the queued ones (#1983)",
+    "program": "top.jq",
+    "args": { "own": "triage-1983-open-on-queued", "trunk": "main" },
+    "input": [
+      {
+        "number": 1981,
+        "head": "triage-1505-string-append",
+        "base": "main",
+        "created": "2026-10-23T01:00:00Z",
+        "landing": true
+      },
+      {
+        "number": 1982,
+        "head": "surface-1798-collection-refusals",
+        "base": "triage-1505-string-append",
+        "created": "2026-10-23T01:30:00Z",
+        "landing": true
+      },
+      {
+        "number": 1990,
+        "head": "triage-1505-interpolation",
+        "base": "surface-1798-collection-refusals",
+        "created": "2026-10-23T03:00:00Z",
+        "landing": false
+      }
+    ],
+    "output": "{\"number\":1990,\"head\":\"triage-1505-interpolation\",\"depth\":3,\"held\":false,\"landing\":false}"
   },
   {
     "name": "a pull request alone lands alone",

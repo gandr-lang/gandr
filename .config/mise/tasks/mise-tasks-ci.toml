@@ -870,32 +870,33 @@ done < "$report"
 # the top's head, and it opens with the top's branch as its base, linked into
 # the top's stack (`gh stack link`). A chain with a pull request below that
 # lands on its own, in the merge queue or set to auto-merge, cannot take a link
-# (#1353); the pull request then opens unlinked on the top. GitHub closes an
-# unlinked pull request, unmerged, when a merge deletes its base branch
-# (#1420), so every open, unlinked pull request on the branch of one that lands
-# on its own is retargeted to main (`retarget_landing`), and `pr:land` from the
-# top waits for that one to merge, then restacks and queues the chain.
+# (#1353); the pull request then opens unlinked on the top, and `pr:land` from
+# the top waits for that one to merge, then restacks and queues the chain.
 # `decide.jq` reads which, as it does for `pr:land`. The task prints which path
 # it took. With nothing open it opens against main.
 #
-# A pull request that is landing, in the merge queue or set to auto-merge, is
-# never the top (#1455): its merge deletes its branch, and a queued stack
-# takes no link, so a pull request opened on it would close unmerged. With
-# every open pull request landing, the new one opens on main, measured past
-# the newest landing head its branch holds; `pr:land` waits for those to merge
-# (`carried_queued`).
+# Every new pull request targets the top of the latest stack, queued or not
+# (#1983): a top not landing is read first, and with every open pull request
+# landing the top is the queued chain's. The new one is rebased onto that
+# top's head, measured against it, and opened on its branch unlinked. When
+# the queued top merges and its branch is deleted, GitHub moves the pull
+# request to main, and it is the bottom of the next chain; `pr:land`
+# retargets what stands on a landing's branches first (`retarget_landing`,
+# #1420) as belt and braces. Nothing waits for the queue, and nothing opens a
+# second root on main.
 #
 # A pull request a `pr:land` is waiting to queue carries the `landing` label
-# (#1556), and a top carrying it is refused: stacked on, it would stop being
-# the top under the landing, which then refuses and starts again from the
-# new top, a whole checks cycle later. Once the chain is queued, the label is
-# gone and the new pull request opens on the trunk. The top is read at the
-# start and again just before the push (#1601): the obligations step between
-# takes about a minute, and a `pr:land` started on the top inside it holds
-# the top. A top held or changed by then is refused. `pr:land` holds its pull
-# request before it reads the chain and reads the chain again before it
-# queues, so an open that read the top before the hold and pushes after it
-# makes the landing refuse instead.
+# (#1556): stacked on, it would stop being the top under the landing, which
+# then refuses and starts again from the new top, a whole checks cycle
+# later. A top carrying it is waited out (`await_top`), never the queue: once
+# the chain is queued the label is gone and the new pull request opens on the
+# queued top. The top is read at the start and again just before the push
+# (#1601): the obligations step between takes about a minute, and a
+# `pr:land` started on the top inside it holds and restacks the top. A top
+# changed or restacked by then is refused, to be opened again. `pr:land`
+# holds its pull request before it reads the chain and reads the chain again
+# before it queues, so an open that read the top before the hold and pushes
+# after it makes the landing refuse instead.
 #
 # The rule runs from the branch the task is run on, so a branch that lacks a
 # change main made to `.config/pr-stack` is refused until it is rebased onto
@@ -937,27 +938,13 @@ if [[ -n "$unblocks" ]]; then
     || { echo "the body must name #$unblocks, the pull request this fix unblocks" >&2; exit 2; }
   top=null
 else
-  top=$(stack_top "$own")
-  if [[ $(jq -r '.held // false' <<< "$top") == true ]]; then
-    echo "the stack top #$(jq -r .number <<< "$top") is being landed; wait for the queue (the coordinator pages it), then pr:open opens on $trunk" >&2
-    exit 2
-  fi
+  top=$(await_top "$own")
 fi
 git fetch --quiet origin "$trunk"
 if [[ "$top" == null ]]; then
   base=$trunk
   measured=$(git merge-base HEAD "origin/$trunk")
-  # A branch stacked before its stack began to land holds that stack's
-  # commits: measured past the newest landing head it holds, its obligations
-  # are its own (#1455).
-  while IFS= read -r landing_head; do
-    [[ -n "$landing_head" ]] || continue
-    git fetch --quiet origin "$landing_head" || continue
-    if git merge-base --is-ancestor "$measured" "origin/$landing_head" && git merge-base --is-ancestor "origin/$landing_head" HEAD; then
-      measured=$(git rev-parse "origin/$landing_head")
-    fi
-  done < <(open_prs | jq -r --arg own "$own" '.[] | select(.landing and .head != $own) | .head')
-  if [[ -z "$unblocks" ]]; then echo "no pull request is open outside the merge queue: opening against $trunk"; fi
+  if [[ -z "$unblocks" ]]; then echo "no pull request is open: opening against $trunk"; fi
 else
   base=$(jq -r .head <<< "$top")
   top_number=$(jq -r .number <<< "$top")
@@ -983,13 +970,11 @@ if [[ -z "$unblocks" && "$base" == "$trunk" && $(open_prs | jq --arg own "$own" 
   exit 2
 fi
 if [[ -z "$unblocks" ]]; then
-  now=$(stack_top "$own")
-  if [[ $(jq -r '.held // false' <<< "$now") == true ]]; then
-    echo "the stack top #$(jq -r .number <<< "$now") began landing while the obligations were measured; wait for the queue (the coordinator pages it), then pr:open opens on $trunk" >&2
-    exit 2
-  fi
-  if [[ $(jq -r '.number // empty' <<< "$now") != $(jq -r '.number // empty' <<< "$top") ]]; then
-    echo "the stack top moved from #$(jq -r '.number // "none"' <<< "$top") to #$(jq -r '.number // "none"' <<< "$now") while the obligations were measured; run \`pr:open\` again" >&2
+  now=$(await_top "$own")
+  if [[ "$base" != "$trunk" ]]; then git fetch --quiet origin "$base"; fi
+  if [[ $(jq -r '.number // empty' <<< "$now") != $(jq -r '.number // empty' <<< "$top") ]] \
+    || { [[ "$base" != "$trunk" ]] && ! git merge-base --is-ancestor "origin/$base" HEAD; }; then
+    echo "the stack top moved from #$(jq -r '.number // "none"' <<< "$top") to #$(jq -r '.number // "none"' <<< "$now"), or was restacked, while the obligations were measured; run \`pr:open\` again" >&2
     exit 2
   fi
 fi
@@ -1007,8 +992,7 @@ if [[ "$base" != "$trunk" ]]; then
     '{server: $server, own: $own, queued: $queued}' | jq -r -f "$pr_stack_dir/decide.jq")
   case "$decision" in
     wait$'\t'*)
-      retarget_landing "$(queued_of "$stack")"
-      echo "#${decision#*$'\t'} below lands on its own, so #$number waits unlinked, and every pull request on its branch is retargeted to $trunk; \`pr:land\` from the top lands the chain once #${decision#*$'\t'} has merged"
+      echo "#${decision#*$'\t'} below is queued, so #$number waits unlinked on $base: when the queued top merges GitHub moves #$number to $trunk, and \`pr:land\` from the top lands it with the rest"
       ;;
     *)
       stack_link "$stack"
