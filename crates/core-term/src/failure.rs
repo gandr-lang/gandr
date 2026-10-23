@@ -171,8 +171,6 @@ impl TrackingIssue
     pub const KERNEL_STAGE: Self = Self(1631);
     /// The conditional `if c { … } else { … }`.
     pub const IF_EXPRESSION: Self = Self(1995);
-    /// A function parameter named by a type identifier or a type variable.
-    pub const TYPE_PARAMETER: Self = Self(1996);
     /// An infix form the lowering does not read: list concatenation, or a
     /// path cons whose letter names no loop.
     pub const INFIX_FORM: Self = Self(1997);
