@@ -740,6 +740,11 @@ impl TermPos
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every position of a term reads back the path it was
+    ///   built from.
+    /// - witness: `term::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
     #[inline]
     #[must_use]
     pub fn steps(&self) -> &[PositionStep]
@@ -1437,6 +1442,7 @@ impl CellAlphabet for TermAlphabet
     ///   change the result.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
     /// - witness: `term::tests::a_substitution_replaces_each_variable_once_all_at_once_654`
+    /// - witness: `term::tests::a_variable_unifies_with_itself_with_another_and_under_a_term`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",

@@ -86,6 +86,15 @@ fn positions_preserve_prefix_boundaries_and_splice_siblings()
         TermAlphabet::command_positions(&term),
         "every node is a position, breadth first"
     );
+    for (pos, path) in positions.iter().zip(&paths) {
+        assert!(
+            pos.steps()
+                .iter()
+                .copied()
+                .eq(path.iter().copied().map(PositionStep::from)),
+            "a position reads back its path"
+        );
+    }
     assert_eq!(
         alloc::vec![TermAlphabet::root_position()],
         TermAlphabet::command_positions(&Term::from(&ctor("Zero", []))),
@@ -392,6 +401,35 @@ fn substitution_walks_are_transactional_and_bounded()
         );
         assert_eq!(seed, refused, "a refused unification leaves the map");
     }
+}
+
+#[test]
+fn a_variable_unifies_with_itself_with_another_and_under_a_term()
+{
+    let mut itself = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::unify_cmd(&var("x"), &var("x"), &mut itself)),
+        "a variable unifies with itself"
+    );
+    assert_eq!(TermSubst::default(), itself, "binding nothing");
+    let mut apart = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::unify_cmd(&var("x"), &var("y"), &mut apart)),
+        "two variables unify"
+    );
+    assert_eq!(
+        apart.apply_fully(&var("x")),
+        apart.apply_fully(&var("y")),
+        "by binding one to the other"
+    );
+    assert_ne!(TermSubst::default(), apart, "a binding is made");
+    let zero = Term::from(&ctor("Zero", []));
+    let mut under = TermSubst::default();
+    assert!(
+        bool::from(TermAlphabet::unify_cmd(&zero, &var("w"), &mut under)),
+        "a variable on the right unifies with a term on the left"
+    );
+    assert_eq!(zero, under.apply_fully(&var("w")), "binding it to the term");
 }
 
 /// #654: a match is applied once, all at once. Firing associativity at a term
