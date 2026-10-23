@@ -1,0 +1,3 @@
+/// `ImplicitTelescope`: an implicit telescope before a definition that takes no parameters.
+@[ refuses("ImplicitTelescope") ]
+def f @[a : Type] = 1;

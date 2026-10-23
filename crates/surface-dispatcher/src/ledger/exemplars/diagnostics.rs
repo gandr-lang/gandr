@@ -75,10 +75,6 @@ pub(super) const DIAGNOSTICS: &str = "diagnostics";
 /// The issue writing the exemplars of the lowering's unshown names.
 const LOWERING: Issue = Issue(1788);
 
-/// The issue letting a fixture state a refusal raised while its source is
-/// collected.
-const COLLECTED: Issue = Issue(1798);
-
 /// The issue letting a fixture state a type member's own refusal.
 const TYPE_MEMBER: Issue = Issue(1087);
 
@@ -114,7 +110,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 89_usize] = [
+const OWED: [(&str, Owed); 86_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -153,7 +149,6 @@ const OWED: [(&str, Owed); 89_usize] = [
             "a parsed tree holds only molds of the grammar that built it",
         )),
     ),
-    ("DuplicateImportAlias", Owed::Unwritten(COLLECTED)),
     (
         "MalformedLiteral",
         Owed::Unreachable(Reason(
@@ -165,7 +160,6 @@ const OWED: [(&str, Owed); 89_usize] = [
     ("UnreadAscription", Owed::Unwritten(MODULE_HEADER)),
     ("FamilyTelescope", Owed::Unwritten(TYPE_MEMBER)),
     ("LowercaseModuleName", Owed::Unwritten(MODULE_HEADER)),
-    ("ImplicitTelescope", Owed::Unwritten(COLLECTED)),
     ("RulesUndecided", Owed::Unwritten(LOWERING)),
     (
         "Unminted",
@@ -173,7 +167,6 @@ const OWED: [(&str, Owed); 89_usize] = [
             "the lowering mints a type or a body for every declaration it does not refuse",
         )),
     ),
-    ("OutOfFragment.Indexed", Owed::Unwritten(COLLECTED)),
     (
         "UnstatedComponent.Constructor",
         Owed::Unreachable(Reason(
