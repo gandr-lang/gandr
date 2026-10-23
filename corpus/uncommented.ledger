@@ -340,8 +340,6 @@ pending/model/sequent/sequent-focusing.gandr:<file>
 pending/model/sequent/sequent-focusing.gandr:pure_expression:6de0c2f5eee499e7
 pending/pathological/builtins/int-division-by-zero.gandr:<file>
 pending/pathological/builtins/int-division-by-zero.gandr:call_expression:cf10545043c7ccaa
-pending/pathological/data/head-uniformity-declined.gandr:<file>
-pending/pathological/data/head-uniformity-declined.gandr:Bad:41810f178392059e
 pending/pathological/desc/nonlinear-cell-refused.gandr:<file>
 pending/pathological/desc/nonlinear-cell-refused.gandr:Bit:6706cf12ff4c63a1
 pending/pathological/eliminator-answer-type-mismatch.gandr:<file>

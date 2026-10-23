@@ -3583,22 +3583,22 @@ pub fn lower_module<'source>(
 ///   [`LoweringRefusal::MalformedForm`] when the module's own shape is wrong —
 ///   a root that is not a module, a root child that is neither a declaration
 ///   nor an import, a declaration with no name, an import out of shape, or an
-///   attribute block decorating nothing;
-///   [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one alias;
-///   [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold; and
-///   [`LoweringRefusal::BudgetExceeded`] when the work outruns `budget`. A
-///   refusal inside a declaration is carried by that declaration instead —
-///   [`LoweringRefusal::ShadowedBuiltin`], a declared name or a binder over a
-///   builtin under the reject policy, included — so one bad declaration does
-///   not hide the rest of the module.
+///   attribute block decorating nothing; [`LoweringRefusal::UnknownMold`] for a
+///   mold `pbg` does not hold; and [`LoweringRefusal::BudgetExceeded`] when the
+///   work outruns `budget`. A refusal inside a declaration is carried by that
+///   declaration instead — [`LoweringRefusal::ShadowedBuiltin`], a declared
+///   name or a binder over a builtin under the reject policy, included — and a
+///   second import of one alias by that import,
+///   [`LoweringRefusal::DuplicateImportAlias`], so one bad declaration does not
+///   hide the rest of the module.
 /// - panics: none. Every tree lookup is checked and a position the tree does
 ///   not hold contributes nothing.
 ///
 /// # Errors
 /// [`LoweringRefusal::GrammarMismatch`] for a tree of another grammar,
-/// [`LoweringRefusal::OutOfFragment`], [`LoweringRefusal::MalformedForm`] and
-/// [`LoweringRefusal::DuplicateImportAlias`] for a module whose own shape is
-/// not a list of declarations and well-formed imports,
+/// [`LoweringRefusal::OutOfFragment`] and [`LoweringRefusal::MalformedForm`]
+/// for a module whose own shape is not a list of declarations and well-formed
+/// imports,
 /// [`LoweringRefusal::UnknownMold`] for a foreign mold, and
 /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
 ///
@@ -16318,22 +16318,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// The key of the form that wrote a half of `slot`'s name a second time,
-    /// when that repetition is the slot's refusal.
+    /// The key of the declaration form `slot`'s refusal was raised at while it
+    /// was collected, when no half of the slot is written there.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the key at the refusing node when the slot's refusal is a
-    ///   duplicate signature or definition; absent otherwise.
+    ///   duplicate signature or definition, or was raised at a `def` form no
+    ///   half of the slot is written at — a form refused before it wrote one;
+    ///   absent otherwise.
+    /// - provides: the key the attributes of a form refused at collection are
+    ///   filed under, which the corpus reads its expectation off (#1798).
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module defining one member twice keys its second
-    ///   definition, which no half reaches.
+    ///   definition, which no half reaches, and a name written once keys none;
+    ///   the corpus's settlement of a form refused at collection exercises the
+    ///   other arm.
     /// - witness: `lower::tests::a_duplicate_definition_is_keyed_at_its_form`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == matches!(slot.refusal, Maybe::Present((_, LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateSignature { .. }))))]
-    fn duplicate_key(
+    #[spec(ensures: |ret| ret == match slot.refusal {
+        Maybe::Present((at, LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateSignature { .. })) => Maybe::Present(self.key_at(at)),
+        Maybe::Present((at, _)) => self.form_refused_at(slot, at),
+        Maybe::Absent(_) => Maybe::Absent(declaration_half::Absent::Unwritten),
+    })]
+    fn refused_form_key(
         &self,
         slot: &DeclarationSlot<'source>,
     ) -> Maybe<UnitKey, declaration_half::Absent>
@@ -16344,9 +16354,39 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 LoweringRefusal::DuplicateDefinition { .. }
                 | LoweringRefusal::DuplicateSignature { .. },
             )) => Maybe::Present(self.key_at(at)),
-            Maybe::Present(_) | Maybe::Absent(_) => {
-                Maybe::Absent(declaration_half::Absent::Unwritten)
-            },
+            Maybe::Present((at, _)) => self.form_refused_at(slot, at),
+            Maybe::Absent(_) => Maybe::Absent(declaration_half::Absent::Unwritten),
+        }
+    }
+
+    /// The key of `at` when it is a `def` form of `slot` that no half of it
+    /// is written at: a form refused while it was collected.
+    ///
+    /// # Specification
+    /// trivial.
+    fn form_refused_at(
+        &self,
+        slot: &DeclarationSlot<'source>,
+        at: NodeIndex,
+    ) -> Maybe<UnitKey, declaration_half::Absent>
+    {
+        let halved = [slot.signature, slot.definition]
+            .into_iter()
+            .any(|half| matches!(half, Maybe::Present(half) if half.declaration.node == at));
+        let form = self.tree.node(at).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::Declaration,
+                    ..
+                })
+            )
+        });
+        if form && !halved {
+            Maybe::Present(self.key_at(at))
+        }
+        else {
+            Maybe::Absent(declaration_half::Absent::Unwritten)
         }
     }
 
@@ -16448,7 +16488,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             row.named(),
                             row.signature(),
                             row.definition(),
-                            row.duplicate(),
+                            row.refused_form(),
                             row.outcome(),
                             origins.declaration(row.origin()),
                         )
@@ -16467,7 +16507,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                     .map(|half| self.key_at(half.declaration.node)),
                                 slot.definition
                                     .map(|half| self.key_at(half.declaration.node)),
-                                self.duplicate_key(slot),
+                                self.refused_form_key(slot),
                                 outcome,
                                 Maybe::Present(Origin::new(
                                     slot.introduced_by.node,
@@ -16505,7 +16545,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 definition: slot
                     .definition
                     .map(|half| self.key_at(half.declaration.node)),
-                duplicate: self.duplicate_key(slot),
+                refused_form: self.refused_form_key(slot),
                 halves: Halves {
                     signature: slot.signature.map(half_at),
                     definition: slot.definition.map(half_at),
@@ -23956,13 +23996,13 @@ mod tests
             twice.outcome()
         );
         let (Maybe::Present(first), Maybe::Present(second)) =
-            (twice.definition(), twice.duplicate())
+            (twice.definition(), twice.refused_form())
         else {
             panic!("the first definition and the repetition are both keyed");
         };
         assert_ne!(first, second, "the repetition is keyed at its own form");
         assert!(
-            matches!(once.duplicate(), Maybe::Absent(_)),
+            matches!(once.refused_form(), Maybe::Absent(_)),
             "a name written once keys no repetition"
         );
     }

@@ -391,7 +391,8 @@ pub enum Composed<'source>
         /// declarations carry.
         exercised: Exercised,
         /// The refusals no expectation can state, in admission order: each
-        /// declaration the lowering refused at its own form files no half,
+        /// declaration the lowering refused with no form of its own keyed —
+        /// a slot held for a component or a module that declares nothing —
         /// so no attribute can be read off it.
         unstatable: Vec<LoweringRefusal<'source>>,
         /// Every core node the lowering minted, mapped back to the syntax
@@ -2367,7 +2368,7 @@ struct Share<'source>
     report: SettleReport<'source>,
     /// The exercised rows its settled declarations carry.
     exercised: Exercised,
-    /// Its declarations refused at their own form.
+    /// Its refusals no expectation can state.
     unstatable: Vec<LoweringRefusal<'source>>,
     /// The types the unit's checker refusals compare and its failures name.
     spellings: TypeSpellings,
@@ -2615,7 +2616,7 @@ where
 #[derive(Debug)]
 struct Unitwide<'source>
 {
-    /// The unit's declarations refused at their own form.
+    /// The unit's refusals no expectation can state.
     unstatable: Vec<LoweringRefusal<'source>>,
     /// The runs the checker inferred over the unit.
     runs: Vec<InferredRun>,
@@ -3207,8 +3208,8 @@ fn elaborated(
     captures: [
         expected_declarations = module.declarations().len(),
         expected_unstatable = module.declarations().iter().filter(|declaration|
-            matches!((declaration.outcome(), declaration.signature(), declaration.definition()),
-                (DeclarationOutcome::Refused(_), Maybe::Absent(_), Maybe::Absent(_))))
+            matches!((declaration.outcome(), declaration.signature(), declaration.definition(), declaration.refused_form()),
+                (DeclarationOutcome::Refused(_), Maybe::Absent(_), Maybe::Absent(_), Maybe::Absent(_))))
             .count(),
     ],
     ensures: |ref ret| match *ret {
@@ -3345,28 +3346,33 @@ pub fn judge_lowering<'source>(
     }
 }
 
-/// The refusals of declarations refused at their own form, in admission order.
+/// The refusals of declarations refused where no form of theirs is keyed, in
+/// admission order.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: retains exactly the refusal of each declaration with neither a
-///   signature nor a definition, in the module's order; other declarations
-///   contribute nothing.
+///   signature, a definition nor a form refused at collection keyed — a slot
+///   held for a component or a module that declares nothing — in the module's
+///   order; other declarations contribute nothing. A form refused at collection
+///   files its attributes under its own key, so its expectation is read
+///   (#1798).
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — refused forms surround a refused body and an admitted
-///   definition; exact refusal values and their distinct spans distinguish
-///   inclusion, omission and reversal. This covers the admission-order filter,
-///   not the lowering's reasons for rejecting arbitrary syntax.
+/// - hypothesis: L3 — a held component refusal surrounded by a refused form, a
+///   refused body and an admitted definition; exact refusal values and their
+///   distinct spans distinguish inclusion, omission and reversal. This covers
+///   the admission-order filter, not the lowering's reasons for rejecting
+///   arbitrary syntax.
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
 /// - witness: `compose::tests::form_refusals_retain_admission_order`
 #[spec(ensures: |ref ret| {
     let mut selected = ret.iter();
     module.declarations().iter().all(|declaration| {
-        match (declaration.outcome(), declaration.signature(), declaration.definition()) {
-            (DeclarationOutcome::Refused(refusal), Maybe::Absent(_), Maybe::Absent(_)) =>
+        match (declaration.outcome(), declaration.signature(), declaration.definition(), declaration.refused_form()) {
+            (DeclarationOutcome::Refused(refusal), Maybe::Absent(_), Maybe::Absent(_), Maybe::Absent(_)) =>
                 selected.next() == Some(&refusal),
             _ => true,
         }
@@ -3378,12 +3384,21 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
         .declarations()
         .iter()
         .filter_map(|lowered| {
-            match (lowered.outcome(), lowered.signature(), lowered.definition()) {
-                (DeclarationOutcome::Refused(refusal), Maybe::Absent(_), Maybe::Absent(_)) => {
-                    Some(refusal)
-                },
-                (DeclarationOutcome::Refused(_), Maybe::Present(_), _)
-                | (DeclarationOutcome::Refused(_), _, Maybe::Present(_))
+            match (
+                lowered.outcome(),
+                lowered.signature(),
+                lowered.definition(),
+                lowered.refused_form(),
+            ) {
+                (
+                    DeclarationOutcome::Refused(refusal),
+                    Maybe::Absent(_),
+                    Maybe::Absent(_),
+                    Maybe::Absent(_),
+                ) => Some(refusal),
+                (DeclarationOutcome::Refused(_), Maybe::Present(_), ..)
+                | (DeclarationOutcome::Refused(_), _, Maybe::Present(_), _)
+                | (DeclarationOutcome::Refused(_), _, _, Maybe::Present(_))
                 | (
                     DeclarationOutcome::Completed { .. }
                     | DeclarationOutcome::Uncompleted { .. }
@@ -4686,7 +4701,8 @@ def wrong = "text" ;"#,
             SourceText::from(
                 r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;
 @[ refuses("UnresolvedName") ] def g = missing ;
-def h = 1 ;"#,
+def h = 1 ;
+module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
             ),
             &mut lowerings,
         );
@@ -4698,23 +4714,32 @@ def h = 1 ;"#,
         };
         assert!(
             matches!(unstatable.as_slice(), [
-                LoweringRefusal::ImplicitTelescope { .. }
+                LoweringRefusal::UnknownMember { .. }
             ]),
-            "the implicit telescope is refused at its own form, and only it"
+            "the component no member supplies is held with no form keyed, and only it: \
+             {unstatable:?}"
         );
-        let settlements: Vec<Settlement> = report
+        let settlements: Vec<(String, Settlement)> = report
             .declarations()
             .iter()
-            .map(gandr_surface_corpus::DeclarationReport::settlement)
+            .map(|declaration| {
+                (
+                    String::from(declaration.name().as_ref()),
+                    declaration.settlement(),
+                )
+            })
             .collect();
         assert_eq!(
             settlements,
             vec![
-                Settlement::Unsettled,
-                Settlement::Settled,
-                Settlement::Settled
+                (String::from("f"), Settlement::Settled),
+                (String::from("g"), Settlement::Settled),
+                (String::from("h"), Settlement::Settled),
+                (String::from("x"), Settlement::Settled),
+                (String::from("z"), Settlement::Unsettled),
             ],
-            "the refused form's expectation cannot be read; a refused body's can"
+            "a form refused at collection states its refusal (#1798), as a refused body \
+             does; the held component cannot"
         );
     }
 
@@ -5273,10 +5298,10 @@ def h = 1 ;"#,
     {
         let grammar = grammar();
         let source = SourceText::from(
-            "def first @[a : Type] = 1 ;\n\
+            "module A : #{ x: Integer, p: Integer } { def x = 1; }\n\
              def broken = missing ;\n\
              def value = 3 ;\n\
-             def last @[a : Type] = 1 ;",
+             module B : #{ y: Integer, q: Integer } { def y = 1; }",
         );
         let mut lowerings = LoweringCount::default();
         let Lowered::Module { module, .. } = lower_source(&grammar, source, &mut lowerings)
@@ -5285,18 +5310,24 @@ def h = 1 ;"#,
         else {
             panic!("individual forms do not refuse the whole source");
         };
-        let [ref first, _, _, ref last] = *module.declarations()
+        let held: Vec<LoweringRefusal<'_>> = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let DeclarationOutcome::Refused(refusal) = declaration.outcome()
+                else {
+                    return None;
+                };
+                matches!(refusal, LoweringRefusal::UnknownMember { .. }).then_some(refusal)
+            })
+            .collect();
+        let [first, last] = *held.as_slice()
         else {
-            panic!("the four declarations retain their admission positions");
-        };
-        let (DeclarationOutcome::Refused(first), DeclarationOutcome::Refused(last)) =
-            (first.outcome(), last.outcome())
-        else {
-            panic!("the implicit telescopes are outside the fragment");
+            panic!("each module holds its missing component: {held:?}");
         };
         assert_ne!(
             first, last,
-            "the two refused forms have distinct source spans"
+            "the two held components have distinct source spans"
         );
         assert_eq!(super::unstatable(&module).as_slice(), &[first, last]);
     }

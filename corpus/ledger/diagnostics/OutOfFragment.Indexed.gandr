@@ -1,0 +1,5 @@
+/// `OutOfFragment.Indexed`: a generator whose result reads its family at an index its header declares as a parameter.
+@[ refuses("OutOfFragment.Indexed") ]
+data Bad(a : Type) : Type {
+  Mk : Bad(Integer);
+}

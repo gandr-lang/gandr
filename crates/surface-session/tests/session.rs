@@ -671,11 +671,11 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
         "import \"file:///lib/parse.gandr\" as parse ;\nimport \"file:///lib/list.gandr\" as list_ext ;\nimport \"file:///lib/other.gandr\" as parse ;",
     );
     assert!(
-        matches!(
-            duplicate.composed(),
-            Composed::Refused(LoweringRefusal::DuplicateImportAlias { .. })
-        ),
-        "a later line cannot silently replace an import alias: {:?}",
+        rows(duplicate.composed())
+            .iter()
+            .any(|row| row.0 == "import"
+                && row.1 == Outcome::Refuses(RefusalName::DuplicateImportAlias)),
+        "a later line cannot silently replace an import alias: the import is refused: {:?}",
         duplicate.composed()
     );
     let uri = |path: &NamePath| {

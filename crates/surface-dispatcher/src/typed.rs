@@ -2012,7 +2012,7 @@ impl TypeTable
             for key in [
                 declaration.signature(),
                 declaration.definition(),
-                declaration.duplicate(),
+                declaration.refused_form(),
             ] {
                 if let Maybe::Present(key) = key
                     && key.source() == own_source

@@ -33,16 +33,16 @@
 //!
 //! # The pending set
 //!
-//! A source under `fixture/pending/` carries a refusal no expectation can
-//! state: the lowering refused it as a whole, or refused one of its
-//! declarations at the declaration's own form, which files no half an attribute
-//! could be read off. `Composed::Settled` carries such refusals as
-//! `unstatable`. A pending source carrying either is `Standing::Pending`:
-//! counted, its declarations not settled, and printed by `test`. A pending
-//! source carrying neither is `Standing::Lowered` and unsettles the run,
-//! because every expectation it needs can be written and it belongs under the
-//! fixture root. `gandr-surface-corpus`'s `root` module describes the set it
-//! holds.
+//! A source under `pending/` carries a refusal no expectation can state: the
+//! lowering refused it as a whole, or refused one of its declarations with no
+//! form of the declaration keyed — a slot held for a module component or a
+//! module member — so no attribute can be read off it. `Composed::Settled`
+//! carries such refusals as `unstatable`. A pending source carrying either is
+//! `Standing::Pending`: counted, its declarations not settled, and printed by
+//! `test`. A pending source carrying neither is `Standing::Lowered` and
+//! unsettles the run, because every expectation it needs can be written and it
+//! belongs under the fixture root. `gandr-surface-corpus`'s `root` module
+//! describes the set it holds.
 //!
 //! The alternative was a `pending` attribute, which the lowering could not read
 //! for either kind of refusal. The choice reverses when every refusal can carry
