@@ -446,7 +446,9 @@ impl<'run, 'host> Calls<'run, 'host>
             {
                 Some(&Literal::Integer(ref integer)) => Ok(Scalar::Integer(integer.clone())),
                 Some(&Literal::Text(ref text)) => Ok(Scalar::Text(text.clone())),
-                Some(&Literal::Numeric(_)) | None => Err(Refusal::Operands),
+                Some(&(Literal::Numeric(_) | Literal::Character(_))) | None => {
+                    Err(Refusal::Operands)
+                },
             },
             Ok(Kind::Injection) if usize::from(header.arity()) == 1 => {
                 // SAFETY: an injection holds its one field after its header.
@@ -1558,7 +1560,7 @@ impl Laying<'_>
             HeapValue::Literal(ref literal) => {
                 let bits = match *literal {
                     Literal::Integer(ref integer) => integer_word(integer),
-                    Literal::Text(_) | Literal::Numeric(_) => None,
+                    Literal::Text(_) | Literal::Numeric(_) | Literal::Character(_) => None,
                 };
                 if let Some(bits) = bits {
                     Vec::from([header(Kind::Integer, 0, 1, Family::UNNAMED)?, bits])

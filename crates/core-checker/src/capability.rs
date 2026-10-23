@@ -403,6 +403,7 @@ pub fn authorise(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::Integer
         | ValueTypeView::String
+        | ValueTypeView::Character
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }

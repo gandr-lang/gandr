@@ -264,6 +264,8 @@ struct Atoms
     integer: FormedValueType,
     /// The string atom.
     string: FormedValueType,
+    /// The character atom.
+    character: FormedValueType,
 }
 
 /// Which atom a leaf rule synthesises.
@@ -276,6 +278,8 @@ pub enum Atom
     Integer,
     /// The string atom, for a string literal.
     String,
+    /// The character atom, for a character literal.
+    Character,
 }
 
 /// An abstract type the context admitted, with the level of the universe it
@@ -644,11 +648,11 @@ impl<'arena> CheckingContext<'arena>
     ///   bounds no held capability by a grant.
     /// - provides: the context every face and the declaration check run in.
     /// - panics: none.
-    /// - intension: mints three value-type nodes into `arena` — the unit type,
-    ///   the integer atom and the string atom — which every literal and unit
-    ///   rule then hands out; the judgement mints the types it rewrites — a
-    ///   codomain shifted under a binder, instantiated at an argument, or
-    ///   decoded from a quote — into the same arena.
+    /// - intension: mints four value-type nodes into `arena` — the unit type,
+    ///   the integer atom, the string atom and the character atom — which every
+    ///   literal and unit rule then hands out; the judgement mints the types it
+    ///   rewrites — a codomain shifted under a binder, instantiated at an
+    ///   argument, or decoded from a quote — into the same arena.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fresh context synthesises the three rigid atoms and
@@ -681,6 +685,7 @@ impl<'arena> CheckingContext<'arena>
             unit: FormedValueType::derived(arena.value_type_unit()),
             integer: FormedValueType::derived(arena.value_type_base(BaseType::Integer)),
             string: FormedValueType::derived(arena.value_type_base(BaseType::String)),
+            character: FormedValueType::derived(arena.value_type_base(BaseType::Character)),
         };
         Self {
             arena,
@@ -3490,6 +3495,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::List(_)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
+                | ValueTypeView::Character
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Universe { .. }
@@ -3805,6 +3811,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Buffer
                     | ValueTypeView::Integer
                     | ValueTypeView::String
+                    | ValueTypeView::Character
                     | ValueTypeView::Unit
                     | ValueTypeView::Thunk(_)
                     | ValueTypeView::Lift { .. }
@@ -4127,6 +4134,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             Atom::Unit => self.atoms.unit,
             Atom::Integer => self.atoms.integer,
             Atom::String => self.atoms.string,
+            Atom::Character => self.atoms.character,
         }
     }
 

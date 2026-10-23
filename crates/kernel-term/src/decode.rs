@@ -48,6 +48,7 @@ use crate::arena::TermArena;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::base::BaseType;
+use crate::base::CharacterLiteral;
 use crate::base::FractionDigits;
 use crate::base::IntegerLiteral;
 use crate::base::Literal;
@@ -4444,7 +4445,7 @@ fn build_variable_atom(
     captures: start = reader.position,
     ensures: |ret| { let byte = reader.image.byte_at(start).map(u8::from);
         reader.position.0 == start.0.saturating_add(usize::from(byte.is_some()))
-            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
+            && match byte { Some(0) => ret.as_ref() == Ok(&BaseType::Integer), Some(1) => ret.as_ref() == Ok(&BaseType::String), Some(2) => ret.as_ref() == Ok(&BaseType::Numeric), Some(3) => ret.as_ref() == Ok(&BaseType::Character), Some(other) => ret.as_ref() == Err(&DecodeError::UnknownTag { site: TagSite::BaseType, tag: WireTag::from(other) }), None => ret.as_ref() == Err(&DecodeError::Truncated) } },
 )]
 #[inline]
 fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError>
@@ -4454,6 +4455,7 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
         tags::BASE_INTEGER => Ok(BaseType::Integer),
         tags::BASE_STRING => Ok(BaseType::String),
         tags::BASE_NUMERIC => Ok(BaseType::Numeric),
+        tags::BASE_CHARACTER => Ok(BaseType::Character),
         other => Err(DecodeError::UnknownTag {
             site: TagSite::BaseType,
             tag: other,
@@ -4552,8 +4554,10 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
 /// - provides: the only path from bytes to a literal, so a non-canonical
 ///   payload cannot enter the term language: the constructor canonicalizes and
 ///   the canonical-form comparison then refuses the original bytes.
-/// - fails: the payload reads' own failures, and [`DecodeError::UnknownTag`] at
-///   the literal-kind site on any other kind byte.
+/// - fails: the payload reads' own failures, [`DecodeError::Malformed`] at the
+///   literal-payload site for a character payload that is not exactly one
+///   scalar, and [`DecodeError::UnknownTag`] at the literal-kind site on any
+///   other kind byte.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -4585,7 +4589,10 @@ fn decode_seam(reader: &mut ByteReader<'_>) -> Result<crate::Seam, DecodeError>
             && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) }, Literal::Numeric(ref value) => kind == Some(2)
             && if value.integer_part().as_ref() == "0"
             && value.fraction().as_ref().is_empty() { value.sign() == Sign::NonNegative }
-        else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) } } }),
+        else { sign == Some(match value.sign() { Sign::NonNegative => 0, Sign::Negative => 1 }) }, Literal::Character(ref value) => { let text = value.to_text();
+        kind == Some(3)
+            && reader.position.0 == start.0.saturating_add(2).saturating_add(text.len())
+            && reader.image.as_ref().get(reader.position.0.saturating_sub(text.len()) .. reader.position.0) == Some(text.as_bytes()) } } }),
 )]
 fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
@@ -4609,6 +4616,14 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
                 integer_part,
                 fraction,
             )))
+        },
+        tags::LITERAL_CHARACTER => {
+            let content = reader.read_text(MalformedSite::LiteralPayload)?;
+            let character =
+                CharacterLiteral::try_from(content).map_err(|_not_one| DecodeError::Malformed {
+                    site: MalformedSite::LiteralPayload,
+                })?;
+            Ok(Literal::Character(character))
         },
         other => Err(DecodeError::UnknownTag {
             site: TagSite::LiteralKind,
@@ -4937,6 +4952,7 @@ mod tests
                 0 => Ok(super::BaseType::Integer),
                 1 => Ok(super::BaseType::String),
                 2 => Ok(super::BaseType::Numeric),
+                3 => Ok(super::BaseType::Character),
                 _ => Err(unknown(super::TagSite::BaseType)),
             };
             assert_eq!(super::decode_base_type(&mut reader), base);
@@ -4989,7 +5005,7 @@ mod tests
                 _ => Err(unknown(super::TagSite::DeclarationKind)),
             };
             assert_eq!(super::declaration_kind(super::WireTag::from(byte)), kind);
-            if byte > 2 {
+            if byte > 3 {
                 let mut reader = ByteReader::new(ArtifactImage::from(bytes.as_slice()));
                 assert_eq!(
                     super::decode_literal(&mut reader),
@@ -5635,6 +5651,33 @@ mod tests
         };
         assert_eq!(value.as_ref(), "é\0a");
         assert_eq!(reader.position.0, text.len());
+        let character = [3_u8, 2, 0xc3, 0xa9];
+        let mut reader = ByteReader::new(ArtifactImage::from(character.as_slice()));
+        assert_eq!(
+            super::decode_literal(&mut reader),
+            Ok(super::Literal::Character(super::CharacterLiteral::from(
+                'é'
+            )))
+        );
+        assert_eq!(reader.position.0, character.len());
+        let accepted = literal_artifact(3, &character);
+        assert_eq!(
+            super::decode(ArtifactImage::from(accepted.as_slice()))
+                .expect("a character at the character atom")
+                .declarations()
+                .len(),
+            1
+        );
+        for payload in [&[3_u8, 0][..], &[3_u8, 2, b'a', b'b'][..]] {
+            let mut reader = ByteReader::new(ArtifactImage::from(payload));
+            assert_eq!(
+                super::decode_literal(&mut reader),
+                Err(DecodeError::Malformed {
+                    site: MalformedSite::LiteralPayload
+                }),
+                "a character payload of no scalar or of two is refused"
+            );
+        }
         for text in [
             &[0_u8][..],
             &[1_u8, b'+'][..],

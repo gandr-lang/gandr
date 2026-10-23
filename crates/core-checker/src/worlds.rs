@@ -947,6 +947,7 @@ pub(crate) fn crosses(
         match value_type_view(context.arena(), head)? {
             ValueTypeView::Integer
             | ValueTypeView::String
+            | ValueTypeView::Character
             | ValueTypeView::Unit
             | ValueTypeView::Unknown => {},
             ValueTypeView::Product(parts) | ValueTypeView::Sum(parts) => {

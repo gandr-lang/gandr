@@ -2874,6 +2874,40 @@ fn every_value_leaf_spells_as_the_surface_writes_it()
     }
 }
 
+/// A character spells between single quotes, each of the escapes the
+/// lowering decodes written as that escape and every other scalar, a
+/// double quote and a multibyte one among them, as itself.
+#[test]
+fn a_character_spells_as_the_literal_it_lowers_from()
+{
+    let mut core = CoreArena::new();
+    let rows = [
+        ('a', "'a'"),
+        ('"', "'\"'"),
+        ('é', "'é'"),
+        ('\'', r"'\''"),
+        ('\\', r"'\\'"),
+        ('\n', r"'\n'"),
+        ('\t', r"'\t'"),
+        ('\r', r"'\r'"),
+        ('\0', r"'\0'"),
+    ];
+    let leaves = rows.map(|(scalar, _)| {
+        let value = core.value_literal(Literal::Character(
+            gandr_kernel_term::CharacterLiteral::from(scalar),
+        ));
+        normal_form(&mut core, value)
+    });
+    let source = CoreSource::new(&core, &[]);
+    for (root, (scalar, expected)) in leaves.into_iter().zip(rows) {
+        assert_eq!(
+            spelled(&source, Root::Value(root)),
+            faithful(Written(expected)),
+            "{scalar:?} spells as the surface writes it"
+        );
+    }
+}
+
 /// A former reads each child at the sort it takes, and a node the printer
 /// cannot read spells `?` at exactly that node: `+U` over a value type,
 /// `-F` over a computation type, an arrow from a computation type, a term

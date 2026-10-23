@@ -1619,6 +1619,7 @@ impl Reader<'_, '_>
                         let ty = match (label.as_ref(), text) {
                             (_, "Integer") => ValueTypeRef::prim(PrimTy::Integer),
                             (_, "String") => ValueTypeRef::prim(PrimTy::StringTy),
+                            (_, "Char") => ValueTypeRef::prim(PrimTy::Char),
                             (_, "Boolean") => ValueTypeRef::prim(PrimTy::Boolean),
                             (_, "Unit") => ValueTypeRef::prim(PrimTy::Unit),
                             ("type_variable", _) => ValueTypeRef::param(text),

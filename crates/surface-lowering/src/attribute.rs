@@ -1060,7 +1060,8 @@ pub const fn payload_form(former: Former) -> PayloadForm
         Former::Number => PayloadForm::Integer,
         Former::Text => PayloadForm::Text,
         Former::Name => PayloadForm::Word,
-        Former::Hole
+        Former::Character
+        | Former::Hole
         | Former::Binary
         | Former::Unary
         | Former::Constructor

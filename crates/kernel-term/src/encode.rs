@@ -1918,8 +1918,9 @@ fn encode_level(
 /// - requires: `literal` is canonical, which its constructors are the only way
 ///   to obtain.
 /// - ensures: appends the kind tag, then the payload each kind owes — a sign
-///   tag and digits for an integer, text for a string, and a sign tag with
-///   integral and fractional digits for a numeric.
+///   tag and digits for an integer, text for a string, a sign tag with integral
+///   and fractional digits for a numeric, and the scalar's UTF-8 text for a
+///   character.
 /// - provides: the literal's byte image; since the payload is canonical, two
 ///   literals agree on bytes exactly when they denote the same value.
 /// - panics: none.
@@ -1947,7 +1948,11 @@ fn encode_level(
             && bytes.ends_with(text.as_ref().as_bytes()), Literal::Numeric(ref numeric) => bytes.get(start).copied() == Some(u8::from(tags::LITERAL_NUMERIC))
             && bytes.get(start.saturating_add(1)).copied() == Some(u8::from(sign_tag(numeric.sign())))
             && bytes.len() == start.saturating_add(2).saturating_add(usize::try_from(64_u32.saturating_sub((u64::try_from((numeric.integer_part().as_ref()).len()).unwrap_or(u64::MAX)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX).saturating_add((numeric.integer_part().as_ref()).len())).saturating_add(usize::try_from(64_u32.saturating_sub((u64::try_from((numeric.fraction().as_ref()).len()).unwrap_or(u64::MAX)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX).saturating_add((numeric.fraction().as_ref()).len()))
-            && bytes.ends_with(numeric.fraction().as_ref().as_bytes()) } },
+            && bytes.ends_with(numeric.fraction().as_ref().as_bytes()), Literal::Character(ref character) => { let text = character.to_text();
+        bytes.get(start).copied() == Some(u8::from(tags::LITERAL_CHARACTER))
+            && bytes.get(start.saturating_add(1)).copied().map(usize::from) == Some(text.len())
+            && bytes.len() == start.saturating_add(2).saturating_add(text.len())
+            && bytes.ends_with(text.as_bytes()) } } },
 )]
 fn encode_literal(
     out: &mut EncodedArtifact,
@@ -1973,6 +1978,11 @@ fn encode_literal(
             encode_text(out, ArtifactText::from(integer.as_str()));
             let fraction = numeric.fraction().to_digits();
             encode_text(out, ArtifactText::from(fraction.as_str()));
+        },
+        Literal::Character(ref character) => {
+            out.put_tag(tags::LITERAL_CHARACTER);
+            let content = character.to_text();
+            encode_text(out, ArtifactText::from(content.as_str()));
         },
     }
 }
@@ -2025,7 +2035,7 @@ fn encode_text(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: maps each of the three base-type atoms to its frozen tag.
+/// - ensures: maps each of the four base-type atoms to its frozen tag.
 /// - provides: the total atom-to-tag map, so a base type's byte is decided in
 ///   one place rather than at each write site.
 /// - panics: none.
@@ -2049,7 +2059,7 @@ fn encode_text(
 /// - witness: `encode::tests::text_and_literals_match_literal_wire_fixtures`
 /// - witness: `encode::tests::levels_and_interfaces_match_literal_wire_fixtures`
 #[spec(
-    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC },
+    ensures: |ret| ret == match base { BaseType::Integer => tags::BASE_INTEGER, BaseType::String => tags::BASE_STRING, BaseType::Numeric => tags::BASE_NUMERIC, BaseType::Character => tags::BASE_CHARACTER },
 )]
 #[inline]
 fn base_type_tag(base: BaseType) -> WireTag
@@ -2058,6 +2068,7 @@ fn base_type_tag(base: BaseType) -> WireTag
         BaseType::Integer => tags::BASE_INTEGER,
         BaseType::String => tags::BASE_STRING,
         BaseType::Numeric => tags::BASE_NUMERIC,
+        BaseType::Character => tags::BASE_CHARACTER,
     }
 }
 
@@ -2278,6 +2289,14 @@ mod tests
                     FractionDigits::none(),
                 )),
                 &[2, 0, 1, b'0', 0],
+            ),
+            (
+                Literal::Character(crate::base::CharacterLiteral::from('a')),
+                &[3, 1, b'a'],
+            ),
+            (
+                Literal::Character(crate::base::CharacterLiteral::from('𐐀')),
+                &[3, 4, 0xf0, 0x90, 0x90, 0x80],
             ),
         ];
         let mut expected: Vec<u8> = Vec::new();

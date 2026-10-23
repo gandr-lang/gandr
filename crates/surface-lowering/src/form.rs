@@ -771,6 +771,8 @@ pub enum Former
     Boolean,
     /// A string literal.
     Text,
+    /// A character literal, `'a'` or `'\n'`.
+    Character,
     /// The parenthesised expression: a grouping, the reserved tuple or an
     /// annotation, told apart by its own tiles; empty, it is refused.
     Parenthesized,
@@ -1084,6 +1086,7 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("number", Former::Number),
     ("boolean", Former::Boolean),
     ("string", Former::Text),
+    ("character", Former::Character),
     ("parenthesized_expression", Former::Parenthesized),
     ("type_quote_expression", Former::TypeQuote),
     ("unit", Former::Unit),
@@ -1166,7 +1169,6 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     // Realised by the grammar, declined by the lowering.
     ("as_pattern", Former::Unadmitted(Unbuilt::AsPattern)),
     ("bind_expression", Former::Unadmitted(Unbuilt::Bind)),
-    ("character", Former::Unadmitted(Unbuilt::Character)),
     ("circuit_declaration", Former::Unadmitted(Unbuilt::Circuit)),
     ("co_expression", Former::Unadmitted(Unbuilt::CoBundle)),
     ("codata_declaration", Former::Unadmitted(Unbuilt::Codata)),

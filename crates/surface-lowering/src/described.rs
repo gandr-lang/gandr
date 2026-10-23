@@ -2138,7 +2138,11 @@ impl LoweredModule<'_>
         let mut codatas: BTreeMap<Name, (ConstantIndex, &CodataSignature)> = BTreeMap::new();
         let mut kinds: BTreeMap<ConstantIndex, ValueTypeId> = BTreeMap::new();
         let base = typer.universe(Level::zero());
-        for (name, atom) in [("Integer", BaseType::Integer), ("String", BaseType::String)] {
+        for (name, atom) in [
+            ("Integer", BaseType::Integer),
+            ("String", BaseType::String),
+            ("Char", BaseType::Character),
+        ] {
             let ty = typer.arena.value_type_base(atom);
             let _first = families.insert(Name::from(name), (ty, base));
         }

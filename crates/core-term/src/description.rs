@@ -729,8 +729,8 @@ fn parameter_value(
 /// Interpret supported primitives without inventing opaque substitutes.
 ///
 /// # Specification
-/// - ensures: Integer, String and Unit retain their native types; Boolean is
-///   the canonical sum of two units.
+/// - ensures: Integer, String, Char and Unit retain their native types; Boolean
+///   is the canonical sum of two units.
 /// - fails: every other primitive returns `Primitive` with its exact tag.
 /// - panics: none.
 ///
@@ -741,6 +741,7 @@ fn parameter_value(
 /// - hypothesis: L3 — each supported primitive and every unsupported tag is
 ///   observed independently; Boolean's two summands are units.
 /// - witness: `description::tests::decode_boolean_retrofits_to_one_plus_one`
+/// - witness: `description::tests::decode_reads_char_as_the_character_atom`
 /// - witness: `description::tests::decode_declines_the_deferred_leaves`
 #[spec(ensures: |result| result.as_ref().map_or(true, |id| arena.value_type(*id).is_some()))]
 fn decode_primitive(
@@ -751,13 +752,13 @@ fn decode_primitive(
     match primitive {
         PrimTy::Integer => Ok(arena.value_type_base(BaseType::Integer)),
         PrimTy::StringTy => Ok(arena.value_type_base(BaseType::String)),
+        PrimTy::Char => Ok(arena.value_type_base(BaseType::Character)),
         PrimTy::Unit => Ok(arena.value_type_unit()),
         PrimTy::Boolean => {
             let unit = arena.value_type_unit();
             Ok(arena.value_type_sum(&[unit, unit]))
         },
-        PrimTy::Char
-        | PrimTy::U32
+        PrimTy::U32
         | PrimTy::U64
         | PrimTy::I32
         | PrimTy::I64

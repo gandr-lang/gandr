@@ -641,6 +641,7 @@ fn structural_rendering_preserves_fields_arms_and_separators()
 #[test]
 fn literal_spelling_preserves_fraction_and_escaped_content()
 {
+    use gandr_kernel_term::CharacterLiteral;
     use gandr_kernel_term::FractionDigits;
     use gandr_kernel_term::NumericLiteral;
     use gandr_kernel_term::StringLiteral;
@@ -676,6 +677,10 @@ fn literal_spelling_preserves_fraction_and_escaped_content()
             Literal::Text(StringLiteral::new(String::from("λ\n\t\"\\\0"))),
             r#""λ\n\t\"\\\0""#,
         ),
+        (Literal::Character(CharacterLiteral::from('λ')), "'λ'"),
+        (Literal::Character(CharacterLiteral::from('\'')), r"'\''"),
+        (Literal::Character(CharacterLiteral::from('\\')), r"'\\'"),
+        (Literal::Character(CharacterLiteral::from('\n')), r"'\n'"),
     ] {
         let mut arena = CommandArena::new();
         let producer = arena

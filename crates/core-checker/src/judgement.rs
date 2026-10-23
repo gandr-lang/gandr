@@ -13,7 +13,7 @@
 //! |---|---|---|
 //! |variable|synthesise|the type its binder declared, relocated past the binders opened since: a root update the value bridge reads through, settled where any other rule reads it|
 //! |constant|synthesise|the type its declaration supplied|
-//! |unit, integer and string literal|synthesise|the atom|
+//! |unit, integer, string and character literal|synthesise|the atom|
 //! |quote `⌜A⌝`, `⌜C⌝`|synthesise|the quoted type is formed; the quote has the universe of its family's sort at the type's level|
 //! |thunk|check against `U C`|its body checks against `C`|
 //! |force|synthesise|the forced value synthesises `U C`; the force has `C`|
@@ -4401,17 +4401,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: nothing.
     /// - ensures: a variable has the type its binder declared, shifted past the
     ///   binders opened since; a constant the type its declaration supplied;
-    ///   the unit value and an integer or string literal their atom; a hole and
-    ///   a mark the unknown type, minted; a quote awaits its type's formation;
-    ///   a pair awaits its components' types and has their eager product; a
-    ///   static application awaits its head's type and meets each argument in
-    ///   turn; reflexivity awaits its point's type `A` and has `Path(A, a, a)`
-    ///   at its point `a`; a compound endpoint awaits its computation's type,
-    ///   which must be a pure returner `F A`, and has `A`; a written run awaits
-    ///   its computation's type, which must be a returner `F^e A`, records the
-    ///   run and has `A`; an ascription `(v : A)` awaits `A`'s formation,
-    ///   checks `v` against it and has `A`. A leaf ascends with the frames as
-    ///   found; every other rule descends above a new frame.
+    ///   the unit value and an integer, string or character literal their atom;
+    ///   a hole and a mark the unknown type, minted; a quote awaits its type's
+    ///   formation; a pair awaits its components' types and has their eager
+    ///   product; a static application awaits its head's type and meets each
+    ///   argument in turn; reflexivity awaits its point's type `A` and has
+    ///   `Path(A, a, a)` at its point `a`; a compound endpoint awaits its
+    ///   computation's type, which must be a pure returner `F A`, and has `A`;
+    ///   a written run awaits its computation's type, which must be a returner
+    ///   `F^e A`, records the run and has `A`; an ascription `(v : A)` awaits
+    ///   `A`'s formation, checks `v` against it and has `A`. A leaf ascends
+    ///   with the frames as found; every other rule descends above a new frame.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk, a static lambda
     ///   and a computation written where a value is read, which the expected
     ///   type decides; [`CheckRefusal::UnboundIndex`] for a variable past its
@@ -4568,6 +4568,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Literal(ref literal) => match literal.base_type() {
                 BaseType::Integer => produced(self.context.atom(Atom::Integer)),
                 BaseType::String => produced(self.context.atom(Atom::String)),
+                BaseType::Character => produced(self.context.atom(Atom::Character)),
                 BaseType::Numeric => Err(unadmitted_value(term, UnadmittedFormer::NumericLiteral)),
             },
             Value::Quote(quoted) => Ok(self.quote(TypeNode::Value(quoted))),
@@ -6846,6 +6847,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             ValueTypeView::Integer
             | ValueTypeView::String
+            | ValueTypeView::Character
             | ValueTypeView::Unit
             | ValueTypeView::Buffer
             | ValueTypeView::Web
@@ -7245,6 +7247,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Buffer
                 | ValueTypeView::Integer
                 | ValueTypeView::String
+                | ValueTypeView::Character
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Lift { .. }
@@ -7319,6 +7322,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Buffer
                 | ValueTypeView::Integer
                 | ValueTypeView::String
+                | ValueTypeView::Character
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Universe { .. }
@@ -8932,6 +8936,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | ValueTypeView::List(_)
                     | ValueTypeView::Integer
                     | ValueTypeView::String
+                    | ValueTypeView::Character
                     | ValueTypeView::Unit
                     | ValueTypeView::Thunk(_)
                     | ValueTypeView::Universe { .. }
@@ -9645,6 +9650,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::List(_)
             | ValueTypeView::Integer
             | ValueTypeView::String
+            | ValueTypeView::Character
             | ValueTypeView::Unit
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }

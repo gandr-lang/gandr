@@ -157,7 +157,6 @@ unproduced = [
   { rule = "bind_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it: a theory's rule term reads it as an abstraction" },
   { rule = "boolean.expression", reason = "core has no boolean literal: the lowering names no former for `true` or `false` in a term" },
   { rule = "break_expression", reason = "a loop's end without a value is its end with unit: the lowering reads `break` as `break(unit)`, and the printer writes the returner a pass ends with as `break_value_expression`" },
-  { rule = "character", reason = "core's literals are integers, numerics and text: the lowering names no former for a character" },
   { rule = "circuit_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "co_expression", reason = "the lowering names no former for this term (`former_of` is `Unadmitted`), so no core term carries it" },
   { rule = "codata_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },

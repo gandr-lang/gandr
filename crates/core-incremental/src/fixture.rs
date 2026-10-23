@@ -24,6 +24,7 @@ use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_strata::LevelVarIndex;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FractionDigits;
@@ -410,9 +411,10 @@ pub fn checked(program: &mut Program) -> Checkpoints
 ///
 /// # Specification
 /// - requires: the requested noise leaves arena-id headroom for the corpus.
-/// - ensures: the fixed data, function, dependent-type, universe, lift, quote
-///   and type-operator cases use contiguous admission positions and resolving
-///   signature and body roots. It is not a corpus of every possible refusal.
+/// - ensures: the fixed data, function, dependent-type, universe, lift, quote,
+///   type-operator and character cases use contiguous admission positions and
+///   resolving signature and body roots. It is not a corpus of every possible
+///   refusal.
 /// - panics: if the fixed small literals, levels or ordering invariant fail.
 ///
 /// # Adequacy
@@ -722,6 +724,15 @@ pub fn every_former(noise: Noise) -> Program
         "native-transport",
         Maybe::Present(suspended),
         Maybe::Present(thunk),
+    );
+
+    // The character atom and a multibyte character literal: checked.
+    let character_type = arena.value_type_base(BaseType::Character);
+    let letter = arena.value_literal(Literal::Character(CharacterLiteral::from('é')));
+    push(
+        "character",
+        Maybe::Present(character_type),
+        Maybe::Present(letter),
     );
 
     Program::new(arena, items).expect("positions ascend")

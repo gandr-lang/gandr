@@ -846,6 +846,7 @@ pub fn constructor_owes(
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
         | ValueTypeView::String
+        | ValueTypeView::Character
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }

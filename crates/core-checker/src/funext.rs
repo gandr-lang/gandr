@@ -620,7 +620,10 @@ fn first_order(
         };
         let head = context.whnf_value_type(part)?;
         match value_type_view(context.arena(), head)? {
-            ValueTypeView::Unit | ValueTypeView::Integer | ValueTypeView::String => {},
+            ValueTypeView::Unit
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Character => {},
             ValueTypeView::Sum(&[first, second]) | ValueTypeView::Product(&[first, second]) => {
                 pending.extend([Walk::Visit(first), Walk::Visit(second)]);
             },
@@ -743,7 +746,7 @@ fn coverage(
                             coordinates: Vec::new(),
                         }]));
                     },
-                    ValueTypeView::Integer | ValueTypeView::String => {
+                    ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Character => {
                         let leaf = context
                             .arena_mut()
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));

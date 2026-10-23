@@ -92,6 +92,7 @@ use gandr_kernel_strata::LevelOffset;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_strata::LevelVarIndex;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldPosition;
@@ -1131,10 +1132,10 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 ///   fits a word.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — integer, text and numeric values in the finite semantic
-///   corpus cross persistence. The predicate states field representability; the
-///   corpus, rather than a generic sink observer, witnesses payload
-///   preservation.
+/// - hypothesis: L3 — integer, text, numeric and character values in the finite
+///   semantic corpus cross persistence. The predicate states field
+///   representability; the corpus, rather than a generic sink observer,
+///   witnesses payload preservation.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 #[spec(
     ensures: |ret| {
@@ -1147,6 +1148,7 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
                 u64::try_from(numeric.integer_part().as_ref().len()).is_ok()
                     && u64::try_from(numeric.fraction().as_ref().len()).is_ok()
             },
+            | Literal::Character(_) => true,
         } {
             Ok(())
         }
@@ -1178,6 +1180,10 @@ where
             writer.bytes(Bytes(numeric.integer_part().as_ref().as_bytes()))?;
             writer.bytes(Bytes(numeric.fraction().as_ref().as_bytes()))?;
         },
+        Literal::Character(character) => {
+            writer.tag(Tag(3));
+            writer.bytes(Bytes(character.to_text().as_bytes()))?;
+        },
     }
     Ok(())
 }
@@ -1189,7 +1195,7 @@ where
 ///   may be normalized.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the finite semantic corpus preserves the three literal
+/// - hypothesis: L3 — the finite semantic corpus preserves the four literal
 ///   classes through persistence. The predicate checks tag classification, not
 ///   a second construction of normalized decimal text. Unknown tags reject
 ///   before consuming available payload bytes.
@@ -1204,6 +1210,7 @@ where
                     | Literal::Integer(_) => 0,
                     | Literal::Text(_) => 1,
                     | Literal::Numeric(_) => 2,
+                    | Literal::Character(_) => 3,
                 })
                 && reader.cursor > before
         },
@@ -1235,6 +1242,12 @@ fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
                 integer_part,
                 fraction,
             )))
+        },
+        3 => {
+            let text = reader.text()?;
+            let character =
+                CharacterLiteral::try_from(text).map_err(|_not_one| CodecError::Corrupt)?;
+            Ok(Literal::Character(character))
         },
         _ => Err(CodecError::Corrupt),
     }
@@ -2100,6 +2113,7 @@ where
                 BaseType::Integer => Tag(0),
                 BaseType::String => Tag(1),
                 BaseType::Numeric => Tag(2),
+                BaseType::Character => Tag(3),
             });
         },
         ContentNode::Product(ref parts) => {
@@ -4257,6 +4271,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 0 => BaseType::Integer,
                 1 => BaseType::String,
                 2 => BaseType::Numeric,
+                3 => BaseType::Character,
                 _ => return Err(CodecError::Corrupt),
             })
         },
