@@ -482,6 +482,39 @@ impl Files
         paths.sort_unstable();
         paths
     }
+
+    /// Every source the walk reaches under the roots, the roots reached first,
+    /// ascending.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each `.gandr` source the dispatcher's traversal reaches under
+    ///   a root whose file could be read, once, ascending.
+    /// - provides: the sources a workspace's diagnostics report.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one walk of the roots, then one pass over the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source under a root and one added in a new folder
+    ///   are listed, a removed one is not.
+    /// - witness: `server::tests::a_workspace_pull_reports_each_source_no_editor_holds_1824`
+    #[spec(ensures: |ret| ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
+    pub fn sources(
+        &mut self,
+        grammar: &Pbg,
+    ) -> Vec<PathBuf>
+    {
+        self.refreshed(grammar);
+        let mut paths: Vec<PathBuf> = self
+            .named
+            .iter()
+            .filter(|named| named.stamp.is_some())
+            .map(|named| named.path.clone())
+            .collect();
+        paths.sort_unstable();
+        paths
+    }
 }
 
 #[cfg(test)]

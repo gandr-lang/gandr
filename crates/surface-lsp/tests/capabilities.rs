@@ -64,7 +64,7 @@ fn advertised_capabilities_name_the_token_legend()
                 "diagnosticProvider": {
                     "identifier": "gandr",
                     "interFileDependencies": true,
-                    "workspaceDiagnostics": false,
+                    "workspaceDiagnostics": true,
                 },
                 "workspace": {
                     "workspaceFolders": {"supported": true, "changeNotifications": true},
