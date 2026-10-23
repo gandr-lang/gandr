@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -9,6 +10,7 @@ use gandr_core_term::CoreArena;
 use quenchant_shape::shape::Maybe;
 
 use super::IncrementalSession;
+use super::submitted;
 use crate::boundary::ItemCount;
 use crate::checkpoint::Resume;
 use crate::checkpoint::lead;
@@ -23,8 +25,10 @@ use crate::fixture::integer;
 use crate::fixture::integers;
 use crate::persistence::BackendArtifact;
 use crate::persistence::CheckpointObserver;
+use crate::persistence::DiscardingCheckpointStore;
 use crate::persistence::FileCheckpointStore;
 use crate::persistence::MemoryCheckpointStore;
+use crate::persistence::RestoreFrom;
 use crate::persistence::address_of;
 use crate::persistence::restore;
 use crate::region::Item;
@@ -332,5 +336,66 @@ fn a_retired_submission_keeps_the_resume_it_held_1547()
         after.checkpoints(),
         whole.checkpoints(),
         "and records the same checkpoints"
+    );
+}
+
+/// #1816: a session over a store that keeps nothing persists the set it holds
+/// to another store, and another session's first submission of the same
+/// program restores from it, every item adopted; another program, or a set
+/// another backend judged, restores nothing, and the submission is judged
+/// whole.
+#[test]
+fn a_held_set_persists_to_another_store_and_restores_a_first_submission_1816()
+{
+    let program = || {
+        integers(CoreArena::new(), &[
+            (Key("one"), Digits("1")),
+            (Key("two"), Digits("2")),
+        ])
+    };
+    let fresh =
+        || IncrementalSession::new(DiscardingCheckpointStore, backend(), CheckBudget::DEFAULT);
+    let mut saved = MemoryCheckpointStore::default();
+    assert_eq!(
+        fresh().persist_to(&mut saved, backend()),
+        Ok(Maybe::Absent(submitted::Absent::Fresh)),
+        "a session that submitted nothing holds nothing to persist"
+    );
+    let mut first = fresh();
+    let _judged = first.submit(&mut program(), &mut Quiet).expect("submit");
+    assert_eq!(
+        first.persist_to(&mut saved, backend()),
+        Ok(Maybe::Present(address_of(&program()).expect("resolved"))),
+        "the held set is stored at its program's address"
+    );
+
+    let restoring = |backend: BackendArtifact| {
+        let mut session = fresh();
+        session.restore_from(Box::new(RestoreFrom::new(saved.clone(), backend)));
+        session
+    };
+    let mut restored = restoring(backend());
+    let census = restored.submit(&mut program(), &mut Quiet).expect("submit");
+    assert_eq!(
+        (census.adopted, census.judged),
+        (ItemCount::from(2_usize), ItemCount::from(0_usize)),
+        "the same program restores, every item adopted"
+    );
+    let edited = || integers(CoreArena::new(), &[(Key("one"), Digits("3"))]);
+    let census = restoring(backend())
+        .submit(&mut edited(), &mut Quiet)
+        .expect("submit");
+    assert_eq!(
+        census.judged,
+        ItemCount::from(1_usize),
+        "another program restores nothing"
+    );
+    let census = restoring(BackendArtifact::from(b"another checker".as_slice()))
+        .submit(&mut program(), &mut Quiet)
+        .expect("submit");
+    assert_eq!(
+        census.judged,
+        ItemCount::from(2_usize),
+        "another backend's set restores nothing"
     );
 }

@@ -493,13 +493,14 @@ pub struct CellTextChange
     pub changes: Vec<ContentChange>,
 }
 
-/// The parameters of `notebookDocument/didClose`.
+/// The parameters of `notebookDocument/didSave` and `didClose`: the notebook
+/// they name.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[repr(transparent)]
-pub struct DidCloseNotebookParams
+pub struct NotebookParams
 {
-    /// The notebook closed.
+    /// The notebook saved or closed.
     pub notebook_document: DocumentIdentifier,
 }
 
@@ -2437,6 +2438,7 @@ impl InitializeResult
                 text_document_sync: TextDocumentSync {
                     open_close: true,
                     change: SyncKind::INCREMENTAL,
+                    save: true,
                 },
                 notebook_document_sync: NotebookSync::JUPYTER,
                 semantic_tokens_provider: SemanticTokensProvider {
@@ -2947,6 +2949,8 @@ pub struct TextDocumentSync
     pub open_close: bool,
     /// What a change notification carries.
     pub change: SyncKind,
+    /// The client sends save notifications, without the text.
+    pub save: bool,
 }
 
 /// What a change notification carries, as the protocol numbers it.
@@ -2965,11 +2969,12 @@ impl SyncKind
 /// Notebook synchronisation, as advertised.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[repr(transparent)]
 pub struct NotebookSync
 {
     /// The notebooks synchronised: Jupyter notebooks whose cells are gandr.
     pub notebook_selector: [NotebookSelector; 1],
+    /// The client sends save notifications.
+    pub save: bool,
 }
 
 impl NotebookSync
@@ -2983,6 +2988,7 @@ impl NotebookSync
             },
             cells: [CellLanguage { language: SOURCE }],
         }],
+        save: true,
     };
 }
 

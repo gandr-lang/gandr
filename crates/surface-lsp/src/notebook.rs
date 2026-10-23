@@ -23,10 +23,10 @@
 //! in the order they ran rather than the order they are laid out: the
 //! document then follows the kernel's history.
 //!
-//! The server answers the four notifications alone. A request naming a cell
+//! The server answers the five notifications alone. A request naming a cell
 //! names a document the server does not hold, and is answered as one.
-//! `notebookDocument/didSave` is declined as `textDocument/didSave` is: every
-//! change is judged as it arrives, so a save owes no check.
+//! `notebookDocument/didSave` keeps the one document's checkpoints as
+//! `textDocument/didSave` keeps a document's, as the `saved` module states.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;

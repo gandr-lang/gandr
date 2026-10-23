@@ -215,8 +215,9 @@ use crate::quiet::caret_form;
 use crate::quiet::formless;
 
 /// The session one open document's revisions are submitted to, or the fault
-/// that kept the grammar it parses under from building. Nothing restores an
-/// open document's checkpoints, so its session keeps none.
+/// that kept the grammar it parses under from building. Its store keeps
+/// nothing per revision: a save keeps the latest judgement elsewhere, as the
+/// `saved` module states.
 pub type DocumentSession =
     Result<Session<DiscardingCheckpointStore, InMemoryBlockStore>, &'static PbgError>;
 

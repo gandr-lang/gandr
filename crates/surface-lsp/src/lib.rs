@@ -78,6 +78,7 @@
 //! use gandr_surface_lsp::Served;
 //! use gandr_surface_lsp::Spelling;
 //! use gandr_surface_lsp::Width;
+//! use gandr_surface_lsp::Workspace;
 //! use gandr_surface_lsp::serve;
 //! use gandr_surface_lsp::write_frame;
 //!
@@ -94,7 +95,10 @@
 //!     &mut Cursor::new(input),
 //!     &mut output,
 //!     &mut Vec::new(),
-//!     (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+//!     (
+//!         Workspace::spelled(Spelling::Unicode),
+//!         &Pool::new(Width::SERIAL),
+//!     ),
 //! )?;
 //! assert_eq!(
 //!     served,
@@ -134,8 +138,8 @@
 //! | cancellation | `$/cancelRequest` | served: a request is answered `RequestCancelled` when its cancellation was read before it was handled, and `ContentModified` when a change of the document it reads was, without being run; a request about a document whose judgement runs is held and answered once that judgement is published, or `ContentModified` when a change or close of the document is read first, and one that reads another document whose judgement runs, as references, rename and call hierarchy do, waits for that judgement, so no answer leaves a document out |
 //! | progress | `window/workDoneProgress/create`, `$/progress`, `window/workDoneProgress/cancel` | served: to a client that declares `window.workDoneProgress`, an open begins `Checking` on the document's file name and a change of files on disk that rechecks open copies begins `Rechecking` on how many, under a token of its own, ended once the judgements it started are published; none is cancellable, and a cancellation naming a token the connection issued is recorded against it, the work it names having ended within the message that started it |
 //! | document synchronisation | `textDocument/didOpen`, `didChange` (incremental), `didClose` | served: an editor's copy shadows the file at its path for every import on every connection, and an open, change or close of it rechecks and republishes every open copy whose closure names it, on each connection holding one, as the `server` module's `Workspace` states; each judgement runs on the worker pool off the serving loop, and a change read while it runs retires it before the next declaration it checks or the next item the incremental pass takes, and drops its publication |
-//! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | `willSave` and `willSaveWaitUntil` served, not advertised: every change is judged as it arrives, so a save owes no check; `willSave` is read and left, `willSaveWaitUntil` answered with the edits formatting the whole document answers; `didSave` declined for the same reason |
-//! | notebook synchronisation | `notebookDocument/didOpen`, `didChange`, `didClose`, `didSave` | served for a Jupyter `.ipynb` whose cells are `gandr`, as a `gandr` kernelspec names them, advertised for the `jupyter-notebook` type: the code cells in order are judged as one document at the notebook's URI, each cell published its own diagnostics in its own lines, as the `notebook` module states; a request naming a cell is answered as one naming a document the server does not hold; `didSave` declined as `textDocument/didSave` is |
+//! | save notifications | `textDocument/willSave`, `willSaveWaitUntil`, `didSave` | `didSave` served and advertised, without the text: every change is judged as it arrives, so a save owes no check, and keeps what the judgement of the saved text built instead — the copy's checkpoints, in the cache directory the driver names, which the first judgement of a copy later opened over the same text, on any connection or in any server, restores and resumes from, as the `saved` module states; a save that cannot keep them is logged as a warning. `willSave` and `willSaveWaitUntil` served, not advertised: `willSave` is read and left, `willSaveWaitUntil` answered with the edits formatting the whole document answers |
+//! | notebook synchronisation | `notebookDocument/didOpen`, `didChange`, `didClose`, `didSave` | served for a Jupyter `.ipynb` whose cells are `gandr`, as a `gandr` kernelspec names them, advertised for the `jupyter-notebook` type: the code cells in order are judged as one document at the notebook's URI, each cell published its own diagnostics in its own lines, as the `notebook` module states; a request naming a cell is answered as one naming a document the server does not hold; `didSave` keeps the one document's checkpoints as `textDocument/didSave` does |
 //! | published diagnostics | `textDocument/publishDiagnostics` | served: the session's judgement, a use of a declaration a `deprecated` attribute marks among it as a `deprecated` warning tagged `Deprecated`, then a hint tagged `Unnecessary`, code `UnusedBinder`, at each lambda or bind binder no use refers to in a declaration the checker judged, refused or not, as the `unused` module states — never another opener's linear binder, nor a binder of a declaration refused for a consumable capability, nor a name starting with `_`. Then a hint tagged `Unnecessary`, code `UnusedImport`, over each path import no name lookup of the lowering was answered through — unqualified, aliased, a dotted path whose module the import brought into the unit, a method, a model's theory or an include — none in a document holding a declaration the lowering refused |
 //! | pulled diagnostics | `textDocument/diagnostic`, `workspace/diagnostic`, `workspace/diagnostic/refresh` | served: a client that declares `textDocument.diagnostic` is published nothing but a notebook's cells, which it never pulls; a pull waits for the copy's judgement as every request naming a copy does, and is answered what the copy last published, the form under the caret held back as from a publication, named by the BLAKE3 digest of its JSON text and answered `unchanged` when the pull names that digest; a publication no pull waited for — a closure's recheck, the quiet deadline's release, a kernel disagreement — asks a client that refreshes its diagnostics to pull again, once per settlement. A workspace pull is answered a report for each source under the opened folders that no editor holds, each judged as a copy is, one at a time while no copy is judged, and judged again once a file it read changed, as the `sweep` module states |
 //! | semantic tokens | `textDocument/semanticTokens/full`, `full/delta`, `range`, `workspace/semanticTokens/refresh` | served: once a copy is judged, each written use classified by what the judgement resolved it to and a name nothing declares or binds as the custom `unresolvedReference`, and each name marked `declaration` where it binds or is declared and with the custom `value` or `computation` by its polarity, a called name being run, as the `tokens` module states; a full answer carries its stream's digest as its id, a delta naming the stream the connection last sent answers one edit over the tokens between the ends the two streams share, and any other id the full stream; the refresh is asked of a client that declares it once a copy is rechecked because a file its closure names changed |
@@ -397,6 +401,7 @@ mod relocate;
 mod rename;
 mod rpc;
 mod run;
+mod saved;
 mod search;
 mod server;
 mod signature;
@@ -443,6 +448,7 @@ pub use crate::quiet::Inbox;
 pub use crate::quiet::QUIET;
 pub use crate::recheck::Reached;
 pub use crate::recheck::Tried;
+pub use crate::saved::Saved;
 pub use crate::server::Admissions;
 pub use crate::server::Awaiting;
 pub use crate::server::Peer;

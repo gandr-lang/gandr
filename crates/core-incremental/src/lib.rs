@@ -229,6 +229,8 @@ pub use crate::persistence::DiscardingCheckpointStore;
 pub use crate::persistence::FileCheckpointStore;
 pub use crate::persistence::Keeping;
 pub use crate::persistence::MemoryCheckpointStore;
+pub use crate::persistence::RestoreFrom;
+pub use crate::persistence::Restorer;
 pub use crate::persistence::address_of;
 pub use crate::persistence::decode_checkpoints;
 pub use crate::persistence::encode_checkpoints;

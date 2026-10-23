@@ -297,7 +297,7 @@ mod tests
                 io::sink(),
                 Some(serve),
                 (
-                    gandr_surface_lsp::Spelling::Unicode,
+                    gandr_surface_lsp::Workspace::spelled(gandr_surface_lsp::Spelling::Unicode),
                     gandr_surface_lsp::Pool::new(gandr_surface_lsp::Width::SERIAL),
                 ),
             )

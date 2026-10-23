@@ -38,7 +38,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 ## Expected features
 
-- **A checkpoint store.** Any `CheckpointStore`: `gandr-core-incremental`'s `MemoryCheckpointStore` for a session that dies with its process, its `FileCheckpointStore` for one that outlives it, its `DiscardingCheckpointStore` for one whose checkpoints nothing restores, such as an editor's open document.
+- **A checkpoint store.** Any `CheckpointStore`: `gandr-core-incremental`'s `MemoryCheckpointStore` for a session that dies with its process, its `FileCheckpointStore` for one that outlives it, its `DiscardingCheckpointStore` for one that keeps nothing per revision, such as an editor's open document. Such a session keeps a judgement at a save by `Session::persist_to` another store, and a session opened later restores its first judgement from it through `Session::restore_from`. Witness: `tests::checkpoint::a_persisted_judgement_restores_another_session_s_first_1816`.
 - **A block store.** Any `BlockStore`: `gandr-storage-records`' `InMemoryBlockStore` for a session that dies with its process; a store that outlives it carries the kernel checkpoints to the next.
 - **A backend identity.** A `BackendArtifact` naming the checker build, so checkpoints a different checker judged are never restored.
 - **The text.** The caller owns the source's buffer and submits each revision whole; the submission borrows it.

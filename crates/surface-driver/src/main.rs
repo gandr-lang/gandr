@@ -1217,8 +1217,46 @@ fn lsp(spelling: Spelling) -> ExitCode
         &mut input,
         &mut output,
         &mut log,
-        (spelling, &Pool::new(Width::PerformanceCores)),
+        (workspace(spelling), &Pool::new(Width::PerformanceCores)),
     ))
+}
+
+/// The workspace a language server or a hub serves over: its user's
+/// configuration naming `spelling`, and its saves kept in the directory
+/// [`config::checkpoints`] names. A directory that cannot be made keeps no
+/// save, noted on standard error, and the server serves on.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a workspace spelled `spelling`, keeping saves when a cache
+///   directory is named and can be made.
+/// - provides: one workspace for `gandr lsp` and `gandr serve`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment and the file
+///   system, which the clauses cannot observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a session served over the standard streams.
+/// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
+fn workspace(spelling: Spelling) -> gandr_surface_lsp::Workspace
+{
+    let workspace = gandr_surface_lsp::Workspace::spelled(spelling);
+    let Some(directory) = config::checkpoints()
+    else {
+        return workspace;
+    };
+    match gandr_surface_lsp::Saved::at(&directory) {
+        Ok(saved) => workspace.saving(saved),
+        Err(error) => {
+            let _noted = writeln!(
+                std::io::stderr(),
+                "gandr: {}: saves keep no checkpoints: {error}",
+                directory.display()
+            );
+            workspace
+        },
+    }
 }
 
 /// The exit code a language-server session that ended as `served` owes.
@@ -1515,7 +1553,7 @@ fn hub(
                 linger,
                 std::io::stderr(),
                 Some(gandr_surface_mcp::serve),
-                (spelling, Pool::new(Width::PerformanceCores)),
+                (workspace(spelling), Pool::new(Width::PerformanceCores)),
             ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => hub_fault(&error),

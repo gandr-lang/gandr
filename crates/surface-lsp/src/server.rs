@@ -169,7 +169,6 @@ use crate::protocol::DiagnosticParams;
 use crate::protocol::DiagnosticReport;
 use crate::protocol::DidChangeNotebookParams;
 use crate::protocol::DidChangeParams;
-use crate::protocol::DidCloseNotebookParams;
 use crate::protocol::DidOpenNotebookParams;
 use crate::protocol::DidOpenParams;
 use crate::protocol::DocumentParams;
@@ -204,6 +203,7 @@ use crate::protocol::MarkupContent;
 use crate::protocol::MessageAction;
 use crate::protocol::MessageParams;
 use crate::protocol::MessageType;
+use crate::protocol::NotebookParams;
 use crate::protocol::PositionParams;
 use crate::protocol::ProgressToken;
 use crate::protocol::PublishParams;
@@ -315,6 +315,7 @@ use crate::rpc::unregister;
 use crate::run::Unran;
 use crate::run::run;
 use crate::run::runs;
+use crate::saved::Saved;
 use crate::search::Declared;
 use crate::search::FOUND_HELD;
 use crate::search::Query;
@@ -436,6 +437,19 @@ struct Document
     /// The requests about it read while its judgement was due or running, in
     /// the order read, answered once it is published.
     asked: Vec<Asked>,
+    /// Whether a save of its text waits for its judgement to be kept.
+    saving: Saving,
+}
+
+/// Whether a save of a copy's text waits for the copy's judgement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Saving
+{
+    /// No save waits.
+    Idle,
+    /// A save arrived while the judgement of the text it saved was due or
+    /// running: its checkpoints are kept once that judgement is published.
+    Owed,
 }
 
 /// A request held until its document's judgement is published.
@@ -452,19 +466,27 @@ struct Asked
 impl Document
 {
     /// An empty copy of the document at `uri`, at `version`, with a session
-    /// of its own.
+    /// of its own, whose first judgement restores from `saved` when the
+    /// workspace keeps saves and the running build has an identity.
     ///
     /// # Specification
     /// trivial.
     fn opened(
         uri: &DocumentUri,
         version: DocumentVersion,
+        saved: Option<&Saved>,
     ) -> Self
     {
+        let mut session = open(uri);
+        if let (Ok(judging), Some(saved)) = (session.as_mut(), saved)
+            && let Maybe::Present(restorer) = saved.restorer()
+        {
+            judging.restore_from(restorer);
+        }
         Self {
             version,
             text: HeldText::new(),
-            session: Arc::new(Mutex::new(open(uri))),
+            session: Arc::new(Mutex::new(session)),
             judgement: Judgement::Settled,
             caret: Maybe::Absent(uncareted::Absent::Unranged),
             checked: Vec::new(),
@@ -472,6 +494,7 @@ impl Document
             published: Vec::new(),
             proposals: Vec::new(),
             asked: Vec::new(),
+            saving: Saving::Idle,
         }
     }
 
@@ -936,11 +959,13 @@ impl Held
         &mut self,
         peer: Peer,
         uri: &DocumentUri,
-        version: DocumentVersion,
+        (version, saved): (DocumentVersion, Option<&Saved>),
     )
     {
         if matches!(self.own(peer), Maybe::Absent(_)) {
-            let _first = self.others.insert(peer, Document::opened(uri, version));
+            let _first = self
+                .others
+                .insert(peer, Document::opened(uri, version, saved));
         }
         self.promote(peer);
     }
@@ -1368,6 +1393,9 @@ pub struct Workspace
     /// Every path the hub's watch over the disk reports a change of, as the
     /// closures named it.
     watched: BTreeSet<PathBuf>,
+    /// Where a save keeps its copy's checkpoints and an open restores from,
+    /// as the `saved` module states; none keeps no save.
+    saved: Option<Saved>,
 }
 
 /// The copies the editors hold, read by an import in place of the file at
@@ -1461,6 +1489,24 @@ impl Workspace
         Self {
             spelling,
             ..Self::default()
+        }
+    }
+
+    /// This workspace, a save of each copy keeping its checkpoints in
+    /// `saved` and each copy opened restoring its first judgement from it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn saving(
+        self,
+        saved: Saved,
+    ) -> Self
+    {
+        Self {
+            saved: Some(saved),
+            ..self
         }
     }
 }
@@ -3654,6 +3700,11 @@ impl Server
             settled.judged.push(line.clone());
             let asked = core::mem::take(&mut document.asked);
             let taken = admission(&mut locked(&document.session), line.timing);
+            // A save the judgement was owed keeps what it judged.
+            let unkept = match (document.saving, workspace.saved.as_ref()) {
+                (Saving::Owed, Some(saved)) => kept(saved, &uri, document),
+                (Saving::Owed | Saving::Idle, _) => None,
+            };
             refresh = Refresh(refresh.0 || refreshing.0);
             workspace.published_by(self.peer, &message);
             if let Some(pushed) = self.pushed(message) {
@@ -3665,6 +3716,7 @@ impl Server
             {
                 unpulled = true;
             }
+            settled.messages.extend(unkept);
             for Asked { id, method, params } in asked {
                 let answered = self.request(workspace, id, &method, params);
                 settled.messages.push(answered);
@@ -5042,8 +5094,11 @@ impl Server
     ///   notebook, closes its one document as a close does, and publishes a
     ///   versionless empty list at each of its code cells. Those publications
     ///   are sent whether or not the client pulls. A change or a close of a
-    ///   notebook this connection does not hold is ignored. Unknown, malformed
-    ///   and out-of-phase notifications leave documents alone.
+    ///   notebook this connection does not hold is ignored. A running-state
+    ///   save of a document, or of a notebook's one document, keeps the
+    ///   checkpoints of this connection's copy as [`Server::save_copy`] states,
+    ///   and logs a warning when they were not kept. Unknown, malformed and
+    ///   out-of-phase notifications leave documents alone.
     /// - provides: document synchronization, configuration, file watching, the
     ///   folders the client opens and termination: a folder opened is a root of
     ///   the path table while this connection holds it open.
@@ -5075,6 +5130,7 @@ impl Server
     /// - witness: `server::tests::an_unread_folder_change_lists_the_folders_whole`
     /// - witness: `server::tests::a_file_operation_rechecks_the_copies_whose_closure_names_it`
     /// - witness: `server::tests::a_notebook_s_code_cells_are_judged_as_one_document_1815`
+    /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
     #[spec(
         captures: [phase = self.phase, count = workspace.documents.len()],
         ensures: |ret| {
@@ -5100,7 +5156,8 @@ impl Server
                         && workspace.documents.get(&params.uri)
                             .is_none_or(|held| matches!(held.own(self.peer), Maybe::Absent(_))),
                 Outgoing::Notification { params: Notified::Told(_), .. } =>
-                    matches!(method.as_ref(), "initialized" | "workspace/didChangeConfiguration"),
+                    matches!(method.as_ref(), "initialized" | "workspace/didChangeConfiguration"
+                        | "textDocument/didSave" | "notebookDocument/didSave"),
                 Outgoing::Request { method: called, .. } => match method.as_ref() {
                     "initialized" => (called == "client/registerCapability" && self.watching.0)
                         || (called == "workspace/configuration" && self.pulling.0),
@@ -5217,9 +5274,22 @@ impl Server
                 }));
                 Outcome::saying(messages)
             },
+            (Phase::Running, "textDocument/didSave") => {
+                let Ok(DocumentParams { text_document }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                Outcome::saying(self.save_copy(workspace, &text_document.uri))
+            },
+            (Phase::Running, "notebookDocument/didSave") => {
+                let Ok(NotebookParams { notebook_document }) = serde_json::from_value(params)
+                else {
+                    return Outcome::quiet();
+                };
+                Outcome::saying(self.save_copy(workspace, &notebook_document.uri))
+            },
             (Phase::Running, "notebookDocument/didClose") => {
-                let Ok(DidCloseNotebookParams { notebook_document }) =
-                    serde_json::from_value(params)
+                let Ok(NotebookParams { notebook_document }) = serde_json::from_value(params)
                 else {
                     return Outcome::quiet();
                 };
@@ -5358,18 +5428,19 @@ impl Server
                 let _indexed = workspace.paths.insert(path.clone(), uri.clone());
                 let held = Held {
                     latest: self.peer,
-                    document: Document::opened(&uri, version),
+                    document: Document::opened(&uri, version, workspace.saved.as_ref()),
                     others: BTreeMap::new(),
                     path,
                 };
                 (uri, held, true)
             };
-        held.take_up(self.peer, &uri, version);
+        held.take_up(self.peer, &uri, (version, workspace.saved.as_ref()));
         let document = &mut held.document;
         document.version = version;
         document.text.replace(text_document.text);
         document.caret = Maybe::Absent(uncareted::Absent::Unranged);
         document.proposals.clear();
+        document.saving = Saving::Idle;
         document.judgement = document.judgement.due(Refresh(false));
         // The first copy of a file stands in for its disk text, so what its
         // importers read changes only where the two differ.
@@ -5414,6 +5485,8 @@ impl Server
             Maybe::Present(document) => {
                 edited(document, text_document.version, changes);
                 document.judgement = document.judgement.due(Refresh(false));
+                // The text a save waiting on the judgement saved is gone.
+                document.saving = Saving::Idle;
                 Some(document.withdrawn())
             },
             Maybe::Absent(_) => None,
@@ -5472,6 +5545,53 @@ impl Server
             self.reclosed(workspace, &path);
         }
         messages
+    }
+
+    /// Keep the checkpoints of this connection's copy of `uri` in the
+    /// workspace's saves: at once when its judgement is published, or once the
+    /// judgement due or running is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: when the workspace keeps saves and this connection holds a
+    ///   copy of `uri`, the copy's latest judgement is kept as [`kept`] keeps
+    ///   it when that judgement is published, and is owed the save otherwise,
+    ///   [`Server::admitted`] keeping it once published unless a change reads
+    ///   first; nothing is done otherwise.
+    /// - provides: the save of a document and of a notebook's one document.
+    /// - fails: never; a save not kept is answered a warning.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a copy saved, closed and opened again adopts what the
+    ///   save judged; a save prunes what another build judged.
+    /// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
+    /// - witness: `server::tests::a_save_prunes_what_another_build_judged_1816`
+    #[spec(ensures: |ret| ret.len() <= 1)]
+    fn save_copy(
+        &self,
+        workspace: &mut Workspace,
+        uri: &DocumentUri,
+    ) -> Vec<Outgoing>
+    {
+        let Some(saved) = workspace.saved.as_ref()
+        else {
+            return Vec::new();
+        };
+        let Some(Maybe::Present(document)) = workspace
+            .documents
+            .get_mut(uri)
+            .map(|held| held.own_mut(self.peer))
+        else {
+            return Vec::new();
+        };
+        match document.judgement {
+            Judgement::Settled => kept(saved, uri, document).into_iter().collect(),
+            Judgement::Due(_) | Judgement::Running(_) => {
+                document.saving = Saving::Owed;
+                Vec::new()
+            },
+        }
     }
 
     /// Apply the `gandr` `settings` this connection's client gave, pushed or
@@ -7989,6 +8109,36 @@ fn initial_pulled(params: &Value) -> PullsDiagnostics
         .unwrap_or_default()
 }
 
+/// Keep the checkpoints of `document`, the copy at `uri`, in `saved`, its owed
+/// save then settled: nothing to say when they were kept, else the warning
+/// naming why not.
+///
+/// # Specification
+/// - requires: `document`'s judgement is published.
+/// - ensures: as [`Saved::keep`]; the copy owes no save after.
+/// - provides: the step a save takes once the judgement of its text is
+///   published.
+/// - fails: never; a failure is the warning returned.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Server::save_copy`].
+/// - witness: `server::tests::a_saved_copy_reopens_adopting_what_the_save_judged_1816`
+#[spec(ensures: document.saving == Saving::Idle)]
+fn kept(
+    saved: &Saved,
+    uri: &DocumentUri,
+    document: &mut Document,
+) -> Option<Outgoing>
+{
+    document.saving = Saving::Idle;
+    let why = saved.keep(&locked(&document.session)).err()?;
+    Some(tell(Told::Logged, MessageParams {
+        kind: MessageType::WARNING,
+        message: format!("the save of {uri} kept no checkpoints: {why}"),
+    }))
+}
+
 /// The warning logged to the client when its `gandr` settings do not read:
 /// what `error` says, and that none of them is applied.
 ///
@@ -8395,26 +8545,27 @@ fn publication(
 
 /// Serve the protocol over `input` and `output` until the session ends.
 ///
-/// Each synchronisation's timing line goes to `log`, its user's configuration
-/// names `spelling`, and its judgements and kernel admissions run on `pool`.
+/// Each synchronisation's timing line goes to `log`, `workspace` holds what
+/// its user's configuration names — the spelling, and where saves are kept —
+/// and its judgements and kernel admissions run on `pool`.
 ///
 /// # Specification
 /// - requires: nothing of the streams; `input` carries the client's frames,
 ///   `output` takes the server's, and `log` takes the operator's lines.
-/// - ensures: each frame read is handled by one [`Server`] over a workspace
-///   whose configured spelling is `spelling`: the progress the work it starts
-///   reports, as [`Server::reported`] states, begins first, and every message
-///   it produces is written as one frame, in order; then the judgements its
-///   synchronisations made due and the admissions they left start on `pool`, as
-///   [`Server::admit`] states, and every line logged that waits for no
-///   admission is written to `log` with a line terminator, before the next
-///   frame is read; the progress ends once no judgement running then runs. A
-///   judgement or an admission that ended is settled before the next frame, as
-///   [`Server::admitted`] states, each message it produces written as one frame
-///   and its lines logged. A publication that held a diagnostic back arms its
-///   document's deadline the server's quiet interval later, and one that held
-///   nothing, or whose correction replaced what it held, disarms it; a deadline
-///   that passes with no frame read releases what the document holds back, as
+/// - ensures: each frame read is handled by one [`Server`] over `workspace`:
+///   the progress the work it starts reports, as [`Server::reported`] states,
+///   begins first, and every message it produces is written as one frame, in
+///   order; then the judgements its synchronisations made due and the
+///   admissions they left start on `pool`, as [`Server::admit`] states, and
+///   every line logged that waits for no admission is written to `log` with a
+///   line terminator, before the next frame is read; the progress ends once no
+///   judgement running then runs. A judgement or an admission that ended is
+///   settled before the next frame, as [`Server::admitted`] states, each
+///   message it produces written as one frame and its lines logged. A
+///   publication that held a diagnostic back arms its document's deadline the
+///   server's quiet interval later, and one that held nothing, or whose
+///   correction replaced what it held, disarms it; a deadline that passes with
+///   no frame read releases what the document holds back, as
 ///   [`Server::release`] states. The session ends at `exit` or at a stream
 ///   closed at a frame boundary, as [`Server::closed`] states, once every
 ///   judgement and admission still running ended and was settled, its line
@@ -8450,14 +8601,13 @@ pub fn serve<Input, Output, Log>(
     input: &mut Input,
     output: &mut Output,
     log: &mut Log,
-    (spelling, pool): (Spelling, &Pool),
+    (mut workspace, pool): (Workspace, &Pool),
 ) -> Result<Served, TransportFault>
 where
     Input: BufRead + Send,
     Output: Write,
     Log: Write,
 {
-    let mut workspace = Workspace::spelled(spelling);
     let mut server = Server::default();
     let inbox = Inbox::default();
     let mut admissions = Admissions::new(pool, inbox.changes());
@@ -8919,10 +9069,10 @@ mod tests
                 r#"[{"jsonrpc":"2.0","id":1,"result":{
                     "capabilities":{
                         "positionEncoding":"utf-16",
-                        "textDocumentSync":{"openClose":true,"change":2},
+                        "textDocumentSync":{"openClose":true,"change":2,"save":true},
                         "notebookDocumentSync":{"notebookSelector":[{
                             "notebook":{"notebookType":"jupyter-notebook"},
-                            "cells":[{"language":"gandr"}]}]},
+                            "cells":[{"language":"gandr"}]}],"save":true},
                         "semanticTokensProvider":{
                             "legend":{
                                 "tokenTypes":["keyword","operator","function","variable",
@@ -16911,5 +17061,224 @@ mod tests
             [(0, 4), (1, 4), (2, 8)],
             "with its declaration: the signature half, the definition half, then the use"
         );
+    }
+
+    /// A connection over a workspace of its own keeping saves in `saves`,
+    /// initialised.
+    ///
+    /// # Specification
+    /// trivial.
+    fn saving(saves: &Path) -> Connected
+    {
+        let mut server = Connected {
+            workspace: Workspace::default()
+                .saving(crate::saved::Saved::at(saves).expect("the saves directory opens")),
+            ..Connected::default()
+        };
+        let _initialized = send(
+            &mut server,
+            Json(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}"#),
+        );
+        server
+    }
+
+    /// What `server` makes of `message`, read whole, before any judgement it
+    /// starts settles.
+    ///
+    /// # Specification
+    /// trivial.
+    fn handled(
+        server: &mut Connected,
+        message: &Value,
+    ) -> Vec<Outgoing>
+    {
+        let body = Body::from(message.to_string().into_bytes());
+        server.server.handle(&mut server.workspace, &body).messages
+    }
+
+    /// What `server` makes of `message`, then the log lines and messages of
+    /// the judgements it started, once settled.
+    ///
+    /// # Specification
+    /// trivial.
+    fn notified(
+        server: &mut Connected,
+        message: &Value,
+    ) -> (Vec<Outgoing>, Vec<String>)
+    {
+        let mut said = handled(server, message);
+        let settled = server.settle();
+        said.extend(settled.messages);
+        (said, settled.log.iter().map(ToString::to_string).collect())
+    }
+
+    /// The records a saves directory holds, by name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn records(saves: &Path) -> Vec<String>
+    {
+        let mut names: Vec<String> = std::fs::read_dir(saves)
+            .expect("the saves directory reads")
+            .map(|entry| {
+                entry
+                    .expect("the entry reads")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// #1816: a save keeps the copy's checkpoints, and a copy opened over the
+    /// saved text on a connection that never held it adopts what the save
+    /// judged at its first judgement: a lone source's items, and an
+    /// importer's own items after its closure's. A save read while the copy's
+    /// judgement is due is kept once the judgement is published, and one a
+    /// change follows is not.
+    #[test]
+    fn a_saved_copy_reopens_adopting_what_the_save_judged_1816()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-saved-1816-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let lone = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = a ;\n";
+        let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
+        for (file, text) in [
+            ("lone.gandr", lone),
+            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            ("importer.gandr", importer),
+        ] {
+            std::fs::write(directory.join(file), text).expect("the source is written");
+        }
+        let saves = directory.join("saves");
+        let uri = |file: &str| format!("file://{}", directory.join(file).display());
+        let open = |file: &str, text: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+                {"textDocument": {"uri": uri(file), "languageId": "gandr", "version": 1_i32, "text": text}}})
+        };
+        let save = |file: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didSave", "params":
+                {"textDocument": {"uri": uri(file)}}})
+        };
+        let judged = |lines: &[String]| -> Vec<String> {
+            lines
+                .iter()
+                .filter_map(|line| {
+                    let (judged, _) = line.split_once(" items judged")?;
+                    Some(judged.rsplit(' ').next()?.to_owned())
+                })
+                .collect()
+        };
+
+        let mut first = saving(&saves);
+        let (_, opened) = notified(&mut first, &open("lone.gandr", lone));
+        assert_eq!(judged(&opened), ["2/2"], "a first open judges every item");
+        assert_eq!(
+            notified(&mut first, &save("lone.gandr")),
+            (Vec::new(), Vec::new()),
+            "a save says nothing when it keeps its checkpoints"
+        );
+        assert_eq!(records(&saves).len(), 1, "one set is kept");
+        let (_, reopened) = notified(&mut saving(&saves), &open("lone.gandr", lone));
+        assert_eq!(
+            judged(&reopened),
+            ["0/2"],
+            "an open of the saved text adopts what the save judged"
+        );
+        let (_, other) = notified(
+            &mut saving(&saves),
+            &open("lone.gandr", "def a : Integer ;\ndef a = 2 ;\n"),
+        );
+        assert_eq!(judged(&other), ["1/1"], "another text restores nothing");
+
+        let (_, laid) = notified(&mut first, &open("importer.gandr", importer));
+        assert_eq!(
+            judged(&laid),
+            ["1/2"],
+            "an importer judges its own item after its closure"
+        );
+        let _kept = notified(&mut first, &save("importer.gandr"));
+        let (_, relaid) = notified(&mut saving(&saves), &open("importer.gandr", importer));
+        assert_eq!(
+            judged(&relaid),
+            ["0/2"],
+            "a reopened importer adopts its own item after a closure laid anew"
+        );
+
+        let edited = "def a : Integer ;\ndef a = 3 ;\n";
+        let mut owing = saving(&saves);
+        let _opened = handled(&mut owing, &open("lone.gandr", edited));
+        let _saved = handled(&mut owing, &save("lone.gandr"));
+        let before = records(&saves).len();
+        let _settled = owing.settle();
+        assert_eq!(
+            records(&saves).len(),
+            before.saturating_add(1),
+            "a save read while the judgement is due is kept once it is published"
+        );
+        let (_, owed) = notified(&mut saving(&saves), &open("lone.gandr", edited));
+        assert_eq!(judged(&owed), ["0/1"]);
+        let _saved = handled(&mut owing, &save("lone.gandr"));
+        let _changed = handled(
+            &mut owing,
+            &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                "textDocument": {"uri": uri("lone.gandr"), "version": 2_i32},
+                "contentChanges": [{"text": "def a : Integer ;\ndef a = 4 ;\n"}]}}),
+        );
+        let before = records(&saves).len();
+        let _settled = owing.settle();
+        assert_eq!(
+            records(&saves).len(),
+            before,
+            "a change read before the save is kept withdraws it"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    /// #1816: a save prunes every record another build judged and keeps its
+    /// own build's.
+    #[test]
+    fn a_save_prunes_what_another_build_judged_1816()
+    {
+        let directory =
+            std::env::temp_dir().join(format!("gandr-pruned-1816-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        let saves = directory.join("saves");
+        let uri = format!("file://{}", directory.join("lone.gandr").display());
+        let save = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didSave", "params":
+            {"textDocument": {"uri": uri}}});
+        let mut server = saving(&saves);
+        let _opened = notified(
+            &mut server,
+            &serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params":
+                {"textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": "def a = 1 ;\n"}}}),
+        );
+        let _kept = notified(&mut server, &save);
+        let [ref own] = *records(&saves)
+        else {
+            panic!("one set is kept");
+        };
+        let mut foreign = std::fs::read(saves.join(own)).expect("the record reads");
+        for byte in foreign
+            .get_mut(44 .. 76)
+            .expect("the record names its backend")
+        {
+            *byte = !*byte;
+        }
+        let other = "f".repeat(64);
+        std::fs::write(saves.join(&other), foreign).expect("another build's record is written");
+        assert_eq!(records(&saves).len(), 2);
+        let _again = notified(&mut server, &save);
+        assert_eq!(
+            records(&saves),
+            core::slice::from_ref(own),
+            "another build's record is pruned, this build's kept"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
     }
 }
