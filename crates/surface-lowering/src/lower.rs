@@ -438,15 +438,18 @@
 //! # Literals mean their decoded value
 //!
 //! A number whose text is decimal digits lowers to its canonical non-negative
-//! magnitude, so `007` and `7` are one literal. A number written with the `f64`
-//! suffix, or annotated `(n : f64)` where it is written, lowers to the IEEE 754
-//! binary64 float nearest its decimal text; another width's suffix is not
-//! admitted yet (#1109). A string lowers to the text between its quotes with
-//! its escapes decoded: `\n`, `\t`, `\r`, `\0`, `\\`, `\"` and `\'` to the
-//! character each names, a backslash before a line break elided together with
-//! the break, any other escaped character to itself, and a trailing lone
-//! backslash dropped. A literal whose text is not its form's lexeme is
-//! `MalformedLiteral`, which only a hand-built tree carries.
+//! magnitude, so `007` and `7` are one literal. A number written with an
+//! integer width, `7u32`, `7u64`, `7i32` or `7i64`, lowers to that width's
+//! literal when its digits fit the width; digits that do not fit it, or a
+//! fraction or an exponent before an integer width, are `MalformedLiteral`. A
+//! number written with the `f64` suffix, or annotated `(n : f64)` where it is
+//! written, lowers to the IEEE 754 binary64 float nearest its decimal text; the
+//! `f32` suffix is not admitted yet (#1109). A string lowers to the text
+//! between its quotes with its escapes decoded: `\n`, `\t`, `\r`, `\0`, `\\`,
+//! `\"` and `\'` to the character each names, a backslash before a line break
+//! elided together with the break, any other escaped character to itself, and a
+//! trailing lone backslash dropped. Any other literal whose text is not its
+//! form's lexeme is `MalformedLiteral`, which only a hand-built tree carries.
 //!
 //! Escape decoding preserves unescaped Unicode and drops a backslash-newline
 //! continuation as one unit, including CRLF. Unknown escapes retain their
@@ -541,9 +544,11 @@ use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Sign;
@@ -776,6 +781,9 @@ quenchant_shape::reason_enum! {
             Malformed,
             /// The former is not a literal former at all.
             NotALiteral,
+            /// A typed number's digits do not fit its integer width, or are
+            /// no integer.
+            OutsideWidth,
         }
     }
 }
@@ -7470,35 +7478,41 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a number, bare or written with its type suffix.
-    /// - ensures: a number standing as a value is planned as a binary64 float
-    ///   when it is written with the `f64` suffix or annotated `(n : f64)`,
-    ///   rounded to nearest from its decimal text; otherwise a lexeme of
-    ///   decimal digits is planned as its canonical integer.
+    /// - ensures: a number standing as a value is planned as the literal of an
+    ///   integer width when it is written with that width's suffix and its
+    ///   digits fit the width; as a binary64 float when it is written with the
+    ///   `f64` suffix or annotated `(n : f64)`, rounded to nearest from its
+    ///   decimal text; otherwise a lexeme of decimal digits is planned as its
+    ///   canonical integer.
     /// - provides: the literal reading of numbers.
-    /// - fails: yields the wrong-sort refusal outside value position; another
-    ///   width suffix is a typed number the fragment does not admit; a fraction
-    ///   or an exponent with neither suffix nor annotation states no type, the
-    ///   unannotated refusal; any other text is a malformed literal.
+    /// - fails: yields the wrong-sort refusal outside value position; the `f32`
+    ///   suffix is a typed number the fragment does not admit; digits that do
+    ///   not fit an integer width, or a fraction or an exponent before one, are
+    ///   a malformed literal; a fraction or an exponent with neither suffix nor
+    ///   annotation states no type, the unannotated refusal; any other text is
+    ///   a malformed literal.
     /// - panics: none.
     ///
     /// # Errors
     /// The number's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — canonical integer magnitudes, suffixed and annotated
-    ///   floats, another width's suffix, a bare fraction and malformed lexemes
-    ///   separate each plan from each refusal.
+    /// - hypothesis: L3 — canonical integer magnitudes, each integer width at
+    ///   its extremes and one past them, suffixed and annotated floats, the
+    ///   `f32` suffix, a bare fraction and malformed lexemes separate each plan
+    ///   from each refusal.
     /// - witness: `lower::tests::an_integer_literal_is_its_canonical_magnitude`
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
     /// - witness: `lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
+    /// - witness: `lower::tests::a_typed_number_is_its_value_at_its_width`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Literal(Literal::Integer(_) | Literal::Float64(_)))
+                    Some(&Plan::Literal(Literal::Integer(_) | Literal::Fixed(_) | Literal::Float64(_)))
                 )
         },
     )]
@@ -7510,10 +7524,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let _frame = self.require(site, Produced::Value)?;
         let text = self.text_at(site.at);
         let spelled: &str = text.as_ref();
-        if ["u32", "u64", "i32", "i64", "f32"]
-            .iter()
-            .any(|width| spelled.ends_with(width))
-        {
+        match typed_number_literal(text) {
+            Maybe::Present(literal) => {
+                self.plan(site, Plan::Literal(literal));
+                return Ok(());
+            },
+            Maybe::Absent(literal::Absent::OutsideWidth) => {
+                return Err(LoweringRefusal::MalformedLiteral {
+                    span: site.at.span,
+                    form: site.name,
+                });
+            },
+            Maybe::Absent(literal::Absent::Malformed | literal::Absent::NotALiteral) => {},
+        }
+        if spelled.ends_with("f32") {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::TypedNumber)));
         }
         let annotated = self
@@ -18446,6 +18470,7 @@ impl Sink<'_>
                 TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
                 TypeAtom::Character => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Character)),
                 TypeAtom::Float64 => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Float64)),
+                TypeAtom::Fixed(width) => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Fixed(width))),
                 TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
                 TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
                 TypeAtom::Web => self.arena.value_type(id) == Some(&ValueType::Web),
@@ -18470,6 +18495,7 @@ impl Sink<'_>
             | TypeAtom::Text
             | TypeAtom::Character
             | TypeAtom::Float64
+            | TypeAtom::Fixed(_)
             | TypeAtom::Void
             | TypeAtom::Buffer
             | TypeAtom::Web => atom_type(self.arena, atom),
@@ -18485,9 +18511,9 @@ impl Sink<'_>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the two-summand sum of units for `Boolean`, the unit, the
-///   integers, the strings, the characters, the binary64 floats, the empty sum
-///   and the buffer for `Unit`, `Integer`, `Text`, `Character`, `Float64`,
-///   `Void` and `Buffer`.
+///   integers, the strings, the characters, the binary64 floats, a width's
+///   integers, the empty sum and the buffer for `Unit`, `Integer`, `Text`,
+///   `Character`, `Float64`, `Fixed`, `Void` and `Buffer`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -18512,6 +18538,7 @@ pub fn atom_type(
         TypeAtom::Text => arena.value_type_base(BaseType::String),
         TypeAtom::Character => arena.value_type_base(BaseType::Character),
         TypeAtom::Float64 => arena.value_type_base(BaseType::Float64),
+        TypeAtom::Fixed(width) => arena.value_type_base(BaseType::Fixed(width)),
         TypeAtom::Void => arena.value_type_sum(&[]),
         TypeAtom::Buffer => arena.value_type_buffer(),
         TypeAtom::Web => arena.value_type_web(),
@@ -19326,6 +19353,68 @@ pub fn parse_literal(
     found.map_or(Maybe::Absent(literal::Absent::Malformed), Maybe::Present)
 }
 
+/// Read a number written with an integer width: decimal digits, then `u32`,
+/// `u64`, `i32` or `i64`.
+///
+/// # Specification
+/// - requires: nothing; any text is admissible.
+/// - ensures: digits that fit the width the suffix names read as that width's
+///   literal, leading zeros dropped.
+/// - fails: [`literal::Absent::OutsideWidth`] for an integer width's suffix
+///   after digits that do not fit it, or after a fraction or an exponent;
+///   [`literal::Absent::Malformed`] for a text with no integer width's suffix,
+///   an `f64` or `f32` one included.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each width's literal reads at its extremes and with
+///   leading zeros; one past each extreme, a fraction and an exponent fall
+///   outside the width; the floating suffixes, an unknown suffix and a bare
+///   number are no integer width's lexeme.
+/// - witness: `lower::tests::a_typed_number_is_its_value_at_its_width`
+#[spec(
+    ensures: |ret| {
+        let spelled: &str = text.as_ref();
+        match spelled.split_at_checked(spelled.len().saturating_sub(3)) {
+            | Some((digits, suffix)) => match ret {
+                | Maybe::Present(Literal::Fixed(fixed)) => {
+                    let unpadded = digits.trim_start_matches('0');
+                    matches!((fixed.width(), suffix), (IntegerWidth::U32, "u32") | (IntegerWidth::U64, "u64") | (IntegerWidth::I32, "i32") | (IntegerWidth::I64, "i64"))
+                        && fixed.to_decimal() == if unpadded.is_empty() { "0" } else { unpadded }
+                },
+                | Maybe::Absent(literal::Absent::OutsideWidth) => matches!(suffix, "u32" | "u64" | "i32" | "i64"),
+                | Maybe::Absent(literal::Absent::Malformed) => !matches!(suffix, "u32" | "u64" | "i32" | "i64"),
+                | _ => false,
+            },
+            | None => matches!(ret, Maybe::Absent(literal::Absent::Malformed)),
+        }
+    },
+)]
+fn typed_number_literal(text: SourceFragment<'_>) -> Maybe<Literal, literal::Absent>
+{
+    let spelled: &str = text.as_ref();
+    let Some((digits, suffix)) = spelled.split_at_checked(spelled.len().saturating_sub(3))
+    else {
+        return Maybe::Absent(literal::Absent::Malformed);
+    };
+    if !matches!(suffix, "u32" | "u64" | "i32" | "i64") {
+        return Maybe::Absent(literal::Absent::Malformed);
+    }
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Maybe::Absent(literal::Absent::OutsideWidth);
+    }
+    let fixed = match suffix {
+        "u32" => digits.parse::<u32>().map(FixedInteger::U32),
+        "u64" => digits.parse::<u64>().map(FixedInteger::U64),
+        "i32" => digits.parse::<i32>().map(FixedInteger::I32),
+        "i64" => digits.parse::<i64>().map(FixedInteger::I64),
+        _ => return Maybe::Absent(literal::Absent::Malformed),
+    };
+    fixed.map_or(Maybe::Absent(literal::Absent::OutsideWidth), |fixed| {
+        Maybe::Present(Literal::Fixed(fixed))
+    })
+}
+
 /// Decode the escapes of a string literal's or an import address's content.
 ///
 /// # Specification
@@ -19625,6 +19714,7 @@ mod tests
     use super::literal;
     use super::lower_module;
     use super::parse_literal;
+    use super::typed_number_literal;
     use crate::attribute::AttributeRegistry;
     use crate::attribute::AttributeSchema;
     use crate::attribute::payload_form;
@@ -23290,10 +23380,10 @@ mod tests
             };
         let rows = [
             (
-                "def a = 1u32 ;",
+                "def a = 1.5f32 ;",
                 unadmitted(
                     8_usize,
-                    12_usize,
+                    14_usize,
                     FormName::from(NamedKind("typed_number")),
                     FragmentSort::Value,
                     Unbuilt::TypedNumber,
@@ -25286,6 +25376,7 @@ mod tests
             Former::Number,
             Former::Boolean,
             Former::Text,
+            Former::Character,
             Former::Parenthesized,
             Former::Unit,
             Former::Thunk,
@@ -25360,6 +25451,48 @@ mod tests
                 parse_literal(Former::Character, SourceFragment::from(spelled)),
                 Maybe::Present(Literal::Character(CharacterLiteral::from(scalar))),
                 "`{spelled}` decodes to {scalar:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_typed_number_is_its_value_at_its_width()
+    {
+        use gandr_kernel_term::FixedInteger;
+
+        let rows = [
+            ("0u32", FixedInteger::U32(0)),
+            ("007u32", FixedInteger::U32(7)),
+            ("4294967295u32", FixedInteger::U32(u32::MAX)),
+            ("18446744073709551615u64", FixedInteger::U64(u64::MAX)),
+            ("2147483647i32", FixedInteger::I32(i32::MAX)),
+            ("9223372036854775807i64", FixedInteger::I64(i64::MAX)),
+        ];
+        for (spelled, fixed) in rows {
+            assert_eq!(
+                typed_number_literal(SourceFragment::from(spelled)),
+                Maybe::Present(Literal::Fixed(fixed)),
+                "`{spelled}` is {fixed:?}"
+            );
+        }
+        let refused = [
+            ("4294967296u32", literal::Absent::OutsideWidth),
+            ("18446744073709551616u64", literal::Absent::OutsideWidth),
+            ("2147483648i32", literal::Absent::OutsideWidth),
+            ("9223372036854775808i64", literal::Absent::OutsideWidth),
+            ("1.5u32", literal::Absent::OutsideWidth),
+            ("1e3i64", literal::Absent::OutsideWidth),
+            ("u32", literal::Absent::OutsideWidth),
+            ("1.5f32", literal::Absent::Malformed),
+            ("2f64", literal::Absent::Malformed),
+            ("7u16", literal::Absent::Malformed),
+            ("7", literal::Absent::Malformed),
+        ];
+        for (spelled, reason) in refused {
+            assert_eq!(
+                typed_number_literal(SourceFragment::from(spelled)),
+                Maybe::Absent(reason),
+                "`{spelled}` is no width literal"
             );
         }
     }

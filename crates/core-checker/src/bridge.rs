@@ -5473,7 +5473,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             Value::Literal(ref literal) => match literal.base_type() {
-                BaseType::Integer | BaseType::String | BaseType::Character | BaseType::Float64 => {
+                BaseType::Integer
+                | BaseType::String
+                | BaseType::Character
+                | BaseType::Float64
+                | BaseType::Fixed(_) => {
                     return Ok(self.erased_value(at, target.value_literal(literal.clone())));
                 },
                 BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
@@ -5983,7 +5987,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         Value::Literal(ref literal)
                             if matches!(
                                 literal.base_type(),
-                                BaseType::Integer | BaseType::String | BaseType::Character
+                                BaseType::Integer
+                                    | BaseType::String
+                                    | BaseType::Character
+                                    | BaseType::Fixed(_)
                             ) =>
                         {
                             target.value_literal(literal.clone())
@@ -6480,6 +6487,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             ValueTypeView::Float64 => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Float64)));
+            },
+            ValueTypeView::Fixed(width) => {
+                return Ok(
+                    self.erased_value_type(at, target.value_type_base(BaseType::Fixed(width)))
+                );
             },
             ValueTypeView::Unit => {
                 return Ok(self.erased_value_type(at, target.value_type_unit()));

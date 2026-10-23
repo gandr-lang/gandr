@@ -1,5 +1,5 @@
 /// `typed_number.expression`: a number with its type. The `f64` suffix
-/// types it as an IEEE 754 binary64 float; another width is not admitted yet
-/// (#1109).
+/// types it as an IEEE 754 binary64 float, and an integer width's suffix as
+/// that width; `f32` is not admitted yet (#1109).
 @[ checks ]
 def half = 0.5f64 ;

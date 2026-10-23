@@ -949,6 +949,7 @@ pub(crate) fn crosses(
             | ValueTypeView::String
             | ValueTypeView::Character
             | ValueTypeView::Float64
+            | ValueTypeView::Fixed(_)
             | ValueTypeView::Unit
             | ValueTypeView::Unknown => {},
             ValueTypeView::Product(parts) | ValueTypeView::Sum(parts) => {

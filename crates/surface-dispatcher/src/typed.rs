@@ -6591,7 +6591,7 @@ mod tests
     #[test]
     fn a_refusal_is_read_as_the_declaration_answers_it()
     {
-        let source = SourceText::from("def answer = 42 ; def sized = 1u32 ;");
+        let source = SourceText::from("def answer = 42 ; def sized = 0.5f32 ;");
         let grammar = built_in().expect("the built-in grammar builds");
         let tree = gandr_surface_parser::parse(&grammar, source)
             .expect("the source parses")

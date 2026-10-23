@@ -2491,8 +2491,8 @@ fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
 {
     let url = "https://github.com/gandr-lang/gandr/issues/1109";
     let wide = only(
-        Path::new("wide.gandr"),
-        SourceText::from("def wide = 1u32 ;\n"),
+        Path::new("half.gandr"),
+        SourceText::from("def half = 0.5f32 ;\n"),
     );
     assert_eq!(
         wide.detail.class,

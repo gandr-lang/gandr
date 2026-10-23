@@ -902,6 +902,7 @@ pub fn decode_bridge(
         | ValueTypeView::String
         | ValueTypeView::Character
         | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Lift { .. }
@@ -1329,6 +1330,9 @@ fn convert(
                     | (ValueTypeView::Unit, ValueTypeView::Unit)
                     | (ValueTypeView::Buffer, ValueTypeView::Buffer)
                     | (ValueTypeView::Web, ValueTypeView::Web) => true,
+                    (ValueTypeView::Fixed(left_width), ValueTypeView::Fixed(right_width)) => {
+                        left_width == right_width
+                    },
                     // Where a found type meets a wanted one a stage is
                     // subsumed by the order; invariantly it equals only
                     // itself.
@@ -1561,6 +1565,7 @@ fn convert(
                         | ValueTypeView::String
                         | ValueTypeView::Character
                         | ValueTypeView::Float64
+                        | ValueTypeView::Fixed(_)
                         | ValueTypeView::Unit
                         | ValueTypeView::Thunk(_)
                         | ValueTypeView::Universe { .. }
@@ -2074,6 +2079,7 @@ fn value_head(
         | ValueTypeView::String
         | ValueTypeView::Character
         | ValueTypeView::Float64
+        | ValueTypeView::Fixed(_)
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Universe { .. }
@@ -2190,6 +2196,11 @@ fn relocated_values(
         | (ValueTypeView::Character, ValueTypeView::Character)
         | (ValueTypeView::Float64, ValueTypeView::Float64)
         | (ValueTypeView::Unit, ValueTypeView::Unit) => Read::Pushed,
+        (ValueTypeView::Fixed(left_width), ValueTypeView::Fixed(right_width))
+            if left_width == right_width =>
+        {
+            Read::Pushed
+        },
         (
             ValueTypeView::Universe {
                 sort: left_sort,
@@ -2331,6 +2342,7 @@ fn relocated_values(
             | ValueTypeView::String
             | ValueTypeView::Character
             | ValueTypeView::Float64
+            | ValueTypeView::Fixed(_)
             | ValueTypeView::Unit
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }

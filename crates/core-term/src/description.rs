@@ -42,6 +42,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::IntegerWidth;
 use gandr_theory_levitation::Code;
 use gandr_theory_levitation::CodeNode;
 use gandr_theory_levitation::CodeView;
@@ -729,8 +730,9 @@ fn parameter_value(
 /// Interpret supported primitives without inventing opaque substitutes.
 ///
 /// # Specification
-/// - ensures: Integer, String, Char and Unit retain their native types; Boolean
-///   is the canonical sum of two units.
+/// - ensures: Integer, String, Char, Unit and the integer widths `u32`, `u64`,
+///   `i32` and `i64` retain their native types; Boolean is the canonical sum of
+///   two units.
 /// - fails: every other primitive returns `Primitive` with its exact tag.
 /// - panics: none.
 ///
@@ -742,6 +744,7 @@ fn parameter_value(
 ///   observed independently; Boolean's two summands are units.
 /// - witness: `description::tests::decode_boolean_retrofits_to_one_plus_one`
 /// - witness: `description::tests::decode_reads_char_as_the_character_atom`
+/// - witness: `description::tests::decode_reads_each_integer_width_as_its_atom`
 /// - witness: `description::tests::decode_declines_the_deferred_leaves`
 #[spec(ensures: |result| result.as_ref().map_or(true, |id| arena.value_type(*id).is_some()))]
 fn decode_primitive(
@@ -758,13 +761,11 @@ fn decode_primitive(
             let unit = arena.value_type_unit();
             Ok(arena.value_type_sum(&[unit, unit]))
         },
-        PrimTy::U32
-        | PrimTy::U64
-        | PrimTy::I32
-        | PrimTy::I64
-        | PrimTy::F32
-        | PrimTy::F64
-        | PrimTy::Unknown => Err(DecodeError::Primitive(primitive)),
+        PrimTy::U32 => Ok(arena.value_type_base(BaseType::Fixed(IntegerWidth::U32))),
+        PrimTy::U64 => Ok(arena.value_type_base(BaseType::Fixed(IntegerWidth::U64))),
+        PrimTy::I32 => Ok(arena.value_type_base(BaseType::Fixed(IntegerWidth::I32))),
+        PrimTy::I64 => Ok(arena.value_type_base(BaseType::Fixed(IntegerWidth::I64))),
+        PrimTy::F32 | PrimTy::F64 | PrimTy::Unknown => Err(DecodeError::Primitive(primitive)),
     }
 }
 

@@ -167,6 +167,8 @@ enum Leaf
     Character,
     /// The 64-bit floating-point atom.
     Float64,
+    /// An integer width atom, at its width.
+    Fixed(gandr_kernel_term::IntegerWidth),
     /// A rigid list tail, at this list type.
     Tail(ValueTypeId),
     /// The translator's own image of a cell's tail, at the target: the leaf a
@@ -496,7 +498,8 @@ fn first_order(
             | ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Character
-            | ValueTypeView::Float64 => {},
+            | ValueTypeView::Float64
+            | ValueTypeView::Fixed(_) => {},
             ValueTypeView::Sum(parts) if !parts.is_empty() => {
                 pending.extend(parts.iter().copied().map(Walk::Visit));
             },
@@ -606,6 +609,7 @@ fn leaves(
             ValueTypeView::String => (Leaf::String, value),
             ValueTypeView::Character => (Leaf::Character, value),
             ValueTypeView::Float64 => (Leaf::Float64, value),
+            ValueTypeView::Fixed(width) => (Leaf::Fixed(width), value),
             ValueTypeView::Unit => continue,
             ValueTypeView::List(element) => match context.arena().value(value) {
                 Some(&Value::ListNil) => continue,
@@ -755,6 +759,7 @@ fn natural(
             ValueTypeView::String => Leaf::String,
             ValueTypeView::Character => Leaf::Character,
             ValueTypeView::Float64 => Leaf::Float64,
+            ValueTypeView::Fixed(width) => Leaf::Fixed(width),
             ValueTypeView::List(element) => match context.arena().value(value) {
                 Some(&Value::ListNil) => continue,
                 Some(&Value::ListCons(first, tail)) => {

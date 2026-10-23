@@ -590,7 +590,8 @@ pub fn coverage(
                     ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Character
-                    | ValueTypeView::Float64 => {
+                    | ValueTypeView::Float64
+                    | ValueTypeView::Fixed(_) => {
                         let leaf = context
                             .arena_mut()
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));

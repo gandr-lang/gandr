@@ -381,7 +381,7 @@ enum Task
 /// - witness: `formation::tests::each_carrying_former_stands_at_the_level_of_what_it_carries`
 #[spec(ensures: |ret| match root {
     | TypeNode::Value(at) => match value_type_view(context.arena(), at) {
-        | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Character | ValueTypeView::Unit | ValueTypeView::Unknown) => ret == Ok(Level::zero()),
+        | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Character | ValueTypeView::Fixed(_) | ValueTypeView::Unit | ValueTypeView::Unknown) => ret == Ok(Level::zero()),
         | Ok(ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. }) => ret.as_ref() == Ok(target),
         | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
         | Ok(_) => true,
@@ -442,6 +442,7 @@ pub fn level_of(
                 | ValueTypeView::String
                 | ValueTypeView::Character
                 | ValueTypeView::Float64
+                | ValueTypeView::Fixed(_)
                 | ValueTypeView::Unit
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)

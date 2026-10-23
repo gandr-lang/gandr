@@ -96,11 +96,13 @@ use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldPosition;
+use gandr_kernel_term::FixedInteger;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::FractionDigits;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
+use gandr_kernel_term::IntegerWidth;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::NumericLiteral;
@@ -1150,7 +1152,7 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
                 u64::try_from(numeric.integer_part().as_ref().len()).is_ok()
                     && u64::try_from(numeric.fraction().as_ref().len()).is_ok()
             },
-            | Literal::Character(_) | Literal::Float64(_) => true,
+            | Literal::Character(_) | Literal::Float64(_) | Literal::Fixed(_) => true,
         } {
             Ok(())
         }
@@ -1190,6 +1192,15 @@ where
             writer.tag(Tag(8));
             writer.bytes(Bytes(u64::from(float).to_le_bytes().as_slice()))?;
         },
+        Literal::Fixed(fixed) => {
+            writer.tag(Tag(match fixed.width() {
+                IntegerWidth::U32 => 4,
+                IntegerWidth::U64 => 5,
+                IntegerWidth::I32 => 6,
+                IntegerWidth::I64 => 7,
+            }));
+            writer.word(Word(u64::from(fixed)));
+        },
     }
     Ok(())
 }
@@ -1201,10 +1212,10 @@ where
 ///   may be normalized.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the finite semantic corpus preserves the four literal
-///   classes through persistence. The predicate checks tag classification, not
-///   a second construction of normalized decimal text. Unknown tags reject
-///   before consuming available payload bytes.
+/// - hypothesis: L3 — the finite semantic corpus preserves the literal classes
+///   through persistence. The predicate checks tag classification, not a second
+///   construction of normalized decimal text. Unknown tags reject before
+///   consuming available payload bytes.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
 #[spec(
@@ -1218,6 +1229,12 @@ where
                     | Literal::Numeric(_) => 2,
                     | Literal::Character(_) => 3,
                     | Literal::Float64(_) => 8,
+                    | Literal::Fixed(fixed) => match fixed.width() {
+                        | IntegerWidth::U32 => 4,
+                        | IntegerWidth::U64 => 5,
+                        | IntegerWidth::I32 => 6,
+                        | IntegerWidth::I64 => 7,
+                    },
                 })
                 && reader.cursor > before
         },
@@ -1263,8 +1280,38 @@ fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
                 u64::from_le_bytes(bits),
             ))))
         },
+        4 => read_fixed(reader, IntegerWidth::U32),
+        5 => read_fixed(reader, IntegerWidth::U64),
+        6 => read_fixed(reader, IntegerWidth::I32),
+        7 => read_fixed(reader, IntegerWidth::I64),
         _ => Err(CodecError::Corrupt),
     }
+}
+
+/// Read a width literal's payload: its bit pattern as one word.
+///
+/// # Specification
+/// - ensures: on `Ok`, the literal of `width` with the read pattern.
+/// - fails: [`CodecError::Corrupt`] for a short word or a 32-bit width's
+///   pattern that sets a bit above its 32nd.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite semantic corpus carries a width literal
+///   through persistence.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|literal| literal.base_type() == BaseType::Fixed(width)))]
+fn read_fixed(
+    reader: &mut Reader<'_>,
+    width: IntegerWidth,
+) -> Result<Literal, CodecError>
+{
+    let bits = reader.word()?;
+    FixedInteger::try_from((width, bits.0))
+        .map(Literal::Fixed)
+        .map_err(|_wider| CodecError::Corrupt)
 }
 
 /// Write a node index.
@@ -2129,6 +2176,10 @@ where
                 BaseType::Numeric => Tag(2),
                 BaseType::Character => Tag(3),
                 BaseType::Float64 => Tag(8),
+                BaseType::Fixed(IntegerWidth::U32) => Tag(4),
+                BaseType::Fixed(IntegerWidth::U64) => Tag(5),
+                BaseType::Fixed(IntegerWidth::I32) => Tag(6),
+                BaseType::Fixed(IntegerWidth::I64) => Tag(7),
             });
         },
         ContentNode::Product(ref parts) => {
@@ -4288,6 +4339,10 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 2 => BaseType::Numeric,
                 3 => BaseType::Character,
                 8 => BaseType::Float64,
+                4 => BaseType::Fixed(IntegerWidth::U32),
+                5 => BaseType::Fixed(IntegerWidth::U64),
+                6 => BaseType::Fixed(IntegerWidth::I32),
+                7 => BaseType::Fixed(IntegerWidth::I64),
                 _ => return Err(CodecError::Corrupt),
             })
         },

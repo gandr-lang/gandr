@@ -394,6 +394,8 @@ pub enum TypeAtom
     Character,
     /// `f64`, the IEEE 754 binary64 base atom.
     Float64,
+    /// `u32`, `u64`, `i32` or `i64`, an integer width atom.
+    Fixed(gandr_kernel_term::IntegerWidth),
     /// `Void`, the sum of no summands, eliminated by a case of no arms.
     Void,
     /// `Buf`, the opaque buffer a receive places live and a send returns.
@@ -439,7 +441,7 @@ pub enum TypeFormer
 ///   near spellings separating the absent branch.
 /// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 9_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 13_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
@@ -447,6 +449,10 @@ const TYPE_ATOMS: [(&str, TypeAtom); 9_usize] = [
     ("String", TypeAtom::Text),
     ("Char", TypeAtom::Character),
     ("f64", TypeAtom::Float64),
+    ("u32", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U32)),
+    ("u64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::U64)),
+    ("i32", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I32)),
+    ("i64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I64)),
     ("Buf", TypeAtom::Buffer),
     ("Web", TypeAtom::Web),
 ];

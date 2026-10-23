@@ -2908,6 +2908,50 @@ fn a_character_spells_as_the_literal_it_lowers_from()
     }
 }
 
+/// A width literal spells as its decimal value, signed when negative, then
+/// its width's suffix, and a width atom as the type head it resolves from.
+#[test]
+fn a_width_literal_spells_with_its_suffix()
+{
+    use gandr_kernel_term::FixedInteger;
+    use gandr_kernel_term::IntegerWidth;
+
+    let mut core = CoreArena::new();
+    let rows = [
+        (FixedInteger::U32(0), "0u32"),
+        (FixedInteger::U32(u32::MAX), "4294967295u32"),
+        (FixedInteger::U64(u64::MAX), "18446744073709551615u64"),
+        (FixedInteger::I32(-1), "-1i32"),
+        (FixedInteger::I64(i64::MIN), "-9223372036854775808i64"),
+    ];
+    let leaves = rows.map(|(fixed, _)| {
+        let value = core.value_literal(Literal::Fixed(fixed));
+        normal_form(&mut core, value)
+    });
+    let heads = [
+        (IntegerWidth::U32, "u32"),
+        (IntegerWidth::U64, "u64"),
+        (IntegerWidth::I32, "i32"),
+        (IntegerWidth::I64, "i64"),
+    ]
+    .map(|(width, head)| (core.value_type_base(BaseType::Fixed(width)), head));
+    let source = CoreSource::new(&core, &[]);
+    for (root, (fixed, expected)) in leaves.into_iter().zip(rows) {
+        assert_eq!(
+            spelled(&source, Root::Value(root)),
+            faithful(Written(expected)),
+            "{fixed:?} spells with its suffix"
+        );
+    }
+    for (atom, head) in heads {
+        assert_eq!(
+            spelled(&source, Root::Type(CoreNode::ValueType(atom))),
+            faithful(Written(head)),
+            "the {head} atom spells as its type head"
+        );
+    }
+}
+
 /// A former reads each child at the sort it takes, and a node the printer
 /// cannot read spells `?` at exactly that node: `+U` over a value type,
 /// `-F` over a computation type, an arrow from a computation type, a term

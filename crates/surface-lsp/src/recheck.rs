@@ -2078,11 +2078,11 @@ mod tests
     fn an_unimplemented_refusal_links_its_tracking_issue()
     {
         let url = "https://github.com/gandr-lang/gandr/issues/1109";
-        let uri = DocumentUri::from("file:///strict/wide.gandr");
-        let diagnostics = checked(&uri, SourceText::from("def wide = 1u32 ;\n"));
+        let uri = DocumentUri::from("file:///strict/half.gandr");
+        let diagnostics = checked(&uri, SourceText::from("def half = 0.5f32 ;\n"));
         let [ref diagnostic] = *diagnostics.as_slice()
         else {
-            panic!("one unsupported typed number");
+            panic!("one unsupported floating width");
         };
         assert_eq!(
             diagnostic.code.as_deref(),

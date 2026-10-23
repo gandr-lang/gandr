@@ -2142,6 +2142,10 @@ impl LoweredModule<'_>
             ("Integer", BaseType::Integer),
             ("String", BaseType::String),
             ("Char", BaseType::Character),
+            ("u32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U32)),
+            ("u64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::U64)),
+            ("i32", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I32)),
+            ("i64", BaseType::Fixed(gandr_kernel_term::IntegerWidth::I64)),
         ] {
             let ty = typer.arena.value_type_base(atom);
             let _first = families.insert(Name::from(name), (ty, base));

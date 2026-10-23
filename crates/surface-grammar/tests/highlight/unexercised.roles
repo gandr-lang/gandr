@@ -1598,7 +1598,6 @@
 2521 TypeBuiltin primitive_type Any L[] R[]
 2523 TypeBuiltin primitive_type Never L[] R[]
 2524 TypeBuiltin primitive_type Boolean L[] R[]
-2526 TypeBuiltin primitive_type u32 L[] R[]
 2530 TypeBuiltin primitive_type f32 L[] R[]
 2534 TypeBuiltin primitive_type Symbol L[] R[]
 2545 Other capability_type identifier L[[] R[]]

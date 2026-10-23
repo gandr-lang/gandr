@@ -4439,7 +4439,8 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
 ///   between single quotes, a backslash, a single quote, a line feed, a tab, a
 ///   carriage return and a nul as the escape the lowering decodes and every
 ///   other scalar as itself; a floating-point literal as its shortest
-///   round-tripping decimal and the `f64` suffix that types it.
+///   round-tripping decimal and the `f64` suffix that types it; a width literal
+///   as its decimal value, signed when negative, and its width's suffix.
 /// - provides: the one spelling of every literal, which holds no line break, so
 ///   a literal never splits across lines.
 /// - fails: never.
@@ -4450,10 +4451,11 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
 ///   numeric fixtures observe delimiters, sign, digits and fractional parts.
 ///   Arbitrary Unicode strings and all magnitudes are not enumerated. The
 ///   character fixtures cover each escape, a double quote and a multibyte
-///   scalar.
+///   scalar; the width fixtures cover each width and a negative value.
 /// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
 /// - witness: `tests::goldens::every_value_leaf_spells_as_the_surface_writes_it`
 /// - witness: `tests::goldens::a_character_spells_as_the_literal_it_lowers_from`
+/// - witness: `tests::goldens::a_width_literal_spells_with_its_suffix`
 #[spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']) && match *literal {
     | Literal::Integer(ref integer) => {
         let digits = match integer.sign() {
@@ -4475,6 +4477,7 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
         && (f64::from(float).is_nan() || ret.0.trim_end_matches("f64").parse::<f64>().ok() == Some(f64::from(float))),
     | Literal::Text(_) => ret.0.len() >= 2_usize && ret.0.starts_with('"') && ret.0.ends_with('"'),
     | Literal::Character(_) => ret.0.len() >= 3_usize && ret.0.starts_with('\'') && ret.0.ends_with('\''),
+    | Literal::Fixed(fixed) => ret.0.strip_prefix(fixed.to_decimal().as_str()) == Some(fixed.width().as_ref()),
 })]
 fn literal(literal: &Literal) -> Spelled
 {
@@ -4519,6 +4522,11 @@ fn literal(literal: &Literal) -> Spelled
             format!("'{escape}'")
         },
         Literal::Float64(float) => format!("{}f64", f64::from(float)),
+        Literal::Fixed(fixed) => {
+            let width = fixed.width();
+            let suffix: &str = width.as_ref();
+            format!("{}{suffix}", fixed.to_decimal())
+        },
     })
 }
 
@@ -6569,6 +6577,12 @@ impl Walk<'_, '_>
             Former::BaseType(BaseType::Float64) => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("f64")));
             },
+            Former::BaseType(BaseType::Fixed(width)) => {
+                return writes(
+                    Production("primitive_type"),
+                    self.atom(Glyphs(width.as_ref())),
+                );
+            },
             Former::BufferType => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Buf")));
             },
@@ -6626,7 +6640,9 @@ impl Walk<'_, '_>
                     Literal::Integer(_) | Literal::Numeric(_) => Production("number.expression"),
                     Literal::Text(_) => Production("string.expression"),
                     Literal::Character(_) => Production("character"),
-                    Literal::Float64(_) => Production("typed_number.expression"),
+                    Literal::Float64(_) | Literal::Fixed(_) => {
+                        Production("typed_number.expression")
+                    },
                 };
                 return writes(production, self.atom(Glyphs(spelled.0.as_str())));
             },
