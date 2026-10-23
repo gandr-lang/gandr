@@ -12,17 +12,18 @@ module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
   /// A shell command's reply; the lowering admits no shell block yet (#1057).
   @[ refuses("OutOfFragment.shell_block") ]
   def hidden_reply = #!{ printf 'hidden module member ran\n'; };
-  /// The seed and the reply's exit code, reached by a projection the
-  /// lowering admits for no field yet (#1106).
-  @[ refuses("OutOfFragment.projection_expression") ]
+  /// The seed and the reply's exit code. An operator is a computation, and a
+  /// definition with no stated type reads its value where nothing infers
+  /// that computation's type.
+  @[ refuses("NotSynthesisable") ]
   def base = seed + hidden_reply.exit_code + 1;
   /// A nested module whose `hidden` the signature leaves out.
   module inner : #{ answer: Integer } {
     /// The enclosing module's base, whose type is unknown while `base` is
-    /// refused (#1106).
+    /// refused.
     @[ refuses("UnknownConstant") ]
     def hidden = base;
-    /// One more than the base, refused with it (#1106).
+    /// One more than the base, refused with it.
     @[ refuses("UnknownConstant") ]
     def answer = base + 1;
   }

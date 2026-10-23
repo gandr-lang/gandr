@@ -1,4 +1,6 @@
-/// `projection_expression`: a projection of a field.
-/// The checker does not reach this form yet; #1106 tracks it.
-@[ refuses("OutOfFragment.projection_expression") ]
-def across = point.x ;
+/// `projection_expression`: a projection of a field, `x` off the record
+/// `point` holds.
+@[ checks ]
+def point = #{ x = 1, y = 2 } ;
+@[ runs("1") ]
+point.x

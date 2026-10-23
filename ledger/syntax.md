@@ -92,7 +92,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`pack_model_expression`](../corpus/ledger/syntax/pack_model_expression.gandr) | `pack EXPRESSION at TYPE` | `expression.pure` | `pack_model_expression` * | admitted | Keyword |
 | [`call_expression`](../corpus/ledger/syntax/call_expression.gandr) | `EXPRESSION ( ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? )` | `expression.postfix` | `call_expression` | admitted | Other |
 | [`instantiation_expression`](../corpus/ledger/syntax/instantiation_expression.gandr) | `EXPRESSION [ INSTANTIATION ⦅ , INSTANTIATION ⦆* ⦅ , ⦆? ]` | `expression.postfix` | `instantiation_expression` | admitted | Other |
-| [`projection_expression`](../corpus/ledger/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | unadmitted | Other, Member, Constructor, Number |
+| [`projection_expression`](../corpus/ledger/syntax/projection_expression.gandr) | `EXPRESSION . ⦅ ‹identifier› ‖ ‹constructor› ‖ ‹number› ⦆` | `expression.postfix` | `projection_expression` | admitted | Other, Member, Constructor, Number |
 | [`view_expression`](../corpus/ledger/syntax/view_expression.gandr) | `EXPRESSION as ‹identifier› ⟨block⟩` | `expression.postfix` | `view_expression` * | admitted | Keyword, VariableDef, Other, Operator, Number, VariableParam |
 | [`index_expression`](../corpus/ledger/syntax/index_expression.gandr) | `EXPRESSION [ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
 | [`hole`](../corpus/ledger/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | admitted | Hole, Label |

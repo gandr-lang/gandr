@@ -5,7 +5,6 @@
 @[ checks ]
 def list = #{each = 7};
 
-/// The run target reads the field; the lowering admits no field projection
-/// yet (#1106).
-@[ refuses("OutOfFragment.projection_expression") ]
+/// The run target reads the record's field `each`, not the builtin's member.
+@[ runs("7") ]
 list.each

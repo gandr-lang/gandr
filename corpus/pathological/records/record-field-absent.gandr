@@ -1,0 +1,18 @@
+// A field is read only where the record has it: a label the record lacks
+// names no field, and a value that is no record has none.
+
+/// A record of two fields.
+@[ checks ]
+def pair = #{ x = 1, y = 2 };
+
+/// `z` is no label of `pair`.
+@[ refuses("AbsentRecordField") ]
+def lacking() -> -F Integer { pair.z }
+
+/// An integer.
+@[ checks ]
+def count = 3;
+
+/// An integer has no fields: a shape mismatch at `count`, wanting a record.
+@[ refuses("ShapeMismatch") ]
+def unfielded() -> -F Integer { count.x }

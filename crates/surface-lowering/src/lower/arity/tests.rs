@@ -644,6 +644,39 @@ fn a_selection_off_a_record_projects_its_label_855()
     );
 }
 
+/// A selection off a value no written type states is the field of the record
+/// the value is, projected at its label: off a definition with no signature,
+/// and off a field of it, the inner link read as the value its projection
+/// returns. A name whose written type is no record keeps its refusal (#1106).
+#[test]
+fn a_field_of_a_record_no_type_states_projects_its_label_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def outer = #{ tag = \"t\", inner = #{ x = 1, y = 2 } } ; def one() -> -F #{x : \
+         Integer, y : Integer} { outer.inner } def two() -> -F Integer { outer.inner.x }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        body(&arena, &module, "one"),
+        ["thunk", "field.inner", "const0"],
+        "the record the definition holds is projected at the label"
+    );
+    assert_eq!(
+        body(&arena, &module, "two"),
+        ["thunk", "field.x", "nested", "field.inner", "const0"],
+        "the outer link projects the record the inner one returns"
+    );
+    assert!(
+        matches!(
+            refused("def typed(n : Integer) -> -F Integer { n.x }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "a written type that is no record keeps the selection's refusal"
+    );
+}
+
 /// A selection by position projects the pair its operand is: `.0` its first
 /// component and `.1` its second, as the labels of a type of two name them;
 /// a third position is refused.

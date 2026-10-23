@@ -211,13 +211,12 @@ fn a_receiver_is_a_typed_first_self()
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
     for name in ["first", "second"] {
-        assert!(
-            matches!(
-                refusal_of(&module, SurfaceName::from(name)),
-                LoweringRefusal::OutOfFragment { .. }
-            ),
-            "`{name}` calls no method: {:?}",
-            refusal_of(&module, SurfaceName::from(name))
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            forms(&arena, tail),
+            ["hold"],
+            "`{name}` calls no method: nothing lends the count, and the selection reads a field \
+             of it"
         );
     }
     assert!(

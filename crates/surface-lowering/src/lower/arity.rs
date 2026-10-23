@@ -46,7 +46,11 @@
 //! type `+U &{…}` of the name an observation selects from. Without one the
 //! form is refused as unannotated; a positional label `.1` names its index
 //! itself and needs no type, except where a sum pattern must know how many
-//! summands to cover. A type named by a declaration is not unfolded.
+//! summands to cover. A type named by a declaration is not unfolded. A
+//! record's field needs no index either: the core's record is keyed by its
+//! labels, so a selection `e.l` off a value no written type states projects
+//! `l` itself, and the checker reads the field's type off the record type `e`
+//! synthesises.
 //!
 //! - Alternatives: a checker that elaborates a labelled form against the type
 //!   it checks at, which the lowering does not duplicate; reading the
@@ -2656,6 +2660,102 @@ impl<'source> Lowerer<'_, 'source>
                 Some((form, label)),
             ),
         );
+
+        Ok(Planned(true))
+    }
+
+    /// Classify a selection `e.l` as the field `l` of the record `e` is, where
+    /// no written type states the record: a chain of selections rooted at a
+    /// value's name.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading;
+    ///   [`Self::selection`] planned nothing at it.
+    /// - ensures: planned when the member is a name and the chain of selections
+    ///   the operand is ends at a name not capitalised that a binder or a
+    ///   declaration answers, with no type written when the operand is that
+    ///   name itself: the field at the member's label, the operand read as a
+    ///   value under the form's frame. Nothing is planned otherwise, so a
+    ///   module path, a builtin namespace's member, an observation and a name
+    ///   whose written type is not a record are read as before.
+    /// - fails: the wrong-sort refusal where no computation is read; the head
+    ///   name's own resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a field of a definition with no signature, a field of
+    ///   a field, a builtin namespace's member and a name with a written type
+    ///   that is not a record.
+    /// - witness: `lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Field(..))))]
+    pub(super) fn field(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<Planned, LoweringRefusal<'source>>
+    {
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return Ok(Planned(false));
+        };
+        let member = self.name_at(selected);
+        if !member
+            .as_ref()
+            .chars()
+            .next()
+            .is_some_and(|first| first == '_' || first.is_lowercase())
+        {
+            return Ok(Planned(false));
+        }
+        let mut head = target;
+        let mut chain = Pieces::new();
+        loop {
+            self.fuel.spend()?;
+            match self.form_at(head)? {
+                Some((_, Former::Projection)) => {
+                    read_pieces(self.pbg, self.tree, head.node, &mut chain)?;
+                    if let Maybe::Present(_) = chain.repair {
+                        return Ok(Planned(false));
+                    }
+                    let Ok((inner, _)) = Self::link(site, &chain.pieces, head.span)
+                    else {
+                        return Ok(Planned(false));
+                    };
+                    head = inner;
+                },
+                Some((_, Former::Name)) => break,
+                Some(_) | None => return Ok(Planned(false)),
+            }
+        }
+        let name = self.name_at(head);
+        if name.as_ref().chars().next().is_none_or(char::is_uppercase) {
+            return Ok(Planned(false));
+        }
+        // The head lies under links the walk has not reached: it resolves by
+        // the declaration the selection belongs to.
+        self.own_written(head.node, site.at.node);
+        let frame = site.reading.frame();
+        let named = Site {
+            at: head,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let declared = match self.resolve_name(named, frame, name)? {
+            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => return Ok(Planned(false)),
+        };
+        // A name with a written type that is no record keeps its reading.
+        if head.node == target.node && matches!(declared, Maybe::Present(_)) {
+            return Ok(Planned(false));
+        }
+        let label = FieldLabel::from(String::from(member.as_ref()));
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Value(frame));
+        self.plan(site, Plan::Field(target.node, label));
 
         Ok(Planned(true))
     }

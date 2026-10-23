@@ -1960,6 +1960,61 @@ fn a_computation_written_as_a_scrutinee_runs_1141()
     );
 }
 
+/// A projection's record is never a thunk, so a projection written there runs
+/// and the outer projection reads the record it returns: a field of a field
+/// checks (#1106).
+#[test]
+fn a_computation_written_as_a_projected_record_runs_1106()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let unit = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    // `outer : #{inner : #{x : Integer}} = #{inner = #{x = 0}}`.
+    let inner_type =
+        arena.value_type_record(alloc::collections::BTreeMap::from([(label("x"), integer)]));
+    let outer_type = arena.value_type_record(alloc::collections::BTreeMap::from([(
+        label("inner"),
+        inner_type,
+    )]));
+    let zero = arena.value_literal(integer_literal());
+    let inner = arena.value_record(alloc::collections::BTreeMap::from([(label("x"), zero)]));
+    let outer = arena.value_record(alloc::collections::BTreeMap::from([(
+        label("inner"),
+        inner,
+    )]));
+    // `picked : unit -> F Integer`, `λu. outer.inner.x`.
+    let answers = arena.comp_type_returner(integer);
+    let picked_arrow = arena.comp_type_arrow(unit, answers);
+    let picked_type = arena.value_type_thunk(picked_arrow);
+    let named = arena.value_constant(ConstantIndex::from(0_usize));
+    let projected = arena.computation_record_projection(named, label("inner"));
+    let record = arena.value_nested(projected);
+    let field = arena.computation_record_projection(record, label("x"));
+    let lambda = arena.computation_lambda(field);
+    let picked = arena.value_thunk(lambda);
+    let module = [
+        declaration(At(0), Maybe::Present(outer_type), Maybe::Present(outer)),
+        declaration(At(1), Maybe::Present(picked_type), Maybe::Present(picked)),
+    ];
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    assert!(
+        matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+        "the inner projection runs and the outer one reads its field: {:?}",
+        report.judged()[1].verdict()
+    );
+    assert_eq!(
+        report.nested_elaborations()[&ConstantIndex::from(1_usize)]
+            .decisions()
+            .get(&record),
+        Some(&Nesting::Ran(Purity::Pure)),
+        "the inner projection runs, purely"
+    );
+}
+
 #[test]
 fn a_run_in_a_definition_s_own_value_is_unenclosed()
 {
