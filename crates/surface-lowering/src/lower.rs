@@ -2315,6 +2315,16 @@ enum Plan
     /// holding a thunk — called on the arguments in the lowerer's operand
     /// store, its returned code decoded in the universe the position reads.
     Unquote(Code, Stretch, Universe),
+    /// The carrier the model a binder holds gives one of its theory's
+    /// unindexed sorts, `a.C`: the binder's bundled record projected at the
+    /// sort's field — at its label off a record, along the nesting otherwise —
+    /// the projection's returned code decoded in the fuss-free universe.
+    Carrier(Code, arity::Observed, Option<FieldLabel>),
+    /// The type the model type a binder is held at fixes one of its theory's
+    /// sorts to, `a.C` for `a : Model(T) with sort C = A`: the type `A`, at the
+    /// node it is written at, raised past the binders between that type and
+    /// the reading.
+    FixedCarrier(Code, NodeIndex),
     /// The call of a dynamic function the code names on the arguments in the
     /// lowerer's operand store, left to right: a type-position call's argument
     /// written as a call, which a value position nests.
@@ -3046,6 +3056,10 @@ struct Lowerer<'run, 'source>
     /// Each `Model(T)` application a manifest type closes, with the sorts it
     /// fixes: each sort's name beside the type it is, in written order.
     fixed_sorts: BTreeMap<NodeIndex, Vec<(Placed, Placed)>>,
+    /// Each type a manifest sort is fixed to that a reading of the sort off
+    /// its binder, `a.C`, stands for: minted before the sweep reaches the
+    /// reading, which can sit deeper in the tree than the type.
+    fixed_carriers: Vec<Placed>,
     /// The type each computation position answers, where a function's result
     /// or a match's answer states it, or the block a statement's local ends
     /// continue answers.
@@ -4612,6 +4626,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             index_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
             fixed_sorts: BTreeMap::new(),
+            fixed_carriers: Vec::new(),
             answers: BTreeMap::new(),
             cocased: BTreeSet::new(),
             synthesised: Vec::new(),
@@ -10624,15 +10639,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a chain of type paths whose head is a bare type name is one
     ///   path: inside a functor whose parameter the head names, a one-link path
     ///   is that parameter's type component, as [`Self::parameter_type`] reads
-    ///   it; otherwise it is resolved through the outermost scope at the depth
-    ///   that binds it: a path ending at an exported type component stands for
-    ///   what the component reads — the type a manifest component or a type
-    ///   member names, the type member a transparently ascribed abstract
-    ///   component reads, the atom an opaquely ascribed one's abstract type
-    ///   declares, or an instance's manifest type. The chain is walked by an
-    ///   explicit loop, and its links are left unread. A one-link path whose
-    ///   head is the alias of a path import reads the type the imported source
-    ///   declares under the member, as a static application of it.
+    ///   it; a one-link path whose head names a binder held at a theory's model
+    ///   type is the carrier the model gives the sort the link names, as
+    ///   [`Self::carrier`] reads it; otherwise it is resolved through the
+    ///   outermost scope at the depth that binds it: a path ending at an
+    ///   exported type component stands for what the component reads — the type
+    ///   a manifest component or a type member names, the type member a
+    ///   transparently ascribed abstract component reads, the atom an opaquely
+    ///   ascribed one's abstract type declares, or an instance's manifest type.
+    ///   The chain is walked by an explicit loop, and its links are left
+    ///   unread. A one-link path whose head is the alias of a path import reads
+    ///   the type the imported source declares under the member, as a static
+    ///   application of it.
     /// - provides: the governed reading of a type path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a type a governing module or a
@@ -10653,17 +10671,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a path to a sealed component, to a manifest one, to a
     ///   body type member, to a nested module's type, to an absent member, to a
     ///   value component and from an unbound head, each asserted as the exact
-    ///   type or refusal; a path past a parameter's type, refused at that link.
+    ///   type or refusal; a path past a parameter's type, refused at that link;
+    ///   a model binder's sort, read as its carrier.
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
     /// - witness: `tests::modules::an_unbound_type_path_is_refused_by_name`
     /// - witness: `tests::modules::opaque_ascription_seals`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Data(..)))
+                    Some(&(Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Decode(..) | Plan::Unquote(..) | Plan::Carrier(..) | Plan::FixedCarrier(..) | Plan::Data(..)))
                 )
         },
     )]
@@ -10729,6 +10749,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Some(&(_, first)) = links.last()
             && self.parameter_type(site, head, first, functor::Deeper(links.len() > 1_usize))?
                 == functor::Read::Planned
+        {
+            return Ok(());
+        }
+        if let &[(_, member)] = links.as_slice()
+            && self.carrier(site, head, member)? == arity::Planned(true)
         {
             return Ok(());
         }
@@ -12922,6 +12947,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .filter(|&(argument, _)| owns(argument))
                     .map(|(_, declared)| declared.typed),
             )
+            // A type a manifest sort is fixed to stands for each reading of
+            // the sort off its binder, wherever that reading stands.
+            .chain(
+                self.fixed_carriers
+                    .iter()
+                    .filter(|written| owns(&written.node))
+                    .copied(),
+            )
             .collect();
         stated.sort_unstable_by_key(|defined| (defined.span.start(), defined.node));
         stated.dedup();
@@ -13625,7 +13658,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Session(..)
                 | Plan::World(world::Worlded::At { .. })
                 | Plan::Staged(..)
-                | Plan::Kept(..) => Some(Produced::ValueType),
+                | Plan::Kept(..)
+                | Plan::Carrier(..)
+                | Plan::FixedCarrier(..) => Some(Produced::ValueType),
                 | Plan::Arrow(..) | Plan::DependentArrow(..) | Plan::With(_) | Plan::Codata(..) | Plan::Former(TypeFormer::Returner, _) | Plan::Effectful(..) => {
                     Some(Produced::CompType)
                 },
@@ -13793,6 +13828,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Unquote(code, arguments, universe) => {
                 self.mint_unquote(code, arguments, universe, sink, origin)
             },
+            Plan::Carrier(code, selected, ref label) => {
+                self.mint_carrier(code, selected, label.as_ref(), sink, origin)
+            },
+            Plan::FixedCarrier(code, written) => self.mint_fixed_carrier(code, written, sink),
             Plan::Called(code, arguments) => self
                 .mint_called(code, arguments, sink, origin)
                 .map(Lowered::Computation),
@@ -14979,6 +15018,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Universe(_)
             | Plan::Decode(..)
             | Plan::Unquote(..)
+            | Plan::Carrier(..)
+            | Plan::FixedCarrier(..)
             | Plan::Called(..)
             | Plan::StaticApplication(..)
             | Plan::Tuple(_)

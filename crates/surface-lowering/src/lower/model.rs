@@ -60,6 +60,7 @@ use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
 
+use super::Code;
 use super::Lowered;
 use super::Lowerer;
 use super::Plan;
@@ -1759,6 +1760,232 @@ impl<'source> Lowerer<'_, 'source>
             .collect();
 
         Maybe::Present((entries, links))
+    }
+
+    /// Classify a type path `a.C` whose head names a binder held at a
+    /// theory's model type: the carrier the model gives the sort `C`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a one-link type path, `head` its head and `member`
+    ///   the name it selects.
+    /// - ensures: planned when `head` names a binder in scope whose written
+    ///   type is `Model(T)`, through parentheses and manifest sorts, and
+    ///   `member` names a sort of it. A sort the type fixes is the type it is
+    ///   fixed to, read at its own node, and the binder stays unmentioned; any
+    ///   other is an unindexed sort of `T` the binder's bundle holds, projected
+    ///   at its field — at its label when no field of the bundle names another,
+    ///   along the nesting otherwise — with the binder mentioned in the type,
+    ///   which so depends on it. Nothing is planned for a head no such binder
+    ///   answers.
+    /// - fails: [`LoweringRefusal::UnknownMember`], naming the binder and the
+    ///   member, for a name that is no component of `T`; the wrong-sort refusal
+    ///   for a component that is no unindexed sort, and where no value type is
+    ///   read; the unbuilt projection for a sort the type leaves a field when
+    ///   it fixes another, whose bundle is planned after the reading;
+    ///   propagates [`LoweringRefusal::BudgetExceeded`] from the binder walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMember`], the wrong-sort refusal, the unbuilt
+    /// projection and [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Termination
+    /// Each step follows a transparent plan to the child it stands for,
+    /// strictly deeper in the finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's carrier read off a binder held at the
+    ///   counter's models, beside the record a second counter sharing it
+    ///   derives; a carrier the binder's type fixes, closed and over an earlier
+    ///   binder past an unmentioned one; an operation and a name the theory
+    ///   lacks, refused, and a sort left a field beside a fixed one.
+    /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&(Plan::Carrier(Code::Bound { .. }, ..) | Plan::FixedCarrier(Code::Bound { .. }, _)))))]
+    pub(super) fn carrier(
+        &mut self,
+        site: Site,
+        head: Placed,
+        member: Placed,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let frame = site.reading.frame();
+        let Maybe::Present(bound) =
+            self.scope
+                .resolve(frame, self.name_at(head), &mut self.fuel)?
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let Maybe::Present(declared) = bound.declared
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let name = self.name_at(member);
+        let telescope = self.telescope_at(site.at.node);
+        let code = Code::Bound {
+            from: frame,
+            binder: bound.binder,
+            telescope,
+        };
+        let mut node = declared;
+        let bundled = loop {
+            if let Some(&(_, written)) = self
+                .fixed_sorts
+                .get(&node)
+                .and_then(|sorts| sorts.iter().find(|&&(sort, _)| self.name_at(sort) == name))
+            {
+                let _frame = self.require(site, Produced::ValueType)?;
+                self.fixed_carriers.push(written);
+                self.plan(site, Plan::FixedCarrier(code, written.node));
+                return Ok(arity::Planned(true));
+            }
+            match self.plans.get(node) {
+                Some(&Plan::Transparent(inner)) => node = inner,
+                Some(&Plan::Bundle(ref bundled)) => break Arc::clone(bundled),
+                _ if self.fixed_sorts.contains_key(&node) => {
+                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
+                },
+                _ => return Ok(arity::Planned(false)),
+            }
+        };
+        let Some(theory) = bundled.theories.first()
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let components = &theory.signature.components;
+        let Some(index) = components
+            .iter()
+            .position(|component| component.name.as_ref() == name.as_ref())
+        else {
+            return Err(LoweringRefusal::UnknownMember {
+                span: member.span,
+                module: self.name_at(head),
+                member: name,
+            });
+        };
+        if !matches!(
+            components.get(index).map(|component| &component.form),
+            Some(&Ok(ModelForm::Sort { ref indices })) if indices.is_empty()
+        ) {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        }
+        let record = (!bundle_dependence(&theory.signature)
+            .iter()
+            .any(|binds| binds.0))
+        .then(|| FieldLabel::from(String::from(name.as_ref())));
+        let selected = arity::Observed {
+            index,
+            count: components.len(),
+        };
+        let _frame = self.require(site, Produced::ValueType)?;
+        let _telescope = self.name_in_type(site.at.node, bound.binder);
+        self.plan(site, Plan::Carrier(code, selected, record));
+
+        Ok(arity::Planned(true))
+    }
+
+    /// Carry out a fixed carrier's plan: the type the binder's model type
+    /// fixes the sort to, raised past the binders between where it is written
+    /// and the reading.
+    ///
+    /// # Specification
+    /// - requires: `code` names the binder and `written` the type its model
+    ///   type fixes the sort to, as [`Self::carrier`] planned them.
+    /// - ensures: the type minted at `written`, raised past the binding binders
+    ///   between the binder and the reading, and past the binder when it binds.
+    /// - provides: the type a model binder's fixed carrier denotes.
+    /// - fails: absent while the written type is unminted, and for a code that
+    ///   names no binder.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::carrier`].
+    /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+    #[spec(ensures: |ret| !matches!(ret, Maybe::Present(ref lowered) if !matches!(*lowered, Lowered::ValueType(_))))]
+    pub(super) fn mint_fixed_carrier(
+        &self,
+        code: Code,
+        written: NodeIndex,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Code::Bound {
+            from,
+            binder,
+            telescope,
+        } = code
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let stated = match self.value_type_at(written) {
+            Maybe::Present(stated) => stated,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let between = u32::from(self.scope.index_in(from, binder, telescope));
+        let past =
+            between.saturating_add(u32::from(bool::from(self.scope.binds(binder, telescope))));
+        let raised = gandr_core_term::shift_value_type(sink.arena, stated, Binders::from(past))
+            .settle(sink.arena);
+
+        Maybe::Present(Lowered::ValueType(raised))
+    }
+
+    /// Carry out a carrier's plan: the binder's bundle projected at the
+    /// sort's field, run where the type is read, and the code it returns
+    /// decoded.
+    ///
+    /// # Specification
+    /// - requires: `code` names the binder; `selected` and `record` place the
+    ///   sort's field in its bundle as [`Self::carrier`] planned them.
+    /// - ensures: the decode, in the fuss-free universe, of the value the
+    ///   projection [`Lowerer::project`] mints off the binder's variable
+    ///   returns; the variable and the projection with the written origin, the
+    ///   returned code and the decode marked inserted.
+    /// - provides: the type a model binder's carrier denotes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::carrier`].
+    /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::ValueType(id)) => matches!(
+                sink.arena.value_type(id),
+                Some(&gandr_core_term::ValueType::Element { code, .. })
+                    if matches!(sink.arena.value(code), Some(&Value::Returned(_)))
+            ),
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
+        },
+    )]
+    pub(super) fn mint_carrier(
+        &self,
+        code: Code,
+        selected: arity::Observed,
+        record: Option<&FieldLabel>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let none = Stretch { start: 0, end: 0 };
+        let held = match self.mint_code(code, none, sink, origin) {
+            Maybe::Present(held) => held,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let projected = match Self::project(held, selected, record, sink, origin) {
+            Maybe::Present(projected) => projected,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let returned = sink.arena.value_returned(projected);
+        sink.origins
+            .record_value(returned, origin.inserted(Insertion::Endpoint));
+        let id = sink
+            .arena
+            .value_type_element(returned, Level::constant(Universe::FUSS_FREE.level));
+        sink.origins
+            .record_value_type(id, origin.inserted(Insertion::Decode));
+
+        Maybe::Present(Lowered::ValueType(id))
     }
 
     /// The theories of the bundle the theory `name` names where a form

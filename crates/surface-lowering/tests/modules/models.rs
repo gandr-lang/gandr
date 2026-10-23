@@ -299,6 +299,107 @@ fn a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_213
     );
 }
 
+/// A model binder's sorts read as types (#2131). `a.C` for `a :
+/// Model(Counter)` is the carrier `a`'s record holds: a second counter fixing
+/// its carrier to `a.C` steps a count of `a`, as any counter steps its own
+/// zero, and one whose carrier is its own steps no count of `a`. A carrier
+/// `a`'s type fixes is the type it is fixed to, read past the binders
+/// between, whether or not another type names `a`. An indexed sort is no
+/// type, and a name the theory lacks is refused naming it.
+#[test]
+fn a_model_binder_s_carrier_is_its_projected_sort_2131()
+{
+    // The refusal a case expects, built from the source it lowers.
+    type Expected<'case> = &'case dyn Fn(&str) -> LoweringRefusal<'static>;
+
+    let counter = "theory Counter {\n  sort C : Type;\n  oper zero : C;\n  oper incr : (c : C) \
+                   --> C;\n  oper read : (c : C) --> Integer;\n}\n";
+    let stepped = |second: &str, count: &str| {
+        let source = format!(
+            "{counter}def step(a : Model(Counter), b : {second}, c : a.C) -> -F Integer {{\n  \
+             case b {{\n    #{{.zero = z, .incr = i, .read = r}} => become r(i({count}))\n  \
+             }}\n}}\n"
+        );
+        let mut lowered = lower(source.as_str());
+        let step = super::declaration(&lowered, "step", Role::Declared).constant();
+        verdicts(&mut lowered)
+            .into_iter()
+            .find(|&(constant, _)| constant == step)
+            .map(|(_, judgement)| judgement)
+    };
+    assert_eq!(
+        stepped("Model(Counter) with sort C = a.C", "c"),
+        Some(Judgement::Checked),
+        "a counter sharing `a`'s carrier steps a count of `a`"
+    );
+    assert_eq!(
+        stepped("Model(Counter)", "z"),
+        Some(Judgement::Checked),
+        "a counter steps its own zero"
+    );
+    assert_eq!(
+        stepped("Model(Counter)", "c"),
+        Some(Judgement::Mismatched),
+        "a counter whose carrier is its own steps no count of `a`"
+    );
+
+    states_the_written_types(
+        format!(
+            "{counter}def fixed : (a : Model(Counter) with sort C = Integer) => (c : a.C) => \
+             Integer ;\ndef fixedWritten : (a : Model(Counter) with sort C = Integer) => (c : \
+             Integer) => Integer ;\ndef open : (x : Type) => (a : Model(Counter) with sort C = \
+             x) => (n : Integer) => (c : a.C) => x ;\ndef openWritten : (x : Type) => (a : \
+             Model(Counter) with sort C = x) => (n : Integer) => (c : x) => x ;\ndef named : (x \
+             : Type) => (a : Model(Counter) with sort C = x) => (p : Path(Model(Counter) with \
+             sort C = x, a, a)) => (c : a.C) => x ;\ndef namedWritten : (x : Type) => (a : \
+             Model(Counter) with sort C = x) => (p : Path(Model(Counter) with sort C = x, a, \
+             a)) => (c : x) => x ;\n"
+        ),
+        &[
+            ("fixed", "fixedWritten"),
+            ("open", "openWritten"),
+            ("named", "namedWritten"),
+        ],
+    );
+
+    let cases: [(&str, Expected<'_>, &str); 2] = [
+        (
+            "E",
+            &|source| LoweringRefusal::OutOfFragment {
+                span: span_of(source, "g.E", 0_usize),
+                form: FormName::from(NamedKind("type_path")),
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "an indexed sort is no type",
+        ),
+        (
+            "Nope",
+            &|source| LoweringRefusal::UnknownMember {
+                span: span_of(source, "Nope", 0_usize),
+                module: name("g"),
+                member: name("Nope"),
+            },
+            "a name the theory lacks is refused naming it",
+        ),
+    ];
+    for (member, refusal, why) in cases {
+        let source = format!(
+            "theory Graph {{\n  sort V : Type;\n  sort E(s : V, t : V) : Type;\n}}\ndef m(g : \
+             Model(Graph), e : g.{member}) -> -F Integer {{ return 0 }}\n"
+        );
+        let found: Vec<_> = rows(&lower(source.as_str()))
+            .into_iter()
+            .filter(|found| found.0 == "m")
+            .collect();
+        assert_eq!(
+            found,
+            [row("m", Role::Declared, Amounts::Refused(refusal(&source)))],
+            "{why}"
+        );
+    }
+}
+
 #[test]
 fn a_model_of_an_undeclared_theory_is_refused_by_name()
 {
