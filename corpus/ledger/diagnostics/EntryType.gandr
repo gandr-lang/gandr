@@ -1,0 +1,3 @@
+/// `EntryType`: a top-level `main` whose type is no program's entry.
+@[ refuses("EntryType") ]
+def main() -> -F String { return "done" }

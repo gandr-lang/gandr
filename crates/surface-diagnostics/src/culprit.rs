@@ -209,6 +209,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
         LoweringRefusal::ImplicitInParentheses { .. } => "an implicit among the arguments",
         LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
+        LoweringRefusal::EntryType { .. } => "an entry of another type",
         LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
         LoweringRefusal::AmbiguousMethod { .. } => "a method of several modules",
         LoweringRefusal::ViewNotPlace { .. } => "no place of the receiver",
@@ -598,6 +599,7 @@ mod tests
             LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
             LoweringRefusal::ImplicitInParentheses { .. } => "an implicit among the arguments",
             LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
+            LoweringRefusal::EntryType { .. } => "an entry of another type",
             LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
             LoweringRefusal::AmbiguousMethod { .. } => "a method of several modules",
             LoweringRefusal::ViewNotPlace { .. } => "no place of the receiver",
@@ -878,6 +880,7 @@ mod tests
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span: at, name },
+            LoweringRefusal::EntryType { span: at },
             LoweringRefusal::StrayReceiverMode {
                 span: at,
                 mode: name,

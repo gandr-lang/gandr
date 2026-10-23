@@ -440,7 +440,7 @@ fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
         SourceText::from(concat!(
             "def fs : Cap {read, write} ;\n",
             "def peek(c : Cap {read}) -> -F [Fs] String { c.read(\"notes\") }\n",
-            "def main() -> -F [Fs] String { peek(fs) }\n",
+            "def granted() -> -F [Fs] String { peek(fs) }\n",
             "def save(c : Cap {read, write}) -> -F [Fs] Unit { c.write(\"notes\", \"x\") }\n",
             "def denied(c : Cap {read}) -> -F [Fs] Unit { c.write(\"notes\", \"x\") }\n",
             "def direct() -> -F [Fs] String { fs.read(\"notes\") }\n",
@@ -483,7 +483,7 @@ fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
     );
 
     let report = judged(&module, &mut arena);
-    for name in ["peek", "main", "save", "direct"] {
+    for name in ["peek", "granted", "save", "direct"] {
         assert!(
             matches!(
                 verdict_of(&module, &report, name.into()),

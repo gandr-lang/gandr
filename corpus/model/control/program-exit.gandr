@@ -1,0 +1,11 @@
+// A program leaving early: `Proc.exit` ends the run with its integer as the
+// exit code, past whatever the entry would have returned, as POSIX `exit`
+// does (IEEE Std 1003.1-2017, `exit`). `gandr run exit.gandr` exits 7.
+
+/// The process capability, owed by the host that grants it.
+@[ owes(1) ]
+def proc : Cap {exit} ;
+
+/// The entry: it exits with 7 before it can return 0.
+@[ checks ]
+def main() -> -F [Proc] Integer { proc.exit(7) ; 0 }

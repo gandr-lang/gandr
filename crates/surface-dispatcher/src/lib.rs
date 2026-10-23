@@ -225,7 +225,10 @@ pub use crate::compose::tabled;
 pub use crate::entry::Entries;
 pub use crate::entry::entries;
 pub use crate::evaluate::Engine;
+pub use crate::evaluate::Entered;
+pub use crate::evaluate::Entry;
 pub use crate::evaluate::Evaluation;
+pub use crate::evaluate::ExitStatus;
 pub use crate::evaluate::Program;
 pub use crate::evaluate::RunStatus;
 pub use crate::evaluate::SealedRun;
@@ -234,6 +237,7 @@ pub use crate::evaluate::Unfinished;
 pub use crate::evaluate::Unrunnable;
 pub use crate::evaluate::ValueSpelling;
 pub use crate::evaluate::declaration_name;
+pub use crate::evaluate::program_entry;
 pub use crate::evaluate::run_target;
 pub use crate::exercised::Exercised;
 pub use crate::exercised::Row;
@@ -351,11 +355,14 @@ pub enum Invocation
         /// The threads the sources are parsed and lowered on.
         width: Width,
     },
-    /// `run`: run the program the source at `path` holds.
+    /// `run`: run the program the source at `path` holds, its entry given
+    /// `arguments`.
     Run
     {
         /// The source file.
         path: PathBuf,
+        /// The arguments the program's entry reads, in order.
+        arguments: Vec<String>,
     },
     /// `stage`: check staging observer programs, in order, through one
     /// memo.
@@ -550,7 +557,11 @@ pub fn dispatch(invocation: Invocation) -> Outcome
             walk: Walk::new(paths),
             width,
         },
-        Invocation::Run { path } => Outcome::Script(Script::new(path)),
+        Invocation::Run { path, arguments } => {
+            let mut script = Script::new(path);
+            script.pass(arguments);
+            Outcome::Script(script)
+        },
         Invocation::Stage { programs, width } => Outcome::Stage(Staging::new(programs, width)),
         Invocation::Format {
             paths,
@@ -701,6 +712,7 @@ mod tests
     {
         let outcome = dispatch(Invocation::Run {
             path: PathBuf::from("no/such/script.gandr"),
+            arguments: Vec::new(),
         });
         let Outcome::Script(mut script) = outcome
         else {

@@ -468,6 +468,10 @@ fn lowered(
             "`{function}`'s implicit `{implicit}` is supplied by name, \
              `{function}[{implicit} = …](…)`, not among the parentheses"
         ),
+        LoweringRefusal::EntryType { .. } => f.write_str(
+            "`main` is the program's entry; declare it `def main() -> -F Integer`, or `def \
+             main(args : List(String)) -> -F Integer` to read the arguments",
+        ),
         LoweringRefusal::RegionAsValue { name, .. } => write!(
             f,
             "`{name}` is a region, never a value; name it only where a type keeps a value in it, \
@@ -1433,6 +1437,7 @@ mod tests
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span, name },
+            LoweringRefusal::EntryType { span },
             LoweringRefusal::StrayReceiverMode { span, mode: name },
             LoweringRefusal::AmbiguousMethod {
                 span,

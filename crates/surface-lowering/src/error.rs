@@ -1120,6 +1120,15 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
     },
 
+    /// A source's top-level `main`, its program's entry, declared at a type no
+    /// entry has: an entry is a computation returning the exit code, `-F
+    /// Integer`, taking the arguments as one `List(String)` when it takes any.
+    EntryType
+    {
+        /// The bytes of the name.
+        span: ByteSpan,
+    },
+
     /// A receiver's mode word, `shared` or `consumed`, written on a parameter
     /// that is no method's receiver: only a module member's first parameter,
     /// `self`, takes one.
@@ -1725,6 +1734,11 @@ impl fmt::Display for LoweringRefusal<'_>
                  supply `{implicit}` by name, `{function}[{implicit} = …](…)`, and pass the \
                  explicit arguments alone"
             ),
+            Self::EntryType { .. } => f.write_str(
+                "`main` is the program's entry: it is a computation returning the exit code, `() \
+                 -> -F Integer`, or one taking the arguments, `(args : List(String)) -> -F \
+                 Integer`",
+            ),
             Self::RegionAsValue { name, .. } => write!(
                 f,
                 "`{name}` binds a region, which is no value: it is read only where a type keeps a \
@@ -1954,6 +1968,7 @@ impl LoweringRefusal<'_>
             | Self::ImplicitUnsupplied { span, .. }
             | Self::ImplicitInParentheses { span, .. }
             | Self::RegionAsValue { span, .. }
+            | Self::EntryType { span }
             | Self::StrayReceiverMode { span, .. }
             | Self::AmbiguousMethod { span, .. }
             | Self::ViewNotPlace { span }
@@ -2044,7 +2059,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 63_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 64_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2328,6 +2343,9 @@ mod tests
                 span: s(117_usize, 118_usize),
                 first: s(0_usize, 1_usize),
             },
+            LoweringRefusal::EntryType {
+                span: s(119_usize, 120_usize),
+            },
         ]
     }
 
@@ -2402,6 +2420,7 @@ mod tests
             s(113_usize, 114_usize),
             s(115_usize, 116_usize),
             s(117_usize, 118_usize),
+            s(119_usize, 120_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
