@@ -58,6 +58,24 @@ def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> -F List(a) {
   }
 }
 
+/// Two lists summed pairwise, a zero in the first skipped: the walk descends
+/// on `xs` and consumes `ys` alongside it, so the call under the match on
+/// `ys` still descends on `xs`, the parameter a match above it takes apart
+/// (#2135).
+@[ checks ]
+def rec pairwise(xs : List(Integer), ys : List(Integer)) -> -F List(Integer) {
+  case xs {
+    Nil => Nil,
+    Cons(x, rest) => case x == 0 {
+      true => become pairwise[<](rest, ys),
+      false => case ys {
+        Nil => Nil,
+        Cons(y, more) => Cons(x + y, pairwise[<](rest, more))
+      }
+    }
+  }
+}
+
 /// Four.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
 def four : Nat ;
@@ -82,3 +100,8 @@ def fibbed = fib(four) ;
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Nil))") ]
 def reversed : () => List(Nat) ;
 def reversed = reverseOnto(Nat, Cons(two, Cons(three, Nil)), Nil) ;
+
+/// One, zero and two summed with ten and twenty: the zero is skipped.
+@[ runs("Cons(11, Cons(22, Nil))") ]
+def sumsSkippingZero : () => List(Integer) ;
+def sumsSkippingZero = pairwise(Cons(1, Cons(0, Cons(2, Nil))), Cons(10, Cons(20, Nil))) ;

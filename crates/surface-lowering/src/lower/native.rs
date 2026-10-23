@@ -3588,7 +3588,8 @@ impl<'source> Lowerer<'_, 'source>
             .iter()
             .map(|&(_pattern, body)| body.node)
             .chain(loops.iter().map(|arm| arm.body));
-        self.scrutinise(frame, scrutinee, bodies)?;
+        let enclosing = self.scrutinised.get(&site.at.node).copied();
+        self.scrutinise(frame, scrutinee, enclosing, bodies)?;
         if let Maybe::Present(node) = written {
             self.read(node.node, Reading::Result(frame));
         }
@@ -10020,15 +10021,17 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: `staged` is the position, in `0 .. parameters.len()`, of the
     ///   parameter the innermost match above the first instantiation of `own`
     ///   in source order scrutinises, a scrutinee written as a bare name equal
-    ///   to that parameter's; the first position when that instantiation claims
-    ///   productivity (`>`), so every call may vary every parameter; the last
-    ///   position otherwise. `kept` is the longest run of parameters before
-    ///   `staged`, from the first, that every call of `own` under `roots`
-    ///   writes back bare in its own place ([`Self::kept_before`]). The
-    ///   classification sweep checks every claim against `staged`
-    ///   ([`Self::claim`]) and every kept argument against its parameter
-    ///   ([`Self::uniform_descent`]), so a name a binder between the match and
-    ///   the parameter shadows is refused there.
+    ///   to that parameter's, passing over each match whose parameter that call
+    ///   writes back bare in its own place — it consumes that one alongside the
+    ///   one it descends on — unless every such match is passed over; the first
+    ///   position when that instantiation claims productivity (`>`), so every
+    ///   call may vary every parameter; the last position otherwise. `kept` is
+    ///   the longest run of parameters before `staged`, from the first, that
+    ///   every call of `own` under `roots` writes back bare in its own place
+    ///   ([`Self::kept_before`]). The classification sweep checks every claim
+    ///   against `staged` ([`Self::claim`]) and every kept argument against its
+    ///   parameter ([`Self::uniform_descent`]), so a name a binder between the
+    ///   match and the parameter shadows is refused there.
     /// - provides: where the function binds its own name: after the kept
     ///   parameters, the ones from `kept` to `staged` its fixpoint's leading
     ///   binders.
@@ -10053,6 +10056,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::a_definition_without_a_case_on_a_parameter_stages_its_last`
     /// - witness: `lower::native::tests::a_varying_parameter_before_the_staged_one_is_a_leading_binder_626`
     /// - witness: `lower::native::tests::a_productive_call_is_the_whole_arm_of_a_copattern_block`
+    /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |staging| staging.kept <= staging.staged && staging.staged.0 < parameters.len().max(1)))]
     pub(super) fn staged_by_body(
         &mut self,
@@ -10187,11 +10191,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: as [`Self::staged_by_body`]; `scratch` is free for reading
     ///   pieces.
-    /// - ensures: `Some` of the scrutinised parameter's position, of the first
-    ///   position when the instantiation's claim is `>`, or of the last
-    ///   position where no match on a parameter stands above the first
-    ///   instantiation; `None` when no instantiation of `own` stands under
-    ///   `roots`.
+    /// - ensures: `Some` of the scrutinised parameter's position — the
+    ///   innermost match's whose parameter the call does not write back bare,
+    ///   the innermost's when it writes back every one — of the first position
+    ///   when the instantiation's claim is `>`, or of the last position where
+    ///   no match on a parameter stands above the first instantiation; `None`
+    ///   when no instantiation of `own` stands under `roots`.
     /// - fails: as [`Self::staged_by_body`].
     /// - panics: none.
     ///
@@ -10205,6 +10210,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::staged_by_body`].
     /// - witness: `lower::native::tests::a_definition_descends_on_the_parameter_its_cases_scrutinise`
+    /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|position| position.0 < parameters.len().max(1))))]
     fn first_claim(
         &self,
@@ -10233,7 +10239,22 @@ impl<'source> Lowerer<'_, 'source>
                 .position(|&parameter| parameter == written)
                 .map(ParameterAt))
         };
-        let mut pending: Vec<(NodeIndex, Option<ParameterAt>)> =
+        // Whether `operand` names `own` bare.
+        let named_own = |operand: Placed| -> Result<bool, LoweringRefusal<'source>> {
+            let Some(node) = self.tree.node(operand.node)
+            else {
+                return Ok(false);
+            };
+            Ok(matches!(shape_of(self.pbg, node)?, Shape::Form {
+                former: Former::Name,
+                ..
+            }) && self.name_at(operand) == own)
+        };
+        // The matches on parameters above a node, innermost first: each link
+        // a position and the link of the match enclosing it.
+        let mut links: Vec<(ParameterAt, Option<usize>)> = Vec::new();
+        let mut written: Vec<Placed> = Vec::new();
+        let mut pending: Vec<(NodeIndex, Option<usize>)> =
             roots.iter().rev().map(|&root| (root, None)).collect();
         while let Some((at, scrutinised)) = pending.pop() {
             let Some(node) = self.tree.node(at)
@@ -10272,13 +10293,67 @@ impl<'source> Lowerer<'_, 'source>
                         return Ok(Some(ParameterAt(0)));
                     }
                 }
-                return Ok(Some(scrutinised.unwrap_or(last)));
+                let innermost = scrutinised
+                    .and_then(|link| links.get(link))
+                    .map(|&(position, _)| position);
+                return Ok(Some(innermost.unwrap_or(last)));
             }
+            // A call of `own` descends on the innermost matched parameter it
+            // does not pass back unchanged: a match on a parameter the call
+            // writes back bare, inside one on the parameter it takes apart,
+            // consumes the one alongside the other.
+            let mut chosen = scrutinised;
+            if former == Some(Former::Call) && scrutinised.is_some() {
+                written.clear();
+                written.extend(operands);
+                if let Some((&head, arguments)) = written.split_first()
+                    && self.tree.node(head.node).is_some_and(|node| {
+                        matches!(
+                            shape_of(self.pbg, node),
+                            Ok(Shape::Form {
+                                former: Former::Instantiation,
+                                ..
+                            })
+                        )
+                    })
+                {
+                    read_pieces(self.pbg, self.tree, head.node, scratch)?;
+                    let instantiated = scratch.pieces.iter().find_map(|piece| match *piece {
+                        Piece::Operand(operand) => Some(operand),
+                        Piece::Tile { .. } => None,
+                    });
+                    if let Some(instantiated) = instantiated
+                        && named_own(instantiated)?
+                    {
+                        let mut link = scrutinised;
+                        while let Some(&(position, outer)) = link.and_then(|at| links.get(at)) {
+                            let unchanged = match arguments.get(position.0) {
+                                Some(&argument) => named(argument)? == Some(position),
+                                None => false,
+                            };
+                            if !unchanged {
+                                break;
+                            }
+                            link = outer;
+                        }
+                        chosen = link.or(scrutinised);
+                    }
+                    read_pieces(self.pbg, self.tree, at, scratch)?;
+                }
+            }
+            let pieces = &scratch.pieces;
+            let operands = pieces.iter().filter_map(|piece| match *piece {
+                Piece::Operand(operand) => Some(operand),
+                Piece::Tile { .. } => None,
+            });
             // A match on a parameter hands its position to its arm bodies,
             // the operands its `=>` tiles introduce; every other child keeps
             // the enclosing one.
             let arms = match (former, operands.clone().next()) {
-                (Some(Former::Case), Some(scrutinee)) => named(scrutinee)?,
+                (Some(Former::Case), Some(scrutinee)) => named(scrutinee)?.map(|position| {
+                    links.push((position, scrutinised));
+                    links.len().saturating_sub(1)
+                }),
                 _ => None,
             };
             let mut children = Vec::new();
@@ -10288,8 +10363,8 @@ impl<'source> Lowerer<'_, 'source>
                     Piece::Tile { label, .. } => after_arrow = label == TileName::FAT_ARROW,
                     Piece::Operand(operand) => {
                         let inherited = match arms {
-                            Some(position) if after_arrow => Some(position),
-                            Some(_) | None => scrutinised,
+                            Some(link) if after_arrow => Some(link),
+                            Some(_) | None => chosen,
                         };
                         children.push((operand.node, inherited));
                         after_arrow = false;
@@ -10404,9 +10479,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `recursion` binds a recursive function's own name.
-    /// - ensures: `Ok` when the parameter the innermost match above `site`
-    ///   scrutinises, recorded by [`Self::scrutinise`] for this function, or
-    ///   its last parameter where none is, is the staged one
+    /// - ensures: `Ok` when the parameter recorded for `site` by
+    ///   [`Self::scrutinise`] for this function — the staged one when any match
+    ///   above `site` takes it apart, the innermost match's otherwise — or its
+    ///   last parameter where no match is, is the staged one
     ///   ([`Self::staged_by_body`]).
     /// - provides: the one-position rule every claim of one function keeps.
     /// - fails: [`LoweringRefusal::DescentOnSeveralParameters`] at `site`,
@@ -10421,6 +10497,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   claims under cases on two are refused, naming both.
     /// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
     /// - witness: `lower::native::tests::a_rebuilt_argument_descends_on_the_same_position`
+    /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::DescentOnSeveralParameters { .. })))]
     fn claim(
         &self,
@@ -10460,16 +10537,18 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Record that each arm body in `bodies` stands under a match on
     /// `scrutinee`, read under `frame`, when it names a recursive function's
-    /// parameter.
+    /// parameter; `enclosing` is the record the match itself stands under.
     ///
     /// # Specification
     /// - requires: `bodies` are the match's arm bodies, not yet visited by the
     ///   classification sweep.
     /// - ensures: when `scrutinee` is a name written bare that resolves to a
     ///   recursive function's parameter, every body records that function and
-    ///   that parameter's position, replacing what an enclosing match recorded;
-    ///   otherwise nothing changes, so a match on anything else leaves the
-    ///   enclosing match's record in force.
+    ///   that parameter's position, replacing what an enclosing match recorded,
+    ///   unless `enclosing` records the parameter that same function stages:
+    ///   then every body keeps it, so a call under a match on another parameter
+    ///   still descends on the staged one; otherwise nothing changes, so a
+    ///   match on anything else leaves the enclosing match's record in force.
     /// - provides: the scrutiny the sweep hands down to every node under an
     ///   arm, which [`Self::claim`] reads.
     /// - fails: the allowance refusal from the binder walk; a fault reading the
@@ -10483,6 +10562,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::claim`].
     /// - witness: `lower::native::tests::claims_under_cases_on_two_parameters_are_refused_by_name`
     /// - witness: `lower::native::tests::a_rebuilt_argument_descends_on_the_same_position`
+    /// - witness: `lower::native::tests::a_claim_under_a_match_on_another_parameter_descends_on_the_staged_one_2135`
     #[spec(
         captures: before = self.scrutinised.len(),
         ensures: |ret| ret.is_err() || self.scrutinised.len() >= before,
@@ -10491,6 +10571,7 @@ impl<'source> Lowerer<'_, 'source>
         &mut self,
         frame: Frame,
         scrutinee: Placed,
+        enclosing: Option<Scrutiny>,
         bodies: impl IntoIterator<Item = NodeIndex>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
@@ -10517,8 +10598,16 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(());
         };
+        let staged = enclosing.filter(|outer| {
+            outer.recursion == scrutiny.recursion
+                && self
+                    .recursions
+                    .get(&outer.recursion)
+                    .is_some_and(|held| held.staged == outer.position)
+        });
+        let recorded = staged.unwrap_or(scrutiny);
         for body in bodies {
-            let _previous = self.scrutinised.insert(body, scrutiny);
+            let _previous = self.scrutinised.insert(body, recorded);
         }
 
         Ok(())
