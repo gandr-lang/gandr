@@ -109,15 +109,22 @@ queued_of() {
   jq -cn '$ARGS.positional | map(tonumber)' --args "${members[@]}"
 }
 
+# The number of the server stack pull request `$1` belongs to, `null` when
+# none. GitHub keeps a stack's merged members, so a pull request whose stack
+# below it merged still belongs to it.
+stack_of() {
+  gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$1" \
+    -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { number } } } }' \
+    --jq '.data.repository.pullRequest.stack.number // "null"'
+}
+
 # Link the open chain `$1` on the server (`link.jq`): into the stack a member
 # already belongs to, by that stack's number, so the stack's merged members
 # stay below the open ones (#1275); otherwise as a new stack.
 stack_link() {
   local number stacks=() args
   for number in $(jq -r '.[].number' <<< "$1"); do
-    stacks+=("$(gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -F number="$number" \
-      -f query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { stack { number } } } }' \
-      --jq '.data.repository.pullRequest.stack.number // "null"')")
+    stacks+=("$(stack_of "$number")")
   done
   mapfile -t args < <(jq -cn --argjson chain "$(jq -c 'map(.number)' <<< "$1")" \
     '{chain: $chain, stacks: ($ARGS.positional | map(fromjson))}' --args "${stacks[@]}" | jq -r -f "$pr_stack_dir/link.jq")
@@ -327,28 +334,31 @@ carried_queued() {
 
 # Queue the stack `$1`, bottom to top, up to and including pull request `$3`
 # (#1988), past the members of the JSON array `$2` already in the merge
-# queue. A stack of one is a plain landing, queued by auto-merge. A longer
-# stack is linked on the server, only its open members when part of it is
-# queued, and queued by GitHub's stack merge, which takes every member up to
-# and including `$3` atomically. Every open pull request on a branch the
-# landing deletes, outside it, is retargeted to the trunk first
-# (`retarget_landing`). The stack merge refuses a pull request whose required
-# checks are still expected, so each queued member's are waited on
-# (`wait_required`), and a red one stops the landing, naming it. A cancelled
-# run the rollup reads, left by a restack's twin runs, is re-run
-# (`rerun_twins`), at most three times for a pull request. Returns 3 when the
-# open members take no link above the queued ones: the stack is read again
-# once those merge.
+# queue. A stack of one is a plain landing, queued by auto-merge, unless it
+# still belongs to a server stack whose members below it merged: GitHub
+# refuses auto-merge for a stacked pull request, so it is queued by the
+# stack merge, unlinked. A longer stack is linked on the server, only its
+# open members when part of it is queued, and queued by GitHub's stack merge,
+# which takes every member up to and including `$3` atomically. Every open
+# pull request on a branch the landing deletes, outside it, is retargeted to
+# the trunk first (`retarget_landing`). The stack merge refuses a pull
+# request whose required checks are still expected, so each queued member's
+# are waited on (`wait_required`), and a red one stops the landing, naming
+# it. A cancelled run the rollup reads, left by a restack's twin runs, is
+# re-run (`rerun_twins`), at most three times for a pull request. Returns 3
+# when the open members take no link above the queued ones: the stack is read
+# again once those merge.
 queue_stack() {
   local stack=$1 queued=$2 upto=$3 open landing number reruns watched
   open=$(jq -c --argjson queued "$queued" '[.[] | select(.number | IN($queued[]) | not)]' <<< "$stack")
   mapfile -t landing < <(jq -r --argjson upto "$upto" '(map(.number) | index($upto)) as $end | .[: $end + 1][].number' <<< "$open")
   retarget_landing "$(jq -cn '$ARGS.positional | map(tonumber)' --args "${landing[@]}")"
   if [[ $(jq length <<< "$stack") == 1 ]]; then
-    gh pr merge "$upto" -R "$repo" --merge --auto
-    return
-  fi
-  if [[ "$queued" == '[]' ]]; then
+    if [[ $(stack_of "$upto") == null ]]; then
+      gh pr merge "$upto" -R "$repo" --merge --auto
+      return
+    fi
+  elif [[ "$queued" == '[]' ]]; then
     stack_link "$stack"
   elif ! stack_link "$open" 2> /dev/null; then
     echo "the open pull requests above the queued #$(jq -r '.[-1]' <<< "$queued") take no link; they land once it merges" >&2
