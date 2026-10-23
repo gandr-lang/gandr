@@ -1767,6 +1767,64 @@ fn a_bound_sealed_atom_lowers_to_the_kernel_atom()
     );
 }
 
+#[test]
+fn a_seal_ending_at_a_skipped_position_closes_before_its_client_2004()
+{
+    // module Counter :> #{ type T, seed : T, type Alias = T } {
+    //   type T = Integer ; def seed = 7 ; }
+    // def client : Counter.T = Counter.seed ;
+    //
+    // The seal reaches the alias at position 3, which the judgement skips and
+    // which crosses nothing; the seal closes before the client at position 4
+    // crosses, so the client reads the atom rigid and stays outside the
+    // extent the kernel draws.
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_term::SealExtent;
+    use gandr_kernel_term::SealScope;
+
+    use crate::declaration::AbstractType;
+    use crate::seal::ComponentOrdinal;
+    use crate::seal::SealSite;
+    use crate::seal::SealingSite;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let seven = arena.value_literal(integer_literal());
+    let atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
+    let seed = arena.value_constant(ConstantIndex::from(1_usize));
+    let exported = arena.value_constant(ConstantIndex::from(2_usize));
+    let (_, readmission) = judge_and_readmit(&mut arena, &[
+        Declaration::abstract_type(
+            ConstantIndex::from(0_usize),
+            AbstractType::new(
+                small,
+                integer,
+                SealExtent::from(3_usize),
+                SealSite::new(SealingSite::from(0_usize), ComponentOrdinal::from(0_usize)),
+            ),
+            origin(At(0)),
+        ),
+        declaration(At(1), Maybe::Present(integer), Maybe::Present(seven)),
+        declaration(At(2), Maybe::Present(atom), Maybe::Present(seed)),
+        declaration(At(4), Maybe::Present(atom), Maybe::Present(exported)),
+    ]);
+    let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+    let DeclarationContent::AbstractType { scope, .. } =
+        *artifact.declarations()[0].declaration().content()
+    else {
+        panic!("the atom exports as an abstract type");
+    };
+    assert_eq!(
+        (artifact.declarations().len(), scope),
+        (4, SealScope::Closed(SealExtent::from(2_usize))),
+        "the seal closes over the member and the witness and not the client"
+    );
+    assert!(
+        Environment::replay(artifact.arena().clone(), artifact.declarations()).is_ok(),
+        "the export replays, the seal where the producer drew it"
+    );
+}
+
 /// The interface an interfaced atom's module states: its relation `related`,
 /// its reflexivity `reflexive` and its law `law`, each named right or one
 /// named at another member's place.
