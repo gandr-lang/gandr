@@ -174,6 +174,65 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Absent(parameter_path::Absent::Outside)
     }
 
+    /// The kind a functor parameter's abstract component reads, when `atom`
+    /// is the template atom of one: the kind the component writes, or the
+    /// fuss-free universe an unkinded `type T` reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for an atom standing for an abstract component of some
+    ///   functor's parameter, its written kind's lowered type, or a fresh
+    ///   fuss-free universe when it writes none; nothing for any other atom,
+    ///   and for a written kind that did not lower.
+    /// - provides: the kind a parameter's abstract type answers at where no
+    ///   judgement forms it, as an application's kind check reads it.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the kind is read off the functors' components and
+    ///   the lowered nodes, which a predicate would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the abstract type of a functor's parameter that is
+    ///   never applied answers at its universe in the parameter's signature.
+    /// - witness: `tests::modules::functors::a_parameter_s_abstract_type_answers_at_its_kind_2183`
+    pub(super) fn parameter_kind(
+        &self,
+        atom: gandr_kernel_term::ConstantIndex,
+        sink: &mut Sink<'_>,
+    ) -> Option<ValueTypeId>
+    {
+        let kind = self
+            .collected
+            .functors
+            .iter()
+            .flat_map(|functor| &functor.components)
+            .find_map(|component| match component.form {
+                ParameterForm::Abstract(kind)
+                    if self
+                        .collected
+                        .slots
+                        .get(usize::from(component.slot))
+                        .is_some_and(|slot| slot.constant == atom) =>
+                {
+                    Some(kind)
+                },
+                ParameterForm::Abstract(_)
+                | ParameterForm::Value(_)
+                | ParameterForm::Manifest(_)
+                | ParameterForm::Derived(_) => None,
+            })?;
+        match kind {
+            Maybe::Present(written) => match self.value_type_at(written.node) {
+                Maybe::Present(stated) => Some(stated),
+                Maybe::Absent(_) => None,
+            },
+            Maybe::Absent(_) => Some(sink.arena.value_type_universe(
+                Sort::Ground(Universe::FUSS_FREE.sort),
+                Level::constant(Universe::FUSS_FREE.level),
+            )),
+        }
+    }
+
     /// Plan the value path `head.selected`, written at `site`, when `head`
     /// names the parameter of the functor the path is written in.
     ///

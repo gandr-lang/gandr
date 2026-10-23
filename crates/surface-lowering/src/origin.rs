@@ -1999,6 +1999,7 @@ impl OriginTable
                 | Labelled::Value(_)
                 | Labelled::Endpoint(_)
                 | Labelled::Bound(_)
+                | Labelled::Kind(_)
                 | Labelled::Branch { .. } => {},
             }
         }
@@ -2242,6 +2243,10 @@ pub enum Labelled
     /// answers even where the block's rewrite leaves no bind or use naming
     /// it (#298).
     Bound(NodeIndex),
+    /// A written type no judgement forms where it is written, at the kind
+    /// the lowering reads it at: a functor parameter's abstract type, which
+    /// only an application of the functor checks (#2183).
+    Kind(ValueTypeId),
     /// An offer arm's label, at the session its endpoint continues as in that
     /// arm: the branch `label` names of the session type the typed run found
     /// the endpoint standing at the offer `action`.

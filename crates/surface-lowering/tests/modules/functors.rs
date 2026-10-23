@@ -6,6 +6,7 @@ use gandr_core_term::ValueType;
 use gandr_surface_lowering::AscriptionForm;
 use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
+use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweredStructure;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Stratum;
@@ -99,6 +100,43 @@ fn the_classic_functor_pair_checks()
             .iter()
             .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
         "and every one checks: {judgements:?}"
+    );
+}
+
+/// #2183: a never-applied functor's parameter's abstract type, which no
+/// judgement forms, is labelled at the universe its unkinded component
+/// reads; a parameter's value component's type is no abstract type and keeps
+/// no such label.
+#[test]
+fn a_parameter_s_abstract_type_answers_at_its_kind_2183()
+{
+    let source = "module Pointed(R : #{ type V, y : V }) {\n  def w = R.y ;\n}\n";
+    let lowered = lower(source);
+    let kinds: Vec<_> = lowered
+        .module
+        .origins()
+        .labels()
+        .iter()
+        .filter_map(|label| match label.labelled {
+            Labelled::Kind(kind) => Some((label.span, lowered.arena.value_type(kind).cloned())),
+            Labelled::ValueType { .. }
+            | Labelled::CompType { .. }
+            | Labelled::Value(_)
+            | Labelled::Endpoint(_)
+            | Labelled::Bound(_)
+            | Labelled::Branch { .. } => None,
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        [(
+            span_of(source, "V", 1_usize),
+            Some(ValueType::Universe {
+                sort: gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+                level: gandr_kernel_strata::Level::zero(),
+            })
+        )],
+        "`V` in `y : V` answers at the universe `type V` reads"
     );
 }
 

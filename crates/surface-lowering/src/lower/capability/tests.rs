@@ -541,7 +541,8 @@ fn an_exercise_s_head_answers_at_its_operation()
             | Labelled::Value(_)
             | Labelled::Endpoint(_)
             | Labelled::Branch { .. }
-            | Labelled::Bound(_) => None,
+            | Labelled::Bound(_)
+            | Labelled::Kind(_) => None,
         })
         .collect();
     heads.sort_by_key(|&(written, ..)| written);

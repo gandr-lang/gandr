@@ -397,7 +397,8 @@ fn each_state_answers_where_it_is_written()
             | crate::origin::Labelled::Value(_)
             | crate::origin::Labelled::Endpoint(_)
             | crate::origin::Labelled::Branch { .. }
-            | crate::origin::Labelled::Bound(_) => None,
+            | crate::origin::Labelled::Bound(_)
+            | crate::origin::Labelled::Kind(_) => None,
         })
         .collect();
     let named = |label: &str| {
@@ -578,7 +579,8 @@ fn each_endpoint_answers_at_its_action()
             | Labelled::CompType { .. }
             | Labelled::Value(_)
             | Labelled::Branch { .. }
-            | Labelled::Bound(_) => None,
+            | Labelled::Bound(_)
+            | Labelled::Kind(_) => None,
         })
         .collect();
     assert!(
@@ -612,7 +614,8 @@ fn each_endpoint_answers_at_its_action()
             | Labelled::CompType { .. }
             | Labelled::Value(_)
             | Labelled::Endpoint(_)
-            | Labelled::Bound(_) => None,
+            | Labelled::Bound(_)
+            | Labelled::Kind(_) => None,
         })
         .collect();
     let offered = EXCHANGE.matches(" => ").count();
