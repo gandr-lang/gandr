@@ -438,6 +438,8 @@ fn spell(shard: Shard)
 /// - `Refused`: a spelling that parses and refuses to lower.
 /// - `Unknown`: a type the printer writes with `?`, which the census of honest
 ///   `?` holds; nothing to read back.
+/// - `Wildcard`: a type holding a wildcard `_` the checker left unsolved, which
+///   reads back as that wildcard only where it was written.
 /// - `Unparsed`: a spelling the grammar refuses.
 /// - `Unspelled`: a type the printer could not spell at all.
 ///
@@ -594,6 +596,7 @@ mod sweeps
                         RoundTrip::Equal => "Equal",
                         RoundTrip::Open => "Open",
                         RoundTrip::Unknown => "Unknown",
+                        RoundTrip::Wildcard => "Wildcard",
                         RoundTrip::Different => {
                             unread.push(format!(
                                 "{}: `{}` reads back as another type",

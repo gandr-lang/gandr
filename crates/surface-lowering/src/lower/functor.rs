@@ -389,15 +389,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every earlier application is renamed.
     /// - ensures: each body slot's constant renamed to its image's, each body
-    ///   atom to its image's atom, each parameter value component to its
-    ///   witness and each parameter atom to the argument's type; the refusal of
-    ///   the argument's type component when that type did not lower.
+    ///   atom to its image's atom, each parameter value component to the
+    ///   argument's member its witness checks and each parameter atom to the
+    ///   argument's type; the refusal of the argument's type component when
+    ///   that type did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::rename_instances_before`].
+    /// - hypothesis: L3 — as [`Self::rename_instances_before`], and a type an
+    ///   instance's member states at a parameter's operation names the
+    ///   argument's, which a source can write.
     /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::an_instance_names_its_argument_s_operations_2179`
     #[spec(ensures: |ret| ret.is_ok() || self.collected.instances.get(usize::from(index)).is_some())]
     fn instance_renaming(
         &self,
@@ -440,13 +444,13 @@ impl<'source> Lowerer<'_, 'source>
         for &matched in &instance.matched {
             match matched {
                 Matched::Value {
-                    parameter, witness, ..
+                    parameter, member, ..
                 } => {
-                    if let (Some(stand_in), Some(checked)) = (
+                    if let (Some(stand_in), Some(read)) = (
                         self.collected.slots.get(usize::from(parameter)),
-                        self.collected.slots.get(usize::from(witness)),
+                        self.collected.slots.get(usize::from(member)),
                     ) {
-                        renaming.constant(stand_in.constant, checked.constant);
+                        renaming.constant(stand_in.constant, read.constant);
                     }
                 },
                 Matched::Abstract {

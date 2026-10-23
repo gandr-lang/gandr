@@ -178,6 +178,7 @@ use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Scopes;
 use gandr_surface_pretty::Style;
+use gandr_surface_pretty::Wildcards;
 use gandr_surface_pretty::WrittenName;
 use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
@@ -493,6 +494,10 @@ pub enum RoundTrip
     /// what the checker holds — an unknown type, a hole: no source spelling
     /// denotes it.
     Unknown,
+    /// The printed type holds a wildcard `_` the checker left unsolved: it
+    /// reads back as that wildcard only at the place it was written, and a
+    /// signature written elsewhere asks for another.
+    Wildcard,
     /// The printer could not lay the type out.
     Unspelled,
     /// The printed type does not parse as a signature's type.
@@ -3595,7 +3600,8 @@ impl TypeTable
     ///   declarations in key order, each with the type as [`Self::at`] or
     ///   [`Self::declared`] prints it. A type the printer cannot lay out is
     ///   [`RoundTrip::Unspelled`]; one holding a `?` the printer wrote is
-    ///   [`RoundTrip::Unknown`]. One whose spelling under the node's binders
+    ///   [`RoundTrip::Unknown`], and one holding a wildcard `_` is
+    ///   [`RoundTrip::Wildcard`]. One whose spelling under the node's binders
     ///   differs from its spelling under none names a binder: when the table
     ///   knows every binder's type and spells it, the binders are declared as
     ///   the parameters of a fresh function, `def f(x₁ : A₁, …, xₙ : Aₙ, it :
@@ -3672,6 +3678,9 @@ impl TypeTable
                         let (settled, under) = if !spelled.unspelled().is_empty() {
                             (Some(RoundTrip::Unknown), None)
                         }
+                        else if spelled.wildcards() == Wildcards::Written {
+                            (Some(RoundTrip::Wildcard), None)
+                        }
                         else if matches!(closed, Maybe::Present(ref closed) if *closed == spelled)
                         {
                             (None, None)
@@ -3705,7 +3714,15 @@ impl TypeTable
                     Maybe::Present(spelled) => Printed {
                         site,
                         node,
-                        settled: (!spelled.unspelled().is_empty()).then_some(RoundTrip::Unknown),
+                        settled: if !spelled.unspelled().is_empty() {
+                            Some(RoundTrip::Unknown)
+                        }
+                        else if spelled.wildcards() == Wildcards::Written {
+                            Some(RoundTrip::Wildcard)
+                        }
+                        else {
+                            None
+                        },
                         spelled: spelled.to_string(),
                         under: None,
                     },
@@ -7929,6 +7946,35 @@ mod tests
         assert!(
             matches!(sides.as_slice(), [(ReadSite::Own(_), own)] if own == "unloop(a) => Loop"),
             "the field reads back once, at its own type: {sides:?}"
+        );
+    }
+
+    /// #2179: a type holding a wildcard the checker left unsolved is settled
+    /// as one before any read-back, since a signature written after the
+    /// source asks for another wildcard; no other printed type is.
+    #[test]
+    fn a_printed_wildcard_is_settled_before_its_read_back_2179()
+    {
+        let source = SourceText::from(include_str!("../../../corpus/model/holes/wildcard.gandr"));
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads =
+            table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
+        let (wild, tame): (Vec<_>, Vec<_>) = reads.iter().partition(|back| {
+            back.spelled
+                .split(|letter: char| !(letter.is_alphanumeric() || letter == '_'))
+                .any(|word| word == "_")
+        });
+        assert!(
+            !wild.is_empty()
+                && wild
+                    .iter()
+                    .all(|back| back.trip == super::RoundTrip::Wildcard),
+            "each type writing `_` is a wildcard's: {wild:?}"
+        );
+        assert!(
+            tame.iter()
+                .all(|back| back.trip != super::RoundTrip::Wildcard),
+            "and no other type is: {tame:?}"
         );
     }
 

@@ -33,7 +33,8 @@
 //! first named by the binding, and one slot per body slot, in the body's
 //! order, after the witnesses. Its declarations are the template's renamed:
 //! each body position to its image, each parameter atom to the argument's
-//! type, each parameter value component to its witness, each of the body's
+//! type, each parameter value component to the argument's member its witness
+//! checks, so an instance's types name what a source can, each of the body's
 //! atoms to the image's. The image of an abstract slot is sealed at the
 //! instance's own module, so its sealing site is the application's and every
 //! application mints its own atoms: `module A = MkCounter(Seed) ;` and `module

@@ -105,6 +105,7 @@ const KINDS: &[(&str, Standing)] = &[
             "an annotation on a head — a stratum or a descent claim: the call it heads answers",
         ),
     ),
+    ("Expression _", Standing::Owed(0)),
     ("Expression abort", Standing::Owed(0)),
     ("Expression access", Standing::Owed(0)),
     ("Expression as", Standing::Owed(0)),
@@ -118,9 +119,12 @@ const KINDS: &[(&str, Standing)] = &[
     ),
     ("Expression break", Standing::Design(EXIT)),
     ("Expression case", Standing::Owed(0)),
+    ("Expression character", Standing::Owed(0)),
     ("Expression close", Standing::Owed(0)),
+    ("Expression co", Standing::Owed(0)),
     ("Expression constructor", Standing::Owed(0)),
     ("Expression continue", Standing::Owed(0)),
+    ("Expression drop", Standing::Owed(0)),
     ("Expression false", Standing::Owed(0)),
     ("Expression fn", Standing::Owed(0)),
     ("Expression for", Standing::Owed(0)),
@@ -128,9 +132,11 @@ const KINDS: &[(&str, Standing)] = &[
     ("Expression handle", Standing::Owed(0)),
     ("Expression hold", Standing::Owed(0)),
     ("Expression identifier", Standing::Owed(0)),
+    ("Expression if", Standing::Owed(0)),
     ("Expression loop", Standing::Owed(0)),
     ("Expression migrate", Standing::Owed(0)),
-    ("Expression number", Standing::Owed(0)),
+    // #2183: the `2` of a member of a module refused at its header.
+    ("Expression number", Standing::Owed(1)),
     ("Expression offer", Standing::Owed(0)),
     ("Expression pack", Standing::Owed(0)),
     ("Expression pure", Standing::Design(EXIT)),
@@ -146,6 +152,7 @@ const KINDS: &[(&str, Standing)] = &[
         "Expression type(",
         Standing::Design("a type quote: the type inside answers, quoted where the value is read"),
     ),
+    ("Expression typed_number", Standing::Owed(0)),
     ("Expression unit", Standing::Owed(0)),
     ("Expression while", Standing::Owed(0)),
     (
@@ -156,7 +163,9 @@ const KINDS: &[(&str, Standing)] = &[
     ("Pattern #{", Standing::Owed(0)),
     ("Pattern (", Standing::Owed(0)),
     ("Pattern +", Standing::Owed(0)),
+    ("Pattern [", Standing::Owed(0)),
     ("Pattern _", Standing::Owed(0)),
+    ("Pattern as", Standing::Owed(0)),
     ("Pattern constructor", Standing::Owed(0)),
     ("Pattern false", Standing::Owed(0)),
     ("Pattern identifier", Standing::Owed(0)),
@@ -178,12 +187,15 @@ const KINDS: &[(&str, Standing)] = &[
     ("Type +U", Standing::Owed(0)),
     ("Type ->", Standing::Owed(0)),
     ("Type -F", Standing::Owed(0)),
-    ("Type .", Standing::Owed(0)),
+    // #2182: a path through a model parameter in a later parameter's type.
+    ("Type .", Standing::Owed(2)),
     ("Type =>", Standing::Owed(0)),
     ("Type ?", Standing::Owed(0)),
     ("Type Buf", Standing::Owed(0)),
     ("Type Cap", Standing::Owed(0)),
-    ("Type Integer", Standing::Owed(0)),
+    ("Type Char", Standing::Owed(0)),
+    // #2183: the types a module refused at its header writes.
+    ("Type Integer", Standing::Owed(2)),
     ("Type Path", Standing::Owed(0)),
     ("Type String", Standing::Owed(0)),
     ("Type Type", Standing::Owed(0)),
@@ -197,14 +209,21 @@ const KINDS: &[(&str, Standing)] = &[
         Standing::Design("a scoped capability: the capability it scopes answers, at its scope"),
     ),
     ("Type end", Standing::Owed(0)),
+    ("Type f64", Standing::Owed(0)),
+    ("Type i32", Standing::Owed(0)),
+    ("Type i64", Standing::Owed(0)),
     ("Type mu", Standing::Owed(0)),
     ("Type number", Standing::Owed(0)),
     (
         "Type sort",
         Standing::Design("a manifest sort's binding: the type it fixes the sort to answers"),
     ),
-    ("Type type_identifier", Standing::Owed(0)),
-    ("Type type_variable", Standing::Owed(0)),
+    // #2183: a functor parameter's signature type.
+    ("Type type_identifier", Standing::Owed(1)),
+    // #2182: a model parameter named in a later parameter's type.
+    ("Type type_variable", Standing::Owed(7)),
+    ("Type u32", Standing::Owed(0)),
+    ("Type u64", Standing::Owed(0)),
     (
         "Type with",
         Standing::Design("a manifest model type: the model type whose sorts it fixes answers"),
@@ -223,6 +242,8 @@ const FORMERS: &[&str] = &[
     "bisim",
     "cong",
     "cons",
+    "decompose",
+    "dialogue",
     "equiv",
     "flowProduct",
     "forward",
@@ -237,10 +258,17 @@ const FORMERS: &[&str] = &[
     "ua",
 ];
 
-/// The moves a run literal `recorded(m₀, …, mₙ)` is written in. A move is
-/// read by its shape, never resolved: the run literal is the core node,
-/// and a payload inside a move is a term of its own.
-const MOVES: &[&str] = &["closed", "offered", "received", "selected", "sent"];
+/// The moves a run literal `recorded(m₀, …, mₙ)` or a dialogue literal
+/// `dialogue(left(m₀), right(m₁), …)` is written in, a dialogue's each under
+/// the endpoint it is made at. A move is read by its shape, never resolved:
+/// the literal is the core node, and a payload inside a move is a term of its
+/// own.
+const MOVES: &[&str] = &[
+    "closed", "left", "offered", "received", "right", "selected", "sent",
+];
+
+/// The literals whose arguments are moves.
+const LITERALS: &[&str] = &["dialogue", "recorded"];
 
 /// Where a node stands relative to a run literal.
 ///
@@ -532,7 +560,7 @@ fn gated(
         let applied = melded && def.label == "(" && def.sort == Sort::Expression;
         let called = if applied { spelled(opener) } else { "" };
         let within = match run {
-            _ if called == "recorded" => Run::Moves,
+            _ if LITERALS.contains(&called) => Run::Moves,
             Run::Moves if called == "selected" || called == "offered" => Run::Labelled,
             held @ (Run::Outside | Run::Moves | Run::Labelled) => held,
         };
