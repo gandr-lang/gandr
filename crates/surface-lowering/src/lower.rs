@@ -677,6 +677,12 @@ pub use closure::Onto;
 
 mod description;
 
+mod entry;
+
+pub use entry::Arguments;
+pub use entry::ENTRY;
+pub use entry::entry_shape;
+
 mod exits;
 
 pub use exits::ElidableExit;
@@ -4057,6 +4063,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_derived_rules(sink);
         self.mint_reducts(sink);
         self.mint_instances(sink);
+        self.refuse_misshapen_entries(sink);
         self.refused_declarations();
 
         self.end_source();

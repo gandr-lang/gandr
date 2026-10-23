@@ -274,6 +274,7 @@ use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Area;
 use gandr_surface_dispatcher::AuthorityError;
+use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::FeatureId;
 use gandr_surface_dispatcher::FormatStep;
@@ -529,15 +530,23 @@ enum Command
         #[arg(long)]
         smoke: bool,
     },
-    /// Run a source as a program: check it as `check` does, then run its last
-    /// declaration and print the value.
+    /// Run a source as a program: check it as `check` does, then run the
+    /// `main` it declares at its top level, or, when it declares none, run its
+    /// last declaration and print the value.
     ///
-    /// Exits 0 when the run returns a value, 1 when it is blamed on a goal or
-    /// stops short of one, and 2 when the source never reaches the machine.
+    /// A `main` returns the exit code, `def main() -> -F Integer`, and reads
+    /// the arguments after the path when it takes them, `def main(args :
+    /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`.
+    /// Exits with that code, its low byte; otherwise 0 when the run returns a
+    /// value, 1 when it is blamed on a goal or stops short of one, and 2 when
+    /// the source never reaches the machine.
     Run
     {
         /// The source file to run.
         path: PathBuf,
+        /// The arguments the program's `main` reads, in order.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        arguments: Vec<String>,
     },
     /// Check staging observer programs: build each, normalize every source,
     /// readmit every certificate and admit every family through one memo.
@@ -922,6 +931,8 @@ enum Screen
 /// - panics: none. Output goes through locked handles and the fallible
 ///   `writeln!`, never `println!`, whose write-failure path panics. Clap's
 ///   command-definition assertions fire only under `debug_assertions`.
+/// - executable: none — `run` exits with a program's own status, any byte, so
+///   the codes the other verbs keep to are observed by the witnesses.
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — finite settled, refused, owed, missing and malformed
@@ -944,7 +955,6 @@ enum Screen
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
 /// - witness: `tests::cli::the_configured_spelling_prints_and_the_flag_outranks_it_782`
-#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNSETTLED) || ret == ExitCode::from(FAULTED))]
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -1015,7 +1025,9 @@ fn main() -> ExitCode
             },
             Verbosity::from(verbosity),
         ),
-        Some(Command::Run { path }) => (Invocation::Run { path }, Verbosity::User),
+        Some(Command::Run { path, arguments }) => {
+            (Invocation::Run { path, arguments }, Verbosity::User)
+        },
         Some(Command::Stage { jobs, programs }) => (
             Invocation::Stage {
                 programs,
@@ -1761,9 +1773,9 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `tests::cli::every_width_stages_the_serial_run`
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
-#[spec(captures: [status = matches!(outcome, Outcome::Status(_))],
+#[spec(captures: [status = matches!(outcome, Outcome::Status(_)), script = matches!(outcome, Outcome::Script(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
-        (*exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
+        (script || *exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
             && (!status || *exit == ExitCode::SUCCESS)))]
 fn render(
     outcome: Outcome,
@@ -2172,18 +2184,22 @@ fn run(
 ///   <fault>` on standard error. Otherwise every report `gandr check --goals`
 ///   prints for the source, its types in `spelling`, goes to standard error as
 ///   a plain snippet followed by an empty line, and every ledger line beside
-///   them; then a run that returned a value writes the value as the one line of
-///   standard output. A run blamed, stuck or unfinished, and a target that
-///   reaches a declaration the machine carries no image of, is one line on
-///   standard error: `gandr:`, the path, the target's name in backticks and the
-///   evaluation's spelling. A source carrying a refusal is `gandr: <path>:
-///   refused; nothing ran` and one declaring no name `gandr: <path>: declares
-///   no name to run`, each on standard error. The exit code is `0` for a value,
-///   `1` for a run that stopped short of one, and `2` for a script that never
-///   reached the machine.
+///   them; then a source declaring an entry runs it and writes nothing, and one
+///   declaring none runs its last declaration, which, when it returned a value,
+///   writes the value as the one line of standard output. A run blamed, stuck
+///   or unfinished, and a target that reaches a declaration the machine carries
+///   no image of, is one line on standard error: `gandr:`, the path, the
+///   target's name in backticks and the evaluation's spelling. A source
+///   carrying a refusal is `gandr: <path>: refused; nothing ran` and one
+///   declaring no name `gandr: <path>: declares no name to run`, each on
+///   standard error. The exit code is an entry's exit status when it returned
+///   or exited with one; otherwise `0` for a value, `1` for a run that stopped
+///   short of one, and `2` for a script that never reached the machine.
 /// - provides: `gandr run`, with its value on the one stream a caller reads.
 /// - fails: the first write error on either stream.
 /// - panics: none.
+/// - executable: none — the exit code is the process's status, which the
+///   witnesses observe by spawning the binary.
 ///
 /// # Errors
 /// The [`std::io::Error`] of the first write that failed.
@@ -2193,7 +2209,9 @@ fn run(
 ///   refusal, absent source and empty program are observed through exact
 ///   status, value multiplicity and separate diagnostic streams. Wrong status,
 ///   repeated values or evaluation after refusal changes these observations.
-///   Arbitrary machine programs and interruption timing are outside them.
+///   Arbitrary machine programs and interruption timing are outside them. An
+///   entry returning a code, one exiting through `Proc.exit`, one counting its
+///   arguments and one reaching a goal observe the entry's statuses.
 /// - witness: `tests::cli::a_script_that_returns_a_value_leaves_successfully`
 /// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
@@ -2202,8 +2220,7 @@ fn run(
 /// - witness: `tests::cli::a_script_with_no_program_is_refused`
 /// - witness: `tests::cli::the_value_of_a_run_is_printed_once`
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
-#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
-    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(STOPPED) || *exit == ExitCode::from(UNREACHED)))]
+/// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
 fn script(
     runnable: &mut Script,
     spelling: Spelling,
@@ -2214,6 +2231,7 @@ fn script(
     runnable.spell_in(spelling);
     let ran = runnable.run();
     let status = ran.status();
+    let mut exited = None;
     match ran {
         ScriptRun::Fault { path, fault } => {
             writeln!(stderr, "gandr: {}: {fault}", path.display())?;
@@ -2244,7 +2262,15 @@ fn script(
                     evaluation: Evaluation::Sealed(sealed),
                     ..
                 } => writeln!(stdout, "{sealed}")?,
-                Ran::Evaluated { target, evaluation } => {
+                Ran::Entered {
+                    entered: Entered::Exited(code),
+                    ..
+                } => exited = Some(u8::from(code)),
+                Ran::Evaluated { target, evaluation }
+                | Ran::Entered {
+                    target,
+                    entered: Entered::Ended(evaluation),
+                } => {
                     writeln!(stderr, "gandr: {path}: `{target}` {evaluation}")?;
                 },
                 Ran::Refused => writeln!(stderr, "gandr: {path}: refused; nothing ran")?,
@@ -2252,9 +2278,10 @@ fn script(
             }
         },
     }
-    Ok(match status {
-        RunStatus::Value => ExitCode::SUCCESS,
-        RunStatus::Failed => ExitCode::from(STOPPED),
-        RunStatus::Unreached => ExitCode::from(UNREACHED),
+    Ok(match (exited, status) {
+        (Some(code), _) => ExitCode::from(code),
+        (None, RunStatus::Value) => ExitCode::SUCCESS,
+        (None, RunStatus::Failed) => ExitCode::from(STOPPED),
+        (None, RunStatus::Unreached) => ExitCode::from(UNREACHED),
     })
 }

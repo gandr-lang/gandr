@@ -17,7 +17,7 @@ def peek(c : Cap {read}) -> -F [Fs] String {
 
 /// The full capability passed where reading alone is asked.
 @[ checks ]
-def main() -> -F [Fs] String {
+def granted() -> -F [Fs] String {
   become peek(fs)
 }
 
