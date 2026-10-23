@@ -836,7 +836,8 @@ impl TryFrom<(IntegerWidth, u64)> for FixedInteger
     ///
     /// # Specification
     /// - requires: nothing; any pattern is admissible.
-    /// - ensures: on `Ok`, the literal has the width and the pattern.
+    /// - ensures: on `Ok`, the literal has the width and the pattern, the
+    ///   pattern read without [`u64::from`], whose own clause reads this one.
     /// - fails: [`WiderThanWidth`] when a 32-bit width's pattern sets a bit
     ///   above its 32nd.
     /// - panics: none.
@@ -847,7 +848,7 @@ impl TryFrom<(IntegerWidth, u64)> for FixedInteger
     ///   64-bit ones.
     /// - witness: `base::tests::a_fixed_integer_keeps_its_width_and_bits`
     #[spec(
-        ensures: |ret| match ret { Ok(literal) => literal.width() == pattern.0 && u64::from(literal) == pattern.1, Err(WiderThanWidth) => matches!(pattern.0, IntegerWidth::U32 | IntegerWidth::I32) && u32::try_from(pattern.1).is_err() },
+        ensures: |ret| match ret { Ok(literal) => match (literal, pattern.0) { (Self::U32(value), IntegerWidth::U32) => u64::from(value) == pattern.1, (Self::U64(value), IntegerWidth::U64) => value == pattern.1, (Self::I32(value), IntegerWidth::I32) => u64::from(value.cast_unsigned()) == pattern.1, (Self::I64(value), IntegerWidth::I64) => value.cast_unsigned() == pattern.1, _ => false }, Err(WiderThanWidth) => matches!(pattern.0, IntegerWidth::U32 | IntegerWidth::I32) && u32::try_from(pattern.1).is_err() },
     )]
     #[inline]
     fn try_from(pattern: (IntegerWidth, u64)) -> Result<Self, Self::Error>
