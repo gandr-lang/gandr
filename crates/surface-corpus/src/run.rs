@@ -157,6 +157,30 @@ pub trait Runner
         &mut self,
         constant: ConstantIndex,
     ) -> RunSpelling;
+
+    /// The spelling of the causal web the dialogue the declaration at
+    /// `constant` holds decomposes to.
+    ///
+    /// # Specification
+    /// - requires: `constant` is the admission position of a declaration of the
+    ///   module being settled that the checker accepted, and that states the
+    ///   web it decomposes to.
+    /// - ensures: the spelling [`Self::run`] gives `decompose` applied to the
+    ///   declaration, a run that stops short of a web included.
+    /// - provides: the produced side of a `decomposes` comparison.
+    /// - fails: never; a run that cannot be carried out is an outcome of its
+    ///   own, spelled.
+    /// - panics: none.
+    /// - executable: none — as [`Self::run`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dialogue stating its web and one stating another;
+    ///   settlement asks the runner for each, and compares its spelling.
+    /// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
+    fn decompose(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling;
 }
 
 impl<Run> Runner for Run
@@ -182,6 +206,20 @@ where
     /// trivial.
     #[inline]
     fn run_refused(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        self(constant)
+    }
+
+    /// Calls the closure: a closure spells a decomposition by position, as
+    /// it spells a run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn decompose(
         &mut self,
         constant: ConstantIndex,
     ) -> RunSpelling

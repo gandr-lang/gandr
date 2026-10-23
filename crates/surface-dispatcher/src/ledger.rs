@@ -1109,6 +1109,7 @@ fn attribute_json(row: &AttributeRow) -> Value
         AttributeSchema::MarkerOrRecord(fields) => {
             json!({ "schema": "marker_or_record", "fields": fields })
         },
+        AttributeSchema::Spelled => json!({ "schema": "spelled" }),
     };
     json!({
         "name": row.name,
@@ -2029,6 +2030,7 @@ mod tests
                 "refuses",
                 "runs",
                 "normalizes",
+                "decomposes",
                 "doc",
                 "explicit_exits",
                 "explicit_runs",

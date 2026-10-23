@@ -5420,7 +5420,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             payloads.push(payload.node);
             let worded = matches!(
                 AttributeRegistry::lookup(attribute.name),
-                Maybe::Present((_, AttributeSchema::Word(_)))
+                Maybe::Present((_, AttributeSchema::Word(_) | AttributeSchema::Spelled))
             );
             let (_shape, value) = self.payload_former(payload)?;
             if value.0 && !worded {
@@ -16096,6 +16096,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         entry,
                         named,
                         members: _,
+                        spelled,
                     }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             self.asked.extend(
@@ -16112,6 +16113,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let attribute = entry.name();
                         table.file(key, entry);
                         table.file_named(key, attribute, named);
+                        if let Some(spelled) = spelled {
+                            table.file_spelled(key, attribute, spelled);
+                        }
                     },
                     Ok(Filing::Unlowered) => {},
                     Err(refusal) => {
@@ -16191,6 +16195,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         entry,
                         named,
                         members,
+                        spelled,
                     }) => {
                         if entry.name() == RegisteredAttribute::EXPLICIT_EXITS {
                             let _first = self.asked.insert(SlotIndex::from(index));
@@ -16200,6 +16205,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let attribute = entry.name();
                         table.file(key, entry);
                         table.file_named(key, attribute, named);
+                        if let Some(spelled) = spelled {
+                            table.file_spelled(key, attribute, spelled);
+                        }
                         if !members.is_empty() {
                             table.file_interface(key, members);
                         }
@@ -16564,11 +16572,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the option, and is ill-typed as another text otherwise; a bare word
     ///   where a word schema stands is admitted only when it spells one of the
     ///   schema's words, filed with no value, and is ill-typed as another word
-    ///   otherwise; a `respects` or `entry` payload is admitted only when it
-    ///   names declarations, an `identity` payload only when it names two or
-    ///   three, which the filing carries, and a `deprecated` record only when
-    ///   its fields are texts among those its schema names, and each is
-    ///   ill-typed as another value otherwise.
+    ///   otherwise; a word or another value where the spelled schema stands is
+    ///   filed with no value and its spelling, every run of layout one space
+    ///   and none just inside a parenthesis; a `respects` or `entry` payload is
+    ///   admitted only when it names declarations, an `identity` payload only
+    ///   when it names two or three, which the filing carries, and a
+    ///   `deprecated` record only when its fields are texts among those its
+    ///   schema names, and each is ill-typed as another value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -16588,12 +16598,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
     /// - witness: `lower::tests::a_form_payload_is_read_as_one_of_its_words`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
     /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
     /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
         captures: before = seen.len(),
         ensures: |ret| match ret.as_ref() {
-            | Ok(&Filing::Filed { ref entry, ref named, ref members }) => {
+            | Ok(&Filing::Filed { ref entry, ref named, ref members, ref spelled }) => {
                 seen.len() == before.saturating_add(1_usize)
                     && seen.last() == Some(&(entry.name(), written.span))
                     && entry.span() == written.span
@@ -16604,6 +16615,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | (Payload::Written(_), Maybe::Absent(payload::Absent::Word)) => {
                             matches!(entry.schema(), AttributeSchema::Word(_))
                         },
+                        | (Payload::Written(_), Maybe::Absent(payload::Absent::Spelled)) => {
+                            entry.schema() == AttributeSchema::Spelled
+                        },
                         | (Payload::Written(placed), Maybe::Present(value)) => {
                             self.value_at(placed.node) == Maybe::Present(value)
                         },
@@ -16612,6 +16626,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     && named.is_empty() == (entry.schema() != AttributeSchema::Names)
                     && members.is_empty() == (entry.schema() != AttributeSchema::Interface)
                     && (members.is_empty() || (2_usize ..= 3_usize).contains(&members.len()))
+                    && spelled.is_some() == (entry.schema() == AttributeSchema::Spelled)
             },
             | Ok(&Filing::Unlowered) => {
                 seen.len() == before
@@ -16644,7 +16659,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let form = match (
             schema,
-            self.payload_form_of(written, name)?,
+            self.payload_form_of(written, name, schema)?,
             written.payload,
         ) {
             (AttributeSchema::MarkerOr(option), PayloadForm::Text, Payload::Written(placed))
@@ -16684,6 +16699,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 });
             },
         }
+        let mut spelled = None;
         let (value, named, members) = match written.payload {
             Payload::Unwritten => (
                 Maybe::Absent(payload::Absent::Marker),
@@ -16692,6 +16708,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ),
             Payload::Written(_) if matches!(schema, AttributeSchema::Word(_)) => {
                 (Maybe::Absent(payload::Absent::Word), Vec::new(), Vec::new())
+            },
+            Payload::Written(placed) if schema == AttributeSchema::Spelled => {
+                // The payload as written, its layout one space and none just
+                // inside a parenthesis, so a form written across lines reads
+                // as one.
+                let mut spelling = String::new();
+                for word in self.text_at(placed).as_ref().split_whitespace() {
+                    if !spelling.is_empty() && !spelling.ends_with('(') && !word.starts_with(')') {
+                        spelling.push(' ');
+                    }
+                    spelling.push_str(word);
+                }
+                spelled = Some(spelling);
+                (
+                    Maybe::Absent(payload::Absent::Spelled),
+                    Vec::new(),
+                    Vec::new(),
+                )
             },
             Payload::Written(placed) => {
                 let Maybe::Present(value) = self.value_at(placed.node)
@@ -16715,7 +16749,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | AttributeSchema::Integer
                     | AttributeSchema::Text
                     | AttributeSchema::MarkerOr(_)
-                    | AttributeSchema::Word(_) => Maybe::Present((Vec::new(), Vec::new())),
+                    | AttributeSchema::Word(_)
+                    | AttributeSchema::Spelled => Maybe::Present((Vec::new(), Vec::new())),
                 };
                 let Maybe::Present((named, members)) = read
                 else {
@@ -16735,6 +16770,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             entry: AttributeEntry::new(name, schema, value, written.span),
             named,
             members,
+            spelled,
         })
     }
 
@@ -16746,8 +16782,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   payload's former otherwise.
     /// - provides: the syntactic half of the payload verdict.
     /// - fails: yields the non-value-payload refusal for a payload that cannot
-    ///   stand as a value, and [`LoweringRefusal::UnknownMold`] for a foreign
-    ///   mold.
+    ///   stand as a value, unless `schema` reads it as its spelling, and
+    ///   [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
     ///
     /// # Errors
@@ -16767,6 +16803,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Payload::Written(placed) => match self.payload_former(placed) {
                     | Err(refusal) => Err(refusal),
                     | Ok((Shape::Form { former, .. }, ValueForm(true))) => Ok(payload_form(former)),
+                    | Ok((Shape::Form { former, .. }, _)) if schema == AttributeSchema::Spelled => {
+                        Ok(payload_form(former))
+                    },
                     | Ok((Shape::Form { name: form, .. }, ValueForm(false))) => {
                         Err(LoweringRefusal::NonValuePayload {
                             span: placed.span,
@@ -16783,6 +16822,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         &self,
         written: &WrittenAttribute<'source>,
         name: RegisteredAttribute,
+        schema: AttributeSchema,
     ) -> Result<PayloadForm, LoweringRefusal<'source>>
     {
         let Payload::Written(placed) = written.payload
@@ -16794,7 +16834,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(PayloadForm::OtherValue);
         };
-        if !value.0 {
+        if !value.0 && schema != AttributeSchema::Spelled {
             return Err(LoweringRefusal::NonValuePayload {
                 span: placed.span,
                 name,
@@ -17988,6 +18028,9 @@ enum Filing
         /// The interface members its payload names, as the components the
         /// payload lowered them to, in written order.
         members: Vec<ValueId>,
+        /// The spelling of a payload its schema reads unquoted, present
+        /// exactly for [`AttributeSchema::Spelled`].
+        spelled: Option<String>,
     },
     /// Nothing: the payload did not lower, which only a payload that itself
     /// refused leaves behind.
@@ -23772,6 +23815,76 @@ mod tests
                 written: PayloadForm::Text,
             },
             "the word is no text"
+        );
+    }
+
+    /// #2077: `decomposes` takes one form unquoted, read as its spelling: the
+    /// web's node names are no declared names, and the spelling joins a form
+    /// written across lines into one. A text is refused at the payload.
+    #[test]
+    fn a_spelled_payload_is_read_back_where_it_was_filed()
+    {
+        use crate::attribute::AttributeRegistry;
+        use crate::attribute::PayloadForm;
+        use crate::attribute::payload;
+
+        let Maybe::Present((decomposes, expected)) =
+            AttributeRegistry::lookup(SurfaceName::from("decomposes"))
+        else {
+            panic!("`decomposes` is registered");
+        };
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "@[ decomposes(series(event(right, 0),\n    parallel( event(left, 1),  event(right, 1) ))) ]\ndef a : Integer ;\ndef b : Integer ;",
+            ),
+            &mut arena,
+        );
+        let [ref declaration, ref other] = *module.declarations()
+        else {
+            panic!("two names are declared");
+        };
+        assert!(
+            !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)),
+            "the web's node names are not looked up in scope: {:?}",
+            declaration.outcome()
+        );
+        let (Maybe::Present(key), Maybe::Present(unspelled)) =
+            (declaration.signature(), other.signature())
+        else {
+            panic!("both names have a signature");
+        };
+        let [ref entry] = *module.attributes().entries(key)
+        else {
+            panic!("one attribute is filed under the signature");
+        };
+        assert_eq!(
+            (entry.name(), entry.payload()),
+            (decomposes, Maybe::Absent(payload::Absent::Spelled)),
+            "the entry is filed with no value"
+        );
+        assert_eq!(
+            module
+                .attributes()
+                .spelled(key, decomposes)
+                .map(String::as_str),
+            Some("series(event(right, 0), parallel(event(left, 1), event(right, 1)))"),
+            "the spelling is filed beside the entry, its layout one space"
+        );
+        assert_eq!(
+            module.attributes().spelled(unspelled, decomposes),
+            None,
+            "another declaration has no spelling"
+        );
+        assert_eq!(
+            refusal(SourceText::from("@[ decomposes(\"x\") ] def a = 3 ;")),
+            LoweringRefusal::IllTypedPayload {
+                span: span(ByteOffset::from(14_usize), ByteOffset::from(17_usize)),
+                name: decomposes,
+                expected,
+                written: PayloadForm::Text,
+            },
+            "the form is unquoted"
         );
     }
 

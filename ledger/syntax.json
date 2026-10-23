@@ -172,6 +172,7 @@
     {"exemplar":"../corpus/ledger/attributes/refuses.gandr","name":"refuses","payload":{"schema":"text"},"reads":"a text payload"},
     {"exemplar":"../corpus/ledger/attributes/runs.gandr","name":"runs","payload":{"schema":"text"},"reads":"a text payload"},
     {"exemplar":"../corpus/ledger/attributes/normalizes.gandr","name":"normalizes","payload":{"schema":"text"},"reads":"a text payload"},
+    {"exemplar":"../corpus/ledger/attributes/decomposes.gandr","name":"decomposes","payload":{"schema":"spelled"},"reads":"an unquoted form"},
     {"exemplar":"../corpus/ledger/attributes/doc.gandr","name":"doc","payload":{"schema":"text"},"reads":"a text payload"},
     {"exemplar":"../corpus/ledger/attributes/explicit_exits.gandr","name":"explicit_exits","payload":{"schema":"marker"},"reads":"no payload"},
     {"exemplar":"../corpus/ledger/attributes/explicit_runs.gandr","name":"explicit_runs","payload":{"option":"effects","schema":"marker_or"},"reads":"no payload or the text \"effects\""},

@@ -431,7 +431,8 @@ impl Annotations
         Stated::Malformed(ExpectationFault::UnknownRefusal { span }
             | ExpectationFault::NegativeObligations { span }
             | ExpectationFault::ObligationsBeyondRange { span }
-            | ExpectationFault::UnwrittenNormalForm { span }) =>
+            | ExpectationFault::UnwrittenNormalForm { span }
+            | ExpectationFault::UnwrittenWeb { span }) =>
             *ret == Self::at(span, Label::Unsettled(Unsettlement::Malformed)),
         Stated::Verdict(_) => *ret == Self::at(declaration, Label::Unsettled(Unsettlement::Malformed)),
     })]
@@ -461,7 +462,8 @@ impl Annotations
                 ExpectationFault::UnknownRefusal { span }
                 | ExpectationFault::NegativeObligations { span }
                 | ExpectationFault::ObligationsBeyondRange { span }
-                | ExpectationFault::UnwrittenNormalForm { span },
+                | ExpectationFault::UnwrittenNormalForm { span }
+                | ExpectationFault::UnwrittenWeb { span },
             ) => Self::at(span, label),
             Stated::Verdict(_) => Self::at(declaration, label),
         }

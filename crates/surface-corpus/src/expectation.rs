@@ -194,6 +194,9 @@ pub enum ExpectationSchema
     /// `normalizes("call ~> normal form")`: the block checks, owing nothing,
     /// and its rules read the call to the normal form spelled.
     Normalizes,
+    /// `decomposes(web)`: the dialogue checks, owing nothing, and its causal
+    /// web decomposes to the web written.
+    Decomposes,
 }
 
 impl ExpectationSchema
@@ -202,8 +205,9 @@ impl ExpectationSchema
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `checks`, `owes`, `refuses`, `runs` and `normalizes` name
-    ///   their schemas; any other registered attribute names none.
+    /// - ensures: `checks`, `owes`, `refuses`, `runs`, `normalizes` and
+    ///   `decomposes` name their schemas; any other registered attribute names
+    ///   none.
     /// - provides: the filter that decides which attributes state a verdict.
     /// - fails: never; an attribute stating something else is the
     ///   [`expectation_schema::Absent::Unrelated`] absence.
@@ -222,9 +226,10 @@ impl ExpectationSchema
     | ("owes", Maybe::Present(Self::Owes))
     | ("refuses", Maybe::Present(Self::Refuses))
     | ("runs", Maybe::Present(Self::Runs))
-    | ("normalizes", Maybe::Present(Self::Normalizes)) => true,
+    | ("normalizes", Maybe::Present(Self::Normalizes))
+    | ("decomposes", Maybe::Present(Self::Decomposes)) => true,
     (name, Maybe::Absent(expectation_schema::Absent::Unrelated)) => {
-        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes")
+        !matches!(name, "checks" | "owes" | "refuses" | "runs" | "normalizes" | "decomposes")
     }
     _ => false,
 },
@@ -239,6 +244,7 @@ impl ExpectationSchema
             "refuses" => Maybe::Present(Self::Refuses),
             "runs" => Maybe::Present(Self::Runs),
             "normalizes" => Maybe::Present(Self::Normalizes),
+            "decomposes" => Maybe::Present(Self::Decomposes),
             _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
         }
     }
@@ -279,6 +285,7 @@ impl fmt::Display for ExpectationSchema
             Self::Refuses => "refuses",
             Self::Runs => "runs",
             Self::Normalizes => "normalizes",
+            Self::Decomposes => "decomposes",
         })
     }
 }
@@ -317,6 +324,9 @@ pub enum Outcome
     /// The block checks, owing nothing, and its rules read a call to a normal
     /// form: the line `call ~> normal form`.
     Normalizes(RunSpelling),
+    /// The dialogue checks, owing nothing, and its causal web decomposes to
+    /// the web spelled.
+    Decomposes(RunSpelling),
     /// The declaration is refused with the named refusal, and running it
     /// anyway produces the outcome spelled: a program that runs while the
     /// checker refuses it.
@@ -326,7 +336,8 @@ pub enum Outcome
 impl fmt::Display for Outcome
 {
     /// Writes `checks owing n`, `refuses Name`, `runs to outcome`,
-    /// `normalizes call ~> normal form` or `refuses Name and runs to outcome`.
+    /// `normalizes call ~> normal form`, `decomposes to web` or
+    /// `refuses Name and runs to outcome`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -359,6 +370,7 @@ impl fmt::Display for Outcome
             Self::Refuses(name) => write!(f, "refuses {name}"),
             Self::Runs(ref spelled) => write!(f, "runs to {spelled}"),
             Self::Normalizes(ref spelled) => write!(f, "normalizes {spelled}"),
+            Self::Decomposes(ref spelled) => write!(f, "decomposes to {spelled}"),
             Self::RefusesRunning(name, ref spelled) => {
                 write!(f, "refuses {name} and runs to {spelled}")
             },
@@ -488,6 +500,13 @@ pub enum ExpectationFault
         /// The bytes the attribute covers.
         span: ByteSpan,
     },
+    /// A `decomposes` payload that is no web: no `series`, `parallel`,
+    /// `prime` or `event` node.
+    UnwrittenWeb
+    {
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+    },
 }
 
 impl fmt::Display for ExpectationFault
@@ -531,6 +550,9 @@ impl fmt::Display for ExpectationFault
             Self::UnwrittenNormalForm { .. } => {
                 f.write_str("the `normalizes` payload writes no `~>` before a normal form")
             },
+            Self::UnwrittenWeb { .. } => f.write_str(
+                "the `decomposes` payload is no `series`, `parallel`, `prime` or `event` node",
+            ),
         }
     }
 }
@@ -597,12 +619,13 @@ pub struct Expectations
 }
 
 /// Read the expectations among `attributes` under `root`, their payloads out
-/// of `arena`.
+/// of `arena` or, for a payload written unquoted, out of `spelled`.
 ///
 /// # Specification
 /// - requires: `attributes` are the entries filed under one declared name, the
-///   signature's before the definition's, and `arena` is the arena the lowering
-///   minted their payloads into.
+///   signature's before the definition's; `arena` is the arena the lowering
+///   minted their payloads into, and `spelled` answers the spelling the
+///   lowering filed beside an entry whose payload it read unquoted.
 /// - ensures: with no expectation, an unattributed name stating checks owing
 ///   nothing, unguarded. Otherwise a fixture: guarded by the first expectation
 ///   in reading order its root does not admit — under the strict root an `owes`
@@ -613,21 +636,23 @@ pub struct Expectations
 ///   carries any other pair or more than two.
 /// - provides: the stated side of the settle comparison.
 /// - fails: [`SettleFault::UnreadablePayload`] when the one payload read is
-///   absent from `arena`, or is not its schema's literal.
+///   absent from `arena`, or is not its schema's literal, or a `decomposes`
+///   entry has no spelling.
 /// - panics: none.
 ///
 /// # Errors
 /// [`SettleFault::UnreadablePayload`] when an `owes`, `refuses`, `runs` or
-/// `normalizes` payload is not an integer or a text literal of `arena`.
+/// `normalizes` payload is not an integer or a text literal of `arena`, or a
+/// `decomposes` payload was filed with no spelling.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — all five schemas under both roots; negative, zero,
-///   maximal and overflowing obligation counts; missing and wrong-kind
-///   payloads; absent, single, composed and conflicting expectations. Exact
-///   membership, verdict, guard and source spans distinguish changed defaults,
-///   wrong schema readings and error-precedence changes. The iterator is
-///   consumed once, so its original sequence is observed by the fixtures, not
-///   replayed in the postcondition.
+/// - hypothesis: L3 — all six schemas under both roots; negative, zero, maximal
+///   and overflowing obligation counts; missing and wrong-kind payloads;
+///   absent, single, composed and conflicting expectations. Exact membership,
+///   verdict, guard and source spans distinguish changed defaults, wrong schema
+///   readings and error-precedence changes. The iterator is consumed once, so
+///   its original sequence is observed by the fixtures, not replayed in the
+///   postcondition.
 /// - witness: `expectation::tests::an_owes_payload_outside_the_counts_states_no_verdict`
 /// - witness: `expectation::tests::a_payload_the_arena_does_not_hold_is_unreadable`
 /// - witness: `expectation::tests::guard_and_conflict_precedence_preserve_the_first_spans`
@@ -669,13 +694,15 @@ pub struct Expectations
 },
 )]
 #[inline]
-pub fn read<'entry, Entries>(
+pub fn read<'entry, Entries, Spell>(
     root: CorpusRoot,
     attributes: Entries,
     arena: &CoreArena,
+    spelled: Spell,
 ) -> Result<Expectations, SettleFault>
 where
     Entries: Iterator<Item = &'entry AttributeEntry>,
+    Spell: Fn(&AttributeEntry) -> Option<RunSpelling>,
 {
     let written: Vec<(ExpectationSchema, &AttributeEntry)> = attributes
         .filter_map(|entry| match ExpectationSchema::of(entry.name()) {
@@ -724,7 +751,7 @@ where
             first: entry.span(),
             second: second.span(),
         }),
-        [_] | [] => stated_by(schema, entry, arena)?,
+        [_] | [] => stated_by(schema, entry, arena, spelled(entry).as_ref())?,
     };
     Ok(Expectations {
         membership: Membership::Fixture,
@@ -734,23 +761,26 @@ where
 }
 
 /// The verdict one expectation of `schema` states, its payload read out of
-/// `arena`.
+/// `arena`, or `spelled` for a payload written unquoted.
 ///
 /// # Specification
 /// - requires: `entry` belongs to the declaration being read; the caller
-///   supplies its payload arena.
+///   supplies its payload arena and the spelling filed beside it.
 /// - ensures: `checks` states zero obligations without a payload; `owes` reads
 ///   an integer count; `refuses` resolves an exact vocabulary spelling or
 ///   reports its unknown name; `runs` preserves the text payload; `normalizes`
-///   preserves a text payload that writes `~>` and reports one that does not.
-///   Malformed counts, names and lines retain the attribute span.
+///   preserves a text payload that writes `~>` and reports one that does not;
+///   `decomposes` preserves a spelling that is a `series`, `parallel`, `prime`
+///   or `event` node and reports one that is not. Malformed counts, names,
+///   lines and webs retain the attribute span.
 /// - fails: `UnreadablePayload` at the attribute span for an absent or
-///   wrong-kind payload required by the schema.
+///   wrong-kind payload required by the schema, or a `decomposes` with no
+///   spelling.
 /// - panics: none.
 ///
 /// # Errors
 /// [`SettleFault::UnreadablePayload`] when the payload is not the schema's
-/// literal of `arena`.
+/// literal of `arena`, or a `decomposes` payload has no spelling.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — integer boundaries, exact refusal names and a near miss,
@@ -762,6 +792,7 @@ where
 /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
 /// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
 /// - witness: `run::tests::run_mismatches_expose_both_spellings_and_preserve_sink_refusal`
+/// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
 #[spec(
     ensures: |ret| {
     let unreadable = SettleFault::UnreadablePayload {
@@ -769,6 +800,14 @@ where
     };
     if schema == ExpectationSchema::Checks {
         ret == Ok(owing_nothing())
+    } else if schema == ExpectationSchema::Decomposes {
+        match spelled {
+            None => ret == Err(unreadable),
+            Some(web) if WEB_NODES.iter().any(|node| web.as_ref().starts_with(node)) && web.as_ref().ends_with(')') => {
+                matches!(ret, Ok(Stated::Verdict(Outcome::Decomposes(ref stated))) if stated == web)
+            }
+            Some(_) => ret == Ok(Stated::Malformed(ExpectationFault::UnwrittenWeb { span: entry.span() })),
+        }
     } else {
         payload(entry, arena)
             .map_or_else(
@@ -825,6 +864,7 @@ fn stated_by(
     schema: ExpectationSchema,
     entry: &AttributeEntry,
     arena: &CoreArena,
+    spelled: Option<&RunSpelling>,
 ) -> Result<Stated, SettleFault>
 {
     let span = entry.span();
@@ -861,8 +901,23 @@ fn stated_by(
                 },
             })
         },
+        ExpectationSchema::Decomposes => {
+            let web = spelled.ok_or(unreadable)?;
+            let written = WEB_NODES.iter().any(|node| web.as_ref().starts_with(node))
+                && web.as_ref().ends_with(')');
+            Ok(if written {
+                Stated::Verdict(Outcome::Decomposes(web.clone()))
+            }
+            else {
+                Stated::Malformed(ExpectationFault::UnwrittenWeb { span })
+            })
+        },
     }
 }
+
+/// The node openings a `decomposes` payload begins with: the modular
+/// decomposition's series, parallel and prime nodes, and a leaf event.
+const WEB_NODES: [&str; 4] = ["series(", "parallel(", "prime(", "event("];
 
 /// The refusal a `refuses` entry names, read out of `arena`.
 ///
@@ -1222,7 +1277,7 @@ mod tests
                 Maybe::Present(payload),
                 span,
             );
-            let expectations = read(CorpusRoot::Fixture, iter::once(&entry), &arena)
+            let expectations = read(CorpusRoot::Fixture, iter::once(&entry), &arena, |_| None)
                 .expect("the payload is an integer of the arena");
             assert_eq!(
                 expectations.membership,
@@ -1259,7 +1314,7 @@ mod tests
         let misread =
             AttributeEntry::new(owes, AttributeSchema::Integer, Maybe::Present(text), span);
         let stated = |root: CorpusRoot, entry: AttributeEntry, arena: &CoreArena| {
-            read(root, iter::once(&entry), arena).map(|expectations| expectations.stated)
+            read(root, iter::once(&entry), arena, |_| None).map(|expectations| expectations.stated)
         };
 
         assert_eq!(
@@ -1337,7 +1392,7 @@ mod tests
             RunSpelling::from(String::from("5")),
         ));
         let stated = |root: CorpusRoot, entries: &[&AttributeEntry]| {
-            read(root, entries.iter().copied(), &arena)
+            read(root, entries.iter().copied(), &arena, |_| None)
                 .map(|expectations| (expectations.stated, expectations.guard))
         };
 
@@ -1427,7 +1482,7 @@ mod tests
             ([owes, refuses], ExpectationSchema::Owes, second),
             ([refuses, owes], ExpectationSchema::Refuses, first),
         ] {
-            let strict = read(CorpusRoot::Strict, entries.iter(), &arena)
+            let strict = read(CorpusRoot::Strict, entries.iter(), &arena, |_| None)
                 .expect("the guard precedes missing payloads");
             assert_eq!(strict.membership, Membership::Fixture);
             assert_eq!(strict.stated, owing_nothing());
@@ -1435,7 +1490,7 @@ mod tests
                 strict.guard,
                 Maybe::Present(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span: at })
             );
-            let fixture = read(CorpusRoot::Fixture, entries.iter(), &arena)
+            let fixture = read(CorpusRoot::Fixture, entries.iter(), &arena, |_| None)
                 .expect("the conflict precedes missing payloads");
             let [left, right] = entries;
             assert_eq!(fixture.membership, Membership::Fixture);
@@ -1482,7 +1537,7 @@ mod tests
                 let entry =
                     AttributeEntry::new(registered(SurfaceName::from(name)), schema, payload, at);
                 assert_eq!(
-                    read(CorpusRoot::Fixture, iter::once(&entry), &arena),
+                    read(CorpusRoot::Fixture, iter::once(&entry), &arena, |_| None),
                     Err(SettleFault::UnreadablePayload { span: at })
                 );
             }
@@ -1494,11 +1549,13 @@ mod tests
             at,
         );
         for root in [CorpusRoot::Strict, CorpusRoot::Fixture] {
-            let empty = read(root, iter::empty(), &arena).expect("no expectation needs no payload");
+            let empty = read(root, iter::empty(), &arena, |_| None)
+                .expect("no expectation needs no payload");
             assert_eq!(empty.membership, Membership::Unattributed);
             assert_eq!(empty.stated, owing_nothing());
             assert_eq!(empty.guard, Maybe::Absent(super::guard::Absent::Admitted));
-            let marked = read(root, iter::once(&checks), &arena).expect("checks is a marker");
+            let marked =
+                read(root, iter::once(&checks), &arena, |_| None).expect("checks is a marker");
             assert_eq!(marked.membership, Membership::Fixture);
             assert_eq!(marked.stated, owing_nothing());
             assert_eq!(marked.guard, Maybe::Absent(super::guard::Absent::Admitted));
@@ -1514,6 +1571,7 @@ mod tests
             ExpectationSchema::Refuses,
             ExpectationSchema::Runs,
             ExpectationSchema::Normalizes,
+            ExpectationSchema::Decomposes,
         ] {
             assert_eq!(
                 fmt::Write::write_fmt(&mut RefusingWriter, format_args!("{schema}")),
@@ -1530,6 +1588,10 @@ mod tests
             (
                 Outcome::Normalizes(RunSpelling::from(String::from("f(λ) ~> λ"))),
                 "f(λ) ~> λ",
+            ),
+            (
+                Outcome::Decomposes(RunSpelling::from(String::from("series(event(left, 0))"))),
+                "series(event(left, 0))",
             ),
         ] {
             let stated = Stated::Verdict(outcome);
@@ -1550,6 +1612,7 @@ mod tests
             ExpectationFault::ObligationsBeyondRange { span: first },
             ExpectationFault::ConflictingExpectations { first, second },
             ExpectationFault::UnwrittenNormalForm { span: first },
+            ExpectationFault::UnwrittenWeb { span: first },
         ] {
             let stated = Stated::Malformed(fault);
             let rendered = stated.to_string();

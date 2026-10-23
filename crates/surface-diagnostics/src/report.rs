@@ -1283,6 +1283,11 @@ impl fmt::Display for NoteText<'_>
                 f,
                 "`{name}` is expected to read {spelled}, and this refusal leaves it unsettled"
             )?,
+            Stated::Verdict(Outcome::Decomposes(ref spelled)) => write!(
+                f,
+                "`{name}` is expected to decompose to {spelled}, and this refusal leaves it \
+                 unsettled"
+            )?,
             Stated::Verdict(Outcome::RefusesRunning(expected, ref spelled)) => {
                 match self.0.outcome() {
                     Outcome::RefusesRunning(refused, ref ran) => write!(
@@ -1293,7 +1298,8 @@ impl fmt::Display for NoteText<'_>
                     Outcome::Checks(_)
                     | Outcome::Refuses(_)
                     | Outcome::Runs(_)
-                    | Outcome::Normalizes(_) => {
+                    | Outcome::Normalizes(_)
+                    | Outcome::Decomposes(_) => {
                         write!(
                             f,
                             "`{name}` is expected to be refused with {expected} and run to {spelled}, \

@@ -577,7 +577,7 @@ impl<'source> DeclarationReport<'source>
             matches!(ret, Outcome::RefusesRunning(name, ref actual) if name == refusal.name() && actual == spelled)
         }
         (&Stated::Verdict(Outcome::RefusesRunning(..)), &Maybe::Absent(_))
-        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_)) | Stated::Malformed(_)), _) => {
+        | (&(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_)) | Stated::Malformed(_)), _) => {
             ret == Outcome::Refuses(refusal.name())
         }
     },
@@ -586,6 +586,9 @@ impl<'source> DeclarationReport<'source>
             Maybe::Present(ref spelled) => match self.stated {
                 Stated::Verdict(Outcome::Normalizes(_)) => {
                     matches!(ret, Outcome::Normalizes(ref actual) if actual == spelled)
+                }
+                Stated::Verdict(Outcome::Decomposes(_)) => {
+                    matches!(ret, Outcome::Decomposes(ref actual) if actual == spelled)
                 }
                 Stated::Verdict(_) | Stated::Malformed(_) => matches!(ret, Outcome::Runs(ref actual) if actual == spelled),
             },
@@ -608,6 +611,7 @@ impl<'source> DeclarationReport<'source>
             (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Present(ref spelled)) => {
                 match self.stated {
                     Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
+                    Stated::Verdict(Outcome::Decomposes(_)) => Outcome::Decomposes(spelled.clone()),
                     Stated::Verdict(
                         Outcome::Checks(_)
                         | Outcome::Refuses(_)
@@ -659,7 +663,7 @@ impl<'source> DeclarationReport<'source>
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Absent(_)) && count == self.owed
             }
-            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
+            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected) | Outcome::Decomposes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(
                         self.ran, Maybe::Present(ref actual) if actual == expected
@@ -687,7 +691,11 @@ impl<'source> DeclarationReport<'source>
                     && matches!(self.ran, Maybe::Absent(_))
                     && count == self.owed
             },
-            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
+            Stated::Verdict(
+                Outcome::Runs(ref expected)
+                | Outcome::Normalizes(ref expected)
+                | Outcome::Decomposes(ref expected),
+            ) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
             },
@@ -709,10 +717,10 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: with `declared` the count a stated `checks` verdict names,
-    ///   and zero for a stated refusal, a stated run outcome or normal form, a
-    ///   run beside a refusal, or a malformed expectation, the owed obligations
-    ///   past `declared` are undeclared and the declared ones past the owed are
-    ///   unproduced; at most one of the two is nonzero.
+    ///   and zero for a stated refusal, a stated run outcome, normal form or
+    ///   decomposition, a run beside a refusal, or a malformed expectation, the
+    ///   owed obligations past `declared` are undeclared and the declared ones
+    ///   past the owed are unproduced; at most one of the two is nonzero.
     /// - provides: the surviving count a report sums.
     /// - fails: never.
     /// - panics: none.
@@ -747,6 +755,7 @@ impl<'source> DeclarationReport<'source>
                 Outcome::Refuses(_)
                 | Outcome::Runs(_)
                 | Outcome::Normalizes(_)
+                | Outcome::Decomposes(_)
                 | Outcome::RefusesRunning(..),
             )
             | Stated::Malformed(_) => 0_usize,
@@ -943,12 +952,12 @@ impl Error for SettleFault
 ///   its name, span and admission position. A lowering refusal consumes no
 ///   checker verdict; other declarations pair with the checker by admission
 ///   position. Root guards override produced verdicts without dropping their
-///   owed obligations. Only accepted declarations stating a run outcome call
-///   `runner`'s run, and only checker-refused declarations stating a run beside
-///   their refusal call its refused run, once each in order; only accepted
-///   declarations stating a normal form read one, through
-///   [`LoweredModule::normal_form`], under the rules of the block that holds
-///   them; the report preserves the checker ledger count.
+///   owed obligations. Only accepted declarations stating a run outcome or a
+///   web call `runner`'s run or its decomposition, and only checker-refused
+///   declarations stating a run beside their refusal call its refused run, once
+///   each in order; only accepted declarations stating a normal form read one,
+///   through [`LoweredModule::normal_form`], under the rules of the block that
+///   holds them; the report preserves the checker ledger count.
 /// - fails: `SettleFault` for the first missing or misaligned verdict, an
 ///   unreadable expectation payload, or a verdict left after the module ends.
 ///   Calls made to the runner before a later fault are not rolled back.
@@ -974,6 +983,7 @@ impl Error for SettleFault
 /// - witness: `settle::tests::a_later_alignment_fault_does_not_replay_or_extend_runner_calls`
 /// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
 /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
+/// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
@@ -1010,7 +1020,7 @@ impl Error for SettleFault
                         && match declaration.ran {
                             Maybe::Present(_) => {
                                 (matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_))
                                 )
                                     && matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
@@ -1030,7 +1040,7 @@ impl Error for SettleFault
                             }
                             Maybe::Absent(ran::Absent::Unaccepted) => {
                                 (matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_))
                                 )
                                     && !matches!(
                                         declaration.produced, Produced::Judged(Verdict::Checked { ..
@@ -1052,7 +1062,7 @@ impl Error for SettleFault
                             }
                             Maybe::Absent(ran::Absent::Unstated) => {
                                 !matches!(
-                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::RefusesRunning(..))
+                                    declaration.stated, Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_) | Outcome::Decomposes(_) | Outcome::RefusesRunning(..))
                                 )
                             }
                         }
@@ -1223,7 +1233,12 @@ pub fn settle_after<'source>(
             Produced::Unlowered(_) | Produced::Judged(Verdict::Refused(_))
                 if !header(module.attributes(), lowered).is_empty() =>
             {
-                expectation::read(root, header(module.attributes(), lowered).iter(), arena)?
+                expectation::read(
+                    root,
+                    header(module.attributes(), lowered).iter(),
+                    arena,
+                    |entry| spelled(module.attributes(), lowered, entry),
+                )?
             },
             Produced::Unlowered(_)
             | Produced::Judged(
@@ -1245,6 +1260,10 @@ pub fn settle_after<'source>(
                 &Stated::Verdict(Outcome::Runs(_)),
                 Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
             ) => Maybe::Present(runner.run(lowered.constant())),
+            (
+                &Stated::Verdict(Outcome::Decomposes(_)),
+                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+            ) => Maybe::Present(runner.decompose(lowered.constant())),
             (
                 &Stated::Verdict(Outcome::RefusesRunning(..)),
                 Produced::Judged(Verdict::Refused(_)),
@@ -1268,7 +1287,7 @@ pub fn settle_after<'source>(
                 ),
             ) => Maybe::Present(normalized(module, lowered, line)),
             (
-                &Stated::Verdict(Outcome::Runs(_)),
+                &Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_)),
                 Produced::Judged(
                     Verdict::Data | Verdict::Owed(_) | Verdict::Suspended(_) | Verdict::Refused(_),
                 )
@@ -1622,7 +1641,54 @@ pub fn expected(
     lowered: &LoweredDeclaration<'_>,
 ) -> Result<Expectations, SettleFault>
 {
-    expectation::read(root, attributes(module.attributes(), lowered), arena)
+    expectation::read(
+        root,
+        attributes(module.attributes(), lowered),
+        arena,
+        |entry| spelled(module.attributes(), lowered, entry),
+    )
+}
+
+/// The spelling the lowering filed beside `entry`, an attribute of the
+/// declaration `lowered` whose payload it read unquoted.
+///
+/// # Specification
+/// - requires: `entry` is filed in `table` under one of `lowered`'s keys.
+/// - ensures: the spelling filed under the first of `lowered`'s signature,
+///   definition, refused form and introduced keys that holds one for the
+///   entry's attribute; absent when none does.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a `decomposes` written before a dialogue's signature is
+///   read from the signature's key.
+/// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|web| {
+    [lowered.signature(), lowered.definition(), lowered.refused_form(), Maybe::Present(lowered.introduced())]
+        .into_iter()
+        .any(|key| matches!(key, Maybe::Present(key) if table.spelled(key, entry.name()).is_some_and(|filed| filed.as_str() == web.as_ref())))
+}))]
+fn spelled(
+    table: &AttributeTable,
+    lowered: &LoweredDeclaration<'_>,
+    entry: &AttributeEntry,
+) -> Option<RunSpelling>
+{
+    let present = |key| match key {
+        Maybe::Present(key) => Some(key),
+        Maybe::Absent(_) => None,
+    };
+    [
+        present(lowered.signature()),
+        present(lowered.definition()),
+        present(lowered.refused_form()),
+        Some(lowered.introduced()),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|key| table.spelled(key, entry.name()))
+    .map(|web| RunSpelling::from(web.clone()))
 }
 
 #[cfg(test)]
@@ -2145,6 +2211,88 @@ mod tests
         {
             self.0.push(("refused", usize::from(constant)));
             ran_at(constant)
+        }
+
+        /// Records a decomposition and spells it as a one-event web at the
+        /// position.
+        ///
+        /// # Specification
+        /// trivial.
+        fn decompose(
+            &mut self,
+            constant: ConstantIndex,
+        ) -> RunSpelling
+        {
+            self.0.push(("decompose", usize::from(constant)));
+            RunSpelling::from(format!("event(left, {})", usize::from(constant)))
+        }
+    }
+
+    /// #2077: a `decomposes` payload is the web's tree, unquoted; an accepted
+    /// dialogue settles when the web `decompose` reads back is the one it
+    /// states, however the tree is laid out, and a payload that is no web
+    /// node is a malformed expectation that asks for nothing.
+    #[test]
+    fn a_web_settles_against_the_dialogue_s_decomposition_2077()
+    {
+        let web = |at: &str| Outcome::Decomposes(RunSpelling::from(format!("event(left, {at})")));
+        let rows = [
+            (
+                CorpusRoot::Strict,
+                "@[ decomposes(event(left, 0)) ] def a = 3 ;",
+                web("0"),
+                Settlement::Settled,
+                &[("decompose", 0_usize)][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ decomposes(\n  event(\n    left,\n    0\n  )\n) ] def a = 3 ;",
+                web("0"),
+                Settlement::Settled,
+                &[("decompose", 0_usize)][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ decomposes(event(left, 1)) ] def a = 3 ;",
+                web("0"),
+                Settlement::Unsettled,
+                &[("decompose", 0_usize)][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ decomposes(series) ] def a = 3 ;",
+                Outcome::Checks(ObligationCount::from(0_usize)),
+                Settlement::Unsettled,
+                &[][..],
+            ),
+            (
+                CorpusRoot::Fixture,
+                "@[ decomposes(event(left, 0)) ] def a : Integer ;",
+                Outcome::Checks(ObligationCount::from(1_usize)),
+                Settlement::Unsettled,
+                &[][..],
+            ),
+        ];
+        for (root, source, outcome, settlement, runs) in rows {
+            let module = checked(SourceText::from(source));
+            let mut asked = Asked::default();
+            let report = settle(
+                root,
+                &module.arena,
+                &module.module,
+                &module.verdicts,
+                &mut asked,
+            )
+            .expect("the verdicts are the module's own");
+            assert_eq!(
+                (
+                    only(&report).outcome(),
+                    only(&report).settlement(),
+                    asked.0.as_slice()
+                ),
+                (outcome, settlement, runs),
+                "`{source}` under the {root} root decomposes and settles as pinned"
+            );
         }
     }
 

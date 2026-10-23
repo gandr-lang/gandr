@@ -400,6 +400,20 @@ enum Start
     Refused,
 }
 
+/// What a run starting from a declaration computes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reach
+{
+    /// The declaration's value, forced when it is a suspension.
+    Value,
+    /// The causal web the dialogue the declaration holds decomposes to:
+    /// `decompose` applied to it.
+    Web,
+}
+
 /// A value, spelled: the text `gandr run` prints for a run that returned one,
 /// laid out by the printer every face shares.
 #[repr(transparent)]
@@ -1155,7 +1169,7 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Evaluation<'source>
     {
-        let (returned, forced) = match self.prepare(constant, Start::Accepted) {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
@@ -1192,7 +1206,41 @@ impl<'source> Program<'source>
         constant: ConstantIndex,
     ) -> Evaluation<'source>
     {
-        let (returned, forced) = match self.prepare(constant, Start::Refused) {
+        let (returned, forced) = match self.prepare(constant, Start::Refused, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(constant, returned, forced, Choice::Policy)
+            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run `decompose` over the dialogue the declaration at `constant`
+    /// holds, read the web back and spell it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate`] gives for a declaration applying
+    ///   `decompose` to the one at `constant`: the web's spelling, or the
+    ///   outcome that stops the run short of one, a declaration whose value is
+    ///   no dialogue included.
+    /// - provides: the run a `decomposes` expectation compares.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the run's clauses are [`Self::evaluate`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus's series-parallel dialogue and the one
+    ///   leaving a prime node settle only when this spells the webs `decompose`
+    ///   returns for them.
+    /// - witness: `tests::corpus::the_fixture_root_settles_every_fixture`
+    #[inline]
+    pub fn evaluate_decomposed(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Web) {
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
@@ -1229,7 +1277,7 @@ impl<'source> Program<'source>
         engine: Engine,
     ) -> Result<Evaluation<'source>, Declined>
     {
-        let (returned, forced) = match self.prepare(constant, Start::Accepted) {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
             Ok(entries) => entries,
             Err(evaluation) => return Ok(evaluation),
         };
@@ -1269,7 +1317,7 @@ impl<'source> Program<'source>
         into: &mut CoreArena,
     ) -> Result<Terminal<'source>, Declined>
     {
-        let (returned, forced) = match self.prepare(constant, Start::Accepted) {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
             Ok(entries) => entries,
             Err(evaluation) => return Ok(Terminal::Ended(evaluation)),
         };
@@ -1287,8 +1335,9 @@ impl<'source> Program<'source>
         )
     }
 
-    /// The two commands that run the declaration at `constant`, started as
-    /// `start` allows: the one returning it and the one forcing it.
+    /// The two commands that run the declaration at `constant` to `reach`,
+    /// started as `start` allows: the one returning it and the one forcing
+    /// it.
     ///
     /// # Specification
     /// trivial.
@@ -1299,12 +1348,13 @@ impl<'source> Program<'source>
         &mut self,
         constant: ConstantIndex,
         start: Start,
+        reach: Reach,
     ) -> Result<(CommandId, CommandId), Evaluation<'source>>
     {
         if let Maybe::Present(unrunnable) = self.unrunnable(constant, start) {
             return Err(Evaluation::Unrunnable(unrunnable));
         }
-        self.entries(constant).map_err(|refusal| {
+        self.entries(constant, reach).map_err(|refusal| {
             Evaluation::Unrunnable(match self.name(constant) {
                 Maybe::Present(declaration) => Unrunnable::Unfocused {
                     declaration,
@@ -1573,13 +1623,15 @@ impl<'source> Program<'source>
         Maybe::Absent(carried::Absent::Carried)
     }
 
-    /// The two commands a run of `constant` needs: `return c`, and `force c`
-    /// for a constant whose value is a thunk.
+    /// The two commands a run of `constant` to `reach` needs: for its value,
+    /// `return c`, and `force c` for a constant whose value is a thunk; for
+    /// its web, `decompose(c)` for both, a web being no thunk.
     ///
     /// # Specification
     /// - requires: nothing; the constant need not have a definition yet.
-    /// - ensures: success returns distinct, allocated return and force commands
-    ///   for the same constant, in that order, in this program's arena.
+    /// - ensures: success returns allocated commands for the same constant in
+    ///   this program's arena: distinct return and force commands, in that
+    ///   order, for its value, and one decompose command twice for its web.
     /// - fails: preserves the focusing refusal; nodes already appended are not
     ///   rolled back when a later allocation fails.
     /// - panics: none.
@@ -1590,7 +1642,8 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::a_run_reaching_a_goal_blames_it`
     #[spec(ensures: |ret| match ret {
-        Ok((returned, forced)) => returned != forced && self.arena.command(returned).is_some()
+        Ok((returned, forced)) => (returned != forced) == (reach == Reach::Value)
+            && self.arena.command(returned).is_some()
             && self.arena.command(forced).is_some(),
         Err(_) => true,
     })]
@@ -1599,17 +1652,27 @@ impl<'source> Program<'source>
     fn entries(
         &mut self,
         constant: ConstantIndex,
+        reach: Reach,
     ) -> Result<(CommandId, CommandId), FocusRefusal>
     {
         let mut core = CoreArena::new();
         let value = core.value_constant(constant);
-        let returned = core.computation_return(value);
-        let forced = core.computation_force(value);
         let mut provenance = Provenance::new();
-        Ok((
-            focus_computation(&core, returned, &mut self.arena, &mut provenance)?,
-            focus_computation(&core, forced, &mut self.arena, &mut provenance)?,
-        ))
+        match reach {
+            Reach::Value => {
+                let returned = core.computation_return(value);
+                let forced = core.computation_force(value);
+                Ok((
+                    focus_computation(&core, returned, &mut self.arena, &mut provenance)?,
+                    focus_computation(&core, forced, &mut self.arena, &mut provenance)?,
+                ))
+            },
+            Reach::Web => {
+                let decomposed = core.computation_decompose(value);
+                let web = focus_computation(&core, decomposed, &mut self.arena, &mut provenance)?;
+                Ok((web, web))
+            },
+        }
     }
 
     /// The value `outcome` halted with, or the evaluation it ends the run
@@ -1994,6 +2057,20 @@ impl Runner for Program<'_>
     {
         RunSpelling::from(self.evaluate_refused(constant).to_string())
     }
+
+    /// Spells the web the dialogue the declaration at `constant` holds
+    /// decomposes to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn decompose(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> RunSpelling
+    {
+        RunSpelling::from(self.evaluate_decomposed(constant).to_string())
+    }
 }
 
 /// The constants `body` refers to, outside its types.
@@ -2316,6 +2393,7 @@ mod tests
     use super::Engine;
     use super::Evaluation;
     use super::Program;
+    use super::Reach;
     use super::RunStatus;
     use super::SealedRun;
     use super::Spelling;
@@ -3053,7 +3131,9 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             .find(|&(_, declared)| declared.name == name)
             .map(|(&constant, _)| constant)
             .expect("the program declares the name");
-        let (returned, forced) = program.entries(position).expect("the declaration focuses");
+        let (returned, forced) = program
+            .entries(position, Reach::Value)
+            .expect("the declaration focuses");
         let run = |root, fuel| {
             gandr_runtime_emitter::evaluate_on(
                 tier,
