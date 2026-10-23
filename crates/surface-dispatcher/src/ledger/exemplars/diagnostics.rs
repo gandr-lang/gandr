@@ -89,6 +89,21 @@ const DATA_MEMBER: Issue = Issue(1462);
 /// The issue writing the exemplars of the checker's unshown names.
 const CHECKER: Issue = Issue(1789);
 
+/// Why no source reaches an effectful former's refusal: only the kernel's
+/// readmission refuses it, and there the declaration stays on the checker's
+/// side instead of being refused.
+const EFFECTFUL: Reason = Reason(
+    "only the kernel's readmission refuses the former, and an effectful one keeps its \
+     declaration on the checker's side rather than refusing it",
+);
+
+/// Why no source reaches a pure former's refusal that only the kernel makes:
+/// one refused there is a disagreement between the two checkers.
+const READMISSION: Reason = Reason(
+    "only the kernel's readmission refuses the former, and a pure one refused there is an \
+     engine fault, never a verdict",
+);
+
 /// A tracker issue, by number.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -110,7 +125,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 86_usize] = [
+const OWED: [(&str, Owed); 83_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -210,7 +225,6 @@ const OWED: [(&str, Owed); 86_usize] = [
             "a circuit rule's redex is placed on the boundary its own wiring derives",
         )),
     ),
-    ("NotADataType", Owed::Unwritten(CHECKER)),
     ("LoopUndecided", Owed::Unwritten(CHECKER)),
     ("AbstractKindNotUniverse", Owed::Unwritten(TYPE_MEMBER)),
     ("RepresentationAboveKind", Owed::Unwritten(TYPE_MEMBER)),
@@ -221,8 +235,6 @@ const OWED: [(&str, Owed); 86_usize] = [
     ("ConstructorArity", Owed::Unwritten(CHECKER)),
     ("NonExhaustiveDataCase", Owed::Unwritten(CHECKER)),
     ("AbsentTupleComponent", Owed::Unwritten(CHECKER)),
-    ("IndexOccurrence", Owed::Unwritten(CHECKER)),
-    ("CrossBlockReference", Owed::Unwritten(CHECKER)),
     ("PathCode", Owed::Unwritten(CHECKER)),
     ("EquivUnsupported", Owed::Unwritten(CHECKER)),
     ("TranslatorStuck", Owed::Unwritten(CHECKER)),
@@ -246,29 +258,52 @@ const OWED: [(&str, Owed); 86_usize] = [
     ("HostWorldUndeclared", Owed::Unwritten(CHECKER)),
     ("MarkUnfounded", Owed::Unwritten(CHECKER)),
     ("EntryUngranted", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.ValueLift", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.NumericLiteral", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.NumericAtom", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.TypeLift", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Abstract", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.SortParameter", Owed::Unwritten(CHECKER)),
+    (
+        "OutOfFragment.ValueLift",
+        Owed::Unreachable(Reason(
+            "the lowering mints no value lift, and the checker's readings copy only the lifts a \
+             term holds",
+        )),
+    ),
+    (
+        "OutOfFragment.NumericLiteral",
+        Owed::Unreachable(Reason("the lowering mints no numeric literal")),
+    ),
+    (
+        "OutOfFragment.NumericAtom",
+        Owed::Unreachable(Reason("the lowering mints no type at the numeric atom")),
+    ),
+    (
+        "OutOfFragment.TypeLift",
+        Owed::Unreachable(Reason(
+            "the lowering mints no type lift, and the checker mints one only to raise a code \
+             above its universe",
+        )),
+    ),
+    ("OutOfFragment.Abstract", Owed::Unreachable(READMISSION)),
+    (
+        "OutOfFragment.SortParameter",
+        Owed::Unreachable(Reason(
+            "the lowering mints a universe only at a ground sort",
+        )),
+    ),
     ("OutOfFragment.TopUniverse", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.StaticLambda", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.EffectRow", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Reify", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Stack", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Perform", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Handle", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Resume", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Reset", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Shift", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Capability", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Exercise", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Scope", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Run", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Memory", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Buffer", Owed::Unwritten(CHECKER)),
-    ("OutOfFragment.Abandon", Owed::Unwritten(CHECKER)),
+    ("OutOfFragment.StaticLambda", Owed::Unreachable(READMISSION)),
+    ("OutOfFragment.EffectRow", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Reify", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Stack", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Perform", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Handle", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Resume", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Reset", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Shift", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Capability", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Exercise", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Scope", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Run", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Memory", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Buffer", Owed::Unreachable(EFFECTFUL)),
+    ("OutOfFragment.Abandon", Owed::Unreachable(EFFECTFUL)),
 ];
 
 /// What a diagnostics exemplar shows.

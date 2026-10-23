@@ -1,0 +1,6 @@
+/// `IndexOccurrence`: a data declaration's own family occurs inside a term a field's type reads.
+@[ refuses("IndexOccurrence") ]
+data Coded : Type {
+  Base : Coded;
+  Looped : (p : Path(Type, Coded, Coded)) --> Coded;
+}
