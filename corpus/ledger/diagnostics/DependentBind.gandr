@@ -1,0 +1,14 @@
+/// `DependentBind`: a bind whose body synthesises a type naming the value it binds.
+@[ checks ]
+def one() -> -F Integer {
+  pure 1
+}
+
+@[ refuses("DependentBind") ]
+def bound() -> -F Integer {
+  run p <- {
+    run n <- one();
+    pure here(n)
+  };
+  pure 1
+}

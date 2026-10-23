@@ -1,0 +1,9 @@
+/// `FamilyArgumentClassifier`: a type operator applied to a value where its static Pi takes a type.
+@[ checks ]
+def twice : Type -> Type ;
+def twice = \Y. Y * Y ;
+
+@[ refuses("FamilyArgumentClassifier") ]
+def wrong(p : twice(1)) -> -F Integer {
+  return 1
+}
