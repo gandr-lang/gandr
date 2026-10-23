@@ -15586,7 +15586,7 @@ mod tests
             },
             ContentChange {
                 range: None,
-                text: String::from("pure 3\n"),
+                text: String::from("@[ checks ]\n"),
             },
         ];
         let (version, tried) = workspace
@@ -15762,10 +15762,10 @@ mod tests
         );
         assert!(
             matches!(
-                workspace.propose(&uri, held, fill(hole, Json("1 ;\npure 3"), None)),
+                workspace.propose(&uri, held, fill(hole, Json("1 ;\n2 ;\npure 3"), None)),
                 Err(ProposalRefusal::Unchecked { .. })
             ),
-            "a fill the lowering refuses whole is not kept"
+            "a fill leaving a stray the lowering refuses is not kept"
         );
         assert_eq!(
             workspace.propose(&uri, held, fill(hole, Json("42"), None)),

@@ -1,0 +1,7 @@
+// A host module's operation selected and never called is no value to run.
+// The lowering admits no member selection on a module yet (#1106), so that
+// refusal stands in front of this one.
+
+/// `fs.read`, never handed its path (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
+fs.read

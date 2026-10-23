@@ -1,9 +1,9 @@
 // A run target before a named item is no run target: the linker folds named
-// items around one final expression, and refuses an expression anywhere else.
-// The lowering reads no root expression yet (#1105), so it refuses the early
-// one as a root child that is no declaration.
+// items around one final expression, and refuses an expression anywhere else
+// as a stray, a root child that is no declaration. Its twin,
+// `model/basics/definitions.gandr`, runs the final one.
 
-/// An expression before a definition (#1105).
+/// An expression before a definition, a stray.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 1;
 

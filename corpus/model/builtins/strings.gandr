@@ -8,12 +8,12 @@
 @[ checks ]
 def slogan = "types are machines";
 
-/// A statement before a named item: the lowering reads no root expression yet
-/// (#1105).
+/// A statement before a named item, a stray: only a source's final expression
+/// is its run target.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 string.contains(slogan, "machine");
 
-/// A second statement, equality (#1105).
+/// A second stray, equality.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 string.eq(slogan, "types are machines");
 
@@ -29,6 +29,7 @@ def has_suffix = string.ends_with(slogan, "machines");
 @[ refuses("UnknownMember") ]
 def escaped = string.escape("a+b.txt");
 
-/// The run target splits at a comma (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target splits at a comma, which is no member of the native
+/// `string` namespace.
+@[ refuses("UnknownMember") ]
 string.split("alpha,beta", ",")

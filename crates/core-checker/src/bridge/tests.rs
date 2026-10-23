@@ -221,6 +221,10 @@ const UNSIGNED: Maybe<ValueTypeId, signature::Absent> = Maybe::Absent(signature:
 /// No body.
 const HOLE: Maybe<ValueId, body::Absent> = Maybe::Absent(body::Absent::Hole);
 
+/// No declared type: a source's run target.
+const RUN_TARGET: Maybe<ValueTypeId, signature::Absent> =
+    Maybe::Absent(signature::Absent::RunTarget);
+
 /// Judge `module` over `arena`, then readmit what the judgement accepted.
 ///
 /// # Specification
@@ -6280,4 +6284,47 @@ fn each_former_the_kernel_refuses_names_its_issue()
             "the bridge's refusal of {former:?}"
         );
     }
+}
+
+#[test]
+fn a_run_target_crosses_at_the_thunk_type_it_synthesised_1105()
+{
+    // A run target suspending a bind crosses as a definition at the thunk
+    // type the checker synthesised, which the kernel checks the thunk
+    // against; a reference to it, signed with that type, crosses after it.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let suspended = arena.value_type_thunk(returns_integer);
+    let zero = arena.value_literal(integer_literal());
+    let bound = arena.computation_return(zero);
+    let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.computation_return(variable);
+    let sequenced = arena.computation_bind(bound, returned);
+    let thunk = arena.value_thunk(sequenced);
+    let target = arena.value_constant(ConstantIndex::from(0_usize));
+    let module = [
+        declaration(At(0), RUN_TARGET, Maybe::Present(thunk)),
+        declaration(At(1), Maybe::Present(suspended), Maybe::Present(target)),
+    ];
+    let (report, readmission) = judge_and_readmit(&mut arena, &module);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.as_slice(), [
+            Verdict::Synthesised { .. },
+            Verdict::Checked { .. }
+        ]),
+        "the run target synthesises and the reference checks: {verdicts:?}"
+    );
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(Readmitted::outcome)
+        .collect();
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| matches!(outcome, Outcome::Defined { .. })),
+        "the kernel admits both: {outcomes:?}"
+    );
 }

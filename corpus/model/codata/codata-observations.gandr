@@ -20,7 +20,7 @@ def rec origin() -> Point {
   .y => 4
 }
 
-/// The run target sums the coordinates; the lowering reads no final
-/// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target sums the coordinates; the lowering reads no projection yet
+/// (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
 origin.x + origin.y

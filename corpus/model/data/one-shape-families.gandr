@@ -52,3 +52,8 @@ def relabel = (toFahrenheit, ((toCelsius, celsiusRoundTrip), (toCelsius, fahrenh
 /// Fahrenheit value of its integer, by a run: the book's Lemma 2.10.5.
 @[ runs("Fah(20)") ]
 def relabelled() -> -F Fahrenheit { transport(\X. X, ua(relabel), Cel(20)) }
+
+/// The run target carries another Celsius value along the same path. No
+/// signature states its type: the transport's own type is `Fahrenheit`.
+@[ runs("Fah(36)") ]
+transport(\X. X, ua(relabel), Cel(36))

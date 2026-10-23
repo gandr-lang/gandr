@@ -72,22 +72,23 @@ fn the_item_source_offers_a_revision_or_names_its_fault()
         2_usize,
         "both declarations are items"
     );
-    let refused = items.items(&Revision::from(String::from("pure 1")));
+    let stray = "@[ checks ]";
+    let refused = items.items(&Revision::from(String::from(stray)));
     let Err(RevisionFault::Refused { class, span }) = refused
     else {
         panic!("a root that is no list of declarations is refused whole: {refused:?}");
     };
     assert_eq!(
         class,
-        FailureClass::Unimplemented(gandr_core_term::TrackingIssue::RUN_TARGET),
-        "a top-level expression is a run target, which is not implemented yet"
+        FailureClass::MalformedSource,
+        "a block that decorates nothing is a stray"
     );
     let Maybe::Present(span) = span
     else {
         panic!("the refusal names its source extent")
     };
     assert_eq!(usize::from(span.start()), 0_usize);
-    assert_eq!(usize::from(span.end()), "pure 1".len());
+    assert_eq!(usize::from(span.end()), stray.len(), "the stray's extent");
     assert_eq!(program.items()[0].key().as_ref(), b"a");
     assert_eq!(program.items()[1].key().as_ref(), b"b");
     let next = items
@@ -101,7 +102,7 @@ fn revision_faults_retain_fields_and_sink_refusals()
     let span = ByteSpan::new(ByteOffset::from(17_usize), ByteOffset::from(31_usize))
         .expect("ordered span");
     let spanned = RevisionFault::Refused {
-        class: FailureClass::Unimplemented(gandr_core_term::TrackingIssue::RUN_TARGET),
+        class: FailureClass::Unimplemented(gandr_core_term::TrackingIssue::PROJECTION),
         span: Maybe::Present(span),
     };
     let unspanned = RevisionFault::Refused {

@@ -51,6 +51,7 @@ def stated() -> -F String {
 @[ refuses("UnknownMember") ]
 def letters = string.length(stated);
 
-/// The run target appends an exclamation (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target appends an exclamation to the phrase, refused above, so it
+/// names a declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 string.append(phrase, "!")

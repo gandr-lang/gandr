@@ -6,6 +6,7 @@
 @[ refuses("OutOfFragment.pack_expression") ]
 def unannotated = pack [ Integer ] thunk { return #{ seed = 7 } };
 
-/// The run target returns it (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target returns it; it is refused above, so it names a
+/// declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 unannotated

@@ -2216,7 +2216,7 @@ mod tests
     #[test]
     fn a_pending_source_publishes_its_refusal_1248()
     {
-        for text in ["nowhere\n", "pure 3\n", "{ }\n"] {
+        for text in ["@[ checks ]\n", "1 ;\n@[ checks ]\n"] {
             let source = SourceText::from(text);
             let pending = checked(
                 &DocumentUri::from("file:///corpus/fixture/pending/whole.gandr"),
@@ -2353,7 +2353,7 @@ mod tests
         let refused = recheck(
             &uri,
             &mut session,
-            SourceText::from("pure 3\n"),
+            SourceText::from("@[ checks ]\n"),
             &gandr_surface_dispatcher::Unshadowed,
             Verbosity::User,
             Spelling::Unicode,
@@ -2375,7 +2375,7 @@ mod tests
         let base = "def a = 1 ;\ndef f : Integer ;\n";
         let candidates = [
             "def a = 1 ;\ndef f : Integer ;\ndef f = \"one\" ;\n",
-            "pure 3\n",
+            "@[ checks ]\n",
             "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
         ];
         let mut session = open(&uri);

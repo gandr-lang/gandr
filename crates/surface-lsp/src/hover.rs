@@ -2762,11 +2762,11 @@ mod tests
             );
         }
         assert_eq!(
-            shown(SourceText::from("nowhere\n"), (0.into(), 0.into())),
+            shown(SourceText::from("@[ checks ]\n"), (0.into(), 0.into())),
             Ok(String::from(
-                "```gandr\nnowhere\n```\n\nA tile of `identifier.expression`.\n\nThe engine \
-                 refuses this source as a whole: the source is not a list of declarations: an \
-                 identifier cannot stand where a declaration is expected"
+                "```gandr\n@[\n```\n\nA tile of `attribute_block`.\n\nThe engine refuses this \
+                 source as a whole: the source is not a list of declarations: an attribute block \
+                 cannot stand where a declaration is expected"
             )),
             "a tile of a source refused whole answers its rule and the refusal"
         );

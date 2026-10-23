@@ -103,16 +103,16 @@ impl LoweringRefusal<'_>
     ///   a form out of the fragment's form, sort and boundary, an unstated
     ///   component's or an undescribed member's fault — and never of a span or
     ///   a name. A form reserved or unadmitted, an indexed reading, an action
-    ///   on no endpoint, a form of the wrong sort where a declaration is read,
-    ///   a graded bridge, an unread ascription, an implicit telescope out of
-    ///   shape, a model component that relates a many-out operation's results,
-    ///   states a circuit rule or binds a variable, and a member the
-    ///   description route or its cell layer has not built a reading for are
-    ///   unimplemented, each naming its issue; the exhausted allowance, the
-    ///   grammar mismatch, the unknown mold, an undecided coincidence check, an
-    ///   unminted declaration and a circuit redex off its own boundary are
-    ///   engine faults; every other refusal, a misplaced form among them, is
-    ///   malformed source.
+    ///   on no endpoint, an operator declaration or an extern block where a
+    ///   declaration is read, a graded bridge, an unread ascription, an
+    ///   implicit telescope out of shape, a model component that relates a
+    ///   many-out operation's results, states a circuit rule or binds a
+    ///   variable, and a member the description route or its cell layer has not
+    ///   built a reading for are unimplemented, each naming its issue; the
+    ///   exhausted allowance, the grammar mismatch, the unknown mold, an
+    ///   undecided coincidence check, an unminted declaration and a circuit
+    ///   redex off its own boundary are engine faults; every other refusal, a
+    ///   misplaced form and a stray root child among them, is malformed source.
     /// - provides: the fact a report groups by, and the issue every face of an
     ///   unimplemented refusal names.
     /// - fails: never.
@@ -134,12 +134,15 @@ impl LoweringRefusal<'_>
                 ..
             } => ret == FailureClass::Unimplemented(feature.tracking()),
             | Self::OutOfFragment {
-                boundary: FragmentBoundary::Indexed | FragmentBoundary::Endpoint,
-                ..
-            }
-            | Self::OutOfFragment {
                 boundary: FragmentBoundary::WrongSort,
                 sort: FragmentSort::Declaration,
+                form,
+                ..
+            } if form == FormName::OPERATOR_DECLARATION || form == FormName::EXTERN_BLOCK => {
+                matches!(ret, FailureClass::Unimplemented(_))
+            },
+            | Self::OutOfFragment {
+                boundary: FragmentBoundary::Indexed | FragmentBoundary::Endpoint,
                 ..
             }
             | Self::UnstatedComponent {
@@ -346,8 +349,9 @@ impl LoweringRefusal<'_>
 /// - requires: nothing.
 /// - ensures: a reserved or unadmitted form names the issue tracking the
 ///   feature it carries; a misplaced form is malformed source; a form of the
-///   wrong sort where a declaration is read names the operator declaration's
-///   issue for an operator declaration and the run target's for every other; an
+///   wrong sort where a declaration is read names the issue of the item it is
+///   when it is an item the lowering does not reach, an operator declaration or
+///   an extern block, and is malformed source for every other, a stray; an
 ///   indexed reading names the indexed family's, an action on no endpoint
 ///   delegation's; every other boundary is malformed source.
 /// - provides: the lowering classifier's arm for `OutOfFragment`.
@@ -355,14 +359,16 @@ impl LoweringRefusal<'_>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each boundary and the declaration sort's two cases are
+/// - hypothesis: L3 — each boundary and the declaration sort's three cases are
 ///   pinned by a census row.
 /// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
 #[spec(
     ensures: |ret| matches!(ret, FailureClass::Unimplemented(_))
         == (matches!(boundary, FragmentBoundary::Reserved(_) | FragmentBoundary::Unadmitted(_))
             || matches!(boundary, FragmentBoundary::Indexed | FragmentBoundary::Endpoint)
-            || (boundary == FragmentBoundary::WrongSort && sort == FragmentSort::Declaration))
+            || (boundary == FragmentBoundary::WrongSort
+                && sort == FragmentSort::Declaration
+                && (form == FormName::OPERATOR_DECLARATION || form == FormName::EXTERN_BLOCK)))
         && matches!(ret, FailureClass::Unimplemented(_) | FailureClass::MalformedSource),
 )]
 #[must_use]
@@ -376,18 +382,9 @@ fn out_of_fragment(
         FragmentBoundary::Reserved(feature) | FragmentBoundary::Unadmitted(feature) => {
             FailureClass::Unimplemented(feature.tracking())
         },
-        FragmentBoundary::WrongSort => match sort {
-            FragmentSort::Declaration if form == FormName::OPERATOR_DECLARATION => {
-                FailureClass::Unimplemented(Unbuilt::OperatorDeclaration.tracking())
-            },
-            FragmentSort::Declaration => FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
-            FragmentSort::Module
-            | FragmentSort::ValueType
-            | FragmentSort::CompType
-            | FragmentSort::Value
-            | FragmentSort::Computation
-            | FragmentSort::Pattern
-            | FragmentSort::Continuation => FailureClass::MalformedSource,
+        FragmentBoundary::WrongSort => match FragmentFeature::of(form, sort, boundary) {
+            FragmentFeature::Unbuilt(unbuilt) => FailureClass::Unimplemented(unbuilt.tracking()),
+            FragmentFeature::Stray | FragmentFeature::Crossed(_) => FailureClass::MalformedSource,
         },
         FragmentBoundary::Indexed => FailureClass::Unimplemented(TrackingIssue::INDEXED),
         FragmentBoundary::Endpoint => FailureClass::Unimplemented(TrackingIssue::DELEGATION),
@@ -427,11 +424,11 @@ fn out_of_fragment(
 pub enum FragmentFeature
 {
     /// The feature a reserved or unadmitted form carries, and the operator
-    /// declaration's wherever it stands.
+    /// declaration's and the extern block's wherever they stand.
     Unbuilt(Unbuilt),
     /// A form of the wrong sort where a declaration is read: an expression
-    /// at a module's root, a run target.
-    RunTarget,
+    /// at a module's root that is not its run target, a stray.
+    Stray,
     /// A form crossing any other boundary, named by the boundary alone: the
     /// operand count an arity offers is no part of the feature.
     Crossed(FragmentBoundary),
@@ -445,9 +442,9 @@ impl FragmentFeature
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a reserved or unadmitted form is the feature it carries; an
-    ///   operator declaration of the wrong sort where a declaration is read is
-    ///   the operator declaration's feature, and any other form so is the run
-    ///   target; every other crossing is its boundary.
+    ///   operator declaration or an extern block of the wrong sort where a
+    ///   declaration is read is its own feature, and any other form so is a
+    ///   stray; every other crossing is its boundary.
     /// - provides: the qualifier a refusal name of `OutOfFragment` carries.
     /// - fails: never.
     /// - panics: none.
@@ -460,7 +457,7 @@ impl FragmentFeature
             ret == Self::Unbuilt(feature)
         },
         | FragmentBoundary::WrongSort if sort == FragmentSort::Declaration => matches!(ret,
-            Self::RunTarget | Self::Unbuilt(Unbuilt::OperatorDeclaration)),
+            Self::Stray | Self::Unbuilt(Unbuilt::OperatorDeclaration | Unbuilt::ExternBlock)),
         | _ => ret == Self::Crossed(boundary),
     })]
     #[inline]
@@ -479,8 +476,11 @@ impl FragmentFeature
                 if form == FormName::OPERATOR_DECLARATION {
                     Self::Unbuilt(Unbuilt::OperatorDeclaration)
                 }
+                else if form == FormName::EXTERN_BLOCK {
+                    Self::Unbuilt(Unbuilt::ExternBlock)
+                }
                 else {
-                    Self::RunTarget
+                    Self::Stray
                 }
             },
             FragmentBoundary::WrongSort
@@ -1130,13 +1130,19 @@ mod tests
                 "call_expression",
                 FragmentSort::Declaration,
                 FragmentBoundary::WrongSort,
-                FailureClass::Unimplemented(TrackingIssue::RUN_TARGET),
+                FailureClass::MalformedSource,
             ),
             (
                 "operator_declaration",
                 FragmentSort::Declaration,
                 FragmentBoundary::WrongSort,
                 FailureClass::Unimplemented(TrackingIssue::OPERATOR_DECLARATION),
+            ),
+            (
+                "extern_block",
+                FragmentSort::Declaration,
+                FragmentBoundary::WrongSort,
+                FailureClass::Unimplemented(TrackingIssue::EXTERN_BLOCK),
             ),
             (
                 "lazy_product_type",
@@ -1206,9 +1212,9 @@ mod tests
         );
     }
 
-    /// Where a declaration is read, an operator declaration is keyed by its
-    /// own feature, the key its unadmitted reading carries, and any other form
-    /// by the run target.
+    /// Where a declaration is read, an operator declaration and an extern
+    /// block are keyed by their own features, the keys their unadmitted
+    /// readings carry, and any other form as a stray.
     #[test]
     fn a_declaration_position_keys_an_operator_declaration_apart()
     {
@@ -1225,12 +1231,21 @@ mod tests
         );
         assert_eq!(
             FragmentFeature::of(
+                FormName::EXTERN_BLOCK,
+                FragmentSort::Declaration,
+                FragmentBoundary::WrongSort
+            ),
+            FragmentFeature::Unbuilt(Unbuilt::ExternBlock),
+            "an extern block where a declaration is read is its own feature"
+        );
+        assert_eq!(
+            FragmentFeature::of(
                 FormName::HOLD_STATEMENT,
                 FragmentSort::Declaration,
                 FragmentBoundary::WrongSort
             ),
-            FragmentFeature::RunTarget,
-            "any other form where a declaration is read is the run target"
+            FragmentFeature::Stray,
+            "any other form where a declaration is read is a stray"
         );
     }
 

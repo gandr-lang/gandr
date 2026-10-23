@@ -542,6 +542,7 @@ impl Unbuilt
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
             Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
+            Self::ExternBlock => TrackingIssue::EXTERN_BLOCK,
             Self::Annotation
             | Self::AsPattern
             | Self::ListPattern
@@ -553,7 +554,6 @@ impl Unbuilt
             | Self::ConsPattern
             | Self::ConstructorPattern
             | Self::Derive
-            | Self::ExternBlock
             | Self::HostEscape
             | Self::LabelledSumPattern
             | Self::LiteralPattern

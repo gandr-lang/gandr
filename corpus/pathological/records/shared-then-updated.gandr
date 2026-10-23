@@ -18,7 +18,6 @@ def b = r;
 @[ refuses("OutOfFragment.record_update_expression") ]
 def updated = #{ r | x = 99 };
 
-/// The run target returns the first name, its `x` still one; the lowering
-/// reads no final expression as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target returns the first name, its `x` still one.
+@[ checks ]
 a

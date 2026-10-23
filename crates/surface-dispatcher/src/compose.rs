@@ -231,6 +231,7 @@ use gandr_surface_lowering::Onto;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Resolution;
+use gandr_surface_lowering::Role;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::Decisions;
@@ -3542,13 +3543,14 @@ impl gandr_surface_format::Elaborate for Elaborating
 ///   order, at the same position and with the lowering's origin as its token: a
 ///   completed declaration carries its declared type and its body, an
 ///   uncompleted one its declared type and a hole, a bodiless definition its
-///   body and no signature, each of the three the laws its `respects` attribute
-///   names and the entry its `entry` attribute names; a data declaration
-///   carries its native signature and a codata declaration its decoded one,
-///   each shared with the lowered module, a sealed abstract type its kind,
-///   representation, extent, site, mobility and the interface its type member's
-///   `identity` attribute names, and a world declaration nothing but its
-///   position. A refused declaration is not offered.
+///   body and no signature, a run target's reason when it is the source's run
+///   target and an unsigned one otherwise, each of the three the laws its
+///   `respects` attribute names and the entry its `entry` attribute names; a
+///   data declaration carries its native signature and a codata declaration its
+///   decoded one, each shared with the lowered module, a sealed abstract type
+///   its kind, representation, extent, site, mobility and the interface its
+///   type member's `identity` attribute names, and a world declaration nothing
+///   but its position. A refused declaration is not offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -3577,7 +3579,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 DeclarationOutcome::Uncompleted { declared_type } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(body::Absent::Hole)},
                 DeclarationOutcome::Bodied { body } =>
-                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(body)},
+                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(if lowered.role() == Role::RunTarget { signature::Absent::RunTarget } else { signature::Absent::Unsigned }),body:Maybe::Present(body)},
                 DeclarationOutcome::Data(index) =>
                     matches!(*actual.content(), gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
                 DeclarationOutcome::Codata(index) =>
@@ -3604,7 +3606,12 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 Maybe::Absent(body::Absent::Hole),
             ),
             DeclarationOutcome::Bodied { body } => (
-                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Absent(if lowered.role() == Role::RunTarget {
+                    signature::Absent::RunTarget
+                }
+                else {
+                    signature::Absent::Unsigned
+                }),
                 Maybe::Present(body),
             ),
             DeclarationOutcome::Data(index) => {
@@ -4587,12 +4594,12 @@ def wrong = "text" ;"#,
         let composed = compose(
             &grammar,
             CorpusRoot::Fixture,
-            SourceText::from("pure greeting"),
+            SourceText::from("@[ checks ]"),
             &mut lowerings,
         );
         let Ok(Composed::Refused(refusal)) = composed
         else {
-            panic!("a root of nothing but a top-level expression refuses the module");
+            panic!("a root of an attribute block that decorates nothing refuses the module");
         };
         assert!(
             matches!(refusal, LoweringRefusal::OutOfFragment {
@@ -4603,8 +4610,8 @@ def wrong = "text" ;"#,
         );
         assert_eq!(
             refusal.classify(),
-            FailureClass::Unimplemented(gandr_core_term::TrackingIssue::RUN_TARGET),
-            "a root expression is a run target, which is not implemented yet"
+            FailureClass::MalformedSource,
+            "a block that decorates nothing is a stray"
         );
     }
 
@@ -4653,8 +4660,13 @@ def wrong = "text" ;"#,
             ),
             (
                 "pure 1 ~ 2",
-                true,
+                false,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 7_usize, 8_usize)][..],
+            ),
+            (
+                "~",
+                true,
+                &[(gandr_surface_parser::Oblig::UnmoldedTok, 0_usize, 1_usize)][..],
             ),
         ] {
             let lowering = lower_source(&grammar, SourceText::from(source), &mut lowerings)
@@ -4678,7 +4690,7 @@ def wrong = "text" ;"#,
         }
         assert_eq!(
             usize::from(lowerings),
-            4_usize,
+            5_usize,
             "each lowering is counted once"
         );
     }
@@ -6232,7 +6244,7 @@ def delivered() -> -F Unit {
         use super::lower_resumed_unit;
 
         let ours = grammar();
-        let own = SourceText::from("pure greeting");
+        let own = SourceText::from("@[ checks ]");
         let refused = |lowered: &Lowered<'_>| {
             matches!(*lowered, Lowered::Refused(refusal)
                 if refusal.classify() != FailureClass::EngineFault)

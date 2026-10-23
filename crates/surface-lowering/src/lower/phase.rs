@@ -88,9 +88,15 @@ impl Phase
                 Maybe::Present(Self::Dynamic)
             },
             (Role::Held | Role::Declared | Role::Parameter, Container::TopLevel(_))
-            | (Role::Witness | Role::Operation | Role::Derived | Role::Abstract | Role::Words, _) => {
-                Maybe::Absent(phased::Absent::Outside)
-            },
+            | (
+                Role::Witness
+                | Role::Operation
+                | Role::Derived
+                | Role::Abstract
+                | Role::Words
+                | Role::RunTarget,
+                _,
+            ) => Maybe::Absent(phased::Absent::Outside),
         }
     }
 }

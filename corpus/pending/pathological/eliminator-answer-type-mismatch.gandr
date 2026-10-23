@@ -1,1 +1,0 @@
-if true -> -F String { pure 1 } else { pure 2 }

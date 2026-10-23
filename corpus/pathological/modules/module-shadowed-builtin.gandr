@@ -5,7 +5,7 @@
 @[ checks ]
 def list = #{each = 7};
 
-/// The run target reads the field; the lowering reads no final expression as
-/// a run target yet (#1105), and admits no field projection (#1106).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target reads the field; the lowering admits no field projection
+/// yet (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
 list.each

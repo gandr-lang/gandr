@@ -16,6 +16,7 @@ def leak(p: package [ T ] +U[ω] (-F #{ seed: T })) -> -F Integer {
 def counter : package [ T ] +U[ω] (-F #{ seed: T });
 def counter = pack [ Integer ] thunk { return #{ seed = 7 } };
 
-/// The run target leaks the counter's seed (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target leaks the counter's seed; `leak` is refused above, so it
+/// names a declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 leak(counter)

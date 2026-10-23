@@ -83,8 +83,9 @@
 //! `gandr run` takes exactly one path, `-` among them: there is no
 //! standard-input face for it to name. The source is composed under the root
 //! its path classifies as and runs only when no declaration of it was refused;
-//! its target is the last name it declares (`gandr-surface-dispatcher`'s
-//! `evaluate` module). A completed run writes its value as the one line of
+//! its target is the `main` it declares, else the final expression it writes,
+//! else the last name it declares (`gandr-surface-dispatcher`'s `evaluate`
+//! module). A completed run writes its value as the one line of
 //! standard output, spelled as a `runs` expectation states it (in Unicode; in
 //! ASCII when that spelling is asked), so a caller
 //! reads the value without parsing anything else. A run blamed on a goal, stuck
@@ -532,7 +533,8 @@ enum Command
     },
     /// Run a source as a program: check it as `check` does, then run the
     /// `main` it declares at its top level, or, when it declares none, run its
-    /// last declaration and print the value.
+    /// final expression, or its last declaration when it writes none, and print
+    /// the value.
     ///
     /// A `main` returns the exit code, `def main() -> -F Integer`, and reads
     /// the arguments after the path when it takes them, `def main(args :
@@ -2185,16 +2187,17 @@ fn run(
 ///   prints for the source, its types in `spelling`, goes to standard error as
 ///   a plain snippet followed by an empty line, and every ledger line beside
 ///   them; then a source declaring an entry runs it and writes nothing, and one
-///   declaring none runs its last declaration, which, when it returned a value,
-///   writes the value as the one line of standard output. A run blamed, stuck
-///   or unfinished, and a target that reaches a declaration the machine carries
-///   no image of, is one line on standard error: `gandr:`, the path, the
-///   target's name in backticks and the evaluation's spelling. A source
-///   carrying a refusal is `gandr: <path>: refused; nothing ran` and one
-///   declaring no name `gandr: <path>: declares no name to run`, each on
-///   standard error. The exit code is an entry's exit status when it returned
-///   or exited with one; otherwise `0` for a value, `1` for a run that stopped
-///   short of one, and `2` for a script that never reached the machine.
+///   declaring none runs its run target — its final expression, else its last
+///   declaration — which, when it returned a value, writes the value as the one
+///   line of standard output. A run blamed, stuck or unfinished, and a target
+///   that reaches a declaration the machine carries no image of, is one line on
+///   standard error: `gandr:`, the path, the target's name in backticks and the
+///   evaluation's spelling. A source carrying a refusal is `gandr: <path>:
+///   refused; nothing ran` and one declaring no name `gandr: <path>: declares
+///   no name to run`, each on standard error. The exit code is an entry's exit
+///   status when it returned or exited with one; otherwise `0` for a value, `1`
+///   for a run that stopped short of one, and `2` for a script that never
+///   reached the machine.
 /// - provides: `gandr run`, with its value on the one stream a caller reads.
 /// - fails: the first write error on either stream.
 /// - panics: none.

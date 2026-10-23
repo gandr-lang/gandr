@@ -405,6 +405,8 @@ impl FormName
     pub const INTERSECTION_TYPE: Self = Self("intersection_type");
     /// The operator declaration `op infixl 6 "spelling" ;`.
     pub const OPERATOR_DECLARATION: Self = Self("operator_declaration");
+    /// The extern block `extern "c" from "library" { … }`.
+    pub const EXTERN_BLOCK: Self = Self("extern_block");
     /// The reserved endpoint copy `dup(e)`.
     pub const DUP: Self = Self("dup_expression");
     /// A type at a stage, `T[i]`.

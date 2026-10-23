@@ -1,0 +1,9 @@
+// A shell block's run is a value: what the host printed is a string the
+// block after it computes on. The lowering admits no shell block yet (#1057).
+
+/// A banner printed on the host, then searched for a word (#1057).
+@[ refuses("OutOfFragment.shell_block") ]
+{
+  run banner <- #!{ printf 'hello from gandr\n'; };
+  string.contains(banner.stdout, "gandr")
+}

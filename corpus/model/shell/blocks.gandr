@@ -1,0 +1,9 @@
+// A shell block runs its commands on the host, and a host escape `$( … )`
+// hands a gandr string to a command as one argument, its spaces kept. The
+// lowering admits no shell block yet (#1057).
+
+/// `printf` handed one argument with spaces through a host escape (#1057).
+@[ refuses("OutOfFragment.shell_block") ]
+#!{
+  printf 'hello from the host\n<%s>\n' $("one argv with spaces");
+}

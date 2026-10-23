@@ -1,12 +1,11 @@
 // An update of one field of a wide record copies every other field, and its
-// cost is the record's width. The update is written as the run target, which
-// the lowering reads no final expression as yet (#1105), and the lowering
-// admits no record update (#1110).
+// cost is the record's width. The update is written as the run target, and
+// the lowering admits no record update yet (#1110).
 
 /// A record of eight fields.
 @[ checks ]
 def wide = #{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8 };
 
-/// One field updated (#1105, #1110).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// One field updated (#1110).
+@[ refuses("OutOfFragment.record_update_expression") ]
 #{ wide | e = 99 }

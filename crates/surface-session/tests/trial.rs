@@ -39,8 +39,8 @@ const CANDIDATES: [&str; 5] = [
     "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
     // No body: `f` stays owed.
     "def a = 1 ;\ndef f : Integer ;\n",
-    // A statement at the top level: the lowering refuses the revision whole.
-    "def a = 1 ;\ndef f : Integer ;\npure 3\n",
+    // A revision that declares nothing: the lowering refuses it whole.
+    "@[ checks ]\n",
     // The checking body again.
     "def a = 1 ;\ndef f : Integer ;\ndef f = a ;\n",
 ];

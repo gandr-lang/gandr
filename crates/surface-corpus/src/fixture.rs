@@ -34,6 +34,7 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::Mark;
 use gandr_surface_lowering::RegisteredAttribute;
+use gandr_surface_lowering::Role;
 use gandr_surface_lowering::Sealing;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::lower_module;
@@ -226,7 +227,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                                 && *held_body == Maybe::Absent(body::Absent::Hole)
                         }
                         DeclarationOutcome::Bodied { body: value } => {
-                            *signature == Maybe::Absent(signature::Absent::Unsigned)
+                            *signature == Maybe::Absent(if lowered.role() == Role::RunTarget { signature::Absent::RunTarget } else { signature::Absent::Unsigned })
                                 && *held_body == Maybe::Present(value)
                         }
                         DeclarationOutcome::Data(_) | DeclarationOutcome::Codata(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World | DeclarationOutcome::Refused(_) => false,
@@ -250,7 +251,12 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                     Maybe::Absent(body::Absent::Hole),
                 ),
                 DeclarationOutcome::Bodied { body: value } => (
-                    Maybe::Absent(signature::Absent::Unsigned),
+                    Maybe::Absent(if lowered.role() == Role::RunTarget {
+                        signature::Absent::RunTarget
+                    }
+                    else {
+                        signature::Absent::Unsigned
+                    }),
                     Maybe::Present(value),
                 ),
                 DeclarationOutcome::Data(index) => {

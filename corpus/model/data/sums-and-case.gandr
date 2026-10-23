@@ -10,7 +10,7 @@ def pick() -> -F Integer {
   }
 }
 
-/// The run target calls `pick`; the lowering reads no final expression as a
-/// run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target calls `pick`, refused above, so it names a declaration
+/// whose type is not known.
+@[ refuses("UnknownConstant") ]
 pick()

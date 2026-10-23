@@ -9,7 +9,8 @@
 //! the strict root, sequenced runs stand in their place. An edit changes one
 //! form, inserts, deletes or moves one, merges one with the next by dropping
 //! its terminator, splits one with a terminator inside it, or inserts a
-//! top-level return, which the lowering refuses as a whole.
+//! top-level return: a stray the lowering refuses where it stands, or, last,
+//! the source's run target.
 
 use anodized::spec;
 use gandr_surface_dispatcher::SourceRoot;
@@ -56,9 +57,9 @@ pub enum FormEdit
     Merge(Position),
     /// Put a terminator inside the form, splitting it in two.
     Split(Position),
-    /// Insert a top-level return before the form, which the lowering refuses
-    /// as a whole.
-    RefuseWhole(Position),
+    /// Insert a top-level return before the form: a stray the lowering refuses
+    /// where it stands, or, inserted last, the source's run target.
+    Expression(Position),
 }
 
 impl core::fmt::Display for FormEdit
@@ -89,7 +90,7 @@ impl core::fmt::Display for FormEdit
             Self::Move(..) => "move",
             Self::Merge(_) => "merge",
             Self::Split(_) => "split",
-            Self::RefuseWhole(_) => "refuse whole",
+            Self::Expression(_) => "expression",
         })
     }
 }
@@ -172,7 +173,7 @@ impl Module
     /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_strict_root`
     /// - witness: `tests::forms::a_large_module_edit_script_submits_as_the_walk_composes_it_under_the_fixture_root`
     #[spec(captures: before = self.forms.len(), ensures: |_| match *edit {
-        FormEdit::Insert(_) | FormEdit::RefuseWhole(_) => self.forms.len() == before.saturating_add(1),
+        FormEdit::Insert(_) | FormEdit::Expression(_) => self.forms.len() == before.saturating_add(1),
         FormEdit::Delete(_) => self.forms.len() == before.saturating_sub(1),
         FormEdit::Merge(_) => self.forms.len() == before || self.forms.len().saturating_add(1) == before,
         FormEdit::Change(_) | FormEdit::Move(..) | FormEdit::Split(_) => self.forms.len() == before,
@@ -230,7 +231,7 @@ impl Module
                     form.insert_str(equals.saturating_add(2), " ;\n");
                 }
             },
-            FormEdit::RefuseWhole(position) => {
+            FormEdit::Expression(position) => {
                 let fresh = self.fresh;
                 self.fresh = self.fresh.saturating_add(1);
                 self.forms.insert(at(position), format!("pure {fresh}"));
@@ -430,7 +431,7 @@ pub fn edits(longest: FormCount) -> impl Strategy<Value = Vec<FormEdit>>
         (position(), position()).prop_map(|(from, to)| FormEdit::Move(from, to)),
         position().prop_map(FormEdit::Merge),
         position().prop_map(FormEdit::Split),
-        position().prop_map(FormEdit::RefuseWhole),
+        position().prop_map(FormEdit::Expression),
     ];
     proptest::collection::vec(edit, 1 .. usize::from(longest).max(2))
 }
@@ -463,7 +464,7 @@ pub fn script(forms: FormCount) -> Vec<FormEdit>
         FormEdit::Move(at(2), at(7)),
         FormEdit::Merge(at(3)),
         FormEdit::Split(at(5)),
-        FormEdit::RefuseWhole(at(4)),
+        FormEdit::Expression(at(4)),
         FormEdit::Delete(at(4)),
     ]
 }

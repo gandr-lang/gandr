@@ -6662,7 +6662,7 @@ mod tests
     #[test]
     fn a_source_refused_whole_keeps_its_refusal_1201()
     {
-        let refused = table(SourceText::from("nowhere\n"));
+        let refused = table(SourceText::from("@[ checks ]\n"));
         let Maybe::Present(refusal) = refused.refused_whole()
         else {
             panic!("a source refused whole keeps its refusal");
