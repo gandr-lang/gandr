@@ -1783,6 +1783,9 @@ enum Stated
     ReflexivityAtRelation,
     /// `reflexive` named as the law.
     LawAtReflexivity,
+    /// `related`, `reflexive` and `law`, the law's body `()`, which is no
+    /// path between pairs.
+    LawRefused,
 }
 
 /// An atom over `Unit` whose module declares the relation `Unit`, its
@@ -1838,7 +1841,16 @@ fn interfaced_atom_module(
         (relation, reflexivity_constant),
     );
     let centre = arena.value_tuple(&[one, one]);
-    let law = thunk(arena, centre, 3);
+    let law = thunk(
+        arena,
+        if matches!(stated, Stated::LawRefused) {
+            one
+        }
+        else {
+            centre
+        },
+        3,
+    );
     let law_constant = arena.value_constant(ConstantIndex::from(2_usize));
     let atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
     let (first, second) = (
@@ -1860,7 +1872,9 @@ fn interfaced_atom_module(
     let at_evidence = arena.value_type_path(identity, along_evidence, evidence);
     let reflexive_evidence = arena.value_here(evidence);
     let interface = match stated {
-        Stated::Lawful => AtomInterface::new(relation, reflexivity_constant).lawful(law_constant),
+        Stated::Lawful | Stated::LawRefused => {
+            AtomInterface::new(relation, reflexivity_constant).lawful(law_constant)
+        },
         Stated::Lawless => AtomInterface::new(relation, reflexivity_constant),
         Stated::RelationAtReflexivity => {
             AtomInterface::new(reflexivity_constant, reflexivity_constant).lawful(law_constant)
@@ -1981,6 +1995,49 @@ fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937()
     assert!(
         matches!(outcome, Some(Outcome::Defined { .. })),
         "the kernel admits it: {outcome:?}"
+    );
+}
+
+/// #1959: an atom whose law the judgement refuses checks, and the kernel
+/// withholds it with the law; each reader of the atom is withheld naming the
+/// atom, as a reader of any nominal head that did not cross, and not refused
+/// as a former the kernel lacks.
+#[test]
+fn a_reader_of_an_atom_withheld_with_its_law_is_withheld_1959()
+{
+    let mut arena = CoreArena::new();
+    let module = interfaced_atom_module(&mut arena, Stated::LawRefused);
+    let (report, readmission) = judge_and_readmit(&mut arena, &module);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(
+            verdicts.get(2 .. 6),
+            Some(&[
+                Verdict::Refused(_),
+                Verdict::Data,
+                Verdict::Checked { .. },
+                Verdict::Checked { .. }
+            ])
+        ),
+        "the law is refused and the atom and its points check: {verdicts:?}"
+    );
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(Readmitted::outcome)
+        .collect();
+    let atom = ConstantIndex::from(3_usize);
+    assert!(
+        matches!(
+            outcomes.get(2 .. 6),
+            Some(&[
+                &Outcome::Marked(_),
+                &Outcome::Refused(Refusal::Withheld { constant: law, .. }),
+                &Outcome::Refused(Refusal::WithheldData { constant: first, .. }),
+                &Outcome::Refused(Refusal::WithheldData { constant: second, .. })
+            ]) if law == ConstantIndex::from(2_usize) && first == atom && second == atom
+        ),
+        "the atom is withheld naming its law, and each point naming the atom: {outcomes:?}"
     );
 }
 

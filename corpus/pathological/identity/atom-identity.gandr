@@ -28,3 +28,40 @@ module Lawless :> #{ type T, origin : T, other : T } {
 @[ refuses("AtomTransport") ]
 def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) ;
 def lawlessOriginOther = unit ;
+
+/// Two points of the unit type, related by the paths between them (#1959).
+@[ checks ]
+def pathRelated(a : Unit, b : Unit) -> -F Type { return Path(Unit, a, b) }
+
+/// Every point related to itself by reflexivity (#1959).
+@[ checks ]
+def pathReflexivity(a : Unit) -> -F pathRelated(a, a) { here(a) }
+
+/// The transport law at the paths of the unit type, refused: `(unit, unit)`
+/// is no path between `(b, r)` and `(a, here(a))`, for `r` is a path the
+/// law knows nothing of (#1959).
+@[ refuses("TypeMismatch") ]
+def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> -F Path(
+  #{ y : Unit, s : pathRelated(a, y) },
+  (b, r),
+  (a, pathReflexivity(a))
+) { (unit, unit) }
+
+/// The unit type sealed, naming the refused law. The atom and its members
+/// check against their types; the kernel withholds them with the law, as it
+/// withholds every reader of a declaration that did not cross, rather than
+/// faulting the source (#1959).
+module PathPoint :> #{ type T, origin : T, other : T } {
+  /// The sealed points, whose transport law is refused.
+  @[ identity((pathRelated, pathReflexivity, pathContraction)) ]
+  @[ checks ]
+  type T = Unit;
+
+  /// One point.
+  @[ checks ]
+  def origin = unit;
+
+  /// Another point.
+  @[ checks ]
+  def other = unit;
+}
