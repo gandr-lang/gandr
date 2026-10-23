@@ -61,11 +61,15 @@ remove_run() {
 # pkg/runner/run_context.go): `act-` and the job's run-qualified name, the
 # prefix of its end line, with every other character than a letter or digit
 # a dash and `--` folded once, cut to 63 characters less trailing dashes,
-# then a dash and the SHA-256 of the whole folded name.
+# then a dash and the SHA-256 of the whole folded name. The reader also
+# marks act's action-cache race (below) in the file its argument names.
 reap_jobs() {
   local line job name hash
   while IFS= read -r line; do
     printf '%s\n' "$line"
+    if [[ "$line" == *"] remove $scratch/actions/"*"/.gitignore: no such file or directory" ]]; then
+      printf '%s\n' "$line" >> "$1"
+    fi
     [[ "$line" =~ ^\[(.+)\]\ 🏁\ \ Job\ (succeeded|failed)$ ]] || continue
     job=${BASH_REMATCH[1]}
     job=${job%"${job##*[! ]}"}
@@ -188,15 +192,32 @@ git clone --quiet --local --no-hardlinks -- "{{config_root}}" "$scratch/checkout
 git -C "$scratch/checkout" remote set-url origin "$(git -C "{{config_root}}" remote get-url origin)"
 cd "$scratch/checkout"
 ACT_RUN_ID=${scratch##*/} yq '.name += "-" + strenv(ACT_RUN_ID)' .github/workflows/ci.yml > "$scratch/ci.yml"
-exec 3> >(reap_jobs)
-reaper_pid=$!
-act workflow_dispatch --workflows "$scratch/ci.yml" --action-cache-path "$scratch/actions" --action-offline-mode --rm --reuse "$@" >&3 2>&3 &
-act_pid=$!
-wait "$act_pid"
-act_pid=
-exec 3>&-
-wait "$reaper_pid"
-reaper_pid=
+# act's shared action cache races (nektos/act#6180, open): two jobs that
+# prepare one action in the same instant both see its `.gitignore`, and the
+# second removal fails its job with `remove …/.gitignore: no such file or
+# directory`. A run that fails with that line runs once more, from a clean
+# slate, and the second verdict stands: a real failure fails it again, and a
+# run that fails without the line is never retried.
+attempt=1
+while :; do
+  rm -f "$scratch/act-race"
+  exec 3> >(reap_jobs "$scratch/act-race")
+  reaper_pid=$!
+  status=0
+  act workflow_dispatch --workflows "$scratch/ci.yml" --action-cache-path "$scratch/actions" --action-offline-mode --rm --reuse "$@" >&3 2>&3 &
+  act_pid=$!
+  wait "$act_pid" || status=$?
+  act_pid=
+  exec 3>&-
+  wait "$reaper_pid"
+  reaper_pid=
+  if [[ "$status" == 0 ]]; then break; fi
+  if [[ "$attempt" != 1 || ! -s "$scratch/act-race" ]]; then exit "$status"; fi
+  printf 'ci:act: act exited %s after its action-cache race (nektos/act#6180); running once more:\n' "$status" >&2
+  cat "$scratch/act-race" >&2
+  remove_run "$run_id"
+  attempt=2
+done
 publish=$(mktemp -d "${action_cache}.publish.XXXXXXXX")
 for entry in "$scratch/actions/"*; do
   [[ -d "$entry" && ! -e "$action_cache/${entry##*/}" ]] || continue
