@@ -8,7 +8,8 @@
 // carriers is read alike once forgotten. A model fixing some of its theory's
 // sorts takes the map putting back those alone, every other sort staying the
 // field it is (#2132). A model type may fix a sort to another model's carrier,
-// `with sort C = a.C`, the two then sharing it (#2131).
+// `with sort C = a.C`, the two then sharing it (#2131), and so may one fixing
+// another of its sorts, reading a sort the other leaves a field (#2158).
 
 // The counter, counting up and down modulo three, the negation between the
 // counts, and `observe`, which reads any counter.
@@ -133,3 +134,53 @@ def countOfIntegers(a : Model(Counter) with sort C = Integer, c : a.C) -> -F Int
 def countOfAny(x : Type, a : Model(Counter) with sort C = x, n : Integer, c : a.C) -> -F x {
   c
 }
+
+/// A pairing: two carriers, a value of each.
+@[ checks ]
+theory Pairing {
+  sort A : Type;
+  sort B : Type;
+  oper left : A;
+  oper right : B;
+}
+
+/// One and the unit, paired, the first carrier manifest at the integers:
+/// the second is a field, so the record is its type, the left and the
+/// right.
+@[ checks ]
+def firstManifest : Model(Pairing) with sort A = Integer ;
+def firstManifest = (type(Unit), (1, unit)) ;
+
+/// One and the unit, paired, both carriers manifest: neither is a field.
+@[ checks ]
+def bothManifest : Model(Pairing) with sort A = Integer with sort B = Unit ;
+def bothManifest = #{.left = 1, .right = unit} ;
+
+/// A pairing's left beside a value of its second carrier, read off it where
+/// its type fixes the first.
+@[ checks ]
+def leftBeside(m : Model(Pairing) with sort A = Integer, b : m.B) -> -F Integer {
+  case m {
+    #{.left = l, .right = r} => l
+  }
+}
+
+/// The pairing of one and the unit beside the unit, its second carrier.
+@[ runs("1") ]
+def leftOfOne() -> -F Integer { become leftBeside(firstManifest, unit) }
+
+/// A pairing sharing another's second carrier: its right is a value of it.
+@[ checks ]
+def rightBeside(
+  m : Model(Pairing) with sort A = Integer,
+  n : Model(Pairing) with sort A = Integer with sort B = m.B
+) -> -F Integer {
+  case n {
+    #{.left = l, .right = r} => become leftBeside(m, r)
+  }
+}
+
+/// The pairing with both carriers manifest shares the first manifest one's
+/// second carrier, the unit.
+@[ runs("1") ]
+def rightOfOne() -> -F Integer { become rightBeside(firstManifest, bothManifest) }

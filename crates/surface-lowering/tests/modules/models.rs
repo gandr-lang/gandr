@@ -400,6 +400,49 @@ fn a_model_binder_s_carrier_is_its_projected_sort_2131()
     }
 }
 
+/// A sort a partly manifest model type leaves a field is read off its binder
+/// (#2158): `m.B` for `m : Model(Pairing) with sort A = Integer` is the
+/// second carrier `m`'s record holds, though the type's application is
+/// classified after a later parameter's type would reach it. A pairing fixing
+/// its second carrier to `m.B` hands its right where `m`'s second carrier is
+/// asked; one whose second carrier is its own field does not.
+#[test]
+fn a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158()
+{
+    let pairing = "theory Pairing {\n  sort A : Type;\n  sort B : Type;\n  oper left : A;\n  \
+                   oper right : B;\n}\ndef keep(m : Model(Pairing) with sort A = Integer, b : \
+                   m.B) -> -F m.B { return b }\n";
+    let handed = |second: &str| {
+        let source = format!(
+            "{pairing}def hand(m : Model(Pairing) with sort A = Integer, n : {second}) -> -F \
+             m.B {{\n  case n {{\n    #{{.left = l, .right = r}} => become keep(m, r)\n  \
+             }}\n}}\n"
+        );
+        let mut lowered = lower(source.as_str());
+        let keep = super::declaration(&lowered, "keep", Role::Declared).constant();
+        let hand = super::declaration(&lowered, "hand", Role::Declared).constant();
+        let judgements = verdicts(&mut lowered);
+        let of = |constant| {
+            judgements
+                .iter()
+                .find(|&&(judged, _)| judged == constant)
+                .map(|&(_, judgement)| judgement)
+        };
+        (of(keep), of(hand))
+    };
+    assert_eq!(
+        handed("Model(Pairing) with sort A = Integer with sort B = m.B"),
+        (Some(Judgement::Checked), Some(Judgement::Checked)),
+        "a value of `m.B` is one `m.B` asks for, and a pairing sharing `m`'s second carrier \
+         hands its right there"
+    );
+    assert_eq!(
+        handed("Model(Pairing) with sort A = Integer"),
+        (Some(Judgement::Checked), Some(Judgement::Mismatched)),
+        "a pairing whose second carrier is its own field hands no value of `m`'s"
+    );
+}
+
 #[test]
 fn a_model_of_an_undeclared_theory_is_refused_by_name()
 {

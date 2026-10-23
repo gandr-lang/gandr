@@ -1395,11 +1395,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a manifest type, `L with R`.
-    /// - ensures: the left operand is read at the form's own reading and
-    ///   adopted, and the sorts the bindings fix, down the chain of `with` the
-    ///   right operand nests, are filed against it, each sort's name beside the
-    ///   type it is, in written order, for [`Self::model_type`] to fix when the
-    ///   operand is `Model(T)`.
+    /// - ensures: the left operand is read at the form's own reading, filed the
+    ///   sorts the bindings fix, down the chain of `with` the right operand
+    ///   nests, each sort's name beside the type it is in written order, and
+    ///   asked classified next, ahead of the sweep, so [`Self::model_type`]
+    ///   fixes them when the operand is `Model(T)` before a later parameter
+    ///   reads a sort off the binder the type holds; the form adopts it.
     /// - fails: a misplaced tile at the `with` when the left operand is no type
     ///   application, and the refusals [`Self::bindings`] yields.
     /// - panics: none.
@@ -1410,18 +1411,20 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — `Model(T)` with one manifest sort, with a sort past
     ///   the binders before it and with two, a chain after a head other than
-    ///   `Model`, after no application, and over an operand that is no binding.
+    ///   `Model`, after no application, and over an operand that is no binding;
+    ///   a sort the type leaves a field, read off its binder after it.
     /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
     /// - witness: `tests::modules::models::a_manifest_sort_reads_past_the_links_before_it`
     /// - witness: `tests::modules::models::a_manifest_sort_the_theory_cannot_fix_is_refused`
     /// - witness: `tests::modules::models::a_manifest_sort_after_another_head_is_refused`
+    /// - witness: `tests::modules::models::a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
                     Some(&Plan::Transparent(child))
-                        if self.reading(child) == site.reading && self.fixed_sorts.contains_key(&child)
+                        if self.reading(child) == site.reading && self.fixed_sorts.contains_key(&child) && self.ahead.last() == Some(&child)
                 )
         },
     )]
@@ -1456,6 +1459,7 @@ impl<'source> Lowerer<'_, 'source>
         read?;
         let _earlier = self.fixed_sorts.insert(applied.node, sorts);
         self.read(applied.node, site.reading);
+        self.ahead.push(applied.node);
 
         self.plan(site, Plan::Transparent(applied.node));
 
@@ -1780,14 +1784,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - fails: [`LoweringRefusal::UnknownMember`], naming the binder and the
     ///   member, for a name that is no component of `T`; the wrong-sort refusal
     ///   for a component that is no unindexed sort, and where no value type is
-    ///   read; the unbuilt projection for a sort the type leaves a field when
-    ///   it fixes another, whose bundle is planned after the reading;
-    ///   propagates [`LoweringRefusal::BudgetExceeded`] from the binder walk.
+    ///   read; propagates [`LoweringRefusal::BudgetExceeded`] from the binder
+    ///   walk.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::UnknownMember`], the wrong-sort refusal, the unbuilt
-    /// projection and [`LoweringRefusal::BudgetExceeded`].
+    /// [`LoweringRefusal::UnknownMember`], the wrong-sort refusal and
+    /// [`LoweringRefusal::BudgetExceeded`].
     ///
     /// # Termination
     /// Each step follows a transparent plan to the child it stands for,
@@ -1797,9 +1800,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a counter's carrier read off a binder held at the
     ///   counter's models, beside the record a second counter sharing it
     ///   derives; a carrier the binder's type fixes, closed and over an earlier
-    ///   binder past an unmentioned one; an operation and a name the theory
-    ///   lacks, refused, and a sort left a field beside a fixed one.
+    ///   binder past an unmentioned one; a sort the type leaves a field beside
+    ///   one it fixes; an operation and a name the theory lacks, refused.
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+    /// - witness: `tests::modules::models::a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158`
     #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&(Plan::Carrier(Code::Bound { .. }, ..) | Plan::FixedCarrier(Code::Bound { .. }, _)))))]
     pub(super) fn carrier(
         &mut self,
@@ -1841,9 +1845,6 @@ impl<'source> Lowerer<'_, 'source>
             match self.plans.get(node) {
                 Some(&Plan::Transparent(inner)) => node = inner,
                 Some(&Plan::Bundle(ref bundled)) => break Arc::clone(bundled),
-                _ if self.fixed_sorts.contains_key(&node) => {
-                    return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
-                },
                 _ => return Ok(arity::Planned(false)),
             }
         };

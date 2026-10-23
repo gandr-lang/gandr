@@ -1,18 +1,19 @@
 // What forgetting a manifest carrier refuses: a model of a theory with the
 // counter's carrier but not its reading is no counter once forgotten, and a
 // model fixing one sort is no model fixing another (#2132). Two counters
-// whose carriers are not shared do not mix, a counter has no sort but its
-// carrier, and a sort a type fixing another leaves a field is not read off
-// its binder yet (#2131).
+// whose carriers are not shared do not mix, and a counter has no sort but
+// its carrier (#2131). A pairing whose second carrier is its own does not
+// share another's (#2158).
 // `../../model/identity/model-counter-manifest.gandr` forgets a counter's
 // manifest carrier, a counter's manifest readings alone, and a carrier two
-// counters share.
+// counters share, or two pairings fixing their first.
 
 // The counter, and `observe`, which reads any counter.
 import "../../model/identity/model-counter.gandr" ;
 
-// The counter whose readings have a sort of their own, and `observeShared`,
-// which reads a counter sharing another's counts.
+// The counter whose readings have a sort of their own, `observeShared`,
+// which reads a counter sharing another's counts, the pairing, and
+// `leftBeside`, which reads a pairing beside a value of its second carrier.
 import "../../model/identity/model-counter-manifest.gandr" ;
 
 /// A ticker: a carrier, a zero and a step, and no reading.
@@ -58,16 +59,14 @@ def integersShared(m : Model(Counter) with sort C = Integer) -> -F Integer {
 @[ refuses("UnknownMember") ]
 def countOfNothing(a : Model(Counter), c : a.Nope) -> -F Integer { return 0 }
 
-/// A pairing: two carriers, a value of each.
-@[ checks ]
-theory Pairing {
-  sort A : Type;
-  sort B : Type;
-  oper left : A;
-  oper right : B;
+/// A pairing's right handed where another pairing's second carrier is
+/// asked, its own second carrier a field of its own (#2158).
+@[ refuses("TypeMismatch") ]
+def rightApart(
+  m : Model(Pairing) with sort A = Integer,
+  n : Model(Pairing) with sort A = Integer
+) -> -F Integer {
+  case n {
+    #{.left = l, .right = r} => become leftBeside(m, r)
+  }
 }
-
-/// A pairing's second carrier, read off a binder whose type fixes the first:
-/// the sort the type leaves a field is not read yet (#2158).
-@[ refuses("OutOfFragment.projection_expression") ]
-def partlyFixed(m : Model(Pairing) with sort A = Integer, b : m.B) -> -F Integer { return 0 }
