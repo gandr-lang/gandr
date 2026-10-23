@@ -1326,14 +1326,16 @@ fn decide(
                     },
                 };
                 let typed = type_value(context, body, typing);
+                // The bridge's crossings in the run are those of the body as
+                // written, which a face reads at the values it shows.
+                let crossed = context.take_crossings();
                 // The run types the body as written, its omitted implicits
                 // standing as holes; each type is read with their solutions.
-                typings = Maybe::Present(Typings::after(signed, typed).retyped(|ty, depth| {
-                    solved_type(context.arena_mut(), (ty, depth), &solutions)
-                }));
+                typings = Maybe::Present(Typings::after(signed, typed.crossed(crossed)).retyped(
+                    |ty, depth| solved_type(context.arena_mut(), (ty, depth), &solutions),
+                ));
                 let _typed = context.take_nesting();
                 let _updated = context.take_updates();
-                let _crossed = context.take_crossings();
             }
             spending = context.worlds_mut().leave();
             match judged {

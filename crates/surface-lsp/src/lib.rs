@@ -25,8 +25,10 @@
 //! forms around a position off its parsed tree. A hover answers the innermost
 //! node under the cursor with its type: a declaration's name its declared
 //! type and documentation, a binder the type its uses were judged at, a term
-//! its type (and the type it was checked against when the two differ), a
-//! written type its universe, and any other position in a declaration's head
+//! its type (and the type it was checked against when the two differ, and
+//! the reduct the checker applies to a model standing where an included
+//! theory's model is asked), a written type its universe, and any other
+//! position in a declaration's head
 //! that declaration. A theory, a module and a member a theory writes answer
 //! as written, a theory with its members. The types come from a typed run
 //! over the document's text, built at the first hover after an edit and kept

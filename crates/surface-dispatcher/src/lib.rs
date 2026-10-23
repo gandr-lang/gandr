@@ -311,6 +311,7 @@ pub use crate::typed::Subject;
 pub use crate::typed::TypeTable;
 pub use crate::typed::TypedSpan;
 pub use crate::typed::checked_against;
+pub use crate::typed::crossed;
 pub use crate::typed::referred;
 pub use crate::typed::reprinted;
 pub use crate::typed::signed;

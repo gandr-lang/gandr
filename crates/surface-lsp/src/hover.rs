@@ -571,13 +571,15 @@ impl Style
 ///   node's range otherwise; else a block of its type — a binder's name, a
 ///   written type's text or a term written as one name before ` : ` — and, for
 ///   a term checked against a type spelled otherwise, that type in a second
-///   block; for a parameter's binder or a use of it, the `///` run written
-///   before the parameter after a blank line; about the node's range. Else, in
-///   the head of a declaration — from its form's start to the brace opening its
-///   own body, a member's keyword to its name — as on its name, about the head,
-///   and in the attributes before the head, about them. Else, on a tile,
-///   [`stubbed`]'s answer, about what it is about. Absent in layout and
-///   comments. Every type is spelled in `style`'s form, and every block is
+///   block; for a model standing where a model of a theory its own includes is
+///   asked, the reduct the checker applies there, applied to the model, in a
+///   block after; for a parameter's binder or a use of it, the `///` run
+///   written before the parameter after a blank line; about the node's range.
+///   Else, in the head of a declaration — from its form's start to the brace
+///   opening its own body, a member's keyword to its name — as on its name,
+///   about the head, and in the attributes before the head, about them. Else,
+///   on a tile, [`stubbed`]'s answer, about what it is about. Absent in layout
+///   and comments. Every type is spelled in `style`'s form, and every block is
 ///   written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
@@ -598,8 +600,9 @@ impl Style
 ///   `Model(…)`'s theory as the theory they name; a declaration and a written
 ///   type in HTML, coloured by their roles; a documented parameter at its
 ///   binder and at a use, and an undocumented one; a run target's call, its
-///   `;`, a name and an argument inside it, a stray and its `;`, and the
-///   attribute of a run target the lowering refused.
+///   `;`, a name and an argument inside it, a stray and its `;`, the attribute
+///   of a run target the lowering refused, and a model the checker carries to
+///   an included theory's models by a reduct.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
@@ -617,6 +620,7 @@ impl Style
 /// - witness: `hover::tests::a_source_s_own_documentation_hovers_at_its_head_1365`
 /// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
 /// - witness: `hover::tests::a_run_target_and_a_stray_hover_as_declarations_2073`
+/// - witness: `hover::tests::a_model_hovers_the_reduct_the_checker_applies_2031`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -1759,16 +1763,20 @@ fn lines(
 ///   source and in the colours the document gives it, then ` : ` and the
 ///   entry's type; any other term's type alone; for a term checked against a
 ///   type spelled otherwise, a second block of that type after a line saying
-///   so.
+///   so; for a model standing where a model of a theory its own includes is
+///   asked, a block of the reduct the checker applies there, applied to the
+///   term — its text when it is one line, else `…` — after a line saying so.
 /// - provides: the node half of [`hover`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a use, a binder, a written type, a literal and a
-///   mismatched term are asserted at their exact texts.
+/// - hypothesis: L3 — a use, a binder, a written type, a literal, a mismatched
+///   term and a model standing at an included theory's models are asserted at
+///   their exact texts.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
+/// - witness: `hover::tests::a_model_hovers_the_reduct_the_checker_applies_2031`
 #[spec(ensures: |ret| ret.starts_with(markup.opener().0))]
 fn typed(
     quoted: &Quoted<'_>,
@@ -1836,6 +1844,19 @@ fn typed(
         against.printed(SourceText::from(expected.as_ref()), Host::Type);
         value.push_str("\n\nchecked against\n\n");
         value.push_str(&against.block());
+    }
+    if let Maybe::Present(map) = entry.crossed() {
+        let argument = <&str>::from(quoted.text)
+            .get(start .. end)
+            .filter(|written| !written.contains('\n'))
+            .unwrap_or("…");
+        let mut applied = Code::new(markup);
+        applied.printed(
+            SourceText::from(format!("{}({argument})", map.as_ref()).as_str()),
+            Host::Term,
+        );
+        value.push_str("\n\nthe checker applies\n\n");
+        value.push_str(&applied.block());
     }
     value
 }
@@ -2043,6 +2064,56 @@ mod tests
             fenced(SourceText::from(format!("{ty} : Type").as_str())),
             "the written type prints the same text"
         );
+    }
+
+    /// #2031: a model standing where a model of a theory its own includes is
+    /// asked hovers the reduct the checker applies there, applied to it as
+    /// the explicit form writes it; a model with manifest sorts crosses by a
+    /// forgetting map no source names, and the function called names none.
+    #[test]
+    fn a_model_hovers_the_reduct_the_checker_applies_2031()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/include/reduct.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+        let text = SourceText::from(written.as_str());
+        let index = LineIndex::new(written.as_str().into());
+        let session = checked(text);
+        let reading = Reading::of(text);
+        let hovering = hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed);
+        let at = |needle: &str, past: usize| {
+            let offset = written
+                .find(needle)
+                .expect("the source writes the call")
+                .saturating_add(past);
+            let position = Position::of_byte(&index, RenderOffset::from(offset))
+                .expect("the offset is on a boundary");
+            match hover(text, &session, &reading, &hovering, position, PLAIN) {
+                Maybe::Present(shown) => shown.contents.value,
+                Maybe::Absent(reason) => panic!("`{needle}` hovers nothing: {reason:?}"),
+            }
+        };
+        let applied = |call: &str| format!("\n\nthe checker applies\n\n{}", fenced(call.into()));
+        for (needle, call) in [
+            ("multiplies(endoMonoid)", "Monoid.Semigroup(endoMonoid)"),
+            ("multiplies(m)", "UnitAndZero.Semigroup(m)"),
+        ] {
+            let shown = at(needle, "multiplies(".len());
+            assert!(
+                shown.ends_with(&applied(call)),
+                "`{needle}` names the reduct the checker applies: {shown}"
+            );
+        }
+        for (needle, past) in [
+            ("multiplies(endoManifest)", "multiplies(".len()),
+            ("multiplies(endoMonoid)", 0),
+        ] {
+            let shown = at(needle, past);
+            assert!(
+                !shown.contains("the checker applies"),
+                "`{needle}` at {past} names no reduct: {shown}"
+            );
+        }
     }
 
     #[test]
