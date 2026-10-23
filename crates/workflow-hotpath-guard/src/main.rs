@@ -1,11 +1,13 @@
 //! `hotpath-guard`: a commit's failed hotpath checks, filed on each
 //! regressed function's issue.
 //!
-//! `hotpath-guard --repository OWNER/NAME --sha SHA [--file-issue]` reads
-//! the commit's `hotpath / <benchmark>` checks and the pull request it
-//! heads, prints the report, and with `--file-issue` records each regressed
-//! function's row on its issue, marks the pull request's rows of passing
-//! benchmarks fixed, and closes or reopens each issue as its rows stand.
+//! `hotpath-guard --repository OWNER/NAME --sha SHA [--pull N] [--file-issue]`
+//! reads the commit's `hotpath / <benchmark>` checks and the pull request
+//! the check run event named (`--pull`), else the one it heads, prints the
+//! report, and with `--file-issue` records each regressed function's row on
+//! its issue, edits or posts the pull request's one report comment there,
+//! marks the pull request's rows of passing benchmarks fixed, and closes or
+//! reopens each issue as its rows stand.
 //!
 //! # Exit codes
 //!
@@ -20,9 +22,12 @@ use std::process::ExitCode;
 use anodized::spec;
 use gandr_workflow_hotpath_guard::CommitSha;
 use gandr_workflow_hotpath_guard::GuardError;
+use gandr_workflow_hotpath_guard::PullNumber;
 use gandr_workflow_hotpath_guard::Report;
 use gandr_workflow_hotpath_guard::Repository;
+use gandr_workflow_hotpath_guard::Unstated;
 use gandr_workflow_hotpath_guard::github;
+use quenchant_shape::shape::Maybe;
 
 /// The exit code of a refusal or a malformed invocation.
 const REFUSED: u8 = 2;
@@ -38,6 +43,10 @@ struct Cli
     /// The commit the checks ran on: the check run's head.
     #[arg(long)]
     sha: CommitSha,
+    /// The pull request the check run event named; looked up from the commit
+    /// when absent.
+    #[arg(long)]
+    pull: Option<PullNumber>,
     /// Record the run on each regressed function's issue.
     #[arg(long)]
     file_issue: bool,
@@ -105,7 +114,11 @@ fn main() -> ExitCode
 fn run(cli: Cli) -> Result<(), GuardError>
 {
     let checks = github::checks(&cli.repository, &cli.sha)?;
-    let pull = github::pull(&cli.repository, &cli.sha)?;
+    let pull = github::pull(
+        &cli.repository,
+        &cli.sha,
+        cli.pull.map_or(Maybe::Absent(Unstated), Maybe::Present),
+    )?;
     let report = Report::new(cli.repository, cli.sha, pull, checks);
     let output = |error: std::io::Error| GuardError::Output {
         message: error.to_string(),

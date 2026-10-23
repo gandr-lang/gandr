@@ -30,8 +30,11 @@ use crate::index::KIND;
 use crate::index::Run;
 use crate::index::Standing;
 use crate::index::Unposted;
+use crate::report::CommentBody;
 use crate::report::ListedPull;
+use crate::report::Marker;
 use crate::report::Pull;
+use crate::report::PullNumber;
 use crate::report::Regression;
 use crate::report::Report;
 use crate::report::Unpulled;
@@ -52,7 +55,7 @@ impl fmt::Display for IssueNumber
     /// # Adequacy
     /// - hypothesis: L3 — an updated issue is printed by its number; an empty
     ///   write changes the line.
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     #[inline]
     fn fmt(
         &self,
@@ -89,7 +92,7 @@ impl fmt::Display for Filed
     /// - hypothesis: L3 — an opened issue's line and an updated one's; an empty
     ///   write changes both.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     #[inline]
     fn fmt(
         &self,
@@ -130,7 +133,8 @@ enum Feed<'text>
 {
     /// Nothing: standard input stays the parent's.
     Nothing,
-    /// A comment's report, as `--body-file -` reads it.
+    /// A comment's report, its subject's marker on the first line, as
+    /// `--body-file -` and `-F body=@-` read it.
     Report(&'text Report),
     /// An issue's index, as `--body-file -` reads it.
     Index(&'text Index),
@@ -172,7 +176,7 @@ fn run(
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let text = match feed {
         Feed::Nothing => None,
-        Feed::Report(report) => Some(report.to_string()),
+        Feed::Report(report) => Some(format!("{}\n{report}", report.marker())),
         Feed::Index(index) => Some(index.to_string()),
     };
     if text.is_some() {
@@ -247,13 +251,18 @@ pub fn checks(
     Ok(concluded)
 }
 
-/// The pull request `sha` names.
+/// The pull request `sha` names: `number` when the check run event named
+/// one, else the one GitHub associates with the commit now.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
-/// - ensures: the pull request GitHub associates with the commit that it heads,
+/// - ensures: with `number`, that pull request, read whatever its head is now;
+///   without, the pull request GitHub associates with the commit that it heads,
 ///   else the first it lists; absent when it lists none.
-/// - provides: the subject of the rows.
+/// - provides: the subject of the rows. The event names the pull request as it
+///   stood when the check concluded: a restack that force-pushes the branch
+///   before the guard runs leaves the commit associated with none, and the
+///   lookup alone would file the run under the bare commit.
 /// - fails: [`GuardError::Gh`] when the query fails or prints what this crate
 ///   does not read.
 /// - panics: none.
@@ -263,24 +272,40 @@ pub fn checks(
 /// As `fails` lists.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a commit a pull request heads and one none carries;
-///   inventing a pull request or losing one changes the rows' subject.
+/// - hypothesis: L3 — a commit a pull request heads, one none carries, and a
+///   force-pushed one the event names; inventing a pull request, losing one or
+///   ignoring the event's changes the rows' subject.
 /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 /// - witness: `tests::cli::a_commit_without_a_pull_request_is_filed_by_its_sha`
+/// - witness: `tests::cli::the_event_s_pull_request_names_a_force_pushed_commit`
 #[inline]
 pub fn pull(
     repository: &Repository,
     sha: &CommitSha,
+    number: Maybe<PullNumber, Unstated>,
 ) -> Result<Maybe<Pull, Unpulled>, GuardError>
 {
     let mut query = Command::new("gh");
-    query.args(["api", &format!("repos/{repository}/commits/{sha}/pulls")]);
-    let answer = run(&mut query, Feed::Nothing)?;
-    let listed: Vec<ListedPull> =
-        serde_json::from_str(&answer).map_err(|error| GuardError::Gh {
-            command: format!("{query:?}"),
-            message: error.to_string(),
-        })?;
+    let listed: Vec<ListedPull> = match number {
+        Maybe::Present(number) => {
+            query.args(["api", &number.api_path(repository)]);
+            let answer = run(&mut query, Feed::Nothing)?;
+            vec![
+                serde_json::from_str(&answer).map_err(|error| GuardError::Gh {
+                    command: format!("{query:?}"),
+                    message: error.to_string(),
+                })?,
+            ]
+        },
+        Maybe::Absent(_) => {
+            query.args(["api", &format!("repos/{repository}/commits/{sha}/pulls")]);
+            let answer = run(&mut query, Feed::Nothing)?;
+            serde_json::from_str(&answer).map_err(|error| GuardError::Gh {
+                command: format!("{query:?}"),
+                message: error.to_string(),
+            })?
+        },
+    };
     Ok(pull_of(sha, listed))
 }
 
@@ -294,13 +319,12 @@ struct Touched
     krate: Maybe<CrateDir, Unstated>,
     /// Its index, as this run leaves it.
     index: Index,
-    /// The report owed as a comment.
+    /// Whether this run may post the subject's comment, or only edit it.
     comment: Comment,
 }
 
-/// Files `report` on each regressed function's issue: rows recorded, comments
-/// appended where owed, open rows of passing series marked fixed, and each
-/// issue closed or reopened as its rows stand.
+/// Files `report` on each regressed function's issue and its pull request's
+/// one report comment there.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository with
@@ -309,13 +333,16 @@ struct Touched
 ///   invocation runs. Otherwise the `kind:performance` issues are listed once;
 ///   each function a failed check regressed has the issue titled `perf:
 ///   <function>`, opened when it had none, carrying its row (see
-///   [`Index::record`]), with the report appended first as a comment when
-///   [`Index::owes`] says one is owed, except that a function whose every
-///   regression the pull request's body accepts opens no issue; each function
-///   with an open row of the report's subject in a passing series has that row
-///   marked fixed, unless a failed check of the same series regressed the
-///   function; each touched issue is closed when it stands settled and was
-///   open, reopened when it stands open and was closed.
+///   [`Index::record`]), except that a function whose every regression the pull
+///   request's body accepts opens no issue; each function with an open row of
+///   the report's subject in a passing series has that row marked fixed, unless
+///   a failed check of the same series regressed the function. On each touched
+///   issue, the comment carrying the report's marker (see [`Report::marker`])
+///   is edited to this run's report; when it has none, one is posted if
+///   [`Comment::of`] owes one for a regression of the function, and none
+///   otherwise; the subject's rows link the comment. Each touched issue is
+///   closed when it stands settled and was open, reopened when it stands open
+///   and was closed.
 /// - provides: one issue per function, its body the index of its regressions.
 /// - fails: [`GuardError::Gh`] when a `gh` invocation fails or the listing is
 ///   not the JSON this crate reads.
@@ -327,15 +354,17 @@ struct Touched
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a fake `gh` holding no issue, one holding a function's
-///   issue with the pull request's open row, a passing rerun, a shift, a
-///   settled issue meeting a new regression, a series both failed and passed,
-///   and an accepted landing with and without its function's issue; a second
-///   issue, a comment per rerun, an open row left after the pass, a regressed
-///   row fixed, an issue opened for an acceptance, or an issue left in the
-///   wrong state changes the recorded invocations.
+///   issue with the pull request's open row and its marked comment, a second
+///   pull request, a passing rerun, a shift, a settled issue meeting a new
+///   regression, a series both failed and passed, and an accepted landing with
+///   and without its function's issue; a second issue, a comment per rerun, an
+///   edit of another pull request's comment, an open row left after the pass, a
+///   regressed row fixed, an issue opened for an acceptance, or an issue left
+///   in the wrong state changes the recorded invocations.
 /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
-/// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
-/// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+/// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
+/// - witness: `tests::cli::a_second_pull_request_adds_a_row_and_a_comment`
+/// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
 /// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
 /// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
 /// - witness: `tests::cli::a_clear_commit_files_nothing`
@@ -370,12 +399,10 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
             message: error.to_string(),
         })?;
     let subject = report.subject();
-    let regressed = report.regressed();
     let at = Run {
         repository: report.repository(),
         sha: report.sha(),
         subject: &subject,
-        regressed: &regressed,
     };
     let found = |function: &SiteName| {
         let title = IssueTitle::of(function);
@@ -418,7 +445,7 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
         let entry = touched
             .entry(regression.function.clone())
             .or_insert_with(|| open(&regression.function, &regression.krate));
-        if entry.index.owes(&subject, regression, &regressed) == Comment::Owed {
+        if Comment::of(regression) == Comment::Owed {
             entry.comment = Comment::Owed;
         }
     }
@@ -449,8 +476,8 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
 
 /// Files the run on `function`'s issue, as [`file()`] states for each touched
 /// function: rows recorded and fixed, the issue opened if it had none, the
-/// report commented when owed, the body written, and the issue closed or
-/// reopened as its rows stand.
+/// subject's comment edited or posted, the body written, and the issue closed
+/// or reopened as its rows stand.
 ///
 /// # Specification
 /// - requires: `entry` is `function`'s issue as listed, and `regressions` the
@@ -468,7 +495,8 @@ pub fn file(report: &Report) -> Result<Vec<Filed>, GuardError>
 /// # Adequacy
 /// - hypothesis: L3 — as [`file()`].
 /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
-/// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+/// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
+/// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
 /// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
 /// - witness: `tests::cli::a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress`
 fn file_function(
@@ -524,20 +552,44 @@ fn file_function(
         },
     };
     let number_text = number.0.to_string();
-    if entry.comment == Comment::Owed {
-        let mut post = Command::new("gh");
-        post.args(["issue", "comment", &number_text, "--body-file", "-"]);
-        let posted = Maybe::Present(
-            run(&mut post, Feed::Report(report))?
-                .trim()
-                .parse::<CommentUrl>()
-                .unwrap_or_else(|never| match never {}),
-        );
+    let marked = match opened {
+        Some(_) => None,
+        None => marked_comment(at.repository, number, &report.marker())?,
+    };
+    let linked = match (marked, entry.comment) {
+        (Some(comment), _) => {
+            run(
+                Command::new("gh").args([
+                    "api",
+                    "--method",
+                    "PATCH",
+                    &format!("repos/{}/issues/comments/{}", at.repository, comment.id),
+                    "-F",
+                    "body=@-",
+                    "--silent",
+                ]),
+                Feed::Report(report),
+            )?;
+            Maybe::Present(comment.html_url)
+        },
+        (None, Comment::Owed) => {
+            let mut post = Command::new("gh");
+            post.args(["issue", "comment", &number_text, "--body-file", "-"]);
+            Maybe::Present(
+                run(&mut post, Feed::Report(report))?
+                    .trim()
+                    .parse::<CommentUrl>()
+                    .unwrap_or_else(|never| match never {}),
+            )
+        },
+        (None, Comment::Unowed) => Maybe::Absent(Unposted),
+    };
+    if matches!(linked, Maybe::Present(_)) {
         for regression in own() {
-            entry.index.record(regression, at, &posted);
+            entry.index.record(regression, at, &linked);
         }
     }
-    if opened.is_none() || entry.comment == Comment::Owed {
+    if opened.is_none() || matches!(linked, Maybe::Present(_)) {
         let mut edit = Command::new("gh");
         edit.args(["issue", "edit", &number_text, "--body-file", "-"]);
         for label in labels(&entry.krate) {
@@ -561,6 +613,71 @@ fn file_function(
         Some((title, url)) => Filed::Opened(title, url, standing),
         None => Filed::Updated(number, standing),
     })
+}
+
+/// One issue comment as `gh api …/comments --jq '.[] | {id, html_url, body}'`
+/// prints it, one per line.
+#[derive(Debug, Deserialize)]
+struct ListedComment
+{
+    /// The comment's id, which `PATCH …/issues/comments/<id>` edits.
+    id: u64,
+    /// Its address, which the subject's rows link.
+    html_url: CommentUrl,
+    /// Its body, whose first line is the marker when the guard wrote it.
+    #[serde(default)]
+    body: CommentBody,
+}
+
+/// The comment on issue `number` whose first line is `marker`, if any.
+///
+/// # Specification
+/// - requires: `gh` on the path, authenticated for the repository.
+/// - ensures: the first comment, in the order GitHub lists them, whose body's
+///   first line is `marker`; none when no comment carries it. Every page of the
+///   listing is read.
+/// - provides: the comment a later run of the same subject edits.
+/// - fails: [`GuardError::Gh`] when the listing fails or a line it prints is
+///   not the JSON this crate reads.
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an issue holding another pull request's marked comment, a
+///   person's comment quoting the marker on a later line, and the subject's
+///   own; editing another's or a person's, or posting beside the subject's own,
+///   changes the recorded invocations.
+/// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
+/// - witness: `tests::cli::a_second_pull_request_adds_a_row_and_a_comment`
+fn marked_comment(
+    repository: &Repository,
+    number: IssueNumber,
+    marker: &Marker,
+) -> Result<Option<ListedComment>, GuardError>
+{
+    let mut list = Command::new("gh");
+    list.args([
+        "api",
+        "--paginate",
+        &format!("repos/{repository}/issues/{}/comments", number.0),
+        "--jq",
+        ".[] | {id, html_url, body}",
+    ]);
+    let listing = run(&mut list, Feed::Nothing)?;
+    for line in listing.lines().filter(|line| !line.trim().is_empty()) {
+        let comment: ListedComment =
+            serde_json::from_str(line).map_err(|error| GuardError::Gh {
+                command: format!("{list:?}"),
+                message: error.to_string(),
+            })?;
+        if Marker::of_comment(&comment.body) == *marker {
+            return Ok(Some(comment));
+        }
+    }
+    Ok(None)
 }
 
 /// The labels a function's issue carries: [`KIND`], and its crate's area when

@@ -1,6 +1,7 @@
 //! **Hotpath guard**: a commit's failed `hotpath / <benchmark>` checks, filed
 //! on one issue per regressed function, `perf: <function>`, whose body is the
-//! index of that function's regressions and whose comments are their reports.
+//! index of that function's regressions and whose comments are their pull
+//! requests' reports, one per pull request.
 //!
 //! - [`check`] reads a concluded check: a failed one's summary into its
 //!   wall-time line, the sites over its policy's threshold and whether it is a
@@ -27,10 +28,15 @@
 //! several issues. One issue per pull request, the alternative, scattered a
 //! function's history.
 //!
-//! **The body is the index; each regression is a comment.** One row per pull
-//! request and benchmark, rewritten in place; everything around the table
-//! stays as written. A new regression's report is a comment its row links,
-//! so no fact lives only in a comment; a rerun adds none ([`index`]).
+//! **The body is the index; each pull request has one comment.** One row per
+//! pull request and benchmark, rewritten in place; everything around the
+//! table stays as written. A pull request's report is one comment, marked
+//! `<!-- hotpath: pr=<n> -->`, that every later run of it edits, so the
+//! comments count pull requests, never runs ([`index`]); appending one per
+//! run put 36 comments on one issue in one stack's restacks.
+//!
+//! **The pull request the event names**, else the one the commit heads
+//! ([`github::pull`]).
 //!
 //! **Runner shift.** A timing failure whose wall time and every regressed
 //! function moved up together, calls and allocations unchanged, is the
@@ -42,10 +48,6 @@
 //! before the queue; a landing whose body carries a settled `accepted` one
 //! writes its rows `accepted`, with no comment and no new issue
 //! ([`report::PullBody::accepted`]).
-//!
-//! **The pull request the commit heads.** A stack's lower head is carried by
-//! every pull request above it, so the guard names the one whose head is the
-//! commit, and the first listed only when none is.
 //!
 //! **Reversal**: hotpath Cloud filing issues itself, or a required hotpath
 //! check.
@@ -71,7 +73,9 @@ pub mod report;
 
 pub use crate::check::CommitSha;
 pub use crate::check::Repository;
+pub use crate::check::Unstated;
 pub use crate::error::GuardError;
 pub use crate::github::Filed;
 pub use crate::index::Standing;
+pub use crate::report::PullNumber;
 pub use crate::report::Report;

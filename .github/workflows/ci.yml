@@ -123,13 +123,16 @@ jobs:
       contents: read
       packages: read
     steps:
-      # Checkout stays shallow except where a gate needs history.
+      # Checkout stays shallow except where a gate needs history. A job that
+      # must build the pull request's own head, not GitHub's merge commit,
+      # names it in CI_CHECKOUT_REF; empty is the event's default ref.
       - &git-checkout
         name: git checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: ${{ env.CI_FETCH_DEPTH || '1' }}
+          ref: ${{ env.CI_CHECKOUT_REF || '' }}
       - &trust-workspace
         name: trust the workspace for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -1368,33 +1371,45 @@ jobs:
   # `<series>`, judged on allocation in every crate, and as `<series>-timing`,
   # judged on wall-clock time in the crates a pull request's change reaches
   # (hotpath/<series>-policy.toml, hotpath/<series>-timing-policy.toml). The
-  # Cloud compares a pull request's reports with main's, comments when one
-  # changed, and fails its `hotpath / <benchmark>` check on a regression; no
-  # check of it is required. Main's push uploads the baselines; a dispatch
-  # runs the series too, which is how act exercises the job. The upload signs
-  # in with the job's OIDC token, which a fork's pull request is not given.
-  # Nothing needs this job. It builds over main's plain test state, rebuilding
-  # only what the profiler's features change.
+  # Cloud compares each report with the report of its base commit, comments
+  # when one changed, and fails its `hotpath / <benchmark>` check on a
+  # regression; no check of it is required. Main's push uploads main's
+  # reports, which merge groups and pull requests on main compare with; a
+  # dispatch runs the series too, which is how act exercises the job. The
+  # upload signs in with the job's OIDC token, which a fork's pull request is
+  # not given. Nothing needs this job. It builds over main's plain test state,
+  # rebuilding only what the profiler's features change.
+  #
+  # A pull request measures its own head, not GitHub's merge commit, against
+  # its base branch's head, so a stacked pull request reads only its own
+  # contribution: a regression the pull request below carries reads 0 % here.
+  # Every run keeps its reports as the artifact `hotpath-<commit>`; a pull
+  # request uploads its base head's reports from that artifact before its own
+  # (`mise run ci:hotpath-base`), and builds and runs the base in this job
+  # only when no run left one.
   hotpath:
     name: report the hotpath benchmarks (linux)
     needs: *rust-needs
     if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.changes.outputs.rust == 'true')) }}
     runs-on: *linux
     permissions:
+      actions: read
       contents: read
       packages: read
       id-token: write
     container: *ci-image # zizmor: ignore[unpinned-images]
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       CI_BUILD_STATE: cargo-test-plain-only
       # Main's push restores main's newest state rather than looking it up.
       CI_ON_MAIN: "true"
+      CI_CHECKOUT_REF: ${{ github.event.pull_request.head.sha }}
       HOTPATH_UPLOAD: fail-on-error
       HOTPATH_ALLOC_METRIC: count
       CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HOTPATH_FUNCTIONS_LIMIT: "0"
       HOTPATH_USER_METADATA: runner=linux-arm64,profile=test
+      GH_TOKEN: ${{ github.token }}
     steps:
       - *git-checkout
       - *trust-workspace
@@ -1405,10 +1420,30 @@ jobs:
       - *find-build-state
       - *unpack-build-state
       - *fetch-dependencies
+      - name: upload the base head's reports
+        if: ${{ github.event_name == 'pull_request' }}
+        run: mise run ci:hotpath-base gandr:gandr-lang:hotpath store:gandr-storage-schema:store
       - name: run the gandr series
         run: mise run ci:hotpath gandr gandr-lang hotpath
       - name: run the store series
         run: mise run ci:hotpath store gandr-storage-schema store
+      # A lost artifact costs a later pull request one in-job base run, never
+      # this run's result.
+      - name: keep the reports
+        continue-on-error: true
+        uses: *upload-artifact
+        with:
+          name: hotpath-${{ github.event.pull_request.head.sha || github.sha }}
+          path: target/hotpath/reports/*.json
+          retention-days: 14
+      - name: keep the base head's reports measured here
+        if: ${{ github.event_name == 'pull_request' && hashFiles('target/hotpath/base/measured/*.json') != '' }}
+        continue-on-error: true
+        uses: *upload-artifact
+        with:
+          name: hotpath-${{ github.event.pull_request.base.sha }}
+          path: target/hotpath/base/measured/*.json
+          retention-days: 14
       - *lane-timing
 
   # A landing's hotpath verdicts become ledger rows (`mise run

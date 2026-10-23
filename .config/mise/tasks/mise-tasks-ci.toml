@@ -494,7 +494,9 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref refs/heads/main --key "${usa
 # pattern the crate's library name, `*` and the file's module: the file
 # names only the innermost module, and `*` stands for any modules around it.
 # A series' own `measure_block!` labels belong to its package. CI_BASE_SHA names the
-# base. The upload is skipped under act, which holds no OIDC token.
+# base. Each upload's report is also written to target/hotpath/reports/, which
+# the job keeps as the artifact `hotpath-<commit>` for `ci:hotpath-base`. The
+# upload is skipped under act, which holds no OIDC token.
 ["ci:hotpath"]
 description = "Run a hotpath series and upload its allocation and timing reports"
 tools.jq = "1.8.1"
@@ -511,10 +513,11 @@ package=${usage_package:?}
 bench=${usage_bench:?}
 root=$(git rev-parse --show-toplevel)
 scratch="$root/target/hotpath"
-mkdir -p "$scratch"
+mkdir -p "$scratch/reports"
 upload() {
   rm -f "$scratch/$1.json"
   HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
+    HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$scratch/reports/$1.json" \
     "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
   if [[ ${ACT:-} != true ]]; then test -s "$scratch/$1.json"; fi
 }
@@ -584,12 +587,93 @@ awk -v ignore="$ignore" '
 upload "$series-timing" "$scratch/$series-timing-policy.toml"
 {% endraw %}'''
 
+# A pull request's baseline: the reports of its base branch's head, uploaded
+# to hotpath Cloud as this pull request's before its own, so the Cloud
+# compares the head with the commit below it rather than with main's newest
+# (#2019). A stacked pull request then reads only its own contribution, and
+# a regression the pull request below carries reads 0 % here.
+#
+# The base head's run kept its reports as the artifact `hotpath-<base>`
+# (ci:hotpath); each is stamped with this pull request's event fields, its
+# `base_sha` and the other run's `ref` dropped (it is the base), its policy's
+# `pr_check` set to `off` so it posts no check, and posted with the job's
+# OIDC token, as hotpath's own relay posts a report file. When no run kept
+# one (a base whose change reached no Rust, an expired artifact), the base
+# is checked out, each series built and run with the same policy change, its
+# in-process upload reading it as the base's report since the checkout is
+# the event's base, and the head checked out again; the reports land in
+# target/hotpath/base/measured/, which the job keeps as `hotpath-<base>`.
+# Arguments: `<series>:<package>:<bench>`, one per series. GITHUB_EVENT_PATH,
+# GITHUB_REPOSITORY, CI_BASE_SHA and GH_TOKEN describe the run.
+["ci:hotpath-base"]
+description = "Upload a pull request's base head's hotpath reports before its own"
+tools.jq = "1.8.1"
+usage = 'arg "<series>..." help="each series as series:package:bench"'
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+base=${CI_BASE_SHA:?the pull request base head}
+repo=${GITHUB_REPOSITORY:?}
+root=$(git rev-parse --show-toplevel)
+dir="$root/target/hotpath/base"
+rm -rf "$dir"
+mkdir -p "$dir/found" "$dir/measured" "$dir/policy"
+eval "series=(${usage_series:?})"
+pull=$(jq -c '.pull_request | {number, base_ref: .base.ref, head_ref: .head.ref, head_sha: .head.sha}' "${GITHUB_EVENT_PATH:?}")
+run=$(gh api "repos/$repo/actions/artifacts?name=hotpath-$base&per_page=100" \
+  --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | .workflow_run.id // empty')
+if [[ -n $run ]] && gh run download "$run" -R "$repo" -n "hotpath-$base" -D "$dir/found" \
+  && compgen -G "$dir/found/*.json" > /dev/null; then
+  token=$(curl -sS --fail -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:?}" \
+    "${ACTIONS_ID_TOKEN_REQUEST_URL:?}&audience=hotpath.rs" | jq -er .value)
+  echo "::add-mask::$token"
+  for report in "$dir/found"/*.json; do
+    benchmark=$(basename "$report" .json)
+    jq --argjson pull "$pull" '
+      .meta.ci.event = "pull_request"
+      | .meta.ci.pull_request = $pull
+      | del(.meta.git.base_sha, .meta.git.ref)
+      | if .meta.policy then .meta.policy.source |= (split("\n") | map(if startswith("pr_check") then "pr_check = \"off\"" else . end) | join("\n")) else . end
+    ' "$report" > "$dir/upload.json"
+    status=$(curl -sS -X POST "${HOTPATH_API_URL:-https://hotpath.rs}/api/v1/reports" \
+      --url-query "benchmark=$benchmark" -H "Authorization: Bearer $token" \
+      -H "Content-Type: application/json" --data-binary @"$dir/upload.json" \
+      -o "$dir/response.json" -w '%{http_code}')
+    if [[ $status != 200 && $status != 201 ]]; then
+      echo "hotpath.rs refused $benchmark's base report (HTTP $status): $(head -c 2000 "$dir/response.json")" >&2
+      exit 1
+    fi
+    echo "uploaded $benchmark's base report from hotpath-$base (run $run)"
+  done
+  exit 0
+fi
+echo "no run kept hotpath-$base: building and running the base here"
+head=$(git rev-parse HEAD)
+git fetch --quiet --depth=1 origin "$base"
+git checkout --quiet --detach "$base"
+trap 'git checkout --quiet --detach "$head"' EXIT
+for spec in "${series[@]}"; do
+  IFS=: read -r name package bench <<< "$spec"
+  for benchmark in "$name" "$name-timing"; do
+    [[ -f "$root/hotpath/$benchmark-policy.toml" ]] || continue
+    awk '/^pr_check *=/ { print "pr_check = \"off\""; next } { print }' \
+      "$root/hotpath/$benchmark-policy.toml" > "$dir/policy/$benchmark-policy.toml"
+    HOTPATH_BENCHMARK=$benchmark HOTPATH_POLICY_PATH="$dir/policy/$benchmark-policy.toml" \
+      HOTPATH_UPLOAD_RESPONSE_PATH="$dir/$benchmark-response.json" \
+      HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$dir/measured/$benchmark.json" \
+      "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
+    test -s "$dir/$benchmark-response.json"
+  done
+done
+{% endraw %}'''
+
 # A commit's concluded `hotpath / <benchmark>` checks, filed on one issue per
 # regressed function, `perf: <function>`, labelled kind:performance and the
-# function's area: its body indexes the function's regressions, each new one
-# a comment (crates/workflow-hotpath-guard/README.md). The hotpath guard
-# workflow runs it on each concluded check's completion. Arguments pass
-# through: `--sha`, optionally `--repository` and `--file-issue`.
+# function's area: its body indexes the function's regressions, and each
+# pull request has one report comment there, edited by its later runs
+# (crates/workflow-hotpath-guard/README.md). The hotpath guard workflow runs
+# it on each concluded check's completion. Arguments pass through: `--sha`,
+# optionally `--repository`, `--pull` and `--file-issue`.
 ["ci:hotpath-guard"]
 description = "A commit's hotpath checks, filed on each regressed function's issue"
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-hotpath-guard --"
