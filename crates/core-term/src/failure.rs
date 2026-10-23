@@ -136,8 +136,6 @@ impl TrackingIssue
     pub const PLACED_STAGE: Self = Self(1502);
     /// The unknown type `?`.
     pub const UNKNOWN_TYPE: Self = Self(1503);
-    /// String interpolation, `"…${ e }…"`.
-    pub const INTERPOLATION: Self = Self(1505);
     /// A match on a view, `case e with v { … }`.
     pub const CASE_VIEW: Self = Self(1506);
     /// An operation written with a circuit body.

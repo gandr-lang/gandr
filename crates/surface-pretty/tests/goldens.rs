@@ -4831,6 +4831,60 @@ fn a_prelude_operator_is_written_as_its_operator()
     );
 }
 
+/// An append is written as the interpolated string the lowering folds into
+/// it: text inside the quotes, any other operand interpolated, and a text
+/// that would merge with its neighbour or vanish interpolated too. The
+/// lowering's `an_interpolated_string_appends_its_segments_in_order` reads
+/// these spellings back as the appends they were printed from.
+#[test]
+fn an_append_is_written_as_the_interpolated_string_that_lowers_to_it()
+{
+    let append = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| <&'static str>::from(primitive.name()) == "string.append")
+        .expect("the prelude holds the append");
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let written = |core: &mut CoreArena, left: ValueId, right: ValueId| {
+        let called = core.computation_primitive(append, Arguments::Binary([left, right]));
+        core.computation_lambda(called)
+    };
+    let hello = text(&mut core, Written("hello "));
+    let bang = text(&mut core, Written("!"));
+    let empty = text(&mut core, Written(""));
+    let opener = text(&mut core, Written("a${"));
+    let greeted = core.computation_primitive(append, Arguments::Binary([hello, bound]));
+    let nested = core.value_nested(greeted);
+    let rows = [
+        (
+            written(&mut core, nested, bang),
+            "fn (a) { \"${ \"hello ${ a }\" }!\" }",
+        ),
+        (written(&mut core, empty, bound), "fn (a) { \"${ a }\" }"),
+        (
+            written(&mut core, bound, empty),
+            "fn (a) { \"${ a }${ \"\" }\" }",
+        ),
+        (
+            written(&mut core, hello, bang),
+            "fn (a) { \"hello ${ \"!\" }\" }",
+        ),
+        (
+            written(&mut core, opener, bound),
+            "fn (a) { \"a\\${${ a }\" }",
+        ),
+    ];
+    let source = CoreSource::new(&core, &[]);
+    for (root, expected) in rows {
+        agrees(&core, &[], CoreNode::Computation(root));
+        assert_eq!(
+            spelled(&source, Root::Computation(CoreNode::Computation(root))),
+            faithful(Written(expected))
+        );
+    }
+}
+
 /// A bind of a computation ascribed a pure returner spells as the typed
 /// bind it lowered from, its value type written after the binder; an
 /// ascription of anything but a bound computation or a returned value

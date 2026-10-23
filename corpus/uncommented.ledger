@@ -525,10 +525,6 @@ surface/n-ary-products.gandr:single_is_not_its_member:1f1c9701eeedfdb7
 surface/n-ary-products.gandr:single_is_not_its_member:3118e4ec21f1cffe
 surface/n-ary-products.gandr:triple:246a4e6a2e1dd08f
 surface/n-ary-products.gandr:triple:4d484ea31c8ada64
-surface/string-interpolation.gandr:<file>
-surface/string-interpolation.gandr:describe:e8871b8539ff7049
-surface/string-interpolation.gandr:greet:3b1541af1a2819c4
-surface/string-interpolation.gandr:price:9f81ae9afdc18403
 surface/typed-holes.gandr:<file>
 surface/typed-holes.gandr:anon:3f2781f223a42bac
 surface/typed-holes.gandr:in_call:320513908cd86340

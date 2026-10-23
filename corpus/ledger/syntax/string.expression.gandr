@@ -1,4 +1,4 @@
-/// `string.expression`: a string with an interpolated expression.
-/// The checker does not reach this form yet; #1505 tracks it.
-@[ refuses("OutOfFragment.string_interpolation") ]
-def greeting = "hello, ${name}" ;
+/// `string.expression`: a string with an interpolated expression, its text
+/// and the interpolated string appended in written order.
+@[ runs("\"hello, types\"") ]
+def greeting() -> -F String { return "hello, ${ "types" }" }
