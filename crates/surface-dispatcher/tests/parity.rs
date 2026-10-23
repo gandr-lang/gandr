@@ -18,6 +18,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
 use gandr_surface_dispatcher::Declared;
@@ -545,10 +546,6 @@ enum Held
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core (#808).
     Apart,
-    /// A declaration the checker carries a model across by a reduct in, which
-    /// the formatter's explicit form writes and the printer, reading the
-    /// lowered core, does not (#2043).
-    Crossed,
 }
 
 impl fmt::Display for Held
@@ -565,7 +562,6 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
-            Self::Crossed => "#2043, a reduct the checker applies",
         })
     }
 }
@@ -664,14 +660,15 @@ enum Spelt
 }
 
 /// The declaration `name`, its type `ty` and body `body` lowered into
-/// `arena`, as `source` spells it in `form`: a function definition whole as
-/// its `def name(…)` or `def rec name(…)`, otherwise a thunked body as
-/// `thunk { … }` around its computation and every other as its value.
+/// `arena`, as `typed` spells its type and `bodied` its body in `form`: a
+/// function definition whole as its `def name(…)` or `def rec name(…)`,
+/// otherwise a thunked body as `thunk { … }` around its computation and
+/// every other as its value.
 ///
 /// # Specification
 /// trivial.
 fn spelt(
-    source: &CoreSource<'_>,
+    (typed, bodied): (&CoreSource<'_>, &CoreSource<'_>),
     name: Name<'_>,
     (ty, body): (ValueTypeId, ValueId),
     form: Form,
@@ -685,14 +682,14 @@ fn spelt(
     let faithful = |printed: &Presentation| {
         printed.fidelity() == Fidelity::Faithful && printed.unspelled().is_empty()
     };
-    if let Ok(Maybe::Present(whole)) = present_whole(source, name, (ty, body), page, style) {
+    if let Ok(Maybe::Present(whole)) = present_whole(bodied, name, (ty, body), page, style) {
         if faithful(&whole) {
             return Spelt::Declared(String::from(whole.as_ref()));
         }
         return unfaithful(whole.unspelled(), SourceFragment::from(whole.as_ref()));
     }
-    let typed = present_type(source, CoreNode::ValueType(ty), page, style);
-    let bodied = present_definition(source, CoreNode::Value(body), page, style)
+    let typed = present_type(typed, CoreNode::ValueType(ty), page, style);
+    let bodied = present_definition(bodied, CoreNode::Value(body), page, style)
         .map(|printed| (String::from(printed.as_ref()), printed));
     let (Ok(typed), Ok((text, bodied))) = (typed, bodied)
     else {
@@ -817,11 +814,12 @@ fn read(
         &mut gandr_surface_lowering::coincide::Decisions::none(),
     )
     .ok()?;
-    // Where the checker carries a model across by a reduct, by the start and
-    // end of each value it crosses at: read off its elaboration, which the
-    // lowered core the printer reads does not hold.
-    let crossings: BTreeMap<ByteOffset, ByteOffset> = if module.reducts().is_empty() {
-        BTreeMap::new()
+    // Where the checker carries a model across by a reduct, and by which:
+    // read off its elaboration, which the lowered core the printer reads
+    // does not hold. A forgetting map, which the checker applies at the
+    // carriers it solves, is written by neither.
+    let crossings: Vec<(ValueId, ConstantIndex)> = if module.reducts().is_empty() {
+        Vec::new()
     }
     else {
         gandr_surface_format::Elaborate::elaborate(
@@ -830,32 +828,23 @@ fn read(
             &module,
         )
         .crossings
-        .keys()
-        .filter_map(|&value| match module.origins().value(value) {
-            Maybe::Present(origin) => Some((origin.span().start(), origin.span().end())),
-            Maybe::Absent(_) => None,
-        })
+        .into_iter()
+        .filter(|&(_, reduct)| module.reducts().binary_search(&reduct).is_ok())
         .collect()
     };
     let owned = constant_names(&module);
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
     let constructors = families.naming(&names);
-    let source = CoreSource::new(&arena, &names).naming(&constructors);
+    let source = CoreSource::new(&arena, &names)
+        .naming(&constructors)
+        .crossing(&crossings);
+    // A body leaves each written reduct's call to the checker, which applies
+    // the reduct where the call stands; a type, read by its value, keeps it.
+    let bodied = source.implying(module.reducts());
     let mut read = Read::default();
     for declaration in module.declarations() {
         if usize::from(declaration.span().start()) < base {
-            continue;
-        }
-        let span = declaration.span();
-        if crossings
-            .range(span.start() .. span.end())
-            .next()
-            .is_some_and(|(_, &end)| end <= span.end())
-        {
-            let _previous = read
-                .held
-                .insert(format!("{}", declaration.name()), Held::Crossed);
             continue;
         }
         let DeclarationOutcome::Completed {
@@ -906,8 +895,18 @@ fn read(
         let name = format!("{}", declaration.name());
         let node = (declared_type, body);
         match (
-            spelt(&source, Name::from(name.as_str()), node, Form::Sugared),
-            spelt(&source, Name::from(name.as_str()), node, Form::Explicit),
+            spelt(
+                (&source, &bodied),
+                Name::from(name.as_str()),
+                node,
+                Form::Sugared,
+            ),
+            spelt(
+                (&source, &bodied),
+                Name::from(name.as_str()),
+                node,
+                Form::Explicit,
+            ),
         ) {
             (Spelt::Whole(sugared_type, sugared), Spelt::Whole(explicit_type, explicit)) => {
                 read.printed.push(Printed {

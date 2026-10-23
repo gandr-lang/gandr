@@ -457,6 +457,12 @@ pub struct CoreSource<'arena>
     /// The relation each type the source writes as `A ≅ B`, `A ≃ B` or
     /// `A ⇝ B` abbreviates, ascending by the type.
     relations: &'arena [(ValueTypeId, Relation)],
+    /// The reduct the checker applies at each value it crosses at, ascending
+    /// by the value.
+    crossings: &'arena [(ValueId, ConstantIndex)],
+    /// The reducts whose written calls the checker would apply itself,
+    /// ascending.
+    implied: &'arena [ConstantIndex],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -485,6 +491,8 @@ impl<'arena> CoreSource<'arena>
             pairs: &[],
             seconds: &[],
             relations: &[],
+            crossings: &[],
+            implied: &[],
         }
     }
 
@@ -663,6 +671,36 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { relations, ..self }
+    }
+
+    /// This source, writing the reduct `crossings` records at each value the
+    /// checker crosses at, ascending by the value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn crossing(
+        self,
+        crossings: &'arena [(ValueId, ConstantIndex)],
+    ) -> Self
+    {
+        Self { crossings, ..self }
+    }
+
+    /// This source, leaving each written call of a reduct `implied` holds,
+    /// ascending, to the checker that would apply it where the call stands.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn implying(
+        self,
+        implied: &'arena [ConstantIndex],
+    ) -> Self
+    {
+        Self { implied, ..self }
     }
 
     /// The name at admission position `constant`.
@@ -2521,6 +2559,66 @@ impl Source for CoreSource<'_>
             return None;
         };
         written(self.seconds, id)
+    }
+
+    /// The reduct recorded at a crossed value, named by its admission
+    /// position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn reduct(
+        &self,
+        node: CoreNode,
+    ) -> Option<(Name<'_>, ConstantIndex)>
+    {
+        let CoreNode::Value(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let at = self
+            .crossings
+            .binary_search_by_key(&id, |&(crossed, _)| crossed)
+            .ok()?;
+        let &(_, reduct) = self.crossings.get(at)?;
+        Some((self.name(reduct)?, reduct))
+    }
+
+    /// The argument of a nested call or a run applying a forced reduct
+    /// constant `implied` holds to one argument.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn implied(
+        &self,
+        node: CoreNode,
+    ) -> Option<CoreNode>
+    {
+        let CoreNode::Value(id) = node
+        else {
+            return None;
+        };
+        let (&Value::Nested(call) | &Value::Run(call)) = self.arena.value(id)?
+        else {
+            return None;
+        };
+        let &Computation::Application(function, argument) = self.arena.computation(call)?
+        else {
+            return None;
+        };
+        let &Computation::Force(callee) = self.arena.computation(function)?
+        else {
+            return None;
+        };
+        let &Value::Constant(reduct) = self.arena.value(callee)?
+        else {
+            return None;
+        };
+        self.implied
+            .binary_search(&reduct)
+            .is_ok()
+            .then_some(CoreNode::Value(argument))
     }
 }
 

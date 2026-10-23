@@ -1605,4 +1605,62 @@ pub trait Source
         let _ = node;
         None
     }
+
+    /// The reduct the checker applies to the value `node`, where it carries a
+    /// model of a theory across to a theory that theory includes: its name
+    /// and its constant.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the reduct the source records at `node`, or none; the default
+    ///   records none, so no value is written as a reduct's call.
+    /// - provides: the call `T.S(m)` the explicit form writes around a value
+    ///   the checker crosses at.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a crossed argument spells as the reduct's call in the
+    ///   explicit form and bare in the sugared one.
+    /// - witness: `tests::goldens::a_reduct_the_checker_applies_is_written_in_the_explicit_form_2043`
+    #[inline]
+    fn reduct(
+        &self,
+        node: Self::Node,
+    ) -> Option<(Name<'_>, ConstantIndex)>
+    {
+        let _ = node;
+        None
+    }
+
+    /// The argument of the reduct's call `node` writes, when the checker
+    /// would apply that reduct to the argument where the call stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the call's one argument when `node` is a call of a reduct the
+    ///   source leaves to the checker, or none; the default leaves none.
+    /// - provides: the argument the sugared form writes in place of a written
+    ///   reduct's call.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::reduct`].
+    /// - witness: `tests::goldens::a_written_reduct_s_call_is_left_to_the_checker_in_the_sugared_form_2043`
+    #[inline]
+    fn implied(
+        &self,
+        node: Self::Node,
+    ) -> Option<Self::Node>
+    {
+        let _ = node;
+        None
+    }
 }

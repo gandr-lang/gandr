@@ -4741,6 +4741,9 @@ struct Walk<'walk, 'names>
     forms: Vec<Vec<Part>>,
     /// Whether the sugar the grammar parses is written where it fits.
     form: Form,
+    /// Whether the next visit is the value whose reduct's call was just
+    /// opened around it, which the walk then reads as the value itself.
+    crossed: bool,
     /// Which glyphs the walk writes where a construct has two spellings.
     spelling: grammar::Spelling,
     /// The node reads the walk may still make: one per visit, and one per
@@ -10133,6 +10136,7 @@ where
         seconds: Vec::new(),
         forms: Vec::new(),
         form: style.form,
+        crossed: false,
         spelling: style.spelling,
         remaining: VISIT_BUDGET,
         surface: match admits {
@@ -10177,6 +10181,28 @@ where
                     return Ok(Walked::OverBudget);
                 };
                 walk.remaining = left;
+                // The explicit form writes the reduct the checker applies to a
+                // value as its call around the value, and the sugared form a
+                // written reduct's call the checker would apply as its
+                // argument.
+                let crossed = core::mem::take(&mut walk.crossed);
+                let node = match walk.form {
+                    Form::Explicit => {
+                        if !crossed && let Some((reduct, constant)) = source.reduct(node) {
+                            walk.name(reduct, Some(constant))?;
+                            walk.crossed = true;
+                            tasks.push(Task::Join(Join::Apply(Arity(1_usize))));
+                            tasks.push(Task::Visit {
+                                node,
+                                admits,
+                                depth,
+                            });
+                            continue;
+                        }
+                        node
+                    },
+                    Form::Sugared => source.implied(node).unwrap_or(node),
+                };
                 walk.visit(
                     source,
                     node,
@@ -10528,6 +10554,7 @@ mod tests
             seconds: super::Vec::new(),
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
+            crossed: false,
             spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
             surface: super::Surface::Expression,
@@ -10620,6 +10647,7 @@ mod tests
             seconds: super::Vec::new(),
             forms: super::Vec::new(),
             form: crate::Form::Sugared,
+            crossed: false,
             spelling: super::grammar::Spelling::Unicode,
             remaining: super::VISIT_BUDGET,
             surface: super::Surface::Expression,
