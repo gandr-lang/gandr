@@ -679,7 +679,7 @@ fn a_field_of_a_record_no_type_states_projects_its_label_1106()
 
 /// A selection by position projects the pair its operand is: `.0` its first
 /// component and `.1` its second, as the labels of a type of two name them;
-/// a third position is refused.
+/// a third position names nothing.
 #[test]
 fn a_selection_by_position_projects_a_pair_401()
 {
@@ -711,9 +711,61 @@ fn a_selection_by_position_projects_a_pair_401()
     assert!(
         matches!(
             refused("def third(p : Integer * String) -> -F String { return p.2 }"),
-            LoweringRefusal::OutOfFragment { .. }
+            LoweringRefusal::UnresolvedName { .. }
         ),
         "a pair has no third position"
+    );
+}
+
+/// A selection by position off a name reads the type written for it: each
+/// place of a product chain is its component, a place of a record is the
+/// entry's label, and a place past the type's entries names nothing. With no
+/// written type, a place past the pair's two stays unadmitted (#1106).
+#[test]
+fn a_selection_by_position_reads_the_written_type_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def middle(p : Integer * String * Integer) -> -F String { return p.1 } def last(p : \
+         Integer * String * Integer) -> -F Integer { return p.2 } def by_place(r : #{n : \
+         Integer, s : String}) -> -F String { return r.1 } def by_label(r : #{n : Integer, s : \
+         String}) -> -F String { return r.s }",
+        &mut arena,
+    );
+
+    assert_eq!(
+        (
+            body(&arena, &module, "middle"),
+            body(&arena, &module, "last")
+        ),
+        (
+            ["thunk", "lambda", "return", "nested", "component1", "#0"]
+                .map(String::from)
+                .to_vec(),
+            ["thunk", "lambda", "return", "nested", "component2", "#0"]
+                .map(String::from)
+                .to_vec()
+        ),
+        "each place of the product is its own component"
+    );
+    assert_eq!(
+        body(&arena, &module, "by_place"),
+        body(&arena, &module, "by_label"),
+        "a place of a record is the entry's label"
+    );
+    assert!(
+        matches!(
+            refused("def past(p : Integer * String * Integer) -> -F Integer { return p.3 }"),
+            LoweringRefusal::UnresolvedName { .. }
+        ),
+        "a product of three has no fourth place"
+    );
+    assert!(
+        matches!(
+            refused("def pair = (1, 2) ; def third() -> -F Integer { pair.2 }"),
+            LoweringRefusal::OutOfFragment { .. }
+        ),
+        "with no written type a third place stays unadmitted"
     );
 }
 

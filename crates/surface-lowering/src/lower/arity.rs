@@ -2602,6 +2602,61 @@ impl<'source> Lowerer<'_, 'source>
             })
     }
 
+    /// The entries of the type written for the operand `target` of a
+    /// selection, when the operand is a name written with a telescope or a
+    /// product chain.
+    ///
+    /// # Specification
+    /// - requires: `target` is the operand of a selection at `site`.
+    /// - ensures: the written type's node and its entries in written order, as
+    ///   [`Self::stated_form`] reads a telescope, when `target` is a name whose
+    ///   binder or declaration was written with such a type; nothing for any
+    ///   other operand, for a name written with no type, or with a type of
+    ///   another former.
+    /// - fails: the name's own resolution refusals; the written type's own
+    ///   malformation; [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dependent record selected by label, and a record, a
+    ///   product chain and a value with no written type selected by place.
+    /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present((node, _)) if self.tree.node(node).is_none())))]
+    fn written_entries(
+        &mut self,
+        site: Site,
+        target: Placed,
+    ) -> Result<
+        Maybe<(NodeIndex, Vec<Entry<'source>>), stated_labels::Absent>,
+        LoweringRefusal<'source>,
+    >
+    {
+        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
+            return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
+        }
+        let frame = site.reading.frame();
+        let named = Site {
+            at: target,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
+            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        };
+        let Maybe::Present(declared) = declared
+        else {
+            return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
+        };
+
+        self.stated_form(site, declared, Former::TelescopeType, Thunked(false))
+    }
+
     /// Classify a selection `p.l` as a projection when `p` is a name whose
     /// written type is a type over labels.
     ///
@@ -2637,26 +2692,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
-            return Ok(Planned(false));
-        }
-        let frame = site.reading.frame();
-        let named = Site {
-            at: target,
-            name: FormName::IDENTIFIER,
-            reading: Reading::Value(frame),
-        };
-        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
-        };
-        let Maybe::Present(declared) = declared
-        else {
-            return Ok(Planned(false));
-        };
-        let Maybe::Present((form, stated)) =
-            self.stated_form(site, declared, Former::TelescopeType, Thunked(false))?
+        let Maybe::Present((form, stated)) = self.written_entries(site, target)?
         else {
             return Ok(Planned(false));
         };
@@ -2791,27 +2827,37 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
-    /// Classify a selection by position, `e.0` or `e.1`, as a projection of
-    /// the pair `e` is.
+    /// Classify a selection by position, `e.0`, `e.1`, `e.2` and on, as a
+    /// projection of the entry at that place.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: planned when the selected member is a number: `0` and `1`
-    ///   project the first and the second component of the pair the operand is,
-    ///   the operand read as a value under the form's frame; nothing is planned
-    ///   for a selection by name.
-    /// - fails: the unadmitted refusal for any other position, since a pair has
-    ///   two; the wrong-sort refusal where no computation is read.
+    /// - ensures: planned when the selected member is a number. When the
+    ///   operand is a name written with a telescope or a product chain, as
+    ///   [`Self::written_entries`] reads it, the entry at that place: by its
+    ///   label when it has one, so a record is projected at the label and a
+    ///   dependent record along its nesting, and otherwise at that component of
+    ///   the product. With no such type, `0` and `1` project the first and the
+    ///   second component of the pair the operand is. The operand is read as a
+    ///   value under the form's frame; nothing is planned for a selection by
+    ///   name.
+    /// - fails: the unresolved-name refusal for a place past the written type's
+    ///   entries; the unadmitted refusal for a place past `1` with no written
+    ///   type, and for an entry labelled by its index; the wrong-sort refusal
+    ///   where no computation is read; the name's own resolution refusals.
     /// - panics: none.
     ///
     /// # Errors
     /// The selection's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both positions of a dependent pair, the second's type
-    ///   reading the first, and a third position refused.
+    /// - hypothesis: L3 — both places of a dependent pair, the second's type
+    ///   reading the first, and a third place refused; the places of a product
+    ///   chain of three and the one past it, a place of a record, and a third
+    ///   place off a value with no written type.
     /// - witness: `lower::arity::tests::a_selection_by_position_projects_a_pair_401`
-    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Select(_, Observed { count: 2, .. }, None))))]
+    /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Select(..))))]
     pub(super) fn positional(
         &mut self,
         site: Site,
@@ -2828,23 +2874,39 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let index = match self.text_at(position).as_ref() {
-            "0" => 0_usize,
-            "1" => 1_usize,
-            _ => return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection))),
+        let unadmitted = || site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection));
+        let Ok(index) = self.text_at(position).as_ref().parse::<usize>()
+        else {
+            return Err(unadmitted());
+        };
+        let (count, labelled) = match self.written_entries(site, target)? {
+            Maybe::Present((form, stated)) => {
+                let Some(entry) = stated.get(index)
+                else {
+                    return Err(LoweringRefusal::UnresolvedName {
+                        span: position.span,
+                        name: self.name_at(position),
+                    });
+                };
+                let labelled = match entry.key {
+                    Key::Label(label, _) => {
+                        Some((form, FieldLabel::from(String::from(label.as_ref()))))
+                    },
+                    Key::Positional => None,
+                    Key::Index(..) => return Err(unadmitted()),
+                };
+                (stated.len(), labelled)
+            },
+            // With no written type the operand is read as the pair a
+            // selection by position projects, the checker refusing any other.
+            Maybe::Absent(_) if index < 2_usize => (2_usize, None),
+            Maybe::Absent(_) => return Err(unadmitted()),
         };
         let frame = self.require(site, Produced::Computation)?;
         self.read(target.node, Reading::Value(frame));
         self.plan(
             site,
-            Plan::Select(
-                target.node,
-                Observed {
-                    index,
-                    count: 2_usize,
-                },
-                None,
-            ),
+            Plan::Select(target.node, Observed { index, count }, labelled),
         );
 
         Ok(Planned(true))
@@ -3651,28 +3713,32 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(projected))
     }
 
-    /// Mint a selection: a record projected at the label it selects, or the
-    /// dependent record projected along the nesting to the entry it selects.
+    /// Mint a selection: a record projected at the label it selects, the
+    /// dependent record projected along the nesting to the entry it selects,
+    /// or a product projected at the component it selects.
     ///
     /// # Specification
     /// - requires: the subject is already minted or absent; `labelled`, when
     ///   present, is the type over labels the subject is stated with and the
     ///   label selected.
-    /// - ensures: when the stated type mints as a record, as
-    ///   [`Self::binds_any`] reads it, the record projection at the label;
-    ///   otherwise the subject projected at component one once per entry before
-    ///   the selected one, each projection but the last read as the value it
-    ///   returns, then at component zero unless the entry is the last;
-    ///   component zero of a type of one entry; every node with the written
-    ///   origin; nothing when the subject did not lower.
+    /// - ensures: with no label, the subject projected at the selected
+    ///   component, since a product mints as one tuple of all its components;
+    ///   when the stated type mints as a record, as [`Self::binds_any`] reads
+    ///   it, the record projection at the label; otherwise the subject
+    ///   projected at component one once per entry before the selected one,
+    ///   each projection but the last read as the value it returns, then at
+    ///   component zero unless the entry is the last; component zero of a type
+    ///   of one entry; every node with the written origin; nothing when the
+    ///   subject did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::selection`], and a selection off a record
-    ///   no field depends on.
+    /// - hypothesis: L3 — as [`Self::selection`], a selection off a record no
+    ///   field depends on, and the places of a product of three.
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::arity::tests::a_selection_off_a_record_projects_its_label_855`
+    /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_select(
         &self,
@@ -3687,14 +3753,23 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let record = labelled.and_then(|&(stated, ref label)| match self.plans.get(stated) {
+        let Some(&(stated, ref label)) = labelled
+        else {
+            let id = sink.arena.computation_tuple_projection(
+                held,
+                gandr_kernel_term::Component::from(selected.index),
+            );
+            sink.origins.record_computation(id, origin);
+            return Maybe::Present(Lowered::Computation(id));
+        };
+        let record = match self.plans.get(stated) {
             Some(&Plan::RecordType(_, binders, last, _))
                 if !bool::from(self.binds_any(binders, last)) =>
             {
                 Some(label)
             },
             _ => None,
-        });
+        };
         Self::project(held, selected, record, sink, origin).map(Lowered::Computation)
     }
 
