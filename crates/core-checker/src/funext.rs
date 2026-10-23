@@ -623,7 +623,8 @@ fn first_order(
             ValueTypeView::Unit
             | ValueTypeView::Integer
             | ValueTypeView::String
-            | ValueTypeView::Character => {},
+            | ValueTypeView::Character
+            | ValueTypeView::Float64 => {},
             ValueTypeView::Sum(&[first, second]) | ValueTypeView::Product(&[first, second]) => {
                 pending.extend([Walk::Visit(first), Walk::Visit(second)]);
             },
@@ -746,7 +747,10 @@ fn coverage(
                             coordinates: Vec::new(),
                         }]));
                     },
-                    ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Character => {
+                    ValueTypeView::Integer
+                    | ValueTypeView::String
+                    | ValueTypeView::Character
+                    | ValueTypeView::Float64 => {
                         let leaf = context
                             .arena_mut()
                             .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));

@@ -392,6 +392,8 @@ pub enum TypeAtom
     Text,
     /// `Char`, the character base atom.
     Character,
+    /// `f64`, the IEEE 754 binary64 base atom.
+    Float64,
     /// `Void`, the sum of no summands, eliminated by a case of no arms.
     Void,
     /// `Buf`, the opaque buffer a receive places live and a send returns.
@@ -437,13 +439,14 @@ pub enum TypeFormer
 ///   near spellings separating the absent branch.
 /// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 8_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 9_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
     ("Integer", TypeAtom::Integer),
     ("String", TypeAtom::Text),
     ("Char", TypeAtom::Character),
+    ("f64", TypeAtom::Float64),
     ("Buf", TypeAtom::Buffer),
     ("Web", TypeAtom::Web),
 ];

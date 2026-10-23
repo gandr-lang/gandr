@@ -3349,6 +3349,7 @@ impl Positions
                     arena.value_type_sum(&[unit, unit])
                 },
                 PrimitiveType::Text => arena.value_type_base(BaseType::String),
+                PrimitiveType::Float64 => arena.value_type_base(BaseType::Float64),
             };
             let result = classifier(arena, primitive.result());
             let mut computation = arena.comp_type_returner(result);
@@ -5472,7 +5473,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             Value::Literal(ref literal) => match literal.base_type() {
-                BaseType::Integer | BaseType::String | BaseType::Character => {
+                BaseType::Integer | BaseType::String | BaseType::Character | BaseType::Float64 => {
                     return Ok(self.erased_value(at, target.value_literal(literal.clone())));
                 },
                 BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
@@ -6476,6 +6477,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             },
             ValueTypeView::Character => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Character)));
+            },
+            ValueTypeView::Float64 => {
+                return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Float64)));
             },
             ValueTypeView::Unit => {
                 return Ok(self.erased_value_type(at, target.value_type_unit()));

@@ -73,8 +73,8 @@
 //! block, a parameter named as a type variable, an annotation, a grade on a
 //! returner, a capitalised name nothing answers, a
 //! selection no module governs, a level wider than a level constant, a type
-//! abstraction, a typed lambda parameter, a number with a fraction or an
-//! exponent, and every kind outside the dispatch table. `WrongSort`: the form
+//! abstraction, a typed lambda parameter, a number at a width other than
+//! `f64`, and every kind outside the dispatch table. `WrongSort`: the form
 //! produces another sort than its position demands. `Arity`: a lambda with
 //! other than one parameter, a block with no last computation, a recursive call
 //! with other than one argument per parameter. `NotInTail`: a `return`,
@@ -282,8 +282,9 @@ pub enum FragmentBoundary
     /// answered and its path's type is not read off a word or an operation
     /// over one, `cong` so standing at a map that is no function definition
     /// with a closed written result that lowers, `then` where no written flow
-    /// type is either, or a transport or ride whose motive is no static
-    /// abstraction.
+    /// type is either, a transport or ride whose motive is no static
+    /// abstraction, or a number with a fraction or an exponent written with
+    /// neither the `f64` suffix nor an annotation.
     Unannotated,
     /// The form is a recursive call passing, where one of the definition's
     /// unchanging parameters stands, something other than that parameter: the

@@ -2,8 +2,8 @@
 //! form its smart constructor maintains.
 //!
 //! The base-type atoms are rigid and closed: the stock is exactly the four the
-//! literal forms name — an integer atom, a string atom, a numeric atom and a
-//! character atom.
+//! literal forms name — an integer atom, a string atom, a numeric atom, a
+//! character atom and a 64-bit binary floating-point atom.
 //!
 //! Literal payloads are canonical and structurally comparable — leading and
 //! trailing zeros normalized, the zero sign pinned — so syntactic equality of
@@ -28,6 +28,7 @@
 //! strings of length one, the atom folds into that type and the tag retires.
 
 use alloc::string::String;
+use core::str::FromStr;
 
 use anodized::spec;
 
@@ -43,6 +44,9 @@ pub enum BaseType
     Numeric,
     /// The character atom — the type of a [`CharacterLiteral`].
     Character,
+    /// The 64-bit binary floating-point atom — the type of a
+    /// [`Float64Literal`].
+    Float64,
 }
 
 /// The sign of a numeric literal.
@@ -756,6 +760,163 @@ impl NumericLiteral
     }
 }
 
+/// A canonical 64-bit binary floating-point literal (IEEE 754 binary64),
+/// inhabiting [`BaseType::Float64`], held as its bit pattern.
+///
+/// Every NaN collapses to the one quiet NaN [`Self::NAN`], so syntactic
+/// equality of two literals is equality of their bit patterns and every NaN
+/// is one value. The two zeros stay distinct: `-0.0` and `0.0` are different
+/// bit patterns, and IEEE comparison, not literal equality, equates them.
+///
+/// # Specification
+/// - requires: the payload is obtained through its owning smart constructors.
+/// - ensures: stores a bit pattern that is either a non-NaN binary64 value or
+///   [`Self::NAN`].
+/// - panics: none.
+/// - executable: none — this data carrier has no invocation boundary; its smart
+///   constructors carry executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — decimal spellings parse to the correctly rounded value,
+///   every NaN payload collapses to the one quiet NaN, the two zeros stay apart
+///   and malformed spellings are refused.
+/// - witness: `base::tests::a_float64_literal_is_its_rounded_bit_pattern`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Float64Literal(u64);
+
+impl Float64Literal
+{
+    /// The one NaN a literal holds: the quiet NaN with an empty payload.
+    pub const NAN: Self = Self(0x7ff8_0000_0000_0000_u64);
+}
+
+impl From<f64> for Float64Literal
+{
+    /// The literal holding `value`, every NaN collapsed to
+    /// [`Float64Literal::NAN`].
+    ///
+    /// # Specification
+    /// - ensures: a NaN `value` is [`Float64Literal::NAN`]; any other is its
+    ///   own bit pattern.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a NaN with a payload and a negative NaN collapse to
+    ///   one literal; the two zeros and the infinities keep their bits.
+    /// - witness: `base::tests::a_float64_literal_is_its_rounded_bit_pattern`
+    #[spec(ensures: |ret| if value.is_nan() { ret == Self::NAN } else { ret.0 == value.to_bits() })]
+    #[inline]
+    fn from(value: f64) -> Self
+    {
+        if value.is_nan() {
+            Self::NAN
+        }
+        else {
+            Self(value.to_bits())
+        }
+    }
+}
+
+impl From<Float64Literal> for f64
+{
+    /// The value the literal holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(literal: Float64Literal) -> Self
+    {
+        Self::from_bits(literal.0)
+    }
+}
+
+impl From<Float64Literal> for u64
+{
+    /// The literal's bit pattern, which its encodings write.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(literal: Float64Literal) -> Self
+    {
+        literal.0
+    }
+}
+
+/// A spelling that is no unsigned decimal number, refused by
+/// [`Float64Literal`]'s [`FromStr`] reading.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MalformedDecimal;
+
+impl FromStr for Float64Literal
+{
+    type Err = MalformedDecimal;
+
+    /// The literal a decimal spelling denotes, rounded to the nearest binary64
+    /// value, ties to even.
+    ///
+    /// # Specification
+    /// - ensures: `Ok` exactly when `text` is ASCII digits, then optionally a
+    ///   `.` and digits, then optionally an exponent `e` or `E`, an optional
+    ///   sign and digits; its value is the correctly rounded binary64 value of
+    ///   that decimal, infinite past the largest finite value.
+    /// - fails: [`MalformedDecimal`] for any other spelling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`MalformedDecimal`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `0.2`, `1e-7` and `2.5E3` read as Rust's correctly
+    ///   rounded parse reads them; a sign, a bare dot, a missing exponent digit
+    ///   and a word are refused.
+    /// - witness: `base::tests::a_float64_literal_is_its_rounded_bit_pattern`
+    #[spec(ensures: |ret| ret.is_err() || text.bytes().next().is_some_and(|byte| byte.is_ascii_digit()))]
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, MalformedDecimal>
+    {
+        let bytes = text.as_bytes();
+        let digits = |from: usize| {
+            bytes.get(from ..).map_or(0, |rest| {
+                rest.iter().take_while(|byte| byte.is_ascii_digit()).count()
+            })
+        };
+        let past = |at: usize, count: usize| at.checked_add(count).ok_or(MalformedDecimal);
+        let whole = digits(0);
+        if whole == 0 {
+            return Err(MalformedDecimal);
+        }
+        let mut at = whole;
+        if bytes.get(at) == Some(&b'.') {
+            let fraction = digits(past(at, 1)?);
+            if fraction == 0 {
+                return Err(MalformedDecimal);
+            }
+            at = past(past(at, 1)?, fraction)?;
+        }
+        if matches!(bytes.get(at), Some(&(b'e' | b'E'))) {
+            at = past(at, 1)?;
+            if matches!(bytes.get(at), Some(&(b'+' | b'-'))) {
+                at = past(at, 1)?;
+            }
+            let exponent = digits(at);
+            if exponent == 0 {
+                return Err(MalformedDecimal);
+            }
+            at = past(at, exponent)?;
+        }
+        if at != bytes.len() {
+            return Err(MalformedDecimal);
+        }
+        text.parse::<f64>()
+            .map(Self::from)
+            .map_err(|_unparsed| MalformedDecimal)
+    }
+}
 /// A literal value: one of the four rigid base-type atoms' canonical payloads.
 ///
 /// # Specification
@@ -787,6 +948,8 @@ pub enum Literal
     Numeric(NumericLiteral),
     /// A character literal, inhabiting [`BaseType::Character`].
     Character(CharacterLiteral),
+    /// A 64-bit floating-point literal, inhabiting [`BaseType::Float64`].
+    Float64(Float64Literal),
 }
 
 impl Literal
@@ -797,8 +960,8 @@ impl Literal
     /// - requires: nothing.
     /// - ensures: maps an integer literal to [`BaseType::Integer`], a text
     ///   literal to [`BaseType::String`], a numeric literal to
-    ///   [`BaseType::Numeric`], and a character literal to
-    ///   [`BaseType::Character`].
+    ///   [`BaseType::Numeric`], a character literal to [`BaseType::Character`],
+    ///   and a floating-point literal to [`BaseType::Float64`].
     /// - provides: the total variant-to-atom map the checker reads, so a
     ///   literal's base type is decided by its payload rather than by an
     ///   annotation.
@@ -816,7 +979,7 @@ impl Literal
     /// - witness: `base::tests::decimal_normalization_matches_a_numeric_reference`
     /// - witness: `base::tests::literal_constructors_preserve_payloads_and_zero_signs`
     #[spec(
-        ensures: |ret| matches!((self, ret), (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric) | (&Self::Character(_), BaseType::Character)),
+        ensures: |ret| matches!((self, ret), (&Self::Integer(_), BaseType::Integer) | (&Self::Text(_), BaseType::String) | (&Self::Numeric(_), BaseType::Numeric) | (&Self::Character(_), BaseType::Character) | (&Self::Float64(_), BaseType::Float64)),
     )]
     #[inline]
     #[must_use]
@@ -827,6 +990,7 @@ impl Literal
             Self::Text(_) => BaseType::String,
             Self::Numeric(_) => BaseType::Numeric,
             Self::Character(_) => BaseType::Character,
+            Self::Float64(_) => BaseType::Float64,
         }
     }
 }
@@ -838,10 +1002,12 @@ mod tests
 
     use super::BaseType;
     use super::CharacterLiteral;
+    use super::Float64Literal;
     use super::FractionDigits;
     use super::IntegerLiteral;
     use super::Literal;
     use super::Magnitude;
+    use super::MalformedDecimal;
     use super::NotOneCharacter;
     use super::NumericLiteral;
     use super::Sign;
@@ -963,6 +1129,11 @@ mod tests
             character.base_type(),
             "the character atom"
         );
+        assert_eq!(
+            BaseType::Float64,
+            Literal::Float64(Float64Literal::from(0.5_f64)).base_type(),
+            "the floating-point atom"
+        );
     }
 
     #[test]
@@ -994,6 +1165,51 @@ mod tests
                 "{several:?} holds more than one scalar"
             );
         }
+    }
+
+    #[test]
+    fn a_float64_literal_is_its_rounded_bit_pattern()
+    {
+        for (text, value) in [
+            ("0.2", 0.2_f64),
+            ("1e-7", 1.0e-7_f64),
+            ("2.5E3", 2500.0_f64),
+            ("7", 7.0_f64),
+            ("1e400", f64::INFINITY),
+        ] {
+            assert_eq!(
+                text.parse::<Float64Literal>().map(u64::from),
+                Ok(value.to_bits()),
+                "{text} is the correctly rounded binary64 value"
+            );
+        }
+        for text in [
+            "", "-1", "+1", ".5", "5.", "1e", "1e+", "inf", "NaN", "0x1", "1.5f64",
+        ] {
+            assert_eq!(
+                text.parse::<Float64Literal>(),
+                Err(MalformedDecimal),
+                "{text:?} is no decimal spelling"
+            );
+        }
+        let payload = f64::from_bits(0x7ff8_0000_0000_0001_u64);
+        assert_eq!(Float64Literal::from(payload), Float64Literal::NAN);
+        assert_eq!(Float64Literal::from(-f64::NAN), Float64Literal::NAN);
+        assert_eq!(
+            Float64Literal::from(f64::from_bits(0xfff0_0000_0000_0001_u64)),
+            Float64Literal::NAN,
+            "a signalling NaN pattern collapses"
+        );
+        assert_ne!(
+            Float64Literal::from(-0.0_f64),
+            Float64Literal::from(0.0_f64),
+            "the two zeros are distinct literals"
+        );
+        assert_eq!(
+            u64::from(Float64Literal::from(f64::NEG_INFINITY)),
+            f64::NEG_INFINITY.to_bits(),
+            "an infinity keeps its bits"
+        );
     }
 
     #[test]

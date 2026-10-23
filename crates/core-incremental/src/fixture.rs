@@ -27,6 +27,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::FractionDigits;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
@@ -453,13 +454,14 @@ pub fn every_former(noise: Noise) -> Program
         ));
     };
 
-    // 0: (Integer × (String + Numeric)) over a pair and an injection: out of
-    // the fragment, its content complete.
+    // 0: (Integer × (String + Numeric) × Float64) over a tuple and an
+    // injection: out of the fragment, its content complete.
     let integer_type = arena.value_type_base(BaseType::Integer);
     let string_type = arena.value_type_base(BaseType::String);
     let numeric_type = arena.value_type_base(BaseType::Numeric);
+    let float_type = arena.value_type_base(BaseType::Float64);
     let sum = arena.value_type_sum(&[string_type, numeric_type]);
-    let product = arena.value_type_product(&[integer_type, sum]);
+    let product = arena.value_type_product(&[integer_type, sum, float_type]);
     let negative = arena.value_literal(Literal::Integer(IntegerLiteral::new(
         Sign::Negative,
         Magnitude::from_decimal_text(String::from("7")).expect("decimal digits"),
@@ -470,7 +472,8 @@ pub fn every_former(noise: Noise) -> Program
         FractionDigits::from_decimal_text(String::from("25")).expect("decimal digits"),
     )));
     let injected = arena.value_injection(Side::Right.into(), numeric);
-    let pair = arena.value_tuple(&[negative, injected]);
+    let float = arena.value_literal(Literal::Float64(Float64Literal::from(-0.1_f64)));
+    let pair = arena.value_tuple(&[negative, injected, float]);
     push("data", Maybe::Present(product), Maybe::Present(pair));
 
     // 1: U (Integer → F Integer) checked by λ. return v0.

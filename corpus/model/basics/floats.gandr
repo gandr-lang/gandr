@@ -1,0 +1,65 @@
+// Numbers with a fraction, typed as IEEE 754 binary64 floats by the `f64`
+// suffix or an annotation, and the `float64` operations over them: the
+// exponential, arithmetic, comparison and rounding to an integer.
+
+/// A suffix types the number.
+@[ checks ]
+def half = 0.5f64;
+
+/// So does an annotation: the low bound of a rubric's band.
+@[ checks ]
+def low = (0.2 : f64);
+
+/// An annotation types a number written without a fraction.
+@[ checks ]
+def trio = (3 : f64);
+
+/// The exponential of a half, the same double on every host.
+@[ runs("1.6487212707001282f64") ]
+def grown() -> -F f64 {
+  run e <- float64.exp(0.5f64);
+  e
+}
+
+/// A sum rounded to an integer: a tie goes to the even neighbour.
+@[ runs("2") ]
+def rounded() -> -F Integer {
+  run sum <- float64.add(1.25f64, (1.25 : f64));
+  run whole <- float64.round(sum);
+  whole
+}
+
+/// A third is less than a half.
+@[ runs("+{.0 = unit}") ]
+def lesser() -> -F Bool {
+  run third <- float64.div(1f64, 3f64);
+  run less <- float64.lt(third, 0.5f64);
+  less
+}
+
+/// An integer read as a float, scaled by a power of ten.
+@[ runs("12.5f64") ]
+def scaled() -> -F f64 {
+  run whole <- float64.from_integer(125);
+  run tenth <- float64.mul(whole, 1e-1f64);
+  tenth
+}
+
+/// A negative float, written as the printers write one: the log-probability
+/// of a half, whose exponential is the half again.
+@[ runs("0.5f64") ]
+def restored() -> -F f64 {
+  run logprob <- -0.6931471805599453f64;
+  run half <- float64.exp(logprob);
+  half
+}
+
+/// The negation runs to the literal the printers write.
+@[ runs("-0.6931471805599453f64") ]
+def negative() -> -F f64 {
+  -0.6931471805599453f64
+}
+
+/// The run target is the exponential above.
+@[ runs("1.6487212707001282f64") ]
+grown()

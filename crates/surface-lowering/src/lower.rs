@@ -438,19 +438,34 @@
 //! # Literals mean their decoded value
 //!
 //! A number whose text is decimal digits lowers to its canonical non-negative
-//! magnitude, so `007` and `7` are one literal. A string lowers to the text
-//! between its quotes with its escapes decoded: `\n`, `\t`, `\r`, `\0`, `\\`,
-//! `\"` and `\'` to the character each names, a backslash before a line break
-//! elided together with the break, any other escaped character to itself, and a
-//! trailing lone backslash dropped. A literal whose text is not its form's
-//! lexeme is `MalformedLiteral`, which only a hand-built tree carries.
+//! magnitude, so `007` and `7` are one literal. A number written with the `f64`
+//! suffix, or annotated `(n : f64)` where it is written, lowers to the IEEE 754
+//! binary64 float nearest its decimal text; another width's suffix is not
+//! admitted yet (#1109). A string lowers to the text between its quotes with
+//! its escapes decoded: `\n`, `\t`, `\r`, `\0`, `\\`, `\"` and `\'` to the
+//! character each names, a backslash before a line break elided together with
+//! the break, any other escaped character to itself, and a trailing lone
+//! backslash dropped. A literal whose text is not its form's lexeme is
+//! `MalformedLiteral`, which only a hand-built tree carries.
 //!
 //! Escape decoding preserves unescaped Unicode and drops a backslash-newline
 //! continuation as one unit, including CRLF. Unknown escapes retain their
 //! escaped character; an unfinished escape contributes nothing. A well-formed
-//! decimal fraction or exponent is recognized as an unsupported number,
-//! distinct from malformed numeric text. Boundary witnesses exercise these
-//! lexical decisions independently of the parser’s accepted corpus.
+//! decimal fraction or exponent with neither suffix nor annotation states no
+//! type, refused as unannotated, distinct from malformed numeric text.
+//! Boundary witnesses exercise these lexical decisions independently of the
+//! parser’s accepted corpus.
+//!
+//! **Choice.** A number's type is the one its suffix or annotation writes, and
+//! a fraction written bare is refused, naming the ascription it needs; no
+//! default type is chosen for it. The alternatives were an exact base type for
+//! a fraction (a dyadic or a rational, exact arithmetic and no rounding), and a
+//! decimal fixed point, a scaled integer with its scale in its type; the first
+//! waits on exact reals, the second is a consumer's encoding rather than a
+//! language type, and the host's double is what a program reading
+//! probabilities through `exp` needs now. **Reversal:** when exact reals land
+//! as another typed number under the same spelling, the default for a bare
+//! fraction is ruled then.
 //!
 //! The alternative was to lower a string to its bytes verbatim. It was dropped
 //! because the core literal is the string the source means: two spellings of
@@ -526,6 +541,7 @@ use gandr_kernel_term::CharacterLiteral;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
+use gandr_kernel_term::Float64Literal;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
@@ -2639,8 +2655,8 @@ struct ValueForm(bool);
 /// # Specification
 /// - requires: coordinates, when present, are interpreted in their originating
 ///   run.
-/// - ensures: The flag distinguishes a well-formed but unsupported fractional
-///   spelling from a malformed integer spelling.
+/// - ensures: The flag distinguishes a well-formed fractional spelling, which
+///   states no type, from a malformed integer spelling.
 /// - provides: A lexical refusal decision distinct from numeric evaluation.
 /// - fails: none as a data value; interpretation belongs to its consumers.
 /// - panics: none as a data value.
@@ -2651,7 +2667,7 @@ struct ValueForm(bool);
 /// - hypothesis: L3 — decimal and exponent markers, missing fields, signs and
 ///   non-ASCII digits separate unsupported numbers from malformed lexemes.
 /// - witness: `lower::tests::fractional_spellings_distinguish_unsupported_numbers_from_malformed_ones`
-/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+/// - witness: `lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Fractional(bool);
@@ -7016,7 +7032,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a name standing as a value resolves against the binder frame
     ///   first and the declarations strictly earlier than its own second, and
     ///   is planned as the variable or constant it resolved to; a binder named
-    ///   inside a type is planned as [`Self::resolved_term`] plans it.
+    ///   inside a type is planned as [`Self::resolved_term`] plans it; a name
+    ///   nothing binds that spells a type atom, as `f64` does, stands as that
+    ///   type, quoted, as a capitalised atom such as `Integer` does.
     /// - provides: the term-name half of resolution.
     /// - fails: yields the wrong-sort refusal for a name in computation
     ///   position, [`LoweringRefusal::RegionAsValue`] for a region binder of
@@ -7036,12 +7054,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_undefined_term_name_is_refused`
     /// - witness: `tests::modules::a_backward_member_reference_resolves`
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
+    /// - witness: `lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil))
+                    Some(&(Plan::Variable(..) | Plan::Constant(_) | Plan::Primitive(_) | Plan::StaticApplication(..) | Plan::ListNil | Plan::Atom(_)))
                 )
         },
     )]
@@ -7062,6 +7081,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(_) => {
                 if name.as_ref() == identity::NIL {
                     self.plan(site, Plan::ListNil);
+                    return Ok(());
+                }
+                if let Maybe::Present(atom) = type_atom(name) {
+                    let _frame = self.require(site, Produced::ValueType)?;
+                    self.plan(site, Plan::Atom(atom));
                     return Ok(());
                 }
                 let path = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
@@ -7445,32 +7469,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Classify a number literal.
     ///
     /// # Specification
-    /// - requires: `site` is a number.
-    /// - ensures: a number standing as a value whose lexeme is decimal digits
-    ///   is planned as its canonical integer.
-    /// - provides: the integer half of the literal reading.
-    /// - fails: yields the wrong-sort refusal outside value position; a
-    ///   fraction or an exponent is a number the fragment does not admit; any
-    ///   other text is a malformed literal.
+    /// - requires: `site` is a number, bare or written with its type suffix.
+    /// - ensures: a number standing as a value is planned as a binary64 float
+    ///   when it is written with the `f64` suffix or annotated `(n : f64)`,
+    ///   rounded to nearest from its decimal text; otherwise a lexeme of
+    ///   decimal digits is planned as its canonical integer.
+    /// - provides: the literal reading of numbers.
+    /// - fails: yields the wrong-sort refusal outside value position; another
+    ///   width suffix is a typed number the fragment does not admit; a fraction
+    ///   or an exponent with neither suffix nor annotation states no type, the
+    ///   unannotated refusal; any other text is a malformed literal.
     /// - panics: none.
     ///
     /// # Errors
     /// The number's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — canonical integer magnitudes, fractional syntax and
-    ///   malformed lexemes separate successful literal plans from their
-    ///   refusals.
+    /// - hypothesis: L3 — canonical integer magnitudes, suffixed and annotated
+    ///   floats, another width's suffix, a bare fraction and malformed lexemes
+    ///   separate each plan from each refusal.
     /// - witness: `lower::tests::an_integer_literal_is_its_canonical_magnitude`
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
+    /// - witness: `lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Literal(Literal::Integer(_)))
+                    Some(&Plan::Literal(Literal::Integer(_) | Literal::Float64(_)))
                 )
         },
     )]
@@ -7481,12 +7509,41 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let _frame = self.require(site, Produced::Value)?;
         let text = self.text_at(site.at);
+        let spelled: &str = text.as_ref();
+        if ["u32", "u64", "i32", "i64", "f32"]
+            .iter()
+            .any(|width| spelled.ends_with(width))
+        {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::TypedNumber)));
+        }
+        let annotated = self
+            .classifiers
+            .get(&site.at.node)
+            .and_then(|&written| self.tree.fragment(written))
+            .is_some_and(|written| {
+                matches!(
+                    type_atom(SurfaceName::from(written)),
+                    Maybe::Present(TypeAtom::Float64)
+                )
+            });
+        let suffixed = spelled.strip_suffix("f64");
+        if suffixed.is_some() || annotated {
+            let Ok(float) = suffixed.unwrap_or(spelled).parse::<Float64Literal>()
+            else {
+                return Err(LoweringRefusal::MalformedLiteral {
+                    span: site.at.span,
+                    form: site.name,
+                });
+            };
+            self.plan(site, Plan::Literal(Literal::Float64(float)));
+            return Ok(());
+        }
         if let Maybe::Present(literal) = parse_literal(Former::Number, text) {
             self.plan(site, Plan::Literal(literal));
             return Ok(());
         }
         if fractional(text).0 {
-            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Fractional)));
+            return Err(site.out(FragmentBoundary::Unannotated));
         }
 
         Err(LoweringRefusal::MalformedLiteral {
@@ -9732,9 +9789,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - ensures: the table row selected by the operator receives value
-    ///   operands in source order; the infix `then` is the composite of two
-    ///   paths, or of two flows where a flow is answered, as [`Self::derive`]
-    ///   plans it; the cons `g ∷ p` is a word, as [`Self::cons`] plans it.
+    ///   operands in source order; a prefix `-` before a number written with
+    ///   the `f64` suffix is `float64.neg`, so the printers' spelling of a
+    ///   negative float, `-0.5f64`, lowers back to that float; the infix `then`
+    ///   is the composite of two paths, or of two flows where a flow is
+    ///   answered, as [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
+    ///   [`Self::cons`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
     ///   [`Self::cons`] does.
@@ -9752,6 +9812,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
+    /// - witness: `lower::tests::a_negated_float_literal_is_float64_negation_1830`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
     fn operator(
         &mut self,
@@ -9788,10 +9849,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             return self.derive(site, frame, identity::Derivation::Then { first, second });
         }
+        // A negated `f64`-suffixed number is the float's negation: the integer
+        // row would refuse its operand, and the printers write a negative float
+        // so.
+        let negated = label.as_ref() == "-"
+            && match arguments {
+                Arguments::Unary(operand) => self.tree.fragment(operand).is_some_and(|written| {
+                    let written: &str = written.as_ref();
+                    written
+                        .strip_suffix("f64")
+                        .is_some_and(|digits| digits.parse::<Float64Literal>().is_ok())
+                }),
+                Arguments::Binary(_) => false,
+            };
         let Some(&primitive) =
             PRELUDE
                 .iter()
                 .find(|primitive| match (primitive.operator(), arguments) {
+                    _ if negated => primitive.name().as_ref() == "float64.neg",
                     (Operator::Prefix(spelling), Arguments::Unary(_))
                     | (Operator::Infix(spelling), Arguments::Binary(_)) => {
                         spelling == label.as_ref()
@@ -18352,8 +18427,8 @@ impl Sink<'_>
     /// # Specification
     /// - requires: newly minted type ids follow those already recorded in the
     ///   origin table.
-    /// - ensures: the selected unit, integer, text or character value type is
-    ///   minted and receives the supplied origin.
+    /// - ensures: the selected unit, integer, text, character or floating-point
+    ///   value type is minted and receives the supplied origin.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -18370,6 +18445,7 @@ impl Sink<'_>
                 TypeAtom::Integer => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Integer)),
                 TypeAtom::Text => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::String)),
                 TypeAtom::Character => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Character)),
+                TypeAtom::Float64 => self.arena.value_type(id) == Some(&ValueType::Base(BaseType::Float64)),
                 TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
                 TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
                 TypeAtom::Web => self.arena.value_type(id) == Some(&ValueType::Web),
@@ -18393,6 +18469,7 @@ impl Sink<'_>
             | TypeAtom::Integer
             | TypeAtom::Text
             | TypeAtom::Character
+            | TypeAtom::Float64
             | TypeAtom::Void
             | TypeAtom::Buffer
             | TypeAtom::Web => atom_type(self.arena, atom),
@@ -18408,8 +18485,9 @@ impl Sink<'_>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the two-summand sum of units for `Boolean`, the unit, the
-///   integers, the strings, the characters, the empty sum and the buffer for
-///   `Unit`, `Integer`, `Text`, `Character`, `Void` and `Buffer`.
+///   integers, the strings, the characters, the binary64 floats, the empty sum
+///   and the buffer for `Unit`, `Integer`, `Text`, `Character`, `Float64`,
+///   `Void` and `Buffer`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -18433,6 +18511,7 @@ pub fn atom_type(
         TypeAtom::Integer => arena.value_type_base(BaseType::Integer),
         TypeAtom::Text => arena.value_type_base(BaseType::String),
         TypeAtom::Character => arena.value_type_base(BaseType::Character),
+        TypeAtom::Float64 => arena.value_type_base(BaseType::Float64),
         TypeAtom::Void => arena.value_type_sum(&[]),
         TypeAtom::Buffer => arena.value_type_buffer(),
         TypeAtom::Web => arena.value_type_web(),
@@ -19339,8 +19418,8 @@ pub fn decode_escapes(content: SourceFragment<'_>) -> String
 /// - ensures: a decimal or exponent marker is required; the whole part and each
 ///   present fraction or exponent contain nonempty ASCII digits, with at most
 ///   one exponent sign.
-/// - provides: the distinction between an unadmitted fractional number and a
-///   malformed integer spelling.
+/// - provides: the distinction between a fractional number that states no type
+///   and a malformed integer spelling.
 /// - fails: malformed, unmarked, signed-whole and non-ASCII spellings return
 ///   false.
 /// - panics: none.
@@ -19350,7 +19429,7 @@ pub fn decode_escapes(content: SourceFragment<'_>) -> String
 ///   fractional numbers from malformed spellings, including empty fields,
 ///   repeated markers, exponent signs and non-ASCII digits.
 /// - witness: `lower::tests::fractional_spellings_distinguish_unsupported_numbers_from_malformed_ones`
-/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+/// - witness: `lower::tests::a_number_takes_float64_from_its_suffix_or_annotation_1830`
 #[spec(
     ensures: |ret| {
         let spelled: &str = text.as_ref();
@@ -19522,6 +19601,7 @@ mod tests
     use gandr_kernel_term::CharacterLiteral;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::Float64Literal;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::IntegerLiteral;
     use gandr_kernel_term::Literal;
@@ -23210,13 +23290,13 @@ mod tests
             };
         let rows = [
             (
-                "def a = 1.5 ;",
+                "def a = 1u32 ;",
                 unadmitted(
                     8_usize,
-                    11_usize,
-                    FormName::from(NamedKind("number")),
+                    12_usize,
+                    FormName::from(NamedKind("typed_number")),
                     FragmentSort::Value,
-                    Unbuilt::Fractional,
+                    Unbuilt::TypedNumber,
                 ),
             ),
             (
@@ -23238,6 +23318,75 @@ mod tests
                 "`{source}` is unimplemented, not malformed"
             );
         }
+    }
+
+    #[test]
+    fn a_number_takes_float64_from_its_suffix_or_annotation_1830()
+    {
+        let float = |source: &'static str| {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            let mut held = body_of(outcomes(&module)[0]);
+            // An annotation no form carries ascribes its operand.
+            if let Some(&Value::Ascribe { value, .. }) = arena.value(held) {
+                held = value;
+            }
+            match arena.value(held) {
+                Some(&Value::Literal(Literal::Float64(float))) => float,
+                other => panic!("`{source}` lowers to a float, not {other:?}"),
+            }
+        };
+        assert_eq!(
+            float("def a = 0.2f64 ;"),
+            Float64Literal::from(0.2_f64),
+            "the suffix types the number"
+        );
+        assert_eq!(
+            float("def a = (0.2 : f64) ;"),
+            Float64Literal::from(0.2_f64),
+            "so does an annotation"
+        );
+        assert_eq!(
+            float("def a = (3 : f64) ;"),
+            Float64Literal::from(3.0_f64),
+            "an annotation types a number written without a fraction"
+        );
+        assert_eq!(
+            float("def a = 1e3f64 ;"),
+            Float64Literal::from(1000.0_f64),
+            "an exponent reads as written"
+        );
+        let refused = refusal(SourceText::from("def a = 0.2 ;"));
+        assert_eq!(
+            refused,
+            LoweringRefusal::OutOfFragment {
+                span: span(ByteOffset::from(8_usize), ByteOffset::from(11_usize)),
+                form: FormName::from(NamedKind("number")),
+                sort: FragmentSort::Value,
+                boundary: FragmentBoundary::Unannotated,
+            },
+            "a fraction states no type of its own"
+        );
+        assert_eq!(
+            refused.classify(),
+            FailureClass::MalformedSource,
+            "the source owes the type, so the refusal is the source's"
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def pick(a : Type) -> -F Integer { 0 }\ndef chosen = thunk { become pick(f64) } ;",
+            ),
+            &mut arena,
+        );
+        assert!(
+            matches!(
+                outcome_named(&module, "chosen"),
+                DeclarationOutcome::Bodied { .. }
+            ),
+            "`f64` passed where a type is read stands as the type, as `Integer` does: {:?}",
+            outcome_named(&module, "chosen")
+        );
     }
 
     #[test]
@@ -24799,6 +24948,45 @@ mod tests
             ),
             "a negation is a tile before one operand: {:?}",
             outcome_named(&module, "f")
+        );
+    }
+
+    #[test]
+    fn a_negated_float_literal_is_float64_negation_1830()
+    {
+        let negation = |source: &'static str| {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            let body = body_of(module.declarations()[0].outcome());
+            let Some(&Value::Thunk(body)) = arena.value(body)
+            else {
+                panic!("`{source}` lowers to a thunk");
+            };
+            match arena.computation(body) {
+                Some(&Computation::Primitive {
+                    primitive,
+                    arguments: gandr_core_term::primitive::Arguments::Unary(operand),
+                }) => (
+                    String::from(primitive.name().as_ref()),
+                    arena.value(operand).cloned(),
+                ),
+                other => panic!("`{source}` lowers to a negation, not {other:?}"),
+            }
+        };
+        assert_eq!(
+            negation("def a = thunk { become -0.5f64 } ;"),
+            (
+                String::from("float64.neg"),
+                Some(Value::Literal(Literal::Float64(Float64Literal::from(
+                    0.5_f64
+                ))))
+            ),
+            "a negated suffixed float is the float's negation"
+        );
+        assert_eq!(
+            negation("def a = thunk { become -5 } ;").0,
+            "neg",
+            "a negated integer stays the integer's"
         );
     }
 

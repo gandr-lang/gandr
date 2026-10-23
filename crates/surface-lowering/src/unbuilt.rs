@@ -102,7 +102,7 @@ pub enum Unbuilt
     Annotation,
     /// A record update, `#{ e | l = v, … }`.
     RecordUpdate,
-    /// A number literal written with its type.
+    /// A number literal written with a width suffix other than `f64`.
     TypedNumber,
     /// The shell block, `#!{ … }`.
     ShellBlock,
@@ -223,8 +223,6 @@ pub enum Unbuilt
     /// A capitalised name where a value is read that names no constructor,
     /// declaration or type.
     UnknownConstructor,
-    /// A number written with a fractional part.
-    Fractional,
     /// An infix form the lowering does not read: an operator outside the
     /// prelude's vocabulary, or a word `g ∷ w` whose letter names no loop.
     InfixForm,
@@ -283,7 +281,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 89_usize] = [
+    pub const ALL: [Self; 88_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -349,7 +347,6 @@ impl Unbuilt
         Self::TypeAbstraction,
         Self::Val,
         Self::UnknownConstructor,
-        Self::Fractional,
         Self::InfixForm,
         Self::PrefixOperator,
         Self::EmptyCase,
@@ -462,7 +459,6 @@ impl Unbuilt
             Self::TypeAbstraction => "type_abstraction",
             Self::Val => "val_statement",
             Self::UnknownConstructor => "constructor",
-            Self::Fractional => "number",
             Self::InfixForm => "binary_expression",
             Self::PrefixOperator => "unary_expression",
             Self::EmptyCase => "case_expression",
@@ -574,7 +570,6 @@ impl Unbuilt
             | Self::TypeAbstraction
             | Self::Val
             | Self::UnknownConstructor
-            | Self::Fractional
             | Self::PrefixOperator
             | Self::UnreadPattern
             | Self::StatedType

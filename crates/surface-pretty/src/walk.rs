@@ -4438,7 +4438,8 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
 ///   its digits, and its fraction after a point when it has one; a character
 ///   between single quotes, a backslash, a single quote, a line feed, a tab, a
 ///   carriage return and a nul as the escape the lowering decodes and every
-///   other scalar as itself.
+///   other scalar as itself; a floating-point literal as its shortest
+///   round-tripping decimal and the `f64` suffix that types it.
 /// - provides: the one spelling of every literal, which holds no line break, so
 ///   a literal never splits across lines.
 /// - fails: never.
@@ -4470,6 +4471,8 @@ fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
         if fraction.is_empty() { digits == Some(numeric.integer_part().as_ref()) }
         else { digits.and_then(|text| text.split_once('.')) == Some((numeric.integer_part().as_ref(), fraction)) }
     },
+    | Literal::Float64(float) => ret.0.ends_with("f64")
+        && (f64::from(float).is_nan() || ret.0.trim_end_matches("f64").parse::<f64>().ok() == Some(f64::from(float))),
     | Literal::Text(_) => ret.0.len() >= 2_usize && ret.0.starts_with('"') && ret.0.ends_with('"'),
     | Literal::Character(_) => ret.0.len() >= 3_usize && ret.0.starts_with('\'') && ret.0.ends_with('\''),
 })]
@@ -4515,6 +4518,7 @@ fn literal(literal: &Literal) -> Spelled
             };
             format!("'{escape}'")
         },
+        Literal::Float64(float) => format!("{}f64", f64::from(float)),
     })
 }
 
@@ -6562,6 +6566,9 @@ impl Walk<'_, '_>
             Former::BaseType(BaseType::Character) => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Char")));
             },
+            Former::BaseType(BaseType::Float64) => {
+                return writes(Production("primitive_type"), self.atom(Glyphs("f64")));
+            },
             Former::BufferType => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Buf")));
             },
@@ -6619,6 +6626,7 @@ impl Walk<'_, '_>
                     Literal::Integer(_) | Literal::Numeric(_) => Production("number.expression"),
                     Literal::Text(_) => Production("string.expression"),
                     Literal::Character(_) => Production("character"),
+                    Literal::Float64(_) => Production("typed_number.expression"),
                 };
                 return writes(production, self.atom(Glyphs(spelled.0.as_str())));
             },

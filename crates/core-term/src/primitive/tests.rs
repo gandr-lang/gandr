@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use super::*;
 use crate::CompType;
 use crate::Computation;
@@ -201,6 +203,90 @@ fn an_append_writes_the_first_string_then_the_second()
         arena.value(minted),
         Some(Value::Literal(Literal::Text(content))) if content.as_ref() == "types are "
     ));
+}
+
+#[test]
+fn floating_point_rows_are_ieee_binary64()
+{
+    let float = |value: f64| Scalar::Float64(Float64Literal::from(value));
+    let apply = |name: &'static str, operands: &[Scalar]| {
+        let borrowed: Vec<Scalar<&IntegerLiteral, &StringLiteral>> =
+            operands.iter().map(Scalar::borrowed).collect();
+        named(PrimitiveName(name)).evaluate(&borrowed)
+    };
+    assert_eq!(
+        apply("float64.add", &[float(0.1_f64), float(0.2_f64)]),
+        Ok(float(0.300_000_000_000_000_04_f64)),
+        "a sum rounds to the nearest double, not to the decimal"
+    );
+    assert_eq!(
+        apply("float64.div", &[float(1.0_f64), float(-0.0_f64)]),
+        Ok(float(f64::NEG_INFINITY)),
+        "a quotient by a signed zero is the signed infinity"
+    );
+    assert_eq!(
+        apply("float64.sub", &[float(f64::INFINITY), float(f64::INFINITY)]),
+        Ok(Scalar::Float64(Float64Literal::NAN)),
+        "an invalid operation is the one canonical NaN"
+    );
+    assert_eq!(
+        apply("float64.eq", &[float(f64::NAN), float(f64::NAN)]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "a NaN equals nothing, itself included"
+    );
+    assert_eq!(
+        apply("float64.ne", &[float(f64::NAN), float(f64::NAN)]),
+        Ok(Scalar::Boolean(Side::Left))
+    );
+    assert_eq!(
+        apply("float64.eq", &[float(-0.0_f64), float(0.0_f64)]),
+        Ok(Scalar::Boolean(Side::Left)),
+        "the zeros are equal"
+    );
+    assert_eq!(
+        apply("float64.lt", &[float(-0.0_f64), float(0.0_f64)]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "and neither is below the other"
+    );
+    assert_eq!(apply("float64.exp", &[float(0.0_f64)]), Ok(float(1.0_f64)));
+    assert_eq!(
+        apply("float64.exp", &[float(1.0_f64)]),
+        Ok(float(f64::from_bits(0x4005_bf0a_8b14_576a_u64))),
+        "`exp` at one is libm's double, one unit in the last place above e, on every host"
+    );
+    assert_eq!(apply("float64.neg", &[float(0.0_f64)]), Ok(float(-0.0_f64)));
+    for (input, expected) in [
+        (2.5_f64, "2"),
+        (3.5_f64, "4"),
+        (-2.5_f64, "-2"),
+        (-0.4_f64, "0"),
+        (1.0e20_f64, "100000000000000000000"),
+    ] {
+        assert_eq!(
+            apply("float64.round", &[float(input)]),
+            Ok(integer(Digits(expected))),
+            "{input} rounds to the nearest integer, ties to even"
+        );
+    }
+    for unbounded in [f64::INFINITY, f64::NAN] {
+        assert_eq!(
+            apply("float64.round", &[float(unbounded)]),
+            Err(PrimitiveError::NotFinite),
+            "no integer is nearest {unbounded}"
+        );
+    }
+    assert_eq!(
+        apply("float64.from_integer", &[integer(Digits(
+            "-9007199254740993"
+        ))]),
+        Ok(float(-9_007_199_254_740_992.0_f64)),
+        "an integer past 2^53 rounds to the nearest double, ties to even"
+    );
+    assert_eq!(
+        apply("float64.add", &[float(1.0_f64), integer(Digits("1"))]),
+        Err(PrimitiveError::ArgumentType),
+        "a floating-point row refuses an integer"
+    );
 }
 
 #[test]

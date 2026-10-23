@@ -1,4 +1,5 @@
-/// `typed_number.expression`: a number with its type.
-/// The checker does not reach this form yet; #1109 tracks it.
-@[ refuses("OutOfFragment.typed_number") ]
+/// `typed_number.expression`: a number with its type. The `f64` suffix
+/// types it as an IEEE 754 binary64 float; another width is not admitted yet
+/// (#1109).
+@[ checks ]
 def half = 0.5f64 ;

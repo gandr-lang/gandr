@@ -1324,7 +1324,7 @@ def d : Integer ;
         let source = SourceText::from(
             r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { become force (thunk { return 3 }) } ;
 @[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { return 3 } ;
-@[ refuses("OutOfFragment.number") ] def c = 1.5 ;"#,
+@[ refuses("OutOfFragment.Unannotated") ] def c = 1.5 ;"#,
         );
         let mut lowerings = LoweringCount::default();
         let Composed::Settled {

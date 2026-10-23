@@ -266,6 +266,8 @@ struct Atoms
     string: FormedValueType,
     /// The character atom.
     character: FormedValueType,
+    /// The 64-bit floating-point atom.
+    float64: FormedValueType,
 }
 
 /// Which atom a leaf rule synthesises.
@@ -280,6 +282,8 @@ pub enum Atom
     String,
     /// The character atom, for a character literal.
     Character,
+    /// The 64-bit floating-point atom, for a floating-point literal.
+    Float64,
 }
 
 /// An abstract type the context admitted, with the level of the universe it
@@ -686,6 +690,7 @@ impl<'arena> CheckingContext<'arena>
             integer: FormedValueType::derived(arena.value_type_base(BaseType::Integer)),
             string: FormedValueType::derived(arena.value_type_base(BaseType::String)),
             character: FormedValueType::derived(arena.value_type_base(BaseType::Character)),
+            float64: FormedValueType::derived(arena.value_type_base(BaseType::Float64)),
         };
         Self {
             arena,
@@ -3496,6 +3501,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Character
+                | ValueTypeView::Float64
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Universe { .. }
@@ -3812,6 +3818,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Character
+                    | ValueTypeView::Float64
                     | ValueTypeView::Unit
                     | ValueTypeView::Thunk(_)
                     | ValueTypeView::Lift { .. }
@@ -4135,6 +4142,7 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             Atom::Integer => self.atoms.integer,
             Atom::String => self.atoms.string,
             Atom::Character => self.atoms.character,
+            Atom::Float64 => self.atoms.float64,
         }
     }
 

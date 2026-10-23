@@ -922,6 +922,19 @@ default-features = false
 version = "0.2.189"
 default-features = false
 
+# The C math library in pure Rust: the native table's floating-point `exp`.
+# Chosen over the host's `f64::exp`, which calls the platform's libm and so
+# answers differently across platforms, and which `no_std` lacks. The record
+# is in core-term's `primitive` module docs.
+# features:
+# - none: `arch` swaps in per-architecture routines; off, every platform runs
+#   the same soft implementation and answers bit for bit alike
+# consumers:
+# - core-term
+[workspace.dependencies.libm]
+version = "0.2.16"
+default-features = false
+
 # Read-only file mappings: the dispatcher's reader maps a source at or above
 # its measured crossover. The choice, its alternatives and its reversal are in
 # the reader module's docs.

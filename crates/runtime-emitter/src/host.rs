@@ -419,7 +419,8 @@ impl<'run, 'host> Calls<'run, 'host>
         self.refused.as_ref()
     }
 
-    /// The integer, boolean or string the operand `word` addresses.
+    /// The integer, boolean, string or floating-point number the operand
+    /// `word` addresses.
     ///
     /// # Specification
     /// trivial.
@@ -446,6 +447,7 @@ impl<'run, 'host> Calls<'run, 'host>
             {
                 Some(&Literal::Integer(ref integer)) => Ok(Scalar::Integer(integer.clone())),
                 Some(&Literal::Text(ref text)) => Ok(Scalar::Text(text.clone())),
+                Some(&Literal::Float64(float)) => Ok(Scalar::Float64(float)),
                 Some(&(Literal::Numeric(_) | Literal::Character(_))) | None => {
                     Err(Refusal::Operands)
                 },
@@ -673,6 +675,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 None => self.literal(runtime, Literal::Integer(integer)),
             },
             Scalar::Text(text) => self.literal(runtime, Literal::Text(text)),
+            Scalar::Float64(float) => self.literal(runtime, Literal::Float64(float)),
             Scalar::Boolean(side) => {
                 let unit = Header::new(
                     Kind::Tuple,
@@ -1560,7 +1563,10 @@ impl Laying<'_>
             HeapValue::Literal(ref literal) => {
                 let bits = match *literal {
                     Literal::Integer(ref integer) => integer_word(integer),
-                    Literal::Text(_) | Literal::Numeric(_) | Literal::Character(_) => None,
+                    Literal::Text(_)
+                    | Literal::Numeric(_)
+                    | Literal::Character(_)
+                    | Literal::Float64(_) => None,
                 };
                 if let Some(bits) = bits {
                     Vec::from([header(Kind::Integer, 0, 1, Family::UNNAMED)?, bits])

@@ -1127,8 +1127,9 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
 ///
 /// # Specification
 /// - ensures: an integer as its sign and digits, a numeric literal with its
-///   fraction, a string quoted with its content escaped, a character in single
-///   quotes escaped alike.
+///   fraction, a floating-point literal as its shortest round-tripping decimal
+///   with the `f64` suffix that types it, a string quoted with its content
+///   escaped, a character in single quotes escaped alike.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1145,6 +1146,8 @@ fn labels_spelled(labels: &[gandr_core_term::FieldLabel]) -> alloc::string::Stri
     | Literal::Numeric(ref numeric) => ret.strip_prefix(if numeric.sign() == Sign::Negative { "-" } else { "" })
         .and_then(|unsigned| unsigned.split_once('.')).is_some_and(|(whole, fraction)|
             whole == numeric.integer_part().as_ref() && fraction == numeric.fraction().as_ref()),
+    | Literal::Float64(float) => ret.ends_with("f64")
+        && (f64::from(float).is_nan() || ret.trim_end_matches("f64").parse::<f64>().ok() == Some(f64::from(float))),
     | Literal::Text(ref content) => {
         let raw: &str = content.as_ref();
         ret.strip_prefix('"').and_then(|text| text.strip_suffix('"'))
@@ -1169,6 +1172,7 @@ fn literal_text(literal: &Literal) -> String
             numeric.integer_part().as_ref(),
             numeric.fraction().as_ref()
         ),
+        Literal::Float64(float) => alloc::format!("{}f64", f64::from(float)),
         Literal::Text(ref content) => {
             let mut quoted = String::from("\"");
             let raw: &str = content.as_ref();
