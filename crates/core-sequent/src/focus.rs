@@ -2100,8 +2100,10 @@ impl<'run> Focusing<'run>
     /// - ensures: the `𝓕` row for the node's former is scheduled or minted; a
     ///   continuation that is not a tail is placed under no binder; a ride or a
     ///   transport applies its motive's action, as [`crate::identity`]
-    ///   tabulates; a hole other than the placeholder of a run match a
-    ///   combinator's build left is scheduled as the perform of
+    ///   tabulates; an application whose argument is a returned value `⟨c⟩`
+    ///   applies [`Combinator::RunArgument`] to the call and `c`, each
+    ///   suspended, so `c` runs first; a hole other than the placeholder of a
+    ///   run match a combinator's build left is scheduled as the perform of
     ///   [`REACHED`](crate::il::REACHED) of
     ///   [`REACHED_HOLE`](crate::il::REACHED_HOLE), its payload the hole's
     ///   name.
@@ -2129,6 +2131,7 @@ impl<'run> Focusing<'run>
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
     /// - witness: `focus::tests::a_hole_is_reached_and_a_mark_refused_by_name_1881`
     /// - witness: `focus::tests::a_session_action_is_refused_by_name`
+    /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
     /// - witness: `tests::run::a_transport_no_row_reads_is_refused_by_its_head`
     #[spec(
         captures: [work = self.tasks.len()],
@@ -2547,8 +2550,24 @@ impl<'run> Focusing<'run>
                 self.tasks.push(Task::Value(value));
             },
             Computation::Application(head, argument) => {
-                self.tasks.push(Task::Apply { head, continuation });
-                self.tasks.push(Task::Value(argument));
+                // A returned argument, a transport or a derived path written
+                // as the call's argument, is the computation that returns it,
+                // run first: the kernel reads `E[c]` as `c to x. E[x]`. The
+                // call and `c` are each suspended and applied to a closed
+                // combinator, so neither is read under a binder it did not
+                // have.
+                if let Some(&Value::Returned(held)) = self.core.value(argument) {
+                    self.tasks.push(Task::Combinator {
+                        combinator: Combinator::RunArgument,
+                        continuation,
+                    });
+                    self.suspended(held)?;
+                    self.suspended(head)?;
+                }
+                else {
+                    self.tasks.push(Task::Apply { head, continuation });
+                    self.tasks.push(Task::Value(argument));
+                }
             },
             Computation::Lambda(body) => {
                 let return_point = self.innermost_covariable()?;
@@ -2786,9 +2805,8 @@ impl<'run> Focusing<'run>
     ///
     /// # Specification
     /// - requires: `held` is `Some(c)` exactly when `operand` is `⟨c⟩`.
-    /// - ensures: on success the thunk and `c`'s translation to a fresh return
-    ///   point are scheduled for a held computation, and the value's
-    ///   translation otherwise.
+    /// - ensures: on success [`Self::suspended`] is scheduled for a held
+    ///   computation, and the value's translation otherwise.
     /// - provides: the operands of [`Combinator::TransportFrom`].
     /// - fails: a refused mint of the return point.
     /// - panics: none.
@@ -2812,16 +2830,51 @@ impl<'run> Focusing<'run>
     ) -> Result<(), FocusRefusal>
     {
         if let Some(computation) = held {
-            let return_point = self.innermost_covariable()?;
-            self.tasks.push(Task::Thunk);
-            self.tasks.push(Task::Computation {
-                computation,
-                continuation: return_point,
-            });
+            self.suspended(computation)
         }
         else {
             self.tasks.push(Task::Value(operand));
+            Ok(())
         }
+    }
+
+    /// Schedule the suspension `thunk(𝓒⟦computation⟧)`, its body translated to
+    /// a fresh return point.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success the thunk and `computation`'s translation to the
+    ///   covariable `0` are scheduled, the translation first.
+    /// - provides: a part a combinator forces where it runs it: a transport's
+    ///   returned operand, and a call and its returned argument.
+    /// - fails: a refused mint of the return point.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned transport operand and a returned call
+    ///   argument each run to the value their bind spelling runs to, which a
+    ///   suspension scheduled at the wrong return point would not.
+    /// - witness: `tests::run::derived_paths_run_as_their_composed_maps`
+    /// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
+    #[spec(
+        captures: work = self.tasks.len(),
+        ensures: |ret| ret.is_err() || (work.checked_add(2) == Some(self.tasks.len())
+            && matches!(self.tasks.last(), Some(&Task::Computation { computation: scheduled, .. }) if scheduled == computation)),
+    )]
+    fn suspended(
+        &mut self,
+        computation: ComputationId,
+    ) -> Result<(), FocusRefusal>
+    {
+        let return_point = self.innermost_covariable()?;
+        self.tasks.push(Task::Thunk);
+        self.tasks.push(Task::Computation {
+            computation,
+            continuation: return_point,
+        });
         Ok(())
     }
 

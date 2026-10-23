@@ -3086,6 +3086,55 @@ fn derived_paths_run_as_their_composed_maps()
     );
 }
 
+/// #2129: a call whose argument is a returned value `⟨c⟩` — a transport
+/// written as the argument — runs `c` first and applies the call to what it
+/// returns, as the bind spelling does: a call closing over a variable bound
+/// outside it reads that variable, and a returned argument before another
+/// keeps its place.
+#[test]
+fn a_returned_argument_runs_before_its_call_2129()
+{
+    let mut core = CoreArena::new();
+    let five = integer(&mut core, Digits("5"));
+    let seven = integer(&mut core, Digits("7"));
+    let unit = core.value_unit();
+    let identity = decoded(&mut core);
+    let path = univalence(&mut core);
+    let moved = core.computation_path_transport(identity, path, five);
+    let argument = core.value_returned(moved);
+    let carried = core.value_tuple(&[five, unit]);
+
+    // `x ← return 7; (λy. return (x, y)) ⟨transport⟩`: under λy, y = 0, x = 1.
+    let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let inner = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let pair = core.value_tuple(&[outer, inner]);
+    let body = core.computation_return(pair);
+    let function = core.computation_lambda(body);
+    let called = core.computation_application(function, argument);
+    let given = core.computation_return(seven);
+    let program = core.computation_bind(given, called);
+    let image = core.value_tuple(&[seven, carried]);
+    assert_eq!(
+        evaluated(&mut core, program),
+        returned(&mut core, image),
+        "the transport runs first and the call reads the variable bound outside it"
+    );
+
+    // `(λa. λb. return (a, b)) ⟨transport⟩ unit`: under λb, b = 0, a = 1.
+    let pair = core.value_tuple(&[outer, inner]);
+    let body = core.computation_return(pair);
+    let second = core.computation_lambda(body);
+    let function = core.computation_lambda(second);
+    let partial = core.computation_application(function, argument);
+    let called = core.computation_application(partial, unit);
+    let image = core.value_tuple(&[carried, unit]);
+    assert_eq!(
+        evaluated(&mut core, called),
+        returned(&mut core, image),
+        "the returned argument keeps its place before the next"
+    );
+}
+
 /// A transport whose motive has a part no row reads does not focus: the
 /// refusal names the transport and that part's head, and the arena returns
 /// to its mark. A dependent function, a path over an element carrier and a
