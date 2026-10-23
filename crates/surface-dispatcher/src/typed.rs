@@ -14,7 +14,11 @@
 //!   checked — and, when an outer judgement checked it against a type spelled
 //!   otherwise, at that type too, so a mismatched term shows both sides. The
 //!   typed run marks a refusal where it stands and goes on, so the terms past a
-//!   refusal are typed as well.
+//!   refusal are typed as well. A model of a theory standing where a model of a
+//!   theory it includes is asked names the reduct the checker applies there
+//!   (#1092), read off the crossings the typed run's value bridge records; a
+//!   theory's forgetting map, which a model with manifest sorts crosses by, has
+//!   no name a source writes and is not named.
 //! - **A binder** is spelled at the type of the uses that resolve to it, read
 //!   through the origin table's use-to-binder record. A binder no use resolves
 //!   to, and any other label — a record or sum type's field, a lazy record's
@@ -233,6 +237,20 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why an entry names no reduct the checker applies at it.
+    pub mod crossed {
+        /// The reason no reduct is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The value bridge carried the term by no reduct — by none, or by
+            /// a theory's forgetting map, which no source names — or the
+            /// entry is no term.
+            Uncrossed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why the table holds no refusal for a declaration.
     pub mod unrefused {
         /// The reason no refusal is held.
@@ -361,6 +379,9 @@ pub struct TypedSpan
     /// The type an outer judgement checked a term against, when spelled
     /// otherwise than its own.
     expected: Maybe<Presentation, checked_against::Absent>,
+    /// The reduct the checker applies at a term a model of a theory stands
+    /// at where a model of one it includes is asked, by its declared path.
+    crossed: Maybe<String, crossed::Absent>,
 }
 
 impl TypedSpan
@@ -408,6 +429,21 @@ impl TypedSpan
     {
         match self.expected {
             Maybe::Present(ref expected) => Maybe::Present(expected),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// The reduct the checker applies at the term, by its declared path,
+    /// `Monoid.Semigroup`: the term is a model of a theory standing where a
+    /// model of a theory it includes is asked.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn crossed(&self) -> Maybe<Name<'_>, crossed::Absent>
+    {
+        match self.crossed {
+            Maybe::Present(ref name) => Maybe::Present(Name::from(name.as_str())),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
@@ -781,6 +817,9 @@ pub struct TypeTable
     /// Each span of the source's own text an entry for a binder or a term
     /// covers, with how the entries there read it, ascending.
     readings: Vec<(ByteSpan, Reading)>,
+    /// The reduct the value bridge carried each term by, by the term, as the
+    /// constant the reduct is declared at.
+    crossings: BTreeMap<ValueId, ConstantIndex>,
     /// The binders in scope at each offset of the unit's text the lowering
     /// read under one.
     in_scope: InScope,
@@ -1292,6 +1331,10 @@ impl TypeTable
                 ),
             };
             context.keep_formations(Formations::Firsts(wanted));
+            // A model stands at a model of a theory its own includes by the
+            // maps the module mints, as the judgement reads it.
+            context.keep_reducts(module.reducts());
+            context.keep_reducts(module.forgets());
             let typed = type_module(&mut context, own_declarations);
             TypedRun::read(&context, typed, written)
         };
@@ -1464,6 +1507,21 @@ impl TypeTable
         endpoints.sort_by_key(|&(term, ..)| term);
         endpoints.dedup_by_key(|&mut (term, ..)| term);
         let names = constant_names(&module);
+        // Each term the value bridge carried by a reduct, with the reduct,
+        // which a face names beside the term's type. A theory's forgetting
+        // map has no name a source writes, so it is not named (#2031).
+        let reducts: BTreeSet<ConstantIndex> = module.reducts().iter().copied().collect();
+        let crossings: BTreeMap<ValueId, ConstantIndex> = typed
+            .typings()
+            .values()
+            .flat_map(|typings| {
+                typings
+                    .crossings()
+                    .iter()
+                    .map(|(&at, crossing)| (at, crossing.by))
+            })
+            .filter(|&(_, by)| reducts.contains(&by))
+            .collect();
         let mut order: Vec<&Kept> = kept.iter().collect();
         order.sort_unstable_by_key(|&&(_, _, _, at, _)| at);
         let mut entries = Vec::with_capacity(order.len());
@@ -2161,6 +2219,7 @@ impl TypeTable
             in_scope: module.into_in_scope(),
             refused: None,
             documented,
+            crossings,
         }
     }
 
@@ -2216,19 +2275,23 @@ impl TypeTable
     ///   term before a type, a written node before an inserted one, and then
     ///   the entry latest in the table. It is spelled at its type and, for a
     ///   term whose last kept type is spelled otherwise, carries that one as
-    ///   its expected type. Absent as [`typing::Absent::Untyped`] when no span
-    ///   holds `offset`, and as [`typing::Absent::Unspelled`] when the printer
-    ///   cannot lay the chosen entry's type out.
+    ///   its expected type; for a term the value bridge carried by a reduct of
+    ///   the module, it carries the reduct's declared path. Absent as
+    ///   [`typing::Absent::Untyped`] when no span holds `offset`, and as
+    ///   [`typing::Absent::Unspelled`] when the printer cannot lay the chosen
+    ///   entry's type out.
     /// - provides: the node a reader pointing at `offset` means.
     /// - fails: never; an absence names its reason.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a variable inside a function body and the body around
-    ///   it, a mismatched term, and a position between declarations, separate
-    ///   the innermost entry, the enclosing one, the expected type and none.
+    ///   it, a mismatched term, a model standing at an included theory's
+    ///   models, and a position between declarations, separate the innermost
+    ///   entry, the enclosing one, the expected type, the reduct and none.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
+    /// - witness: `typed::tests::a_crossed_model_names_the_reduct_the_checker_applies_2031`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -2866,6 +2929,7 @@ impl TypeTable
     ///   they synthesise, or one spelled alike, answer one type.
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
+    /// - witness: `typed::tests::a_crossed_model_names_the_reduct_the_checker_applies_2031`
     #[spec(ensures: |ret| match ret {
         Maybe::Present(ref answer) => answer.span == entry.span && answer.subject == entry.subject,
         Maybe::Absent(typing::Absent::Unspelled) => true,
@@ -2892,12 +2956,29 @@ impl TypeTable
             },
             Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(checked_against::Absent::Agreed),
         };
+        let crossed = match entry.standing {
+            Standing::Judged(Within {
+                node: CoreNode::Value(at),
+                ..
+            }) if entry.subject == Subject::Term => self
+                .crossings
+                .get(&at)
+                .and_then(|&map| self.names.get(usize::from(map)))
+                .filter(|name| !name.is_empty())
+                .map_or(Maybe::Absent(crossed::Absent::Uncrossed), |name| {
+                    Maybe::Present(name.clone())
+                }),
+            Standing::Judged(_) | Standing::Closed | Standing::Named(_) | Standing::Parted(..) => {
+                Maybe::Absent(crossed::Absent::Uncrossed)
+            },
+        };
         Maybe::Present(TypedSpan {
             span: entry.span,
             subject: entry.subject,
             provenance: entry.provenance,
             ty,
             expected,
+            crossed,
         })
     }
 
@@ -4637,6 +4718,7 @@ mod tests
     use super::Subject;
     use super::TypeTable;
     use super::checked_against;
+    use super::crossed;
     use super::typing;
     use super::unrefused;
 
@@ -6233,6 +6315,54 @@ mod tests
                 expected: Maybe::Present(String::from("Integer")),
             }),
             "the term has its own type and the one it was checked against"
+        );
+    }
+
+    /// #2031: a model of a theory standing where a model of a theory it
+    /// includes is asked names the reduct the checker applies there; the
+    /// call around it and the parameter's binder name none.
+    #[test]
+    fn a_crossed_model_names_the_reduct_the_checker_applies_2031()
+    {
+        let source = SourceText::from(
+            "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\ntheory \
+             Monoid {\n  include Semigroup;\n  oper one : () --> M;\n}\ndef multiplies(s : \
+             Model(Semigroup)) -> -F Integer { 0 }\ndef asSemigroup(m : Model(Monoid)) -> -F \
+             Integer { become multiplies(m) }\n",
+        );
+        let table = table(source);
+        let text = <&str>::from(source);
+        let crossed = |needle: &str, past: usize| {
+            let offset = text
+                .find(needle)
+                .expect("the needle occurs")
+                .saturating_add(past);
+            match table.at(
+                ByteOffset::from(offset),
+                PageWidth::from(80_u32),
+                Form::Explicit.into(),
+            ) {
+                Maybe::Present(entry) => match entry.crossed() {
+                    Maybe::Present(reduct) => Ok(String::from(reduct.as_ref())),
+                    Maybe::Absent(reason) => Err(Some(reason)),
+                },
+                Maybe::Absent(_) => Err(None),
+            }
+        };
+        assert_eq!(
+            crossed("multiplies(m)", "multiplies(".len()),
+            Ok(String::from("Monoid.Semigroup")),
+            "the model the call is given crosses by the monoid's reduct"
+        );
+        assert_eq!(
+            crossed("multiplies(m)", 0),
+            Err(Some(crossed::Absent::Uncrossed)),
+            "the function the call heads crosses by nothing"
+        );
+        assert_eq!(
+            crossed("m : Model(Monoid)", 0),
+            Err(Some(crossed::Absent::Uncrossed)),
+            "the parameter's binder is no term"
         );
     }
 

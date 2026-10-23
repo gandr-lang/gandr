@@ -220,7 +220,8 @@ pub struct Kept
 /// Every term judgement it finished, with its type; every type formation it
 /// finished, with its level; the session type each action's endpoint stood
 /// at; every move of the world register, with the linear zone around each
-/// spent capability; and the refusals it marked.
+/// spent capability; the refusals it marked; and each value the value bridge
+/// carried by a map between models, with the map.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Typings
 {
@@ -236,6 +237,10 @@ pub struct Typings
     moves: Vec<crate::worlds::WorldMove>,
     /// The refusals marked, in the order met.
     marks: Vec<MarkEntry>,
+    /// Each value the value bridge carried by a map between models — a
+    /// theory's reduct to one it includes, or a theory's forgetting map — by
+    /// the value, with the map.
+    crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
 }
 
 impl Typings
@@ -299,6 +304,34 @@ impl Typings
         &self.marks
     }
 
+    /// Each value the value bridge carried by a map between models, by the
+    /// value, with the map: the reduct the checker applies where a model of
+    /// a theory stands at a model of one it includes, or the forgetting map
+    /// where a model with manifest sorts stands at its theory's models.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn crossings(&self) -> &BTreeMap<ValueId, gandr_core_term::Crossing>
+    {
+        &self.crossings
+    }
+
+    /// This record with `crossings`, the crossings the run that typed it
+    /// recorded.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn crossed(
+        mut self,
+        crossings: BTreeMap<ValueId, gandr_core_term::Crossing>,
+    ) -> Self
+    {
+        self.crossings = crossings;
+        self
+    }
+
     /// `body`'s record, after what `signature`'s formation kept: what a
     /// typed declaration keeps for its written type and its body, the type's
     /// first.
@@ -306,7 +339,8 @@ impl Typings
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the typings, the formations, the endpoints and the moves are
-    ///   `signature`'s then `body`'s, in order; the marks are `body`'s.
+    ///   `signature`'s then `body`'s, in order; the marks and the crossings are
+    ///   `body`'s.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -338,6 +372,7 @@ impl Typings
             endpoints,
             moves,
             marks: body.marks,
+            crossings: body.crossings,
         }
     }
 
@@ -666,6 +701,7 @@ pub fn type_value(
         endpoints,
         moves,
         marks,
+        crossings: BTreeMap::new(),
     }
 }
 
