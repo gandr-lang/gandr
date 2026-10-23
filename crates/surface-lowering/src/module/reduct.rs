@@ -246,12 +246,13 @@ impl<'source> Collector<'_, 'source>
         }
     }
 
-    /// The manifest types of the source, in the order their text starts.
+    /// The manifest types and the forgetting forms of the source, in the order
+    /// their text starts.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: every node of the source's tree classified as a manifest
-    ///   type, once, ascending by the start of its span.
+    /// - ensures: every node of the source's tree classified as a manifest type
+    ///   or a forgetting form, once, ascending by the start of its span.
     /// - panics: none.
     /// - executable: none — the classification is the grammar's, which a
     ///   predicate would read again.
@@ -277,7 +278,7 @@ impl<'source> Collector<'_, 'source>
                 matches!(
                     shape_of(self.pbg, node),
                     Ok(Shape::Form {
-                        former: Former::ManifestType,
+                        former: Former::ManifestType | Former::ForgetModel,
                         ..
                     })
                 )
@@ -305,14 +306,16 @@ impl<'source> Collector<'_, 'source>
             .collect()
     }
 
-    /// Collect the forgetting maps the manifest type `at` asks for: `Model(T)
-    /// with sort C₁ = A₁ … with sort Cₙ = Aₙ` puts back the sorts `C₁ … Cₙ` of
-    /// `T`.
+    /// Collect the forgetting maps the manifest type or the forgetting form
+    /// `at` asks for: `Model(T) with sort C₁ = A₁ … with sort Cₙ = Aₙ` and
+    /// `forget[sort C₁ = A₁, …, sort Cₙ = Aₙ](m) at Model(T)` both put back
+    /// the sorts `C₁ … Cₙ` of `T`.
     ///
     /// # Specification
-    /// - requires: `at` is a manifest type of the source; `forgotten` holds
-    ///   each theory and sort set a forgetting slot of the unit puts back.
-    /// - ensures: when the left operand of `at` applies `Model` to a theory
+    /// - requires: `at` is a manifest type or a forgetting form of the source;
+    ///   `forgotten` holds each theory and sort set a forgetting slot of the
+    ///   unit puts back.
+    /// - ensures: when `at` applies `Model` to a theory
     ///   [`Collected::presented_theory`] resolves where the type is written,
     ///   whose models bundle, and its bindings fix distinct unindexed sorts of
     ///   it that no slot of `forgotten` puts back for the theory, one
@@ -353,8 +356,22 @@ impl<'source> Collector<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         self.fuel.spend()?;
+        let forgetting = self.tree.node(at.node).is_some_and(|node| {
+            matches!(
+                shape_of(self.pbg, node),
+                Ok(Shape::Form {
+                    former: Former::ForgetModel,
+                    ..
+                })
+            )
+        });
         let mut pieces = core::mem::take(&mut self.pieces);
-        let chain = self.manifest_chain(at, &mut pieces);
+        let chain = if forgetting {
+            self.forgetting_chain(at, &mut pieces)
+        }
+        else {
+            self.manifest_chain(at, &mut pieces)
+        };
         self.pieces = pieces;
         let Some((named, fixed)) = chain
         else {
@@ -500,6 +517,120 @@ impl<'source> Collector<'_, 'source>
                 return Some((named, sorts));
             }
         }
+    }
+
+    /// The theory's name tile and each sort's name tile of the forgetting form
+    /// `at`, `forget[sort C₁ = A₁, …, sort Cₙ = Aₙ](m) at Model(T)`, read off
+    /// its tiles and its bracket's bindings with `pieces` as scratch; nothing
+    /// for a form the parser repaired or out of that shape.
+    ///
+    /// # Specification
+    /// - requires: `at` is a forgetting form of the source.
+    /// - ensures: the name tile of `T` and the sort name tiles in written
+    ///   order, at least one, when the form reads as above.
+    /// - panics: none.
+    /// - executable: none — as [`Self::manifest_chain`].
+    ///
+    /// # Termination
+    /// Every pass of the bracket's loop reads an entry and the next separator
+    /// off the finite pieces, or leaves; the second reads each of the entries
+    /// the first collected once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's carrier put back by the written map,
+    ///   whose slot no manifest type of the source asks for, as
+    ///   [`Self::forget`].
+    /// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
+    fn forgetting_chain(
+        &self,
+        at: Placed,
+        pieces: &mut Pieces,
+    ) -> Option<(Placed, Vec<Placed>)>
+    {
+        read_pieces(self.pbg, self.tree, at.node, pieces).ok()?;
+        if let Maybe::Present(_) = pieces.repair {
+            return None;
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, at.span);
+        let Maybe::Present(_) = cursor.tile(TileName::FORGET)
+        else {
+            return None;
+        };
+        let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN)
+        else {
+            return None;
+        };
+        let mut entries = Vec::new();
+        loop {
+            let Run::One(entry) = cursor.operands()
+            else {
+                return None;
+            };
+            entries.push(entry);
+            if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+                break;
+            }
+            let Maybe::Present(_) = cursor.tile(TileName::COMMA)
+            else {
+                return None;
+            };
+            if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+                break;
+            }
+        }
+        let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN)
+        else {
+            return None;
+        };
+        let Run::One(_) = cursor.operands()
+        else {
+            return None;
+        };
+        let Maybe::Present(_) = cursor.tile(TileName::PAREN_CLOSE)
+        else {
+            return None;
+        };
+        let Maybe::Present(_) = cursor.tile(TileName::AT)
+        else {
+            return None;
+        };
+        let Run::One(stated) = cursor.operands()
+        else {
+            return None;
+        };
+        let Maybe::Absent(_) = cursor.peek()
+        else {
+            return None;
+        };
+        let mut sorts = Vec::with_capacity(entries.len());
+        for entry in entries {
+            read_pieces(self.pbg, self.tree, entry.node, pieces).ok()?;
+            let mut binding = Cursor::new(&pieces.pieces, entry.span);
+            let Maybe::Present(_) = binding.tile(TileName::SORT)
+            else {
+                return None;
+            };
+            let Maybe::Present(sort) = binding.tile(TileName::TYPE_IDENTIFIER)
+            else {
+                return None;
+            };
+            let Maybe::Present(_) = binding.tile(TileName::EQUALS)
+            else {
+                return None;
+            };
+            let Run::One(_) = binding.operands()
+            else {
+                return None;
+            };
+            let Maybe::Absent(_) = binding.peek()
+            else {
+                return None;
+            };
+            sorts.push(sort);
+        }
+        let named = self.model_operand(stated, pieces)?;
+
+        Some((named, sorts))
     }
 
     /// The operands either side of the `with` of the manifest type `at`.

@@ -4219,6 +4219,62 @@ fn primary_expressions(
     ));
 }
 
+/// The forgetting map written out, `forget[sort C = A, …](m) at Model(T)`.
+///
+/// The form reads a model whose sorts `C …` are manifest at `A …` as a model
+/// of `T` with those sorts put back: the dual of `pack M at Model(T)`, what
+/// the pack makes manifest the forgetting abstracts again. Each entry of the
+/// bracket is a type, the binding `sort C = A` a manifest type writes after
+/// its `with`, so the bracket names what the model's type fixed as that type
+/// spells it, and its `=` and `,` are the molds the manifest type and the
+/// package's `pack [T, …] M` already have. The form stands at `pure`'s
+/// precedence for the reason the pack does. It comes after every other rule:
+/// the parser breaks a tie between molds by their order, so a form placed
+/// among the others renumbers every mold after it and moves ties in forms it
+/// has nothing to do with, while one placed last loses every tie to them.
+/// PBG-only, parity-exempt.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `forget_model_expression` alone, of the expression sort with its
+///   own provenance at `expression.pure`.
+/// - fails: the band `precs` does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::MissingPrec`] naming the band.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch a lost form, changed provenance and a misplaced
+///   band; the parser's recovery sweep catches a placement that moves another
+///   form's ties.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if name == "expression.pure" && precs.get(PrecName(name)).is_none()), |rules| rules.len() == 1 && rules.iter().all(|rule| rule.name().0 == "forget_model_expression" && rule.sort() == Sort::Expression && rule.provenance().0 == "forget_model_expression" && precs.get(PrecName("expression.pure")) == Some(rule.prec()))))]
+pub(super) fn forgetting(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
+{
+    let pure = precs.prec(PrecName("expression.pure"))?;
+    Ok(Vec::from([r(
+        RuleName("forget_model_expression"),
+        Provenance("forget_model_expression"),
+        Sort::Expression,
+        pure,
+        seq([
+            t(TileLabel("forget")),
+            t(TileLabel("[")),
+            comma1(h(Sort::Type)),
+            t(TileLabel("]")),
+            t(TileLabel("(")),
+            h(Sort::Expression),
+            t(TileLabel(")")),
+            t(TileLabel("at")),
+            h(Sort::Type),
+        ]),
+    )]))
+}
+
 #[cfg(test)]
 mod tests
 {

@@ -1,0 +1,49 @@
+// What a written forgetting map refuses (#2130): a map at another carrier
+// than the model's is a map the model does not stand at, a sort the theory
+// does not have is no member of it, and a sort written twice, a bracket entry
+// that is no binding or a map onto a type that is no theory's models is
+// malformed.
+// `../../model/identity/model-counter-manifest-explicit.gandr` writes the map
+// at the carrier the model's type fixes, onto its theory's models.
+
+// The counter, counting up modulo three, and `observe`, which reads any
+// counter.
+import "../../model/identity/model-counter.gandr" ;
+// Counting up modulo three, its carrier manifest.
+import "../../model/identity/model-counter-manifest.gandr" ;
+
+/// Counting up modulo three, forgotten as though its carrier were the
+/// integers: the map at the integers asks a counter over the integers.
+@[ refuses("TypeMismatch"), form(explicit) ]
+def otherCarrier() -> -F Integer {
+  become observe(forget[sort C = Integer](upManifest) at Model(Counter))
+}
+
+/// A sort the counter does not have, forgotten.
+@[ refuses("UnknownMember"), form(explicit) ]
+def strangeSort() -> -F Integer {
+  become observe(forget[sort D = Integer](upManifest) at Model(Counter))
+}
+
+/// The counter's carrier written twice in one map.
+@[ refuses("MalformedForm"), form(explicit) ]
+def twiceWritten() -> -F Integer {
+  become observe(
+    forget[
+      sort C = Unit + (Unit + Unit),
+      sort C = Unit + (Unit + Unit)
+    ](upManifest) at Model(Counter)
+  )
+}
+
+/// The counter's carrier written without the sort it fixes.
+@[ refuses("MalformedForm"), form(explicit) ]
+def unbound() -> -F Integer {
+  become observe(forget[Unit + (Unit + Unit)](upManifest) at Model(Counter))
+}
+
+/// A map onto the integers, which are no theory's models.
+@[ refuses("MalformedForm"), form(explicit) ]
+def ontoIntegers() -> -F Integer {
+  become observe(forget[sort C = Unit + (Unit + Unit)](upManifest) at Integer)
+}

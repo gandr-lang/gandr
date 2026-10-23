@@ -805,6 +805,7 @@ enum Standing
             | Former::Become
             | Former::Force
             | Former::Run
+            | Former::ForgetModel
             | Former::Binary
             | Former::Unary
             | Former::World
@@ -828,6 +829,7 @@ fn operand_of(
         | Former::Become
         | Former::Force
         | Former::Run
+        | Former::ForgetModel
         | Former::Binary
         | Former::Unary
         | Former::World

@@ -1225,6 +1225,7 @@ pub fn spine_domains<'source>(
             | Former::Force
             | Former::Run
             | Former::Call
+            | Former::ForgetModel
             | Former::Case
             | Former::If
             | Former::Telescope

@@ -3220,6 +3220,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Force
                 | Former::Run
                 | Former::Call
+                | Former::ForgetModel
                 | Former::Case
                 | Former::If
                 | Former::Telescope
