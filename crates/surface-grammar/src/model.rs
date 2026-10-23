@@ -99,6 +99,7 @@ use crate::automaton::TileTableBytes;
 use crate::check::validate_assumption_3;
 use crate::check::validate_operator_form;
 use crate::mold::FrozenTable;
+use crate::mold::HoleFollows;
 use crate::mold::MoldDef;
 use crate::mold::MoldHasPredecessor;
 use crate::mold::MoldHasRequiredTail;
@@ -1868,6 +1869,34 @@ impl Pbg
     ) -> Result<(Bound<Prec>, Bound<Prec>), PbgError>
     {
         self.molds.bounds(id)
+    }
+
+    /// Whether a hole can follow mold `id` within its form: whether a hole
+    /// can face it on its right.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when [`bounds`](Self::bounds) reads a value
+    ///   bound on the right; false for an id past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an infix operator and an opener are followed by a
+    ///   hole, an atom is not.
+    /// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+    #[spec(ensures: |ret| bool::from(ret) == self.molds.bounds(id).is_ok_and(|(_, right)| !matches!(right, Bound::Root)))]
+    #[inline]
+    #[must_use]
+    pub fn hole_follows(
+        &self,
+        id: MoldId,
+    ) -> HoleFollows
+    {
+        HoleFollows::from(
+            self.molds
+                .bounds(id)
+                .is_ok_and(|(_, right)| !matches!(right, Bound::Root)),
+        )
     }
 
     /// The symbols a context's zipper crosses stepping out in direction
