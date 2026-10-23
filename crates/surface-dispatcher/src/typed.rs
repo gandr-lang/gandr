@@ -150,6 +150,7 @@ use gandr_surface_diagnostics::diagnose;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::ClauseBinder;
 use gandr_surface_lowering::ClausePlace;
+use gandr_surface_lowering::ComponentName;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::InScope;
@@ -162,6 +163,7 @@ use gandr_surface_lowering::PatternReading;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_lowering::described::DescribedRole;
@@ -1364,14 +1366,16 @@ impl TypeTable
     ///   table [`of_unit`](Self::of_unit) builds of the same source; a term
     ///   checked against another type keeps both; a term under a constructor's
     ///   stated index answers under its frame; a run's binder answers at what
-    ///   its computation returns; a declaration refused as shadowing answers
-    ///   nowhere inside it while a term after it does; both halves of a
-    ///   declaration find its type.
+    ///   its computation returns, and a component of a run's tuple or a model's
+    ///   field nothing reads at its place in the split tuple's type; a
+    ///   declaration refused as shadowing answers nowhere inside it while a
+    ///   term after it does; both halves of a declaration find its type.
     /// - witness: `typed::tests::every_kind_of_node_is_typed_where_it_was_written`
     /// - witness: `tests::corpus::sweeps::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
     /// - witness: `typed::tests::a_mismatched_term_shows_both_types`
     /// - witness: `typed::tests::only_a_stated_index_answers_under_its_frame_931`
     /// - witness: `typed::tests::a_run_binder_answers_at_what_its_computation_returns_298`
+    /// - witness: `typed::tests::an_unread_binder_of_a_list_a_model_or_a_bind_answers_2181`
     /// - witness: `typed::tests::a_declaration_refused_as_shadowing_answers_at_no_site_677`
     /// - witness: `typed::tests::a_term_after_a_declaration_refused_as_shadowing_still_answers_677`
     /// - witness: `typed::tests::both_halves_of_a_declaration_find_its_type`
@@ -1809,6 +1813,87 @@ impl TypeTable
                     node,
                     depth: Some(depth),
                 }),
+            });
+        }
+        // Each component a split names by a binder its pattern writes and no
+        // use or pattern answers, at its place in the type the first judgement
+        // of the split's tuple reads: a product's component, a dependent
+        // pair's first, and its second, under the first named as the split
+        // names it when its type reads the first. A `run` tuple's component
+        // and a model's record field nothing reads answer at their own type.
+        for &((split, component), ref name) in origins.components() {
+            let ComponentName::Written(written) = *name
+            else {
+                continue;
+            };
+            let span = written.span();
+            if binders.contains(&span) {
+                continue;
+            }
+            let Some(&Computation::Split { scrutinee, .. }) = arena.computation(split)
+            else {
+                continue;
+            };
+            let Some((TypeNode::Value(tuple), (constant, depth))) =
+                first_of(TermNode::Value(scrutinee))
+            else {
+                continue;
+            };
+            let tuple = exposed(&mut arena, &definitions, tuple);
+            let (ty, under) = match (arena.value_type(tuple), usize::from(component)) {
+                (Some(&ValueType::Product(ref components)), place) => {
+                    let Some(&ty) = components.get(place)
+                    else {
+                        continue;
+                    };
+                    (ty, None)
+                },
+                (Some(&ValueType::Sigma { first, .. }), 0_usize) => (first, None),
+                (Some(&ValueType::Sigma { second, .. }), 1_usize) => {
+                    match strengthen_value_type(&mut arena, second, Binders::NONE.deeper()) {
+                        Maybe::Present(outside) => (outside.settle(&mut arena), None),
+                        Maybe::Absent(_) => {
+                            let first =
+                                match origins.component(split, SplitComponent::from(0_usize)) {
+                                    Maybe::Present(&ComponentName::Written(origin)) => text
+                                        .get(
+                                            usize::from(origin.span().start())
+                                                .. usize::from(origin.span().end()),
+                                        )
+                                        .map(String::from),
+                                    Maybe::Present(&ComponentName::Labelled(ref label)) => {
+                                        Some(String::from(label.as_ref()))
+                                    },
+                                    Maybe::Absent(_) => None,
+                                };
+                            let Some(first) = first
+                            else {
+                                continue;
+                            };
+                            (second, Some(first))
+                        },
+                    }
+                },
+                (Some(_) | None, _) => continue,
+            };
+            let within = Within {
+                constant,
+                node: CoreNode::Value(scrutinee),
+                depth: Some(depth),
+            };
+            let standing = under.map_or(Standing::Judged(within), |first| {
+                let named = NamedContext(contexts.len());
+                contexts.push(Vec::from([first]));
+                Standing::Parted(within, named)
+            });
+            let _fresh = binders.insert(span);
+            entries.push(Entry {
+                span,
+                subject: Subject::Binder,
+                provenance: Provenance::Written,
+                ty: TypeNode::Value(ty),
+                last: TypeNode::Value(ty),
+                standing,
             });
         }
         // What each written computation returns, read at the first judgement
@@ -4535,7 +4620,9 @@ fn exposed(
 ///   label names no field. A part stands under no earlier part unless its type
 ///   names one: a data constructor's field whose type names a field before it
 ///   stands under every field before it at its declared type, and a dependent
-///   pair's second whose type names the first stands under the first.
+///   pair's second whose type names the first stands under the first. A list
+///   cell's head is at the list's element and its tail at the list, under no
+///   earlier part; the empty list has none.
 /// - provides: one step of [`matched`]'s walk.
 /// - fails: never.
 /// - panics: none.
@@ -4544,13 +4631,15 @@ fn exposed(
 /// - hypothesis: L3 — as [`matched`], and a record pattern over a product of
 ///   three and an indexed pattern over a sum of two, each part at its
 ///   component, and a record pattern over a plain record, labelled and by
-///   position, each part at its label's field.
+///   position, each part at its label's field; a list pattern's cells, each
+///   head at the element and each tail at the list.
 /// - witness: `typed::tests::a_pattern_answers_as_itself_in_a_settled_and_a_refused_match_385`
 /// - witness: `typed::tests::an_unused_dependent_part_answers_in_its_arms_context`
 /// - witness: `typed::tests::a_pattern_inside_a_dependent_pair_s_second_component_answers_558`
 /// - witness: `typed::tests::a_part_of_a_product_or_a_binary_sum_answers_at_its_component`
 /// - witness: `typed::tests::an_unused_part_of_a_static_application_answers_1080`
 /// - witness: `typed::tests::an_unread_binder_of_a_plain_record_answers_at_its_field_1883`
+/// - witness: `typed::tests::an_unread_binder_of_a_list_a_model_or_a_bind_answers_2181`
 #[spec(ensures: |ret| ret.iter().all(|&(_, part, _)| arena.value_type(part).is_some())
     && (ret.is_empty() || matches!(*pattern, Pattern::Constructor { .. } | Pattern::Pair(..) | Pattern::Injection(..))))]
 fn parts(
@@ -4603,6 +4692,17 @@ fn parts(
                     return match summands.get(usize::from(tag)) {
                         Some(&summand) => at(&[summand], fields),
                         None => Vec::new(),
+                    };
+                },
+                Some(&ValueType::List(element)) => {
+                    // A list pattern is the list case on the empty list and a
+                    // cell, its head at the element and its tail at the list.
+                    return match (usize::from(tag), fields.as_slice()) {
+                        (1_usize, &[head, tail]) => Vec::from([
+                            (head, element, Before(0_usize)),
+                            (tail, ty, Before(0_usize)),
+                        ]),
+                        _ => Vec::new(),
                     };
                 },
                 Some(&ValueType::Data { .. }) => {},
@@ -6744,6 +6844,47 @@ mod tests
                 answer(&table, source, SourceText::from(needle)),
                 agreed(Subject::Binder, SourceText::from(ty)),
                 "`{needle}` answers at its label's field"
+            );
+        }
+    }
+
+    /// #2181: a binder no arm reads answers at its type in a list pattern, its
+    /// rest and the wildcards it writes, in a model's record pattern and in a
+    /// pair a bind runs.
+    #[test]
+    fn an_unread_binder_of_a_list_a_model_or_a_bind_answers_2181()
+    {
+        let source = SourceText::from(concat!(
+            "def shortLength(xs : List(Integer)) -> -F Integer {\n",
+            "  case xs {\n    [] => 0,\n    [a] => 1,\n    [c, d] => 2,\n    _ => 3\n  }\n}\n",
+            "def secondOf(xs : List(Integer)) -> -F Integer {\n",
+            "  case xs {\n    [_, b, ..rest] => b,\n    _ => 0\n  }\n}\n",
+            "def headed(xs : List(Integer)) -> -F Integer {\n",
+            "  case xs {\n    [h, .._] as all => become shortLength(all),\n    [] => 0\n  }\n}\n",
+            "theory Semigroup {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\n",
+            "def multiplies(s : Model(Semigroup)) -> -F Integer {\n",
+            "  case s {\n    #{.mul = m} => 0\n  }\n}\n",
+            "def bound() -> -F Integer {\n  run (p, n) <- pure ((true : Bool), 2);\n  n\n}\n",
+            "def split() -> -F Integer {\n",
+            "  run (y, z) : Integer * Integer <- pure (1, 2);\n  y\n}\n",
+        ));
+        let table = table(source);
+        for (needle, ty) in [
+            ("a] =>", "Integer"),
+            ("c, d]", "Integer"),
+            ("d] =>", "Integer"),
+            ("_, b, ..rest", "Integer"),
+            ("rest] =>", "List(Integer)"),
+            ("h, .._", "Integer"),
+            ("_] as all", "List(Integer)"),
+            ("p, n)", "Bool"),
+            ("z) :", "Integer"),
+            ("m} =>", "+U (M -> M -> -F M)"),
+        ] {
+            assert_eq!(
+                answer(&table, source, SourceText::from(needle)),
+                agreed(Subject::Binder, SourceText::from(ty)),
+                "`{needle}` answers at its type"
             );
         }
     }
