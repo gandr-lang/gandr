@@ -10,4 +10,7 @@ mod attach;
 mod format;
 
 #[cfg(test)]
+mod forget;
+
+#[cfg(test)]
 mod rewrite;

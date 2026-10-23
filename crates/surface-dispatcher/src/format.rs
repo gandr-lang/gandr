@@ -1013,6 +1013,105 @@ mod tests
         );
     }
 
+    /// #2130: beside the checker the explicit form writes the forgetting map
+    /// it applies at a manifest carrier, and the sugared form leaves it to the
+    /// checker again; the map at a sort selected off a binder is left to the
+    /// checker in both.
+    #[test]
+    fn a_forgetting_map_the_checker_applies_is_written_out_only_in_the_explicit_form_2130()
+    {
+        let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+        let base = include_str!("../../../corpus/model/identity/model-counter.gandr");
+        let (_, uses) = include_str!("../../../corpus/model/identity/model-counter-manifest.gandr")
+            .split_once("import \"./model-counter.gandr\" ;\n")
+            .expect("the exemplar imports its base");
+        let written = format!("{base}{uses}");
+        let format = |text: &str, form, checker: Option<&dyn gandr_surface_format::Elaborate>| {
+            let parsed = gandr_surface_parser::parse(&grammar, SourceText::from(text))
+                .expect("the source parses");
+            let options = FormatOptions {
+                form,
+                rewrites: gandr_surface_format::Selection::Only(&[
+                    gandr_surface_format::RewriteName::InsertedForget,
+                ]),
+                ..FormatOptions::default()
+            };
+            let formatted = gandr_surface_format::format_beside(
+                &grammar,
+                &parsed,
+                options,
+                (gandr_surface_format::Beside::Alone, checker),
+            )
+            .expect("the source formats");
+            let withdrawn: Vec<String> = formatted
+                .withdrawn()
+                .iter()
+                .map(|withdrawal| withdrawal.declaration.clone())
+                .collect();
+            (formatted.into_text(), withdrawn)
+        };
+        let elaborating: &dyn gandr_surface_format::Elaborate = &crate::compose::Elaborating;
+        let checker = Some(elaborating);
+        let (source, _) = format(&written, gandr_surface_format::Form::Source, None);
+        let (explicit, withdrawn) = format(&source, gandr_surface_format::Form::Explicit, checker);
+        let tokens = |text: &str| text.split_whitespace().collect::<String>();
+        let mut expected = tokens(&source);
+        for (written, applied) in [
+            (
+                "observe(upManifest)",
+                "observe(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter))",
+            ),
+            (
+                "(upManifest : Model(Counter))",
+                "(forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter) : Model(Counter))",
+            ),
+            (
+                "observe(negatedManifest)",
+                "observe(forget[sort C = +{Unit, Bool}](negatedManifest) at Model(Counter))",
+            ),
+            (
+                "observeShown(upReadings)",
+                "observeShown(forget[sort R = Integer](upReadings) at Model(ReadCounter))",
+            ),
+            (
+                "observeShown(upBoth)",
+                "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at \
+                 Model(ReadCounter))",
+            ),
+            (
+                "observeShown(negatedBoth)",
+                "observeShown(forget[sort C = +{Unit, Bool}, sort R = Integer](negatedBoth) at \
+                 Model(ReadCounter))",
+            ),
+        ] {
+            assert!(
+                expected.contains(&tokens(written)),
+                "the source writes `{written}`"
+            );
+            expected = expected.replace(&tokens(written), &tokens(applied));
+        }
+        assert_eq!(
+            (tokens(&explicit), withdrawn),
+            (expected, Vec::new()),
+            "the explicit form writes each forgetting map at a quoted carrier, and leaves the \
+             one at a sort selected off a binder to the checker"
+        );
+        // The explicit form breaks the bodies its maps lengthen, and a body
+        // keeps the lines it is written on, so the round trip is read by its
+        // tokens.
+        let (sugared, withdrawn) = format(&explicit, gandr_surface_format::Form::Sugared, checker);
+        assert_eq!(
+            (tokens(&sugared), withdrawn),
+            (tokens(&source), Vec::new()),
+            "the sugared form leaves each forgetting map to the checker again"
+        );
+        assert_eq!(
+            format(&source, gandr_surface_format::Form::Explicit, None),
+            (source.clone(), Vec::new()),
+            "without a checker no forgetting map is written"
+        );
+    }
+
     /// A path that names no source, one that cannot be read and one whose
     /// formatted text cannot be written read apart, and the two input-output
     /// faults carry the error they met.

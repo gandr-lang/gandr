@@ -617,6 +617,7 @@ use crate::module::DeclarationParts;
 use crate::module::DeclarationSlot;
 use crate::module::DecoratedModule;
 use crate::module::FamilyIndex;
+use crate::module::Forgetting;
 use crate::module::Half;
 use crate::module::HalfAt;
 use crate::module::Halves;
@@ -3335,6 +3336,9 @@ struct Lowerer<'run, 'source>
     /// Each derived rule's minted type and proof, by slot: a `derive`
     /// declaration's statement and each lemma its proof rests on.
     derivations: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// The sorts each minted forgetting map puts back, in signature order, by
+    /// its slot.
+    forgotten: BTreeMap<SlotIndex, Vec<gandr_theory_levitation::Name>>,
     /// Each `theory` block's definition, `S : Theory`, as its minted type and
     /// value, by slot.
     presented: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
@@ -4362,6 +4366,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .filter(|entry| matches!(entry.refusal, Maybe::Absent(_)))
             .map(|entry| entry.constant)
             .collect();
+        // Each minted one as a source writes it: its theory, the theory it
+        // returns a model of, and its carriers' sorts.
+        let mut forgotten = core::mem::take(&mut self.forgotten);
+        let forgettings: Vec<Forgetting> = self
+            .collected
+            .forgets
+            .iter()
+            .filter_map(|(&slot, forgetting)| {
+                let constant = |at: SlotIndex| {
+                    self.collected
+                        .slots
+                        .get(usize::from(at))
+                        .map(|entry| entry.constant)
+                };
+                Some(Forgetting {
+                    map: constant(slot)?,
+                    theory: constant(forgetting.theory)?,
+                    onto: constant(forgetting.onto)?,
+                    sorts: forgotten.remove(&slot)?,
+                })
+            })
+            .collect();
         let Self {
             collected,
             recognition,
@@ -4487,7 +4513,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_supplies(supplies)
         .with_qualified(qualified)
         .with_reducts(reducts)
-        .with_forgets(forgets))
+        .with_forgets(forgets)
+        .with_forgettings(forgettings))
     }
 
     /// Rebind the lowering to `tree`, which lays more nodes after the ones
@@ -4754,6 +4781,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             nominations: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
+            forgotten: BTreeMap::new(),
             presented: BTreeMap::new(),
             renamings: Vec::new(),
             instance_types: BTreeMap::new(),

@@ -16,9 +16,10 @@
 //!   typed run marks a refusal where it stands and goes on, so the terms past a
 //!   refusal are typed as well. A model of a theory standing where a model of a
 //!   theory it includes is asked names the reduct the checker applies there
-//!   (#1092), read off the crossings the typed run's value bridge records; a
-//!   theory's forgetting map, which a model with manifest sorts crosses by, has
-//!   no name a source writes and is not named.
+//!   (#1092), and a model whose sorts are manifest standing where a model of
+//!   its theory is asked names the forgetting map the checker applies there at
+//!   the carriers it solves, each read off the crossings the typed run's value
+//!   bridge records and written as the explicit form writes it.
 //! - **A binder** is spelled at the type of the uses that resolve to it, read
 //!   through the origin table's use-to-binder record. A binder no use resolves
 //!   to, and any other label — a record or sum type's field, a lazy record's
@@ -116,6 +117,7 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Crossing;
 use gandr_core_term::DataSignature;
 use gandr_core_term::FieldLabel;
 use gandr_core_term::Sort;
@@ -172,6 +174,7 @@ use gandr_surface_parser::ParseResult;
 use gandr_surface_parser::parse;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
+use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
@@ -186,6 +189,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -240,14 +244,15 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
-    /// Why an entry names no reduct the checker applies at it.
+    /// Why an entry names no map the checker applies at it.
     pub mod crossed {
-        /// The reason no reduct is named.
+        /// The reason no map is named.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The value bridge carried the term by no reduct — by none, or by
-            /// a theory's forgetting map, which no source names — or the
-            /// entry is no term.
+            /// The value bridge carried the term by no map the explicit form
+            /// writes — by none, by a forgetting map at a carrier the printer
+            /// cannot spell, or by one onto a theory its own includes — or
+            /// the entry is no term.
             Uncrossed,
         }
     }
@@ -382,9 +387,11 @@ pub struct TypedSpan
     /// The type an outer judgement checked a term against, when spelled
     /// otherwise than its own.
     expected: Maybe<Presentation, checked_against::Absent>,
-    /// The reduct the checker applies at a term a model of a theory stands
-    /// at where a model of one it includes is asked, by its declared path.
-    crossed: Maybe<String, crossed::Absent>,
+    /// The map the checker applies at a term: a reduct where a model of a
+    /// theory stands where a model of one it includes is asked, a forgetting
+    /// map where a model whose sorts are manifest stands where a model of its
+    /// theory is asked.
+    crossed: Maybe<Applied, crossed::Absent>,
 }
 
 impl TypedSpan
@@ -436,20 +443,69 @@ impl TypedSpan
         }
     }
 
-    /// The reduct the checker applies at the term, by its declared path,
-    /// `Monoid.Semigroup`: the term is a model of a theory standing where a
-    /// model of a theory it includes is asked.
+    /// The map the checker applies at the term, as the explicit form writes
+    /// it around the term: the term is a model of a theory standing where a
+    /// model of one it includes is asked, or a model whose sorts are manifest
+    /// standing where a model of its theory is asked.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub fn crossed(&self) -> Maybe<Name<'_>, crossed::Absent>
+    pub const fn crossed(&self) -> Maybe<&Applied, crossed::Absent>
     {
         match self.crossed {
-            Maybe::Present(ref name) => Maybe::Present(Name::from(name.as_str())),
+            Maybe::Present(ref applied) => Maybe::Present(applied),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
+}
+
+/// A map the checker applies at a term, as the explicit form writes it.
+///
+/// The text goes around the term: `Monoid.Semigroup(` and `)` for a reduct,
+/// `forget[sort C = Integer](` and `) at Model(Counter)` for a forgetting map.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Applied
+{
+    /// The text written before the term.
+    before: String,
+    /// The text written after it.
+    after: String,
+}
+
+impl Applied
+{
+    /// The map applied to the term spelled `term`, as the explicit form
+    /// writes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn around(
+        &self,
+        term: SourceFragment<'_>,
+    ) -> String
+    {
+        format!("{}{}{}", self.before, <&str>::from(term), self.after)
+    }
+}
+
+/// A map the value bridge carried a term by, as the table keeps it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CrossedBy
+{
+    /// The reduct declared at this constant.
+    Reduct(ConstantIndex),
+    /// A forgetting map onto the theory declared at `theory`: each sort it
+    /// puts back, with its carrier's type.
+    Forget
+    {
+        /// The theory.
+        theory: ConstantIndex,
+        /// The sorts and their carriers' types, in the map's order.
+        sorts: Vec<(String, ValueTypeId)>,
+    },
 }
 
 /// What the table holds for a declaration.
@@ -824,9 +880,9 @@ pub struct TypeTable
     /// Each span of the source's own text an entry for a binder or a term
     /// covers, with how the entries there read it, ascending.
     readings: Vec<(ByteSpan, Reading)>,
-    /// The reduct the value bridge carried each term by, by the term, as the
-    /// constant the reduct is declared at.
-    crossings: BTreeMap<ValueId, ConstantIndex>,
+    /// The reduct or forgetting map the value bridge carried each term by,
+    /// by the term, where the explicit form writes one.
+    crossings: BTreeMap<ValueId, CrossedBy>,
     /// The declarations of the source's own text a run can start at, each by
     /// where its name is written and the constant it admits, ascending.
     runs: Vec<(Referent, ConstantIndex)>,
@@ -1519,21 +1575,35 @@ impl TypeTable
         endpoints.sort_by_key(|&(term, ..)| term);
         endpoints.dedup_by_key(|&mut (term, ..)| term);
         let names = constant_names(&module);
-        // Each term the value bridge carried by a reduct, with the reduct,
-        // which a face names beside the term's type. A theory's forgetting
-        // map has no name a source writes, so it is not named (#2031).
+        // Each term the value bridge carried by a reduct, or by a forgetting
+        // map at carriers the explicit form spells, with the map, which a face
+        // names beside the term's type.
+        let mut carried: BTreeMap<ValueId, Crossing> = BTreeMap::new();
+        for typings in typed.typings().values() {
+            for (&at, crossing) in typings.crossings() {
+                let _first = carried.entry(at).or_insert_with(|| crossing.clone());
+            }
+        }
         let reducts: BTreeSet<ConstantIndex> = module.reducts().iter().copied().collect();
-        let crossings: BTreeMap<ValueId, ConstantIndex> = typed
-            .typings()
-            .values()
-            .flat_map(|typings| {
-                typings
-                    .crossings()
-                    .iter()
-                    .map(|(&at, crossing)| (at, crossing.by))
-            })
-            .filter(|&(_, by)| reducts.contains(&by))
+        let mut crossings: BTreeMap<ValueId, CrossedBy> = carried
+            .iter()
+            .filter(|&(_, crossing)| reducts.contains(&crossing.by))
+            .map(|(&at, crossing)| (at, CrossedBy::Reduct(crossing.by)))
             .collect();
+        for (at, forgetting) in gandr_surface_format::forgettings(&module, &arena, &carried) {
+            let sorts: Vec<(String, ValueTypeId)> = forgetting
+                .sorts
+                .iter()
+                .filter_map(|&(sort, carrier)| match carrier {
+                    CoreNode::ValueType(ty) => Some((String::from(sort.as_ref()), ty)),
+                    CoreNode::CompType(_) | CoreNode::Value(_) | CoreNode::Computation(_) => None,
+                })
+                .collect();
+            let _previous = crossings.insert(at, CrossedBy::Forget {
+                theory: forgetting.theory,
+                sorts,
+            });
+        }
         let mut order: Vec<&Kept> = kept.iter().collect();
         order.sort_unstable_by_key(|&&(_, _, _, at, _)| at);
         let mut entries = Vec::with_capacity(order.len());
@@ -3152,11 +3222,8 @@ impl TypeTable
             }) if entry.subject == Subject::Term => self
                 .crossings
                 .get(&at)
-                .and_then(|&map| self.names.get(usize::from(map)))
-                .filter(|name| !name.is_empty())
-                .map_or(Maybe::Absent(crossed::Absent::Uncrossed), |name| {
-                    Maybe::Present(name.clone())
-                }),
+                .and_then(|by| self.applied(by, &binders, page, style))
+                .map_or(Maybe::Absent(crossed::Absent::Uncrossed), Maybe::Present),
             Standing::Judged(_) | Standing::Closed | Standing::Named(_) | Standing::Parted(..) => {
                 Maybe::Absent(crossed::Absent::Uncrossed)
             },
@@ -3169,6 +3236,60 @@ impl TypeTable
             expected,
             crossed,
         })
+    }
+
+    /// The map `by` names, as the explicit form writes it around a term
+    /// standing under `context`, each carrier spelled in `style` on a page of
+    /// `page` columns: none when a name is empty or a carrier is spelled
+    /// otherwise than faithfully.
+    ///
+    /// # Specification
+    /// trivial.
+    fn applied(
+        &self,
+        by: &CrossedBy,
+        context: &Context,
+        page: PageWidth,
+        style: Style,
+    ) -> Option<Applied>
+    {
+        let named = |constant: ConstantIndex| {
+            self.names
+                .get(usize::from(constant))
+                .filter(|name| !name.is_empty())
+        };
+        match *by {
+            CrossedBy::Reduct(reduct) => Some(Applied {
+                before: format!("{}(", named(reduct)?),
+                after: String::from(")"),
+            }),
+            CrossedBy::Forget { theory, ref sorts } => {
+                let theory = named(theory)?;
+                let mut before = String::from("forget[");
+                for (index, &(ref sort, ty)) in sorts.iter().enumerate() {
+                    let Maybe::Present(spelled) =
+                        self.spell(TypeNode::Value(ty), context, page, style)
+                    else {
+                        return None;
+                    };
+                    if spelled.fidelity() != Fidelity::Faithful {
+                        return None;
+                    }
+                    if index > 0 {
+                        before.push_str(", ");
+                    }
+                    before.push_str("sort ");
+                    before.push_str(sort);
+                    before.push_str(" = ");
+                    before.push_str(spelled.as_ref());
+                }
+                before.push_str("](");
+                Some(Applied {
+                    before,
+                    after: format!(") at Model({theory})"),
+                })
+            },
+        }
     }
 
     /// The type or refusal of the declaration one of whose forms has the key
@@ -6621,7 +6742,9 @@ mod tests
                 Form::Explicit.into(),
             ) {
                 Maybe::Present(entry) => match entry.crossed() {
-                    Maybe::Present(reduct) => Ok(String::from(reduct.as_ref())),
+                    Maybe::Present(applied) => {
+                        Ok(applied.around(gandr_surface_syntax::SourceFragment::from("m")))
+                    },
                     Maybe::Absent(reason) => Err(Some(reason)),
                 },
                 Maybe::Absent(_) => Err(None),
@@ -6629,7 +6752,7 @@ mod tests
         };
         assert_eq!(
             crossed("multiplies(m)", "multiplies(".len()),
-            Ok(String::from("Monoid.Semigroup")),
+            Ok(String::from("Monoid.Semigroup(m)")),
             "the model the call is given crosses by the monoid's reduct"
         );
         assert_eq!(

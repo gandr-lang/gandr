@@ -249,8 +249,9 @@ impl<'source> Lowerer<'_, 'source>
             let (span, name) = (entry.named.span, entry.name);
             let origin = Origin::new(entry.named.node, entry.named.span);
             match self.forget(slot, sink, origin) {
-                Ok(minted) => {
-                    let _first = self.derivations.insert(slot, minted);
+                Ok((ty, body, sorts)) => {
+                    let _first = self.derivations.insert(slot, (ty, body));
+                    let _sorts = self.forgotten.insert(slot, sorts);
                 },
                 Err(Missing::Refused(refusal)) => {
                     let _first = self.faults.insert(slot, refusal);
@@ -265,7 +266,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The type and body of the forgetting slot `slot`, every node of both
-    /// carrying `origin` marked [`Insertion::Derived`].
+    /// carrying `origin` marked [`Insertion::Derived`], beside the sorts it
+    /// puts back in signature order.
     ///
     /// # Specification
     /// - requires: `slot` is a forgetting slot of the current source.
@@ -276,7 +278,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   returns a model of; the body `thunk(λx₁ … λm. r)`, `r` destructuring
     ///   `m` as [`Destructured`] does and returning `S`'s record, each fixed
     ///   sort's field its carrier and every other field the binder of the field
-    ///   of `M` of its name.
+    ///   of `M` of its name; and the fixed sorts, one per carrier, in the order
+    ///   of the carriers.
     /// - fails: [`Missing::Unlowered`] where a model type does not mint, a
     ///   field of `S` names no field of `M` nor a fixed sort, or an index
     ///   outgrows what one holds.
@@ -289,13 +292,13 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::mint_forgets`].
     /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
     /// - witness: `tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ty, body)| sink.arena.value_type(ty).is_some() && sink.arena.value(body).is_some()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ty, body, ref sorts)| sink.arena.value_type(ty).is_some() && sink.arena.value(body).is_some() && !sorts.is_empty()))]
     fn forget(
         &self,
         slot: SlotIndex,
         sink: &mut Sink<'_>,
         origin: Origin,
-    ) -> Result<(ValueTypeId, ValueId), Missing<'source>>
+    ) -> Result<(ValueTypeId, ValueId, Vec<Name>), Missing<'source>>
     {
         let plan = self
             .collected
@@ -437,6 +440,6 @@ impl<'source> Lowerer<'_, 'source>
         let declared = sink.arena.value_type_thunk(arrow);
         sink.origins.record_value_type(declared, below);
 
-        Ok((declared, body))
+        Ok((declared, body, fixed))
     }
 }

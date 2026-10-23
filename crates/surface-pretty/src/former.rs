@@ -1636,15 +1636,17 @@ pub trait Source
         None
     }
 
-    /// The argument of the reduct's call `node` writes, when the checker
-    /// would apply that reduct to the argument where the call stands.
+    /// The model argument of the reduct's or forgetting map's call `node`
+    /// writes, when the checker would apply that map to the argument where
+    /// the call stands.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the call's one argument when `node` is a call of a reduct the
-    ///   source leaves to the checker, or none; the default leaves none.
-    /// - provides: the argument the sugared form writes in place of a written
-    ///   reduct's call.
+    /// - ensures: the call's last argument when `node` is a call of a reduct or
+    ///   a forgetting map the source leaves to the checker, or none; the
+    ///   default leaves none.
+    /// - provides: the model the sugared form writes in place of a written
+    ///   reduct's or forgetting map's call.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — as for [`read`].
@@ -1654,6 +1656,7 @@ pub trait Source
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::reduct`].
     /// - witness: `tests::goldens::a_written_reduct_s_call_is_left_to_the_checker_in_the_sugared_form_2043`
+    /// - witness: `tests::goldens::a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130`
     #[inline]
     fn implied(
         &self,
@@ -1663,4 +1666,45 @@ pub trait Source
         let _ = node;
         None
     }
+
+    /// The forgetting map the checker applies to the value `node`, where it
+    /// reads a model whose sorts are manifest as a model of its theory.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the map the source records at `node`, or none; the default
+    ///   records none, so no value is written as a forgetting map's call.
+    /// - provides: the form `forget[sort C = A, …](m) at Model(T)` the explicit
+    ///   form writes around a value the checker crosses at.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a crossed argument spells as the map's form in the
+    ///   explicit form and bare in the sugared one.
+    /// - witness: `tests::goldens::a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130`
+    #[inline]
+    fn forgotten(
+        &self,
+        node: Self::Node,
+    ) -> Option<Forgotten<'_, Self::Node>>
+    {
+        let _ = node;
+        None
+    }
+}
+
+/// A forgetting map a source records at a value: the theory whose model it
+/// returns, and each sort it puts back with the type it puts back at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Forgotten<'source, Node>
+{
+    /// The theory, by its name and its constant.
+    pub theory: (Name<'source>, ConstantIndex),
+    /// Each sort the map puts back, by name, and the type node of its
+    /// carrier, in the theory's order.
+    pub sorts: &'source [(Name<'source>, Node)],
 }

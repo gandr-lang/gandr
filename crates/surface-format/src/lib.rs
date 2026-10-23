@@ -108,6 +108,7 @@
 //! | `linear-run`     | `run x <- c ; f(x)`, as written | `f(c)`, beside a checker |
 //! | `inserted-thunk` | `thunk { e }`, as written | `e`, beside a checker |
 //! | `inserted-reduct` | `T.S(m)`, beside a checker | `m`, beside a checker |
+//! | `inserted-forget` | `forget[sort C = A](m) at Model(T)`, beside a checker | `m`, beside a checker |
 //! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> -F B { c }`, from `def f : () => B ; def f = thunk { c } ;` |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
@@ -259,6 +260,8 @@ mod attach;
 
 mod composite;
 
+mod forget;
+
 mod layout;
 
 mod leaf;
@@ -311,6 +314,7 @@ pub use crate::attach::CommentKind;
 pub use crate::attach::Role;
 pub use crate::attach::Width;
 pub use crate::attach::comments;
+pub use crate::forget::forgettings;
 use crate::layout::Gap;
 use crate::leaf::Integrity;
 use crate::leaf::Leaf;
@@ -837,19 +841,21 @@ pub fn format_beside(
     };
     // A linear run lowers otherwise than the call written at its read, a
     // thunk otherwise than the computation the checker wraps in it, and a
-    // reduct's call otherwise than the value the checker applies the reduct
-    // to, so each is written away only where a checker can compare the two.
-    // The source is elaborated at most once: here when the lowering lists a
-    // run, which is written only in a declaration the checker elaborates as
-    // written, or mints a reduct, which the explicit form writes where the
-    // checker applies it; otherwise only once a rewritten source lowers
-    // otherwise — a thunk left out of a declaration the checker refuses
-    // elaborates to nothing on either side, and that declaration keeps its
-    // thunks.
+    // reduct's or forgetting map's call otherwise than the value the checker
+    // applies the map to, so each is written away only where a checker can
+    // compare the two. The source is elaborated at most once: here when the
+    // lowering lists a run, which is written only in a declaration the
+    // checker elaborates as written, or mints a reduct or a forgetting map,
+    // which the explicit form writes where the checker applies it; otherwise
+    // only once a rewritten source lowers otherwise — a thunk left out of a
+    // declaration the checker refuses elaborates to nothing on either side,
+    // and that declaration keeps its thunks.
     let checker = chosen.and(lowered.as_ref()).and(checker);
     let mut elaborations: Elaborations = match (lowered.as_ref(), checker) {
         (Some(module), Some(checker))
-            if !module.linear_runs().is_empty() || !module.reducts().is_empty() =>
+            if !module.linear_runs().is_empty()
+                || !module.reducts().is_empty()
+                || !module.forgets().is_empty() =>
         {
             Some(checker.elaborate(&mut arena, module))
         },
@@ -867,8 +873,18 @@ pub fn format_beside(
         (Some(_) | None, _) => linear::Runs::default(),
     };
     let reducts = match (lowered.as_ref(), elaborations.as_ref()) {
-        (Some(module), Some(elaboration)) if !module.reducts().is_empty() => {
-            Reducts::beside(module, elaboration, (base, unchecked.clone()))
+        (Some(module), Some(elaboration))
+            if !module.reducts().is_empty() || !module.forgets().is_empty() =>
+        {
+            Reducts::beside(
+                module,
+                elaboration,
+                (
+                    &arena,
+                    whole.as_ref().map_or(tree, ParseResult::tree).source(),
+                ),
+                (base, unchecked.clone()),
+            )
         },
         (Some(_) | None, _) => Reducts::default(),
     };

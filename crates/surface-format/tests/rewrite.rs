@@ -1374,6 +1374,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "linear-run",
             "inserted-thunk",
             "inserted-reduct",
+            "inserted-forget",
             "function-form",
         ],
         "each rewrite is named as a caller selects it, in the table's order"

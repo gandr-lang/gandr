@@ -32,6 +32,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::former::Arity;
 use crate::former::Component;
+use crate::former::Forgotten;
 use crate::former::Former;
 use crate::former::Name;
 use crate::former::Recursion;
@@ -395,6 +396,18 @@ const UNNAMED: &Constructors<'static> = &Constructors {
     loops: BTreeMap::new(),
 };
 
+/// The forgetting map the checker applies at a value a source records: the
+/// theory whose model it returns, and each sort it puts back, by name, with
+/// the type node of its carrier, in the theory's order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Forgetting<'arena>
+{
+    /// The theory, by admission position.
+    pub theory: ConstantIndex,
+    /// Each sort and its carrier's type.
+    pub sorts: Vec<(Name<'arena>, CoreNode)>,
+}
+
 /// A core arena read through the names of the constants it mentions.
 ///
 /// A core node names a constant or an abstract type by its admission
@@ -460,8 +473,11 @@ pub struct CoreSource<'arena>
     /// The reduct the checker applies at each value it crosses at, ascending
     /// by the value.
     crossings: &'arena [(ValueId, ConstantIndex)],
-    /// The reducts whose written calls the checker would apply itself,
-    /// ascending.
+    /// The forgetting map the checker applies at each value it crosses at,
+    /// ascending by the value.
+    forgettings: &'arena [(ValueId, Forgetting<'arena>)],
+    /// The reducts and forgetting maps whose written calls the checker would
+    /// apply itself, ascending.
     implied: &'arena [ConstantIndex],
 }
 
@@ -492,6 +508,7 @@ impl<'arena> CoreSource<'arena>
             seconds: &[],
             relations: &[],
             crossings: &[],
+            forgettings: &[],
             implied: &[],
         }
     }
@@ -688,8 +705,27 @@ impl<'arena> CoreSource<'arena>
         Self { crossings, ..self }
     }
 
-    /// This source, leaving each written call of a reduct `implied` holds,
-    /// ascending, to the checker that would apply it where the call stands.
+    /// This source, writing the forgetting map `forgettings` records at each
+    /// value the checker crosses at, ascending by the value.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forgetting(
+        self,
+        forgettings: &'arena [(ValueId, Forgetting<'arena>)],
+    ) -> Self
+    {
+        Self {
+            forgettings,
+            ..self
+        }
+    }
+
+    /// This source, leaving each written call of a reduct or a forgetting map
+    /// `implied` holds, ascending, to the checker that would apply it where
+    /// the call stands.
     ///
     /// # Specification
     /// trivial.
@@ -2584,11 +2620,42 @@ impl Source for CoreSource<'_>
         Some((self.name(reduct)?, reduct))
     }
 
-    /// The argument of a nested call or a run applying a forced reduct
-    /// constant `implied` holds to one argument.
+    /// The forgetting map recorded at a crossed value, its theory named by
+    /// its admission position.
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    fn forgotten(
+        &self,
+        node: CoreNode,
+    ) -> Option<Forgotten<'_, CoreNode>>
+    {
+        let CoreNode::Value(id) = self.restoration.restored(node)
+        else {
+            return None;
+        };
+        let at = self
+            .forgettings
+            .binary_search_by_key(&id, |&(crossed, _)| crossed)
+            .ok()?;
+        let &(_, ref forgetting) = self.forgettings.get(at)?;
+        Some(Forgotten {
+            theory: (self.name(forgetting.theory)?, forgetting.theory),
+            sorts: &forgetting.sorts,
+        })
+    }
+
+    /// The last argument of a nested call or a run applying a forced
+    /// constant `implied` holds: a reduct's one argument, a forgetting map's
+    /// model after its carriers.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// Every turn reads one application nearer the spine's head, a finite
+    /// term.
     #[inline]
     fn implied(
         &self,
@@ -2603,20 +2670,28 @@ impl Source for CoreSource<'_>
         else {
             return None;
         };
-        let &Computation::Application(function, argument) = self.arena.computation(call)?
+        let &Computation::Application(mut function, argument) = self.arena.computation(call)?
         else {
             return None;
         };
-        let &Computation::Force(callee) = self.arena.computation(function)?
-        else {
-            return None;
+        let callee = loop {
+            let computation = self.arena.computation(function)?;
+            if let &Computation::Application(inner, _) = computation {
+                function = inner;
+                continue;
+            }
+            let &Computation::Force(callee) = computation
+            else {
+                return None;
+            };
+            break callee;
         };
-        let &Value::Constant(reduct) = self.arena.value(callee)?
+        let &Value::Constant(map) = self.arena.value(callee)?
         else {
             return None;
         };
         self.implied
-            .binary_search(&reduct)
+            .binary_search(&map)
             .is_ok()
             .then_some(CoreNode::Value(argument))
     }

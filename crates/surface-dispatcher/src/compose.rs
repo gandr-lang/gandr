@@ -3489,8 +3489,8 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
 /// The checker the formatter's meaning check asks for elaborated bodies.
 ///
 /// It judges a lowered module whole, as [`judge`] judges one under the
-/// unbounded grant, entering at the worlds it declares, the reducts it mints
-/// kept.
+/// unbounded grant, entering at the worlds it declares, the reducts and
+/// forgetting maps it mints kept.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -3498,7 +3498,8 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
 ///   the module, in its order, the body the checker defines for it — a nested
 ///   computation elaborated to the bind it runs as — and none for one it
 ///   refuses, defines nothing for, or the lowering refused; and each value the
-///   checker applied one of the module's reducts to, with the reduct.
+///   checker applied one of the module's reducts or forgetting maps to, with
+///   the map and the carriers it applied the map at.
 /// - provides: the checker half of `gandr fmt`'s meaning check.
 /// - fails: never; a refusal is a declaration with no body.
 /// - panics: none.
@@ -3508,11 +3509,14 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
 ///   its read elaborate to one body, so the sugared form writes it away, and so
 ///   do a `thunk { e }` and the `e` the checker wraps in one where it checks
 ///   `e` against a thunk type, and a model and the reduct's call the checker
-///   applies to it where a model of an included theory is asked, which the
-///   explicit form writes; a source formatted without the checker keeps each.
+///   applies to it where a model of an included theory is asked, and a manifest
+///   model and the forgetting map the checker applies to it where its theory's
+///   model is asked, both of which the explicit form writes; a source formatted
+///   without the checker keeps each.
 /// - witness: `format::tests::a_linear_run_is_written_away_beside_a_checker`
 /// - witness: `format::tests::a_thunk_the_checker_inserts_is_left_to_it_1327`
 /// - witness: `format::tests::a_reduct_the_checker_applies_is_written_in_the_explicit_form_and_left_out_in_the_sugared`
+/// - witness: `format::tests::a_forgetting_map_the_checker_applies_is_written_out_only_in_the_explicit_form_2130`
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Elaborating;
 
@@ -3553,7 +3557,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 .nested_elaborations()
                 .values()
                 .flat_map(|elaboration| elaboration.crossings().iter())
-                .map(|(&value, crossing)| (value, crossing.by))
+                .map(|(&value, crossing)| (value, crossing.clone()))
                 .collect(),
         }
     }

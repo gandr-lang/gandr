@@ -434,3 +434,29 @@ fn arguments(spelled: SourceFragment<'_>) -> Option<(Vec<Token>, Vec<Token>)>
     let [motive, _, value] = arguments;
     (!motive.is_empty() && !value.is_empty()).then_some((motive, value))
 }
+
+/// The tokens of `spelled`, each with whether the printer wrote whitespace
+/// before it, the first with none; none when it spells no token.
+///
+/// # Specification
+/// trivial.
+pub fn tokens(spelled: SourceFragment<'_>) -> Option<Vec<Token>>
+{
+    let text = <&str>::from(spelled);
+    let mut found: Vec<Token> = Vec::new();
+    let mut spaced = Spaced::No;
+    for token in label(spelled) {
+        if token.lexeme == Lexeme::Space {
+            spaced = Spaced::Yes;
+            continue;
+        }
+        let written =
+            text.get(usize::try_from(token.start).ok()? .. usize::try_from(token.end).ok()?)?;
+        found.push(Token {
+            text: String::from(written),
+            spaced: if found.is_empty() { Spaced::No } else { spaced },
+        });
+        spaced = Spaced::No;
+    }
+    (!found.is_empty()).then_some(found)
+}

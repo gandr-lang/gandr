@@ -304,8 +304,9 @@ fn a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_213
 /// `forget[sort B = Unit, sort A = Integer](m) at Model(Pairing)` calls the
 /// pairing's map at the carriers in the order the signature states its sorts,
 /// whichever order they are written in, so it checks where the inserted map
-/// does and shares its slot. A written map whose model fixes no sort takes the
-/// slot it names, so the checker, not the lowering, refuses the model at it.
+/// does and shares its slot; the module records each map's sorts in that
+/// order. A written map whose model fixes no sort takes the slot it names, so
+/// the checker, not the lowering, refuses the model at it.
 #[test]
 fn a_written_forgetting_map_takes_the_slot_it_names_2130()
 {
@@ -329,6 +330,18 @@ fn a_written_forgetting_map_takes_the_slot_it_names_2130()
         ["Pairing", "Counter"],
         "the written pairing's map shares the inserted one's slot; the written counter's map \
          takes its own"
+    );
+    let carried: Vec<Vec<&str>> = lowered
+        .module
+        .forgettings()
+        .iter()
+        .map(|forgetting| forgetting.sorts.iter().map(AsRef::as_ref).collect())
+        .collect();
+    assert_eq!(
+        carried,
+        [vec!["A", "B"], vec!["C"]],
+        "each map records the sorts it puts back in signature order, the order of its \
+         carriers, whichever order the form writes them in"
     );
     let written = super::declaration(&lowered, "written", Role::Declared).constant();
     let unfixed = super::declaration(&lowered, "unfixed", Role::Declared).constant();

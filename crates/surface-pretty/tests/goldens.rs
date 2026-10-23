@@ -73,6 +73,7 @@ use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::DEPTH_LIMIT;
 use gandr_surface_pretty::Elided;
 use gandr_surface_pretty::Fidelity;
+use gandr_surface_pretty::Forgetting;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Former;
 use gandr_surface_pretty::Name;
@@ -1939,6 +1940,40 @@ fn a_written_reduct_s_call_is_left_to_the_checker_in_the_sugared_form_2043()
         (&kept, Form::Sugared, "Monoid.Semigroup(endoMonoid)"),
     ] {
         let presented = present_value(source, CoreNode::Value(call), page, form.into())
+            .expect("the value lays out");
+        assert_eq!(presented.as_ref(), expected, "{form:?}");
+        assert_eq!(presented.fidelity(), Fidelity::Faithful, "{form:?}");
+    }
+}
+
+/// #2130: a model the checker carries across to its theory's models by a
+/// forgetting map is written as the map in the explicit form, each sort it
+/// puts back beside its carrier, `forget[sort C = A](m) at Model(T)`, and
+/// bare in the sugared form, where the checker applies the map.
+#[test]
+fn a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130()
+{
+    let names = [Name::from("Counter"), Name::from("upManifest")];
+    let mut core = CoreArena::new();
+    let model = core.value_constant(ConstantIndex::from(1_usize));
+    let carrier = core.value_type_unit();
+    let forgettings = [(model, Forgetting {
+        theory: ConstantIndex::from(0_usize),
+        sorts: vec![(Name::from("C"), CoreNode::ValueType(carrier))],
+    })];
+    let source = CoreSource::new(&core, &names).forgetting(&forgettings);
+    let unforgotten = CoreSource::new(&core, &names);
+    let page = PageWidth::from(80_u32);
+    for (source, form, expected) in [
+        (
+            &source,
+            Form::Explicit,
+            "forget[sort C = Unit](upManifest) at Model(Counter)",
+        ),
+        (&source, Form::Sugared, "upManifest"),
+        (&unforgotten, Form::Explicit, "upManifest"),
+    ] {
+        let presented = present_value(source, CoreNode::Value(model), page, form.into())
             .expect("the value lays out");
         assert_eq!(presented.as_ref(), expected, "{form:?}");
         assert_eq!(presented.fidelity(), Fidelity::Faithful, "{form:?}");

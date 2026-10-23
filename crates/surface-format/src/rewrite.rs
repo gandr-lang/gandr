@@ -39,6 +39,7 @@ use crate::leaf::Owner;
 use crate::leaf::copied;
 use crate::linear::Runs;
 use crate::merge::Pairing;
+use crate::reduct::Applied;
 use crate::reduct::Reduct;
 use crate::reduct::Reducts;
 use crate::tail::Exit;
@@ -105,6 +106,12 @@ pub enum RewriteName
     /// the checker applies and the sugared form leaves out each it would,
     /// both only beside a checker that elaborates both.
     InsertedReduct,
+    /// A forgetting map the checker applies: `forget[sort C = A](m) at
+    /// Model(T)` and `m`, where a model whose sorts are manifest stands where
+    /// a model of its theory is asked; the explicit form writes each the
+    /// checker applies and the sugared form leaves out each it would, both
+    /// only beside a checker that elaborates both.
+    InsertedForget,
     /// A signature and its definition, merged: `def f : () => B ; def f =
     /// thunk { c } ;` and `def f() -> -F B { c }`; both forms move it.
     FunctionForm,
@@ -137,6 +144,7 @@ impl fmt::Display for RewriteName
             Self::LinearRun => "linear-run",
             Self::InsertedThunk => "inserted-thunk",
             Self::InsertedReduct => "inserted-reduct",
+            Self::InsertedForget => "inserted-forget",
             Self::FunctionForm => "function-form",
         })
     }
@@ -182,7 +190,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 26] = [
+pub const REWRITES: [Rewrite; 28] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -373,6 +381,22 @@ pub const REWRITES: [Rewrite; 26] = [
         mold: MoldName(""),
         from: Spelling("m"),
         to: Spelling("T.S(m)"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedForget,
+        direction: Direction::Sugar,
+        mold: MoldName("forget_model_expression"),
+        from: Spelling("forget[sort C = A](m) at Model(T)"),
+        to: Spelling("m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedForget,
+        direction: Direction::Desugar,
+        mold: MoldName(""),
+        from: Spelling("m"),
+        to: Spelling("forget[sort C = A](m) at Model(T)"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -1342,11 +1366,17 @@ impl<'source> Respelling<'_, 'source>
         let mut index = Position::First;
         let mut starts = Vec::with_capacity(parts.len());
         let reducts = self.reducts;
-        let writes = open == Open::Yes
-            && self
-                .chosen
-                .rewrites(MoldName(""))
-                .any(|name| name == RewriteName::InsertedReduct);
+        let writing = |rewrite: RewriteName| {
+            open == Open::Yes
+                && self
+                    .chosen
+                    .rewrites(MoldName(""))
+                    .any(|name| name == rewrite)
+        };
+        let (reduced, forgotten) = (
+            writing(RewriteName::InsertedReduct),
+            writing(RewriteName::InsertedForget),
+        );
         for part in parts {
             let before = out.leaves.len();
             out.leaves.extend(part.before.iter().copied());
@@ -1355,19 +1385,45 @@ impl<'source> Respelling<'_, 'source>
                 own: out.leaves.len(),
             });
             let crossed = match part.role {
-                Role::Operand(child) if writes => self
+                Role::Operand(child) if reduced || forgotten => self
                     .span_of(child)
-                    .and_then(|span| reducts.crossed(span, self.unreduced)),
+                    .and_then(|span| reducts.crossed(span, self.unreduced))
+                    .filter(|applied| match *applied {
+                        Applied::Reduct(_) => reduced,
+                        Applied::Forget(_) => forgotten,
+                    }),
                 Role::Operand(_) | Role::Own(_) | Role::Comment => None,
             };
-            if let Some(name) = crossed {
-                for (at, segment) in name.iter().enumerate() {
-                    if at > 0 {
-                        out.token(DOT);
+            match crossed {
+                Some(Applied::Reduct(name)) => {
+                    for (at, segment) in name.iter().enumerate() {
+                        if at > 0 {
+                            out.token(DOT);
+                        }
+                        out.fragment(SourceFragment::from(segment.as_str()));
                     }
-                    out.fragment(SourceFragment::from(segment.as_str()));
-                }
-                out.token(OPEN_PAREN);
+                    out.token(OPEN_PAREN);
+                },
+                Some(Applied::Forget(forget)) => {
+                    out.token(Spelling("forget"));
+                    out.token(Spelling("["));
+                    for (at, &(ref sort, ref carrier)) in forget.sorts.iter().enumerate() {
+                        if at > 0 {
+                            out.token(COMMA);
+                            out.gap(Spelling(" "));
+                        }
+                        out.token(Spelling("sort"));
+                        out.gap(Spelling(" "));
+                        out.fragment(SourceFragment::from(sort.as_str()));
+                        out.gap(Spelling(" "));
+                        out.token(Spelling("="));
+                        out.gap(Spelling(" "));
+                        written(&mut out, carrier);
+                    }
+                    out.token(Spelling("]"));
+                    out.token(OPEN_PAREN);
+                },
+                None => {},
             }
             match part.role {
                 Role::Operand(child @ Child::Node(at))
@@ -1399,9 +1455,28 @@ impl<'source> Respelling<'_, 'source>
                     out.leaves.extend(part.leaves.iter().copied());
                 },
             }
-            if crossed.is_some() {
-                out.token(CLOSE_PAREN);
-                self.changed = Changed::Yes;
+            match crossed {
+                Some(Applied::Reduct(_)) => {
+                    out.token(CLOSE_PAREN);
+                    self.changed = Changed::Yes;
+                },
+                Some(Applied::Forget(forget)) => {
+                    out.token(CLOSE_PAREN);
+                    out.gap(Spelling(" "));
+                    out.token(Spelling("at"));
+                    out.gap(Spelling(" "));
+                    out.token(Spelling("Model"));
+                    out.token(OPEN_PAREN);
+                    for (at, segment) in forget.theory.iter().enumerate() {
+                        if at > 0 {
+                            out.token(DOT);
+                        }
+                        out.fragment(SourceFragment::from(segment.as_str()));
+                    }
+                    out.token(CLOSE_PAREN);
+                    self.changed = Changed::Yes;
+                },
+                None => {},
             }
             if matches!(part.role, Role::Operand(_)) {
                 index = Position::Later;
@@ -1899,6 +1974,9 @@ impl<'source> Respelling<'_, 'source>
             (RewriteName::InsertedReduct, Direction::Sugar) => {
                 self.unreduced_call(&mut out, parts, extent)?
             },
+            (RewriteName::InsertedForget, Direction::Sugar) => {
+                self.unforgotten(&mut out, parts, extent)?
+            },
             (RewriteName::ShortAlias, Direction::Sugar) => {
                 self.shortened(&mut out, parts, self.context(at))?;
                 Band::Loose
@@ -1910,7 +1988,8 @@ impl<'source> Respelling<'_, 'source>
                 RewriteName::TailReturn
                 | RewriteName::ShortAlias
                 | RewriteName::InsertedThunk
-                | RewriteName::InsertedReduct,
+                | RewriteName::InsertedReduct
+                | RewriteName::InsertedForget,
                 Direction::Desugar,
             )
             | (
@@ -2389,6 +2468,37 @@ impl<'source> Respelling<'_, 'source>
         Some(operand.band)
     }
 
+    /// Write the forgetting map's form spanning `extent` whose parts are
+    /// `parts` as its model, answering the model's band, when the checker
+    /// would apply a forgetting map there; nothing when a comment stands
+    /// among its parts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unforgotten(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        if self.reducts.forgotten(extent, self.unreduced) != Reduct::Moved {
+            return None;
+        }
+        // Each sort's binding, then the model, then the theory's model type.
+        let (_, operands) = split(parts);
+        let &[.., model, _] = operands.as_slice()
+        else {
+            return None;
+        };
+        let operand = self.operand(model);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
     /// Write the thunk of arrows the value-function alias whose parts are
     /// `parts` stands for: a domain that binds a name as `(x : A) ->`, every
     /// other bare.
@@ -2753,7 +2863,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 30] = [
+const RULES: [MoldName; 31] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -2777,6 +2887,7 @@ const RULES: [MoldName; 30] = [
     MoldName("manifest_type"),
     MoldName("manifest_sort"),
     MoldName("call_expression"),
+    MoldName("forget_model_expression"),
     MoldName("path_type"),
     MoldName("binary_expression.then"),
     MoldName("send_session_type"),
