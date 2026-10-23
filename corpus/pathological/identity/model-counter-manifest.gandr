@@ -1,13 +1,18 @@
 // What forgetting a manifest carrier refuses: a model of a theory with the
 // counter's carrier but not its reading is no counter once forgotten, and a
-// model fixing one sort is no model fixing another (#2132).
+// model fixing one sort is no model fixing another (#2132). Two counters
+// whose carriers are not shared do not mix, a counter has no sort but its
+// carrier, and a sort a type fixing another leaves a field is not read off
+// its binder yet (#2131).
 // `../../model/identity/model-counter-manifest.gandr` forgets a counter's
-// manifest carrier, and a counter's manifest readings alone.
+// manifest carrier, a counter's manifest readings alone, and a carrier two
+// counters share.
 
 // The counter, and `observe`, which reads any counter.
 import "../../model/identity/model-counter.gandr" ;
 
-// The counter whose readings have a sort of their own.
+// The counter whose readings have a sort of their own, and `observeShared`,
+// which reads a counter sharing another's counts.
 import "../../model/identity/model-counter-manifest.gandr" ;
 
 /// A ticker: a carrier, a zero and a step, and no reading.
@@ -32,3 +37,37 @@ def tickerObserved(m : Model(Ticker) with sort C = Integer) -> -F Integer {
 def countsForReadings(m : Model(ReadCounter) with sort C = Integer) -> -F (Model(ReadCounter) with sort R = Integer) {
   m
 }
+
+/// A count of one counter stepped by a second whose carrier is its own: the
+/// second's counts are not the first's (#2131).
+@[ refuses("TypeMismatch") ]
+def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> -F Integer {
+  case b {
+    #{.zero = z, .incr = i, .read = r} => become r(i(c))
+  }
+}
+
+/// A counter over the integers where one sharing counting up's counts is
+/// asked: counting up counts modulo three, not in the integers (#2131).
+@[ refuses("TypeMismatch") ]
+def integersShared(m : Model(Counter) with sort C = Integer) -> -F Integer {
+  become observeShared(upModel, m)
+}
+
+/// A count of a sort the counter does not have.
+@[ refuses("UnknownMember") ]
+def countOfNothing(a : Model(Counter), c : a.Nope) -> -F Integer { return 0 }
+
+/// A pairing: two carriers, a value of each.
+@[ checks ]
+theory Pairing {
+  sort A : Type;
+  sort B : Type;
+  oper left : A;
+  oper right : B;
+}
+
+/// A pairing's second carrier, read off a binder whose type fixes the first:
+/// the sort the type leaves a field is not read yet (#2158).
+@[ refuses("OutOfFragment.projection_expression") ]
+def partlyFixed(m : Model(Pairing) with sort A = Integer, b : m.B) -> -F Integer { return 0 }

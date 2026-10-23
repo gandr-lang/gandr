@@ -3354,19 +3354,57 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let mut held: ValueId = match self.value_at(subject) {
+        let held: ValueId = match self.value_at(subject) {
             Maybe::Present(held) => held,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        if let Some(&(stated, ref label)) = labelled
-            && let Some(&Plan::RecordType(_, binders, last, _)) = self.plans.get(stated)
-            && !bool::from(self.binds_any(binders, last))
-        {
+        let record = labelled.and_then(|&(stated, ref label)| match self.plans.get(stated) {
+            Some(&Plan::RecordType(_, binders, last, _))
+                if !bool::from(self.binds_any(binders, last)) =>
+            {
+                Some(label)
+            },
+            _ => None,
+        });
+        Self::project(held, selected, record, sink, origin).map(Lowered::Computation)
+    }
+
+    /// Project the entry `selected` names off the record or the dependent
+    /// record `held`.
+    ///
+    /// # Specification
+    /// - requires: `held` is minted; `record`, when present, is the label of
+    ///   the selected entry of a record no entry depends on.
+    /// - ensures: the record projection at `record`'s label when present;
+    ///   otherwise `held` projected at component one once per entry before the
+    ///   selected one, each projection but the last read as the value it
+    ///   returns, then at component zero unless the entry is the last;
+    ///   component zero of a type of one entry; every node with `origin`.
+    /// - provides: the one projection a selection and a model's carrier share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_select`], and a model's carrier read
+    ///   off its nesting.
+    /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    /// - witness: `lower::arity::tests::a_selection_off_a_record_projects_its_label_855`
+    /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Present(id) if sink.arena.computation(id).is_some()))]
+    pub(super) fn project(
+        mut held: ValueId,
+        selected: Observed,
+        record: Option<&FieldLabel>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        if let Some(label) = record {
             let id = sink
                 .arena
                 .computation_record_projection(held, label.clone());
             sink.origins.record_computation(id, origin);
-            return Maybe::Present(Lowered::Computation(id));
+            return Maybe::Present(id);
         }
         let mut sides = path(selected);
         if sides.is_empty() {
@@ -3387,9 +3425,7 @@ impl<'source> Lowerer<'_, 'source>
             projected = Some(id);
         }
 
-        projected.map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
-            Maybe::Present(Lowered::Computation(id))
-        })
+        projected.map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present)
     }
 
     /// Whether the entries of a type over labels, `binders` its written

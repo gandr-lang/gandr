@@ -7,7 +7,8 @@
 // family in the carrier, so a manifest model carried along an equivalence of
 // carriers is read alike once forgotten. A model fixing some of its theory's
 // sorts takes the map putting back those alone, every other sort staying the
-// field it is (#2132).
+// field it is (#2132). A model type may fix a sort to another model's carrier,
+// `with sort C = a.C`, the two then sharing it (#2131).
 
 // The counter, counting up and down modulo three, the negation between the
 // counts, and `observe`, which reads any counter.
@@ -95,3 +96,40 @@ def negatedBoth = transport(
 /// in the counts, so forgetting at the far end reads it as counting up reads.
 @[ runs("1") ]
 def observedNegatedBoth() -> -F Integer { become observeShown(negatedBoth) }
+
+/// A count of one counter stepped and read by a second sharing its counts:
+/// `b`'s carrier is `a`'s, so a count of `a` is one `b` takes.
+@[ checks ]
+def stepShared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> -F Integer {
+  case b {
+    #{.zero = z, .incr = i, .read = r} => become r(i(c))
+  }
+}
+
+/// Counting up and its manifest twin share their counts: counting up's
+/// zero, stepped and read by the twin.
+@[ runs("1") ]
+def sharedUp() -> -F Integer { become stepShared(upModel, upManifest, Up.zero) }
+
+/// The counter sharing `a`'s counts where any counter is asked: the checker
+/// solves the carrier as `a`'s.
+@[ checks ]
+def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> -F Integer {
+  become observe(b)
+}
+
+/// The twin read as any counter, its carrier solved as counting up's.
+@[ runs("1") ]
+def observedSharedUp() -> -F Integer { become observeShared(upModel, upManifest) }
+
+/// A count of a counter whose counts are manifest at the integers is an
+/// integer: the carrier its type fixes is the type it names.
+@[ checks ]
+def countOfIntegers(a : Model(Counter) with sort C = Integer, c : a.C) -> -F Integer { c }
+
+/// A count of a counter whose counts are manifest at a type bound before it,
+/// past a binder between, is a value of that type.
+@[ checks ]
+def countOfAny(x : Type, a : Model(Counter) with sort C = x, n : Integer, c : a.C) -> -F x {
+  c
+}
