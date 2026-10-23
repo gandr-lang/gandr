@@ -5455,10 +5455,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 continue;
             };
             payloads.push(payload.node);
-            let worded = matches!(
-                AttributeRegistry::lookup(attribute.name),
-                Maybe::Present((_, AttributeSchema::Word(_) | AttributeSchema::Spelled))
-            );
+            payloads.extend(attribute.key.map(|key| key.node));
+            // A named payload is never a value: its schema reads its spelling,
+            // or refuses it.
+            let worded = attribute.key.is_some()
+                || matches!(
+                    AttributeRegistry::lookup(attribute.name),
+                    Maybe::Present((_, AttributeSchema::Word(_) | AttributeSchema::Spelled))
+                );
             let (_shape, value) = self.payload_former(payload)?;
             if value.0 && !worded {
                 seeds.push((payload.node, Reading::Value(Frame::Outermost)));
@@ -16660,13 +16664,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the option, and is ill-typed as another text otherwise; a bare word
     ///   where a word schema stands is admitted only when it spells one of the
     ///   schema's words, filed with no value, and is ill-typed as another word
-    ///   otherwise; a word or another value where the spelled schema stands is
-    ///   filed with no value and its spelling, every run of layout one space
-    ///   and none just inside a parenthesis; a `respects` or `entry` payload is
-    ///   admitted only when it names declarations, an `identity` payload only
-    ///   when it names two or three, which the filing carries, and a
-    ///   `deprecated` record only when its fields are texts among those its
-    ///   schema names, and each is ill-typed as another value otherwise.
+    ///   otherwise; a word or another value where the spelled schema stands, or
+    ///   a named payload, is filed with no value and its spelling, every run of
+    ///   layout one space and none just inside a parenthesis, a named one `name
+    ///   = value`; a named payload is ill-typed where any other schema stands;
+    ///   a `respects` or `entry` payload is admitted only when it names
+    ///   declarations, an `identity` payload only when it names two or three,
+    ///   which the filing carries, and a `deprecated` record only when its
+    ///   fields are texts among those its schema names, and each is ill-typed
+    ///   as another value otherwise.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -16687,6 +16693,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_form_payload_is_read_as_one_of_its_words`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
     /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
+    /// - witness: `lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     /// - witness: `attribute::tests::a_respects_payload_names_its_laws_in_written_order`
     /// - witness: `tests::modules::a_sealed_atom_reads_the_identity_its_type_member_states`
     #[spec(
@@ -16776,7 +16783,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             PayloadVerdict::IllTyped => {
                 let span = match written.payload {
-                    Payload::Written(payload) => payload.span,
+                    Payload::Written(payload) => written
+                        .key
+                        .map_or(payload.span, |key| key.span.join(payload.span)),
                     Payload::Unwritten => written.span,
                 };
                 return Err(LoweringRefusal::IllTypedPayload {
@@ -16800,9 +16809,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Payload::Written(placed) if schema == AttributeSchema::Spelled => {
                 // The payload as written, its layout one space and none just
                 // inside a parenthesis, so a form written across lines reads
-                // as one.
+                // as one; a named payload is spelled `name = value`.
                 let mut spelling = String::new();
-                for word in self.text_at(placed).as_ref().split_whitespace() {
+                let key = written.key.map(|key| self.text_at(key));
+                let value = self.text_at(placed);
+                let words = key
+                    .iter()
+                    .flat_map(|key| key.as_ref().split_whitespace().chain(["="]))
+                    .chain(value.as_ref().split_whitespace());
+                for word in words {
                     if !spelling.is_empty() && !spelling.ends_with('(') && !word.starts_with(')') {
                         spelling.push(' ');
                     }
@@ -16866,8 +16881,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `name` is the registered name `written` resolved to.
-    /// - ensures: the absent form for no payload, and the payload form of the
-    ///   payload's former otherwise.
+    /// - ensures: the absent form for no payload, the named form for a payload
+    ///   written with a name, and the payload form of the payload's former
+    ///   otherwise.
     /// - provides: the syntactic half of the payload verdict.
     /// - fails: yields the non-value-payload refusal for a payload that cannot
     ///   stand as a value, unless `schema` reads it as its spelling, and
@@ -16884,9 +16900,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_schema_taking_a_payload_refuses_an_absent_one`
     /// - witness: `lower::tests::a_non_value_payload_is_refused`
     /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
+    /// - witness: `lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     #[spec(
         ensures: |ret| {
             ret == match written.payload {
+                | Payload::Written(_) if written.key.is_some() => Ok(PayloadForm::Named),
                 | Payload::Unwritten => Ok(PayloadForm::Absent),
                 | Payload::Written(placed) => match self.payload_former(placed) {
                     | Err(refusal) => Err(refusal),
@@ -16917,6 +16935,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(PayloadForm::Absent);
         };
+        if written.key.is_some() {
+            return Ok(PayloadForm::Named);
+        }
         let (shape, value) = self.payload_former(placed)?;
         let Shape::Form { name: form, former } = shape
         else {
@@ -23998,6 +24019,62 @@ mod tests
                 written: PayloadForm::Text,
             },
             "the form is unquoted"
+        );
+    }
+
+    /// #2077: a named payload, `decomposes(primes = 2)`, is spelled with its
+    /// name where the spelled schema stands, and is ill-typed from its name
+    /// through its value where any other schema stands.
+    #[test]
+    fn a_named_payload_is_spelled_with_its_name_2077()
+    {
+        use crate::attribute::AttributeRegistry;
+        use crate::attribute::PayloadForm;
+
+        let Maybe::Present((decomposes, _)) =
+            AttributeRegistry::lookup(SurfaceName::from("decomposes"))
+        else {
+            panic!("`decomposes` is registered");
+        };
+        let Maybe::Present((owes, expected)) = AttributeRegistry::lookup(SurfaceName::from("owes"))
+        else {
+            panic!("`owes` is registered");
+        };
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("@[ decomposes(primes  =\n 2) ]\ndef a : Integer ;"),
+            &mut arena,
+        );
+        let [ref declaration] = *module.declarations()
+        else {
+            panic!("one name is declared");
+        };
+        let Maybe::Present(key) = declaration.signature()
+        else {
+            panic!("the name has a signature");
+        };
+        assert!(
+            !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)),
+            "the payload's name is not looked up in scope: {:?}",
+            declaration.outcome()
+        );
+        assert_eq!(
+            module
+                .attributes()
+                .spelled(key, decomposes)
+                .map(String::as_str),
+            Some("primes = 2"),
+            "the name is spelled before the value"
+        );
+        assert_eq!(
+            refusal(SourceText::from("@[ owes(n = 1) ] def a : Integer ;")),
+            LoweringRefusal::IllTypedPayload {
+                span: span(ByteOffset::from(8_usize), ByteOffset::from(13_usize)),
+                name: owes,
+                expected,
+                written: PayloadForm::Named,
+            },
+            "an integer payload takes no name"
         );
     }
 

@@ -42,18 +42,9 @@ def retiring = dialogue(
 
 /// The same play, the operator taking the choice before the seat's report is
 /// logged: the two moves are independent, so the log reads back the web
-/// `retiring` does.
-@[ decomposes(
-  series(
-    event(right, 0),
-    event(left, 0),
-    event(left, 1),
-    parallel(event(left, 2), event(right, 1)),
-    event(right, 2),
-    event(right, 3),
-    parallel(series(event(left, 3), event(left, 4)), event(right, 4))
-  )
-) ]
+/// `retiring` does, stated here by its prime count alone: series-parallel, it
+/// has no prime node.
+@[ decomposes(primes = 0) ]
 def retiringLater : Dialogue(Seat.SeatEnd) ;
 def retiringLater = dialogue(
   right(sent(Seat.task)),

@@ -612,6 +612,8 @@ pub enum PayloadForm
     OtherWord,
     /// A value of the fragment that is none of the forms above.
     OtherValue,
+    /// A payload written with a name, `primes = 2`.
+    Named,
 }
 
 impl fmt::Display for PayloadForm
@@ -634,6 +636,7 @@ impl fmt::Display for PayloadForm
             Self::Word => f.write_str("a bare word"),
             Self::OtherWord => f.write_str("another word"),
             Self::OtherValue => f.write_str("a non-literal payload"),
+            Self::Named => f.write_str("a named payload"),
         }
     }
 }
@@ -882,9 +885,10 @@ impl AttributeRegistry
 ///   the one name it declares, and by the word schema, read as one of its
 ///   words; a word spelling none by no schema; any other value exactly by the
 ///   names, interface and marker-or-record schemas, each reading its shape off
-///   the lowered value; a word or any other value, unquoted, by the spelled
-///   schema; every other pair is refused, and the refusal is the missing one
-///   exactly when nothing was written for a schema that takes something.
+///   the lowered value; a word or any other value, unquoted, and a named
+///   payload, by the spelled schema alone; every other pair is refused, and the
+///   refusal is the missing one exactly when nothing was written for a schema
+///   that takes something.
 /// - provides: the one decision the payload half of the attribute pass makes,
 ///   separated from the diagnostics that report it.
 /// - fails: never — a refusal is a verdict here, not an error.
@@ -916,6 +920,7 @@ impl AttributeRegistry
                     PayloadForm::OtherValue
                 )
                 | (AttributeSchema::Word(_), PayloadForm::Word)
+                | (AttributeSchema::Spelled, PayloadForm::Named)
         );
         let missing = matches!(form, PayloadForm::Absent)
             && matches!(
@@ -957,7 +962,8 @@ pub const fn payload_verdict(
             AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
             PayloadForm::OtherValue,
         )
-        | (AttributeSchema::Word(_), PayloadForm::Word) => PayloadVerdict::Admitted,
+        | (AttributeSchema::Word(_), PayloadForm::Word)
+        | (AttributeSchema::Spelled, PayloadForm::Named) => PayloadVerdict::Admitted,
         (
             AttributeSchema::Integer
             | AttributeSchema::Text
@@ -1021,6 +1027,17 @@ pub const fn payload_verdict(
             | PayloadForm::OtherText
             | PayloadForm::OtherWord
             | PayloadForm::OtherValue,
+        )
+        | (
+            AttributeSchema::Marker
+            | AttributeSchema::Integer
+            | AttributeSchema::Text
+            | AttributeSchema::MarkerOr(_)
+            | AttributeSchema::Names
+            | AttributeSchema::Interface
+            | AttributeSchema::MarkerOrRecord(_)
+            | AttributeSchema::Word(_),
+            PayloadForm::Named,
         ) => PayloadVerdict::IllTyped,
     }
 }
@@ -2073,22 +2090,25 @@ mod tests
             PayloadForm::Word,
             PayloadForm::OtherWord,
             PayloadForm::OtherValue,
+            PayloadForm::Named,
         ];
         // One row per schema, one column per form in the order above.
         let expected = [
-            (AttributeSchema::Marker, [A, I, I, I, I, I, I]),
-            (AttributeSchema::Integer, [M, A, I, I, I, I, I]),
-            (AttributeSchema::Text, [M, I, A, A, I, I, I]),
-            (AttributeSchema::MarkerOr("effects"), [A, I, A, I, I, I, I]),
-            (AttributeSchema::Names, [M, I, I, I, A, I, A]),
-            (AttributeSchema::Interface, [M, I, I, I, I, I, A]),
+            (AttributeSchema::Marker, [A, I, I, I, I, I, I, I]),
+            (AttributeSchema::Integer, [M, A, I, I, I, I, I, I]),
+            (AttributeSchema::Text, [M, I, A, A, I, I, I, I]),
+            (AttributeSchema::MarkerOr("effects"), [
+                A, I, A, I, I, I, I, I,
+            ]),
+            (AttributeSchema::Names, [M, I, I, I, A, I, A, I]),
+            (AttributeSchema::Interface, [M, I, I, I, I, I, A, I]),
             (AttributeSchema::Word(&["explicit", "sugared"]), [
-                M, I, I, I, A, I, I,
+                M, I, I, I, A, I, I, I,
             ]),
             (AttributeSchema::MarkerOrRecord(&["since", "note"]), [
-                A, I, I, I, I, I, A,
+                A, I, I, I, I, I, A, I,
             ]),
-            (AttributeSchema::Spelled, [M, I, I, I, A, I, A]),
+            (AttributeSchema::Spelled, [M, I, I, I, A, I, A, A]),
         ];
 
         for (schema, verdicts) in expected {

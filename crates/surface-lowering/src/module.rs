@@ -1171,8 +1171,12 @@ pub struct WrittenAttribute<'source>
     /// The bytes the attribute covers: its name, through the closing
     /// parenthesis when it has a payload.
     pub span: ByteSpan,
-    /// The payload it was written with.
+    /// The payload it was written with: in a named payload, `primes = 2`,
+    /// the value after the `=`.
     pub payload: Payload,
+    /// The name a named payload is written with, the expression before its
+    /// `=`.
+    pub key: Option<Placed>,
     /// The declaration form the attribute decorates.
     pub decorates: NodeIndex,
 }
@@ -5171,7 +5175,8 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `cursor` stands where an attribute's name belongs.
     /// - ensures: the attribute's name, the bytes from its name through its
     ///   closing parenthesis, and its payload, which is unwritten for a bare
-    ///   name and for empty parentheses.
+    ///   name and for empty parentheses; a payload written `n = v` is `v`,
+    ///   named `n`.
     /// - provides: the per-attribute half of [`Self::read_block`].
     /// - fails: as [`Self::read_block`].
     /// - panics: none.
@@ -5185,6 +5190,7 @@ impl<'source> Collector<'_, 'source>
     ///   predicate asks for the name tile's own bytes, by address and length.
     /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
     /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_key`
+    /// - witness: `lower::tests::a_named_payload_is_spelled_with_its_name_2077`
     #[spec(
         ensures: |ret| {
             ret.as_ref().map_or(true, |entry| {
@@ -5213,6 +5219,7 @@ impl<'source> Collector<'_, 'source>
             at,
             span: at.span,
             payload: Payload::Unwritten,
+            key: None,
             decorates: declaration,
         };
         if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
@@ -5223,6 +5230,16 @@ impl<'source> Collector<'_, 'source>
                     return Err(extra_operand(FormName::ATTRIBUTE, extra));
                 },
             };
+            if let (Maybe::Present(_), Payload::Written(key)) =
+                (cursor.tile(TileName::EQUALS), written.payload)
+            {
+                let Run::One(value) = cursor.operands()
+                else {
+                    return Err(misplaced(cursor.here()));
+                };
+                written.key = Some(key);
+                written.payload = Payload::Written(value);
+            }
             let Maybe::Present(close) = cursor.tile(TileName::PAREN_CLOSE)
             else {
                 return Err(misplaced(cursor.here()));
