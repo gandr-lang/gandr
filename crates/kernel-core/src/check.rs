@@ -620,19 +620,21 @@ fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 
 /// The shape an introduction form needs of the type it checks at, for the
 /// forms whose check reads that type's head: a record, a list, an injection,
-/// a tuple and a thunk. Every other value checks by synthesis or by a rule of
-/// its own.
+/// a tuple, a thunk and a reflexivity. Every other value checks by synthesis
+/// or by a rule of its own.
 ///
 /// # Specification
 /// - ensures: `Some` of the shape the form's arm of the check refuses with, for
-///   exactly the six forms named; `None` for every other value and for an
+///   exactly the seven forms named; `None` for every other value and for an
 ///   absent one.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a tuple at a decode of a returned code reads the decode
-///   first and checks at the type it quotes.
+///   first and checks at the type it quotes, and so does a reflexivity at the
+///   diagonal of a relation returning an identity's code.
 /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
-#[spec(ensures: |ret| ret.is_some() == matches!(value, Some(Value::Record(_) | Value::ListNil | Value::ListCons(..) | Value::Injection(..) | Value::Tuple(_) | Value::Thunk(_))))]
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+#[spec(ensures: |ret| ret.is_some() == matches!(value, Some(Value::Record(_) | Value::ListNil | Value::ListCons(..) | Value::Injection(..) | Value::Tuple(_) | Value::Thunk(_) | Value::Here { .. })))]
 const fn introduced_shape(value: Option<&Value>) -> Option<ExpectedValueShape>
 {
     let Some(value) = value
@@ -645,8 +647,8 @@ const fn introduced_shape(value: Option<&Value>) -> Option<ExpectedValueShape>
         Value::Injection(..) => Some(ExpectedValueShape::Sum),
         Value::Tuple(_) => Some(ExpectedValueShape::Product),
         Value::Thunk(_) => Some(ExpectedValueShape::Thunk),
-        Value::Here { .. }
-        | Value::Stay { .. }
+        Value::Here { .. } => Some(ExpectedValueShape::Path),
+        Value::Stay { .. }
         | Value::Higher { .. }
         | Value::HigherEvaluation { .. }
         | Value::QuantifiedEvaluation { .. }

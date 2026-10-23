@@ -7563,10 +7563,9 @@ fn move_payloads(
 ///   when both identities are reflexivity the operand returns unchanged; when
 ///   only the path is `here(c)` the operand transports along the identity over
 ///   it in the fibre `z. C[c, z]`; along any other path, into a returned type
-///   `Path(Unit, l, r)`, or `Path(A, l, r)` at a lawful atom `A` whose relation
-///   returns the unit type's code outright ([`relation_code`]), it returns the
-///   unit, that fibre's one inhabitant; over any other stuck path the transport
-///   stacks on the path's spine.
+///   `Path(A, l, r)` at a carrier whose identities [`carrier_fibre`] reads as
+///   the unit type, it returns the unit, that fibre's one inhabitant; over any
+///   other stuck path the transport stacks on the path's spine.
 /// - provides: the telescope transport's computation rules, a subset of the
 ///   kernel's, and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand, or a motive
@@ -7584,15 +7583,16 @@ fn move_payloads(
 /// - hypothesis: L3 — `here` along both identities, `here` along the path with
 ///   a stuck identity over it, a stuck path, a closed path that is no
 ///   reflexivity in a constant motive, and evidence or a stuck path into an
-///   identity at the unit type each reach their own arm; dropping the fibre's
-///   point, the stuck form's start, the constant row or the unit fibre's row
-///   changes the read-back term.
+///   identity at the unit type, at an identity of it or at a lawful atom each
+///   reach their own arm; dropping the fibre's point, the stuck form's start,
+///   the constant row or the unit fibre's row changes the read-back term.
 /// - witness: `identity::tests::telescope_transport_along_here_is_the_identity`
 /// - witness: `identity::tests::telescope_transport_along_here_replays_the_fibre`
 /// - witness: `identity::tests::telescope_transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_value`
 /// - witness: `identity::tests::telescope_transport_into_the_unit_fibre_returns_the_unit_1886`
 /// - witness: `identity::tests::telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937`
+/// - witness: `identity::tests::telescope_transport_into_an_identity_of_the_unit_type_returns_the_unit_1960`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(4_usize)
@@ -7629,24 +7629,16 @@ fn step_telescope_transport(
             return Ok(());
         }
     }
-    // Into an identity at the unit type, or at a lawful atom whose relation
-    // returns the unit type's code outright, the transport along any path
-    // that is no reflexivity returns the unit, that fibre's one inhabitant.
+    // Into an identity at a carrier whose identities are the unit type, the
+    // transport along any path that is no reflexivity returns the unit, that
+    // fibre's one inhabitant.
     let carried = *domain.value(path).ok_or(dangling)?;
     let carrier = match returned.and_then(|body| core.value_type(body)) {
-        Some(&ValueType::Path { carrier, .. }) => core.value_type(carrier),
+        Some(&ValueType::Path { carrier, .. }) => Some(carrier),
         _ => None,
     };
-    let fibre = match carrier {
-        Some(&ValueType::Abstract(atom)) => machine
-            .definitions
-            .identity(atom)
-            .and_then(|relation| relation_code(core, &machine.definitions, relation))
-            .and_then(|code| core.value_type(code)),
-        _ => carrier,
-    };
-    if let Some(&ValueType::Product(ref parts)) = fibre
-        && parts.is_empty()
+    if carrier
+        .is_some_and(|carrier| carrier_fibre(core, &machine.definitions, carrier) == Fibre::Unit)
         && !matches!(carried, DomainValue::Here { .. })
     {
         let centre = domain.value_unit(TermFace::Reduced);
@@ -7706,6 +7698,86 @@ fn step_telescope_transport(
         | DomainValue::Lift { .. }
         | DomainValue::Code { .. }
         | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
+    }
+}
+
+/// What every identity at a carrier reads as, for transport into its fibre.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Fibre
+{
+    /// The unit type: transport into the fibre returns the unit.
+    Unit,
+    /// Any other type, or a chain the walk does not read.
+    Other,
+}
+
+/// What every identity at `carrier` reads as.
+///
+/// # Specification
+/// - requires: nothing — any type is admissible input.
+/// - ensures: [`Fibre::Unit`] exactly when `carrier` is the unit type; an
+///   identity whose own carrier's identities read so, since an identity of the
+///   unit type is the unit type; or a lawful atom whose relation
+///   [`relation_code`] reads as returning the unit type's code, or an
+///   identity's at a carrier whose identities read so, each atom on the way
+///   admitted before the last. The unit type itself always reads so.
+/// - provides: the telescope transport's unit fibre row, which the kernel's
+///   replay reads by the same walk.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `loop` over a chain of carriers, not recursion.
+/// - measure: the identity nesting under the current carrier, which each
+///   identity step lowers, and the admission position of the atom read, which
+///   each atom step must lower.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the unit type, a lawful atom relating by it, one relating
+///   by an identity of it and an identity at that atom each read as the unit
+///   fibre; an atom relating by another type does not.
+/// - witness: `identity::tests::telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937`
+/// - witness: `identity::tests::telescope_transport_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+#[spec(ensures: |ret| ret == Fibre::Unit || !matches!(core.value_type(carrier), Some(ValueType::Product(parts)) if parts.is_empty()))]
+fn carrier_fibre(
+    core: &CoreArena,
+    definitions: &Definitions<'_>,
+    carrier: gandr_core_term::ValueTypeId,
+) -> Fibre
+{
+    let unit = |parts: &[gandr_core_term::ValueTypeId]| {
+        if parts.is_empty() {
+            Fibre::Unit
+        }
+        else {
+            Fibre::Other
+        }
+    };
+    let mut carrier = carrier;
+    let mut ceiling = None;
+    loop {
+        match core.value_type(carrier) {
+            Some(&ValueType::Product(ref parts)) => return unit(parts),
+            Some(&ValueType::Path { carrier: inner, .. }) => carrier = inner,
+            Some(&ValueType::Abstract(atom)) => {
+                if ceiling.is_some_and(|above| atom >= above) {
+                    return Fibre::Other;
+                }
+                ceiling = Some(atom);
+                let Some(code) = definitions
+                    .identity(atom)
+                    .and_then(|relation| relation_code(core, definitions, relation))
+                else {
+                    return Fibre::Other;
+                };
+                match core.value_type(code) {
+                    Some(&ValueType::Product(ref parts)) => return unit(parts),
+                    Some(&ValueType::Path { carrier: inner, .. }) => carrier = inner,
+                    _ => return Fibre::Other,
+                }
+            },
+            _ => return Fibre::Other,
+        }
     }
 }
 
