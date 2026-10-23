@@ -293,6 +293,7 @@ use gandr_core_checker::bridge::LeadingCount;
 use gandr_core_checker::bridge::Readmitted;
 use gandr_core_checker::bridge::crossed;
 use gandr_core_incremental::BackendArtifact;
+use gandr_core_incremental::CheckpointAddress;
 use gandr_core_incremental::CheckpointObserver;
 use gandr_core_incremental::CheckpointStore;
 use gandr_core_incremental::CheckpointStoreError;
@@ -302,6 +303,7 @@ use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::Keeping;
 use gandr_core_incremental::ProgramError;
+use gandr_core_incremental::Restorer;
 use gandr_core_incremental::Resume;
 use gandr_core_incremental::ResumeCensus;
 use gandr_core_incremental::ResumeError;
@@ -1983,6 +1985,57 @@ impl<Store, Blocks> Session<Store, Blocks>
             },
             restored,
         })
+    }
+
+    /// Have the next judgement restore from `restorer` when the session holds
+    /// no resume: the checkpoints it holds for the program the judgement
+    /// lowers are resumed from as a judgement's own would be, so a session
+    /// opened over a text a save persisted adopts what that save judged.
+    /// Unlike [`reopen`](Self::reopen), the session keeps its own store and
+    /// lowers nothing ahead of the judgement.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn restore_from(
+        &mut self,
+        restorer: Box<dyn Restorer>,
+    )
+    {
+        self.incremental.restore_from(restorer);
+    }
+
+    /// Persist the checkpoints of the latest judgement to `store`, as
+    /// `backend` judged them, whatever store the session keeps its own in:
+    /// what a save keeps for [`restore_from`](Self::restore_from).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`IncrementalSession::persist_to`].
+    /// - provides: `submitted::Absent` when no judgement completed.
+    /// - fails: as [`IncrementalSession::persist_to`].
+    /// - panics: propagates a panic from the store.
+    /// - executable: none — the clauses are
+    ///   [`IncrementalSession::persist_to`]'s, checked at its call.
+    ///
+    /// # Errors
+    /// As [`IncrementalSession::persist_to`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a session over a store that keeps nothing persists
+    ///   its judgement, and another session's first judgement of the same text
+    ///   restores it, every item adopted; another text adopts nothing.
+    /// - witness: `tests::checkpoint::a_persisted_judgement_restores_another_session_s_first_1816`
+    #[inline]
+    pub fn persist_to<To>(
+        &self,
+        store: &mut To,
+        backend: BackendArtifact,
+    ) -> Result<Maybe<CheckpointAddress, submitted::Absent>, CheckpointStoreError>
+    where
+        To: CheckpointStore,
+    {
+        self.incremental.persist_to(store, backend)
     }
 
     /// Submit one revision: [`judge`](Self::judge) it, then

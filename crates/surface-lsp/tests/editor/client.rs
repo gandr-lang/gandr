@@ -545,7 +545,10 @@ impl Streams
                 &mut inbox,
                 &mut outbox,
                 &mut io::sink(),
-                (Spelling::Unicode, &pool),
+                (
+                    gandr_surface_lsp::Workspace::spelled(Spelling::Unicode),
+                    &pool,
+                ),
             )
         });
         Self {

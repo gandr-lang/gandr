@@ -24,9 +24,12 @@ use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::Opacity;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
+use gandr_core_incremental::Resume;
 use gandr_core_incremental::TypeContent;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::check_program;
+use gandr_core_incremental::decode_checkpoints;
+use gandr_core_incremental::encode_checkpoints;
 use gandr_core_incremental::footprint_of;
 use gandr_core_incremental::lead;
 use gandr_core_incremental::resume;
@@ -422,6 +425,84 @@ fn a_resume_held_after_other_leading_items_is_not_reused_1647()
         first.checkpoints(),
         "as a first revision after that leading records"
     );
+}
+
+/// #1816: a set a save persisted of a revision laid after a closure, read back
+/// in another session, resumes after a leading state of the same closure that
+/// session built anew: the leading items are the state's and the revision's
+/// own are recalled from the restored set. A restored set laid after another
+/// closure holds other leading checkpoints, and its revision's own items are
+/// judged afresh.
+#[test]
+fn a_restored_set_resumes_after_the_leading_items_it_holds_1816()
+{
+    let closure = [
+        def(Name("a"), Body::Int(1)),
+        def(Name("b"), read(Name("a"))),
+    ];
+    let own = [
+        def(Name("c"), read(Name("b"))),
+        def(Name("d"), Body::Int(4)),
+    ];
+    let saved = |closure: &[Stmt]| {
+        let mut leading_program = lower(closure);
+        let (_, leading) =
+            lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+        let revision: Vec<Stmt> = closure.iter().chain(&own).cloned().collect();
+        let saved = resume_after(
+            Maybe::Absent(submitted::Absent::Fresh),
+            &Arc::new(leading),
+            &mut lower_after(&leading_program, &revision),
+        )
+        .expect("the order builds");
+        let bytes = encode_checkpoints(saved.checkpoints()).expect("supported");
+        Resume::from_checkpoints(decode_checkpoints(&bytes).expect("decodes"))
+            .expect("the order builds")
+    };
+    let mut leading_program = lower(&closure);
+    let (_, leading) = lead(&mut leading_program, CheckBudget::DEFAULT).expect("the order builds");
+    let leading = Arc::new(leading);
+    let revision: Vec<Stmt> = closure.iter().chain(&own).cloned().collect();
+    let first = resume_after(
+        Maybe::Absent(submitted::Absent::Fresh),
+        &leading,
+        &mut lower_after(&leading_program, &revision),
+    )
+    .expect("the order builds");
+
+    let restored = resume_after(
+        Maybe::Present(saved(&closure)),
+        &leading,
+        &mut lower_after(&leading_program, &revision),
+    )
+    .expect("the order builds");
+    assert_eq!(
+        restored.adoptions(),
+        [Adopted, Adopted, Adopted, Adopted],
+        "the own items are recalled from the restored set"
+    );
+    assert_eq!(
+        restored.checkpoints(),
+        first.checkpoints(),
+        "to the checkpoints a first revision after the state records"
+    );
+
+    let elsewhere = [
+        def(Name("a"), Body::Int(2)),
+        def(Name("b"), read(Name("a"))),
+    ];
+    let unrecalled = resume_after(
+        Maybe::Present(saved(&elsewhere)),
+        &leading,
+        &mut lower_after(&leading_program, &revision),
+    )
+    .expect("the order builds");
+    assert_eq!(
+        unrecalled.adoptions(),
+        [Adopted, Adopted, Judged, Judged],
+        "a set laid after another closure is not recalled"
+    );
+    assert_eq!(unrecalled.checkpoints(), first.checkpoints());
 }
 
 #[test]

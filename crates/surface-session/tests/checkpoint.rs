@@ -16,6 +16,7 @@ use gandr_core_incremental::FileCheckpointStore;
 use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemSource as _;
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_core_incremental::RestoreFrom;
 use gandr_core_incremental::stored;
 use gandr_kernel_term::DecodeError;
 use gandr_kernel_term::MalformedSite;
@@ -363,6 +364,65 @@ fn a_store_holding_nothing_reopens_fresh()
         refused.restored(),
         Maybe::Absent(reopened::Absent::RefusedWhole),
         "a revision refused whole has no program to restore for"
+    );
+}
+
+/// #1816: a session over a store that keeps nothing persists its judgement to
+/// a file store, and another session told to restore from that store adopts
+/// every item at its first judgement of the same text; one of another text
+/// adopts none.
+#[test]
+fn a_persisted_judgement_restores_another_session_s_first_1816()
+{
+    let scratch = Scratch::new(Label("persisted"));
+    let discarding = || {
+        Session::new(
+            grammar(),
+            SourceRoot::Strict,
+            DiscardingCheckpointStore,
+            InMemoryBlockStore::default(),
+            backend(),
+        )
+    };
+    let mut saved = FileCheckpointStore::open(scratch.path()).expect("the directory opens");
+    assert!(
+        matches!(
+            discarding().persist_to(&mut saved, backend()),
+            Ok(Maybe::Absent(_))
+        ),
+        "a session that judged nothing persists nothing"
+    );
+    let mut saving = discarding();
+    let _written = saving.submit(SourceText::from(WRITTEN)).expect("submits");
+    assert!(
+        matches!(
+            saving.persist_to(&mut saved, backend()),
+            Ok(Maybe::Present(_))
+        ),
+        "the judgement is persisted"
+    );
+    let restoring = || {
+        let mut session = discarding();
+        session.restore_from(Box::new(RestoreFrom::new(saved.clone(), backend())));
+        session
+    };
+    let adopted = |session: &mut Session<DiscardingCheckpointStore, InMemoryBlockStore>, text| {
+        let submission = session.submit(SourceText::from(text)).expect("submits");
+        let Maybe::Present(resumed) = submission.resumed()
+        else {
+            panic!("the revision is resumed");
+        };
+        resumed.census().adopted
+    };
+    assert_eq!(
+        adopted(&mut restoring(), WRITTEN),
+        ItemCount::from(2_usize),
+        "the same text restores, both items adopted"
+    );
+    assert_eq!(
+        adopted(&mut restoring(), APPENDED),
+        ItemCount::from(0_usize),
+        "another text restores nothing"
     );
 }
 

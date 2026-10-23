@@ -1,5 +1,6 @@
 //! A session: one call per revision that resumes, persists and streams.
 
+use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::fmt;
 
@@ -18,11 +19,14 @@ use crate::checkpoint::Resuming;
 use crate::checkpoint::resume_after_retiring;
 use crate::checkpoint::resume_or_check;
 use crate::persistence::BackendArtifact;
+use crate::persistence::CheckpointAddress;
 use crate::persistence::CheckpointObserver;
 use crate::persistence::CheckpointStore;
 use crate::persistence::CheckpointStoreError;
 use crate::persistence::Keeping;
+use crate::persistence::Restorer;
 use crate::persistence::persist;
+use crate::persistence::persist_set;
 use crate::region::Program;
 use crate::stream::SynthesisStream;
 
@@ -36,6 +40,27 @@ quenchant_shape::reason_enum! {
             Fresh,
         }
     }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a session's next submission restores from no store.
+    pub mod restoring {
+        /// The reason none is consulted.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// None was given.
+            Unasked,
+            /// The submission after it was given consulted it.
+            Spent,
+        }
+    }
+}
+
+/// A checkpoint observer told nothing.
+struct Unobserved;
+
+impl CheckpointObserver for Unobserved
+{
 }
 
 /// Why a submission failed.
@@ -118,6 +143,8 @@ pub struct IncrementalSession<Store>
     budget: CheckBudget,
     /// The latest resume.
     last: Maybe<Resume, submitted::Absent>,
+    /// What the next submission restores from when no resume is held.
+    restoring: Maybe<Box<dyn Restorer>, restoring::Absent>,
 }
 
 impl<Store> fmt::Debug for IncrementalSession<Store>
@@ -157,6 +184,7 @@ impl<Store> IncrementalSession<Store>
             backend,
             budget,
             last: Maybe::Absent(submitted::Absent::Fresh),
+            restoring: Maybe::Absent(restoring::Absent::Unasked),
         }
     }
 
@@ -177,6 +205,108 @@ impl<Store> IncrementalSession<Store>
             backend,
             budget: resume.checkpoints().budget(),
             last: Maybe::Present(resume),
+            restoring: Maybe::Absent(restoring::Absent::Unasked),
+        }
+    }
+
+    /// Have the next submission restore from `restorer` when the session
+    /// holds no resume: the set it holds for the submitted program is
+    /// resumed from as a submission's own would be.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn restore_from(
+        &mut self,
+        restorer: Box<dyn Restorer>,
+    )
+    {
+        self.restoring = Maybe::Present(restorer);
+    }
+
+    /// Persist the checkpoints of the latest resume to `store`, as `backend`
+    /// judged them: what a save keeps for a later session to restore from.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: when a resume is held, its checkpoints stored in `store` at
+    ///   the address of the program they are of, which is returned; the session
+    ///   is unchanged.
+    /// - provides: `submitted::Absent` when no submission completed.
+    /// - fails: the address's or the store's error.
+    /// - panics: propagates a panic from the store.
+    ///
+    /// # Errors
+    /// As [`address_of`](crate::address_of) and [`CheckpointStore::store`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a set persisted from a session over a store that
+    ///   keeps nothing restores a second session's first submission of the same
+    ///   program, every item adopted.
+    /// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+    #[spec(ensures: |ret| matches!(
+        (ret, &self.last),
+        (Ok(Maybe::Absent(_)), Maybe::Absent(_)) | (Ok(Maybe::Present(_)) | Err(_), Maybe::Present(_))
+    ))]
+    #[inline]
+    pub fn persist_to<To>(
+        &self,
+        store: &mut To,
+        backend: BackendArtifact,
+    ) -> Result<Maybe<CheckpointAddress, submitted::Absent>, CheckpointStoreError>
+    where
+        To: CheckpointStore,
+    {
+        match self.last {
+            Maybe::Present(ref resume) => {
+                persist_set(store, backend, resume.checkpoints(), &mut Unobserved)
+                    .map(Maybe::Present)
+            },
+            Maybe::Absent(reason) => Ok(Maybe::Absent(reason)),
+        }
+    }
+
+    /// The resume the next submission of `program` starts from: the one held,
+    /// else the set the restorer holds for it, the restorer spent either way.
+    /// A restorer that fails or holds no set leaves the submission fresh: the
+    /// set is a cache of a judgement the submission makes anyway.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the held resume when one is held; otherwise the restored
+    ///   set's resume when the restorer answers one, and no resume when it
+    ///   answers none or fails; the restorer is spent.
+    /// - panics: propagates a panic from the restorer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`persist_to`](Self::persist_to); a program the
+    ///   restorer holds no set for is judged whole.
+    /// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+    #[spec(ensures: matches!(self.restoring, Maybe::Absent(_)))]
+    fn starting(
+        &mut self,
+        program: &Program,
+    ) -> Maybe<Resume, submitted::Absent>
+    {
+        let held = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
+        let mut restorer = match core::mem::replace(
+            &mut self.restoring,
+            Maybe::Absent(restoring::Absent::Spent),
+        ) {
+            Maybe::Present(restorer) => restorer,
+            Maybe::Absent(reason) => {
+                self.restoring = Maybe::Absent(reason);
+                return held;
+            },
+        };
+        match held {
+            Maybe::Present(_) => held,
+            Maybe::Absent(_) => match restorer.restored(program) {
+                Ok(Maybe::Present(checkpoints)) => {
+                    Resume::from_checkpoints(checkpoints).map_or(held, Maybe::Present)
+                },
+                Ok(Maybe::Absent(_)) | Err(_) => held,
+            },
         }
     }
 
@@ -235,14 +365,16 @@ impl<Store> IncrementalSession<Store>
     /// [`submit`](Self::submit), polling `retirement` before each item the
     /// pass adopts or judges: retired, the pass stops before the item it
     /// polled at, nothing is persisted, and the session keeps the resume it
-    /// held for the next submission to resume from.
+    /// held, or the set it restored when it held none, for the next submission
+    /// to resume from.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: while every poll answers wanted, [`submit`](Self::submit)'s
     ///   census as [`Polled::Whole`]. Retired, [`Polled::Retired`] with the
-    ///   retirement; the session holds the resume it held before, and the store
-    ///   is not addressed.
+    ///   retirement; the session holds the resume it held before, or, when it
+    ///   held none, the set [`restore_from`](Self::restore_from)'s restorer
+    ///   answered, if any, and the store is not addressed.
     /// - fails: as [`submit`](Self::submit).
     /// - panics: none.
     ///
@@ -260,7 +392,9 @@ impl<Store> IncrementalSession<Store>
             | Ok(Polled::Whole(census)) => {
                 matches!(self.last, Maybe::Present(ref latest) if latest.census() == census && latest.checkpoints().items().len() == program.items().len())
             },
-            | Ok(Polled::Retired(..)) => self.last().map(Resume::census) == held,
+            | Ok(Polled::Retired(..)) => {
+                matches!(held, Maybe::Absent(_)) || self.last().map(Resume::census) == held
+            },
             | Err(SessionError::Resume(_)) => {
                 matches!(self.last, Maybe::Absent(submitted::Absent::Fresh))
             },
@@ -281,7 +415,7 @@ impl<Store> IncrementalSession<Store>
         Observer: CheckpointObserver,
         Poll: Retirement,
     {
-        let previous = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
+        let previous = self.starting(program);
         let polled = resume_or_check(previous, program, self.budget, retirement)
             .map_err(SessionError::Resume)?;
         self.settled(program, polled, observer)
@@ -355,7 +489,9 @@ impl<Store> IncrementalSession<Store>
             | Ok(Polled::Whole(census)) => {
                 matches!(self.last, Maybe::Present(ref latest) if latest.census() == census && latest.checkpoints().items().len() == program.items().len())
             },
-            | Ok(Polled::Retired(..)) => self.last().map(Resume::census) == held,
+            | Ok(Polled::Retired(..)) => {
+                matches!(held, Maybe::Absent(_)) || self.last().map(Resume::census) == held
+            },
             | Err(SessionError::Resume(_)) => {
                 matches!(self.last, Maybe::Absent(submitted::Absent::Fresh))
             },
@@ -377,7 +513,7 @@ impl<Store> IncrementalSession<Store>
         Observer: CheckpointObserver,
         Poll: Retirement,
     {
-        let previous = core::mem::replace(&mut self.last, Maybe::Absent(submitted::Absent::Fresh));
+        let previous = self.starting(program);
         let polled = resume_after_retiring(previous, leading, program, retirement)
             .map_err(SessionError::Resume)?;
         self.settled(program, polled, observer)

@@ -207,7 +207,10 @@ fn lsp_session(
         &mut input,
         &mut output,
         &mut log,
-        (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+        (
+            gandr_surface_lsp::Workspace::spelled(Spelling::Unicode),
+            &Pool::new(Width::SERIAL),
+        ),
     )
     .expect("the session is served");
     core::hint::black_box((served, output, log));

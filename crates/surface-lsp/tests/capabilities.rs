@@ -25,10 +25,10 @@ fn advertised_capabilities_name_the_token_legend()
         json!({
             "capabilities": {
                 "positionEncoding": "utf-16",
-                "textDocumentSync": {"openClose": true, "change": 2_i32},
+                "textDocumentSync": {"openClose": true, "change": 2_i32, "save": true},
                 "notebookDocumentSync": {"notebookSelector": [{
                     "notebook": {"notebookType": "jupyter-notebook"},
-                    "cells": [{"language": "gandr"}]}]},
+                    "cells": [{"language": "gandr"}]}], "save": true},
                 "semanticTokensProvider": {
                     "legend": {"tokenTypes": TOKEN_TYPES, "tokenModifiers": TOKEN_MODIFIERS},
                     "full": {"delta": true},

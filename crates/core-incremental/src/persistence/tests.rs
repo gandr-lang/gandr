@@ -1417,3 +1417,51 @@ fn stores_refuse_capped_levels_without_replacing_records()
     let loaded = file.load(address, backend()).expect("old file checkpoints");
     assert!(matches!(loaded, Maybe::Present(ref checkpoints) if checkpoints == &valid));
 }
+
+/// #1816: pruning a record directory by a backend removes the records another
+/// backend judged, and keeps the kept backend's and every file that is no
+/// record: one named by no address, and one named by an address that does not
+/// open with a record's header.
+#[test]
+fn pruning_keeps_only_the_kept_backend_s_records_1816()
+{
+    let scratch = Scratch::new(Label("pruned"));
+    let mut store = FileCheckpointStore::open(scratch.path()).expect("open");
+    let mut kept = pair();
+    let kept_address = address_of(&kept).expect("resolved");
+    let kept_set = checked(&mut kept);
+    store
+        .store(kept_address, backend(), &kept_set)
+        .expect("stored");
+    let mut other = integers(CoreArena::new(), &[(Key("c"), Digits("3"))]);
+    let other_address = address_of(&other).expect("resolved");
+    let other_set = checked(&mut other);
+    store
+        .store(
+            other_address,
+            BackendArtifact::from(b"another checker".as_slice()),
+            &other_set,
+        )
+        .expect("stored");
+    let squatter = format!("{:064x}", 7_u8);
+    std::fs::write(scratch.path().join(&squatter), b"no record").expect("squatter");
+    std::fs::write(scratch.path().join("notes"), b"no record").expect("notes");
+
+    assert_eq!(store.prune(backend()), Ok(RecordCount::from(1_usize)));
+    let mut left = vec![kept_address.to_hex(), squatter, "notes".into()];
+    left.sort();
+    assert_eq!(
+        scratch.entries(),
+        left,
+        "only another backend's record is removed"
+    );
+    assert!(matches!(
+        store.load(kept_address, backend()),
+        Ok(Maybe::Present(ref checkpoints)) if checkpoints == &kept_set
+    ));
+    assert_eq!(
+        store.prune(backend()),
+        Ok(RecordCount::from(0_usize)),
+        "a second pruning finds nothing to remove"
+    );
+}

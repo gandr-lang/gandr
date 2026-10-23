@@ -30,9 +30,18 @@
 //! **Reversal.** A request for each platform's native directory takes the
 //! crate; a second setting that a project overrides key by key takes a layered
 //! merge.
+//!
+//! # Saves under the XDG cache directory
+//!
+//! The language server keeps the checkpoints an editor's save persists in
+//! `gandr/checkpoints` under the user's cache directory: `$XDG_CACHE_HOME`
+//! when it names an absolute path, and `$HOME/.cache` otherwise, by the same
+//! rule. The directory is a cache: removing it costs the next open a whole
+//! judgement, and nothing else.
 
 use core::fmt;
 use std::io;
+use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
@@ -128,11 +137,92 @@ fn located(
     fallback: Option<PathBuf>,
 ) -> Option<PathBuf>
 {
-    let directory = match home {
-        Some(home) if home.is_absolute() => home,
-        Some(_) | None => fallback?.join(".config"),
-    };
-    Some(directory.join("gandr").join("config.toml"))
+    Some(
+        directory(home, fallback, Path::new(".config"))?
+            .join("gandr")
+            .join("config.toml"),
+    )
+}
+
+/// The user's directory of a kind: `home` when it is an absolute path, else
+/// `default` under `fallback`, the user's home directory.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `home` when it is absolute, else `<fallback>/<default>` when
+///   `fallback` is present, else absent.
+/// - provides: the XDG rule the configuration and the cache share.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`located`] and [`checkpointed`].
+/// - witness: `config::tests::the_file_sits_under_the_xdg_configuration_home`
+/// - witness: `config::tests::saves_sit_under_the_xdg_cache_home_1816`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|path| path.is_absolute() || path.ends_with(default)))]
+fn directory(
+    home: Option<PathBuf>,
+    fallback: Option<PathBuf>,
+    default: &Path,
+) -> Option<PathBuf>
+{
+    match home {
+        Some(home) if home.is_absolute() => Some(home),
+        Some(_) | None => Some(fallback?.join(default)),
+    }
+}
+
+/// The directory saves keep their checkpoints in, under `home`, the XDG cache
+/// home, or under `fallback`, the user's home directory, when `home` names
+/// none.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `<home>/gandr/checkpoints` when `home` is an absolute path, else
+///   `<fallback>/.cache/gandr/checkpoints` when `fallback` is present, else
+///   absent.
+/// - provides: the one path rule saves are kept at.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an absolute home, a relative one beside a fallback, and
+///   neither are each resolved.
+/// - witness: `config::tests::saves_sit_under_the_xdg_cache_home_1816`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|path| path.ends_with("gandr/checkpoints")))]
+fn checkpointed(
+    home: Option<PathBuf>,
+    fallback: Option<PathBuf>,
+) -> Option<PathBuf>
+{
+    Some(
+        directory(home, fallback, Path::new(".cache"))?
+            .join("gandr")
+            .join("checkpoints"),
+    )
+}
+
+/// The directory saves keep their checkpoints in, as [`checkpointed`] names it
+/// under the process's environment.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: as [`checkpointed`] of `$XDG_CACHE_HOME` and `$HOME`.
+/// - provides: where the language server keeps saves.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the result depends on the environment, which the
+///   clauses cannot observe.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`checkpointed`].
+/// - witness: `config::tests::saves_sit_under_the_xdg_cache_home_1816`
+pub fn checkpoints() -> Option<PathBuf>
+{
+    checkpointed(
+        std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
 }
 
 /// The configuration `read`, the contents of `path` parsed as TOML, sets.
@@ -245,6 +335,7 @@ mod tests
 
     use super::Configuration;
     use super::Fault;
+    use super::checkpointed;
     use super::located;
     use super::parsed;
 
@@ -268,6 +359,30 @@ mod tests
             Some(PathBuf::from("/home/user/.config/gandr/config.toml"))
         );
         assert_eq!(file(None, None), None);
+    }
+
+    /// #1816: saves are kept under the XDG cache home by the configuration's
+    /// own rule.
+    #[test]
+    fn saves_sit_under_the_xdg_cache_home_1816()
+    {
+        let directory = |home: Option<&str>, fallback: Option<&str>| {
+            checkpointed(home.map(PathBuf::from), fallback.map(PathBuf::from))
+        };
+        assert_eq!(
+            directory(Some("/xdg"), Some("/home/user")),
+            Some(PathBuf::from("/xdg/gandr/checkpoints"))
+        );
+        assert_eq!(
+            directory(Some("relative"), Some("/home/user")),
+            Some(PathBuf::from("/home/user/.cache/gandr/checkpoints")),
+            "a relative XDG_CACHE_HOME is ignored, as the specification asks"
+        );
+        assert_eq!(
+            directory(None, Some("/home/user")),
+            Some(PathBuf::from("/home/user/.cache/gandr/checkpoints"))
+        );
+        assert_eq!(directory(None, None), None);
     }
 
     #[test]

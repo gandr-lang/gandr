@@ -36,6 +36,7 @@ use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
 use gandr_surface_lsp::Spelling;
 use gandr_surface_lsp::TransportFault;
+use gandr_surface_lsp::Workspace;
 use gandr_surface_lsp::read_frame;
 use gandr_surface_lsp::serve;
 use gandr_surface_lsp::write_frame;
@@ -240,7 +241,10 @@ fn logged(messages: &[Value]) -> (Served, Vec<Value>, Vec<String>)
         &mut stream,
         &mut output,
         &mut log,
-        (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+        (
+            Workspace::spelled(Spelling::Unicode),
+            &Pool::new(Width::SERIAL),
+        ),
     )
     .expect("the streams carry the session");
     let log = String::from_utf8(log).expect("the log is UTF-8");
@@ -646,7 +650,10 @@ fn a_stream_closed_without_exit_ends_abruptly()
                 &mut cut,
                 &mut output,
                 &mut Vec::new(),
-                (Spelling::Unicode, &Pool::new(Width::SERIAL))
+                (
+                    Workspace::spelled(Spelling::Unicode),
+                    &Pool::new(Width::SERIAL)
+                )
             ),
             Err(TransportFault::Truncated)
         ),
@@ -758,7 +765,10 @@ fn idled(quiet: &Value) -> Vec<Value>
         &mut input,
         &mut output,
         &mut Vec::new(),
-        (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+        (
+            Workspace::spelled(Spelling::Unicode),
+            &Pool::new(Width::SERIAL),
+        ),
     )
     .expect("the streams carry the session");
     assert_eq!(served, Served::Abrupt, "the stream closes without shutdown");
@@ -1109,7 +1119,10 @@ fn an_edit_that_changes_nothing_republishes_the_same_bytes()
             &mut stream,
             &mut output,
             &mut log,
-            (Spelling::Unicode, &Pool::new(Width::SERIAL)),
+            (
+                Workspace::spelled(Spelling::Unicode),
+                &Pool::new(Width::SERIAL),
+            ),
         )
         .expect("the streams carry the session");
         assert_eq!(served, Served::Clean);

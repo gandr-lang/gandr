@@ -712,6 +712,74 @@ impl FileCheckpointStore
     {
         self.root.join(address.to_hex())
     }
+
+    /// Remove every record another backend judged, keeping `kept`'s.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success every record whose header names a backend other
+    ///   than `kept` is removed, and their count returned; a record of `kept`,
+    ///   a temporary, and a file that is no record — its name is no address's
+    ///   digest, or it does not open with a record's magic — are left. A record
+    ///   another process removed first is not counted.
+    /// - fails: [`CheckpointStoreError::Io`] when the directory cannot be
+    ///   listed, or a record cannot be read or removed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckpointStoreError::Io`], as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a directory holding a record of the kept backend, one
+    ///   of another and a file that is no record keeps the first and the last.
+    /// - witness: `persistence::tests::pruning_keeps_only_the_kept_backend_s_records_1816`
+    #[spec(ensures: |ret| matches!(ret, Ok(_) | Err(CheckpointStoreError::Io)))]
+    #[inline]
+    pub fn prune(
+        &self,
+        kept: BackendArtifact,
+    ) -> Result<RecordCount, CheckpointStoreError>
+    {
+        let entries = std::fs::read_dir(&self.root).map_err(|_error| CheckpointStoreError::Io)?;
+        let mut removed = 0_usize;
+        // The header up to the backend: magic, version, address, backend.
+        let mut header = Vec::with_capacity(76);
+        for entry in entries {
+            let path = entry.map_err(|_error| CheckpointStoreError::Io)?.path();
+            let named = path.file_name().is_some_and(|name| {
+                name.len() == 64
+                    && name
+                        .as_encoded_bytes()
+                        .iter()
+                        .all(|byte| matches!(byte, b'0' ..= b'9' | b'a' ..= b'f'))
+            });
+            if !named {
+                continue;
+            }
+            header.clear();
+            let read = std::fs::File::open(&path).and_then(|file| {
+                std::io::Read::read_to_end(&mut std::io::Read::take(file, 76), &mut header)
+            });
+            match read {
+                Ok(_) => {},
+                Err(ref error) if failure_of(error) == Failure::NotFound => continue,
+                Err(_error) => return Err(CheckpointStoreError::Io),
+            }
+            if header.get(.. 8) != Some(FILE_MAGIC.as_slice())
+                || header
+                    .get(44 .. 76)
+                    .is_none_or(|backend| backend == kept.0.as_slice())
+            {
+                continue;
+            }
+            match std::fs::remove_file(&path) {
+                Ok(()) => removed = removed.saturating_add(1),
+                Err(ref error) if failure_of(error) == Failure::NotFound => {},
+                Err(_error) => return Err(CheckpointStoreError::Io),
+            }
+        }
+        Ok(RecordCount::from(removed))
+    }
 }
 
 impl CheckpointStore for FileCheckpointStore
@@ -1391,6 +1459,41 @@ where
     Store: CheckpointStore,
     Observer: CheckpointObserver,
 {
+    persist_set(store, backend, checkpoints, observer)
+}
+
+/// Store `checkpoints` at the address their items' contents name, as judged
+/// by `backend`, and tell `observer`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the set is stored at the address of the program whose
+///   items' contents are the checkpoints', which is returned, and the observer
+///   is told; on failure the observer is told nothing.
+/// - fails: the address's or the store's error.
+/// - panics: propagates a panic from a supplied store or observer.
+/// - executable: none — a generic store and observer expose neither what was
+///   stored nor what they were told, and restating the address rehashes every
+///   content.
+///
+/// # Errors
+/// As [`address_of`] and [`CheckpointStore::store`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`persist`], and a session's held set persisted to a
+///   second store is restored from it for the same program.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+/// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+pub fn persist_set<Store, Observer>(
+    store: &mut Store,
+    backend: BackendArtifact,
+    checkpoints: &Checkpoints,
+    observer: &mut Observer,
+) -> Result<CheckpointAddress, CheckpointStoreError>
+where
+    Store: CheckpointStore,
+    Observer: CheckpointObserver,
+{
     let contents: Vec<&ItemContent> = checkpoints
         .items()
         .iter()
@@ -1471,6 +1574,118 @@ where
                 stored::Absent::OtherBackend => restored::Absent::OtherBackend,
             }))
         },
+    }
+}
+
+/// What a session's first submission restores its checkpoints from: the set
+/// stored for the program it submits, if one is.
+///
+/// # Specification
+/// - executable: none — a trait has no call boundary; [`RestoreFrom`] carries
+///   the implementation's clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`RestoreFrom`].
+/// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+pub trait Restorer: Send
+{
+    /// The set stored for `program`, or why none is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as the implementation states.
+    /// - fails: as the implementation states.
+    /// - panics: none.
+    /// - executable: none — a trait method has no body to check; each
+    ///   implementation states its own.
+    ///
+    /// # Errors
+    /// As the implementation states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`RestoreFrom`].
+    /// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+    fn restored(
+        &mut self,
+        program: &Program,
+    ) -> Result<Maybe<Checkpoints, restored::Absent>, CheckpointStoreError>;
+}
+
+/// A checkpoint store read for the sets one backend judged: what an editor's
+/// copy restores its first judgement from when the store holds the set a
+/// save persisted of the same text.
+///
+/// # Specification
+/// - executable: none — a pair of a store and a backend has no call boundary;
+///   [`Restorer::restored`] carries the clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a set persisted for a program is restored for an
+///   identical one, and nothing is for another program or another backend.
+/// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoreFrom<Store>
+{
+    /// The store read.
+    store: Store,
+    /// The backend whose sets are restored.
+    backend: BackendArtifact,
+}
+
+impl<Store> RestoreFrom<Store>
+{
+    /// Restore from `store` the sets `backend` judged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        store: Store,
+        backend: BackendArtifact,
+    ) -> Self
+    {
+        Self { store, backend }
+    }
+}
+
+impl<Store> Restorer for RestoreFrom<Store>
+where
+    Store: CheckpointStore + Send,
+{
+    /// Load the set at the program's address, if the backend judged it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the set stored at `program`'s address by the backend;
+    ///   `restored::Absent::NotStored` when none is stored there, and
+    ///   `restored::Absent::OtherBackend` when another backend's is.
+    /// - fails: the address's or the store's error.
+    /// - panics: propagates a panic from the store.
+    /// - executable: none — what a store holds at an address is not observable
+    ///   but by the load the method makes.
+    ///
+    /// # Errors
+    /// As [`address_of`] and [`CheckpointStore::load`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a persisted set restores for an identical program,
+    ///   and a store holding another backend's set at the address restores
+    ///   nothing.
+    /// - witness: `session::tests::a_held_set_persists_to_another_store_and_restores_a_first_submission_1816`
+    #[inline]
+    fn restored(
+        &mut self,
+        program: &Program,
+    ) -> Result<Maybe<Checkpoints, restored::Absent>, CheckpointStoreError>
+    {
+        Ok(match self.store.load(address_of(program)?, self.backend)? {
+            Maybe::Present(checkpoints) => Maybe::Present(checkpoints),
+            Maybe::Absent(stored::Absent::NotStored) => Maybe::Absent(restored::Absent::NotStored),
+            Maybe::Absent(stored::Absent::OtherBackend) => {
+                Maybe::Absent(restored::Absent::OtherBackend)
+            },
+        })
     }
 }
 

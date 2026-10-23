@@ -1387,8 +1387,9 @@ pub fn lead(
 ///   `base` is given. Otherwise one checkpoint per item: the leading items' the
 ///   state's, each marked adopted, and every other as the pass gives it after
 ///   them, recalled from `base`'s items after the leading ones when `base`
-///   started after the same state. The leading items keep `base`'s handles
-///   then, and take fresh ones otherwise.
+///   started after the same state, or started at the first item with the
+///   state's checkpoints first, as a restored set does. The leading items keep
+///   `base`'s handles then, and take fresh ones otherwise.
 /// - fails: [`ResumeError::Order`] when the order cannot be built or spliced.
 /// - panics: none.
 ///
@@ -1478,8 +1479,8 @@ where
             handles,
             order,
             census,
-            after: Maybe::Present(after),
-        }) if Arc::ptr_eq(&after, leading) => {
+            after,
+        }) if started_after(&after, &checkpoints, leading) == Leads::Leads => {
             let advanced = match (
                 handles.split_at_checked(count),
                 checkpoints.items.get(count ..),
@@ -1508,7 +1509,7 @@ where
                         handles,
                         order,
                         census,
-                        after: Maybe::Present(after),
+                        after,
                     }),
                 ),
             }
@@ -1527,6 +1528,44 @@ where
         }),
         Polled::Retired(retired, held) => Polled::Retired(retired, held),
     })
+}
+
+/// Whether a resume whose pass started `after` and recorded `checkpoints`
+/// leads with `leading`: it does when it was resumed after that very state,
+/// or when it started at the first item and its first checkpoints are the
+/// state's, as a set a save persisted of a revision laid after the same
+/// closure, restored, starts.
+///
+/// # Specification
+/// - ensures: [`Leads::Leads`] exactly when `after` is `leading` itself, or
+///   `after` is absent and the first checkpoints equal the state's;
+///   [`Leads::Departs`] otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a resume held after another leading of the same closure
+///   is not recalled, and a set restored of a revision after the same closure
+///   recalls its own items.
+/// - witness: `tests::incremental::a_resume_held_after_other_leading_items_is_not_reused_1647`
+/// - witness: `tests::incremental::a_restored_set_resumes_after_the_leading_items_it_holds_1816`
+#[spec(ensures: |ret| (ret == Leads::Leads) == match *after {
+    Maybe::Present(ref state) => Arc::ptr_eq(state, leading),
+    Maybe::Absent(_) => checkpoints.items.get(.. leading.checkpoints.len()) == Some(leading.checkpoints.as_slice()),
+})]
+fn started_after(
+    after: &Maybe<Arc<Leading>, leading::Absent>,
+    checkpoints: &Checkpoints,
+    leading: &Arc<Leading>,
+) -> Leads
+{
+    let leads = match *after {
+        Maybe::Present(ref state) => Arc::ptr_eq(state, leading),
+        Maybe::Absent(_) => {
+            checkpoints.items.get(.. leading.checkpoints.len())
+                == Some(leading.checkpoints.as_slice())
+        },
+    };
+    if leads { Leads::Leads } else { Leads::Departs }
 }
 
 /// Resume from `previous` onto `edited`, or judge `edited` whole under

@@ -101,7 +101,6 @@ use std::time::Instant;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Pool;
-use gandr_surface_pretty::Spelling;
 use quenchant_shape::shape::Maybe;
 
 use crate::disk::Disk;
@@ -271,13 +270,13 @@ pub type Face = fn(&mut BufReader<UnixStream>, Peer, &Mutex<Workspace>);
 ///   one is given, and one whose first byte is `r` to the render-bus face,
 ///   [`crate::bus::serve`]. Every other accepted connection is served as
 ///   [`Server::handle`], [`Server::admit`] and [`Server::admitted`] state, over
-///   the documents every connection shares, the workspace's configured spelling
-///   `spelling`, its judgements and kernel admissions running on `pool`, each
-///   connection answered from its own copy: its answers and publications reach
-///   it in the order its handling made them, and each synchronisation's timing
-///   line goes to `log`. For a connection whose client watches no file, the hub
-///   watches the files its copies' closures name, as [`Server::followed`] reads
-///   them, and a change to one on disk is handled as
+///   the documents every connection shares, `workspace` holding what the user's
+///   configuration names, its judgements and kernel admissions running on
+///   `pool`, each connection answered from its own copy: its answers and
+///   publications reach it in the order its handling made them, and each
+///   synchronisation's timing line goes to `log`. For a connection whose client
+///   watches no file, the hub watches the files its copies' closures name, as
+///   [`Server::followed`] reads them, and a change to one on disk is handled as
 ///   [`Server::changed_on_disk`] states; a watch that cannot start is said once
 ///   in `log` and the hub serves on unwatched. A connection ends at `exit`, at
 ///   the end of its stream, or at a stream fault; it then holds nothing and its
@@ -312,13 +311,13 @@ pub fn run_hub<Log>(
     linger: Duration,
     mut log: Log,
     lines: Option<Face>,
-    (spelling, pool): (Spelling, Pool),
+    (workspace, pool): (Workspace, Pool),
 ) -> Result<(), io::Error>
 where
     Log: Write + Send + 'static,
 {
     listener.set_nonblocking(true)?;
-    let workspace = Arc::new(Mutex::new(Workspace::spelled(spelling)));
+    let workspace = Arc::new(Mutex::new(workspace));
     let pool = Arc::new(pool);
     let disk = match Disk::new() {
         Ok(disk) => Some(disk),
@@ -785,7 +784,7 @@ mod tests
                 io::sink(),
                 Some(echo),
                 (
-                    super::Spelling::Unicode,
+                    super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
                     super::Pool::new(gandr_surface_dispatcher::Width::SERIAL),
                 ),
             )
@@ -1366,7 +1365,7 @@ mod tests
                 io::sink(),
                 Some(echo),
                 (
-                    super::Spelling::Unicode,
+                    super::Workspace::spelled(gandr_surface_pretty::Spelling::Unicode),
                     super::Pool::new(gandr_surface_dispatcher::Width::SERIAL),
                 ),
             )
