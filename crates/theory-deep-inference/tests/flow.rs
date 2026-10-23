@@ -811,6 +811,69 @@ fn a_leg_that_lands_off_the_join_has_no_certificate_flow()
 }
 
 #[test]
+fn a_certificate_whose_legs_record_one_step_has_one_flow()
+{
+    let (store, composition) = fusion_fixture();
+    let certificate = one_step_certificate(
+        &Toy::add(Toy::zero(), Toy::zero()),
+        &Toy::zero(),
+        &add_z_at_root(&composition),
+    );
+    assert!(
+        bool::from(legs_flow_equal(&certificate, &store).expect("both legs project")),
+        "two legs recording one step project to one flow"
+    );
+}
+
+#[test]
+fn a_leg_off_the_join_refuses_the_leg_comparison()
+{
+    let (store, composition) = fusion_fixture();
+    let strays = one_step_certificate(
+        &Toy::add(Toy::zero(), Toy::zero()),
+        &Toy::succ(Toy::zero()),
+        &add_z_at_root(&composition),
+    );
+    assert_eq!(
+        Err(FlowObstruction::LegMissesTheJoin {
+            reached: Box::new(Toy::zero()),
+        }),
+        legs_flow_equal(&strays, &store),
+        "the comparison carries the projection's refusal rather than answering"
+    );
+}
+
+#[test]
+fn equal_flows_from_two_peaks_to_one_join_are_not_one_certificate()
+{
+    // A cell that erases its variable reaches one join from two peaks, so the
+    // peak conjunct alone separates the two certificates.
+    let mut store = CellStore::new();
+    let erase = store.insert(toy_cell(Toy::add(Toy::var("x"), Toy::zero()), Toy::zero()));
+    let step = CellApp {
+        cell: erase,
+        at: at![],
+    };
+    let ground = one_step_certificate(&Toy::add(Toy::zero(), Toy::zero()), &Toy::zero(), &step);
+    let schematic =
+        one_step_certificate(&Toy::add(Toy::var("y"), Toy::zero()), &Toy::zero(), &step);
+    let ground_flow =
+        project_flow(&store, &ground.overlap.peak, &ground.path_a).expect("the leg projects");
+    let schematic_flow =
+        project_flow(&store, &schematic.overlap.peak, &schematic.path_a).expect("the leg projects");
+    assert!(
+        bool::from(flows_equal(&ground_flow, &schematic_flow)),
+        "the two legs carry one flow"
+    );
+    assert!(
+        !bool::from(
+            tracelets_flow_equal(&ground, &schematic, &store).expect("both certificates project")
+        ),
+        "while the peaks differ, so the certificates are two"
+    );
+}
+
+#[test]
 fn the_games_oracle_separates_missing_labels_and_causal_shapes()
 {
     let (store, f, g) = cong2_store();

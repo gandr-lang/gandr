@@ -14,6 +14,7 @@ use anodized::spec;
 use gandr_theory_cell_complexes::Cat;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
+use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellProvenance;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CmdPat;
@@ -1072,6 +1073,79 @@ fn a_skeleton_divergent_family_yields_no_template()
         }),
         anti_unify_tracelets(&divergent, &store, &mut InheritanceCache::new()).err(),
         "the member whose path diverges in one step is named"
+    );
+}
+
+/// The refusal of a 64-member family whose last member differs from the lead
+/// only where `alter` changes it.
+///
+/// # Specification
+/// trivial.
+fn last_member_altered(alter: impl FnOnce(&mut Tracelet)) -> Option<TemplateRefusal>
+{
+    let (store, lead) = lead_base();
+    let mut members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let last = members.last_mut()?;
+    alter(last);
+    anti_unify_tracelets(&members, &store, &mut InheritanceCache::new()).err()
+}
+
+#[test]
+fn a_member_whose_left_cell_alone_differs_is_named_divergent()
+{
+    assert_eq!(
+        Some(TemplateRefusal::SkeletonDivergence {
+            member: MemberIndex::from(63_usize)
+        }),
+        last_member_altered(|last| {
+            last.overlap.left = CellId::from(usize::from(last.overlap.left).saturating_add(1));
+        }),
+        "every other part of the skeleton is shared, so the left cell alone diverges"
+    );
+}
+
+#[test]
+fn a_member_whose_right_cell_alone_differs_is_named_divergent()
+{
+    assert_eq!(
+        Some(TemplateRefusal::SkeletonDivergence {
+            member: MemberIndex::from(63_usize)
+        }),
+        last_member_altered(|last| {
+            last.overlap.right = CellId::from(usize::from(last.overlap.right).saturating_add(1));
+        }),
+        "every other part of the skeleton is shared, so the right cell alone diverges"
+    );
+}
+
+#[test]
+fn a_member_whose_overlap_kind_alone_differs_is_named_divergent()
+{
+    assert_eq!(
+        Some(TemplateRefusal::SkeletonDivergence {
+            member: MemberIndex::from(63_usize)
+        }),
+        last_member_altered(|last| {
+            last.overlap.kind = match last.overlap.kind {
+                OverlapKind::Confluence => OverlapKind::Composition,
+                OverlapKind::Composition => OverlapKind::Confluence,
+            };
+        }),
+        "every other part of the skeleton is shared, so the overlap kind alone diverges"
+    );
+}
+
+#[test]
+fn a_template_reports_its_expansion_factor()
+{
+    let (store, lead) = lead_base();
+    let members = family(&lead, Members(64), Regime::TwoArms, Adversary::Honest);
+    let template = anti_unify_tracelets(&members, &store, &mut InheritanceCache::new())
+        .expect("two arms per entry pay");
+    assert_eq!(
+        usize::from(template.plain_size()).checked_div(usize::from(template.size())),
+        Some(usize::from(template.expansion_factor())),
+        "the factor is the plain size over the template size, rounded down"
     );
 }
 

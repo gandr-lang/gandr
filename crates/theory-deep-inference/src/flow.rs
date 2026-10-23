@@ -983,6 +983,8 @@ where
 /// - witness: `tests::flow::flow_equality_is_strictly_finer_than_replay_equivalence`
 /// - witness: `tests::flow::the_games_quotient_identifies_a_tile_the_flow_declines_a_canonical_form`
 /// - witness: `flow::tests::a_two_step_leg_and_a_one_step_leg_have_different_flows`
+/// - witness: `tests::flow::a_certificate_whose_legs_record_one_step_has_one_flow`
+/// - witness: `tests::flow::a_leg_off_the_join_refuses_the_leg_comparison`
 #[inline]
 #[spec(ensures: |output| output == tracelet_flow(tracelet, store).map(|projected| flows_equal(&projected.path_a, &projected.path_b)))]
 pub fn legs_flow_equal<A>(
@@ -1030,6 +1032,7 @@ where
 /// - witness: `tests::flow::replay_equivalent_certificates_can_carry_different_flows`
 /// - witness: `tests::flow::equal_flows_over_different_boundaries_are_not_one_certificate`
 /// - witness: `tests::flow::flow_equality_implies_replay_equivalence`
+/// - witness: `tests::flow::equal_flows_from_two_peaks_to_one_join_are_not_one_certificate`
 #[inline]
 #[spec(ensures: |output| output == tracelet_flow(left, store).and_then(|left| tracelet_flow(right, store).map(|right| FlowEquality::from(left.peak == right.peak && left.joins_at == right.joins_at && bool::from(flows_equal(&left.path_a, &right.path_a)) && bool::from(flows_equal(&left.path_b, &right.path_b))))))]
 pub fn tracelets_flow_equal<A>(
