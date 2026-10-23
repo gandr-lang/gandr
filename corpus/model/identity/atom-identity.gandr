@@ -92,3 +92,86 @@ def backAlong : Path(
   unit
 ) ;
 def backAlong = here(unit) ;
+
+/// Based path induction along the evidence in the family of the identities
+/// of the singleton's own paths: each fibre is an identity of the relation's,
+/// the unit type, and so the unit type too (#1960).
+@[ checks ]
+def overAlong : Path(
+  Path(Path(Point.T, Point.origin, Point.other), originOther, originOther),
+  transport(
+    +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Path(
+      Path(Point.T, Point.origin, y),
+      z,
+      z
+    )),
+    originOther,
+    here(Point.origin),
+    here(originOther),
+    here(here(Point.origin))
+  ),
+  unit
+) ;
+def overAlong = here(unit) ;
+
+/// Two points of the unit type, related by the paths between them: each
+/// fibre of this relation is an identity of the unit type, not the unit type
+/// itself (#1959).
+@[ checks ]
+def pathRelated(a : Unit, b : Unit) -> -F Type { return Path(Unit, a, b) }
+
+/// Every point related to itself by its reflexivity.
+@[ checks ]
+def pathReflexivity(a : Unit) -> -F pathRelated(a, a) { here(a) }
+
+/// The transport law at the paths of the unit type: an identity of the
+/// unit type, and one over it, is the unit (#1960).
+@[ checks ]
+def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> -F Path(
+  #{ y : Unit, s : pathRelated(a, y) },
+  (b, r),
+  (a, pathReflexivity(a))
+) { (unit, unit) }
+
+/// The unit type sealed, relating its points by the paths between them.
+module PathPoint :> #{ type T, origin : T, other : T } {
+  /// The sealed points, whose identity is the relation `pathRelated`.
+  @[ identity((pathRelated, pathReflexivity, pathContraction)) ]
+  @[ checks ]
+  type T = Unit;
+
+  /// One point.
+  @[ checks ]
+  def origin = unit;
+
+  /// Another point, related to the first.
+  @[ checks ]
+  def other = unit;
+}
+
+/// The relation's evidence between the two points: a path of the unit type,
+/// which is the unit.
+@[ checks ]
+def pathOriginOther : Path(PathPoint.T, PathPoint.origin, PathPoint.other) ;
+def pathOriginOther = unit ;
+
+/// Based path induction along that evidence in the family of paths back to
+/// `origin`: each fibre is the relation's, an identity of the unit type, so
+/// the transport is the unit (#1960).
+@[ checks ]
+def pathBack : Path(
+  Path(PathPoint.T, PathPoint.other, PathPoint.origin),
+  transport(
+    +U ((y : PathPoint.T) -> (z : Path(PathPoint.T, PathPoint.origin, y)) -> -F Path(
+      PathPoint.T,
+      y,
+      PathPoint.origin
+    )),
+    pathOriginOther,
+    here(PathPoint.origin),
+    here(pathOriginOther),
+    here(PathPoint.origin)
+  ),
+  unit
+) ;
+def pathBack = here(unit) ;

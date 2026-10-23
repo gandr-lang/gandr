@@ -6296,17 +6296,22 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// The fibre the introduction `term` checked at an identity reads: at the
     /// unit type, the unit type, the empty tuple of paths as a tuple at a
     /// product is a tuple of paths; at a lawful atom past its seal, the
-    /// relation its interface states, between the two endpoints.
+    /// relation its interface states, between the two endpoints; at an
+    /// identity whose identities read as the unit type, the unit type.
     ///
     /// # Specification
     /// - requires: `expected` is formed.
     /// - ensures: when `expected`'s weak head is `Path(A, left, right)`: `A`
     ///   itself when `A`'s weak head is the unit type, and `El(⟨relation left
     ///   right⟩)` at the atom's kind's level when it is an atom whose interface
-    ///   states a law; nothing otherwise, an atom inside its seal reading as
-    ///   its representation.
-    /// - fails: [`CheckRefusal::AtomTransport`] at `term` when `A`'s weak head
-    ///   is an atom whose interface states no law; the unfolding's refusal;
+    ///   states a law, the fibre of that identity instead when its weak head is
+    ///   itself an identity whose fibre this reading reaches; when `A` is
+    ///   itself an identity, its own fibre read the same way, innermost out,
+    ///   and the unit type when that fibre's weak head is the unit type, an
+    ///   identity of the unit type being the unit type; nothing otherwise, an
+    ///   atom inside its seal reading as its representation.
+    /// - fails: [`CheckRefusal::AtomTransport`] at `term` when an atom on the
+    ///   way is one whose interface states no law; the unfolding's refusal;
     ///   [`CheckRefusal::MachineInvariant`] for an atom whose kind is no
     ///   universe.
     /// - panics: none.
@@ -6314,13 +6319,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Errors
     /// - [`CheckRefusal`] — as above.
     ///
+    /// # Termination
+    /// - reason: one `loop` over the carriers under `expected`, not recursion.
+    /// - measure: the identity nesting under the current carrier, which each
+    ///   identity step lowers, and the admission position of the atom read,
+    ///   whose relation is admitted before it and so names no later atom.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — the relation's evidence between two points of a
     ///   lawful atom checks at their identity and is refused by name at a
     ///   lawless one, `()` checks at an identity of the unit type between two
-    ///   variables, and the kernel admits each identity checked.
+    ///   variables and at an identity of the paths of a lawful atom relating by
+    ///   the unit type, and the kernel admits each identity checked.
     /// - witness: `bridge::tests::a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers`
     /// - witness: `bridge::tests::an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name`
+    /// - witness: `bridge::tests::j_along_an_atom_relating_by_the_paths_of_the_unit_type_checks_and_replays_1960`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |fibre| fibre.is_none_or(|fibre| self.context.arena().value_type(fibre).is_some())))]
     fn identity_fibre(
         &mut self,
@@ -6331,40 +6344,78 @@ impl<'context, 'arena> Machine<'context, 'arena>
         let head = self.context.whnf_value_type(expected)?;
         let ValueTypeView::Path {
             carrier,
-            left,
-            right,
+            mut left,
+            mut right,
         } = value_type_view(self.context.arena(), head)?
         else {
             return Ok(None);
         };
-        let carrier = self.context.whnf_value_type(carrier)?;
-        let view = value_type_view(self.context.arena(), carrier)?;
-        if matches!(view, ValueTypeView::Unit) {
-            return Ok(Some(carrier));
+        let mut carrier = self.context.whnf_value_type(carrier)?;
+        let mut nested = false;
+        // What an atom's relation reads as at the outermost identity, kept
+        // when the identity it reads as has no fibre this reading reaches.
+        let mut related_fibre = None;
+        loop {
+            let view = value_type_view(self.context.arena(), carrier)?;
+            if view == ValueTypeView::Unit {
+                return Ok(Some(carrier));
+            }
+            if let ValueTypeView::Path {
+                carrier: inner,
+                left: from,
+                right: to,
+            } = view
+            {
+                nested = true;
+                (left, right) = (from, to);
+                carrier = self.context.whnf_value_type(inner)?;
+                continue;
+            }
+            let ValueTypeView::Abstract(atom) = view
+            else {
+                return Ok(related_fibre);
+            };
+            let Some((interface, kind)) = self.context.interface_of(atom)
+            else {
+                return Ok(related_fibre);
+            };
+            if let Maybe::Absent(_) = interface.law() {
+                return Err(CheckRefusal::AtomTransport { at: term, atom });
+            }
+            let Some(&gandr_core_term::ValueType::Universe { ref level, .. }) =
+                self.context.arena().value_type(kind)
+            else {
+                return Err(CheckRefusal::MachineInvariant);
+            };
+            let level = level.clone();
+            let related = crate::former::related_by(
+                self.context.arena_mut(),
+                interface.relation(),
+                (left, right),
+                level,
+            );
+            let read = self.context.whnf_value_type(related)?;
+            // The relation returns an identity's code: the introduction reads
+            // that identity's fibre in turn.
+            if let ValueTypeView::Path {
+                carrier: inner,
+                left: from,
+                right: to,
+            } = value_type_view(self.context.arena(), read)?
+            {
+                if !nested {
+                    related_fibre = Some(related);
+                }
+                (left, right) = (from, to);
+                carrier = self.context.whnf_value_type(inner)?;
+            }
+            else if nested {
+                carrier = read;
+            }
+            else {
+                return Ok(Some(related));
+            }
         }
-        let ValueTypeView::Abstract(atom) = view
-        else {
-            return Ok(None);
-        };
-        let Some((interface, kind)) = self.context.interface_of(atom)
-        else {
-            return Ok(None);
-        };
-        if let Maybe::Absent(_) = interface.law() {
-            return Err(CheckRefusal::AtomTransport { at: term, atom });
-        }
-        let Some(&gandr_core_term::ValueType::Universe { ref level, .. }) =
-            self.context.arena().value_type(kind)
-        else {
-            return Err(CheckRefusal::MachineInvariant);
-        };
-        let level = level.clone();
-        Ok(Some(crate::former::related_by(
-            self.context.arena_mut(),
-            interface.relation(),
-            (left, right),
-            &level,
-        )))
     }
 
     /// The domain and codomain a static lambda's body checks against: the

@@ -1389,7 +1389,10 @@ fn admitted_head(
 /// # Specification
 /// - requires: as [`fibre`].
 /// - ensures: as [`fibre`], also returning the graph whose diagonal an
-///   enclosing identity reads.
+///   enclosing identity reads. A level whose fibre is the decode of a returned
+///   code, a lawful atom's relation between two points, is read at the type the
+///   code quotes ([`decoded_fibre`]); an identity there is read innermost out
+///   in turn.
 /// - fails: as [`fibre`].
 /// - panics: none.
 ///
@@ -1397,12 +1400,17 @@ fn admitted_head(
 /// As [`fibre`].
 ///
 /// # Termination
-/// - reason: as [`fibre`].
-/// - measure: as [`fibre`].
+/// - reason: `while` loops over the finite chain of nested identity domains,
+///   restarted only when a decoded fibre is itself an identity; not recursion.
+/// - measure: the chain length, which the inner loops record and consume; a
+///   restart reads the code of a relation admitted before the atom whose fibre
+///   it is, so the atoms a restart reaches descend.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`fibre`].
+/// - hypothesis: L3 — as [`fibre`]; an identity of the paths of a lawful atom
+///   reads the unit fibre through its relation's code.
 /// - witness: `element_identity::tests::a_higher_field_checks_and_computes_square_symmetry`
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(fibre, _)| arena.value_type(fibre).is_some()))]
 fn native_fibre(
     arena: &mut TermArena,
@@ -1414,23 +1422,84 @@ fn native_fibre(
 {
     let mut enclosing = Vec::new();
     let mut base = (domain, left, right);
-    while let Some(&ValueType::Path {
-        domain,
-        left,
-        right,
-    }) = arena.value_type(base.0)
-    {
-        enclosing.push((base.1, base.2));
-        base = (domain, left, right);
+    loop {
+        while let Some(&ValueType::Path {
+            domain,
+            left,
+            right,
+        }) = arena.value_type(base.0)
+        {
+            enclosing.push((base.1, base.2));
+            base = (domain, left, right);
+        }
+        require_folded(arena, interfaces, Mode::Identity, base.0)?;
+        let (mut fibre, mut fibers) = fold_fibre(arena, interfaces, base)?;
+        loop {
+            let Some((left, right)) = enclosing.pop()
+            else {
+                return Ok((fibre, fibers));
+            };
+            let left = diagonal_endpoint(arena, &fibers, left)?;
+            let right = diagonal_endpoint(arena, &fibers, right)?;
+            let domain = decoded_fibre(arena, interfaces, fibre);
+            if let Some(&ValueType::Path { .. }) = arena.value_type(domain) {
+                base = (domain, left, right);
+                break;
+            }
+            (fibre, fibers) = fold_fibre(arena, interfaces, (domain, left, right))?;
+        }
     }
-    require_folded(arena, interfaces, Mode::Identity, base.0)?;
-    let (mut fibre, mut fibers) = fold_fibre(arena, interfaces, base)?;
-    while let Some((left, right)) = enclosing.pop() {
-        let left = diagonal_endpoint(arena, &fibers, left)?;
-        let right = diagonal_endpoint(arena, &fibers, right)?;
-        (fibre, fibers) = fold_fibre(arena, interfaces, (fibre, left, right))?;
+}
+
+/// `fibre` read at the type it quotes when it is the decode of a returned
+/// code, the definitions `interfaces` admitted unfolding: the identity at a
+/// lawful atom is the decode of its relation's code between the two points.
+///
+/// # Specification
+/// - requires: `fibre` lives in `arena`, as every body `interfaces` admitted
+///   does.
+/// - ensures: the type the code normalizes to the quote of, by
+///   [`crate::replay::read_decode`] within [`ReplayBudget::DEFAULT`], when
+///   `fibre` is `El(c)` at a code `c` that is a returned computation; `fibre`
+///   itself otherwise, and when the code reads to no quote.
+/// - provides: the identity fold's reading of an atom's fibre as the type its
+///   relation returns, which the checking machine reads the same way at an
+///   identity's domain.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`native_fibre`].
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+#[spec(ensures: |ret| arena.value_type(ret).is_some() || ret == fibre)]
+fn decoded_fibre(
+    arena: &mut TermArena,
+    interfaces: Interfaces<'_>,
+    fibre: ValueTypeId,
+) -> ValueTypeId
+{
+    let Some(&ValueType::Element { code, .. }) = arena.value_type(fibre)
+    else {
+        return fibre;
+    };
+    if !matches!(arena.value(code), Some(Value::Returned(_))) {
+        return fibre;
     }
-    Ok((fibre, fibers))
+    let entries = interfaces.entries();
+    let unfoldings = Unfoldings::new(
+        entries
+            .iter()
+            .map(|entry| match *entry.content() {
+                DeclarationContent::Def { body, .. } => crate::replay::Unfoldable::Body(body),
+                DeclarationContent::Data { .. }
+                | DeclarationContent::Codata { .. }
+                | DeclarationContent::Axiom { .. }
+                | DeclarationContent::AbstractType { .. } => crate::replay::Unfoldable::Opaque,
+            })
+            .collect(),
+    )
+    .identifying(entries);
+    crate::replay::read_decode(arena, &unfoldings, code, ReplayBudget::DEFAULT).unwrap_or(fibre)
 }
 
 /// Read the fold at one closed, non-identity domain.
@@ -2810,18 +2879,18 @@ where
     }
 }
 
-/// A telescope transport into an identity at a lawful atom, along a path that
-/// is no reflexivity: the unit when the atom's relation returns the code of
-/// the unit type outright.
+/// A telescope transport along a path that is no reflexivity, into a returned
+/// type that reads as the unit type through the identities and lawful atoms
+/// its carrier names: the unit.
 ///
 /// # Specification
 /// - requires: nothing; an ill-typed term sticks without panicking.
-/// - ensures: the unit when the path is no `here`, the motive's returned type
-///   is `Path(A, l, r)` at an atom `A` the unfoldings identify by a relation
-///   `R`, and [`relation_code`] reads `R` as returning the unit type's code, so
-///   the fibre is the unit type at every pair of endpoints; `Stuck` otherwise.
-/// - provides: the replay's telescope transport row at a lawful atom, which
-///   [`telescope_beta`] leaves stuck.
+/// - ensures: the unit when the path is no `here` and the motive's returned
+///   type is `Path(A, l, r)` at a carrier `A` whose identities
+///   [`carrier_fibre`] reads as the unit type, so the fibre is the unit type at
+///   every pair of endpoints; `Stuck` otherwise.
+/// - provides: the replay's telescope transport row at a carrier that is an
+///   identity or a lawful atom, which [`telescope_beta`] leaves stuck.
 /// - fails: `ArenaFault` on an unreadable motive layer or path.
 /// - panics: none.
 ///
@@ -2830,14 +2899,16 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — evidence into the fibre of an atom whose relation returns
-///   the unit type returns the unit; the same transport over unfoldings
-///   identifying no atom, or along `here`, sticks.
+///   the unit type returns the unit, and into one whose relation returns an
+///   identity of the unit type; the same transport over unfoldings identifying
+///   no atom, or along `here`, sticks.
 /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |reduction| match *reduction {
     Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
     Reduction::Stuck => true,
 }))]
-pub(crate) fn atom_fibre_beta(
+pub(crate) fn unit_fibre_beta(
     arena: &mut TermArena,
     unfoldings: &crate::replay::Unfoldings,
     term: TelescopeStep,
@@ -2854,19 +2925,86 @@ pub(crate) fn atom_fibre_beta(
     else {
         return Ok(Reduction::Stuck);
     };
-    let Some(&ValueType::Abstract(atom)) = arena.value_type(domain)
-    else {
-        return Ok(Reduction::Stuck);
-    };
-    if let Some(relation) = unfoldings.identity(atom)
-        && let Some(code) = relation_code(arena, unfoldings, relation)
-        && let Some(&ValueType::Product(ref parts)) = arena.value_type(code)
-        && parts.is_empty()
-    {
+    if carrier_fibre(arena, unfoldings, domain) == Fibre::Unit {
         let centre = arena.value_unit();
         return Ok(Reduction::Reduced(arena.computation_return(centre)));
     }
     Ok(Reduction::Stuck)
+}
+
+/// What every identity at a carrier reads as, for J into its fibre.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Fibre
+{
+    /// The unit type: J into the fibre returns the unit.
+    Unit,
+    /// Any other type, or a chain the walk does not read.
+    Other,
+}
+
+/// What every identity at `carrier` reads as.
+///
+/// # Specification
+/// - requires: nothing — any type is admissible input.
+/// - ensures: [`Fibre::Unit`] exactly when `carrier` is the unit type; an
+///   identity whose own carrier's identities read so, since an identity of the
+///   unit type is the unit type; or an atom the unfoldings identify by a
+///   relation whose code [`relation_code`] reads as the unit type, or as an
+///   identity at a carrier whose identities read so, each atom on the way
+///   admitted before the last. The unit type itself always reads so.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: one `loop` over a chain of carriers, not recursion.
+/// - measure: the identity nesting under the current carrier, which each
+///   identity step lowers, and the admission position of the atom read, which
+///   each atom step must lower.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`unit_fibre_beta`].
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
+#[spec(ensures: |ret| ret == Fibre::Unit || !matches!(arena.value_type(carrier), Some(ValueType::Product(parts)) if parts.is_empty()))]
+fn carrier_fibre(
+    arena: &TermArena,
+    unfoldings: &crate::replay::Unfoldings,
+    carrier: ValueTypeId,
+) -> Fibre
+{
+    let unit = |parts: &[ValueTypeId]| {
+        if parts.is_empty() {
+            Fibre::Unit
+        }
+        else {
+            Fibre::Other
+        }
+    };
+    let mut carrier = carrier;
+    let mut ceiling = None;
+    loop {
+        match arena.value_type(carrier) {
+            Some(&ValueType::Product(ref parts)) => return unit(parts),
+            Some(&ValueType::Path { domain, .. }) => carrier = domain,
+            Some(&ValueType::Abstract(atom)) => {
+                if ceiling.is_some_and(|above| atom >= above) {
+                    return Fibre::Other;
+                }
+                ceiling = Some(atom);
+                let Some(code) = unfoldings
+                    .identity(atom)
+                    .and_then(|relation| relation_code(arena, unfoldings, relation))
+                else {
+                    return Fibre::Other;
+                };
+                match arena.value_type(code) {
+                    Some(&ValueType::Product(ref parts)) => return unit(parts),
+                    Some(&ValueType::Path { domain, .. }) => carrier = domain,
+                    _ => return Fibre::Other,
+                }
+            },
+            _ => return Fibre::Other,
+        }
+    }
 }
 
 /// The type whose code the relation `relation` returns outright: read through
@@ -2885,8 +3023,9 @@ pub(crate) fn atom_fibre_beta(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`atom_fibre_beta`].
+/// - hypothesis: L3 — as [`unit_fibre_beta`].
 /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+/// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
 #[spec(ensures: |ret| ret.is_none_or(|quoted| arena.value_type(quoted).is_some()))]
 fn relation_code(
     arena: &TermArena,
