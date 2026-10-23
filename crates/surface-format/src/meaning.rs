@@ -229,7 +229,7 @@ where
 }
 
 /// The keys of the forms holding `declaration`: its signature, its
-/// definition and a duplicate, those it has.
+/// definition and a form refused at collection, those it has.
 ///
 /// # Specification
 /// trivial.
@@ -238,7 +238,7 @@ fn halves(declaration: &LoweredDeclaration<'_>) -> impl Iterator<Item = NodeKey>
     [
         declaration.signature(),
         declaration.definition(),
-        declaration.duplicate(),
+        declaration.refused_form(),
     ]
     .into_iter()
     .filter_map(|half| match half {

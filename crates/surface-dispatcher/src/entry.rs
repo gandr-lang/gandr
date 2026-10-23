@@ -165,7 +165,7 @@ enum Cursor<'step>
     /// The refusals of a pending source still to print.
     Pending
     {
-        /// The refusals at a declaration's own form.
+        /// The refusals no expectation can state.
         unstatable: slice::Iter<'step, LoweringRefusal<'step>>,
     },
 }

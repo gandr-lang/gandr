@@ -2760,13 +2760,14 @@ pub fn source_pieces(
 ///   an attribute block decorates the form after it in the source, and one
 ///   standing at the source's end decorates nothing. Each import is kept in
 ///   source order with its address decoded and its alias bound in the import
-///   scope.
+///   scope; an import binding an alias an earlier import binds is a stray,
+///   refused alone and decorated by the attribute blocks before it, so `@[
+///   refuses("DuplicateImportAlias") ] import … as … ;` states it.
 /// - provides: the admission order every later pass resolves names against,
 ///   which the lowering builds a source at a time, before its passes over that
 ///   source.
 /// - fails: [`LoweringRefusal::MalformedForm`] when a declaration has no name
 ///   to file a refusal under, or an import is out of shape;
-///   [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one alias;
 ///   [`LoweringRefusal::OutOfFragment`] when a root child is neither a
 ///   declaration, a module nor an import — an attribute block decorating
 ///   nothing, or a module with no member, included — in a source that declares
@@ -2778,9 +2779,9 @@ pub fn source_pieces(
 /// - panics: none. A position the tree does not hold contributes nothing.
 ///
 /// # Errors
-/// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::OutOfFragment`] and
-/// [`LoweringRefusal::DuplicateImportAlias`] for a source whose own children
-/// are not declarations and well-formed imports,
+/// [`LoweringRefusal::MalformedForm`] and [`LoweringRefusal::OutOfFragment`]
+/// for a source whose own children are not declarations and well-formed
+/// imports,
 /// [`LoweringRefusal::UnknownMold`] for a foreign mold, and
 /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
 ///
@@ -3026,25 +3027,30 @@ impl<'source> Stray<'source>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a success is none; a form of the wrong sort or a malformed form
-///   is that child's own refusal; every other refusal — a mold the grammar does
-///   not hold, an exhausted allowance, an import out of reach — refuses the
-///   source.
+/// - ensures: a success is none; a form of the wrong sort, a malformed form and
+///   an import binding an alias an earlier import binds are that child's own
+///   refusal; every other refusal — a mold the grammar does not hold, an
+///   exhausted allowance, an import out of reach — refuses the source.
 /// - provides: the line between a stray root child and a fault of the source.
 /// - fails: the refusals that are no child's own.
 /// - panics: none.
 ///
 /// # Errors
-/// Every refusal other than [`LoweringRefusal::OutOfFragment`] and
-/// [`LoweringRefusal::MalformedForm`].
+/// Every refusal other than [`LoweringRefusal::OutOfFragment`],
+/// [`LoweringRefusal::MalformedForm`] and
+/// [`LoweringRefusal::DuplicateImportAlias`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a stray between two declarations is its own refusal, and
-///   a stray in a source declaring nothing refuses the source.
+/// - hypothesis: L3 — a stray between two declarations is its own refusal, a
+///   stray in a source declaring nothing refuses the source, and a second
+///   import of one alias refuses that import alone.
 /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+/// - witness: `tests::namespace::duplicate_source_import_alias_becomes_a_refusal`
 #[spec(ensures: |ret| match ret {
     | Ok(Some(ref refusal)) => matches!(*refusal,
-        LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::MalformedForm { .. }),
+        LoweringRefusal::OutOfFragment { .. }
+        | LoweringRefusal::MalformedForm { .. }
+        | LoweringRefusal::DuplicateImportAlias { .. }),
     | Ok(None) | Err(_) => true,
 })]
 fn strayed<'source>(
@@ -3055,7 +3061,8 @@ fn strayed<'source>(
         Ok(()) => Ok(None),
         Err(
             refusal @ (LoweringRefusal::OutOfFragment { .. }
-            | LoweringRefusal::MalformedForm { .. }),
+            | LoweringRefusal::MalformedForm { .. }
+            | LoweringRefusal::DuplicateImportAlias { .. }),
         ) => Ok(Some(refusal)),
         Err(refusal) => Err(refusal),
     }
@@ -3850,13 +3857,17 @@ impl<'source> Collector<'_, 'source>
     ///   a refusal of the family's rules as one rewriting system
     ///   (`RulesUnoriented`, `RulesDiverge`, `RulesUncompleted`,
     ///   `RulesNeverComplete`, `RulesUndecided`) is offered to the family's own
-    ///   slot, and every other diagnostic whose span lies inside `child`'s
-    ///   takes one held slot under the family's name, in report order; nothing
-    ///   for a child the description route did not describe.
+    ///   slot, a diagnostic at the very span the family's own slot is already
+    ///   refused at is dropped, and every other diagnostic whose span lies
+    ///   inside `child`'s takes one held slot under the family's name, in
+    ///   report order; nothing for a child the description route did not
+    ///   describe.
     /// - provides: member-local refusal beside native admission: a declined
     ///   member leaves its family and its siblings standing, a family whose
-    ///   rules part is refused whole, and a malformed form is reported once, at
-    ///   its repair.
+    ///   rules part is refused whole, a fault both readings see — a generator
+    ///   whose result reads its family at an index — is reported once, by the
+    ///   native reading under the family's own name and attributes (#1798), and
+    ///   a malformed form is reported once, at its repair.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3899,7 +3910,23 @@ impl<'source> Collector<'_, 'source>
             slot.refuse(child.node, repaired);
             return;
         }
+        let refused_at = match self.collected.owner_of(child.node) {
+            Maybe::Present(owner) => match self.collected.slots.get(usize::from(owner)) {
+                Some(&DeclarationSlot {
+                    refusal: Maybe::Present((_, ref refusal)),
+                    ..
+                }) => match refusal.span() {
+                    Maybe::Present(span) => Some(span),
+                    Maybe::Absent(_) => None,
+                },
+                Some(_) | None => None,
+            },
+            Maybe::Absent(_) => None,
+        };
         for (span, refusal) in refusals {
+            if refused_at == Some(span) {
+                continue;
+            }
             if matches!(
                 refusal,
                 LoweringRefusal::RulesUnoriented { .. }
@@ -4822,16 +4849,18 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `slot` names a live slot; `declaration` is the form read,
     ///   and `named` the name tile it writes.
-    /// - ensures: a fault is offered to the slot at the form itself; a clean
-    ///   form's halves — one for a signature or a definition, the definition
-    ///   for a function tail and its signature too when the tail is signed —
-    ///   are recorded unless the slot already holds one of their kinds, which
-    ///   offers the duplicate refusal naming the first instead and records none
-    ///   of them. A written signature and the signature a signed function tail
-    ///   derives are not duplicates: the written one is the slot's, whichever
-    ///   came first, and the derived one is filed as a witness checking it. A
-    ///   clean form's attributes join the slot's in source order, once whatever
-    ///   the halves it writes.
+    /// - ensures: a fault is offered to the slot at the form itself, and the
+    ///   form's attributes join the slot's, so the attribute block written
+    ///   before it states the refusal (#1798); a clean form's halves — one for
+    ///   a signature or a definition, the definition for a function tail and
+    ///   its signature too when the tail is signed — are recorded unless the
+    ///   slot already holds one of their kinds, which offers the duplicate
+    ///   refusal naming the first instead and records none of them. A written
+    ///   signature and the signature a signed function tail derives are not
+    ///   duplicates: the written one is the slot's, whichever came first, and
+    ///   the derived one is filed as a witness checking it. A clean form's
+    ///   attributes join the slot's in source order, once whatever the halves
+    ///   it writes.
     /// - provides: the filing half of [`Self::declaration`].
     /// - fails: never.
     /// - panics: none.
@@ -4880,7 +4909,7 @@ impl<'source> Collector<'_, 'source>
                 | Tail::Refused(_) => {
                     return entry.signature == signature
                         && entry.definition == definition
-                        && entry.attributes.len() == count
+                        && entry.attributes.len() == count.saturating_add(before.2)
                         && self.collected.slots.len() == before.0;
                 },
             };
@@ -4956,6 +4985,9 @@ impl<'source> Collector<'_, 'source>
             Tail::Data(form) => (Operand::Data(form), &[HalfKind::Definition]),
             Tail::World => (Operand::World, &[HalfKind::Definition]),
             Tail::Refused(refusal) => {
+                // The refusal is the declaration's, so its attribute block,
+                // read before the refusal was raised, states its expectation.
+                entry.attributes.extend(attributes);
                 entry.refuse(declaration.node, refusal);
                 return;
             },
@@ -8232,9 +8264,10 @@ pub struct DeclarationParts<'source>
     pub signature: Maybe<UnitKey, declaration_half::Absent>,
     /// The unit key of this name's definition form.
     pub definition: Maybe<UnitKey, declaration_half::Absent>,
-    /// The unit key of the form that wrote a half of this name a second time,
-    /// when that repetition is the name's refusal.
-    pub duplicate: Maybe<UnitKey, declaration_half::Absent>,
+    /// The unit key of the declaration form the name's refusal was raised at
+    /// while it was collected, when no half is written there: a half written
+    /// a second time, or a form refused before it wrote one.
+    pub refused_form: Maybe<UnitKey, declaration_half::Absent>,
     /// Where each of the name's halves is written.
     pub halves: Halves,
     /// What the name's declarations amount to.
@@ -8385,16 +8418,18 @@ impl<'source> LoweredDeclaration<'source>
         self.parts.definition
     }
 
-    /// The unit key of the form that wrote a half of this name a second
-    /// time, when that repetition is the name's refusal: the form no other
-    /// key reaches, which answers at that refusal.
+    /// The unit key of the declaration form the name's refusal was raised at
+    /// while it was collected, when no half is written there: a half written a
+    /// second time, or a form refused before it wrote one. It is the form no
+    /// other key reaches, which answers at that refusal and files the
+    /// attributes written before it.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    pub const fn duplicate(&self) -> Maybe<UnitKey, declaration_half::Absent>
+    pub const fn refused_form(&self) -> Maybe<UnitKey, declaration_half::Absent>
     {
-        self.parts.duplicate
+        self.parts.refused_form
     }
 
     /// Where each of the name's halves is written: a name declared in two

@@ -1,0 +1,5 @@
+/// A generator whose result reads the family at `Integer` where its header binds the parameter `a`: an index the header does not declare.
+@[ refuses("OutOfFragment.Indexed") ]
+data Bad(a : Type) : Type {
+  Mk : Bad(Integer);
+}

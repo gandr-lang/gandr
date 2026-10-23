@@ -43,9 +43,14 @@
 //!   import already binds is refused at the declaration, naming the import; two
 //!   unqualified imports binding one name refuse a use of it, naming both, and
 //!   leave every other name of both usable.
-//! - `DuplicateImportAlias`: two imports binding one alias refuse the module,
-//!   naming the first, rather than a later import silently hiding an earlier
-//!   one.
+//! - `DuplicateImportAlias`: of two imports binding one alias, the second is
+//!   refused, naming the first, rather than silently hiding it. The refusal is
+//!   the import's own: the rest of the source lowers against the first import's
+//!   binding, and the attribute blocks written before the second import state
+//!   it, `@[ refuses("DuplicateImportAlias") ] import … as … ;`. A refusal of a
+//!   whole source that no item can carry would be stated by an inner block at
+//!   the source's head, `@![ refuses("…") ]`, built when the first such refusal
+//!   appears.
 //!
 //! The recorded design refuses an ambiguous unqualified import outright; this
 //! refuses the use instead, as Haskell refuses an ambiguous occurrence and

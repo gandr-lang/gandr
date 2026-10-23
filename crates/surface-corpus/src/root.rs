@@ -113,37 +113,45 @@
 //!
 //! # The pending set
 //!
-//! A source under `fixture/pending/` carries a refusal no expectation can
-//! state: the lowering refuses it as a whole — its root is not a list of
-//! declarations — or refuses one of its declarations at the declaration's own
-//! form, which files no half for an attribute to be read off. The runner counts
-//! such a source as pending and settles none of its declarations; `test` prints
-//! each such refusal, naming the form the fragment lacks — a call or an
-//! operator, a record update, a data declaration, a module, an effect — which
-//! is the former the source waits for, and its run outcomes are written when it
-//! moves. A pending source that carries none — the fragment grew, and every
-//! expectation it needs can be stated — is unsettled, and moves to the fixture
-//! root with its expectations written.
+//! A source under `pending/` carries a refusal no expectation can state: the
+//! lowering refuses it as a whole — its root is not a list of declarations —
+//! or refuses one of its declarations with no form of the declaration keyed
+//! for an attribute to be read off. The runner counts such a source as pending
+//! and settles none of its declarations; `test` prints each such refusal,
+//! naming the form the fragment lacks — a call or an operator, a record
+//! update, a data declaration, a module, an effect — which is the former the
+//! source waits for, and its run outcomes are written when it moves. A pending
+//! source that carries none — the fragment grew, and every expectation it
+//! needs can be stated — is unsettled, and moves to the fixture root with its
+//! expectations written.
+//!
+//! A declaration refused at its own form while its source is collected — an
+//! implicit telescope, a generator reading its family at an index — states
+//! its refusal: the form's attribute block is filed under the form's key,
+//! which stands in for the definition the form did not write. An import
+//! binding an alias an earlier import binds is refused alone, a stray decorated
+//! by the blocks before it: `@[ refuses("DuplicateImportAlias") ] import … as
+//! … ;`.
 //!
 //! Three module sources stay pending for the second reason.
 //! `pathological/module-malformed-recovery` writes a member whose definition
-//! leaves its operand unwritten, refused at the member's own form;
+//! leaves its operand unwritten, held under its module's name;
 //! `pathological/modules/module-missing-component` and
 //! `pathological/modules/module-abstract-type-component` write a value
 //! component and an abstract type component the body supplies no member for,
-//! each refused at the component, which declares nothing. A refusal at the
-//! declaration form itself has no half to carry an expectation. A type
-//! component whose body supplies the member does: the check of the member at
-//! the component's kind reads its expectation off the attributes written
-//! before the member, `@[ refuses("…") ] type T = τ ;`, so
-//! `surface/kinded-type-component` states its refusal and settles.
+//! each held at the component, which declares nothing. A type component whose
+//! body supplies the member states its refusal: the check of the member at the
+//! component's kind reads its expectation off the attributes written before the
+//! member, `@[ refuses("…") ] type T = τ ;`, so `surface/kinded-type-component`
+//! settles.
 //!
 //! The alternatives were leaving these sources out, which loses them, and
 //! stating each one's refusal in an attribute, which the lowering cannot read
-//! for either kind of refusal. The choice reverses when the lowering files an
-//! attribute for a declaration refused at its form and a refusal of the whole
-//! module can carry an expectation; the pending set then empties into the
-//! fixture root.
+//! for a held slot. The choice reverses when a module member's and a
+//! component's refusal can carry an expectation; the pending set then holds
+//! only sources refused as a whole. Such a refusal stands at a root child; one
+//! that no item could carry would be stated by an inner block at the source's
+//! head, `@![ refuses("…") ]`, which is built when the first one appears.
 
 use core::fmt;
 

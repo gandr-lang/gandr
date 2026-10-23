@@ -1452,14 +1452,16 @@ fn normalized(
 }
 
 /// The attributes filed under `lowered`'s halves in `table`: the signature's,
-/// then the definition's; a form that wrote both halves, a signed function
-/// tail, has its attributes read once.
+/// then the definition's, or, where no definition is written, those of the
+/// form refused while it was collected; a form that wrote both halves, a
+/// signed function tail, has its attributes read once.
 ///
 /// # Specification
 /// - requires: nothing; a declaration half with no table entry contributes no
 ///   attributes.
 /// - ensures: yields the signature’s entries followed by the definition’s
-///   entries in their stored order, but reads a shared signature/definition
+///   entries in their stored order, the refused form's standing in for the
+///   definition's when it has none, but reads a shared signature/definition
 ///   origin only once.
 /// - panics: none.
 ///
@@ -1467,14 +1469,19 @@ fn normalized(
 /// - hypothesis: L3 — separate signature and definition expectations produce a
 ///   conflict with ordered spans; a single attributed signed function settles
 ///   without a duplicated expectation; an unattributed declaration has no
-///   entries. The predicate traverses a cheap clone of the private iterator,
-///   leaving the returned iterator unconsumed.
+///   entries; a declaration refused at its form before it wrote a half states
+///   its refusal. The predicate traverses a cheap clone of the private
+///   iterator, leaving the returned iterator unconsumed.
 /// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
 /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+/// - witness: `settle::tests::a_form_refused_at_collection_states_its_refusal_1798`
 #[spec(
     ensures: |ret| {
     let signature = lowered.signature();
-    let definition = lowered.definition();
+    let definition = match lowered.definition() {
+        Maybe::Present(key) => Maybe::Present(key),
+        Maybe::Absent(_) => lowered.refused_form(),
+    };
     let first = match signature {
         Maybe::Present(digest) => table.entries(digest),
         Maybe::Absent(_) => &[],
@@ -1499,7 +1506,10 @@ fn attributes<'table>(
 >
 {
     let signature = lowered.signature();
-    let definition = lowered.definition();
+    let definition = match lowered.definition() {
+        Maybe::Present(key) => Maybe::Present(key),
+        Maybe::Absent(_) => lowered.refused_form(),
+    };
     let first = match signature {
         Maybe::Present(digest) => table.entries(digest),
         Maybe::Absent(_) => &[],
@@ -1790,6 +1800,39 @@ mod tests
             Settlement::Unsettled,
             "two expectations settle nothing, even when one of them holds"
         );
+    }
+
+    /// #1798: a declaration refused at its own form while it was collected —
+    /// an implicit telescope before no function's parameters — wrote no half,
+    /// so its attribute block was read nowhere and it stayed expected to
+    /// check. The block is filed under the refused form, which stands in for
+    /// the definition the form did not write.
+    #[test]
+    fn a_form_refused_at_collection_states_its_refusal_1798()
+    {
+        let rows = [
+            (
+                r#"@[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;"#,
+                Settlement::Settled,
+            ),
+            (
+                r#"@[ refuses("TypeMismatch") ] def f @[a : Type] = 1 ;"#,
+                Settlement::Unsettled,
+            ),
+            (r#"def f @[a : Type] = 1 ;"#, Settlement::Unsettled),
+            (
+                r#"def f : Integer ; @[ refuses("ImplicitTelescope") ] def f @[a : Type] = 1 ;"#,
+                Settlement::Settled,
+            ),
+        ];
+        for (source, settlement) in rows {
+            let report = settled(CorpusRoot::Fixture, SourceText::from(source));
+            assert_eq!(
+                only(&report).settlement(),
+                settlement,
+                "`{source}` settles as pinned"
+            );
+        }
     }
 
     #[test]

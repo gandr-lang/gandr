@@ -2853,29 +2853,56 @@ fn lowered_unit<'source>(
     )
 }
 
+/// #1798: the second import of one alias is refused alone, so the rest of
+/// the source lowers against the first and the attribute block before the
+/// second import states its refusal.
 #[test]
 fn duplicate_source_import_alias_becomes_a_refusal()
 {
     let pbg = grammar();
-    let refused = lowered(
+    let module = lowered(
         &pbg,
         &parsed(
             &pbg,
             SourceText::from(
                 "import \"file:///lib/parse.gandr\" as parse ;\nimport \
-                     \"file:///lib/list.gandr\" as parse ;",
+                     \"file:///lib/list.gandr\" as parse ;\ndef x = 3 ;",
             ),
         ),
     )
-    .expect_err("two imports of one alias refuse the module");
+    .expect("a second import of one alias refuses that import, not the module");
+    let first = bytes(0_usize, 43_usize);
+    let refused: Vec<(String, DeclarationOutcome<'_>)> = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            (
+                String::from(declaration.name().as_ref()),
+                declaration.outcome(),
+            )
+        })
+        .filter(|entry| matches!(entry.1, DeclarationOutcome::Refused(_)))
+        .collect();
     assert_eq!(
         refused,
-        LoweringRefusal::DuplicateImportAlias {
-            span: bytes(44_usize, 86_usize),
-            alias: SurfaceName::from("parse"),
-            first: bytes(0_usize, 43_usize),
-        },
-        "the second import is refused, naming the first"
+        Vec::from([(
+            String::from("import"),
+            DeclarationOutcome::Refused(LoweringRefusal::DuplicateImportAlias {
+                span: bytes(44_usize, 86_usize),
+                alias: SurfaceName::from("parse"),
+                first,
+            })
+        )]),
+        "the second import is refused alone, naming the first, and `x` lowers"
+    );
+    assert_eq!(
+        module
+            .imports()
+            .iter()
+            .map(ImportDeclaration::span)
+            .collect::<Vec<_>>(),
+        Vec::from([first]),
+        "the first import keeps its alias"
     );
 }
 
