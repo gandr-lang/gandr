@@ -53,10 +53,7 @@ def encode(c : Integer) -> -F List(Integer) {
 def rec encodeAll(cs : List(Integer)) -> -F List(Integer) {
   case cs {
     Nil => Nil,
-    Cons(
-      c,
-      rest
-    ) => { run head <- encode(c); run tail <- encodeAll[<](rest); become concat(head, tail) }
+    Cons(c, rest) => become concat(encode(c), encodeAll[<](rest))
   }
 }
 

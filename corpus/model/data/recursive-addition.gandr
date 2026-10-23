@@ -1,7 +1,8 @@
-// Addition on the naturals in each spelling an arm admits: a `return` after a
-// `run`, the same with both elided, the recursive call nested in the
+// Addition on the naturals in the spellings an arm admits, each as the sugared
+// form writes it: a `run` that only sequences the recursive call, its result
+// returned or the `return` elided, is written with the call nested in the
 // constructor it returns (the base's `plus`), and a `run` written inside a
-// constructor's field. Each spelling runs to the same value. A structural
+// constructor's field stays. Each spelling runs to the same value. A structural
 // recursive call stands one stage below the term it was read from (Abel,
 // _Termination checking with types_, doi:10.1051/ita:2004015). The lists'
 // folds are `recursive-lists.gandr` and `recursive-nat-lists.gandr`.
@@ -10,21 +11,22 @@
 // numerals two and three.
 import "./data-base.gandr" ;
 
-/// Addition with the recursive call run and its result returned.
+/// Addition with the recursive call run and its result returned, the run
+/// written at its read.
 @[ checks ]
 def rec plus_returned(n : Nat, m : Nat) -> -F Nat {
   case m {
     Zero => n,
-    Succ(p) => { run r <- plus_returned[<](n, p); Succ(r) }
+    Succ(p) => Succ(plus_returned[<](n, p))
   }
 }
 
-/// Addition with the `return`s elided.
+/// Addition with the `return`s elided, the run written at its read.
 @[ checks ]
 def rec plus_elided(n : Nat, m : Nat) -> -F Nat {
   case m {
     Zero => n,
-    Succ(p) => { run r <- plus_elided[<](n, p); Succ(r) }
+    Succ(p) => Succ(plus_elided[<](n, p))
   }
 }
 

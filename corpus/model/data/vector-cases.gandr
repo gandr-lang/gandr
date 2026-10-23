@@ -36,7 +36,7 @@ def oneLength(v : Vec(Integer, Succ(Zero))) -> -F Nat {
 def rec vcount(n : Nat, v : Vec(Integer, n)) -> -F Nat {
   case v {
     VNil => Zero,
-    VCons(m, h, t) => { run r <- vcount[<](m, t); Succ(r) }
+    VCons(m, h, t) => Succ(vcount[<](m, t))
   }
 }
 

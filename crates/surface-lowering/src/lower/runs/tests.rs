@@ -205,6 +205,40 @@ fn a_run_read_once_first_is_linear()
     );
 }
 
+/// A run in a match's branch, whose statements the branch's copies each
+/// hold, is linear where every copy reads it once and first, as it is
+/// outside a match (#1935).
+#[test]
+fn a_run_in_a_match_branch_is_linear_1935()
+{
+    let source = format!(
+        "{NAT}def second(a : Nat, b : Nat) -> -F Nat {{ b }}\n\
+         def armed(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run d <- twice(b) ; Succ(d) }} }} }}\n\
+         def chained(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run e <- twice(b) ; run f <- twice(e) ; Succ(f) }} }} }}\n\
+         def reread(a : Nat) -> -F Nat {{ case a {{ Zero => Zero, Succ(b) => {{ run g <- twice(b) ; second(g, g) }} }} }}\n"
+    );
+    let text = SourceText::from(source.as_str());
+    let mut arena = CoreArena::new();
+    let module = lowered(text, &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+    let at = |context: &str, needle: &str| {
+        spelled_within(text, SourceText::from(context), SourceText::from(needle))
+    };
+    let linear = |bound: (&str, &str), read: (&str, &str)| LinearRun {
+        bound: at(bound.0, bound.1),
+        read: at(read.0, read.1),
+    };
+    assert_eq!(
+        module.linear_runs(),
+        [
+            linear(("run d <- twice(b)", "twice(b)"), ("Succ(d) }", "d")),
+            linear(("run f <- twice(e)", "twice(e)"), ("Succ(f) }", "f")),
+        ],
+        "a branch's run read once and first is linear, a chain's last link among them; one \
+         read twice is not"
+    );
+}
+
 /// The nested values the checker decided to run in `report`'s elaborated
 /// bodies, with the purity of each.
 ///

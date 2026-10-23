@@ -83,10 +83,7 @@ def leftward = transport(\x. Model(Counter) with sort C = x, nestings, rightward
 @[ checks ]
 def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
   case m {
-    #{.start = s, .step = t} => {
-      run zero <- s();
-      become t(zero)
-    }
+    #{.start = s, .step = t} => become t(s())
   }
 }
 
@@ -98,10 +95,7 @@ def second() -> -F (Unit + (Unit + Unit)) { become stepOnce(rightward) }
 @[ checks ]
 def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> -F ((Unit + Unit) + Unit) {
   case m {
-    #{.start = s, .step = t} => {
-      run zero <- s();
-      become t(zero)
-    }
+    #{.start = s, .step = t} => become t(s())
   }
 }
 

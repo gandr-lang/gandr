@@ -1197,6 +1197,49 @@ fn the_runs_ending_a_block_are_written_away_together()
     }
 }
 
+/// A match's branch writes its runs away as a block does, and a branch's
+/// block left with its one computation is written as that computation; a
+/// block keeping a statement keeps its braces (#1935).
+#[test]
+fn a_branch_s_runs_are_written_away_and_its_block_with_them_1935()
+{
+    let grammar = grammar();
+    let head = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                \n\
+                def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                \n\
+                def both(m : Nat, k : Nat) -> -F Nat { Succ(m) }\n\
+                \n";
+    for (body, written) in [
+        (
+            "def armed(a : Nat) -> -F Nat { case a { Zero => Zero, Succ(b) => { run d <- twice(b) ; Succ(d) } } }\n",
+            "def armed(a : Nat) -> -F Nat { case a { Zero => Zero, Succ(b) => Succ(twice(b)) } }\n",
+        ),
+        (
+            "def paired(a : Nat) -> -F Nat { case a { Zero => Zero, Succ(b) => { run e <- twice(b) ; run f <- twice(Zero) ; both(e, f) } } }\n",
+            "def paired(a : Nat) -> -F Nat { case a { Zero => Zero, Succ(b) => both(twice(b), twice(Zero)) } }\n",
+        ),
+        (
+            "def reread(a : Nat) -> -F Nat { case a { Zero => Zero, Succ(b) => { run g <- twice(b) ; run h <- twice(g) ; both(h, g) } } }\n",
+            "def reread(a : Nat) -> -F Nat {\n  case a { Zero => Zero, Succ(b) => { run g <- twice(b) ; both(twice(g), g) } }\n}\n",
+        ),
+    ] {
+        let source = format!("{head}{body}");
+        let parsed = parse(&grammar, SourceText::from(source.as_str())).expect("the source parses");
+        let oracle = Oracle {
+            answer: Answer::Alike,
+            asked: Cell::new(0),
+        };
+        let options = FormatOptions {
+            form: Form::Sugared,
+            ..FormatOptions::default()
+        };
+        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, Some(&oracle)))
+            .expect("the source formats");
+        assert_eq!(formatted.into_text(), format!("{head}{written}"), "{body}");
+    }
+}
+
 /// Every refusal, every reason a declaration keeps its spelling and every
 /// rewrite's name renders apart from the others of its kind, carrying what
 /// it names.

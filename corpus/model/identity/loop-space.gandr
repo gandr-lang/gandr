@@ -20,8 +20,8 @@ import "./loop-winding.gandr" ;
 def rec spinWords(n : Int) -> -F Words {
   case n {
     Z => Nil,
-    S(x) => { run c <- spinWords[<](x); Loop(c) },
-    P(x) => { run c <- spinWords[<](x); Unloop(c) }
+    S(x) => Loop(spinWords[<](x)),
+    P(x) => Unloop(spinWords[<](x))
   }
 }
 

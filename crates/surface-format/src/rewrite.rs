@@ -636,6 +636,25 @@ enum Shape<'source>
         /// The value type it returns.
         result: Child<'source>,
     },
+    /// A block whose statements are all written away: its one computation,
+    /// as the form around it may write it without the braces.
+    Braced
+    {
+        /// The computation's leaves.
+        entry: Vec<Leaf<'source>>,
+        /// How tightly the computation binds.
+        band: Band,
+    },
+}
+
+/// Whether writing a block's linear runs away left it no statement.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Emptied
+{
+    /// Every statement is written away, and no comment stands among them.
+    Yes,
+    /// A statement or a comment stays.
+    No,
 }
 
 /// Whether a parenthesised list binds a name.
@@ -1300,9 +1319,16 @@ impl<'source> Respelling<'_, 'source>
                         .get(&at)
                         .is_some_and(|spelled| spelled.rewritten == Changed::Yes) =>
                 {
+                    // Only a block's braces go here: a parenthesis goes
+                    // where its own form is read.
+                    let operand = self.operand(child);
+                    let braced = self
+                        .spelled
+                        .get(&at)
+                        .is_some_and(|spelled| matches!(spelled.shape, Shape::Braced { .. }));
                     let operand = Operand {
-                        inner: None,
-                        ..self.operand(child)
+                        inner: if braced { operand.inner } else { None },
+                        ..operand
                     };
                     out.place(&operand, Band::admitted(rule, index));
                 },
@@ -1314,22 +1340,51 @@ impl<'source> Respelling<'_, 'source>
                 index = Position::Later;
             }
         }
+        let mut shape = shape;
+        let mut rewritten = Changed::No;
         if open == Open::Yes
             && !self.runs.calls().is_empty()
             && self
                 .chosen
                 .rewrites(MoldName("block"))
                 .any(|name| name == RewriteName::LinearRun)
-            && self.linear(parts, &starts, &mut out.leaves) == Changed::Yes
         {
-            self.changed = Changed::Yes;
+            let (changed, emptied) = self.linear(parts, &starts, &mut out.leaves);
+            if changed == Changed::Yes {
+                self.changed = Changed::Yes;
+            }
+            // A block, a form that is its braces, whose statements are all
+            // written away reads as its one computation where that
+            // computation fits, the braces dropped.
+            let own = |part: Option<&Part<'source>>, spelled: Spelling| {
+                part.is_some_and(
+                    |part| matches!(part.role, Role::Own(text) if <&str>::from(text) == spelled.0),
+                )
+            };
+            if emptied == Emptied::Yes
+                && own(parts.first(), OPEN_BRACE)
+                && own(parts.last(), CLOSE_BRACE)
+                && commented == Commented::No
+                && let Some(Role::Operand(tail)) = parts
+                    .iter()
+                    .rev()
+                    .map(|part| part.role)
+                    .find(|role| matches!(role, Role::Operand(_)))
+                && let Some(entry) = braced(&out.leaves)
+            {
+                shape = Shape::Braced {
+                    entry: entry.to_vec(),
+                    band: self.operand(tail).band,
+                };
+                rewritten = Changed::Yes;
+            }
         }
         Spelled {
             leaves: out.leaves,
             band: Band::of(rule),
             shape,
             commented,
-            rewritten: Changed::No,
+            rewritten,
         }
     }
 
@@ -1345,7 +1400,9 @@ impl<'source> Respelling<'_, 'source>
     /// statement's range is read before a later one moves. A statement with a
     /// comment among its parts, or whose read stands in no later part, stays,
     /// and so does every statement before it: written at its read past one
-    /// that stays, its call would run after that one's.
+    /// that stays, its call would run after that one's. The form is emptied
+    /// when every statement it holds is written away and no comment stands
+    /// among its parts.
     ///
     /// # Specification
     /// trivial.
@@ -1354,7 +1411,7 @@ impl<'source> Respelling<'_, 'source>
         parts: &[Part<'source>],
         starts: &[Start],
         leaves: &mut Vec<Leaf<'source>>,
-    ) -> Changed
+    ) -> (Changed, Emptied)
     {
         let total = leaves.len();
         let end = |part: usize| {
@@ -1388,6 +1445,7 @@ impl<'source> Respelling<'_, 'source>
             })
             .collect();
         let mut changed = Changed::No;
+        let mut written_away = 0_usize;
         // The first part of the statement last written away; none yet.
         let mut following: Option<usize> = None;
         for &(first, called) in statements.iter().rev() {
@@ -1428,9 +1486,20 @@ impl<'source> Respelling<'_, 'source>
             drop(leaves.splice(read ..= read, written));
             drop(leaves.drain(from .. through));
             changed = Changed::Yes;
+            written_away = written_away.saturating_add(1);
             following = Some(first);
         }
-        changed
+        let stops = (0 .. parts.len()).filter(|&part| own(part, ";")).count();
+        let emptied = if written_away > 0
+            && written_away == stops
+            && !parts.iter().any(|part| matches!(part.role, Role::Comment))
+        {
+            Emptied::Yes
+        }
+        else {
+            Emptied::No
+        };
+        (changed, emptied)
     }
 
     /// The operand `child` as a new position reads it.
@@ -1457,7 +1526,20 @@ impl<'source> Respelling<'_, 'source>
                 inner: None,
             };
         };
-        let inner = self.unwrapped(child).and_then(spelled);
+        let braced = match child {
+            Child::Node(at) => self
+                .spelled
+                .get(&at)
+                .and_then(|spelled| match spelled.shape {
+                    Shape::Braced { ref entry, band } => Some((entry.clone(), band)),
+                    Shape::Other
+                    | Shape::Parenthesized { .. }
+                    | Shape::Arrow { .. }
+                    | Shape::Returner { .. } => None,
+                }),
+            Child::Leaf(_) => None,
+        };
+        let inner = braced.or_else(|| self.unwrapped(child).and_then(spelled));
         Operand {
             leaves,
             band,
@@ -2649,6 +2731,28 @@ fn shape<'source>(
         ("f_type", &["-F"], &[result]) => Shape::Returner { result },
         _ => Shape::Other,
     }
+}
+
+/// The leaves inside the braces `leaves` opens with and closes with, the
+/// layout beside either brace left out, when there are any.
+///
+/// # Specification
+/// trivial.
+fn braced<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> Option<&'leaves [Leaf<'source>]>
+{
+    let token = |leaf: &Leaf<'_>, text: Spelling| {
+        leaf.material == Material::Token && <&str>::from(leaf.text) == text.0
+    };
+    let open = leaves.iter().position(|leaf| token(leaf, OPEN_BRACE))?;
+    let close = leaves.iter().rposition(|leaf| token(leaf, CLOSE_BRACE))?;
+    let inside = leaves.get(open.saturating_add(1) .. close)?;
+    let first = inside
+        .iter()
+        .position(|leaf| leaf.material != Material::Whitespace)?;
+    let last = inside
+        .iter()
+        .rposition(|leaf| leaf.material != Material::Whitespace)?;
+    inside.get(first ..= last)
 }
 
 /// The entries of the parenthesised list whose parts are `parts`, each `A`

@@ -25,9 +25,7 @@ def rec size(t : Tree) -> -F Nat {
     Node(f) => {
       run l <- f(L);
       run r <- f(R);
-      run a <- size[<](l);
-      run b <- size[<](r);
-      plus(a, b)
+      plus(size[<](l), size[<](r))
     }
   }
 }

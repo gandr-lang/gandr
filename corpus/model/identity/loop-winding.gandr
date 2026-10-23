@@ -17,8 +17,8 @@ import "./loop-shape.gandr" ;
 def rec windWords(c : Words) -> -F Int {
   case c {
     Nil => Z,
-    Loop(x) => { run n <- windWords[<](x); S(n) },
-    Unloop(x) => { run n <- windWords[<](x); P(n) }
+    Loop(x) => S(windWords[<](x)),
+    Unloop(x) => P(windWords[<](x))
   }
 }
 

@@ -1,29 +1,30 @@
 // The folds over a polymorphic list — its length, appending and mapping — in
-// each spelling an arm admits: a `return` after a `run`, the same with both
-// elided, and the recursive call nested in the constructor it returns. A
-// structural recursive call stands one stage below the list it was read from
-// (Abel, _Termination checking with types_, doi:10.1051/ita:2004015); the
-// list is the polymorphic one of Martin-Löf's type theory. They run at the
-// naturals in `recursive-nat-lists.gandr`.
+// the spellings an arm admits, each as the sugared form writes it: a `run`
+// that only sequences a call, its result returned or the `return` elided, is
+// written with the call nested in the constructor it returns. A structural
+// recursive call stands one stage below the list it was read from (Abel,
+// _Termination checking with types_, doi:10.1051/ita:2004015); the list is
+// the polymorphic one of Martin-Löf's type theory. They run at the naturals
+// in `recursive-nat-lists.gandr`.
 
 // The naturals and the lists.
 import "./data-base.gandr" ;
 
-/// The length of a list, returned.
+/// The length of a list, returned, the run written at its read.
 @[ checks ]
 def rec length(a : Type, xs : List(a)) -> -F Nat {
   case xs {
     Nil => Zero,
-    Cons(x, rest) => { run r <- length[<](a, rest); Succ(r) }
+    Cons(x, rest) => Succ(length[<](a, rest))
   }
 }
 
-/// The length of a list, the `return`s elided.
+/// The length of a list, the `return`s elided, the run written at its read.
 @[ checks ]
 def rec length_elided(a : Type, xs : List(a)) -> -F Nat {
   case xs {
     Nil => Zero,
-    Cons(x, rest) => { run r <- length_elided[<](a, rest); Succ(r) }
+    Cons(x, rest) => Succ(length_elided[<](a, rest))
   }
 }
 
@@ -36,21 +37,21 @@ def rec length_nested(a : Type, xs : List(a)) -> -F Nat {
   }
 }
 
-/// Appending two lists, returned.
+/// Appending two lists, returned, the run written at its read.
 @[ checks ]
 def rec append(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
   case xs {
     Nil => ys,
-    Cons(x, rest) => { run r <- append[<](a, ys, rest); (Cons(x, r) : List(a)) }
+    Cons(x, rest) => (Cons(x, append[<](a, ys, rest)) : List(a))
   }
 }
 
-/// Appending two lists, the `return`s elided.
+/// Appending two lists, the `return`s elided, the run written at its read.
 @[ checks ]
 def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
   case xs {
     Nil => ys,
-    Cons(x, rest) => { run r <- append_elided[<](a, ys, rest); (Cons(x, r) : List(a)) }
+    Cons(x, rest) => (Cons(x, append_elided[<](a, ys, rest)) : List(a))
   }
 }
 
@@ -63,27 +64,22 @@ def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
   }
 }
 
-/// Mapping a function over a list, returned.
+/// Mapping a function over a list, returned, the runs written at their reads.
 @[ checks ]
 def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
   case xs {
     Nil => (Nil : List(b)),
-    Cons(
-      x,
-      rest
-    ) => { run y <- f(x); run r <- map[<](a, b, f, rest); (Cons(y, r) : List(b)) }
+    Cons(x, rest) => (Cons(f(x), map[<](a, b, f, rest)) : List(b))
   }
 }
 
-/// Mapping a function over a list, the `return`s elided.
+/// Mapping a function over a list, the `return`s elided, the runs written at
+/// their reads.
 @[ checks ]
 def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
   case xs {
     Nil => (Nil : List(b)),
-    Cons(
-      x,
-      rest
-    ) => { run y <- f(x); run r <- map_elided[<](a, b, f, rest); (Cons(y, r) : List(b)) }
+    Cons(x, rest) => (Cons(f(x), map_elided[<](a, b, f, rest)) : List(b))
   }
 }
 
