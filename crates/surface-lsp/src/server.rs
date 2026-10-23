@@ -69,7 +69,10 @@ use std::sync::mpsc::Sender;
 use std::time::Instant;
 
 use anodized::spec;
+use gandr_core_incremental::Checkpoints;
 use gandr_core_incremental::DiscardingCheckpointStore;
+use gandr_core_incremental::Handed;
+use gandr_core_incremental::Restorer;
 use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Delivered;
@@ -466,21 +469,19 @@ struct Asked
 impl Document
 {
     /// An empty copy of the document at `uri`, at `version`, with a session
-    /// of its own, whose first judgement restores from `saved` when the
-    /// workspace keeps saves and the running build has an identity.
+    /// of its own, whose first judgement restores from `restorer` when one is
+    /// given.
     ///
     /// # Specification
     /// trivial.
     fn opened(
         uri: &DocumentUri,
         version: DocumentVersion,
-        saved: Option<&Saved>,
+        restorer: Option<Box<dyn Restorer>>,
     ) -> Self
     {
         let mut session = open(uri);
-        if let (Ok(judging), Some(saved)) = (session.as_mut(), saved)
-            && let Maybe::Present(restorer) = saved.restorer()
-        {
+        if let (Ok(judging), Some(restorer)) = (session.as_mut(), restorer) {
             judging.restore_from(restorer);
         }
         Self {
@@ -945,14 +946,18 @@ impl Held
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `peer`'s copy is the latest; a copy it already held is kept,
-    ///   session and all, and every other connection's copy is unchanged.
+    ///   session and all, and every other connection's copy is unchanged; a
+    ///   copy it is given restores its first judgement from what the latest
+    ///   copy's last judgement recorded, else from `saved`.
     /// - provides: an open, which then overwrites the copy's text.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a second connection opening a held document gets a
-    ///   copy of its own beside the first's, which keeps answering the first.
+    ///   copy of its own beside the first's, which keeps answering the first,
+    ///   and judges only what the first's last judgement did not.
     /// - witness: `server::tests::two_connections_hold_their_own_copies`
+    /// - witness: `server::tests::a_copy_opened_again_or_beside_another_resumes_from_its_last_judgement_2102`
     #[spec(captures: [holders = self.others.len().saturating_add(1_usize)],
         ensures: self.latest == peer && self.others.len().saturating_add(1_usize) >= holders)]
     fn take_up(
@@ -963,9 +968,10 @@ impl Held
     )
     {
         if matches!(self.own(peer), Maybe::Absent(_)) {
+            let restorer = restorer(handed_on(&self.document), saved);
             let _first = self
                 .others
-                .insert(peer, Document::opened(uri, version, saved));
+                .insert(peer, Document::opened(uri, version, restorer));
         }
         self.promote(peer);
     }
@@ -1347,14 +1353,22 @@ impl From<u64> for Peer
 /// one buffer then applied each edit twice. One text with a change applied
 /// only when its version passes the held one was the other repair; clients
 /// number versions independently, so two whose numbering drifted apart would
-/// lose each other's edits. A copy costs a session per holding connection and
-/// a cold check at its open; a session that forks, sharing its form store and
-/// checkpoints between copies, is the lever if that cost is ever measured.
+/// lose each other's edits. A copy costs a session per holding connection;
+/// its first judgement starts from what the latest copy's last judgement
+/// recorded, so the incremental pass at a second connection's open judges
+/// only what that one did not.
+///
+/// A document is forgotten with its sessions once no connection holds it,
+/// but what its last copy recorded at its last judgement is kept by its URI:
+/// the next copy opened there resumes from it, whatever its text, adopting
+/// each item whose content and support it recorded. A workspace that keeps
+/// saves restores from them only a copy it hands nothing.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a document is held while at least one connection holds a copy,
-///   and is forgotten with its sessions once none does.
+///   and is forgotten with its sessions once none does, what its last copy
+///   recorded kept for the next copy opened at its URI.
 /// - panics: none.
 /// - executable: none — this state carrier has no call boundary; the server's
 ///   handling carries the executable clauses.
@@ -1362,9 +1376,11 @@ impl From<u64> for Peer
 /// # Adequacy
 /// - hypothesis: L3 — two connections opening, editing, querying and closing
 ///   one document, and one leaving while the other stays, are each answered for
-///   their own copy.
+///   their own copy; a second connection's copy, and a copy opened again, judge
+///   only what an earlier copy did not.
 /// - witness: `server::tests::two_connections_hold_their_own_copies`
 /// - witness: `server::tests::a_departing_connection_leaves_the_others_served`
+/// - witness: `server::tests::a_copy_opened_again_or_beside_another_resumes_from_its_last_judgement_2102`
 #[derive(Default)]
 pub struct Workspace
 {
@@ -1396,6 +1412,10 @@ pub struct Workspace
     /// Where a save keeps its copy's checkpoints and an open restores from,
     /// as the `saved` module states; none keeps no save.
     saved: Option<Saved>,
+    /// What the last copy of each document let go recorded at its last
+    /// judgement, by the document's URI: what the first judgement of the next
+    /// copy opened at it resumes from, whatever its text.
+    handed: BTreeMap<DocumentUri, Checkpoints>,
 }
 
 /// The copies the editors hold, read by an import in place of the file at
@@ -2103,6 +2123,9 @@ impl Workspace
         }
         if held.latest == peer && held.others.is_empty() {
             let _forgotten = self.paths.remove(&held.path);
+            if let Some(set) = handed_on(&held.document) {
+                let _replaced = self.handed.insert(uri, set);
+            }
             return Some(held.path);
         }
         if let Maybe::Present(held) = held.release(peer) {
@@ -5426,9 +5449,10 @@ impl Server
                 let uri = text_document.uri;
                 let path = named_path(&uri.path());
                 let _indexed = workspace.paths.insert(path.clone(), uri.clone());
+                let restorer = restorer(workspace.handed.remove(&uri), workspace.saved.as_ref());
                 let held = Held {
                     latest: self.peer,
-                    document: Document::opened(&uri, version, workspace.saved.as_ref()),
+                    document: Document::opened(&uri, version, restorer),
                     others: BTreeMap::new(),
                     path,
                 };
@@ -8137,6 +8161,57 @@ fn kept(
         kind: MessageType::WARNING,
         message: format!("the save of {uri} kept no checkpoints: {why}"),
     }))
+}
+
+/// What `document`'s session recorded at its last judgement, when it holds
+/// one and no judgement holds the session now.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the checkpoints of the session's latest resume when its lock is
+///   free and it judged one; nothing otherwise, the session untouched.
+/// - provides: the set a copy let go hands to the next opened at its URI, and
+///   the set a connection's copy beside another's starts from.
+/// - panics: none.
+/// - executable: none — whether the lock is free is a fact of the moment the
+///   call takes it, which no clause can restate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Workspace`]'s hand-on.
+/// - witness: `server::tests::a_copy_opened_again_or_beside_another_resumes_from_its_last_judgement_2102`
+fn handed_on(document: &Document) -> Option<Checkpoints>
+{
+    let session = document.session.try_lock().ok()?;
+    let held = session
+        .as_ref()
+        .ok()
+        .and_then(|judging| match judging.last() {
+            Maybe::Present(resume) => Some(resume.checkpoints().clone()),
+            Maybe::Absent(_) => None,
+        });
+    drop(session);
+    held
+}
+
+/// What the first judgement of a copy restores from: `handed`, a set an
+/// earlier copy of its document recorded, when there is one, else the set
+/// `saved` holds for the text it judges, when the workspace keeps saves and
+/// the build has an identity.
+///
+/// # Specification
+/// trivial.
+fn restorer(
+    handed: Option<Checkpoints>,
+    saved: Option<&Saved>,
+) -> Option<Box<dyn Restorer>>
+{
+    match handed {
+        Some(set) => Some(Box::new(Handed::new(set))),
+        None => match saved?.restorer() {
+            Maybe::Present(restorer) => Some(restorer),
+            Maybe::Absent(_) => None,
+        },
+    }
 }
 
 /// The warning logged to the client when its `gandr` settings do not read:
@@ -15785,6 +15860,69 @@ mod tests
         assert!(
             workspace.documents.is_empty(),
             "a stranger's departure changes nothing"
+        );
+    }
+
+    /// #2102: a copy's first judgement resumes from what an earlier copy of
+    /// its document recorded, with no save kept: a second connection's copy
+    /// from the copy the first holds, and a copy opened after the last was
+    /// let go from what that one recorded, whatever its text — its unchanged
+    /// items adopted and its changed ones judged.
+    #[test]
+    fn a_copy_opened_again_or_beside_another_resumes_from_its_last_judgement_2102()
+    {
+        let (mut workspace, [mut first, mut second]) = two_connections();
+        let judged = |connection: &mut Connection, workspace: &mut Workspace, body: &Body| {
+            let _said = connection.server.handle(workspace, body);
+            let mut admissions = Admissions::new(&SERIAL, Inbox::default().changes());
+            let mut log = connection.server.admit(workspace, &mut admissions);
+            log.extend(
+                connection
+                    .server
+                    .admitted(workspace, &mut admissions, Awaiting::All)
+                    .log,
+            );
+            let lines: Vec<String> = log.iter().map(ToString::to_string).collect();
+            lines
+                .iter()
+                .filter_map(|line| {
+                    let (judged, _) = line.split_once(" items judged")?;
+                    Some(judged.rsplit(' ').next()?.to_owned())
+                })
+                .collect::<Vec<String>>()
+        };
+        let open = |text: &str| {
+            shared(
+                Json("textDocument/didOpen"),
+                Json(&format!(r#","version":1,"text":{}}}"#, Value::from(text))),
+            )
+        };
+        let close = shared(Json("textDocument/didClose"), Json("}"));
+        let lone = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = a ;\n";
+        assert_eq!(
+            judged(&mut first, &mut workspace, &open(lone)),
+            ["2/2"],
+            "a first open judges every item"
+        );
+        assert_eq!(
+            judged(&mut second, &mut workspace, &open(lone)),
+            ["0/2"],
+            "a second connection's copy resumes from the first's"
+        );
+        let _closed = judged(&mut first, &mut workspace, &close);
+        let _closed = judged(&mut second, &mut workspace, &close);
+        assert!(workspace.documents.is_empty(), "the last close forgets it");
+        assert_eq!(
+            judged(&mut first, &mut workspace, &open(lone)),
+            ["0/2"],
+            "a copy opened again resumes from what the last one let go recorded"
+        );
+        let _closed = judged(&mut first, &mut workspace, &close);
+        let edited = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = 2 ;\n";
+        assert_eq!(
+            judged(&mut first, &mut workspace, &open(edited)),
+            ["1/2"],
+            "an edited text adopts its unchanged item and judges the changed one"
         );
     }
 

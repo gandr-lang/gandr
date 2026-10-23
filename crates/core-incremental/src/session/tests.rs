@@ -9,6 +9,7 @@ use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
 use quenchant_shape::shape::Maybe;
 
+use super::Handed;
 use super::IncrementalSession;
 use super::submitted;
 use crate::boundary::ItemCount;
@@ -397,5 +398,54 @@ fn a_held_set_persists_to_another_store_and_restores_a_first_submission_1816()
         census.judged,
         ItemCount::from(2_usize),
         "another backend's set restores nothing"
+    );
+}
+
+/// #2102: a set handed on from a session that judged one revision resumes
+/// another session's first submission of a later revision: its unchanged
+/// items adopted, its changed one judged, and its checkpoints those of a whole
+/// judgement of the later revision.
+#[test]
+fn a_set_handed_on_resumes_a_later_revision_s_first_submission_2102()
+{
+    let revision = |two: &'static str| {
+        integers(CoreArena::new(), &[
+            (Key("one"), Digits("1")),
+            (Key("two"), Digits(two)),
+            (Key("three"), Digits("3")),
+        ])
+    };
+    let fresh =
+        || IncrementalSession::new(DiscardingCheckpointStore, backend(), CheckBudget::DEFAULT);
+    let mut earlier = fresh();
+    let _judged = earlier
+        .submit(&mut revision("2"), &mut Quiet)
+        .expect("submit");
+    let Maybe::Present(held) = earlier.last()
+    else {
+        panic!("the earlier revision is held");
+    };
+    let mut handed = fresh();
+    handed.restore_from(Box::new(Handed::new(held.checkpoints().clone())));
+    let census = handed
+        .submit(&mut revision("5"), &mut Quiet)
+        .expect("submit");
+    assert_eq!(
+        (census.adopted, census.judged),
+        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
+        "the unchanged items are adopted and the changed one judged"
+    );
+    let mut whole = fresh();
+    let _judged = whole
+        .submit(&mut revision("5"), &mut Quiet)
+        .expect("submit");
+    let (Maybe::Present(resumed), Maybe::Present(judged)) = (handed.last(), whole.last())
+    else {
+        panic!("both sessions hold a resume");
+    };
+    assert_eq!(
+        resumed.checkpoints(),
+        judged.checkpoints(),
+        "the resume records what a whole judgement records"
     );
 }

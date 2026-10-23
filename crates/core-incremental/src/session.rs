@@ -11,6 +11,7 @@ use gandr_core_checker::Retirement;
 use gandr_core_checker::Unretired;
 use quenchant_shape::shape::Maybe;
 
+use crate::checkpoint::Checkpoints;
 use crate::checkpoint::Leading;
 use crate::checkpoint::Resume;
 use crate::checkpoint::ResumeCensus;
@@ -27,6 +28,7 @@ use crate::persistence::Keeping;
 use crate::persistence::Restorer;
 use crate::persistence::persist;
 use crate::persistence::persist_set;
+use crate::persistence::restored;
 use crate::region::Program;
 use crate::stream::SynthesisStream;
 
@@ -639,6 +641,80 @@ impl<Store> IncrementalSession<Store>
     pub fn into_store(self) -> Store
     {
         self.store
+    }
+}
+
+/// A set an earlier revision of a program judged, handed on in memory: what
+/// a session's first submission of a later revision resumes from, as it would
+/// from the session that judged the earlier one.
+///
+/// The set is not addressed: it is handed to whatever program the submission
+/// lays, and the resume recalls each of its items by content and adopts one
+/// only where its support still holds, judging every other, as it does with a
+/// predecessor's.
+///
+/// # Specification
+/// - executable: none — a held set has no call boundary; [`Restorer::restored`]
+///   carries the clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a set handed on to a later revision adopts its unchanged
+///   items and judges its changed one, its checkpoints those of a whole
+///   judgement of that revision.
+/// - witness: `session::tests::a_set_handed_on_resumes_a_later_revision_s_first_submission_2102`
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Handed
+{
+    /// The set, until a submission takes it.
+    held: Maybe<Checkpoints, restored::Absent>,
+}
+
+impl Handed
+{
+    /// Hand `checkpoints` on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(checkpoints: Checkpoints) -> Self
+    {
+        Self {
+            held: Maybe::Present(checkpoints),
+        }
+    }
+}
+
+impl Restorer for Handed
+{
+    /// The set handed on, whatever program it is asked for, the first time it
+    /// is asked; nothing after.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the set handed on at the first call, and
+    ///   `restored::Absent::NotStored` at every later one.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// None.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Handed`].
+    /// - witness: `session::tests::a_set_handed_on_resumes_a_later_revision_s_first_submission_2102`
+    #[spec(ensures: matches!(self.held, Maybe::Absent(_)))]
+    #[inline]
+    fn restored(
+        &mut self,
+        _program: &Program,
+    ) -> Result<Maybe<Checkpoints, restored::Absent>, CheckpointStoreError>
+    {
+        Ok(core::mem::replace(
+            &mut self.held,
+            Maybe::Absent(restored::Absent::NotStored),
+        ))
     }
 }
 
