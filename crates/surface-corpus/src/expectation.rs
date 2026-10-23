@@ -935,8 +935,8 @@ const PRIMES: &str = "primes = ";
 /// # Specification
 /// - requires: `web` is a spelling the runner printed for a web.
 /// - ensures: `primes = k` for a `stated` opening `primes = `, `k` the number
-///   of `prime(` nodes in `web` that no longer name ends in; `web` itself
-///   otherwise.
+///   of `prime(` nodes in `web`, each a `prime(` that begins a name rather than
+///   ending a longer one; `web` itself otherwise.
 /// - fails: never.
 /// - panics: none.
 ///
