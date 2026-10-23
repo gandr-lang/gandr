@@ -3,11 +3,13 @@
 //! on the path.
 //!
 //! The fake answers the check-run query with `FAKE_CHECKS`, one JSON object a
-//! line, the pull-request query with `FAKE_PULLS` and the issue listing with
-//! `FAKE_GH_ISSUES`. It logs every invocation to `FAKE_GH_LOG` and writes each
-//! body it is fed to `FAKE_GH_BODY.<verb>-<issue>`; a created issue and a
-//! posted comment are numbered by the log's length. It fails every
-//! invocation under `FAKE_GH=fail`.
+//! line, the pull-request query with `FAKE_PULLS` (or `FAKE_PULL` for one
+//! named by `--pull`), an issue's comment listing with `FAKE_COMMENTS`, one
+//! JSON object a line, and the issue listing with `FAKE_GH_ISSUES`. It logs
+//! every invocation to `FAKE_GH_LOG` and writes each body it is fed to
+//! `FAKE_GH_BODY.<verb>-<issue>`, or `FAKE_GH_BODY.patch-<comment>` for an
+//! edited comment; a created issue and a posted comment are numbered by the
+//! log's length. It fails every invocation under `FAKE_GH=fail`.
 //!
 //! The fake is a file of the tree, never written per case: macOS assesses an
 //! executable the first time it runs, one at a time across the machine, and a
@@ -91,7 +93,7 @@ Its body carries no settled `hotpath: accepted — <benchmark> …` verdict for 
 ";
 
 /// The body of `decide`'s issue before its rows.
-const DECIDE_HEAD: &str = "The hotpath guard's regressions of `gandr_core_checker::module::decide` (`crates/core-checker`), as the `hotpath / <series>` checks measure it: this body is the index, one row per pull request and series; each new regression's report is a comment below. The guard rewrites the rows and keeps the rest of this body as written.
+const DECIDE_HEAD: &str = "The hotpath guard's regressions of `gandr_core_checker::module::decide` (`crates/core-checker`), as the `hotpath / <series>` checks measure it: this body is the index, one row per pull request and series; each pull request's report is one comment below, edited by its later runs. The guard rewrites the rows and keeps the rest of this body as written.
 
 ## Index
 
@@ -237,16 +239,52 @@ macro_rules! run {
     }};
 }
 
-/// The `gh` invocations the fake in `$root` logged that write an issue.
+/// The `gh` invocations the fake in `$root` logged that write an issue or
+/// edit a comment.
 macro_rules! writes {
     ($root:expr) => {
         std::fs::read_to_string($root.join("log"))
             .unwrap()
             .lines()
-            .filter(|line| line.starts_with("issue ") && !line.starts_with("issue list"))
+            .filter(|line| {
+                (line.starts_with("issue ") && !line.starts_with("issue list"))
+                    || line.starts_with("api --method")
+            })
             .map(str::to_owned)
             .collect::<Vec<_>>()
     };
+}
+
+/// The marker of pull request 1358's report comment.
+const MARKER: &str = "<!-- hotpath: pr=1358 -->";
+
+/// The comment listing of an issue holding pull request 1358's marked
+/// report as comment 1, pull request 1400's as comment 2, and a person's
+/// comment quoting 1358's marker on a later line as comment 3.
+///
+/// # Specification
+/// trivial.
+fn comments() -> String
+{
+    [
+        (1_u64, format!("{MARKER}\nthe earlier report")),
+        (
+            2_u64,
+            "<!-- hotpath: pr=1400 -->\nanother pull request's report".to_owned(),
+        ),
+        (3_u64, format!("A person, quoting:\n{MARKER}")),
+    ]
+    .into_iter()
+    .map(|(id, body)| {
+        serde_json::json!({
+            "id": id,
+            "html_url": format!("https://example.invalid/issues/4#issuecomment-{id}"),
+            "body": body,
+        })
+        .to_string()
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// The body the fake in `$root` was fed by `$verb` on issue `$number`.
@@ -286,19 +324,21 @@ fn a_failed_check_opens_one_issue_per_function()
         "issue comment 7 --body-file -",
         "issue edit 7 --body-file - --add-label kind:performance --add-label area:surface",
     ]);
-    assert_eq!(body!(scratch, "comment", 4_u64), BODY);
-    let with = "<!-- with: gandr_core_checker::module::decide, lsp keystroke -->";
+    assert_eq!(
+        body!(scratch, "comment", 4_u64),
+        format!("{MARKER}\n{BODY}")
+    );
     assert_eq!(body!(scratch, "edit", 4_u64), index![
         format!(
             "| #1358 | {COMMIT} | `gandr` | allocations | avg `1444 → 2558` **+77%**, total \
                  `452181 → 813738` **+80%** | open | \
                  [run](https://github.com/gandr-lang/gandr/runs/119144034179), \
-                 [comment](https://example.invalid/issues/4#issuecomment-5) {with} |"
+                 [comment](https://example.invalid/issues/4#issuecomment-5) |"
         ),
         format!(
             "| #1358 | {COMMIT} | `gandr-timing` | timing | avg `284.34 µs → 411.59 µs` \
                  **+45%** | open | [run](https://github.com/gandr-lang/gandr/runs/119144057632), \
-                 [comment](https://example.invalid/issues/4#issuecomment-5) {with} |"
+                 [comment](https://example.invalid/issues/4#issuecomment-5) |"
         ),
     ]);
     std::fs::remove_dir_all(&scratch).unwrap();
@@ -327,15 +367,14 @@ fn only_a_completed_failed_hotpath_check_is_filed()
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
-/// `decide`'s row for pull request `$number` in `gandr`, open, its comment
-/// `$comment` naming `decide` alone.
+/// `decide`'s row for pull request `$number` in `gandr`, open, linking its
+/// comment `$comment`.
 macro_rules! open_row {
     ($number:expr, $comment:expr) => {
         format!(
             "| #{} | {COMMIT} | `gandr` | allocations | avg `1444 → 2558` **+77%** | open | \
              [run](https://github.com/gandr-lang/gandr/runs/1), \
-             [comment](https://example.invalid/issues/4#issuecomment-{}) <!-- with: \
-             gandr_core_checker::module::decide --> |",
+             [comment](https://example.invalid/issues/4#issuecomment-{}) |",
             $number, $comment
         )
     };
@@ -360,16 +399,26 @@ fn a_second_pull_request_adds_a_row_and_a_comment()
     )])
     .to_string();
     let pulls = pulls!(1400_u64);
+    let comments = comments()
+        .lines()
+        .filter(|line| !line.contains("pr=1400"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let output = run!(scratch, HEAD, ["--file-issue"], [
         ("FAKE_CHECKS", checks.as_str()),
         ("FAKE_PULLS", pulls.as_str()),
-        ("FAKE_GH_ISSUES", issues.as_str())
+        ("FAKE_GH_ISSUES", issues.as_str()),
+        ("FAKE_COMMENTS", comments.as_str())
     ]);
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(writes!(scratch), [
         "issue comment 4 --body-file -",
         "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
     ]);
+    assert!(
+        body!(scratch, "comment", 4_u64).starts_with("<!-- hotpath: pr=1400 -->\n"),
+        "the second pull request's comment carries its own marker"
+    );
     assert_eq!(
         body!(scratch, "edit", 4_u64),
         index![
@@ -377,8 +426,7 @@ fn a_second_pull_request_adds_a_row_and_a_comment()
             format!(
                 "| #1400 | {COMMIT} | `gandr` | allocations | avg `1444 → 2558` **+77%** | open \
                  | [run](https://github.com/gandr-lang/gandr/runs/9), \
-                 [comment](https://example.invalid/issues/4#issuecomment-4) <!-- with: \
-                 gandr_core_checker::module::decide --> |"
+                 [comment](https://example.invalid/issues/4#issuecomment-5) |"
             ),
         ],
         "two pull requests, two rows, each with its comment"
@@ -387,7 +435,7 @@ fn a_second_pull_request_adds_a_row_and_a_comment()
 }
 
 #[test]
-fn a_later_run_updates_its_row_without_a_comment()
+fn a_later_run_edits_its_comment_and_row()
 {
     let scratch = scratch!("rerun");
     let checks = check!(
@@ -405,10 +453,12 @@ fn a_later_run_updates_its_row_without_a_comment()
     )])
     .to_string();
     let pulls = pulls!(1358_u64);
+    let comments = comments();
     let output = run!(scratch, HEAD, ["--file-issue"], [
         ("FAKE_CHECKS", checks.as_str()),
         ("FAKE_PULLS", pulls.as_str()),
-        ("FAKE_GH_ISSUES", issues.as_str())
+        ("FAKE_GH_ISSUES", issues.as_str()),
+        ("FAKE_COMMENTS", comments.as_str())
     ]);
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert!(
@@ -416,19 +466,69 @@ fn a_later_run_updates_its_row_without_a_comment()
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
-    assert_eq!(writes!(scratch), [
-        "issue edit 4 --body-file - --add-label kind:performance --add-label area:core"
-    ]);
+    assert_eq!(
+        writes!(scratch),
+        [
+            "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
+            "issue edit 4 --body-file - --add-label kind:performance --add-label area:core"
+        ],
+        "the pull request's own marked comment is edited; none is posted"
+    );
+    let edited = body!(scratch, "patch", 1_u64);
+    assert!(
+        edited.starts_with(&format!("{MARKER}\nA hotpath check failed on [#1358]")),
+        "{edited}"
+    );
+    assert!(
+        edited.contains("(https://github.com/gandr-lang/gandr/runs/9)"),
+        "the comment names the later run: {edited}"
+    );
     assert_eq!(
         body!(scratch, "edit", 4_u64),
         index![open_row!(1358_u64, 1_u64).replace("runs/1)", "runs/9)")],
-        "the row names the later run and keeps its comment"
+        "one row, naming the later run and linking the one comment"
     );
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
 #[test]
-fn a_passing_run_marks_its_row_fixed_without_a_comment()
+fn the_event_s_pull_request_names_a_force_pushed_commit()
+{
+    let scratch = scratch!("force-pushed");
+    let checks = check!(
+        "hotpath / gandr",
+        "completed",
+        Some("failure"),
+        9_u64,
+        DECIDE
+    );
+    let pull = r#"{"number":1358,"html_url":"https://github.com/gandr-lang/gandr/pull/1358","head":{"ref":"theory-model-record","sha":"b52c58585c2365b2e677525bc33723d1019aa2c5"}}"#;
+    let output = run!(scratch, HEAD, ["--pull", "1358", "--file-issue"], [
+        ("FAKE_CHECKS", checks.as_str()),
+        ("FAKE_PULLS", "[]"),
+        ("FAKE_PULL", pull)
+    ]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).starts_with("A hotpath check failed on [#1358]"),
+        "the restack moved the head on, and the event still names the pull request: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        body!(scratch, "comment", 4_u64).starts_with(&format!("{MARKER}\n")),
+        "filed under the pull request, not the bare commit"
+    );
+    assert!(
+        std::fs::read_to_string(scratch.join("log"))
+            .unwrap()
+            .contains("api repos/gandr-lang/gandr/pulls/1358\n"),
+        "read by its number"
+    );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn a_passing_run_edits_its_comment_and_marks_its_row_fixed()
 {
     let scratch = scratch!("fixed");
     let checks = [
@@ -464,10 +564,12 @@ fn a_passing_run_marks_its_row_fixed_without_a_comment()
     ])
     .to_string();
     let pulls = pulls!(1358_u64);
+    let comments = comments();
     let output = run!(scratch, HEAD, ["--file-issue"], [
         ("FAKE_CHECKS", checks.as_str()),
         ("FAKE_PULLS", pulls.as_str()),
-        ("FAKE_GH_ISSUES", issues.as_str())
+        ("FAKE_GH_ISSUES", issues.as_str()),
+        ("FAKE_COMMENTS", comments.as_str())
     ]);
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert!(
@@ -478,10 +580,20 @@ fn a_passing_run_marks_its_row_fixed_without_a_comment()
     assert_eq!(
         writes!(scratch),
         [
+            "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
             "issue edit 4 --body-file - --add-label kind:performance",
             "issue close 4"
         ],
-        "only the issue with the pull request's open row; every row settled closes it"
+        "only the issue with the pull request's open row: its comment edited, none posted; \
+         every row settled closes it"
+    );
+    assert_eq!(
+        body!(scratch, "patch", 1_u64),
+        format!(
+            "{MARKER}\nNo hotpath check failed at \
+             [`914a768`](https://github.com/gandr-lang/gandr/commit/{HEAD}).\n"
+        ),
+        "the green run says so in the comment"
     );
     let fixed = open_row!(1358_u64, 1_u64).replace(
         "| open |",
@@ -519,20 +631,25 @@ fn a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress()
     ])
     .to_string();
     let pulls = pulls!(1358_u64);
+    let comments = comments();
     let output = run!(scratch, HEAD, ["--file-issue"], [
         ("FAKE_CHECKS", checks.as_str()),
         ("FAKE_PULLS", pulls.as_str()),
-        ("FAKE_GH_ISSUES", issues.as_str())
+        ("FAKE_GH_ISSUES", issues.as_str()),
+        ("FAKE_COMMENTS", comments.as_str())
     ]);
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(
         writes!(scratch),
         [
+            "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
             "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+            "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
             "issue edit 5 --body-file - --add-label kind:performance",
             "issue close 5"
         ],
-        "the function the failed check names stays open; the other, which the pass touches, closes"
+        "the function the failed check names stays open; the other, which the pass touches, \
+         closes; each edits the pull request's comment and posts none"
     );
     assert_eq!(
         body!(scratch, "edit", 4_u64),

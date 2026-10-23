@@ -3,7 +3,13 @@ printf '%s\n' "$*" >> "$FAKE_GH_LOG"
 if [ "$FAKE_GH" = fail ]; then echo 'HTTP 401: Bad credentials' >&2; exit 1; fi
 n=$(wc -l < "$FAKE_GH_LOG" | tr -d ' ')
 case "$1 $2" in
-  'api --paginate') printf '%s\n' "$FAKE_CHECKS" ;;
+  'api --paginate')
+    case "$3" in
+      */comments) printf '%s\n' "${FAKE_COMMENTS:-}" ;;
+      *) printf '%s\n' "$FAKE_CHECKS" ;;
+    esac ;;
+  'api --method') cat > "$FAKE_GH_BODY.patch-${4##*/}" ;;
+  'api repos/'*/pulls/*) printf '%s' "${FAKE_PULL:?the named pull request}" ;;
   'api repos/'*) printf '%s' "${FAKE_PULLS:-[]}" ;;
   'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
   'issue create') cat > "$FAKE_GH_BODY.create-$n"; echo "https://example.invalid/issues/$n" ;;

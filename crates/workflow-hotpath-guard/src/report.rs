@@ -31,6 +31,28 @@ use crate::check::Unstated;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PullNumber(u64);
 
+impl PullNumber
+{
+    /// The API path of this pull request in `repository`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the event's pull request is read by its number; a
+    ///   lost number reads another pull request.
+    /// - witness: `tests::cli::the_event_s_pull_request_names_a_force_pushed_commit`
+    #[must_use]
+    #[inline]
+    pub(crate) fn api_path(
+        self,
+        repository: &Repository,
+    ) -> String
+    {
+        format!("repos/{repository}/pulls/{}", self.0)
+    }
+}
+
 impl fmt::Display for PullNumber
 {
     /// Writes `#` and the number.
@@ -49,6 +71,27 @@ impl fmt::Display for PullNumber
     ) -> fmt::Result
     {
         write!(f, "#{}", self.0)
+    }
+}
+
+impl FromStr for PullNumber
+{
+    type Err = core::num::ParseIntError;
+
+    /// Reads a pull request's number, bare, as the check run event names it.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the event's pull request names the rows of a commit a
+    ///   restack force-pushed away; a misread number files the run on another
+    ///   pull request's rows.
+    /// - witness: `tests::cli::the_event_s_pull_request_names_a_force_pushed_commit`
+    #[inline]
+    fn from_str(text: &str) -> Result<Self, Self::Err>
+    {
+        text.parse().map(Self)
     }
 }
 
@@ -358,7 +401,7 @@ impl Report
     ///   benchmark; a failure kept as passed, or the later page kept, changes
     ///   the rows.
     /// - witness: `tests::cli::only_a_completed_failed_hotpath_check_is_filed`
-    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+    /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
     #[must_use]
     #[inline]
     pub fn new(
@@ -427,7 +470,7 @@ impl Report
     /// # Adequacy
     /// - hypothesis: L3 — a passing check fixes its open row; no passed check,
     ///   or one of another benchmark, leaves it open.
-    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+    /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
     #[must_use]
     #[inline]
     pub const fn passed(&self) -> &BTreeMap<Benchmark, RunUrl>
@@ -450,7 +493,7 @@ impl Report
     /// - hypothesis: L3 — a pull request's subject and a bare commit's; the
     ///   branch for the number, or the full commit, misses the earlier row.
     /// - witness: `tests::cli::a_commit_without_a_pull_request_is_filed_by_its_sha`
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     #[spec(ensures: |ret| ret.0.starts_with('#') || ret.0.starts_with('`'))]
     #[must_use]
     #[inline]
@@ -539,27 +582,88 @@ impl Report
         }
     }
 
-    /// The functions the failed checks regressed, by name, sorted, each once.
+    /// The marker the subject's report comment carries on each function's
+    /// issue, by which a later run finds the comment to edit.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `<!-- hotpath: pr=<n> -->` for a pull request; `<!-- hotpath:
+    ///   commit=<short> -->` for a bare commit.
+    /// - provides: one comment per subject and issue.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a later run of the same pull request, and a second
+    ///   pull request, on one issue; a marker naming the commit for a pull
+    ///   request, or none, posts a comment per run or edits another pull
+    ///   request's.
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
+    /// - witness: `tests::cli::a_second_pull_request_adds_a_row_and_a_comment`
+    #[spec(ensures: |ret| ret.0.starts_with("<!-- hotpath: ") && ret.0.ends_with(" -->"))]
+    #[must_use]
+    #[inline]
+    pub fn marker(&self) -> Marker
+    {
+        Marker(match self.pull {
+            Maybe::Present(ref pull) => format!("<!-- hotpath: pr={} -->", pull.number.0),
+            Maybe::Absent(_) => format!("<!-- hotpath: commit={} -->", self.sha.short()),
+        })
+    }
+}
+
+/// The first line of a subject's report comment: the marker a later run of
+/// the same subject finds its comment by.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Marker(String);
+
+impl Marker
+{
+    /// The first line of `body`, which a guard-written comment opens with its
+    /// marker.
     ///
     /// # Specification
     /// trivial.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a benchmark that failed and passed in one run; an
-    ///   empty or other set fixes the row it regressed.
-    /// - witness: `tests::cli::a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress`
+    /// - hypothesis: L3 — a person's comment quoting the marker on a later line
+    ///   beside the subject's own; reading any line edits the person's.
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     #[must_use]
     #[inline]
-    pub fn regressed(&self) -> BTreeSet<SiteName>
+    pub(crate) fn of_comment(body: &CommentBody) -> Self
     {
-        self.failures
-            .iter()
-            .flat_map(|failure| failure.sections.iter())
-            .flat_map(|section| section.sites.iter())
-            .map(|site| site.name.clone())
-            .collect()
+        Self(body.0.lines().next().unwrap_or_default().to_owned())
     }
 }
+
+impl fmt::Display for Marker
+{
+    /// Writes the marker.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a posted comment opens with its marker; an empty
+    ///   write leaves the comment unfound by the next run.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(&self.0)
+    }
+}
+
+/// An issue comment's Markdown body, as GitHub answers it.
+#[repr(transparent)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct CommentBody(String);
 
 impl fmt::Display for Report
 {

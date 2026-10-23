@@ -7,10 +7,11 @@
 //! wrote around the table stay as written, so a hand-folded row in the same
 //! columns is read like the guard's own.
 //!
-//! A new regression's report is a comment its row links. A later run of the
-//! same pull request and benchmark rewrites the row and adds no comment,
-//! unless the set of functions the run regressed changed (the row records
-//! the set its comment named) or the row had settled.
+//! Each pull request (or bare commit) has one report comment on the issue,
+//! found by its marker (`<!-- hotpath: pr=<n> -->`) and linked from its
+//! rows: its first regression posts it, and every later run of the same
+//! pull request edits it in place — a later regression, a passing run, a
+//! shift or an acceptance — so a rerun or a restack never adds a comment.
 //!
 //! A row is `open`; `fixed` when a later run of its pull request passes its
 //! benchmark; `runner shift`; or `accepted`, written when the pull request's
@@ -18,9 +19,6 @@
 //! verdict a red hotpath check owes before it queues). The issue closes when
 //! no row is open and reopens on the next open row.
 
-extern crate alloc;
-
-use alloc::collections::BTreeSet;
 use core::fmt;
 use core::str::FromStr;
 
@@ -48,9 +46,6 @@ const HEADER: &str = "| pull request | commit | series | metric | delta | status
 
 /// The index table's alignment row.
 const SEPARATOR: &str = "| --- | --- | --- | --- | --- | --- | --- |";
-
-/// The opening of a report cell's record of its comment's functions.
-const WITH: &str = "<!-- with: ";
 
 /// The opening of a report cell's comment link.
 const COMMENT: &str = "[comment](";
@@ -94,7 +89,7 @@ impl IssueTitle
     /// - hypothesis: L3 — `perf: gandr_core_checker::module::decide` and `perf:
     ///   #<n> regresses module::decide`; reading the second as a function, or
     ///   the first as none, changes the issues a pass touches.
-    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+    /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
     #[must_use]
     #[inline]
     pub fn function(&self) -> Option<SiteName>
@@ -203,7 +198,7 @@ impl Key
     /// # Adequacy
     /// - hypothesis: L3 — a later run of the same pull request finds its row;
     ///   an empty key appends a second one.
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     fn borrowed(&self) -> RowKey<'_>
     {
         RowKey {
@@ -223,7 +218,7 @@ impl Row
     /// # Adequacy
     /// - hypothesis: L3 — a later run of the same pull request finds its row;
     ///   an empty key appends a second one.
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     fn key(&self) -> RowKey<'_>
     {
         RowKey {
@@ -263,8 +258,7 @@ impl Row
         }
     }
 
-    /// The report cell's comment link and its record of the comment's
-    /// functions, as written.
+    /// The report cell's comment link, as written.
     ///
     /// # Specification
     /// trivial.
@@ -272,8 +266,7 @@ impl Row
     /// # Adequacy
     /// - hypothesis: L3 — a later run keeps its row's comment link; a lost link
     ///   changes the row.
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
-    /// - witness: `index::tests::a_changed_set_of_functions_owes_a_comment`
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     fn comment(&self) -> Maybe<String, Unstated>
     {
         let cell = self.cells.get(6).map_or("", String::as_str);
@@ -283,15 +276,52 @@ impl Row
     }
 }
 
-/// Whether recording a regression owes its issue a comment.
+/// What a run does to its subject's report comment on a function's issue.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Comment
 {
-    /// A new regression: the report is appended as a comment.
+    /// A regression standing unaccepted and unshifted: the subject's
+    /// comment is edited to this run's report, or posted when it has none.
     Owed,
-    /// A later run of a standing regression, or a runner shift: the row
-    /// changes, no comment is added.
+    /// A passing run, a runner shift or an accepted regression: the
+    /// subject's comment is edited to this run's report when it has one, and
+    /// none is posted.
     Unowed,
+}
+
+impl Comment
+{
+    /// What recording `regression` does to its subject's comment.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Comment::Unowed`] for a runner shift or a regression its
+    ///   pull request's body accepts; [`Comment::Owed`] otherwise.
+    /// - provides: whether this run may post the subject's first comment.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the cases are the clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a first regression, a shift and an accepted
+    ///   regression; a comment posted for the shift or the acceptance, or none
+    ///   for the regression, changes the comments.
+    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+    /// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
+    /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
+    #[must_use]
+    #[inline]
+    pub const fn of(regression: &Regression) -> Self
+    {
+        if matches!(regression.shift, Maybe::Present(_))
+            || matches!(regression.accepted, Maybe::Present(_))
+        {
+            Self::Unowed
+        }
+        else {
+            Self::Owed
+        }
+    }
 }
 
 /// Whether the issue stands open or settled.
@@ -351,8 +381,9 @@ impl Index
             head: lines(&format!(
                 "The hotpath guard's regressions of `{function}`{place}, as the `hotpath / \
                  <series>` checks measure it: this body is the index, one row per pull request \
-                 and series; each new regression's report is a comment below. The guard \
-                 rewrites the rows and keeps the rest of this body as written.\n\n## \
+                 and series; each pull request's report is one comment below, edited by its \
+                 later runs. The guard rewrites the rows and keeps the rest of this body as \
+                 written.\n\n## \
                  Index\n\n{HEADER}\n{SEPARATOR}"
             )),
             rows: Vec::new(),
@@ -446,59 +477,6 @@ impl Index
         }
     }
 
-    /// Whether recording `regression` for `subject` owes a comment.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: [`Comment::Unowed`] for a runner shift or a regression its
-    ///   pull request's body accepts; otherwise [`Comment::Owed`] when the
-    ///   subject has no row in the series, its row is not open, or its row's
-    ///   comment named other functions than `regressed`; [`Comment::Unowed`]
-    ///   for a later run of an open row with the same functions.
-    /// - provides: one comment per regression event, none per rerun.
-    /// - fails: never.
-    /// - panics: none.
-    /// - executable: none — the cases are the clause.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a first regression, a rerun naming the same
-    ///   functions, a rerun naming one more, a shift, and an accepted
-    ///   regression; a comment per rerun, none for the changed set, or one for
-    ///   the shift or the acceptance changes the comments.
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
-    /// - witness: `index::tests::a_changed_set_of_functions_owes_a_comment`
-    /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
-    #[must_use]
-    #[inline]
-    pub fn owes(
-        &self,
-        subject: &Subject,
-        regression: &Regression,
-        regressed: &BTreeSet<SiteName>,
-    ) -> Comment
-    {
-        if matches!(regression.shift, Maybe::Present(_))
-            || matches!(regression.accepted, Maybe::Present(_))
-        {
-            return Comment::Unowed;
-        }
-        let key = Key::new(subject, &regression.series);
-        let Some(row) = self.rows.iter().find(|row| row.key() == key.borrowed())
-        else {
-            return Comment::Owed;
-        };
-        let named = match row.comment() {
-            Maybe::Present(cell) => cell.contains(&format!("{WITH}{} -->", With(regressed))),
-            Maybe::Absent(_) => false,
-        };
-        if row.status() == Status::Open && named {
-            Comment::Unowed
-        }
-        else {
-            Comment::Owed
-        }
-    }
-
     /// Records `regression` as `subject`'s row in its series.
     ///
     /// # Specification
@@ -507,8 +485,8 @@ impl Index
     ///   states the commit, the series, the metric, the delta, `accepted` with
     ///   the body's verdict when the pull request accepts the growth, else the
     ///   `runner shift` with its proposal, else `open`, and the run; its
-    ///   comment is `comment` with `regressed` recorded when one was posted,
-    ///   otherwise the row's earlier comment as written.
+    ///   comment is `comment` when this run posted or edited one, otherwise the
+    ///   row's earlier comment as written.
     /// - provides: the index after a failed run.
     /// - fails: never.
     /// - panics: none.
@@ -519,7 +497,7 @@ impl Index
     ///   regression; a second row for the rerun, a lost comment link, an `open`
     ///   shift or an `open` acceptance changes the index.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
-    /// - witness: `tests::cli::a_later_run_updates_its_row_without_a_comment`
+    /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
     /// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[inline]
@@ -546,11 +524,9 @@ impl Index
             .and_then(|index| self.rows.get(index))
             .map_or(Maybe::Absent(Unstated), Row::comment);
         let report = match (comment, earlier) {
-            (&Maybe::Present(ref url), _) => format!(
-                "[run]({}), {COMMENT}{url}) {WITH}{} -->",
-                regression.run,
-                With(at.regressed)
-            ),
+            (&Maybe::Present(ref url), _) => {
+                format!("[run]({}), {COMMENT}{url})", regression.run)
+            },
             (&Maybe::Absent(_), Maybe::Present(earlier)) => {
                 format!("[run]({}), {earlier}", regression.run)
             },
@@ -619,7 +595,7 @@ impl Index
     /// # Adequacy
     /// - hypothesis: L3 — a pull request's open rows in two series, one of
     ///   which passes; fixing both, or neither, changes the index.
-    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+    /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
     #[inline]
     pub fn fix(
         &mut self,
@@ -655,7 +631,7 @@ impl Index
     /// # Adequacy
     /// - hypothesis: L3 — an index whose last open row is fixed, and one
     ///   gaining an open row; leaving either as it stood changes the state.
-    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+    /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
     /// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
     #[must_use]
     #[inline]
@@ -703,7 +679,7 @@ impl fmt::Display for Index
     }
 }
 
-/// The run a row is written for: its subject, commit and regressed set.
+/// The run a row is written for: its subject and commit.
 #[derive(Clone, Copy, Debug)]
 pub struct Run<'run>
 {
@@ -713,8 +689,6 @@ pub struct Run<'run>
     pub sha: &'run CommitSha,
     /// The row's key.
     pub subject: &'run Subject,
-    /// Every function the run's failed checks regressed.
-    pub regressed: &'run BTreeSet<SiteName>,
 }
 
 impl Run<'_>
@@ -741,7 +715,8 @@ impl Run<'_>
 
 /// A posted comment's address.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(transparent)]
 pub struct CommentUrl(String);
 
 impl FromStr for CommentUrl
@@ -785,58 +760,20 @@ impl fmt::Display for CommentUrl
     }
 }
 
-/// Why a row records no new comment: none was owed.
+/// Why a row records no comment of this run: none was posted or edited.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Unposted;
 
-/// A set of functions as a report cell records it: comma-separated names.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct With<'set>(&'set BTreeSet<SiteName>);
-
-impl fmt::Display for With<'_>
-{
-    /// Writes the names, sorted, comma-separated.
-    ///
-    /// # Specification
-    /// trivial.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a report cell recording two functions; an empty write
-    ///   changes the row.
-    /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        let names: Vec<String> = self.0.iter().map(ToString::to_string).collect();
-        f.write_str(&names.join(", "))
-    }
-}
-
 #[cfg(test)]
 mod tests
 {
-    extern crate alloc;
-
-    use alloc::collections::BTreeSet;
-
-    use quenchant_shape::shape::Maybe;
-
-    use super::Comment;
-    use super::CommentUrl;
     use super::Index;
     use super::IssueBody;
-    use super::Run;
     use super::Standing;
     use crate::check::Benchmark;
-    use crate::check::RunUrl;
-    use crate::check::SiteName;
-    use crate::report::Regression;
     use crate::report::Subject;
 
     /// The hand-folded index of `decide`, trimmed to two of its rows.
@@ -904,45 +841,5 @@ Owed once for the function.
             Standing::Open,
             "the open row keeps the issue open"
         );
-    }
-
-    #[test]
-    fn a_changed_set_of_functions_owes_a_comment()
-    {
-        let repository = "gandr-lang/gandr".parse().unwrap();
-        let sha = "914a768".parse().unwrap();
-        let subject = "#1358".parse::<Subject>().unwrap();
-        let decide = "gandr_core_checker::module::decide"
-            .parse::<SiteName>()
-            .unwrap();
-        let one: BTreeSet<SiteName> = [decide.clone()].into();
-        let two: BTreeSet<SiteName> =
-            [decide.clone(), "lsp keystroke".parse::<SiteName>().unwrap()].into();
-        let regression = Regression {
-            function: decide.clone(),
-            krate: Maybe::Absent(crate::check::Unstated),
-            series: "gandr".parse::<Benchmark>().unwrap(),
-            run: "https://github.com/gandr-lang/gandr/runs/1"
-                .parse::<RunUrl>()
-                .unwrap(),
-            metric: "allocations".parse().unwrap(),
-            delta: "avg `1444 → 2558` **+77%**".parse().unwrap(),
-            shift: Maybe::Absent(crate::check::Unshifted),
-            accepted: Maybe::Absent(crate::report::Unaccepted),
-        };
-        let mut index = Index::new(&decide, &Maybe::Absent(crate::check::Unstated));
-        assert_eq!(index.owes(&subject, &regression, &one), Comment::Owed);
-        index.record(
-            &regression,
-            &Run {
-                repository: &repository,
-                sha: &sha,
-                subject: &subject,
-                regressed: &one,
-            },
-            &Maybe::Present("https://example.invalid/c/1".parse::<CommentUrl>().unwrap()),
-        );
-        assert_eq!(index.owes(&subject, &regression, &one), Comment::Unowed);
-        assert_eq!(index.owes(&subject, &regression, &two), Comment::Owed);
     }
 }

@@ -251,7 +251,7 @@ impl Listed
     ///   and a failed check of another name; reading the pending or foreign one
     ///   as concluded, or the passing one as failed, changes the report.
     /// - witness: `tests::cli::only_a_completed_failed_hotpath_check_is_filed`
-    /// - witness: `tests::cli::a_passing_run_marks_its_row_fixed_without_a_comment`
+    /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
     #[inline]
     pub(crate) fn concluded(self) -> Maybe<Concluded, Unconcluded>
     {
