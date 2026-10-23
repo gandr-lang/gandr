@@ -237,6 +237,7 @@ const OWED: [(&str, Owed); 72_usize] = [
     ("ShiftWithoutReset", Owed::Unwritten(CHECKER)),
     ("DependentStack", Owed::Unwritten(CHECKER)),
     ("UnboundEndpoint", Owed::Unwritten(CHECKER)),
+
     ("CodataArity", Owed::Unwritten(CHECKER)),
     ("HostWorldUndeclared", Owed::Unwritten(CHECKER)),
     ("EntryUngranted", Owed::Unwritten(CHECKER)),
