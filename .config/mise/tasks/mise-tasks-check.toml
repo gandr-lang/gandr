@@ -40,6 +40,39 @@ env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
 run = ".config/mise/scope cargo clippy --workspace --all-targets --locked --profile test -- --deny warnings"
 
+# CI's plain Clippy pass lints only the targets that carry plain-only code,
+# `cfg(not(anodized_panic))`, as the plain test lane runs only their tests
+# (`check:tests-plain-only`): the enforcing pass lints the rest (#2070). The
+# list is checked first: every file under `crates/` that names
+# `not(anodized_panic)` sits in a listed target's directory, or the task
+# fails naming it. A new such target joins this list and the plain-only test
+# filters.
+["check:clippy-plain-only"]
+description = "The plain clippy wall over the targets that carry plain-only code"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+# <package>:<test target>:<the target's directory>, one per target.
+targets=(gandr-surface-parser:tests:crates/surface-parser/tests/)
+unlisted=0
+while IFS= read -r file; do
+  listed=false
+  for target in "${targets[@]}"; do
+    if [[ $file == "${target##*:}"* ]]; then listed=true; fi
+  done
+  if [[ $listed == false ]]; then
+    echo "$file carries cfg(not(anodized_panic)) code in no target check:clippy-plain-only lints: list its target there and in the plain-only test filters" >&2
+    unlisted=1
+  fi
+done < <(git grep -l 'not(anodized_panic)' -- crates)
+(( unlisted == 0 ))
+for target in "${targets[@]}"; do
+  package=${target%%:*}
+  test=${target#*:}
+  .config/mise/scope cargo clippy --locked --package "$package" --test "${test%%:*}" -- --deny warnings
+done
+{% endraw %}'''
+
 # The compiler-plugin half of the lint wall, from the pinned Git policy
 # source: specification presence, adequacy grammar, nominal signature
 # boundaries, transparent layout, recursion and ownership cycles. The opt-in
@@ -245,8 +278,8 @@ run = ".config/mise/scope cargo build --locked --workspace --all-targets --profi
 
 # The enforcing run is CI's full test pass, so the plain lane compiles and
 # runs only what that run cannot: the tests gated `cfg(not(anodized_panic))`.
-# A new such test joins both filters below. Plain Clippy covers the rest of
-# the plain graph's compilation.
+# A new such test joins both filters below and `check:clippy-plain-only`'s
+# list, which fails on a plain-only file outside it.
 ["build:tests-plain-only"]
 description = "Compile the plain-only test targets without running them"
 run = ".config/mise/scope cargo nextest run --locked --package gandr-surface-parser --test tests --no-run"
