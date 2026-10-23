@@ -1022,26 +1022,27 @@ where
 ///   carry none, a record's and a record type's after their field labels, a
 ///   record update's base and then the fields it writes after their labels, and
 ///   an injection's body after its summand; type children admit types and term
-///   children terms as the grammar places them, an update's every slot a value;
-///   a dependent arrow's codomain, a dependent pair's second factor, a static
-///   abstraction's, a lambda's and a fixpoint's body, a bind's rest, a case's
-///   branches, a transport's motive, a return clause and a stack capture's body
-///   stand under one binder, a split's body under one per component, a data
-///   case's branch under one per field of its constructor, a fold's cell branch
-///   and a handler's operation clauses under two, a scope's subject under the
-///   capability's and a fork's child and parent each under one linear binder, a
-///   hold's scope and an access's body each under one linear binder; the
-///   computation a bind runs, the function an application applies, a
-///   computation where a value is read, an offer's arms and a fork's child
-///   admit computations where the body goes on, a body in braces one where it
-///   ends, a thunk's body below a value and a lambda's body there one whose
-///   type nothing states, and a bind's rest and the branches of a case what its
-///   own position admits; a data case's motive is a type under one binder where
-///   `written` writes it; a thunk's body is a child only where bodies are
-///   spelled; a family's arguments, a codata family's included, admit values
-///   their parameters state the type of, and a constructor's classifier is a
-///   child only where bodies are spelled and its position states no type; every
-///   leaf former has none.
+///   children terms as the grammar places them, an update's every slot a value,
+///   and an ascription's value and type but the type alone for a truth value
+///   ascribed `Bool`, written as its word; a dependent arrow's codomain, a
+///   dependent pair's second factor, a static abstraction's, a lambda's and a
+///   fixpoint's body, a bind's rest, a case's branches, a transport's motive, a
+///   return clause and a stack capture's body stand under one binder, a split's
+///   body under one per component, a data case's branch under one per field of
+///   its constructor, a fold's cell branch and a handler's operation clauses
+///   under two, a scope's subject under the capability's and a fork's child and
+///   parent each under one linear binder, a hold's scope and an access's body
+///   each under one linear binder; the computation a bind runs, the function an
+///   application applies, a computation where a value is read, an offer's arms
+///   and a fork's child admit computations where the body goes on, a body in
+///   braces one where it ends, a thunk's body below a value and a lambda's body
+///   there one whose type nothing states, and a bind's rest and the branches of
+///   a case what its own position admits; a data case's motive is a type under
+///   one binder where `written` writes it; a thunk's body is a child only where
+///   bodies are spelled; a family's arguments, a codata family's included,
+///   admit values their parameters state the type of, and a constructor's
+///   classifier is a child only where bodies are spelled and its position
+///   states no type; every leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -1490,10 +1491,14 @@ where
         Former::Ascription { body, ty } => {
             Vec::from([Slot::of(body, admits, Binds::NONE), comp_type(ty)])
         },
+        // A truth value is a word: the type is its one child.
         Former::Annotated {
             value: annotated,
             ty,
-        } => Vec::from([value(annotated), value_type(ty)]),
+        } => match truth(source, annotated, ty) {
+            Some(_) => Vec::from([value_type(ty)]),
+            None => Vec::from([value(annotated), value_type(ty)]),
+        },
         // An offer's arm and a fork's child end in a computation the surface
         // reads only as one, `retire => pure unit`: no exit is elided there.
         Former::Offer { arms, .. } => components(
@@ -1984,6 +1989,51 @@ where
                 })
         });
     two_units.then_some(Glyphs("Bool"))
+}
+
+/// The word the surface writes the injection `value` by where it is ascribed
+/// `ty`: `true` for `Bool`'s first summand and `false` for its second, each
+/// over the empty product, the two injections the lowering reads the words as.
+///
+/// # Specification
+/// - requires: nothing; `source` may be malformed.
+/// - ensures: `true` exactly when `ty` reads as `Bool` and `value` as the
+///   injection of unit at the first summand, `false` at the second; none
+///   otherwise.
+/// - provides: the spelling of an ascribed truth value, which lowers back to
+///   the same injection under the same ascription.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `true` and `false` ascribed `Bool`, unit injected into a
+///   sum of a unit and an integer, and an integer injected into `Bool` spell
+///   apart.
+/// - witness: `tests::goldens::an_ascribed_truth_value_spells_as_its_word_2168`
+#[spec(ensures: |ret| ret.is_none() || (named_sum(source, ty).is_some()
+    && matches!(source.read(value), Former::Injection(summand, body)
+        if usize::from(summand) < 2_usize && matches!(source.read(body), Former::Unit))))]
+fn truth<S>(
+    source: &S,
+    value: S::Node,
+    ty: S::Node,
+) -> Option<Glyphs<'static>>
+where
+    S: Source + ?Sized,
+{
+    let _bool = named_sum(source, ty)?;
+    let Former::Injection(summand, body) = source.read(value)
+    else {
+        return None;
+    };
+    if !matches!(source.read(body), Former::Unit) {
+        return None;
+    }
+    match usize::from(summand) {
+        0_usize => Some(Glyphs("true")),
+        1_usize => Some(Glyphs("false")),
+        _ => None,
+    }
 }
 
 /// The notation a decode of `node` is written in where a type is read: a
@@ -8581,11 +8631,13 @@ impl Walk<'_, '_>
     ///   value as the continuation's call, `k(v)`; a return ascribed its
     ///   returner as the annotated value `(v : T)`, under a `pure` unless a
     ///   body ends there, its two pieces the value and the type the visit
-    ///   shaped. The forms the grammar does not write — native transport, a
-    ///   fixpoint `rec f { c }`, a fold, any other resumption `resume(k, c)`,
-    ///   `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
-    ///   observation `c.0`, and a positional projection off anything but a
-    ///   name, `(v.1).0` — make the presentation approximate.
+    ///   shaped; a value ascription as `(v : T)`, a truth value ascribed `Bool`
+    ///   as its word, `(true : Bool)`, its one piece the type. The forms the
+    ///   grammar does not write — native transport, a fixpoint `rec f { c }`, a
+    ///   fold, any other resumption `resume(k, c)`, `reset { c }`, `shift k { c
+    ///   }`, a lazy product `&{c, …}` and its observation `c.0`, and a
+    ///   positional projection off anything but a name, `(v.1).0` — make the
+    ///   presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -9413,14 +9465,14 @@ impl Walk<'_, '_>
                     writes(Production("parenthesized_expression"), Binding::Atom)
                 }
             },
-            // `(v : T)`, the annotation the source wrote.
-            Former::Annotated { .. } => {
-                let _ = parts
-                    .text("(")
-                    .piece(Binding::Arrow)
-                    .text(" : ")
-                    .piece(Binding::Arrow)
-                    .text(")");
+            // `(v : T)`, the annotation the source wrote; `(true : Bool)` for an
+            // ascribed truth value.
+            Former::Annotated { value, ty } => {
+                let _ = match truth(source, value, ty) {
+                    Some(word) => parts.text("(").text(word.0),
+                    None => parts.text("(").piece(Binding::Arrow),
+                };
+                let _ = parts.text(" : ").piece(Binding::Arrow).text(")");
                 writes(Production("parenthesized_expression"), Binding::Atom)
             },
             #[cfg_attr(
