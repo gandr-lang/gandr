@@ -1431,21 +1431,10 @@ fn a_user_module_selection_is_governed_and_a_free_target_still_projects()
             row("M.field", Role::Declared, Amounts::Bodied),
             row("use_field", Role::Declared, Amounts::Bodied),
             row("free", Role::Declared, Amounts::Bodied),
-            row(
-                "free_field",
-                Role::Declared,
-                Amounts::Refused(LoweringRefusal::OutOfFragment {
-                    span: span_of(source, "free.field", 0_usize),
-                    form: FormName::from(NamedKind("projection_expression")),
-                    sort: FragmentSort::Value,
-                    boundary: FragmentBoundary::Unadmitted(
-                        gandr_surface_lowering::Unbuilt::Projection
-                    ),
-                })
-            ),
+            row("free_field", Role::Declared, Amounts::Bodied),
         ],
-        "the module selection resolves; a selection no module governs is a record \
-             projection, which waits for the record former and is not a module refusal"
+        "the module selection resolves; a selection no module governs is the field of the \
+             record its head holds, not a module refusal"
     );
     assert_eq!(
         constant_read_by(&lowered, "use_field"),
@@ -1458,8 +1447,9 @@ fn a_user_module_selection_is_governed_and_a_free_target_still_projects()
             judged(0_usize, Judgement::Synthesised),
             judged(1_usize, Judgement::Synthesised),
             judged(2_usize, Judgement::Synthesised),
+            judged(3_usize, Judgement::Refused),
         ],
-        "and checks"
+        "the module selection checks, and the checker refuses a field of an integer"
     );
 }
 

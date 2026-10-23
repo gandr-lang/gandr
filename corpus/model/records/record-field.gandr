@@ -1,0 +1,35 @@
+// A field is read by its label off the record a value is, whether a type is
+// written for the record or not: a definition's record, a field's record and
+// the record a run binds. A projection is a computation, so it stands where
+// one is read: a body, a bind, a run target, a path's endpoint.
+
+/// A record holding a record, no type written for either.
+@[ checks ]
+def nest = #{ tag = "t", inner = #{ x = 1, y = 2 } };
+
+/// The field `inner` of `nest`, a record.
+@[ runs("#{.x = 1, .y = 2}") ]
+def innerOf() -> -F #{x : Integer, y : Integer} { nest.inner }
+
+/// A field of a field: the inner projection runs, and the outer one reads
+/// the record it returns.
+@[ runs("2") ]
+def deepField() -> -F Integer { nest.inner.y }
+
+/// A field of the record a run binds, its type written nowhere.
+@[ runs("1") ]
+def boundField() -> -F Integer {
+  run held <- nest.inner;
+  held.x
+}
+
+/// The record rebuilt from its fields is the record: η, a path whose
+/// endpoints read the fields off `nest`.
+@[ checks ]
+def rebuilt() -> -F Path(
+  #{tag : String, inner : #{x : Integer, y : Integer}},
+  #{.tag = nest.tag, .inner = nest.inner},
+  nest
+) {
+  here(nest)
+}

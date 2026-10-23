@@ -5514,9 +5514,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// Read `value` where no thunk stands: a case's, a split's or a list
-    /// case's scrutinee, the path an element transport follows, or a record
-    /// update's base. A computation written there runs, and its type is the
-    /// one it returns; any other value synthesises.
+    /// case's scrutinee, the record or tuple a projection reads, the path an
+    /// element transport follows, or a record update's base. A computation
+    /// written there runs, and its type is the one it returns; any other value
+    /// synthesises.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -5531,8 +5532,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Adequacy
     /// - hypothesis: L3 — a comparison written as a case's scrutinee runs and
     ///   the case reads its answer, as a path written as a call does; the
-    ///   scrutinee's typing is kept once, at what it returns.
+    ///   scrutinee's typing is kept once, at what it returns; a field of a
+    ///   field runs the inner projection and reads the record it returns.
     /// - witness: `module::tests::a_computation_written_as_a_scrutinee_runs_1141`
+    /// - witness: `module::tests::a_computation_written_as_a_projected_record_runs_1106`
     #[spec(
         captures: [
             before = self.frames.len(),
@@ -5567,12 +5570,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: nothing.
     /// - ensures: a force awaits its value's synthesised type; a return awaits
     ///   its value's; an application awaits its head's; a bind awaits its bound
-    ///   computation's; a transport awaits its path's and a data case or a
-    ///   split its scrutinee's, each read by [`Self::unsuspended`], so a
-    ///   computation nested there waits a second frame, the run's; an
-    ///   ascription forms its stated type, checks its body against it and
-    ///   synthesises it; a hole and a mark have the unknown computation type,
-    ///   minted, and ascend.
+    ///   computation's; a transport awaits its path's, a data case or a split
+    ///   its scrutinee's and a projection its record's, each read by
+    ///   [`Self::unsuspended`], so a computation nested there waits a second
+    ///   frame, the run's; an ascription forms its stated type, checks its body
+    ///   against it and synthesises it; a hole and a mark have the unknown
+    ///   computation type, minted, and ascend.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a fixpoint;
     ///   [`CheckRefusal::OutOfFragment`] for a case.
     ///
@@ -5605,10 +5608,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => {
                 self.wait(Frame::NativeProjection(term));
-                Ok(Step::Descend(Goal::Value {
-                    term: record,
-                    direction: Direction::Synthesise,
-                }))
+                self.unsuspended(record)
             },
             Computation::Ascribe { body, ty } => {
                 self.wait(Frame::Ascription { body, ty });

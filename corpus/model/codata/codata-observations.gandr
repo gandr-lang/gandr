@@ -20,7 +20,7 @@ def rec origin() -> Point {
   .y => 4
 }
 
-/// The run target sums the coordinates; the lowering reads no projection yet
-/// (#1106).
-@[ refuses("OutOfFragment.projection_expression") ]
+/// The run target sums the coordinates; `origin` is refused above, so it
+/// names a declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 origin.x + origin.y

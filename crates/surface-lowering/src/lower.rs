@@ -2388,6 +2388,10 @@ enum Plan
     /// selected when it was selected by label: projected at the label off a
     /// record, along the nesting otherwise.
     Select(NodeIndex, arity::Observed, Option<(NodeIndex, FieldLabel)>),
+    /// The field the label names of the record the value at the node is, its
+    /// type stated nowhere: projected at the label, for the checker to read
+    /// off the record type the value synthesises.
+    Field(NodeIndex, FieldLabel),
     /// The thunked arrow from the domains in the lowerer's operand store to
     /// the returner of the codomain.
     ValueFunction(Stretch, NodeIndex),
@@ -5813,24 +5817,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Give every unowned node of the type written at `written` the
-    /// declaration `anchor` belongs to, ahead of the walk.
+    /// Give every unowned node written at `written` the declaration `anchor`
+    /// belongs to, ahead of the walk.
     ///
     /// # Specification
     /// - requires: `written` is `anchor` or a node under it, so the walk would
     ///   give it `anchor`'s owner.
     /// - ensures: when `anchor` is owned, every node under `written`, itself
     ///   included, that had no owner has `anchor`'s; nothing else changes.
-    /// - provides: the owner a name under a type resolves by where a lambda
-    ///   reads its binder's type before the walk reaches that type: a bare
-    ///   lambda's signature lies after its body in the arena.
+    /// - provides: the owner a name resolves by where it is read before the
+    ///   walk reaches it: a lambda reads its binder's type, and a bare lambda's
+    ///   signature lies after its body in the arena; a selection reads the name
+    ///   its chain of selections ends at.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a bare lambda signed `+U (Empty -> -F Integer)`
-    ///   matches no arm on its binder where its signature lies after its body.
+    ///   matches no arm on its binder where its signature lies after its body;
+    ///   a field of a field reads the record its chain begins at.
     /// - witness: `lower::native::tests::a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944`
+    /// - witness: `lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
     #[spec(
         captures: before = (
             self.collected.owner.len(),
@@ -9997,14 +10004,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   name whose written type is a thunked lazy record over labels observes
     ///   the entry its label names; a selection off a name whose written type
     ///   is a type over labels projects the entry its label names, as
-    ///   [`Self::selection`] reads it. A chain of selections whose head is a
-    ///   capitalised name is a path: inside a functor whose parameter the head
-    ///   names, a one-link path is that parameter's value component, as
-    ///   [`Self::parameter_value`] reads it; otherwise it is resolved through
-    ///   the outermost scope at the depth that binds it: a path ending at an
-    ///   exported value component stands as that member's constant when the
-    ///   member is declared strictly before the declaration the path is written
-    ///   in, its last segment kept as a written name resolved to that
+    ///   [`Self::selection`] reads it; a selection off a value no written type
+    ///   states, a chain of selections ending at a binder's or a declaration's
+    ///   name not capitalised, projects the field its label names of the record
+    ///   the value is, as [`Self::field`] reads it. A chain of selections whose
+    ///   head is a capitalised name is a path: inside a functor whose parameter
+    ///   the head names, a one-link path is that parameter's value component,
+    ///   as [`Self::parameter_value`] reads it; otherwise it is resolved
+    ///   through the outermost scope at the depth that binds it: a path ending
+    ///   at an exported value component stands as that member's constant when
+    ///   the member is declared strictly before the declaration the path is
+    ///   written in, its last segment kept as a written name resolved to that
     ///   declaration, and a path ending at a type component stands as its
     ///   stated type, as [`Self::module_type`] reads it. The chain is walked by
     ///   an explicit loop, and its links are left unread.
@@ -10017,7 +10027,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   is an application of a functor; the wrong-sort refusal for a path
     ///   ending at a module, which is not a value; the wrong-sort refusal
     ///   outside value position; and the unadmitted refusal for a selection no
-    ///   module governs, a record projection the fragment does not admit.
+    ///   module governs and no value heads: a builtin namespace's member, or a
+    ///   field of a name whose written type is no record.
     /// - panics: none.
     ///
     /// # Errors
@@ -10036,6 +10047,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
+    /// - witness: `lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
     /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
     #[spec(
@@ -10043,7 +10055,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
                 )
         },
     )]
@@ -10090,6 +10102,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let frame = self.require(site, Produced::Value)?;
             let plan = self.resolved_term(site, frame, resolved)?;
             self.plan(site, plan);
+            return Ok(());
+        }
+        // A selection off a value no module governs is the field of a record.
+        if self.field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
         let _frame = self.require(site, Produced::Value)?;
@@ -13687,7 +13703,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Constructor(_)
                 | Plan::Ascribed(..)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::Decompose(_) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -13961,6 +13977,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Select(subject, selected, ref labelled) => {
                 self.mint_select(subject, selected, labelled.as_ref(), sink, origin)
             },
+            Plan::Field(subject, ref label) => self.value_at(subject).map(|held| {
+                let id = sink
+                    .arena
+                    .computation_record_projection(held, label.clone());
+                sink.origins.record_computation(id, origin);
+                Lowered::Computation(id)
+            }),
             Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             Plan::Loop(body) => self.mint_loop(body, sink, origin),
             Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
@@ -15111,6 +15134,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Copattern(_)
             | Plan::Observe(..)
             | Plan::Select(..)
+            | Plan::Field(..)
             | Plan::Block(_)
             | Plan::Loop(_)
             | Plan::While(..)
