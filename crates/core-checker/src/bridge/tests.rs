@@ -4343,6 +4343,63 @@ fn an_omitted_implicit_is_refused_unforced_or_apart_1216()
 }
 
 #[test]
+fn an_ascription_solves_the_wildcard_its_type_holds_1979()
+{
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def p       : Path(Integer, 0, 0) = here(0) ;
+    // def met     : Path(Integer, 0, 0) = (p : Path(Integer, 0, ?a)) ;
+    // def reached = (here(0) : Path(Integer, 0, ?b)) ;
+    // The value bridge meets `?a` against `p`'s right end. `reached` has no
+    // signature to meet its type at, so only reflexivity, meeting `?b`
+    // against its point, solves `?b`.
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    let [first, second] = [0_u32, 1].map(|index| {
+        arena.value_hole(HoleId::nominated(NominationIndex::from(index)).expect("a nominated name"))
+    });
+    let closed = arena.value_type_path(integer, zero, zero);
+    let here = arena.value_here(zero);
+    let path = arena.value_constant(ConstantIndex::from(0_usize));
+    let met = |arena: &mut CoreArena, end: ValueId| {
+        let ty = arena.value_type_path(integer, zero, end);
+        arena.value_ascribe(path, ty)
+    };
+    let reached = |arena: &mut CoreArena, end: ValueId| {
+        let ty = arena.value_type_path(integer, zero, end);
+        arena.value_ascribe(here, ty)
+    };
+    let met_open = met(&mut arena, first);
+    let met_closed = met(&mut arena, zero);
+    let reached_open = reached(&mut arena, second);
+    let reached_closed = reached(&mut arena, zero);
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(At(0), Maybe::Present(closed), Maybe::Present(here)),
+        declaration(At(1), Maybe::Present(closed), Maybe::Present(met_open)),
+        declaration(At(2), UNSIGNED, Maybe::Present(reached_open)),
+    ]);
+    for (index, supplied, route) in [
+        (1, met_closed, "the value bridge"),
+        (2, reached_closed, "reflexivity's endpoints"),
+    ] {
+        let verdict = report.judged()[index].verdict();
+        assert!(
+            matches!(verdict, Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. } if gandr_core_term::equal_certificate_syntax(&arena, body, supplied) == gandr_core_term::CertificateEquality::Equal),
+            "{route} solves the open end and the body is emitted with it supplied: {verdict:?}"
+        );
+    }
+    assert!(
+        readmission
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(*entry.outcome(), Outcome::Defined { .. })),
+        "the kernel admits every body, never offered a metavariable"
+    );
+}
+
+#[test]
 fn an_empty_ledger_readmits_an_artifact_resting_on_no_axiom()
 {
     // An unsupported signed hole is marked, never entered as an axiom.

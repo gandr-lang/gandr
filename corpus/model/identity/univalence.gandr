@@ -137,6 +137,13 @@ def uaLiteral(
 def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) ;
 def loopsAreIntegers = ua(winding) ;
 
+/// The same path ascribed a type whose right end is left as a wildcard:
+/// `ua(winding)` forces that end to the integers, so the elaborator reads the
+/// equivalence's codomain off the path it makes (#1979).
+@[ checks ]
+def loopsAreTheirWinding : Path(Type, Path(Circle, Base, Base), Int) ;
+def loopsAreTheirWinding = (ua(winding) : Path(Type, Path(Circle, Base, Base), _)) ;
+
 /// Transport along `ua` applies the record's map, by conversion: cubical's
 /// `uaβ`, at two variables, the record written out and checked against the
 /// path `fwdAlong` takes.
