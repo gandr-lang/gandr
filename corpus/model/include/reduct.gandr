@@ -3,7 +3,9 @@
 // reduct, `Monoid.Semigroup` from `Model(Monoid)` to `Model(Semigroup)`, which
 // keeps the members the inclusion places and forgets the rest; a sort is kept,
 // never sealed. The checker applies it where the one model stands at the
-// other, and the run and the kernel read the application.
+// other, and the run and the kernel read the application. A model of the
+// extension with its carrier manifest stands there too, by the map that puts
+// the carrier back and then restricts (#2136).
 
 // The semigroup, the monoid, both extensions at once, and the endomorphism
 // monoid.
@@ -47,4 +49,24 @@ def asSemigroup() -> -F Integer { become multiplies(endoMonoid) }
 @[ checks ]
 def throughTheDiamond(m : Model(UnitAndZero)) -> -F Integer {
   become multiplies(m)
+}
+
+/// The endomorphism monoid with its carrier written: the carrier is no field,
+/// so the record is the multiplication, the unit and the three laws, nested
+/// as pairs since each law names the operations before it.
+@[ checks ]
+def endoManifest : Model(Monoid) with sort M = (Integer => Integer) ;
+def endoManifest = (Endo.mul, (Endo.one, (Endo.assoc, (Endo.unitL, Endo.unitR)))) ;
+
+/// The manifest monoid where a semigroup is asked: the checker applies the
+/// map that puts the carrier back and keeps the semigroup's members.
+@[ runs("0") ]
+def manifestAsSemigroup() -> -F Integer { become multiplies(endoManifest) }
+
+/// Both extensions' model with its carrier written, where a semigroup is
+/// asked: the two ways round the diamond compose to one inclusion, so one map
+/// puts the carrier back and restricts.
+@[ checks ]
+def manifestDiamond(u : Model(UnitAndZero) with sort M = Unit) -> -F Integer {
+  become multiplies(u)
 }

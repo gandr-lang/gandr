@@ -2,18 +2,21 @@
 //!
 //! The slot a forgetting map takes ([`crate::module::ForgetSlot`]) carries a
 //! model of a theory whose sorts `C₁ … Cₙ` are manifest to a model of the
-//! theory, dropping the cell each manifest fixes:
+//! theory, dropping the cell each manifest fixes, or to a model of a theory it
+//! includes, restricting along the inclusion after:
 //!
 //! ```text
-//! T.forget : U((x₁ : Type) → … → (m : Model(T) with sort C₁ = x₁ …) → F Model(T))
+//! T.forget : U((x₁ : Type) → … → (m : Model(T) with sort C₁ = x₁ …) → F Model(S))
 //! T.forget = thunk(λx₁ … λm. r)
 //! ```
 //!
-//! `r` destructures `m` as a reduct does ([`super::reduct`]) and returns `T`'s
+//! `S` is `T` itself or a theory a reduct of `T` restricts to. `r`
+//! destructures `m` as a reduct does ([`super::reduct`]) and returns `S`'s
 //! bundled record, each fixed sort's field the carrier it is fixed to and
-//! every other field, an unfixed sort's among them, the binder of its own. The
-//! checker inserts the map where a model with those sorts manifest stands at
-//! `Model(T)`, solving the carriers from the model's type.
+//! every other field, an unfixed sort's among them, the binder of `m`'s field
+//! of its name: a reduct places each member of `S` at the member of `T` of its
+//! name. The checker inserts the map where a model with those sorts manifest
+//! stands at `Model(S)`, solving the carriers from the model's type.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -102,15 +105,17 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `slot` is a forgetting slot of the current source.
-    /// - ensures: the type `U((x₁ : Type) → … → M → F Model(T))`, one dependent
+    /// - ensures: the type `U((x₁ : Type) → … → M → F Model(S))`, one dependent
     ///   arrow over the fuss-free universe per sort the slot fixes, in
-    ///   signature order, and `M` the record of `T`'s models with each such
-    ///   sort manifest at the decode of its carrier; the body `thunk(λx₁ … λm.
-    ///   r)`, `r` destructuring `m` as [`Destructured`] does and returning
-    ///   `T`'s record, each fixed sort's field its carrier and every other
-    ///   field the binder of the field of `M` of its name.
-    /// - fails: [`Missing::Unlowered`] where either model type does not mint,
-    ///   or an index outgrows what one holds.
+    ///   signature order, `M` the record of `T`'s models with each such sort
+    ///   manifest at the decode of its carrier, and `S` the theory the slot
+    ///   returns a model of; the body `thunk(λx₁ … λm. r)`, `r` destructuring
+    ///   `m` as [`Destructured`] does and returning `S`'s record, each fixed
+    ///   sort's field its carrier and every other field the binder of the field
+    ///   of `M` of its name.
+    /// - fails: [`Missing::Unlowered`] where a model type does not mint, a
+    ///   field of `S` names no field of `M` nor a fixed sort, or an index
+    ///   outgrows what one holds.
     /// - panics: none.
     ///
     /// # Errors
@@ -119,6 +124,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::mint_forgets`].
     /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    /// - witness: `tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ty, body)| sink.arena.value_type(ty).is_some() && sink.arena.value(body).is_some()))]
     fn forget(
         &self,
@@ -196,7 +202,27 @@ impl<'source> Lowerer<'_, 'source>
             .signature;
         let destructuring = Destructured::of(source);
         let past = u32::from(destructuring.depth().ok_or(Missing::Unlowered)?);
-        let returner = sink.arena.comp_type_returner(plain.model());
+        // The map returns the theory's own record, or the record of the
+        // theory it restricts to.
+        let restricted = if plan.onto == plan.theory {
+            None
+        }
+        else {
+            Some(self.reduct_bundle(plan.onto, sink, below)?)
+        };
+        let (onto, model) = match restricted {
+            Some(ref bundle) => (
+                &bundle
+                    .bundled()
+                    .theories
+                    .first()
+                    .ok_or(Missing::Unlowered)?
+                    .signature,
+                bundle.model(),
+            ),
+            None => (full, plain.model()),
+        };
+        let returner = sink.arena.comp_type_returner(model);
         sink.origins.record_comp_type(returner, below);
         // Where each name stands: a carrier's place among the carriers, any
         // other field's among the manifest model's.
@@ -207,8 +233,8 @@ impl<'source> Lowerer<'_, 'source>
             .enumerate()
             .map(|(at, held)| (&held.name, at))
             .collect();
-        let mut fields = Vec::with_capacity(full.components.len());
-        for component in &full.components {
+        let mut fields = Vec::with_capacity(onto.components.len());
+        for component in &onto.components {
             let index = match carrier_at.get(&component.name) {
                 // A carrier stands past the destructuring, `m`, and the
                 // carriers after it.
@@ -226,7 +252,7 @@ impl<'source> Lowerer<'_, 'source>
             fields.push(field);
         }
         let record =
-            packed_record(full, &fields, sink, (below, below)).ok_or(Missing::Unlowered)?;
+            packed_record(onto, &fields, sink, (below, below)).ok_or(Missing::Unlowered)?;
         let returned = sink.arena.computation_return(record);
         sink.origins.record_computation(returned, below);
         let destructured = destructuring
