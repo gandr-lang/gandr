@@ -413,12 +413,7 @@ jobs:
   #   landing SHA; a test lane reuses the latest successful queue build when
   #   no cached state of its generation matched or when that build completed
   #   after main's newest state was saved. Artifact discovery is skipped
-  #   under act, and a failed lookup means no reuse, not a failed run;
-  # - the comments the obligations and mutants lanes update in place, on a
-  #   pull request of this repository: only this workflow's own comment is
-  #   updated, a comment by anyone else that copies the marker is ignored.
-  #   The comment is found here and posted after the lane, from bare runners,
-  #   so the job running the change's code holds no write token.
+  #   under act, and a failed lookup means no reuse, not a failed run.
   # Always trigger the workflow: a skipped workflow supplies no required
   # check, whereas a skipped job succeeds. Dependency updates land through a
   # maintainer's pull request, so a dependabot pull request runs nothing:
@@ -431,7 +426,6 @@ jobs:
       contents: read
       packages: read
       actions: read
-      pull-requests: read
     outputs:
       rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
       extension: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
@@ -446,17 +440,13 @@ jobs:
       baseline-run-id: ${{ steps.baseline.outputs.run-id }}
       baseline-sha: ${{ steps.baseline.outputs.sha }}
       baseline-created: ${{ steps.baseline.outputs.created }}
-      obligations-comment: ${{ steps.obligations-comment.outputs.id }}
-      mutants-comment: ${{ steps.mutants-comment.outputs.id }}
     env:
       CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
       CI_SHA: ${{ github.sha }}
       CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
       CI_QUEUE_STATE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
-      CI_COMMENTS: ${{ github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && github.base_ref == github.event.repository.default_branch }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
       - *git-checkout
       - id: fetch
@@ -574,22 +564,6 @@ jobs:
           | max_by(.created_at) // {}
           | "run-id=\(.workflow_run.id // "")\nsha=\(.workflow_run.head_sha // "")\ncreated=\(.created_at // "")"'
           >> "$GITHUB_OUTPUT"
-      - id: obligations-comment
-        name: find the obligations comment
-        if: ${{ env.CI_COMMENTS == 'true' }}
-        shell: bash
-        run: |
-          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
-            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- quenchant-obligations -->")))] | first | .id // ""')
-          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
-      - id: mutants-comment
-        name: find the mutants comment
-        if: ${{ env.CI_COMMENTS == 'true' }}
-        shell: bash
-        run: |
-          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
-            jq -r '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- gandr-mutants -->")))] | first | .id // ""')
-          printf 'id=%s\n' "$id" >> "$GITHUB_OUTPUT"
 
   # Builds and publishes the missing tag with the image workflow itself.
   # Every image job needs it, so all of them wait for a build. A job's
@@ -1153,8 +1127,8 @@ jobs:
   # request skips it (#2045). Dispatches run the lane too, against the
   # parent commit and without a body, so `ci:act` exercises it. A fork's
   # read-only token cannot comment: its witnesses stay in the log. The
-  # comment is found by `prepare` and posted after the lane, from bare
-  # runners, so the job running the change's code holds no write token.
+  # comment is posted after the lane, from a bare runner, so the job running
+  # the change's code holds no write token.
   obligations:
     name: re-verify obligated specifications (linux)
     needs: *rust-needs
@@ -1177,8 +1151,9 @@ jobs:
       # policy state: its library, records and rustdoc JSON. Nothing is saved.
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ENFORCING: "true"
-      # A pull request checks out its merge commit, whose first parent is the
-      # base it merges into; a dispatch compares against its parent commit.
+      # A pull request checks out its own head, not GitHub's merge commit, and
+      # a dispatch its commit with the parent it compares against.
+      CI_CHECKOUT_REF: ${{ github.event.pull_request.head.sha }}
       CI_FETCH_DEPTH: "2"
     steps:
       - *git-checkout
@@ -1204,6 +1179,28 @@ jobs:
         run: |
           mkdir -p target/evidence
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > target/evidence/body.md
+      # The change is measured as `pr:open` and `pr:land` measure it: the pull
+      # request's head against its merge base with the trunk as it reads now
+      # (`evidence:obligations`' default), never GitHub's merge commit, whose
+      # first parent can be a trunk older than the run (#2067). The trunk is
+      # fetched until its history meets the head's. A dispatch reads its
+      # parent commit.
+      - name: fetch the trunk to the change's merge base
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [[ -z $BASE_REF ]]; then
+            printf 'CI_OBLIGATIONS_BASE=%s\n' "$(git rev-parse --short=12 HEAD^)" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          git fetch --quiet --no-tags --depth=50 origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          for _ in $(seq 20); do
+            git merge-base HEAD "origin/$BASE_REF" > /dev/null && exit 0
+            git fetch --quiet --no-tags --deepen=100 origin HEAD "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          done
+          printf '::error::the head and %s share no commit within the fetched history\n' "$BASE_REF"
+          exit 1
       # Exit 2 is an unticked box: the witnesses still rerun and the comment
       # is still posted, and the last step fails the lane. The read-only token
       # reads the labels the lint assessment is owed under and the head's
@@ -1222,7 +1219,7 @@ jobs:
             extra=(--previous target/evidence/body.md --pr "$PR_NUMBER" --require-acknowledged)
           fi
           status=0
-          mise run evidence:obligations "$(git rev-parse --short=12 HEAD^)" "${extra[@]}" || status=$?
+          mise run evidence:obligations ${CI_OBLIGATIONS_BASE:+"$CI_OBLIGATIONS_BASE"} "${extra[@]}" || status=$?
           if (( status == 2 )); then
             printf 'open=true\n' >> "$GITHUB_OUTPUT"
           elif (( status != 0 )); then
@@ -1255,38 +1252,46 @@ jobs:
   # report exists: the comment lists the witnesses rerun. GitHub refuses a
   # comment body over 65,536 characters, so a longer report is cut at a line
   # boundary below that, and the comment links the full report's artifact.
+  # The comment is updated in place: the poster finds this workflow's own
+  # comment by its marker when it posts, so a rerun of the lane, which reuses
+  # the first attempt's other jobs, edits the comment the first attempt
+  # posted (#2067). Only `github-actions[bot]`'s comment is updated; a comment
+  # by anyone else that copies the marker is ignored. The poster runs on a
+  # bare runner, so the job running the change's code holds no write token.
   obligations-comment:
     name: post the obligations comment
-    needs: [prepare, obligations]
+    needs: obligations
     if: ${{ !cancelled() && needs.obligations.outputs.comment == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
     runs-on: *linux
     permissions:
       pull-requests: write
-    env: &obligations-comment-env
+    env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
-    steps:
-      - name: download the obligations comment
+      COMMENT_ARTIFACT: obligations-comment
+      COMMENT_MARKER: <!-- quenchant-obligations -->
+      REPORT_URL: ${{ needs.obligations.outputs.report }}
+    steps: &post-comment
+      - name: download the comment
         uses: *download-artifact
         with:
-          name: obligations-comment
+          name: ${{ env.COMMENT_ARTIFACT }}
       - name: create or update the comment
         shell: bash
-        env:
-          COMMENT_ID: ${{ needs.prepare.outputs.obligations-comment }}
-          REPORT_URL: ${{ needs.obligations.outputs.report }}
         run: |
           if (( $(wc -c < comment.md) > 60000 )); then
             body=$(head -c 60000 comment.md)
             {
               printf '%s\n\n' "${body%$'\n'*}"
-              printf -- '---\n\nThe report is cut here at the comment size limit. The full report is the [obligations-comment artifact](%s).\n' "$REPORT_URL"
+              printf -- '---\n\nThe report is cut here at the comment size limit. The full report is the [%s artifact](%s).\n' "$COMMENT_ARTIFACT" "$REPORT_URL"
             } > comment.cut.md
             mv comment.cut.md comment.md
           fi
-          if [[ -n $COMMENT_ID ]]; then
-            gh api --method PATCH "repos/$GH_REPO/issues/comments/$COMMENT_ID" -F body=@comment.md --silent
+          id=$(gh api --paginate --slurp "repos/$GH_REPO/issues/$PR_NUMBER/comments" |
+            jq -r --arg marker "$COMMENT_MARKER" '[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith($marker)))] | first | .id // ""')
+          if [[ -n $id ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$id" -F body=@comment.md --silent
           else
             gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
           fi
@@ -1375,36 +1380,19 @@ jobs:
 
   mutants-comment:
     name: post the mutants comment
-    needs: [prepare, mutants]
+    needs: mutants
     if: ${{ !cancelled() && needs.mutants.outputs.comment == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork }}
     runs-on: *linux
     permissions:
       pull-requests: write
-    env: *obligations-comment-env
-    steps:
-      - name: download the mutants comment
-        uses: *download-artifact
-        with:
-          name: mutants-comment
-      - name: create or update the comment
-        shell: bash
-        env:
-          COMMENT_ID: ${{ needs.prepare.outputs.mutants-comment }}
-          REPORT_URL: ${{ needs.mutants.outputs.report }}
-        run: |
-          if (( $(wc -c < comment.md) > 60000 )); then
-            body=$(head -c 60000 comment.md)
-            {
-              printf '%s\n\n' "${body%$'\n'*}"
-              printf -- '---\n\nThe report is cut here at the comment size limit. The full report is the [mutants-comment artifact](%s).\n' "$REPORT_URL"
-            } > comment.cut.md
-            mv comment.cut.md comment.md
-          fi
-          if [[ -n $COMMENT_ID ]]; then
-            gh api --method PATCH "repos/$GH_REPO/issues/comments/$COMMENT_ID" -F body=@comment.md --silent
-          else
-            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
-          fi
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      COMMENT_ARTIFACT: mutants-comment
+      COMMENT_MARKER: <!-- gandr-mutants -->
+      REPORT_URL: ${{ needs.mutants.outputs.report }}
+    steps: *post-comment
 
   # The daily mutation run (`mutants:nightly`, #1456): one crate a night in a
   # fixed rotation, each mutant under the witnesses of its function, resumed
