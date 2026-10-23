@@ -1,3 +1,0 @@
-#!{
-  printf 'hello from the host\n<%s>\n' $("one argv with spaces");
-}

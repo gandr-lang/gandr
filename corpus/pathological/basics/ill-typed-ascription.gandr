@@ -1,0 +1,6 @@
+// An ascription states the type its expression must check at: a string
+// ascribed `Integer` is refused at the string.
+
+/// A string ascribed `Integer`, as the run target.
+@[ refuses("TypeMismatch") ]
+("five" : Integer)

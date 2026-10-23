@@ -1,0 +1,7 @@
+// An `else if` chain whose answer is written on a later rung alone. Where
+// nothing states its type the answer is not read yet (#2089), so the run
+// target is refused as not synthesisable.
+
+/// The answer written on the second rung only (#2089).
+@[ refuses("NotSynthesisable") ]
+if false { pure 0 } else if true -> -F Integer { pure 1 } else { pure 2 }

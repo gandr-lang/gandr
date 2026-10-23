@@ -4,7 +4,7 @@
 @[ checks ]
 def single = #{ a = 1 };
 
-/// The run target adds `b`; the lowering reads no final expression as a run
-/// target yet (#1105), and admits no record update (#1110).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target adds `b`; the lowering admits no record update yet
+/// (#1110).
+@[ refuses("OutOfFragment.record_update_expression") ]
 #{ single | b = 2 }

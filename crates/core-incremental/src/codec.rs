@@ -4979,6 +4979,7 @@ where
                     write_index(writer, root)?;
                 },
                 Maybe::Absent(signature::Absent::Unsigned) => writer.tag(Tag(0)),
+                Maybe::Absent(signature::Absent::RunTarget) => writer.tag(Tag(2)),
             }
             match *body {
                 Maybe::Present(root) => {
@@ -5241,6 +5242,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
             let signature = match reader.tag()?.0 {
                 0 => Maybe::Absent(signature::Absent::Unsigned),
                 1 => Maybe::Present(read_index(reader)?),
+                2 => Maybe::Absent(signature::Absent::RunTarget),
                 _ => return Err(CodecError::Corrupt),
             };
             let body = match reader.tag()?.0 {

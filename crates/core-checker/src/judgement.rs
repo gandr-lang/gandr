@@ -44,7 +44,9 @@
 //! the conversion boundary to the expected type; that is the only place a
 //! type meets a type. A checking form in synthesis position is refused, naming
 //! the form: the judgement never guesses a type an introduction did not
-//! carry.
+//! carry. A source's run target is the one root no signature can be written
+//! for: [`synthesise_run_target_with_failure`] reads the thunk standing there
+//! by the computation it suspends, and a thunk anywhere else keeps its row.
 //!
 //! Constructors, nominal cases, and record and tuple projections synthesise; a
 //! record is answered in both directions, as `judgement::native` states. The
@@ -695,6 +697,57 @@ pub fn synthesise_value_with_failure(
             conversions,
         }),
         Produced::CompType(_) | Produced::Checked => {
+            Err(Failure::bare(CheckRefusal::MachineInvariant, pursued(goal)))
+        },
+    }
+}
+
+/// Synthesise the type of a run target, keeping the failure of a refused
+/// run: a thunk has the thunk type of the computation type its computation
+/// synthesises, and any other value the type it synthesises.
+///
+/// # Specification
+/// - requires: as for [`synthesise_value`].
+/// - ensures: `U C` for `thunk c` when `c` synthesises `C`; as for
+///   [`synthesise_value`] for every other value. A thunk anywhere but the root
+///   is read by its own rule.
+/// - fails: the failure of the run over `c`, or as for
+///   [`synthesise_value_with_failure`] when `target` is no thunk.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run target suspending a return, an application and a
+///   bind each has the thunk of its computation's type, the same thunk unsigned
+///   anywhere else is refused, and a target whose computation does not
+///   synthesise refuses as that computation does.
+/// - witness: `judgement::tests::a_run_target_has_the_thunk_type_of_its_computation_1105`
+#[spec(
+    captures: depth = context.depth(Zone::Intuitionistic),
+    ensures: |ret| context.depth(Zone::Intuitionistic) == depth,
+)]
+pub fn synthesise_run_target_with_failure(
+    context: &mut CheckingContext<'_>,
+    target: ValueId,
+) -> Result<Synthesised<FormedValueType>, Failure>
+{
+    let Some(&Value::Thunk(computation)) = context.arena().value(target)
+    else {
+        return synthesise_value_with_failure(context, target);
+    };
+    let goal = Goal::Computation {
+        term: computation,
+        direction: Direction::Synthesise,
+    };
+    let (produced, conversions) = Machine::run(context, goal)?;
+    match produced {
+        Produced::CompType(produced) => {
+            let suspended = context.arena_mut().value_type_thunk(produced);
+            Ok(Synthesised {
+                produced: FormedValueType::derived(suspended),
+                conversions,
+            })
+        },
+        Produced::ValueType(_) | Produced::Checked => {
             Err(Failure::bare(CheckRefusal::MachineInvariant, pursued(goal)))
         },
     }

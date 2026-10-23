@@ -1,6 +1,6 @@
 /// `extern_block`: an extern block: foreign declarations from a library.
-/// The checker does not reach this form yet; #1105 tracks it.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The checker does not reach this form yet; #327 tracks it.
+@[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "sensor" {
   def read(channel : i32) -> i64;
 }

@@ -194,7 +194,8 @@ impl Lowerer<'_, '_>
                 | Role::Operation
                 | Role::Derived
                 | Role::Words
-                | Role::Parameter => {},
+                | Role::Parameter
+                | Role::RunTarget => {},
             }
         }
     }

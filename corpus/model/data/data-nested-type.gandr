@@ -12,7 +12,6 @@ def sum_first() -> -F Integer {
   7
 }
 
-/// The run target calls `sum_first`; the lowering reads no final expression
-/// as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target calls `sum_first`.
+@[ runs("7") ]
 sum_first()

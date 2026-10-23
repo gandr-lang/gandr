@@ -1,7 +1,6 @@
 // A constructor's field is checked at the type its family's argument gives
 // it: `Some("hello")` is no `Maybe(Integer)`. The mismatch is written as the
-// run target, which the lowering reads no final expression as yet (#1105), so
-// that refusal stands in front of the mismatch.
+// run target.
 
 /// An optional value of any type.
 @[ checks ]
@@ -10,6 +9,6 @@ data Maybe(a : Type) : Type {
   Some : (x : a) --> Maybe(a);
 }
 
-/// A string where an integer is expected (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// A string where an integer is expected.
+@[ refuses("TypeMismatch") ]
 (Some("hello") : Maybe(Integer))

@@ -1,6 +1,6 @@
 //! The run verb: one source read as a program, and its entry run — the `main`
-//! it declares at its top level — or, when it declares none, its last
-//! declaration.
+//! it declares at its top level — or, when it declares none, its run target:
+//! the final expression it writes, or its last declaration when it writes none.
 //!
 //! # A script never reaches the machine with a refusal in it
 //!

@@ -78,8 +78,8 @@
 //! IL, and the [`Program`] it builds runs any declaration on the L machine and
 //! reads its terminal back: the settle comparison runs the declarations that
 //! state a `runs` outcome, the session runs what the user entered, and `gandr
-//! run` runs the last name a source declares. Nothing runs that no caller
-//! asked for, so `check` performs no run beyond the outcomes its sources
+//! run` runs a source's `main`, or else its run target. Nothing runs that no
+//! caller asked for, so `check` performs no run beyond the outcomes its sources
 //! state.
 //!
 //! # Staged programs check on the driver's pool

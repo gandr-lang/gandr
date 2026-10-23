@@ -66,6 +66,11 @@ quenchant_shape::reason_enum! {
             /// The author wrote a definition and no signature, so the body
             /// must synthesise its own type.
             Unsigned,
+            /// The declaration is a source's run target, its final
+            /// expression: no signature can be written, and a body that
+            /// suspends a computation has the thunk type of the computation
+            /// type it synthesises.
+            RunTarget,
         }
     }
 }

@@ -1,5 +1,0 @@
-{
-  run missing <- env.get("GANDR_CORPUS_UNSET_VARIABLE_ZZQ");
-  run code <- (if string.eq(missing, "") { pure 3 } else { pure 7 } : -F Integer);
-  proc.exit(code)
-}

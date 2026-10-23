@@ -20,7 +20,7 @@ def plus_two(x: Integer) -> -F Integer {
   return (x + 2)
 }
 
-/// The run target applies the function to the seed; the lowering reads no
-/// final expression as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target applies the function to the seed, both refused above, so
+/// it names a declaration whose type is not known.
+@[ refuses("UnknownConstant") ]
 plus_two(seed)

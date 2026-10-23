@@ -68,9 +68,6 @@ impl TrackingIssue
     pub const UNION_INTERSECTION: Self = Self(1056);
     /// The shell block, `#!{ … }`.
     pub const SHELL_BLOCK: Self = Self(1057);
-    /// A root form that declares nothing, which the lowering reads as no run
-    /// target yet.
-    pub const RUN_TARGET: Self = Self(1105);
     /// A projection, `e.1` or `e.field`, where the fragment reads none.
     pub const PROJECTION: Self = Self(1106);
     /// Packages: `pack`, `unpack` and the package type.
@@ -90,6 +87,11 @@ impl TrackingIssue
     pub const UNFILED: Self = Self(1207);
     /// An import whose address has a scheme, which nothing resolves.
     pub const SCHEME: Self = Self(1233);
+    /// A hover over a source's run target, which the outline gives no symbol.
+    pub const RUN_TARGET_HOVER: Self = Self(2073);
+    /// An extern block, binding a library's functions: native interop's
+    /// first rung.
+    pub const EXTERN_BLOCK: Self = Self(327);
     /// A case or a form over an indexed family.
     pub const INDEXED: Self = Self(1314);
     /// Function extensionality past the first-order coverage.

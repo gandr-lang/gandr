@@ -595,7 +595,7 @@ fn the_test_verb_prints_every_fixture_and_pending_source()
     let fixture = scratch.file(Path::new("fixture/later.gandr"), owed);
     let pending = scratch.file(
         Path::new("fixture/pending/whole.gandr"),
-        Text::from("pure 3\n"),
+        Text::from("@[ checks ]\n"),
     );
     let root = scratch.0.join("fixture");
 
@@ -607,7 +607,7 @@ fn the_test_verb_prints_every_fixture_and_pending_source()
     assert!(fixture_lines[0].starts_with("settled `later`"));
     assert_eq!(pending_lines.len(), 1);
     assert!(pending_lines[0].starts_with("pending: "));
-    assert!(pending_lines[0].contains("`pure_expression`"));
+    assert!(pending_lines[0].contains("`attribute_block`"));
 
     let checked = ran(gandr(&[Path::new("check"), &root]));
     assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));

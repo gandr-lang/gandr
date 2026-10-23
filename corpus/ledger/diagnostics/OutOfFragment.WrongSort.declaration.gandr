@@ -1,6 +1,8 @@
-/// `OutOfFragment.WrongSort.declaration`: a run target that is no declaration.
+/// `OutOfFragment.WrongSort.declaration`: a stray, an expression at the root
+/// that is not the source's run target, since a definition follows it.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+1;
+
+/// The definition after it.
 @[ checks ]
 def n = 5;
-
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
-#{ n | x = 1 }

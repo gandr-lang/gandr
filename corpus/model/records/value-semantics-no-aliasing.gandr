@@ -9,6 +9,6 @@ def r = #{ x = 1, y = 2 };
 @[ refuses("OutOfFragment.record_update_expression") ]
 def r2 = #{ r | x = 9 };
 
-/// The run target returns `r`, still at `x = 1` (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target returns `r`, still at `x = 1`.
+@[ runs("#{.x = 1, .y = 2}") ]
 r

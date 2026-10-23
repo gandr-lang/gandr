@@ -4,7 +4,6 @@
 @[ checks ]
 def point = (1, 2);
 
-/// The run target returns the pair; the lowering reads no final expression as
-/// a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target returns the pair.
+@[ runs("(1, 2)") ]
 pure point

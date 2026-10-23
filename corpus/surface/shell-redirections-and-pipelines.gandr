@@ -1,0 +1,44 @@
+// A shell block reads redirections, pipelines and control operators as
+// written. Every block but the last stands before another root form, a stray
+// refused where it stands; the last is the run target, which the lowering
+// admits no shell block for yet (#1057).
+
+/// Standard output written to a file, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ echo hi > out; }
+
+/// Standard output appended to a file, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ echo more >> out; }
+
+/// Standard input read from a file, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ cat < in; }
+
+/// Standard error written to a file, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ make 2> err; }
+
+/// Standard error joined to standard output, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ make 2>&1; }
+
+/// A pipeline of two commands, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ cat data | sort; }
+
+/// A pipeline carrying standard error too, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ make |& tee log; }
+
+/// A command run when the one before it succeeds, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ probe && report; }
+
+/// A command run when the one before it fails, a stray.
+@[ refuses("OutOfFragment.WrongSort.declaration") ]
+#!{ probe || abort; }
+
+/// A command sent to the background, the run target (#1057).
+@[ refuses("OutOfFragment.shell_block") ]
+#!{ warm; run & }

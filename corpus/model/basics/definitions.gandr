@@ -5,7 +5,6 @@
 @[ checks ]
 def greeting = "the value zone";
 
-/// The run target returns the named value; the lowering reads no final
-/// expression as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target returns the named value.
+@[ runs("\"the value zone\"") ]
 pure greeting

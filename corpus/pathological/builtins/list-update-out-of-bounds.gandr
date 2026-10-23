@@ -1,0 +1,7 @@
+// A list updated at an index past its end has no element there to replace.
+// The lowering admits no member selection on a module yet (#1106), so that
+// refusal stands in front of this one.
+
+/// The tenth element of a three-element list set to zero (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
+list.set([1, 2, 3], 9, 0)

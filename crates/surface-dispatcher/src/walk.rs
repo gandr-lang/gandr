@@ -1869,7 +1869,7 @@ pub mod tests
             Path::new("tree/a/notes.txt"),
             SourceText::from("not a source"),
         );
-        scratch.file(Path::new("tree/c.gandr"), SourceText::from("pure 3"));
+        scratch.file(Path::new("tree/c.gandr"), SourceText::from("@[ checks ]"));
         scratch.file(Path::new("named.source"), SourceText::from("def n = 4 ;"));
         scratch.file(
             Path::new("elsewhere/linked.gandr"),
@@ -2042,11 +2042,11 @@ pub mod tests
         scratch.file(Path::new("corpus/fixture/owes.gandr"), owes);
         scratch.file(
             Path::new("corpus/fixture/whole.gandr"),
-            SourceText::from("pure 3"),
+            SourceText::from("@[ checks ]"),
         );
         scratch.file(
             Path::new("corpus/fixture/pending/outside.gandr"),
-            SourceText::from("pure 3"),
+            SourceText::from("@[ checks ]"),
         );
         scratch.file(
             Path::new("corpus/fixture/pending/lowered.gandr"),
@@ -2538,9 +2538,9 @@ pub mod tests
         let scratch = Scratch::new(Path::new("refused-whole"));
         let sources = [
             ("base", "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n"),
-            // A source that declares nothing, one root expression after its
-            // import, is refused as a whole.
-            ("bad", "import \"./base.gandr\" ;\n\npure one\n"),
+            // A source that declares nothing, an attribute block decorating
+            // nothing after its import, is refused as a whole.
+            ("bad", "import \"./base.gandr\" ;\n\n@[ checks ]\n"),
             (
                 "sibling",
                 "import \"./base.gandr\" ;\n\n@[ checks ]\ndef three : Integer ;\ndef three = \
@@ -2601,7 +2601,7 @@ pub mod tests
         );
         scratch.file(
             Path::new("fixture/bad.gandr"),
-            SourceText::from("import \"./base.gandr\" ;\n\npure one\n"),
+            SourceText::from("import \"./base.gandr\" ;\n\n@[ checks ]\n"),
         );
         for width in core::iter::once(Width::SERIAL).chain(widths()) {
             let (seen, _report) = visited(&scratch.0, vec![scratch.0.join("fixture")], width);
@@ -2634,7 +2634,7 @@ pub mod tests
     {
         let scratch = Scratch::new(Path::new("refused-twice"));
         let checks = "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n";
-        let bad = "import \"./base.gandr\" ;\n\npure one\n";
+        let bad = "import \"./base.gandr\" ;\n\n@[ checks ]\n";
         for (name, text) in [
             ("base", checks),
             ("bad1", bad),

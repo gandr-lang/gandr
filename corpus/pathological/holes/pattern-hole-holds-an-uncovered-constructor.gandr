@@ -20,7 +20,7 @@ def classify(c : Color) -> -F Integer {
   }
 }
 
-/// The run target classifies `Green`; the lowering reads no final expression
-/// as a run target yet (#1105).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target classifies `Green`: it checks against `classify`'s
+/// signature, whose body is refused above, so it is not run.
+@[ checks ]
 classify(Green)

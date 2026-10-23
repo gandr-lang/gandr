@@ -1,0 +1,7 @@
+// A list literal synthesises no type from its elements: where nothing states
+// the list's type, it is refused. `model/builtins/lists.gandr` states the type
+// in a signature.
+
+/// Three integers, no type stated.
+@[ refuses("NotSynthesisable") ]
+[1, 2, 3]

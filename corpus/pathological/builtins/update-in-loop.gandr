@@ -5,6 +5,7 @@
 @[ checks ]
 def steps = ([1, 2, 3, 4] : List(Integer));
 
-/// The run target pushes each element in a fold (#1105, #1106).
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// The run target pushes each element in a fold, through the `list`
+/// namespace's projection (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
 list.reduce(thunk { fn(acc, n) { return list.push(acc, n) } }, [], steps)

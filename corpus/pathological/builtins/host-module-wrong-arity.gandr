@@ -1,0 +1,7 @@
+// A host module's operation takes the arguments it declares: `fs.write` takes
+// a path and the text to write. The lowering admits no member selection on a
+// module yet (#1106), so that refusal stands in front of this one.
+
+/// `fs.write` handed a path alone (#1106).
+@[ refuses("OutOfFragment.projection_expression") ]
+fs.write("/tmp/only-a-path")

@@ -2937,6 +2937,8 @@ struct Lowerer<'run, 'source>
     exported_types: BTreeMap<NamePath, TypeComponent<'source>>,
     /// Each witness's body, by slot.
     witnessed: BTreeMap<SlotIndex, ValueId>,
+    /// Each run target's body, by slot: the thunk suspending its computation.
+    targets: BTreeMap<SlotIndex, ValueId>,
     /// Each abstract slot's declaration, once its kind and representation
     /// lowered.
     sealings: BTreeMap<SlotIndex, Sealing>,
@@ -4522,6 +4524,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             exported: BTreeMap::new(),
             exported_types: BTreeMap::new(),
             witnessed: BTreeMap::new(),
+            targets: BTreeMap::new(),
             sealings: BTreeMap::new(),
             kind_checks: BTreeMap::new(),
             modelled: BTreeMap::new(),
@@ -5249,17 +5252,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a signature's type is read as a value type, a definition's
     ///   body as a value in the outermost frame, a function tail's declaration
     ///   form as a function, which reads both halves it wrote at once, a
-    ///   manifest type component's and a type member's type and an abstract
-    ///   component's written kind as value types, a data declaration's
-    ///   parameter types, universe and field types as value types under the
-    ///   parameters before them, and an attribute's payload, a declaration's or
-    ///   a decorated module's, as a value when its form can stand as one and
-    ///   its schema is not a word schema, whose payload is read as written; a
-    ///   witness's body, a member rather than a form, is read nowhere. Every
-    ///   other node stays unread. Every written payload is marked as one,
-    ///   whatever its form, and every signature type's root with the type
-    ///   components it sees. A definition both of whose halves are written is
-    ///   signed as [`Self::sign_definitions`] signs it.
+    ///   source's run target as a computation in the outermost frame whose
+    ///   paths end where the body of the thunk it is run as ends, a manifest
+    ///   type component's and a type member's type and an abstract component's
+    ///   written kind as value types, a data declaration's parameter types,
+    ///   universe and field types as value types under the parameters before
+    ///   them, and an attribute's payload, a declaration's or a decorated
+    ///   module's, as a value when its form can stand as one and its schema is
+    ///   not a word schema, whose payload is read as written; a witness's body,
+    ///   a member rather than a form, is read nowhere. Every other node stays
+    ///   unread. Every written payload is marked as one, whatever its form, and
+    ///   every signature type's root with the type components it sees. A
+    ///   definition both of whose halves are written is signed as
+    ///   [`Self::sign_definitions`] signs it.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
     ///   grammar does not hold.
@@ -5371,6 +5376,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     },
                     Operand::Function => {
                         seeds.push((half.declaration.node, Reading::Function));
+                    },
+                    Operand::RunTarget(expression) => {
+                        // The target is the body of the thunk the run forces:
+                        // a value its path ends in is returned.
+                        let _tail = self.exits.insert(expression.node);
+                        let _passed = self.exitable.insert(expression.node);
+                        let _owner = self.bodies.insert(expression.node, expression.node);
+                        seeds.push((expression.node, Reading::Computation(Frame::Outermost)));
                     },
                     Operand::Member(_)
                     | Operand::Data(_)
@@ -12807,6 +12820,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let _replaced = self.witnessed.insert(SlotIndex::from(position), id);
             }
         }
+        // A run target's computation is suspended: the thunk is the body of the
+        // declaration the source runs.
+        for (position, slot) in self.collected.slots.iter().enumerate().skip(from.slots) {
+            if let Maybe::Present(Half {
+                operand: Operand::RunTarget(expression),
+                ..
+            }) = slot.definition
+                && let Maybe::Absent(_) = slot.refusal
+                && let Maybe::Present(computation) = self.computation_at(expression.node)
+                && let Maybe::Present(origin) = self.origin_at(expression.node)
+            {
+                let id = sink.arena.value_thunk(computation);
+                let _minted = sink.value(id, origin.inserted(Insertion::Thunk));
+                let _replaced = self.targets.insert(SlotIndex::from(position), id);
+            }
+        }
         self.record_labels(sink);
         self.record_framed(sink);
 
@@ -17220,7 +17249,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(Half { operand: Operand::Member(target), .. })
                     if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_)))))
             && [slot.signature, slot.definition].into_iter().any(|half| matches!(half,
-                Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Presented | Operand::Code | Operand::Model(_), .. })))
+                Maybe::Present(Half { operand: Operand::Written(_) | Operand::Function | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Presented | Operand::Code | Operand::Model(_) | Operand::RunTarget(_), .. })))
         ),
     )]
     fn lowers_a_half(
@@ -17256,7 +17285,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Derived
                         | Operand::Presented
                         | Operand::Code
-                        | Operand::Model(_),
+                        | Operand::Model(_)
+                        | Operand::RunTarget(_),
                     ..
                 }) => true,
             });
@@ -17350,7 +17380,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Operand::Written(written) => self.value_type_at(written.node),
                         | Operand::Function => self.signature_at(half.declaration.node),
                         | Operand::Model(_) => self.modelled.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
-                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
+                        | Operand::Member(_) | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::World | Operand::RunTarget(_) => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => self.annotated_type(slot),
                 };
@@ -17363,6 +17393,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             .get(&position)
                             .copied()
                             .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+                        | Operand::RunTarget(_) => self.targets.get(&position).copied().map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
                         | Operand::Data(_) | Operand::Words(_) | Operand::Loop { .. } | Operand::Operation | Operand::Derived | Operand::Signature | Operand::Presented | Operand::Code | Operand::Model(_) | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
                     },
                     | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
@@ -17537,7 +17568,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Signature
                 | Operand::Presented
                 | Operand::Code
-                | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
+                | Operand::World
+                | Operand::RunTarget(_) => Maybe::Absent(lowered::Absent::Unminted),
             },
             Maybe::Absent(_) => self.annotated_type(slot),
         };
@@ -17560,6 +17592,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Operand::Code
                 | Operand::Model(_)
                 | Operand::World => Maybe::Absent(lowered::Absent::Unminted),
+                Operand::RunTarget(_) => self
+                    .targets
+                    .get(&position)
+                    .copied()
+                    .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
             },
             Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };

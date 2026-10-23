@@ -2266,7 +2266,7 @@ fn each_verb_prints_its_entries()
     for (relative, text) in [
         ("fixture/hole.gandr", "def hole : Integer ;\n"),
         ("fixture/pending/lowered.gandr", "def a = 1 ;\n"),
-        ("fixture/pending/whole.gandr", "pure 3\n"),
+        ("fixture/pending/whole.gandr", "@[ checks ]\n"),
         (
             "fixture/settled.gandr",
             "@[ owes(1) ] def later : Integer ;\n",
@@ -2275,7 +2275,7 @@ fn each_verb_prints_its_entries()
             "fixture/unproduced.gandr",
             "@[ refuses(\"UnresolvedName\") ] def answer = 42 ;\n",
         ),
-        ("strict/whole.gandr", "pure 3\n"),
+        ("strict/whole.gandr", "@[ checks ]\n"),
     ] {
         scratch.file(Path::new(relative), SourceText::from(text));
     }
@@ -2337,7 +2337,7 @@ fn each_verb_prints_its_entries()
             (
                 PathBuf::from("strict/whole.gandr"),
                 Severity::Error,
-                Class::Refusal(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET)),
+                Class::Refusal(FailureClass::MalformedSource),
             ),
         ]
     };
@@ -2378,7 +2378,7 @@ fn each_verb_prints_its_entries()
         (
             PathBuf::from("strict/whole.gandr"),
             Severity::Error,
-            Class::Refusal(FailureClass::Unimplemented(TrackingIssue::RUN_TARGET))
+            Class::Refusal(FailureClass::MalformedSource)
         ),
     ]);
 }
