@@ -11,10 +11,14 @@
 //! or modifies.
 
 use core::error::Error;
+use core::num::NonZeroUsize;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_surface_parser::DisagreementCount;
 use gandr_surface_parser::FormSplit;
 use gandr_surface_parser::Lexeme;
@@ -123,12 +127,15 @@ const TABLES_WHOLE_STRIDE: usize = if cfg!(anodized_panic) { 16 } else { 1 };
 /// profile parses the night's slice of it. A queue entry that changes the
 /// parser, its grammar or its syntax tree (`crates/surface-parser/`,
 /// `crates/surface-grammar/`, `crates/surface-syntax/`) reaches every record,
-/// and the plain lane runs the whole matrix for it, about a minute; the
-/// enforcing shards keep the sample, where the whole matrix would take half an
-/// hour. The sample, [`RECOVERY`], parses forty-eight sources, those the
-/// change touches first: each one's whole row and the rows of every sixteenth
-/// significant token. Every source's record is still required to exist, and
-/// every record to have a source, under every profile.
+/// and the plain lane runs the whole matrix for it; the enforcing shards keep
+/// the sample, where the whole matrix would take half an hour. The sources
+/// are independent, so they are parsed on every available core, the longest
+/// first ([`observed_in_parallel`]): run one after another, the whole matrix
+/// took 127 s of the plain lane's critical path (#2148). The sample,
+/// [`RECOVERY`], parses forty-eight sources, those the change touches first:
+/// each one's whole row and the rows of every sixteenth significant token.
+/// Every source's record is still required to exist, and every record to have
+/// a source, under every profile.
 #[test]
 fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error>>
 {
@@ -236,8 +243,7 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
     let mut stale = Vec::new();
     let mut moved = Vec::new();
     let mut worse: Vec<(usize, usize, String)> = Vec::new();
-    let mut observed = String::new();
-    let mut dropped = String::new();
+    let mut jobs: Vec<(&str, PathBuf, &Path)> = Vec::new();
     for source in &sources {
         let rel = source.name.as_ref();
         let record = records.join(rel).with_extension("recovery");
@@ -252,51 +258,67 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
         if only.is_none() && !visited.contains(&source.path) {
             continue;
         }
-        let src = std::fs::read_to_string(&source.path)
-            .map_err(|error| format!("{}: {error}", source.path.display()))?;
-        let whole = parse(pbg, SourceText::from(src.as_str()))?;
-        let digest = fingerprint(whole.tree());
-        observed.clear();
-        writeln!(
-            observed,
-            "W\t{}\t{}\t{digest}",
-            whole.obligations().len(),
-            whole.tree().positions().count()
-        )?;
-        let significant = label(SourceFragment::from(src.as_str()))
-            .into_iter()
-            .filter(|token| token.lexeme != Lexeme::Space);
-        for (index, token) in significant.enumerate() {
-            if !index.is_multiple_of(stride) {
-                writeln!(observed, "T")?;
-                continue;
-            }
-            let start = usize::try_from(token.start)?;
-            let end = usize::try_from(token.end)?;
-            let cut = parse(pbg, SourceText::from(src.get(.. end).unwrap_or_default()))?;
-            let cut_digest = fingerprint(cut.tree());
-            dropped.clear();
-            dropped.push_str(src.get(.. start).unwrap_or_default());
-            dropped.push_str(src.get(end ..).unwrap_or_default());
-            let variant = parse(pbg, SourceText::from(dropped.as_str()))?;
+        jobs.push((rel, record, source.path.as_path()));
+    }
+    let observations = observed_in_parallel(
+        &jobs,
+        |&(_, _, path)| path,
+        |&(_, _, path)| {
+            let src = std::fs::read_to_string(path)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+            let mut observed = String::new();
+            let mut dropped = String::new();
+            let whole =
+                parse(pbg, SourceText::from(src.as_str())).map_err(|error| error.to_string())?;
+            let digest = fingerprint(whole.tree());
             writeln!(
                 observed,
-                "T\t{}\t{}\t{}\t{}\t{}",
-                cut.obligations().len(),
-                cut.tree().positions().count(),
-                cut_digest.get(.. 8).unwrap_or_default(),
-                variant.obligations().len(),
-                variant.tree().positions().count()
-            )?;
-        }
+                "W\t{}\t{}\t{digest}",
+                whole.obligations().len(),
+                whole.tree().positions().count()
+            )
+            .map_err(|error| error.to_string())?;
+            let significant = label(SourceFragment::from(src.as_str()))
+                .into_iter()
+                .filter(|token| token.lexeme != Lexeme::Space);
+            for (index, token) in significant.enumerate() {
+                if !index.is_multiple_of(stride) {
+                    writeln!(observed, "T").map_err(|error| error.to_string())?;
+                    continue;
+                }
+                let start = usize::try_from(token.start).map_err(|error| error.to_string())?;
+                let end = usize::try_from(token.end).map_err(|error| error.to_string())?;
+                let cut = parse(pbg, SourceText::from(src.get(.. end).unwrap_or_default()))
+                    .map_err(|error| error.to_string())?;
+                let cut_digest = fingerprint(cut.tree());
+                dropped.clear();
+                dropped.push_str(src.get(.. start).unwrap_or_default());
+                dropped.push_str(src.get(end ..).unwrap_or_default());
+                let variant = parse(pbg, SourceText::from(dropped.as_str()))
+                    .map_err(|error| error.to_string())?;
+                writeln!(
+                    observed,
+                    "T\t{}\t{}\t{}\t{}\t{}",
+                    cut.obligations().len(),
+                    cut.tree().positions().count(),
+                    cut_digest.get(.. 8).unwrap_or_default(),
+                    variant.obligations().len(),
+                    variant.tree().positions().count()
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            Ok(observed)
+        },
+    )?;
+    for (&(rel, ref record, _), observed) in jobs.iter().zip(&observations) {
         if update {
             if let Some(parent) = record.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&record, &observed)?;
+            std::fs::write(record, observed)?;
             continue;
         }
-        let recorded = std::fs::read_to_string(&record)?;
+        let recorded = std::fs::read_to_string(record)?;
         let (rows, recorded_rows) = (observed.lines().count(), recorded.lines().count());
         if rows != recorded_rows {
             stale.push(format!(
@@ -411,6 +433,79 @@ fn dropped_tokens_recover_no_worse_than_the_record() -> Result<(), Box<dyn Error
             .collect::<Vec<_>>()
     );
     Ok(())
+}
+
+/// `observe` applied to every job on every available core, the results in
+/// the jobs' order.
+///
+/// A worker takes the next job the shared cursor names until none is left.
+/// The jobs are taken largest file first, since a source costs its length
+/// squared, so the last job a worker takes is a short one.
+///
+/// # Specification
+/// - ensures: one result per job, in the jobs' order, each `observe` of that
+///   job; at most as many workers as jobs, and at least one.
+/// - fails: with the error of the first job, in the jobs' order, whose
+///   observation failed.
+/// - panics: resumes a worker's panic on the caller's thread.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the whole recovery sweep compares every observed row with
+///   the record kept at the job's own source; a result out of the jobs' order,
+///   or one missing, moves every row after it and fails the sweep.
+/// - witness: `tests::sweeps::dropped_tokens_recover_no_worse_than_the_record`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |observed| observed.len() == jobs.len()))]
+fn observed_in_parallel<T, J>(
+    jobs: &[T],
+    path: impl Fn(&T) -> &Path,
+    observe: impl Fn(&T) -> Result<J, String> + Sync,
+) -> Result<Vec<J>, Box<dyn Error>>
+where
+    T: Sync,
+    J: Send,
+{
+    let mut order: Vec<(u64, usize)> = jobs
+        .iter()
+        .enumerate()
+        .map(|(at, job)| {
+            (
+                std::fs::metadata(path(job)).map_or(0, |meta| meta.len()),
+                at,
+            )
+        })
+        .collect();
+    order.sort_unstable_by(|left, right| right.cmp(left));
+    let workers = std::thread::available_parallelism()
+        .map_or(1, NonZeroUsize::get)
+        .min(jobs.len())
+        .max(1);
+    let cursor = AtomicUsize::new(0);
+    let mut done: Vec<(usize, Result<J, String>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = core::iter::repeat_n((), workers)
+            .map(|()| {
+                scope.spawn(|| {
+                    let mut taken = Vec::new();
+                    while let Some(&(_, at)) = order.get(cursor.fetch_add(1, Ordering::Relaxed)) {
+                        if let Some(job) = jobs.get(at) {
+                            taken.push((at, observe(job)));
+                        }
+                    }
+                    taken
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| match handle.join() {
+                Ok(taken) => taken,
+                Err(panic) => std::panic::resume_unwind(panic),
+            })
+            .collect()
+    });
+    done.sort_unstable_by_key(|&(at, _)| at);
+    done.into_iter()
+        .map(|(_, observed)| observed.map_err(Box::<dyn Error>::from))
+        .collect()
 }
 
 /// The molder's tables reach the dry runs' verdict at every decision the
