@@ -1567,13 +1567,30 @@ snapshot() {
     }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid] | @tsv'
 }
 # The first failed required check on the head of `$1`, this pull request by
-# default, if any.
+# default, if any. A cancelled check is red unless a later run of its
+# workflow started on the same head: two pull_request events for one head
+# start two runs, the concurrency group cancels the older, and its cancelled
+# checks stay listed until the newer run's jobs start.
 red_check() {
-  local status=0 failed
-  failed=$(gh pr checks "${1:-$number}" -R "$repo" --required --json bucket,name --jq '[.[] | select(.bucket == "fail" or .bucket == "cancel") | .name] | first // empty') || status=$?
+  local status=0 checks red link run newer
+  checks=$(gh pr checks "${1:-$number}" -R "$repo" --required --json bucket,name,link) || status=$?
   # 1: some check failed; 8: some check pending.
   if [[ "$status" != 0 && "$status" != 1 && "$status" != 8 ]]; then return "$status"; fi
-  printf '%s' "$failed"
+  while IFS=$'\t' read -r red link; do
+    [[ -n "$red" ]] || continue
+    if [[ "$link" =~ /actions/runs/([0-9]+)/ ]]; then
+      run=${BASH_REMATCH[1]}
+      newer=$(gh api "repos/$repo/actions/runs/$run" --jq '"\(.head_sha)\t\(.workflow_id)\t\(.conclusion)"' |
+        while IFS=$'\t' read -r sha workflow conclusion; do
+          [[ "$conclusion" == cancelled ]] || continue
+          gh api "repos/$repo/actions/workflows/$workflow/runs?head_sha=$sha&per_page=100" \
+            --jq "[.workflow_runs[] | select(.id > $run)] | length"
+        done) || newer=
+      if [[ "${newer:-0}" != 0 ]]; then continue; fi
+    fi
+    printf '%s' "$red"
+    return 0
+  done < <(jq -r '.[] | select(.bucket == "fail" or .bucket == "cancel") | "\(.name)\t\(if .bucket == "cancel" then .link else "" end)"' <<< "$checks")
 }
 trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
 source "$(git rev-parse --show-toplevel)/.config/pr-stack/stack.bash"
