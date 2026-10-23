@@ -1,4 +1,6 @@
-/// `rest_pattern`: a rest pattern, matching the remainder of a list.
-/// The checker does not reach this form yet; #1051 tracks it.
-@[ refuses("OutOfFragment.list_pattern") ]
-def first = case xs { [x, ..Rest] => x } ;
+/// `rest_pattern`: a rest pattern, matching the remainder of a list; here a
+/// hole, which leaves the arm that runs undecided.
+@[ refuses("UndecidedCoverage") ]
+def head(xs : List(Integer)) -> -F Integer {
+  case xs { [x, ..?] => return x, [] => return 0 }
+}

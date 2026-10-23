@@ -505,6 +505,8 @@ impl TileName
     pub const DEF: Self = Self("def");
     /// The selection dot `.` of a path.
     pub const DOT: Self = Self(".");
+    /// The two dots `..` opening a list pattern's rest.
+    pub const DOT_DOT: Self = Self("..");
     /// The lambda keyword `fn`.
     pub const FN: Self = Self("fn");
     /// The force keyword `force`.

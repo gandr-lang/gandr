@@ -521,7 +521,6 @@ impl Unbuilt
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,
-            Self::AsPattern | Self::ListPattern | Self::RestPattern => TrackingIssue::PATTERNS,
             Self::Character => TrackingIssue::CHARACTER,
             Self::CoBundle => TrackingIssue::CO_BUNDLE,
             Self::Drop => TrackingIssue::DROP,
@@ -541,6 +540,9 @@ impl Unbuilt
             Self::InfixForm => TrackingIssue::INFIX_FORM,
             Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
             Self::Annotation
+            | Self::AsPattern
+            | Self::ListPattern
+            | Self::RestPattern
             | Self::Interpolation
             | Self::Bind
             | Self::Circuit

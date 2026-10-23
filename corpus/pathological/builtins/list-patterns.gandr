@@ -1,0 +1,20 @@
+// A list pattern's refusals: a match that leaves a list shape unmatched, and
+// a list pattern beside a pattern of another kind in one column.
+
+/// No arm matches the empty list.
+@[ refuses("NonExhaustiveMatch") ]
+def unmatched(xs : List(Integer)) -> -F Integer {
+  case xs {
+    [a, ..rest] => return a
+  }
+}
+
+/// A list pattern and a number in one column match no one type.
+@[ refuses("OutOfFragment.WrongSort") ]
+def mixed(xs : List(Integer)) -> -F Integer {
+  case xs {
+    [] => return 0,
+    3 => return 1,
+    _ => return 2
+  }
+}

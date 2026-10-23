@@ -234,9 +234,12 @@
 //! `case e -> T? { p => c, … }` compiles to a decision tree of native
 //! eliminations by the pattern-matrix construction of Maranget's _Compiling
 //! Pattern Matching to Good Decision Trees_ (ML 2008): a data case per
-//! constructor column, a sum case per boolean column, and the prelude's integer
-//! equality cased on per integer literal. Patterns nest: constructors,
-//! variables, `_`, integer and boolean literals, or-patterns binding nothing,
+//! constructor column, a sum case per boolean column, the prelude's integer
+//! equality cased on per integer literal, and the native list case per list
+//! column. Patterns nest: constructors, variables, `_`, integer and boolean
+//! literals, or-patterns binding nothing, list patterns `[p, …]` and
+//! `[p, …, ..r]`, read as cells over the empty list or the rest `r`, an
+//! as-pattern `p as x` binding the value `p` matches where its column stands,
 //! and a pattern hole `?` or `?name` in any position, which leaves the leaf it
 //! reaches stuck on a hole whose identity is the pattern's syntax node. The
 //! scrutinee is never bound; each leaf substitutes its arm body's variables by
@@ -244,11 +247,12 @@
 //! joined through a thunk whose type the checker would have to know. The data
 //! case's motive is the written answer or the result of the function whose body
 //! ends in the match, and a match that eliminates native data with neither is
-//! unannotated. Rows exhausted before a leaf are `NonExhaustiveMatch`, classed
-//! as malformed source; string patterns, as-patterns, an or-pattern binding a
-//! variable and the view `with e` are declined by name. Reversal: a join point
-//! earns its thunk once duplication costs more than binding the answer type at
-//! every join.
+//! unannotated; the list case only checks, against the answer its position
+//! gives. Rows exhausted before a leaf are `NonExhaustiveMatch`, classed as
+//! malformed source; string patterns, a rest pattern outside a list, an
+//! or-pattern binding a variable and the view `with e` are declined by name.
+//! Reversal: a join point earns its thunk once duplication costs more than
+//! binding the answer type at every join.
 //!
 //! A match of no arms, `case e {}`, names no family to compile against, so it
 //! reads its scrutinee's stated type, as a sum pattern reads its arity: a
@@ -1150,9 +1154,10 @@ pub(super) struct Constructed
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: a constructor's, a tuple's and a record's fields are a stretch of
-///   the match's part store, a record's labels one per field; a binder numbers
-///   its arm variable.
+/// - ensures: a constructor's, a tuple's, a record's and a cell's fields are a
+///   stretch of the match's part store, a cell's two, a record's labels one per
+///   field; a binder numbers its arm variable; an as-pattern's alias is a
+///   binder minted after it.
 /// - executable: none — the pattern holds no store to check its stretch
 ///   against.
 ///
@@ -1162,6 +1167,7 @@ pub(super) struct Constructed
 /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
 /// - witness: `lower::native::tests::telescope_patterns_split_and_project`
 /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
+/// - witness: `lower::native::tests::list_patterns_case_on_the_native_list`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Matcher
 {
@@ -1214,6 +1220,24 @@ enum Matcher
         arity: usize,
         /// The payload's pattern.
         field: PatternAt,
+    },
+    /// `[]`: the empty native list.
+    Nil,
+    /// A native list's cell: its head's and its tail's patterns, in the part
+    /// store, the head first.
+    Cell
+    {
+        /// The head's and the tail's patterns.
+        fields: Stretch,
+    },
+    /// `p as x`: the pattern `inner` matches, and the binder `alias` binds
+    /// the whole value.
+    Alias
+    {
+        /// The pattern the value matches.
+        inner: PatternAt,
+        /// The binder of the whole value.
+        alias: PatternAt,
     },
 }
 
@@ -1372,6 +1396,20 @@ enum Test
         /// Each summand's child.
         branches: Vec<TestAt>,
     },
+    /// Case on the native list at `level`: the empty list's child under no
+    /// binder, and the cell's under its head's and its tail's, the head
+    /// outermost.
+    List
+    {
+        /// The scrutinised level.
+        level: TreeLevel,
+        /// The tree binders above the case.
+        depth: Depth,
+        /// The child for the empty list.
+        nil: TestAt,
+        /// The child for a cell.
+        cell: TestAt,
+    },
 }
 
 /// One match, compiled to its decision tree.
@@ -1521,6 +1559,9 @@ struct Written
     /// Each sum pattern read so under no stated sum, at the arity its index
     /// alone gives, with the site it was read at.
     unstated: Vec<(PatternAt, Site)>,
+    /// Each cell and empty list a list pattern implies past its first cell,
+    /// which stands at the list's own syntax and answers no span of its own.
+    implied: Vec<PatternAt>,
 }
 
 /// The matcher every unwritten column entry reads as.
@@ -1585,6 +1626,8 @@ enum Head
     Record,
     /// An injection into a sum of this many summands.
     Sum(usize),
+    /// The empty native list or a cell.
+    List,
 }
 
 /// Whether a queued pattern is the label tile a punned telescope entry binds.
@@ -4216,6 +4259,43 @@ impl<'source> Lowerer<'_, 'source>
         if name == FormName::CONS_PATTERN {
             return self.cons_pattern(site, here, queued.slot, pieces, patterns, work);
         }
+        if name == FormName::LIST_PATTERN {
+            return self.list_pattern(here, queued, pieces, patterns, work);
+        }
+        if name == FormName::AS_PATTERN {
+            let mut cursor = Cursor::new(&pieces.pieces, at.span);
+            let inner = here.one(cursor.operands())?;
+            closed(here, &mut cursor, TileName::AS)?;
+            let Maybe::Present(alias) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            exhausted(here, &cursor)?;
+            let parts = allocated(patterns, work, &[
+                Queued {
+                    at: inner,
+                    slot: UNWRITTEN,
+                    ..queued
+                },
+                Queued {
+                    at: alias,
+                    slot: UNWRITTEN,
+                    punned: Punned(true),
+                    ..queued
+                },
+            ]);
+            let part = |offset: usize| {
+                patterns
+                    .parts
+                    .get(parts.start.saturating_add(offset))
+                    .copied()
+                    .unwrap_or(UNWRITTEN)
+            };
+            return Ok(Matcher::Alias {
+                inner: part(0),
+                alias: part(1),
+            });
+        }
         if name == FormName::LITERAL_PATTERN {
             return match pieces.pieces.first() {
                 Some(&Piece::Tile { label, at: tile }) if label == TileName::NUMBER => {
@@ -4425,6 +4505,178 @@ impl<'source> Lowerer<'_, 'source>
             tag: constructor.tag,
             fields: allocated(patterns, work, &queued),
         })
+    }
+
+    /// The shape of the list pattern `[p, …, q]` or `[p, …, q, ..r]` at
+    /// `here`, the pattern `queued` holds, read from `pieces`: the cell of
+    /// `p` over the rest of the list, each later cell and the closing empty
+    /// list allocated in turn, every element and the rest queued in source
+    /// order.
+    ///
+    /// # Specification
+    /// - requires: `here` is a list pattern of a match, `pieces` its reading.
+    /// - ensures: the empty list for `[]`; for `[..r]`, `r` queued into the
+    ///   pattern's own slot and the wildcard it replaces; otherwise the cell of
+    ///   the first element, whose tail is the cell of the next and so on, the
+    ///   last tail the rest `r` or the empty list. Each element is queued at
+    ///   the element type a stated `List(T)` writes and the rest at the list's
+    ///   own stated type; every implied cell and empty list after the first
+    ///   stands at the list's syntax and is recorded as implied.
+    /// - fails: a tile out of place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the empty list, a list of two elements and a list
+    ///   with a rest each compile to the list cases they write, read back out
+    ///   of the arena.
+    /// - witness: `lower::native::tests::list_patterns_case_on_the_native_list`
+    #[spec(
+        captures: before = work.len(),
+        ensures: |ret| ret.as_ref().map_or(true, |shape| matches!(*shape, Matcher::Nil | Matcher::Cell { .. } | Matcher::Wild) && work.len() >= before),
+    )]
+    fn list_pattern(
+        &mut self,
+        here: Site,
+        queued: Queued,
+        pieces: &Pieces,
+        patterns: &mut Written,
+        work: &mut Vec<Queued>,
+    ) -> Result<Matcher, LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, here.at.span);
+        closed(here, &mut cursor, TileName::BRACKET_OPEN)?;
+        let mut elements = Vec::new();
+        let mut rest = None;
+        loop {
+            if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+                break;
+            }
+            if let Maybe::Present(_) = cursor.tile(TileName::DOT_DOT) {
+                rest = Some(here.one(cursor.operands())?);
+                closed(here, &mut cursor, TileName::BRACKET_CLOSE)?;
+                break;
+            }
+            elements.push(here.one(cursor.operands())?);
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
+                closed(here, &mut cursor, TileName::BRACKET_CLOSE)?;
+                break;
+            }
+        }
+        exhausted(here, &cursor)?;
+        // The parse may read a closing `..p` as the rest pattern standing as
+        // the last element; it is the list's rest all the same.
+        if rest.is_none()
+            && let Some(&last) = elements.last()
+            && let Some(node) = self.tree.node(last.node)
+            && let Shape::Form { name, .. } = shape_of(self.pbg, node)?
+            && name == FormName::REST_PATTERN
+        {
+            let mut inner = Pieces::new();
+            read_pieces(self.pbg, self.tree, last.node, &mut inner)?;
+            if let Maybe::Present(repaired) = inner.repair {
+                return Err(repaired.refusal(name));
+            }
+            let mut cursor = Cursor::new(&inner.pieces, last.span);
+            closed(here, &mut cursor, TileName::DOT_DOT)?;
+            rest = Some(here.one(cursor.operands())?);
+            exhausted(here, &cursor)?;
+            let _rest = elements.pop();
+        }
+        let element = self.listed(queued.stated)?;
+        let mut pending = Vec::with_capacity(elements.len().saturating_add(1));
+        let mut shape = Matcher::Nil;
+        let mut cell = queued.slot;
+        let last = elements.len().saturating_sub(1);
+        for (index, &written) in elements.iter().enumerate() {
+            // The head stands at its element; the tail at the rest when it is
+            // the rest, and else at the list, a cell or empty list implied.
+            let tail_at = match rest {
+                Some(rest) if index == last => rest,
+                Some(_) | None => here.at,
+            };
+            let start = patterns.parts.len();
+            let head = PatternAt(patterns.shapes.len());
+            patterns.shapes.push((written, Matcher::Wild));
+            patterns.parts.push(head);
+            let tail = PatternAt(patterns.shapes.len());
+            patterns.shapes.push((tail_at, Matcher::Nil));
+            patterns.parts.push(tail);
+            pending.push(Queued {
+                at: written,
+                slot: head,
+                stated: element,
+                ..queued
+            });
+            let fields = Stretch {
+                start,
+                end: patterns.parts.len(),
+            };
+            if cell == queued.slot {
+                shape = Matcher::Cell { fields };
+            }
+            else if let Some(held) = patterns.shapes.get_mut(cell.0) {
+                held.1 = Matcher::Cell { fields };
+            }
+            cell = tail;
+            if tail_at == here.at {
+                patterns.implied.push(tail);
+            }
+        }
+        if let Some(rest) = rest {
+            pending.push(Queued {
+                at: rest,
+                slot: cell,
+                ..queued
+            });
+            if cell == queued.slot {
+                shape = Matcher::Wild;
+            }
+        }
+        work.extend(pending.into_iter().rev());
+
+        Ok(shape)
+    }
+
+    /// The element type the stated list type `stated` writes, `T` of
+    /// `List(T)`.
+    ///
+    /// # Specification
+    /// - requires: nothing beyond a well-formed tree.
+    /// - ensures: the operand of a stated `List(T)`, its parentheses stripped;
+    ///   untyped for any other stated type and for none.
+    /// - fails: the walk's refusal reading the stated type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::list_pattern`].
+    /// - witness: `lower::native::tests::list_patterns_case_on_the_native_list`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |element| matches!(stated, Maybe::Present(_)) || matches!(*element, Maybe::Absent(_))))]
+    fn listed(
+        &mut self,
+        stated: Maybe<NodeIndex, binder_type::Absent>,
+    ) -> Result<Maybe<NodeIndex, binder_type::Absent>, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(stated) = stated
+        else {
+            return Ok(stated);
+        };
+        if let Maybe::Present(typed) = self.unwrapped(stated)?
+            && typed.former == Former::TypeApplication
+            && typed.keyword.is_some_and(|head| {
+                type_former(self.name_at(head)) == Maybe::Present(TypeFormer::List)
+            })
+            && let [element] = typed.operands[..]
+        {
+            return Ok(Maybe::Present(element));
+        }
+
+        Ok(Maybe::Absent(binder_type::Absent::Untyped))
     }
 
     /// The tuple or record shape of a telescope or tuple pattern's
@@ -5023,7 +5275,8 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: as [`Self::compile`], for one item.
-    /// - ensures: the item's node: a leaf or a stuck node when the first row
+    /// - ensures: the item's node, its rows' as-patterns first settled where
+    ///   they stand ([`peeled`]): a leaf or a stuck node when the first row
     ///   tests nothing, a stuck node when its leftmost tested pattern is a
     ///   hole, and else the switch on that pattern's column, its children
     ///   queued on `tree`.
@@ -5045,6 +5298,8 @@ impl<'source> Lowerer<'_, 'source>
         tree: &mut Compiling,
     ) -> Result<Test, LoweringRefusal<'source>>
     {
+        let settled = peeled(patterns, item);
+        let item = settled.as_ref().unwrap_or(item);
         let Some(first) = item.rows.first()
         else {
             return Err(LoweringRefusal::NonExhaustiveMatch { span: site.at.span });
@@ -5056,7 +5311,7 @@ impl<'source> Lowerer<'_, 'source>
             .find_map(|(column, &pattern)| {
                 let &(written, ref shape) = patterns.shapes.get(pattern.0)?;
                 let head = match *shape {
-                    Matcher::Wild | Matcher::Binder(_) => return None,
+                    Matcher::Wild | Matcher::Binder(_) | Matcher::Alias { .. } => return None,
                     Matcher::Hole(hole) => Head::Hole(hole),
                     Matcher::Constructor { form, .. } => Head::Data(form),
                     Matcher::Boolean(_) => Head::Boolean,
@@ -5066,6 +5321,7 @@ impl<'source> Lowerer<'_, 'source>
                     },
                     Matcher::Record { .. } => Head::Record,
                     Matcher::Injection { arity, .. } => Head::Sum(arity),
+                    Matcher::Nil | Matcher::Cell { .. } => Head::List,
                 };
                 Some((Column(column), written, head))
             });
@@ -5093,6 +5349,7 @@ impl<'source> Lowerer<'_, 'source>
             },
             Head::Record => self.switch_record(patterns, item, switch, tree),
             Head::Sum(arity) => self.switch_sum(patterns, item, switch, Width(arity), tree),
+            Head::List => self.switch_list(patterns, item, switch, tree),
         }
     }
 
@@ -5232,7 +5489,10 @@ impl<'source> Lowerer<'_, 'source>
                     | Matcher::Integer(_)
                     | Matcher::Tuple { .. }
                     | Matcher::Record { .. }
-                    | Matcher::Injection { .. } => return Err(switch.wrong),
+                    | Matcher::Injection { .. }
+                    | Matcher::Nil
+                    | Matcher::Cell { .. }
+                    | Matcher::Alias { .. } => return Err(switch.wrong),
                 };
                 next.columns = splice(&row.columns, switch.column, &replacement);
                 specialised.push(next);
@@ -5314,7 +5574,10 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Integer(_)
                 | Matcher::Tuple { .. }
                 | Matcher::Record { .. }
-                | Matcher::Injection { .. } => return Err(switch.wrong),
+                | Matcher::Injection { .. }
+                | Matcher::Nil
+                | Matcher::Cell { .. }
+                | Matcher::Alias { .. } => return Err(switch.wrong),
             }
         }
         let without = splice(&item.levels, switch.column, &[]);
@@ -5379,7 +5642,10 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Boolean(_)
                 | Matcher::Tuple { .. }
                 | Matcher::Record { .. }
-                | Matcher::Injection { .. } => return Err(switch.wrong),
+                | Matcher::Injection { .. }
+                | Matcher::Nil
+                | Matcher::Cell { .. }
+                | Matcher::Alias { .. } => return Err(switch.wrong),
             }
         }
         let depth = Depth(item.depth.0.saturating_add(2));
@@ -5473,7 +5739,10 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Boolean(_)
                 | Matcher::Integer(_)
                 | Matcher::Record { .. }
-                | Matcher::Injection { .. } => return Err(switch.wrong),
+                | Matcher::Injection { .. }
+                | Matcher::Nil
+                | Matcher::Cell { .. }
+                | Matcher::Alias { .. } => return Err(switch.wrong),
             };
             next.columns = splice(&row.columns, switch.column, &replacement);
             specialised.push(next);
@@ -5533,7 +5802,10 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Boolean(_)
                 | Matcher::Integer(_)
                 | Matcher::Tuple { .. }
-                | Matcher::Injection { .. } => return Err(switch.wrong),
+                | Matcher::Injection { .. }
+                | Matcher::Nil
+                | Matcher::Cell { .. }
+                | Matcher::Alias { .. } => return Err(switch.wrong),
             }
         }
         let labels: Vec<FieldLabel> = named.into_iter().collect();
@@ -5570,7 +5842,10 @@ impl<'source> Lowerer<'_, 'source>
                 | Matcher::Boolean(_)
                 | Matcher::Integer(_)
                 | Matcher::Tuple { .. }
-                | Matcher::Injection { .. } => return Err(switch.wrong),
+                | Matcher::Injection { .. }
+                | Matcher::Nil
+                | Matcher::Cell { .. }
+                | Matcher::Alias { .. } => return Err(switch.wrong),
             };
             next.columns = splice(&row.columns, switch.column, &replacement);
             specialised.push(next);
@@ -5655,7 +5930,10 @@ impl<'source> Lowerer<'_, 'source>
                     | Matcher::Boolean(_)
                     | Matcher::Integer(_)
                     | Matcher::Tuple { .. }
-                    | Matcher::Record { .. } => return Err(switch.wrong),
+                    | Matcher::Record { .. }
+                    | Matcher::Nil
+                    | Matcher::Cell { .. }
+                    | Matcher::Alias { .. } => return Err(switch.wrong),
                 };
                 next.columns = splice(&row.columns, switch.column, &[replacement]);
                 specialised.push(next);
@@ -5674,6 +5952,89 @@ impl<'source> Lowerer<'_, 'source>
         })
     }
 
+    /// Case on the native list in `switch`'s column: the empty list and a
+    /// cell.
+    ///
+    /// # Specification
+    /// - requires: `switch`'s column holds the empty list or a cell in the
+    ///   item's first row.
+    /// - ensures: a list case whose empty child holds the rows admitting the
+    ///   empty list, the column removed, under no binder more; and whose cell
+    ///   child holds the rows admitting a cell, the column replaced by the
+    ///   cell's head and tail patterns, or by wildcards for a pattern matching
+    ///   anything, under two binders more, the head outermost.
+    /// - fails: the switch's wrong-sort refusal for a row whose pattern in the
+    ///   column is no list pattern and matches not everything;
+    ///   [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As stated.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty arm, a cell arm and a catch-all reach the
+    ///   sides they admit.
+    /// - witness: `lower::native::tests::list_patterns_case_on_the_native_list`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |test| matches!(*test, Test::List { .. })))]
+    fn switch_list(
+        &mut self,
+        patterns: &Written,
+        item: &Work,
+        switch: Switch<'source>,
+        tree: &mut Compiling,
+    ) -> Result<Test, LoweringRefusal<'source>>
+    {
+        let mut empty = Vec::new();
+        let mut cells = Vec::new();
+        for row in &item.rows {
+            self.fuel.spend()?;
+            let held = patterns.entry(row, switch.column);
+            let mut next = row.clone();
+            match *held {
+                Matcher::Nil => {
+                    next.columns = splice(&row.columns, switch.column, &[]);
+                    empty.push(next);
+                },
+                Matcher::Cell { fields } => {
+                    let parts = patterns
+                        .parts
+                        .get(fields.start .. fields.end)
+                        .unwrap_or_default();
+                    next.columns = splice(&row.columns, switch.column, parts);
+                    cells.push(next);
+                },
+                Matcher::Wild | Matcher::Binder(_) | Matcher::Hole(_) => {
+                    through(&mut next, held, switch.level);
+                    let mut cell = next.clone();
+                    next.columns = splice(&row.columns, switch.column, &[]);
+                    cell.columns = splice(&row.columns, switch.column, &[UNWRITTEN; 2]);
+                    empty.push(next);
+                    cells.push(cell);
+                },
+                Matcher::Constructor { .. }
+                | Matcher::Boolean(_)
+                | Matcher::Integer(_)
+                | Matcher::Tuple { .. }
+                | Matcher::Record { .. }
+                | Matcher::Injection { .. }
+                | Matcher::Alias { .. } => return Err(switch.wrong),
+            }
+        }
+        let cell = tree.queue(
+            Depth(item.depth.0.saturating_add(2)),
+            splice(&item.levels, switch.column, &fresh(item.depth, Width(2))),
+            cells,
+        );
+        let nil = tree.queue(item.depth, splice(&item.levels, switch.column, &[]), empty);
+
+        Ok(Test::List {
+            level: switch.level,
+            depth: item.depth,
+            nil,
+            cell,
+        })
+    }
+
     /// Mint `patterns` into `kept`'s core pattern table and record one arm
     /// alternative per entry of `roots`.
     ///
@@ -5684,11 +6045,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   a boolean as an injection over the unit, a tuple of no component as
     ///   the unit and of two as a pair, and an injection into a sum of two as
     ///   the injection on its side; any other tuple and a record as a
-    ///   constructor of tag zero over its parts, and any other injection as the
-    ///   constructor tagged with its summand over its payload, which the core's
-    ///   coverage reads as outside its fragment; one arm record per root, in
-    ///   order; each pattern's own span, then each span `patterns` spells
-    ///   inside one, recorded against the pattern minted for it.
+    ///   constructor of tag zero over its parts, any other injection as the
+    ///   constructor tagged with its summand over its payload, and the empty
+    ///   list and a cell as the constructors tagged zero and one over theirs,
+    ///   which the core's coverage reads as outside its fragment; an as-pattern
+    ///   as the pattern it names; one arm record per root, in order; each
+    ///   pattern's own span but an implied list's, then each span `patterns`
+    ///   spells inside one, recorded against the pattern minted for it.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -5700,7 +6063,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::sum_patterns_case_on_the_stated_arity`
     /// - witness: `lower::native::tests::an_or_pattern_settles_each_alternative`
     /// - witness: `lower::native::tests::a_binary_injection_pattern_is_kept_at_its_side`
-    #[spec(captures: before = kept.arms.len(), ensures: kept.arms.len() == before.saturating_add(roots.len()) && kept.spans.len() >= patterns.shapes.len())]
+    #[spec(captures: before = kept.arms.len(), ensures: kept.arms.len() == before.saturating_add(roots.len()) && kept.spans.len() >= patterns.shapes.len().saturating_sub(patterns.implied.len()))]
     fn keep(
         patterns: &Written,
         roots: &[(ArmAt, PatternAt, NodeIndex, NodeIndex)],
@@ -5719,8 +6082,23 @@ impl<'source> Lowerer<'_, 'source>
                     .filter_map(|&part| minted.get(part.0).copied().flatten())
                     .collect()
             };
+            if let Matcher::Alias { inner, .. } = *shape {
+                let named = minted.get(inner.0).copied().flatten();
+                if let Some(held) = minted.get_mut(position) {
+                    *held = named;
+                }
+                continue;
+            }
             let pattern = match *shape {
-                Matcher::Wild => Pattern::Wildcard,
+                Matcher::Alias { .. } | Matcher::Wild => Pattern::Wildcard,
+                Matcher::Nil => Pattern::Constructor {
+                    tag: ConstructorTag::from(0_usize),
+                    fields: Vec::new(),
+                },
+                Matcher::Cell { fields } => Pattern::Constructor {
+                    tag: ConstructorTag::from(1_usize),
+                    fields: parts(fields),
+                },
                 Matcher::Binder(_) => Pattern::Binder,
                 Matcher::Hole(hole) => Pattern::Hole(hole),
                 Matcher::Integer(ref literal) => Pattern::Literal(literal.clone()),
@@ -5782,10 +6160,17 @@ impl<'source> Lowerer<'_, 'source>
             .spelled
             .iter()
             .map(|&(slot, span, reading)| (slot.0, span, reading));
+        let mut implied = alloc::vec![false; patterns.shapes.len()];
+        for &at in &patterns.implied {
+            if let Some(flag) = implied.get_mut(at.0) {
+                *flag = true;
+            }
+        }
         let own = patterns
             .shapes
             .iter()
             .enumerate()
+            .filter(|&(position, _)| !implied.get(position).copied().unwrap_or(false))
             .map(|(position, &(at, _))| (position, at.span, PatternReading::Matched));
         for (position, span, reading) in own.chain(spelled) {
             if let Some(&Some(pattern)) = minted.get(position) {
@@ -7360,7 +7745,8 @@ impl<'source> Lowerer<'_, 'source>
                 | Test::Boolean { .. }
                 | Test::Integer { .. }
                 | Test::Record { .. }
-                | Test::Sum { .. } => continue,
+                | Test::Sum { .. }
+                | Test::List { .. } => continue,
             };
             let Some(&gandr_core_term::Computation::DataCase {
                 branches: ref lowered,
@@ -7437,6 +7823,7 @@ impl<'source> Lowerer<'_, 'source>
                     pending.extend(branches.iter().map(|&(_arity, child)| child));
                 },
                 Some(&Test::Sum { ref branches, .. }) => pending.extend(branches.iter().copied()),
+                Some(&Test::List { nil, cell, .. }) => pending.extend([nil, cell]),
                 Some(&(Test::Boolean { yes, no, .. } | Test::Integer { yes, no, .. })) => {
                     pending.extend([yes, no]);
                 },
@@ -7791,6 +8178,10 @@ fn tracked_motives(
             Test::Record {
                 ref labels, child, ..
             } => under(arena, child, labels.len()),
+            Test::List { nil, cell, .. } => {
+                under(arena, nil, 0_usize);
+                under(arena, cell, 2_usize);
+            },
             Test::Sum { ref branches, .. } => {
                 for &at in branches {
                     under(arena, at, 1_usize);
@@ -7900,6 +8291,10 @@ fn refinements(
                 mark(no);
             },
             Test::Split { child, .. } | Test::Record { child, .. } => mark(child),
+            Test::List { nil, cell, .. } => {
+                mark(nil);
+                mark(cell);
+            },
             Test::Sum { ref branches, .. } => {
                 for &at in branches {
                     mark(at);
@@ -8288,6 +8683,18 @@ fn mint_test(
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
             Maybe::Present(sink.arena.computation_case(scrutinee, &lowered_branches))
         },
+        Test::List {
+            level,
+            depth,
+            nil,
+            cell,
+        } => match (child(nil), child(cell)) {
+            (Maybe::Present(empty), Maybe::Present(cons)) => {
+                let scrutinee = level_value(sink.arena, scrutinised, depth, level);
+                Maybe::Present(sink.arena.computation_list_case(scrutinee, empty, cons))
+            },
+            _ => Maybe::Absent(lowered::Absent::Unminted),
+        },
     }
 }
 
@@ -8419,6 +8826,56 @@ fn leaf(
     }
 }
 
+/// `item` with every as-pattern its rows hold settled where it stands: the
+/// alias's binder bound at the column's level and the column holding the
+/// pattern it names, until none is left; none when no row holds one.
+///
+/// # Specification
+/// - requires: `item`'s rows are as wide as its levels.
+/// - ensures: `None` when no column of any row holds an as-pattern; else the
+///   item with each such column replaced by the pattern it names and one more
+///   binding per alias at that column's level.
+/// - fails: never.
+/// - panics: none.
+/// - intension: each alias names a pattern minted after it, so the peeling of
+///   one column ends.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an as-pattern over a cell binds the whole list beside the
+///   cell's head and tail.
+/// - witness: `lower::native::tests::list_patterns_case_on_the_native_list`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|work| work.rows.len() == item.rows.len()))]
+fn peeled(
+    patterns: &Written,
+    item: &Work,
+) -> Option<Work>
+{
+    let alias = |at: PatternAt| match patterns.shapes.get(at.0) {
+        Some(&(_, Matcher::Alias { inner, alias })) => Some((inner, alias)),
+        _ => None,
+    };
+    if !item
+        .rows
+        .iter()
+        .any(|row| row.columns.iter().any(|&at| alias(at).is_some()))
+    {
+        return None;
+    }
+    let mut work = item.clone();
+    for row in &mut work.rows {
+        for (column, &level) in row.columns.iter_mut().zip(&item.levels) {
+            while let Some((inner, named)) = alias(*column) {
+                if let Some(&(_, Matcher::Binder(variable))) = patterns.shapes.get(named.0) {
+                    row.bindings.push((variable, level));
+                }
+                *column = inner;
+            }
+        }
+    }
+
+    Some(work)
+}
+
 /// Settle `held`, a pattern that matches anything, at `level` for `row`: a
 /// binder binds its variable there, and a hole is the one the row passed
 /// unless it passed an earlier one.
@@ -8462,7 +8919,10 @@ fn through(
         | Matcher::Integer(_)
         | Matcher::Tuple { .. }
         | Matcher::Record { .. }
-        | Matcher::Injection { .. } => {},
+        | Matcher::Injection { .. }
+        | Matcher::Nil
+        | Matcher::Cell { .. }
+        | Matcher::Alias { .. } => {},
     }
 }
 

@@ -18404,8 +18404,9 @@ fn statement_form(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a list pattern, declined by its own row, a lambda, which
-///   the dispatch reads, and a misplaced form, standing as patterns.
+/// - hypothesis: L3 — a rest pattern outside a list, declined by its own row, a
+///   lambda, which the dispatch reads, and a misplaced form, standing as
+///   patterns.
 /// - witness: `lower::tests::an_unread_pattern_names_its_feature`
 #[spec(ensures: |ret| match declined_feature(name) {
     | Maybe::Present(feature) => ret == feature,
@@ -24315,19 +24316,20 @@ mod tests
     #[test]
     fn an_unread_pattern_names_its_feature()
     {
-        let source = "def f(n : Integer) -> -F Integer { case n { [a] => return 0 } }";
+        let source =
+            "def f(p : Integer * Integer) -> -F Integer { case p { (a, ..?) => return 0 } }";
         let refused = refusal(SourceText::from(source));
         assert!(
             matches!(refused, LoweringRefusal::OutOfFragment {
                 form,
-                boundary: FragmentBoundary::Unadmitted(Unbuilt::ListPattern),
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::RestPattern),
                 ..
-            } if form == FormName::from(NamedKind("list_pattern"))),
-            "a list pattern is declined by its own feature: {refused:?}"
+            } if form == FormName::from(NamedKind("rest_pattern"))),
+            "a rest pattern outside a list is declined by its own feature: {refused:?}"
         );
         assert_eq!(
-            super::unread_pattern(FormName::from(NamedKind("list_pattern"))),
-            Unbuilt::ListPattern,
+            super::unread_pattern(FormName::from(NamedKind("rest_pattern"))),
+            Unbuilt::RestPattern,
             "a declined row's feature names the pattern"
         );
         assert_eq!(
