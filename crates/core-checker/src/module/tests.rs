@@ -1271,6 +1271,79 @@ fn a_record_update_builds_its_base_s_kept_fields_beside_its_overlay()
     );
 }
 
+/// #2159: a record update written in a signature reads the record it builds,
+/// so a path between two updates at distinct labels, or between an update
+/// writing a field's own value and its base, holds at one point. The kernel
+/// re-derives both.
+#[test]
+fn a_record_update_in_a_signature_reads_its_record_2159()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    // `point = #{x = 0, y = 0}`.
+    let pair_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("x"), integer),
+        (label("y"), integer),
+    ]));
+    let pair = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("x"), zero),
+        (label("y"), zero),
+    ]));
+    let point = arena.value_constant(ConstantIndex::from(0_usize));
+    let written = |arena: &mut CoreArena, base, name| {
+        let overlay = arena.value_record(alloc::collections::BTreeMap::from([(label(name), zero)]));
+        arena.value_record_update(base, overlay)
+    };
+    // `commute : Path(R, #{#{point | x = 0} | y = 0}, #{#{point | y = 0} | x =
+    // 0})`.
+    let commuted = {
+        let first = written(&mut arena, point, "x");
+        let left = written(&mut arena, first, "y");
+        let second = written(&mut arena, point, "y");
+        let right = written(&mut arena, second, "x");
+        arena.value_type_path(pair_type, left, right)
+    };
+    let commute = arena.value_here(pair);
+    // `unchanged : Path(R, #{point | x = 0}, point)`.
+    let unchanged_type = {
+        let left = written(&mut arena, point, "x");
+        arena.value_type_path(pair_type, left, point)
+    };
+    let unchanged = arena.value_here(point);
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(pair_type), Maybe::Present(pair)),
+            declaration(At(1), Maybe::Present(commuted), Maybe::Present(commute)),
+            declaration(
+                At(2),
+                Maybe::Present(unchanged_type),
+                Maybe::Present(unchanged),
+            ),
+        ])
+    };
+    for (position, what) in [
+        (1_usize, "updates at distinct labels commute"),
+        (2_usize, "an update writing a field's own value is its base"),
+    ] {
+        assert!(
+            matches!(report.judged()[position].verdict(), Verdict::Checked { .. }),
+            "{what}: {:?}",
+            report.judged()[position].verdict()
+        );
+    }
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel re-derives each built signature: {readmission:?}"
+    );
+}
+
 #[test]
 fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
 {

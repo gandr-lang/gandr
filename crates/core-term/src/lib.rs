@@ -261,6 +261,7 @@ pub use crate::rewrite::Nesting;
 pub use crate::rewrite::Renaming;
 pub use crate::rewrite::Unenclosed;
 pub use crate::rewrite::abstract_constant_value_type;
+pub use crate::rewrite::build_type_updates;
 pub use crate::rewrite::build_updates;
 pub use crate::rewrite::constructor_classifier;
 pub use crate::rewrite::cross_reducts;

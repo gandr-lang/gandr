@@ -943,12 +943,13 @@ enum Run
 ///   suspended, is [`Verdict::Suspended`] at the type it supplies instead,
 ///   defines nothing, and is held suspended; a refusal wins over any residual.
 ///   An owed hole is held owed. A formed signature enters the signature table
-///   after the body is judged, whatever the body's verdict; a synthesised type
-///   enters it after synthesis; a refused body alone enters nothing. A
-///   definition quantified over stages checks at a stage minted per binder and
-///   enters the table at its plain type, its stage signature kept beside it. An
-///   abstract type's retention is checked where the context retains it, by
-///   `CheckingContext::seal_abstract`.
+///   after the body is judged, whatever the body's verdict; a signature holding
+///   a record update forms with each built as its record (#2159), so it enters
+///   the table as built; a synthesised type enters it after synthesis; a
+///   refused body alone enters nothing. A definition quantified over stages
+///   checks at a stage minted per binder and enters the table at its plain
+///   type, its stage signature kept beside it. An abstract type's retention is
+///   checked where the context retains it, by `CheckingContext::seal_abstract`.
 /// - provides: the one obligation a declaration can owe, carried in its
 ///   verdict, so a caller judging a single declaration needs no ledger.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
@@ -977,11 +978,11 @@ enum Run
             | crate::DeclarationContent::Abstract(_) | crate::DeclarationContent::World => true,
             | crate::DeclarationContent::Value { .. } => false,
         },
-        | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Present(value) } if *ty == declared.id() && *value <= body)
+        | Verdict::Checked { declared, body, .. } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(_), body: Maybe::Present(value) } if *value <= body)
             && (context.signature(declaration.constant()) == Maybe::Present(declared) || !declaration.stages().is_empty()),
         | Verdict::Synthesised { synthesised, body } => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Absent(_), body: Maybe::Present(value) } if *value <= body)
             && context.signature(declaration.constant()) == Maybe::Present(synthesised.produced()),
-        | Verdict::Owed(entry) => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(ty), body: Maybe::Absent(_) } if *ty == entry.absence().declared().id())
+        | Verdict::Owed(entry) => matches!(declaration.content(), crate::DeclarationContent::Value { signature: Maybe::Present(_), body: Maybe::Absent(_) })
             && entry.absence().constant() == declaration.constant()
             && entry.absence().origin() == declaration.origin()
             && (context.signature(declaration.constant()) == Maybe::Present(entry.absence().declared()) || !declaration.stages().is_empty()),
@@ -1210,10 +1211,10 @@ fn decide(
                         declared,
                         declaration.stages(),
                     )?;
-                    quantified = Some((form_value_type(context, erased)?, marks));
+                    quantified = Some((form_built(context, erased)?, marks));
                 }
                 crate::quantified::mint(context.stages_mut(), declaration.stages());
-                form_value_type(context, declared)
+                form_built(context, declared)
             })
             .and_then(|formed| crate::session::unrestricted(context, formed.id()).map(|()| formed))
             .map(Direction::Check),
@@ -1445,6 +1446,51 @@ fn decide(
             | Verdict::Refused(_) => Residue::default(),
         },
     }
+}
+
+/// Form the signature `declared`, then each record update its formation
+/// checked built as the record it stands for, and that formed in turn.
+///
+/// A type's updates are checked where it forms, but conversion reads no update:
+/// a signature holding one would compare it unelaborated against the record it
+/// stands for (#2159). The build is the one a body's updates take
+/// ([`gandr_core_term::build_type_updates`]).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the formed `declared` when its formation checked no record
+///   update; otherwise the formation of `declared` with every update it checked
+///   standing as the record of its overlay's fields beside its base's kept
+///   ones. No update the formation recorded stays recorded.
+/// - fails: the refusal forming `declared`, or forming the built type.
+/// - panics: none.
+/// - executable: none — the build is a walk of the type, which a predicate
+///   would repeat.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two updates at distinct labels commuting, and an update
+///   writing a field's own value, each read in a path type's endpoints, convert
+///   to the record they build only once the signature is built.
+/// - witness: `module::tests::a_record_update_in_a_signature_reads_its_record_2159`
+fn form_built(
+    context: &mut CheckingContext<'_>,
+    declared: gandr_core_term::ValueTypeId,
+) -> Result<FormedValueType, CheckRefusal>
+{
+    let _earlier = context.take_updates();
+    let formed = form_value_type(context, declared)?;
+    let updates = context.take_updates();
+    if updates.is_empty() {
+        return Ok(formed);
+    }
+    let mut carried = Vec::new();
+    let built = gandr_core_term::build_type_updates(
+        context.arena_mut(),
+        formed.id(),
+        &updates,
+        &mut carried,
+    );
+    form_value_type(context, built)
 }
 
 /// Judge an accepted structural definition once more with its own fixpoint's
