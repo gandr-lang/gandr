@@ -234,6 +234,7 @@ impl LoweringRefusal<'_>
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
             | Self::RegionAsValue { .. }
+            | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
             | Self::ViewNotPlace { .. }
@@ -295,6 +296,7 @@ impl LoweringRefusal<'_>
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
             | Self::RegionAsValue { .. }
+            | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
             | Self::AmbiguousMethod { .. }
             | Self::ViewNotPlace { .. }
@@ -687,7 +689,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 64_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 65_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -956,6 +958,7 @@ mod tests
                 theory: SurfaceName::from("Grp"),
                 fault: crate::derive::DeriveFault::Apart,
             },
+            LoweringRefusal::EntryType { span: empty },
         ]
     }
 
@@ -1025,6 +1028,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
         ];
 

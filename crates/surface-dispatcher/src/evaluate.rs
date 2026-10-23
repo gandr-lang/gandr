@@ -8,9 +8,10 @@
 //! declarations, each a constant the machine unfolds on demand. An accepted
 //! declaration's elaborated body is focused once, when the program is built; a
 //! declaration owed its body, refused, or whose body does not focus is carried
-//! as itself, the machine's opaque constant. `gandr run` runs the last name
-//! the source declares; the session and the corpus run any accepted
-//! declaration by its admission position.
+//! as itself, the machine's opaque constant. `gandr run` runs the program's
+//! entry, the `main` its source declares at the top level, and the last name
+//! the source declares when it declares none; the session and the corpus run
+//! any accepted declaration by its admission position.
 //!
 //! # Running a declaration
 //!
@@ -186,6 +187,13 @@ use gandr_surface_pretty::present_computation_line;
 use gandr_surface_pretty::present_type;
 use quenchant_shape::shape::Maybe;
 
+mod entry;
+
+pub use entry::Entered;
+pub use entry::Entry;
+pub use entry::ExitStatus;
+pub use entry::program_entry;
+
 quenchant_shape::reason_enum! {
     /// Why a program has no run target.
     pub mod run_target {
@@ -299,6 +307,9 @@ pub struct Program<'source>
     families: Families,
     /// The spelling its values and sealed types are written in.
     spelling: Spelling,
+    /// The `main` the source run declares at its top level, when it declares
+    /// one at an entry's type.
+    entry: Maybe<Entry, program_entry::Absent>,
 }
 
 /// The part of a program a module's leading declarations make: each of them
@@ -881,6 +892,7 @@ impl<'source> Program<'source>
             sealed,
             families,
             spelling: Spelling::Unicode,
+            entry: entry::entry_of(core, module, verdicts),
         }
     }
 
@@ -2275,7 +2287,7 @@ mod tests
     /// - witness: `evaluate::tests::a_value_runs_to_its_spelling`
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
     #[spec(ensures: |ref ret| ret.declarations.keys().all(|&constant| ret.definitions.get(constant).is_some()))]
-    fn program<'source>(source: impl Into<SourceText<'source>>) -> Program<'source>
+    pub(super) fn program<'source>(source: impl Into<SourceText<'source>>) -> Program<'source>
     {
         let grammar = built_in().expect("the built-in grammar builds");
         let mut lowerings = LoweringCount::default();

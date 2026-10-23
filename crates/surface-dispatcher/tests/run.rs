@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Ran;
@@ -28,7 +29,7 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::SourceText;
 
 /// A program whose last declaration returns forty-two.
-const ANSWER: &str = "def main : +U (-F Integer) ;\ndef main = thunk { return 42 } ;\n";
+const ANSWER: &str = "def answer : +U (-F Integer) ;\ndef answer = thunk { return 42 } ;\n";
 
 /// A scratch source file, removed when dropped.
 #[repr(transparent)]
@@ -112,7 +113,7 @@ impl Drop for Scratch
 /// - witness: `tests::run::run_source_runs_source_text`
 /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
 #[spec(ensures: |ref ret| match *ret {
-        Ran::Evaluated { target, .. } => text.as_ref().contains(target.as_ref()),
+        Ran::Evaluated { target, .. } | Ran::Entered { target, .. } => text.as_ref().contains(target.as_ref()),
         Ran::Refused | Ran::NoProgram => true,
     })]
 fn ran_text(text: SourceText<'_>) -> Ran<'_>
@@ -193,7 +194,7 @@ fn run_source_runs_source_text()
             Ran::Evaluated {
                 target,
                 evaluation: Evaluation::Value(ref value),
-            } if target.as_ref() == "main" && value.as_ref() == "42"
+            } if target.as_ref() == "answer" && value.as_ref() == "42"
         ),
         "a completed run returns the computed value: {ran:?}"
     );
@@ -255,6 +256,36 @@ fn a_script_runs_to_its_value_in_the_spelling_asked_782()
             panic!("the word runs to a value: {run:?}");
         };
         assert_eq!(value.as_ref(), spelled, "the word in {spelling:?}");
+    }
+}
+
+/// #1881: a script's arguments reach its entry, which exits with their
+/// number.
+#[test]
+fn a_script_passes_its_arguments_to_its_entry_1881()
+{
+    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  case xs {\n    [] => 0,\n    \
+                   [x, ..rest] => { run n <- count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
+                   List(String)) -> -F Integer { become count(args) }\n";
+    let file = Scratch::write(Path::new("arguments"), SourceText::from(counted));
+    for arguments in [vec![], vec![String::from("one"), String::from("two")]] {
+        let mut script = Script::new(file.0.clone());
+        let count = u8::try_from(arguments.len()).expect("a few arguments");
+        script.pass(arguments);
+        let run = script.run();
+        assert!(
+            matches!(
+                run,
+                ScriptRun::Source {
+                    ran: Ran::Entered {
+                        entered: Entered::Exited(status),
+                        ..
+                    },
+                    ..
+                } if u8::from(status) == count
+            ),
+            "the entry exits with the number of its arguments: {run:?}"
+        );
     }
 }
 

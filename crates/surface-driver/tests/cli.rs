@@ -163,12 +163,12 @@ impl Drop for Scratch
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — malformed invocations, an extra script operand and
+/// - hypothesis: L3 — malformed invocations, a program's trailing arguments and
 ///   distinct check/test results expose argument identity and order. Dropped,
 ///   reordered or substituted arguments change statuses or output; arbitrary
 ///   `AsRef` types with stateful views are outside the domain.
 /// - witness: `tests::cli::a_malformed_invocation_exits_two`
-/// - witness: `tests::cli::a_second_operand_is_refused`
+/// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
 /// - witness: `tests::cli::the_test_verb_prints_every_fixture_and_pending_source`
 #[spec(ensures: |ref ret| ret.get_program() == std::ffi::OsStr::new(env!("CARGO_BIN_EXE_gandr"))
         && ret.get_args().eq(arguments.iter().map(AsRef::as_ref)))]
@@ -197,15 +197,17 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — accepted, refused and unreadable sources plus a closed
-///   output pipe expose all three process statuses and stream roles. Wrong
-///   commands, missing waits or lost output change these fixtures; external
-///   signals and process-creation failures are excluded.
+///   output pipe expose all three process statuses and stream roles, and a
+///   program its own exit statuses. Wrong commands, missing waits or lost
+///   output change these fixtures; external signals and process-creation
+///   failures are excluded.
 /// - witness: `tests::cli::a_settled_run_exits_zero`
 /// - witness: `tests::cli::an_unreadable_path_exits_two`
 /// - witness: `tests::cli::unwritable_standard_output_exits_two`
+/// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
 #[spec(
         requires: command.get_program() == std::ffi::OsStr::new(env!("CARGO_BIN_EXE_gandr")),
-        ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)),
+        ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 255)),
     )]
 fn ran(mut command: Command) -> Output
 {
@@ -1210,7 +1212,7 @@ fn unwritable_standard_output_exits_two()
     let source = scratch.file(Path::new("answer.gandr"), Text::from("def answer = 42 ;\n"));
     let program = scratch.file(
         Path::new("program.gandr"),
-        Text::from("def main : +U (-F Integer) ; def main = thunk { return 17 } ;"),
+        Text::from("def answer : +U (-F Integer) ; def answer = thunk { return 17 } ;"),
     );
     for arguments in [
         &[][..],
@@ -2086,7 +2088,7 @@ fn a_script_that_returns_a_value_leaves_successfully()
     let (_path, output) = run_script(
         &scratch,
         Path::new("value.gandr"),
-        Text::from("def main : +U (-F Integer) ;\ndef main = thunk { return 42 } ;\n"),
+        Text::from("def answer : +U (-F Integer) ;\ndef answer = thunk { return 42 } ;\n"),
     );
     assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
     assert_eq!(
@@ -2095,6 +2097,51 @@ fn a_script_that_returns_a_value_leaves_successfully()
         "the run routes its value to the caller"
     );
     assert_eq!(stderr(&output), "", "a completed run writes no complaint");
+}
+
+/// #1881: a program leaves with the status its `main` returns or exits with,
+/// its arguments the operands after the path, and writes no value; a `main`
+/// reaching a goal is blamed as any run is.
+#[test]
+fn a_program_leaves_with_its_entry_s_status_1881()
+{
+    let scratch = Scratch::new(Path::new("program-entry"));
+    let counted = "def rec count(xs : List(String)) -> -F Integer {\n  case xs {\n    [] => 0,\n    \
+                   [x, ..rest] => { run n <- count[<](rest); n + 1 }\n  }\n}\ndef main(args : \
+                   List(String)) -> -F Integer { become count(args) }\n";
+    for (name, text, arguments, status) in [
+        (
+            "returned.gandr",
+            "def main() -> -F Integer { return 3 }\ndef later = 1 ;\n",
+            &[][..],
+            3_i32,
+        ),
+        (
+            "exited.gandr",
+            "def proc : Cap {exit} ;\ndef main() -> -F [Proc] Integer { proc.exit(7) ; return 0 }\n",
+            &[][..],
+            7_i32,
+        ),
+        (
+            "counted.gandr",
+            counted,
+            &["a", "-b", "--c", "two.gandr"][..],
+            4_i32,
+        ),
+        (
+            "wrapped.gandr",
+            "def main() -> -F Integer { return 257 }\n",
+            &[][..],
+            1_i32,
+        ),
+    ] {
+        let path = scratch.file(Path::new(name), Text::from(text));
+        let mut command = gandr(&[Path::new("run"), path.as_path()]);
+        command.args(arguments);
+        let output = ran(command);
+        assert_eq!(code(&output), Code(status), "{name}: {}", stderr(&output));
+        assert_eq!(stdout(&output), "", "{name}: a program writes no value");
+    }
 }
 
 /// The value of a completed run is the whole of standard output, once,
@@ -2152,7 +2199,7 @@ fn an_ill_typed_script_is_refused_by_the_checker()
     let (path, output) = run_script(
         &scratch,
         Path::new("ill-typed.gandr"),
-        Text::from("def main : Integer ;\ndef main = \"five\" ;\n"),
+        Text::from("def five : Integer ;\ndef five = \"five\" ;\n"),
     );
     assert_eq!(
         code(&output),
@@ -2184,7 +2231,7 @@ fn an_outcome_only_refusal_is_visible_in_a_script_run()
     let (_path, output) = run_script(
         &scratch,
         Path::new("outcome-only.gandr"),
-        Text::from("def wrong : Integer ;\ndef wrong = \"one\" ;\ndef main = 0 ;\n"),
+        Text::from("def wrong : Integer ;\ndef wrong = \"one\" ;\ndef zero = 0 ;\n"),
     );
     assert_eq!(
         code(&output),
@@ -2237,18 +2284,6 @@ fn a_script_with_no_program_is_refused()
     assert!(stderr(&output).starts_with(&format!("gandr: {}: ", path.display())));
 }
 
-/// `run` takes exactly one operand.
-#[test]
-fn a_second_operand_is_refused()
-{
-    let output = ran(gandr(&["run", "one.gandr", "two.gandr"]));
-    assert_eq!(
-        code(&output),
-        Code(2_i32),
-        "the script runner takes exactly one operand"
-    );
-}
-
 /// A literal dash selects a path, whether that file is absent or runnable.
 #[test]
 fn a_bare_dash_is_a_path_not_standard_input()
@@ -2261,7 +2296,7 @@ fn a_bare_dash_is_a_path_not_standard_input()
     assert!(stderr(&output).starts_with("gandr: -: "));
     let _path = scratch.file(
         Path::new("-"),
-        Text::from("def main : +U (-F Integer) ; def main = thunk { return 17 } ;"),
+        Text::from("def answer : +U (-F Integer) ; def answer = thunk { return 17 } ;"),
     );
     let mut present = gandr(&["run", "-"]);
     present.current_dir(&scratch.0);
@@ -2308,7 +2343,7 @@ fn a_failed_diagnostic_stream_stops_later_output()
     let source = scratch.file(
         Path::new("value.gandr"),
         Text::from(
-            "def unused : Integer ; def main : +U (-F Integer) ; def main = thunk { return 9 } ;",
+            "def unused : Integer ; def answer : +U (-F Integer) ; def answer = thunk { return 9 } ;",
         ),
     );
     let control = ran(gandr(&[Path::new("run"), &source]));

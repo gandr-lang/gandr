@@ -14,7 +14,7 @@ A programming language built on a small certified kernel. A call-by-push-value c
 gandr check crates/surface-corpus/strict      # every declaration checks, owing nothing
 gandr check --goals my-sources/               # owed signatures printed as goals
 gandr test corpus                          # every fixture and pending source printed
-gandr run my-program.gandr                    # check, then run the last declaration and print its value
+gandr run my-program.gandr a b               # check, then run `main` with the arguments, exiting with its code
 gandr fmt --check my-sources/                 # list the sources out of layout
 ```
 

@@ -618,6 +618,8 @@ pub enum RefusalName
     ImplicitUnsolved,
     /// A definition's region binder named as a value.
     RegionAsValue,
+    /// A source's top-level `main` declared at a type no entry has.
+    EntryType,
     /// A receiver mode word on a parameter that is no method's receiver.
     StrayReceiverMode,
     /// A method call whose name more than one module's receivers declare.
@@ -858,7 +860,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 199_usize] = [
+    pub const VOCABULARY: [Self; 200_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -957,6 +959,7 @@ impl RefusalName
         Self::ImplicitInParentheses,
         Self::ImplicitUnsolved,
         Self::RegionAsValue,
+        Self::EntryType,
         Self::StrayReceiverMode,
         Self::AmbiguousMethod,
         Self::ViewNotPlace,
@@ -1145,6 +1148,7 @@ impl RefusalName
         (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
         (Self::ImplicitUnsolved, b"ImplicitUnsolved") |
         (Self::RegionAsValue, b"RegionAsValue") |
+        (Self::EntryType, b"EntryType") |
         (Self::StrayReceiverMode, b"StrayReceiverMode") |
         (Self::AmbiguousMethod, b"AmbiguousMethod") |
         (Self::ViewNotPlace, b"ViewNotPlace") |
@@ -1466,6 +1470,7 @@ impl RefusalName
             Self::ImplicitInParentheses => "ImplicitInParentheses",
             Self::ImplicitUnsolved => "ImplicitUnsolved",
             Self::RegionAsValue => "RegionAsValue",
+            Self::EntryType => "EntryType",
             Self::StrayReceiverMode => "StrayReceiverMode",
             Self::AmbiguousMethod => "AmbiguousMethod",
             Self::ViewNotPlace => "ViewNotPlace",
@@ -2037,6 +2042,8 @@ impl Refusal<'_>
         RefusalName::ImplicitInParentheses) |
         (Self::Lowering(LoweringRefusal::RegionAsValue { .. }),
         RefusalName::RegionAsValue) |
+        (Self::Lowering(LoweringRefusal::EntryType { .. }),
+        RefusalName::EntryType) |
         (Self::Lowering(LoweringRefusal::StrayReceiverMode { .. }),
         RefusalName::StrayReceiverMode) |
         (Self::Lowering(LoweringRefusal::AmbiguousMethod { .. }),
@@ -2283,7 +2290,8 @@ impl Refusal<'_>
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
         RefusalName::ImplicitUnsupplied) | (LoweringRefusal::ImplicitInParentheses { .. },
         RefusalName::ImplicitInParentheses) | (LoweringRefusal::RegionAsValue { .. },
-        RefusalName::RegionAsValue) | (LoweringRefusal::StrayReceiverMode { .. },
+        RefusalName::RegionAsValue) | (LoweringRefusal::EntryType { .. },
+        RefusalName::EntryType) | (LoweringRefusal::StrayReceiverMode { .. },
         RefusalName::StrayReceiverMode) | (LoweringRefusal::AmbiguousMethod { .. },
         RefusalName::AmbiguousMethod) | (LoweringRefusal::ViewNotPlace { .. },
         RefusalName::ViewNotPlace) | (LoweringRefusal::ViewOfNoPlace { .. },
@@ -2371,6 +2379,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::ImplicitUnsupplied { .. } => RefusalName::ImplicitUnsupplied,
         LoweringRefusal::ImplicitInParentheses { .. } => RefusalName::ImplicitInParentheses,
         LoweringRefusal::RegionAsValue { .. } => RefusalName::RegionAsValue,
+        LoweringRefusal::EntryType { .. } => RefusalName::EntryType,
         LoweringRefusal::StrayReceiverMode { .. } => RefusalName::StrayReceiverMode,
         LoweringRefusal::AmbiguousMethod { .. } => RefusalName::AmbiguousMethod,
         LoweringRefusal::ViewNotPlace { .. } => RefusalName::ViewNotPlace,
