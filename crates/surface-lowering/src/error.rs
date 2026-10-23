@@ -70,8 +70,8 @@
 //! — a statement other than `run`, an annotated or patterned `run` binder, a
 //! recursive function with no parameter to recurse on, a claim on a name that
 //! is not a recursive function or that heads no call, an explicit parameter
-//! block, a parameter named as a type variable, an annotation, a string
-//! interpolation, a grade on a returner, a capitalised name nothing answers, a
+//! block, a parameter named as a type variable, an annotation, a grade on a
+//! returner, a capitalised name nothing answers, a
 //! selection no module governs, a level wider than a level constant, a type
 //! abstraction, a typed lambda parameter, a number with a fraction or an
 //! exponent, and every kind outside the dispatch table. `WrongSort`: the form

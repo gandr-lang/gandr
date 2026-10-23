@@ -3428,6 +3428,10 @@ enum Part
     /// a child visited after the rest, so the binders it opens are the ones
     /// the join names, though it is written before them.
     Last(Binding),
+    /// The next child's piece, a text literal written inside the string
+    /// around it: the piece is taken and this, its escaped content, written
+    /// in its place.
+    Spliced(String),
     /// The name of the binder at this offset among those the former's
     /// children open.
     Binder(usize),
@@ -3468,7 +3472,7 @@ impl Parts
         part: Part,
     ) -> &mut Self
     {
-        if matches!(part, Part::Piece(_) | Part::Last(_)) {
+        if matches!(part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_)) {
             self.pieces = self.pieces.saturating_add(1_usize);
         }
         self.parts.push(part);
@@ -3510,6 +3514,19 @@ impl Parts
     ) -> &mut Self
     {
         self.part(Part::Piece(loosest))
+    }
+
+    /// Appends the next child's piece as `content`, the escaped content of
+    /// the text literal it is.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spliced(
+        &mut self,
+        content: String,
+    ) -> &mut Self
+    {
+        self.part(Part::Spliced(content))
     }
 
     /// Appends `, ` and a soft line before every entry of a block but the
@@ -4334,15 +4351,53 @@ fn universe(
     }))
 }
 
+/// The inside of a string literal holding `text`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a backslash, a double quote, a line feed, a tab, a carriage
+///   return and a nul are written as the escapes the lowering decodes, a `$`
+///   before a `{` as `\$`, so it opens no interpolation, and every other
+///   character as itself.
+/// - provides: one escaping for a whole literal and for the text an
+///   interpolated string holds between its interpolations.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the escaped-control string and the interpolated strings
+///   read back as the literal and the appends they were printed from.
+/// - witness: `tests::goldens::string_controls_stay_in_one_escaped_literal`
+/// - witness: `tests::goldens::an_append_is_written_as_the_interpolated_string_that_lowers_to_it`
+#[spec(ensures: |ref ret| !ret.0.contains(['\r', '\n', '\t', '\0']))]
+fn interior(text: &gandr_kernel_term::StringLiteral) -> Spelled
+{
+    let content: &str = text.as_ref();
+    // Room for the quotes a whole literal adds around it.
+    let mut spelled = String::with_capacity(content.len().saturating_add(2_usize));
+    let mut characters = content.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '\\' => spelled.push_str("\\\\"),
+            '"' => spelled.push_str("\\\""),
+            '\n' => spelled.push_str("\\n"),
+            '\t' => spelled.push_str("\\t"),
+            '\r' => spelled.push_str("\\r"),
+            '\0' => spelled.push_str("\\0"),
+            '$' if characters.peek() == Some(&'{') => spelled.push_str("\\$"),
+            other => spelled.push(other),
+        }
+    }
+    Spelled(spelled)
+}
+
 /// The surface spelling of a literal.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: an integer as its sign and digits; a string between double quotes
-///   with a backslash, a double quote, a line feed, a tab, a carriage return
-///   and a nul written as the escapes the lowering decodes, every other
-///   character as itself; a numeric literal as its sign, its digits, and its
-///   fraction after a point when it has one.
+///   with its content as [`interior`] writes it; a numeric literal as its sign,
+///   its digits, and its fraction after a point when it has one.
 /// - provides: the one spelling of every literal, which holds no line break, so
 ///   a literal never splits across lines.
 /// - fails: never.
@@ -4384,20 +4439,8 @@ fn literal(literal: &Literal) -> Spelled
             format!("{}{}", sign(integer.sign()), integer.magnitude().as_ref())
         },
         Literal::Text(ref text) => {
-            let content: &str = text.as_ref();
-            let mut spelled = String::with_capacity(content.len().saturating_add(2_usize));
-            spelled.push('"');
-            for character in content.chars() {
-                match character {
-                    '\\' => spelled.push_str("\\\\"),
-                    '"' => spelled.push_str("\\\""),
-                    '\n' => spelled.push_str("\\n"),
-                    '\t' => spelled.push_str("\\t"),
-                    '\r' => spelled.push_str("\\r"),
-                    '\0' => spelled.push_str("\\0"),
-                    other => spelled.push(other),
-                }
-            }
+            let Spelled(mut spelled) = interior(text);
+            spelled.insert(0_usize, '"');
             spelled.push('"');
             spelled
         },
@@ -8231,10 +8274,11 @@ impl Walk<'_, '_>
     ///   in reading order: `Path(A, x, y)`; a family or a constructor as its
     ///   name, applied to its components when it has any, a parameterised
     ///   constructor written against its family as [`children`] reads its
-    ///   classifier; a primitive and an operation as a call of their name;
-    ///   `transport(…)` over its motive — `\a. M`, or `+U M` for a telescope —
-    ///   and operands; `v.l` and `v.i`; `case v { … }` with one arm per branch
-    ///   but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
+    ///   classifier; a primitive and an operation as a call of their name, but
+    ///   a string append as the interpolated string `"…${ v }…"` that lowers to
+    ///   it; `transport(…)` over its motive — `\a. M`, or `+U M` for a
+    ///   telescope — and operands; `v.l` and `v.i`; `case v { … }` with one arm
+    ///   per branch but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
     ///   constructor's applied to its field binders, its equations unwritten,
     ///   `?` for a constructor the source cannot name; `handle { c } with {
     ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`;
@@ -8267,7 +8311,7 @@ impl Walk<'_, '_>
         captures: [forms = self.forms.len()],
         ensures: |ret| self.forms.len() == forms.saturating_add(1_usize)
             && matches!(ret, Join::Form { pieces: Arity(count), .. }
-                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_) | Part::Last(_))).count() == count)),
+                if self.forms.last().is_some_and(|parts| parts.iter().filter(|part| matches!(**part, Part::Piece(_) | Part::Last(_) | Part::Spliced(_))).count() == count)),
     )]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -8450,6 +8494,37 @@ impl Walk<'_, '_>
                 else {
                     applied
                 }
+            },
+            Former::Primitive { name, arity }
+                if name.as_ref() == "string.append" && usize::from(arity) == 2_usize =>
+            {
+                // An append is written as the interpolated string the lowering
+                // folds into it, which reads back as this very call: a text
+                // operand stands inside the quotes, every other operand in an
+                // interpolation. A text right of text, or an empty one on the
+                // right, would merge or vanish on the way back, so it stays
+                // interpolated.
+                let text = |at: usize| {
+                    let operand = source.component(node, Component::from(at))?;
+                    let Former::Literal(&Literal::Text(ref text)) = source.read(operand)
+                    else {
+                        return None;
+                    };
+                    let content: &str = text.as_ref();
+                    let empty = content.is_empty();
+                    Some((interior(text).0, empty))
+                };
+                let left = text(0_usize);
+                let right = text(1_usize).filter(|&(_, empty)| left.is_none() && !empty);
+                let _ = parts.text("\"");
+                for operand in [left, right] {
+                    let _ = match operand {
+                        Some((spliced, _)) => parts.spliced(spliced),
+                        None => parts.text("${ ").piece(Binding::Sequence).text(" }"),
+                    };
+                }
+                let _ = parts.text("\"");
+                writes(Production("string.expression"), Binding::Atom)
             },
             Former::Primitive { name, arity } => {
                 // A primitive the surface writes as an operator is written so:
@@ -9583,6 +9658,12 @@ impl Walk<'_, '_>
                         Part::Piece(loosest) => {
                             let piece = children.pop().ok_or(PresentationError::Unbalanced)?;
                             current.push(self.bare_or_block(piece, loosest)?);
+                        },
+                        Part::Spliced(content) => {
+                            let _literal = children.pop().ok_or(PresentationError::Unbalanced)?;
+                            if !content.is_empty() {
+                                current.push(self.leaf(Glyphs(content.as_str()))?);
+                            }
                         },
                         Part::Last(loosest) => {
                             let piece = last.pop().ok_or(PresentationError::Unbalanced)?;
