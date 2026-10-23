@@ -14,9 +14,23 @@ name: hotpath guard
 # waits for it: the check's completion runs this workflow instead. GitHub
 # sends the event for check runs another app creates, from the default
 # branch's copy of this file; the job runs only for a concluded hotpath check.
+# A check CI posts itself (the judge's `hotpath / <benchmark>-band`) starts
+# no workflow: GitHub starts none for what a workflow's token does, a
+# dispatch aside. Its poster dispatches this workflow with the commit and
+# the pull request instead.
 on:
   check_run:
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: the commit whose hotpath checks are filed
+        required: true
+        type: string
+      pull:
+        description: the pull request the commit heads
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -26,7 +40,7 @@ permissions:
 # request (of one commit, without one) queue, so a later run finds the
 # comment and the rows an earlier one wrote rather than posting its own.
 concurrency:
-  group: hotpath-guard-${{ github.event.check_run.pull_requests[0].number || github.event.check_run.head_sha }}
+  group: hotpath-guard-${{ inputs.pull || github.event.check_run.pull_requests[0].number || inputs.sha || github.event.check_run.head_sha }}
   cancel-in-progress: false
 
 env:
@@ -41,7 +55,7 @@ env:
 jobs:
   file:
     name: file the concluded hotpath checks
-    if: ${{ startsWith(github.event.check_run.name, 'hotpath / ') && (github.event.check_run.conclusion == 'failure' || github.event.check_run.conclusion == 'success') && !github.event.repository.fork }}
+    if: ${{ !github.event.repository.fork && (github.event_name == 'workflow_dispatch' || (startsWith(github.event.check_run.name, 'hotpath / ') && (github.event.check_run.conclusion == 'failure' || github.event.check_run.conclusion == 'success'))) }}
     # ci.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -91,6 +105,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.check_run.head_sha }}
-          PULL: ${{ github.event.check_run.pull_requests[0].number }}
+          HEAD_SHA: ${{ inputs.sha || github.event.check_run.head_sha }}
+          PULL: ${{ inputs.pull || github.event.check_run.pull_requests[0].number }}
         run: mise run ci:hotpath-guard --sha "$HEAD_SHA" ${PULL:+--pull "$PULL"} --file-issue >> "$GITHUB_STEP_SUMMARY"

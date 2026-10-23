@@ -501,6 +501,12 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref refs/heads/main --key "${usa
 # base. Each upload's report is also written to target/hotpath/reports/, which
 # the job keeps as the artifact `hotpath-<commit>` for `ci:hotpath-base`. The
 # upload is skipped under act, which holds no OIDC token.
+#
+# Every run's report, the uploads' among them, is kept as
+# target/hotpath/runs/<series>-<n>.json, and runs without an upload follow
+# until HOTPATH_RUNS (default 1) are kept: the several-run judgement of
+# `ci:hotpath-band` reads them, and the job keeps them as the artifact
+# `hotpath-runs-<commit>` for a later pull request's base.
 ["ci:hotpath"]
 description = "Run a hotpath series and upload its allocation and timing reports"
 tools.jq = "1.8.1"
@@ -517,13 +523,27 @@ package=${usage_package:?}
 bench=${usage_bench:?}
 root=$(git rev-parse --show-toplevel)
 scratch="$root/target/hotpath"
-mkdir -p "$scratch/reports"
+mkdir -p "$scratch/reports" "$scratch/runs"
+rm -f "$scratch/runs/$series"-*.json "$scratch/$series-timing-policy.toml"
+kept=0
+keep() {
+  kept=$((kept + 1))
+  cp "$1" "$scratch/runs/$series-$kept.json"
+}
 upload() {
   rm -f "$scratch/$1.json"
   HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
     HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$scratch/reports/$1.json" \
     "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
   if [[ ${ACT:-} != true ]]; then test -s "$scratch/$1.json"; fi
+  keep "$scratch/reports/$1.json"
+}
+more() {
+  while (( kept < ${HOTPATH_RUNS:-1} )); do
+    HOTPATH_UPLOAD=0 HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$scratch/run.json" \
+      "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
+    keep "$scratch/run.json"
+  done
 }
 upload "$series" "$root/hotpath/$series-policy.toml"
 
@@ -558,6 +578,7 @@ jq -r --rawfile changed "$scratch/changed" --argjson every "$every" --arg packag
 ' "$scratch/metadata.json" > "$scratch/outside"
 if [[ $(head -n 1 "$scratch/outside") != in ]]; then
   echo "the change reaches no crate $package depends on: no $series-timing upload"
+  more
   exit 0
 fi
 tail -n +2 "$scratch/outside" | while IFS=$'\t' read -r dir lib; do
@@ -589,6 +610,7 @@ awk -v ignore="$ignore" '
   END { if (!found) { print FILENAME " has no [functions] table to hold the ignore" > "/dev/stderr"; exit 1 } }
 ' "$root/hotpath/$series-timing-policy.toml" > "$scratch/$series-timing-policy.toml"
 upload "$series-timing" "$scratch/$series-timing-policy.toml"
+more
 {% endraw %}'''
 
 # A pull request's baseline: the reports of its base branch's head, uploaded
@@ -671,6 +693,64 @@ for spec in "${series[@]}"; do
 done
 {% endraw %}'''
 
+# A pull request's rows under each policy's share floor, judged over several
+# runs a side (crates/workflow-hotpath-guard/src/judge.rs): hotpath Cloud
+# judges the rows at and over it on one report a side, and skips the rest.
+# The base's runs are the artifact `hotpath-runs-<base>` its own run kept,
+# never measured here; without one the band goes unjudged, said once. Each
+# series is judged as `<series>-band` under its allocation policy and, when
+# `ci:hotpath` wrote a timing policy for it (the change reaches the series),
+# as `<series>-timing-band` under that one, its ignore included. Each
+# judgement's check run body is written to target/hotpath/band/checks/,
+# which the job keeps for the poster: the job running the change's code
+# holds no token to post a check. Arguments: each series' name.
+# GITHUB_REPOSITORY, CI_BASE_SHA, CI_HEAD_SHA and GH_TOKEN describe the run.
+["ci:hotpath-band"]
+description = "Judge a pull request's hotpath rows under the share floor over several runs a side"
+usage = 'arg "<series>..." help="each series by name"'
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+shopt -s nullglob
+base=${CI_BASE_SHA:?the pull request base head}
+head=${CI_HEAD_SHA:?the pull request head}
+repo=${GITHUB_REPOSITORY:?}
+root=$(git rev-parse --show-toplevel)
+scratch="$root/target/hotpath"
+dir="$scratch/band"
+rm -rf "$dir"
+mkdir -p "$dir/base" "$dir/checks"
+eval "series=(${usage_series:?})"
+run=$(gh api "repos/$repo/actions/artifacts?name=hotpath-runs-$base&per_page=100" \
+  --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | .workflow_run.id // empty')
+if [[ -z $run ]] || ! gh run download "$run" -R "$repo" -n "hotpath-runs-$base" -D "$dir/base"; then
+  echo "no run kept hotpath-runs-$base: the rows under the share floor go unjudged"
+  exit 0
+fi
+for name in "${series[@]}"; do
+  for benchmark in "$name" "$name-timing"; do
+    policy="$root/hotpath/$benchmark-policy.toml"
+    if [[ $benchmark == "$name-timing" ]]; then policy="$scratch/$benchmark-policy.toml"; fi
+    if [[ ! -f $policy ]]; then
+      echo "$benchmark: the change reaches no crate of the series; no band"
+      continue
+    fi
+    base_runs=("$dir/base/$name"-[0-9]*.json)
+    head_runs=("$scratch/runs/$name"-[0-9]*.json)
+    if (( ${#base_runs[@]} == 0 || ${#head_runs[@]} == 0 )); then
+      echo "$benchmark: no runs of $name on both sides; no band"
+      continue
+    fi
+    runs=()
+    for report in "${base_runs[@]}"; do runs+=(--base-run "$report"); done
+    for report in "${head_runs[@]}"; do runs+=(--head-run "$report"); done
+    "$root/.config/mise/scope" cargo run --locked --quiet --profile test --package gandr-workflow-hotpath-guard --bin hotpath-judge -- \
+      --repository "$repo" --head "$head" --base "$base" --benchmark "$benchmark-band" \
+      --policy "$policy" --band --output "$dir/checks/$benchmark-band.json" "${runs[@]}"
+  done
+done
+{% endraw %}'''
+
 # A commit's concluded `hotpath / <benchmark>` checks, filed on one issue per
 # regressed function, `perf: <function>`, labelled kind:performance and the
 # function's area: its body indexes the function's regressions, and each
@@ -680,7 +760,7 @@ done
 # optionally `--repository`, `--pull` and `--file-issue`.
 ["ci:hotpath-guard"]
 description = "A commit's hotpath checks, filed on each regressed function's issue"
-run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-hotpath-guard --"
+run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-hotpath-guard --bin hotpath-guard --"
 
 # A landing's hotpath verdicts, read on main's push from each merged pull
 # request's `hotpath / <benchmark>` checks (the number from each landing
