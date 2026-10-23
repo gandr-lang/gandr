@@ -172,6 +172,10 @@ impl AsRef<[u8]> for ArtifactIdentity
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an identity borrows back the bytes it was built from.
+    /// - witness: `manifest::tests::an_identity_and_an_image_borrow_their_own_bytes`
     #[inline]
     fn as_ref(&self) -> &[u8]
     {
@@ -273,6 +277,10 @@ impl AsRef<[u8]> for ManifestImage<'_>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an image borrows back the bytes it was built from.
+    /// - witness: `manifest::tests::an_identity_and_an_image_borrow_their_own_bytes`
     #[inline]
     fn as_ref(&self) -> &[u8]
     {
@@ -1481,6 +1489,16 @@ mod tests
                 Err(core::fmt::Error)
             }
         }
+    }
+
+    #[test]
+    fn an_identity_and_an_image_borrow_their_own_bytes()
+    {
+        let identity = ArtifactIdentity::from(ROOT);
+        assert_eq!(ROOT.as_slice(), identity.as_ref());
+        let bytes = [0xAB_u8, 0xCD];
+        let image = ManifestImage::from(bytes.as_slice());
+        assert_eq!(bytes.as_slice(), image.as_ref());
     }
 
     #[test]
