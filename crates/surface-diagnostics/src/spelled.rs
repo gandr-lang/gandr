@@ -50,8 +50,10 @@
 //! regions its run had opened the same way, one per capability scope and hold
 //! the checker entered, outermost first, each named as the source writes the
 //! capability or the held slot, so a kept type reads `at c` rather than
-//! `at ?`. The alternative, a spelling per diagnostic, is the arena copy the
-//! section above declines.
+//! `at ?`. A region the failing definition abstracts, `@[r : Region]`, is
+//! named as its telescope writes it, by the lowering's
+//! [`LoweredModule::region_names`]. The alternative, a spelling per
+//! diagnostic, is the arena copy the section above declines.
 //!
 //! # A failure is kept by position
 //!
@@ -277,7 +279,8 @@ impl TypeSpellings
     ///   it, where it captures nothing; a type a failure names is spelled under
     ///   the hypotheses it stands under, each by the name
     ///   [`crate::frame::contexts`] gives it, and in the regions it stands in,
-    ///   each by its scope's capability or its hold's slot as written, a
+    ///   each by its scope's capability or its hold's slot as written, and at
+    ///   its definition's region binders, each by its name in the telescope, a
     ///   failure's first naming of a node winning; a type the printer cannot
     ///   spell, or whose line is wider than a page of [`SPELLING_WIDTH`]
     ///   columns, is left unkeyed, and is never laid out; nothing else is
@@ -293,11 +296,13 @@ impl TypeSpellings
     ///   module whose declarations all check spells none; a sealed abstract
     ///   type is spelled by its module's path; a mismatch between types over
     ///   two parameters spells each by its name, and a hypothesis's type the
-    ///   parameters before it; a type kept at a scope or a hold names it.
+    ///   parameters before it; a type kept at a scope or a hold names it, and
+    ///   one kept at a definition's region binder names the binder.
     /// - witness: `tests::diagnostics::a_refusal_keeps_its_failure_and_spells_its_types`
     /// - witness: `tests::diagnostics::a_sealed_type_is_spelled_by_its_path`
     /// - witness: `tests::diagnostics::a_refusal_spells_its_binders_by_name_418`
     /// - witness: `tests::diagnostics::a_trace_spells_a_kept_region_by_its_name_1494`
+    /// - witness: `tests::diagnostics::a_mismatch_between_two_region_binders_names_both_2138`
     #[spec(ensures: |ret| [&ret.unicode, &ret.ascii].iter().all(|spelled| spelled.0.iter().all(|(node, presentation)| !presentation.as_ref().contains('\n')
         && (report.declarations().iter().any(|declaration|
             matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Checking(refusal))
@@ -315,7 +320,7 @@ impl TypeSpellings
     {
         spell(
             (arena, module),
-            (report.declarations(), failures.0.values()),
+            (report.declarations(), failures.0.iter()),
             (origins, text),
         )
     }
@@ -363,7 +368,7 @@ impl TypeSpellings
                             .partition_point(|declaration| declaration.constant() < boundary) ..,
                     )
                     .unwrap_or_default(),
-                failures.0.range(boundary ..).map(|(_, failure)| failure),
+                failures.0.range(boundary ..),
             ),
             (origins, text),
         );
@@ -419,7 +424,7 @@ fn spell<'failure>(
     (arena, module): (&CoreArena, &LoweredModule<'_>),
     (declarations, failures): (
         &[DeclarationReport<'_>],
-        impl Iterator<Item = &'failure Failure>,
+        impl Iterator<Item = (&'failure ConstantIndex, &'failure Failure)>,
     ),
     (origins, text): (&OriginTable, SourceText<'_>),
 ) -> TypeSpellings
@@ -435,8 +440,18 @@ fn spell<'failure>(
     // capability scope's subject and one at a hold's body, each named as the
     // source writes the binder it opens, the capability or the held slot.
     let mut regions: Vec<Vec<Option<String>>> = Vec::new();
+    // Each failure's definition's region binders, by ordinal, named as its
+    // telescope writes them.
+    let mut bindings: Vec<Vec<Option<Name<'_>>>> = Vec::new();
     let mut named: Vec<(TypeNode, Scoped)> = Vec::new();
-    for failure in failures {
+    for (&constant, failure) in failures {
+        bindings.push(
+            module
+                .region_names(constant)
+                .iter()
+                .map(|name| name.map(|name| Name::from(<&str>::from(SourceFragment::from(name)))))
+                .collect(),
+        );
         let scope = scopes.len();
         let first = named.len();
         let mut names: Vec<Option<String>> = Vec::with_capacity(failure.hypotheses().len());
@@ -579,6 +594,7 @@ fn spell<'failure>(
             .get(scope)
             .and_then(|around| around.get(.. within))
             .unwrap_or_default();
+        let bound = bindings.get(scope).map(Vec::as_slice).unwrap_or_default();
         for (spelling, spelled) in [
             (Spelling::Unicode, &mut unicode),
             (Spelling::Ascii, &mut ascii),
@@ -590,9 +606,11 @@ fn spell<'failure>(
             // The one-line spelling is the page's layout wherever it fits,
             // and a type laid out over more lines is not kept, so one whose
             // line does not fit is never laid out.
-            if let Ok(presentation) =
-                present_type_line(&source.within(context).scoped(around), root, style)
-                && !presentation.as_ref().contains('\n')
+            if let Ok(presentation) = present_type_line(
+                &source.within(context).scoped(around).bounding(bound),
+                root,
+                style,
+            ) && !presentation.as_ref().contains('\n')
                 && u32::try_from(presentation.as_ref().chars().count())
                     .is_ok_and(|width| width <= SPELLING_WIDTH)
             {

@@ -4277,6 +4277,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             mut resolutions,
             stage_bounds,
             supplies,
+            region_binders,
             ..
         } = self;
         let declared_use = |&(span, slot): &(ByteSpan, SlotIndex)| {
@@ -4339,6 +4340,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .iter()
             .map(|(&slot, plan)| (ConstantIndex::from(usize::from(slot)), plan.rules().clone()))
             .collect();
+        // Each definition over regions names its binders by ordinal, so a
+        // diagnostic spells a type kept at one as the source writes it.
+        let region_names: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> =
+            region_binders
+                .into_iter()
+                .filter_map(|(slot, binders)| {
+                    let constant = collected.slots.get(usize::from(slot))?.constant;
+                    let mut names = alloc::vec![None; binders.len()];
+                    for (name, binder) in binders {
+                        if let Some(at) = usize::try_from(u32::from(binder))
+                            .ok()
+                            .and_then(|at| names.get_mut(at))
+                        {
+                            *at = Some(name);
+                        }
+                    }
+                    Some((constant, names))
+                })
+                .collect();
 
         Ok(LoweredModule::new(
             declarations,
@@ -4369,6 +4389,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_reached_imports(reached)
         .with_operation_rules(operation_rules)
         .with_stage_bounds(stage_bounds)
+        .with_region_names(region_names)
         .with_supplies(supplies)
         .with_qualified(qualified)
         .with_reducts(reducts)

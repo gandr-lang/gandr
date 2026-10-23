@@ -113,6 +113,36 @@ fn a_telescope_files_its_bounds_and_marks_its_stages()
     }
 }
 
+/// #2138: a definition over regions files each binder's name at its ordinal,
+/// so a diagnostic spells a type kept at one by the name the telescope
+/// writes; a definition over none files nothing.
+#[test]
+fn a_definition_s_region_binders_are_named_by_ordinal_2138()
+{
+    let source = "def crossed @[s : Region, i : Size, r : Region] (k : (() => Integer) at r, j : (() => Integer) at s) -> -F Integer {\n  force k\n}\ndef plain(x : Integer) -> -F Integer {\n  return x\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let named = |name: &str| {
+        let Some(declaration) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+        else {
+            panic!("{name} is declared");
+        };
+        module.region_names(declaration.constant())
+    };
+    assert_eq!(
+        named("crossed"),
+        [Some(SurfaceName::from("s")), Some(SurfaceName::from("r"))],
+        "the region binders in written order, the stage binder between them not counted"
+    );
+    assert!(
+        named("plain").is_empty(),
+        "a definition over no region names none"
+    );
+}
+
 #[test]
 fn a_call_handing_the_scrutinee_is_refused()
 {
