@@ -408,68 +408,6 @@ fn every_corpus_source_is_registered()
     );
 }
 
-/// #1521: every corpus source, judged keeping its type table, answers every
-/// entry, every declaration and every declared name as its table typed alone
-/// does, so a document's table can come from the judgement that checks it.
-#[test]
-fn a_judgement_s_table_answers_as_the_table_typed_alone_1521()
-{
-    use gandr_surface_dispatcher::Checking;
-    use gandr_surface_dispatcher::HostGrant;
-    use gandr_surface_dispatcher::TypeTable;
-    use gandr_surface_dispatcher::judge_member_tabled;
-    use gandr_surface_lowering::Unit;
-    use gandr_surface_pretty::Form;
-    use gandr_surface_pretty::PageWidth;
-    use gandr_surface_syntax::ByteOffset;
-
-    let grammar = built_in().expect("the built-in grammar builds");
-    let page = PageWidth::from(80_u32);
-    let style = Form::Explicit.into();
-    let answers = |table: &TypeTable| {
-        (
-            table.entries(page, style).collect::<Vec<_>>(),
-            table.declarations(page, style).collect::<Vec<_>>(),
-            table.declared_names().to_vec(),
-        )
-    };
-    let mut tabled = 0_usize;
-    let mut differing = Vec::new();
-    for path in sources_under(&[strict_root(), fixture_root()]) {
-        let own = std::fs::read_to_string(&path).expect("a corpus source reads");
-        let text = SourceText::from(own.as_str());
-        let Ok(alone) = TypeTable::of(&grammar, text)
-        else {
-            continue;
-        };
-        let Ok(Lowered::Module { module, arena }) =
-            lower_source(&grammar, text, &mut LoweringCount::default())
-                .map(gandr_surface_dispatcher::Lowering::into_lowered)
-        else {
-            continue;
-        };
-        let (_judged, table) = judge_member_tabled(
-            gandr_surface_corpus::CorpusRoot::Fixture,
-            (module, text),
-            arena,
-            (&HostGrant::UNBOUNDED, Checking::Whole),
-            (&Unit::single(), ByteOffset::from(0_usize)),
-        );
-        let Maybe::Present(table) = table
-        else {
-            panic!("{} is judged keeping its table", path.display());
-        };
-        tabled = tabled.saturating_add(1);
-        if answers(&table) != answers(&alone) {
-            differing.push(path);
-        }
-    }
-    assert!(
-        tabled > 100 && differing.is_empty(),
-        "over {tabled} sources, a judgement's table answers as the table typed alone; differing: {differing:?}"
-    );
-}
-
 #[test]
 fn a_planted_orphan_is_not_registered()
 {
@@ -856,9 +794,10 @@ fn no_subject_declares_a_name_twice()
     );
 }
 
-/// The width sweep: a wider visit over corpus sources hands over, step by
+/// The corpus sweeps: a wider visit over corpus sources hands over, step by
 /// step, exactly what the serial visit over them yields, and answers the
-/// serial visit's report.
+/// serial visit's report; and a judgement's type table answers as the table
+/// typed alone.
 mod sweeps
 {
     use gandr_workflow_sweep::Sample;
@@ -911,6 +850,102 @@ mod sweeps
                      alike, and counts its report"
             );
         }
+    }
+
+    /// The table parity's sample: two hundred and fifty-six sources, ranked
+    /// by their BLAKE3 digest under this name, at least one of each corpus
+    /// class, and every source the change adds or modifies
+    /// (`gandr-workflow-sweep`); more than half of them lower to a module and
+    /// are compared. The `sweeps` and nightly profiles visit the two roots
+    /// whole.
+    const TABLED: Sample = Sample {
+        name: SampleName("a_judgement_s_table_answers_as_the_table_typed_alone_1521"),
+        size: SampleSize(256),
+    };
+
+    /// #1521: every corpus source, judged keeping its type table, answers
+    /// every entry, every declaration and every declared name as its table
+    /// typed alone does, so a document's table can come from the judgement
+    /// that checks it. Held to the 30 s bound by its sample (#2037).
+    #[test]
+    fn a_judgement_s_table_answers_as_the_table_typed_alone_1521()
+    {
+        use gandr_surface_dispatcher::Checking;
+        use gandr_surface_dispatcher::HostGrant;
+        use gandr_surface_dispatcher::TypeTable;
+        use gandr_surface_dispatcher::judge_member_tabled;
+        use gandr_surface_lowering::Unit;
+        use gandr_surface_pretty::Form;
+        use gandr_surface_pretty::PageWidth;
+        use gandr_surface_syntax::ByteOffset;
+
+        let sweep = Sweep::asked().expect("the run's sweep resolves");
+        let (paths, least) = match sweep.coverage() {
+            gandr_workflow_sweep::Coverage::Full => {
+                (sources_under(&[strict_root(), fixture_root()]), 100_usize)
+            },
+            gandr_workflow_sweep::Coverage::Sampled => {
+                let visited = sweep.visit(
+                    TABLED,
+                    &gandr_workflow_sweep::corpus::sources().expect("the corpus reads"),
+                );
+                assert!(
+                    visited.len() >= TABLED.size.0,
+                    "the sample is drawn: {}",
+                    visited.len()
+                );
+                (
+                    visited.into_iter().map(|source| source.path).collect(),
+                    128_usize,
+                )
+            },
+        };
+        let grammar = built_in().expect("the built-in grammar builds");
+        let page = PageWidth::from(80_u32);
+        let style = Form::Explicit.into();
+        let answers = |table: &TypeTable| {
+            (
+                table.entries(page, style).collect::<Vec<_>>(),
+                table.declarations(page, style).collect::<Vec<_>>(),
+                table.declared_names().to_vec(),
+            )
+        };
+        let mut tabled = 0_usize;
+        let mut differing = Vec::new();
+        for path in paths {
+            let own = std::fs::read_to_string(&path).expect("a corpus source reads");
+            let text = SourceText::from(own.as_str());
+            let Ok(alone) = TypeTable::of(&grammar, text)
+            else {
+                continue;
+            };
+            let Ok(Lowered::Module { module, arena }) =
+                lower_source(&grammar, text, &mut LoweringCount::default())
+                    .map(gandr_surface_dispatcher::Lowering::into_lowered)
+            else {
+                continue;
+            };
+            let (_judged, table) = judge_member_tabled(
+                gandr_surface_corpus::CorpusRoot::Fixture,
+                (module, text),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                (&Unit::single(), ByteOffset::from(0_usize)),
+            );
+            let Maybe::Present(table) = table
+            else {
+                panic!("{} is judged keeping its table", path.display());
+            };
+            tabled = tabled.saturating_add(1);
+            if answers(&table) != answers(&alone) {
+                differing.push(path);
+            }
+        }
+        assert!(
+            tabled > least && differing.is_empty(),
+            "over {tabled} sources, a judgement's table answers as the table typed alone; \
+             differing: {differing:?}"
+        );
     }
 
     /// The bytes of a step's `Debug` spelling, folded into one hash.
