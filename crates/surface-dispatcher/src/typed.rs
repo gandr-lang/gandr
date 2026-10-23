@@ -7943,6 +7943,35 @@ mod tests
         );
     }
 
+    /// #2217: an update whose base is another update builds the record the
+    /// inner one stands for and keeps that record's fields, never a
+    /// projection off it, so the type a path between the two orders states
+    /// prints as the record both are and reads back.
+    #[test]
+    fn an_update_of_an_update_in_a_type_reads_back_2217()
+    {
+        let source = SourceText::from(
+            "def corner = #{ x = 1, y = 2 };\n\ndef commute : Path(\n  #{x : Integer, y : \
+             Integer},\n  #{ #{ corner | x = 9 } | y = 3 },\n  #{ #{ corner | y = 3 } | x = 9 \
+             }\n) ;\ndef commute = here(#{ x = 9, y = 3 }) ;\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let trips: Vec<(String, RoundTrip)> = table(source)
+            .read_back(&grammar, PageWidth::from(200_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.trip))
+            .collect();
+        assert!(
+            trips.iter().any(|&(ref spelled, _)| spelled
+                == "Path(#{x : Integer, y : Integer}, #{.x = 9, .y = 3}, #{.x = 9, .y = 3})"),
+            "both orders print as the record they build: {trips:?}"
+        );
+        assert!(
+            trips.iter().all(|&(_, ref trip)| *trip == RoundTrip::Equal),
+            "every printed type reads back: {trips:?}"
+        );
+    }
+
     /// #1655: a dependent record a parameter is typed by, read back under the
     /// parameter before it, reprints with the labels it was written and
     /// printed with: the copy the read-back shifts under that parameter keeps
