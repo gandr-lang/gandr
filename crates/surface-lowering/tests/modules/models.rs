@@ -250,6 +250,55 @@ fn a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132()
     );
 }
 
+/// A manifest model of an extension stands where an included theory's model
+/// is asked: beside the map onto its own theory's models, each set of sorts a
+/// manifest model type fixes takes one map per theory a reduct restricts to,
+/// forgetting the sorts and then restricting, under that theory's name
+/// (#2136).
+#[test]
+fn a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136()
+{
+    let source = format!(
+        "{INCLUDED}def anySemigroup(s : Model(Semigroup)) -> -F Model(Semigroup) {{ return s \
+         }}\ndef anyMonoid(m : Model(Monoid)) -> -F Model(Monoid) {{ return m }}\ndef \
+         throughBoth(m : Model(Monoid) with sort M = Integer) -> -F Model(Semigroup) {{\n  become \
+         anySemigroup(m)\n}}\ndef forgotten(m : Model(Monoid) with sort M = Integer) -> -F \
+         Model(Monoid) {{\n  become anyMonoid(m)\n}}\ndef diamond(m : Model(UnitAndZero) with \
+         sort M = Unit) -> -F Model(Semigroup) {{\n  become anySemigroup(m)\n}}\n"
+    );
+    let mut lowered = lower(source.as_str());
+    let listed: BTreeSet<_> = lowered.module.forgets().iter().collect();
+    let forgets: Vec<String> = rows(&lowered)
+        .into_iter()
+        .zip(lowered.module.declarations())
+        .filter(|&(_, declaration)| listed.contains(&declaration.constant()))
+        .map(|((name, ..), _)| name)
+        .collect();
+    assert_eq!(
+        forgets,
+        [
+            "Monoid",
+            "Semigroup",
+            "UnitAndZero",
+            "Monoid",
+            "Semigroup",
+            "LeftZero"
+        ],
+        "a manifest monoid takes the map onto the monoids and one onto the semigroups, shared \
+         by the second monoid fixing the same carrier; the diamond's takes one onto each theory \
+         it reaches"
+    );
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.iter().all(|&(_, judgement)| matches!(
+            judgement,
+            Judgement::Checked | Judgement::Synthesised | Judgement::Declared
+        )),
+        "each map checks, and a manifest monoid stands where a semigroup is asked as where a \
+         monoid is, the diamond's where a semigroup is: {judgements:?}"
+    );
+}
+
 #[test]
 fn a_model_of_an_undeclared_theory_is_refused_by_name()
 {

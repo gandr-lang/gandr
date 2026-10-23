@@ -1385,7 +1385,8 @@ pub struct Collected<'source>
     /// includes, directly or through another.
     pub reducts: BTreeMap<SlotIndex, ReductSlot>,
     /// Each forgetting map's plan, by its slot: one per set of unindexed sorts
-    /// of one theory that a manifest model type of the unit fixes.
+    /// of one theory that a manifest model type of the unit fixes, and one
+    /// more per theory a reduct of that theory restricts to.
     pub forgets: BTreeMap<SlotIndex, ForgetSlot>,
     /// The theories each `theory` block includes, by its slot: each with the
     /// inclusion composed along the way first reached, in the order reached.
@@ -2950,10 +2951,10 @@ pub fn collect_source<'source>(
     let placed: Vec<Placed> = pieces.iter().map(|piece| piece.placed()).collect();
     let mut torn = collector.torn_lines(&placed);
     collector.torn_forms(&placed, &mut torn);
-    // A manifest model type asks for the map forgetting its sorts, which takes
-    // its slot before the root child writing the type, so every declaration
-    // that crosses by it is judged after it; those minted are counted apart,
-    // since they declare nothing the source writes.
+    // A manifest model type asks for the maps forgetting its sorts, which take
+    // their slots before the root child writing the type, so every
+    // declaration that crosses by one is judged after it; those minted are
+    // counted apart, since they declare nothing the source writes.
     let mut manifests = collector.manifest_types().into_iter().peekable();
     let mut forgotten = collector.forgotten();
     let mut minted = 0_usize;
@@ -2985,10 +2986,11 @@ pub fn collect_source<'source>(
             continue;
         }
         while let Some(at) = manifests.next_if(|at| at.span.start() < child.span.end()) {
-            if at.span.start() >= child.span.start()
-                && collector.forget(at, &mut forgotten)?.is_some()
-            {
-                minted = minted.saturating_add(1);
+            if at.span.start() >= child.span.start() {
+                let before = collector.collected.slots.len();
+                collector.forget(at, &mut forgotten)?;
+                minted =
+                    minted.saturating_add(collector.collected.slots.len().saturating_sub(before));
             }
         }
         match torn.remove(&child.node) {

@@ -15,11 +15,15 @@
 //! it, the same way: the forgetting map from `T`'s models with those sorts
 //! manifest to its models ([`ForgetSlot`]), `(x₁ : Type, …) -> Model(T) with
 //! sort C₁ = x₁ … -> Model(T)`, which drops the cell each manifest fixes and
-//! keeps every other sort a field. One slot serves every model type of the
-//! unit fixing the same sorts of the same theory, so the maps a unit takes are
-//! as many as the sort sets it writes, each judged before every declaration
-//! that crosses by it. The slot carries the theory's name and is entered in no
-//! name table.
+//! keeps every other sort a field. Beside it, each theory a reduct of `T`
+//! restricts to takes one slot: the forgetting map followed by that reduct,
+//! `… -> Model(T) with sort C₁ = x₁ … -> Model(S)`, so a manifest model of
+//! an extension stands where an included theory's model is asked. One slot
+//! serves every model type of the unit fixing the same sorts of the same
+//! theory, so the maps a unit takes are as many as the sort sets it writes,
+//! times the theories each restricts to, each judged before every
+//! declaration that crosses by it. A slot carries the name of the theory it
+//! returns a model of and is entered in no name table.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -82,20 +86,24 @@ pub struct ReductSlot
 }
 
 /// A slot a forgetting map takes: the theory whose models it forgets the
-/// manifest sorts of, and the sorts it puts back.
+/// manifest sorts of, the sorts it puts back, and the theory it returns a
+/// model of.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: `theory` is the slot of a `theory` block whose models bundle, and
-///   `fixed` names at least one unindexed sort of its presentation.
+/// - ensures: `theory` is the slot of a `theory` block whose models bundle,
+///   `fixed` names at least one unindexed sort of its presentation, and `onto`
+///   is `theory` itself or the target of a reduct of `theory`.
 /// - executable: none — the record is data the lowering reads.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a counter's models, its carrier manifest at the integers,
 ///   stand where a counter's are asked; a pairing's, one sort of two manifest,
-///   stand where a pairing's are.
+///   stand where a pairing's are; a monoid's, its carrier manifest, where a
+///   semigroup's are.
 /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
 /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+/// - witness: `tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForgetSlot
 {
@@ -103,6 +111,10 @@ pub struct ForgetSlot
     pub theory: SlotIndex,
     /// The sorts the map puts back.
     pub fixed: BTreeSet<Name>,
+    /// The slot of the theory the map returns a model of: `theory`, or one a
+    /// reduct of it restricts to, which the map restricts to after putting
+    /// the sorts back.
+    pub onto: SlotIndex,
 }
 
 /// Each theory and sort set a forgetting slot puts back.
@@ -293,7 +305,7 @@ impl<'source> Collector<'_, 'source>
             .collect()
     }
 
-    /// Collect the forgetting map the manifest type `at` asks for: `Model(T)
+    /// Collect the forgetting maps the manifest type `at` asks for: `Model(T)
     /// with sort C₁ = A₁ … with sort Cₙ = Aₙ` puts back the sorts `C₁ … Cₙ` of
     /// `T`.
     ///
@@ -304,14 +316,17 @@ impl<'source> Collector<'_, 'source>
     ///   [`Collected::presented_theory`] resolves where the type is written,
     ///   whose models bundle, and its bindings fix distinct unindexed sorts of
     ///   it that no slot of `forgotten` puts back for the theory, one
-    ///   [`Role::Derived`] slot under the theory's name, named at the theory's
-    ///   name in the type, its definition the forgetting map of those sorts the
-    ///   lowering mints, entered in `forgotten` and answered; nothing
-    ///   otherwise, a manifest type of another shape being the lowering's to
-    ///   refuse where it reads it.
+    ///   [`Role::Derived`] slot under the theory's name, its definition the
+    ///   forgetting map of those sorts the lowering mints, then one per theory
+    ///   a reduct of the theory restricts to, in the reducts' order, under that
+    ///   theory's name, its definition the forgetting map followed by the
+    ///   reduct; each named at the theory's name in the type, and the sort set
+    ///   entered in `forgotten`. Nothing otherwise, a manifest type of another
+    ///   shape being the lowering's to refuse where it reads it. Every slot
+    ///   taken is a forgetting slot.
     /// - provides: the forgetting half of the theory collection.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
-    ///   allowance.
+    ///   allowance, before any slot is taken.
     /// - panics: none.
     ///
     /// # Errors
@@ -320,23 +335,22 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a counter's carrier fixed at a type and at a
     ///   variable, one map between them; a pairing's sorts fixed one, the other
-    ///   and both, a map each; a theory no manifest type names, none.
+    ///   and both, a map each; a monoid's carrier fixed, a map to the monoids
+    ///   and one to the semigroups; a theory no manifest type names, none.
     /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
     /// - witness: `tests::modules::models::a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132`
+    /// - witness: `tests::modules::models::a_manifest_model_of_an_extension_stands_where_the_included_model_is_asked_2136`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.forgets.len()),
-        ensures: |ret| match ret {
-            | Ok(Some(minted)) => minted.0 == before.0
-                && self.collected.slots.len() == before.0.saturating_add(1)
-                && self.collected.forgets.len() == before.1.saturating_add(1),
-            | Ok(None) | Err(_) => self.collected.slots.len() == before.0,
-        },
+        ensures: |ret| self.collected.slots.len().saturating_sub(before.0)
+            == self.collected.forgets.len().saturating_sub(before.1)
+            && (ret.is_ok() || self.collected.slots.len() == before.0),
     )]
     pub(super) fn forget(
         &mut self,
         at: Placed,
         forgotten: &mut Forgotten,
-    ) -> Result<Option<SlotIndex>, LoweringRefusal<'source>>
+    ) -> Result<(), LoweringRefusal<'source>>
     {
         self.fuel.spend()?;
         let mut pieces = core::mem::take(&mut self.pieces);
@@ -344,24 +358,24 @@ impl<'source> Collector<'_, 'source>
         self.pieces = pieces;
         let Some((named, fixed)) = chain
         else {
-            return Ok(None);
+            return Ok(());
         };
         let Ok((theory, presentation)) =
             self.collected
                 .presented_theory(named.span.start(), named.span, self.name_of(named))
         else {
-            return Ok(None);
+            return Ok(());
         };
         let Ok(signature) = derive(presentation)
         else {
-            return Ok(None);
+            return Ok(());
         };
         if !signature
             .components
             .iter()
             .all(|component| component.form.is_ok())
         {
-            return Ok(None);
+            return Ok(());
         }
         let unindexed: BTreeMap<&str, &Name> = signature
             .components
@@ -377,39 +391,51 @@ impl<'source> Collector<'_, 'source>
                 .get(self.name_of(sort).as_ref())
                 .is_some_and(|&name| sorts.insert(name.clone()))
         });
-        if !clean || forgotten.contains(&(theory, sorts.clone())) {
-            return Ok(None);
+        if !clean || !forgotten.insert((theory, sorts.clone())) {
+            return Ok(());
         }
-        let Some(held) = self.collected.slots.get(usize::from(theory))
-        else {
-            return Ok(None);
-        };
-        let name = held.name;
-        let minted = SlotIndex(self.collected.slots.len());
-        self.collected.slots.push(DeclarationSlot {
-            name,
-            container: self.collected.top(at.span.start()),
-            role: Role::Derived,
-            constant: ConstantIndex::from(minted.0),
-            introduced_by: at,
-            named,
-            signature: Maybe::Absent(declaration_half::Absent::Unwritten),
-            definition: Maybe::Present(Half {
-                declaration: at,
+        // The map onto the theory's own models first, then one per theory a
+        // reduct restricts them to.
+        let reached: Vec<SlotIndex> = self
+            .collected
+            .reducts
+            .values()
+            .filter(|reduct| reduct.source == theory)
+            .map(|reduct| reduct.target)
+            .collect();
+        let container = self.collected.top(at.span.start());
+        for onto in core::iter::once(theory).chain(reached) {
+            let Some(held) = self.collected.slots.get(usize::from(onto))
+            else {
+                continue;
+            };
+            let name = held.name;
+            let minted = SlotIndex(self.collected.slots.len());
+            self.collected.slots.push(DeclarationSlot {
+                name,
+                container,
+                role: Role::Derived,
+                constant: ConstantIndex::from(minted.0),
+                introduced_by: at,
                 named,
-                operand: Operand::Derived,
-            }),
-            attributes: Vec::new(),
-            docs: Vec::new(),
-            refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
-        });
-        let _fresh = forgotten.insert((theory, sorts.clone()));
-        let _first = self.collected.forgets.insert(minted, ForgetSlot {
-            theory,
-            fixed: sorts,
-        });
+                signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+                definition: Maybe::Present(Half {
+                    declaration: at,
+                    named,
+                    operand: Operand::Derived,
+                }),
+                attributes: Vec::new(),
+                docs: Vec::new(),
+                refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+            });
+            let _first = self.collected.forgets.insert(minted, ForgetSlot {
+                theory,
+                fixed: sorts.clone(),
+                onto,
+            });
+        }
 
-        Ok(Some(minted))
+        Ok(())
     }
 
     /// The theory's name tile and each fixed sort's name tile of the manifest
