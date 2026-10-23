@@ -248,6 +248,7 @@ const SIGNED: &[RewriteName] = &[
     RewriteName::ShortAlias,
     RewriteName::LinearRun,
     RewriteName::InsertedThunk,
+    RewriteName::InsertedReduct,
 ];
 
 /// The printer's form the source `text` declares at its head, which the
@@ -544,6 +545,10 @@ enum Held
     /// A printing whose sugared and explicit spellings, each substituted
     /// for the declaration, lower to different core (#808).
     Apart,
+    /// A declaration the checker carries a model across by a reduct in, which
+    /// the formatter's explicit form writes and the printer, reading the
+    /// lowered core, does not (#2043).
+    Crossed,
 }
 
 impl fmt::Display for Held
@@ -560,6 +565,7 @@ impl fmt::Display for Held
         f.write_str(match *self {
             Self::Notation => "#941, written in the printer's own notation",
             Self::Apart => "#808, the two spellings lower apart",
+            Self::Crossed => "#2043, a reduct the checker applies",
         })
     }
 }
@@ -811,6 +817,26 @@ fn read(
         &mut gandr_surface_lowering::coincide::Decisions::none(),
     )
     .ok()?;
+    // Where the checker carries a model across by a reduct, by the start and
+    // end of each value it crosses at: read off its elaboration, which the
+    // lowered core the printer reads does not hold.
+    let crossings: BTreeMap<ByteOffset, ByteOffset> = if module.reducts().is_empty() {
+        BTreeMap::new()
+    }
+    else {
+        gandr_surface_format::Elaborate::elaborate(
+            &gandr_surface_dispatcher::Elaborating,
+            &mut arena,
+            &module,
+        )
+        .crossings
+        .keys()
+        .filter_map(|&value| match module.origins().value(value) {
+            Maybe::Present(origin) => Some((origin.span().start(), origin.span().end())),
+            Maybe::Absent(_) => None,
+        })
+        .collect()
+    };
     let owned = constant_names(&module);
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
@@ -819,6 +845,17 @@ fn read(
     let mut read = Read::default();
     for declaration in module.declarations() {
         if usize::from(declaration.span().start()) < base {
+            continue;
+        }
+        let span = declaration.span();
+        if crossings
+            .range(span.start() .. span.end())
+            .next()
+            .is_some_and(|(_, &end)| end <= span.end())
+        {
+            let _previous = read
+                .held
+                .insert(format!("{}", declaration.name()), Held::Crossed);
             continue;
         }
         let DeclarationOutcome::Completed {
@@ -1072,11 +1109,12 @@ fn apart(
                                 lowerings
                                     .iter()
                                     .map(|&(ref module, base)| {
-                                        let bodies = gandr_surface_format::Elaborate::definitions(
+                                        let bodies = gandr_surface_format::Elaborate::elaborate(
                                             &gandr_surface_dispatcher::Elaborating,
                                             &mut arena,
                                             module,
-                                        );
+                                        )
+                                        .definitions;
                                         module
                                             .declarations()
                                             .iter()

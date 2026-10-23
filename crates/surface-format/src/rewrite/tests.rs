@@ -31,6 +31,7 @@ use crate::linear::Runs;
 use crate::meaning;
 use crate::meaning::Agreement;
 use crate::meaning::Differing;
+use crate::reduct::Reducts;
 use crate::tail::Tails;
 use crate::thunk::Thunks;
 use crate::verify_rewritten;
@@ -69,6 +70,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     let tails = Tails::default();
     let runs = Runs::default();
     let thunks = Thunks::default();
+    let reducts = Reducts::default();
     let rewrites = Rewrites {
         chosen,
         withdrawn: &[],
@@ -76,6 +78,8 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
         tails: &tails,
         runs: &runs,
         thunks: &thunks,
+        reducts: &reducts,
+        unreduced: &[],
     };
     let (Respelled::Changed(sugared), _) = respell(&grammar, tree, form, &flat.leaves, rewrites)
     else {

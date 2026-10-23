@@ -3461,16 +3461,19 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
         .collect()
 }
 
-/// The checker the formatter's meaning check asks for elaborated bodies: a
-/// lowered module judged whole, as [`judge`] judges one under the unbounded
-/// grant, entering at the worlds it declares.
+/// The checker the formatter's meaning check asks for elaborated bodies.
+///
+/// It judges a lowered module whole, as [`judge`] judges one under the
+/// unbounded grant, entering at the worlds it declares, the reducts it mints
+/// kept.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: as [`gandr_surface_format::Elaborate`]: for each declaration of
 ///   the module, in its order, the body the checker defines for it — a nested
 ///   computation elaborated to the bind it runs as — and none for one it
-///   refuses, defines nothing for, or the lowering refused.
+///   refuses, defines nothing for, or the lowering refused; and each value the
+///   checker applied one of the module's reducts to, with the reduct.
 /// - provides: the checker half of `gandr fmt`'s meaning check.
 /// - fails: never; a refusal is a declaration with no body.
 /// - panics: none.
@@ -3479,26 +3482,29 @@ fn pattern_holes(module: &LoweredModule<'_>) -> Vec<HoleId>
 /// - hypothesis: L3 — a `run` statement read once first and the call written at
 ///   its read elaborate to one body, so the sugared form writes it away, and so
 ///   do a `thunk { e }` and the `e` the checker wraps in one where it checks
-///   `e` against a thunk type; a source formatted without the checker keeps
-///   both.
+///   `e` against a thunk type, and a model and the reduct's call the checker
+///   applies to it where a model of an included theory is asked, which the
+///   explicit form writes; a source formatted without the checker keeps each.
 /// - witness: `format::tests::a_linear_run_is_written_away_beside_a_checker`
 /// - witness: `format::tests::a_thunk_the_checker_inserts_is_left_to_it_1327`
+/// - witness: `format::tests::a_reduct_the_checker_applies_is_written_in_the_explicit_form_and_left_out_in_the_sugared`
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Elaborating;
 
 impl gandr_surface_format::Elaborate for Elaborating
 {
     /// Check `module` beside the host's built-ins and answer each
-    /// declaration's elaborated body, as [`Elaborating`] states.
+    /// declaration's elaborated body and each crossing, as [`Elaborating`]
+    /// states.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn definitions(
+    fn elaborate(
         &self,
         arena: &mut CoreArena,
         module: &LoweredModule<'_>,
-    ) -> Vec<Option<ValueId>>
+    ) -> gandr_surface_format::Elaboration
     {
         let grant = HostGrant::UNBOUNDED;
         let declarations = adapt(module);
@@ -3511,11 +3517,19 @@ impl gandr_surface_format::Elaborate for Elaborating
         context.keep_reducts(module.reducts());
         let report = check_module(&mut context, &declarations);
         let definitions = report.definitions();
-        module
-            .declarations()
-            .iter()
-            .map(|declaration| definitions.get(&declaration.constant()).copied())
-            .collect()
+        gandr_surface_format::Elaboration {
+            definitions: module
+                .declarations()
+                .iter()
+                .map(|declaration| definitions.get(&declaration.constant()).copied())
+                .collect(),
+            crossings: report
+                .nested_elaborations()
+                .values()
+                .flat_map(|elaboration| elaboration.crossings().iter())
+                .map(|(&value, &reduct)| (value, reduct))
+                .collect(),
+        }
     }
 }
 

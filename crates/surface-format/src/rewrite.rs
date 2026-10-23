@@ -39,6 +39,8 @@ use crate::leaf::Owner;
 use crate::leaf::copied;
 use crate::linear::Runs;
 use crate::merge::Pairing;
+use crate::reduct::Reduct;
+use crate::reduct::Reducts;
 use crate::tail::Exit;
 use crate::tail::Tails;
 use crate::thunk::Thunk;
@@ -98,6 +100,11 @@ pub enum RewriteName
     /// checks `e` against a thunk type; only the sugared form moves it, and
     /// only beside a checker that elaborates both.
     InsertedThunk,
+    /// A reduct the checker applies: `T.S(m)` and `m`, where a model of `T`
+    /// stands where a model of `S` is asked; the explicit form writes each
+    /// the checker applies and the sugared form leaves out each it would,
+    /// both only beside a checker that elaborates both.
+    InsertedReduct,
     /// A signature and its definition, merged: `def f : () => B ; def f =
     /// thunk { c } ;` and `def f() -> -F B { c }`; both forms move it.
     FunctionForm,
@@ -129,6 +136,7 @@ impl fmt::Display for RewriteName
             Self::ShortAlias => "short-alias",
             Self::LinearRun => "linear-run",
             Self::InsertedThunk => "inserted-thunk",
+            Self::InsertedReduct => "inserted-reduct",
             Self::FunctionForm => "function-form",
         })
     }
@@ -162,7 +170,8 @@ pub struct Rewrite
     pub name: RewriteName,
     /// Which way it moves them.
     pub direction: Direction,
-    /// The form it applies to.
+    /// The form it applies to; the empty name for one that applies at an
+    /// operand of any form.
     pub mold: MoldName,
     /// The spelling it reads.
     pub from: Spelling,
@@ -173,7 +182,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 24] = [
+pub const REWRITES: [Rewrite; 26] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -348,6 +357,22 @@ pub const REWRITES: [Rewrite; 24] = [
         mold: MoldName("thunk_expression"),
         from: Spelling("thunk { e }"),
         to: Spelling("e"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReduct,
+        direction: Direction::Sugar,
+        mold: MoldName("call_expression"),
+        from: Spelling("T.S(m)"),
+        to: Spelling("m"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReduct,
+        direction: Direction::Desugar,
+        mold: MoldName(""),
+        from: Spelling("m"),
+        to: Spelling("T.S(m)"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -730,6 +755,10 @@ struct Respelling<'run, 'source>
     runs: &'source Runs,
     /// Where a thunk is left to the checker.
     thunks: &'source Thunks,
+    /// The reducts the module mints and where the checker applies them.
+    reducts: &'source Reducts,
+    /// The spans of the top-level forms whose reducts stay as written.
+    unreduced: &'run [ByteSpan],
     /// Each nested form respelled, by position.
     spelled: BTreeMap<NodeIndex, Spelled<'source>>,
     /// Each node's extent: its first leaf's start to its last leaf's end.
@@ -802,7 +831,8 @@ enum Visit
 /// What one formatting's rewrites read: the rewrites chosen, the spans they
 /// do not enter, the motives of the path composites the lowering derived, the
 /// tails whose `return` it would infer, the `run` statements that only
-/// sequence a call and where a thunk is left to the checker.
+/// sequence a call, where a thunk is left to the checker, and the reducts the
+/// checker applies.
 #[derive(Clone, Copy, Debug)]
 pub struct Rewrites<'run, 'source>
 {
@@ -819,6 +849,10 @@ pub struct Rewrites<'run, 'source>
     pub runs: &'source Runs,
     /// Where a thunk is left to the checker.
     pub thunks: &'source Thunks,
+    /// The reducts the module mints and where the checker applies them.
+    pub reducts: &'source Reducts,
+    /// The spans of the top-level forms whose reducts stay as written.
+    pub unreduced: &'run [ByteSpan],
 }
 
 /// The top-level form `form` of `tree`, whose leaves are `leaves`, respelled
@@ -868,6 +902,8 @@ pub fn respell<'source>(
         tails: rewrites.tails,
         runs: rewrites.runs,
         thunks: rewrites.thunks,
+        reducts: rewrites.reducts,
+        unreduced: rewrites.unreduced,
         spelled: BTreeMap::new(),
         extents: BTreeMap::new(),
         parents: BTreeMap::new(),
@@ -1271,7 +1307,9 @@ impl<'source> Respelling<'_, 'source>
     /// and a parenthesis around one alone dropped once the operand binds
     /// tightest. Where the form is `open` to rewrites and opens a block, each
     /// `run` statement the lowering lists as linear is written away
-    /// ([`Self::linear`]).
+    /// ([`Self::linear`]); where it is open and the explicit form writes
+    /// reducts, each operand the checker applies a reduct to is written as
+    /// the reduct's call.
     ///
     /// # Specification
     /// trivial.
@@ -1305,6 +1343,12 @@ impl<'source> Respelling<'_, 'source>
         };
         let mut index = Position::First;
         let mut starts = Vec::with_capacity(parts.len());
+        let reducts = self.reducts;
+        let writes = open == Open::Yes
+            && self
+                .chosen
+                .rewrites(MoldName(""))
+                .any(|name| name == RewriteName::InsertedReduct);
         for part in parts {
             let before = out.leaves.len();
             out.leaves.extend(part.before.iter().copied());
@@ -1312,6 +1356,21 @@ impl<'source> Respelling<'_, 'source>
                 layout: before,
                 own: out.leaves.len(),
             });
+            let crossed = match part.role {
+                Role::Operand(child) if writes => self
+                    .span_of(child)
+                    .and_then(|span| reducts.crossed(span, self.unreduced)),
+                Role::Operand(_) | Role::Own(_) | Role::Comment => None,
+            };
+            if let Some(name) = crossed {
+                for (at, segment) in name.iter().enumerate() {
+                    if at > 0 {
+                        out.token(DOT);
+                    }
+                    out.fragment(SourceFragment::from(segment.as_str()));
+                }
+                out.token(OPEN_PAREN);
+            }
             match part.role {
                 Role::Operand(child @ Child::Node(at))
                     if self
@@ -1330,11 +1389,21 @@ impl<'source> Respelling<'_, 'source>
                         inner: if braced { operand.inner } else { None },
                         ..operand
                     };
-                    out.place(&operand, Band::admitted(rule, index));
+                    let fits = if crossed.is_some() {
+                        Band::Loose
+                    }
+                    else {
+                        Band::admitted(rule, index)
+                    };
+                    out.place(&operand, fits);
                 },
                 Role::Own(_) | Role::Operand(_) | Role::Comment => {
                     out.leaves.extend(part.leaves.iter().copied());
                 },
+            }
+            if crossed.is_some() {
+                out.token(CLOSE_PAREN);
+                self.changed = Changed::Yes;
             }
             if matches!(part.role, Role::Operand(_)) {
                 index = Position::Later;
@@ -1544,6 +1613,21 @@ impl<'source> Respelling<'_, 'source>
             leaves,
             band,
             inner,
+        }
+    }
+
+    /// The source bytes the operand `child` covers.
+    ///
+    /// # Specification
+    /// trivial.
+    fn span_of(
+        &self,
+        child: Child<'source>,
+    ) -> Option<ByteSpan>
+    {
+        match child {
+            Child::Leaf(leaf) => Some(leaf.span),
+            Child::Node(at) => self.extents.get(&at).copied(),
         }
     }
 
@@ -1814,14 +1898,21 @@ impl<'source> Respelling<'_, 'source>
                 }
                 self.unthunked(&mut out, parts)?
             },
+            (RewriteName::InsertedReduct, Direction::Sugar) => {
+                self.unreduced_call(&mut out, parts, extent)?
+            },
             (RewriteName::ShortAlias, Direction::Sugar) => {
                 self.shortened(&mut out, parts, self.context(at))?;
                 Band::Loose
             },
             // The linear run moves a form opening a block in `kept`, whatever
-            // its rule.
+            // its rule, and a reduct the explicit form writes is written
+            // around an operand there, whatever its parent's rule.
             (
-                RewriteName::TailReturn | RewriteName::ShortAlias | RewriteName::InsertedThunk,
+                RewriteName::TailReturn
+                | RewriteName::ShortAlias
+                | RewriteName::InsertedThunk
+                | RewriteName::InsertedReduct,
                 Direction::Desugar,
             )
             | (
@@ -2269,6 +2360,37 @@ impl<'source> Respelling<'_, 'source>
         Some(operand.band)
     }
 
+    /// Write the call spanning `extent` whose parts are `parts` as its one
+    /// argument, answering the argument's band, when its callee names a
+    /// reduct the checker would apply there; nothing when a comment stands
+    /// among its parts or it takes another number of arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreduced_call(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+        extent: ByteSpan,
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (_, operands) = split(parts);
+        let &[callee, argument] = operands.as_slice()
+        else {
+            return None;
+        };
+        let callee = self.tokens(callee);
+        if self.reducts.called((extent, &callee), self.unreduced) != Reduct::Moved {
+            return None;
+        }
+        let operand = self.operand(argument);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
     /// Write the thunk of arrows the value-function alias whose parts are
     /// `parts` stands for: a domain that binds a name as `(x : A) ->`, every
     /// other bare.
@@ -2685,6 +2807,9 @@ const CLOSE_PAREN: Spelling = Spelling(")");
 
 /// `,`.
 const COMMA: Spelling = Spelling(",");
+
+/// `.`.
+const DOT: Spelling = Spelling(".");
 
 /// `back`.
 const BACK: Spelling = Spelling("back");

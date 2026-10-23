@@ -25,10 +25,12 @@ path = "tests/lib.rs"
 # one core arena and comparing what each declaration lowered to. The path
 # composite's explicit spelling writes the motive the lowering derived,
 # spelled through the shared printer under the names the diagnostics give
-# a lowered module's constants and constructors.
+# a lowered module's constants and constructors. The checker names the reduct
+# it applies at a crossing by its constant.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-layout.workspace = true

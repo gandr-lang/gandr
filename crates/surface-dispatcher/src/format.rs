@@ -949,6 +949,70 @@ mod tests
         );
     }
 
+    #[test]
+    fn a_reduct_the_checker_applies_is_written_in_the_explicit_form_and_left_out_in_the_sugared()
+    {
+        let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
+        let base = include_str!("../../../corpus/model/include/monoid.gandr");
+        let (_, uses) = include_str!("../../../corpus/model/include/reduct.gandr")
+            .split_once("import \"./monoid.gandr\" ;\n")
+            .expect("the exemplar imports its base");
+        let written = format!("{base}{uses}");
+        let format = |text: &str, form, checker: Option<&dyn gandr_surface_format::Elaborate>| {
+            let parsed = gandr_surface_parser::parse(&grammar, SourceText::from(text))
+                .expect("the source parses");
+            let options = FormatOptions {
+                form,
+                rewrites: gandr_surface_format::Selection::Only(&[
+                    gandr_surface_format::RewriteName::InsertedReduct,
+                ]),
+                ..FormatOptions::default()
+            };
+            let formatted = gandr_surface_format::format_beside(
+                &grammar,
+                &parsed,
+                options,
+                (gandr_surface_format::Beside::Alone, checker),
+            )
+            .expect("the source formats");
+            let withdrawn: Vec<String> = formatted
+                .withdrawn()
+                .iter()
+                .map(|withdrawal| withdrawal.declaration.clone())
+                .collect();
+            (formatted.into_text(), withdrawn)
+        };
+        let elaborating: &dyn gandr_surface_format::Elaborate = &crate::compose::Elaborating;
+        let checker = Some(elaborating);
+        let (source, _) = format(&written, gandr_surface_format::Form::Source, None);
+        let (explicit, withdrawn) = format(&source, gandr_surface_format::Form::Explicit, checker);
+        let tokens = |text: &str| text.split_whitespace().collect::<String>();
+        assert_eq!(
+            (tokens(&explicit), withdrawn),
+            (
+                tokens(&source)
+                    .replace(
+                        "multiplies(endoMonoid)",
+                        "multiplies(Monoid.Semigroup(endoMonoid))"
+                    )
+                    .replace("multiplies(m)", "multiplies(UnitAndZero.Semigroup(m))"),
+                Vec::new()
+            ),
+            "the explicit form writes the reduct the checker applies, the diamond's by the \
+             reduct its model's theory names, and leaves the one a type names as written"
+        );
+        assert_eq!(
+            format(&explicit, gandr_surface_format::Form::Sugared, checker),
+            (source.clone(), Vec::new()),
+            "the sugared form leaves each to the checker again, and keeps the reduct a type names"
+        );
+        assert_eq!(
+            format(&source, gandr_surface_format::Form::Explicit, None),
+            (source.clone(), Vec::new()),
+            "without a checker no reduct is written"
+        );
+    }
+
     /// A path that names no source, one that cannot be read and one whose
     /// formatted text cannot be written read apart, and the two input-output
     /// faults carry the error they met.
