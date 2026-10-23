@@ -607,6 +607,8 @@ use crate::form::shape_of;
 use crate::import::ImportBinding;
 use crate::import::ImportResolution;
 use crate::import::ModuleImports;
+use crate::layout::bracket_form;
+use crate::layout::misplaced;
 use crate::module::CodataIndex;
 use crate::module::Collected;
 use crate::module::ComponentScope;
@@ -4176,6 +4178,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_forgets(sink);
         self.mint_instances(sink);
         self.refuse_misshapen_entries(sink);
+        self.place_by_layout();
         self.refused_declarations();
 
         self.end_source();
@@ -6525,6 +6528,78 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         self.scratch = scratch;
+    }
+
+    /// Move each refusal of a declaration of the current source that the
+    /// parser repaired to the first bracket the declaration's layout places
+    /// elsewhere ([`misplaced()`]), when that bracket comes before it: the
+    /// repair follows from the bracket.
+    ///
+    /// # Specification
+    /// - requires: every pass that refuses a declaration of the current source
+    ///   has run.
+    /// - ensures: each slot of the current source refused as a malformed form
+    ///   the parser repaired, whose declaration — the half whose bytes hold the
+    ///   refusal, or the refusing node itself for a slot refused before its
+    ///   halves were kept — holds a [`misplaced()`] bracket reported before the
+    ///   refusal, is refused there instead, at the same node, naming the form
+    ///   of that bracket ([`bracket_form`]) and the bracket's fault; every
+    ///   other refusal is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the slots.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`misplaced()`]; a definition whose block closes
+    ///   twice on one line keeps the doubled closer's refusal.
+    /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+    /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
+    fn place_by_layout(&mut self)
+    {
+        let pbg = self.pbg;
+        let tree = self.tree;
+        for slot in self.collected.slots.iter_mut().skip(self.current.slots) {
+            let Maybe::Present((
+                position,
+                LoweringRefusal::MalformedForm {
+                    span,
+                    fault: FormFault::Repaired(_),
+                    ..
+                },
+            )) = slot.refusal
+            else {
+                continue;
+            };
+            let holds =
+                |within: ByteSpan| within.start() <= span.start() && span.end() <= within.end();
+            let half = [slot.signature, slot.definition]
+                .into_iter()
+                .find_map(|half| match half {
+                    Maybe::Present(half) if holds(half.declaration.span) => {
+                        Some(half.declaration.span)
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => None,
+                });
+            let own = tree
+                .node(position)
+                .map(gandr_surface_syntax::Node::span)
+                .filter(|&own| holds(own));
+            let Some(within) = half.or(own)
+            else {
+                continue;
+            };
+            let Maybe::Present(found) = misplaced(pbg, tree, within)
+            else {
+                continue;
+            };
+            if found.at.start() < span.start() {
+                slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
+                    span: found.at,
+                    form: bracket_form(pbg, tree, found.bracket),
+                    fault: found.fault,
+                }));
+            }
+        }
     }
 
     /// Keep the uses of every declaration of the current source that the
@@ -20051,6 +20126,7 @@ mod tests
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GrammarFingerprint;
     use gandr_surface_syntax::MoldId;
     use gandr_surface_syntax::NodeLabel;
@@ -24191,6 +24267,83 @@ mod tests
             "a module never closed keeps its close at its end: its rule writes its members \
              side by side"
         );
+    }
+
+    /// #2242: a declaration the parser repaired because a bracket was written
+    /// once too often, or left out, is refused at that bracket, as its layout
+    /// places it, not where the parser's pairing finally failed.
+    #[test]
+    fn a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let case = "def same(n : Integer) -> -F Integer {\n  case n {{\n    0 as zero => return \
+                    zero,\n    _ => return n\n  }\n}\n";
+        let access = "def bump() -> -F Integer {\n  hold c = 0;\n  access c as v { resume(v, v + \
+                      1) ;\n  pure c\n}\n";
+        let handle = "def quiet(n : Integer) -> -F Integer {\n  handle c : Proc {\n    \
+                      c.exit(1);\n    return n\n  with {\n    pure(x) => pure x,\n    oper \
+                      exit(code, k) => k(unit)\n  }\n}\n";
+        let unopened = "def same(n : Integer) -> -F Integer {\n  case n\n    0 as zero => \
+                        return zero,\n    _ => return n\n  }\n}\n";
+        let quoted = "def numbers : List((Integer) ;\ndef numbers = cons(1, nil) ;\n";
+        let after = |source: &str, written: &str| {
+            source
+                .find(written)
+                .map_or(0_usize, |start| start.saturating_add(written.len()))
+        };
+        for (source, point, form, fault, why) in [
+            (
+                case,
+                at(after(case, "case n "), after(case, "case n {")),
+                "case_expression",
+                FormFault::ExtraOpen(ClosingClass::Brace),
+                "a doubled `{` is refused at the first of the pair: its line opens two and is \
+                 answered once",
+            ),
+            (
+                access,
+                at(after(access, "v + 1)"), after(access, "v + 1)")),
+                "access_expression",
+                FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
+                "a block on one line missing its `}` is refused before the line's `;`: the next \
+                 line is no deeper",
+            ),
+            (
+                handle,
+                at(after(handle, "return n"), after(handle, "return n")),
+                "handle_expression",
+                FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
+                "a block missing its `}` is refused at the end of the line before the one that \
+                 comes back to its indentation",
+            ),
+            (
+                unopened,
+                at(after(unopened, "case n"), after(unopened, "case n")),
+                "case_expression",
+                FormFault::MissingOpen(ClosingClass::Brace),
+                "a `}` beginning a line deeper than every waiting `{` answers one left out at \
+                 the end of the line at its indentation",
+            ),
+            (
+                quoted,
+                at(after(quoted, "List"), after(quoted, "List(")),
+                "type_application",
+                FormFault::ExtraOpen(ClosingClass::Paren),
+                "a doubled `(` is refused at the first of the pair",
+            ),
+        ] {
+            let tree = repaired(&pbg, SourceText::from(source));
+            assert_eq!(
+                refusal_in(&pbg, &tree),
+                LoweringRefusal::MalformedForm {
+                    span: point,
+                    form: FormName::from(NamedKind(form)),
+                    fault,
+                },
+                "{why}"
+            );
+        }
     }
 
     #[test]

@@ -396,9 +396,9 @@ impl fmt::Display for FragmentBoundary
 ///
 /// # Specification
 /// - requires: a producer reports the fault observed in the form's children.
-/// - ensures: parser repair, missing operand, extra operand, misplaced tile and
-///   extra closer reports retain distinct meanings; a repair retains its shape,
-///   and an extra closer its family.
+/// - ensures: parser repair, missing operand, extra operand, misplaced tile,
+///   extra closer, extra opener and missing opener reports retain distinct
+///   meanings; a repair retains its shape, and a bracket fault its family.
 /// - provides: the structural reason a form could not be read.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -406,14 +406,16 @@ impl fmt::Display for FragmentBoundary
 ///   children needed to establish that the reported fault occurred.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — repaired, juxtaposed, misplaced-tile and doubled-closer
-///   fixtures carry different exact faults and spans. The raw missing-operand
-///   variant is included in the span projection fixture; the source examples
-///   are not a complete enumeration of malformed child sequences.
+/// - hypothesis: L3 — repaired, juxtaposed, misplaced-tile, doubled-closer,
+///   doubled-opener and left-out-opener fixtures carry different exact faults
+///   and spans. The raw missing-operand variant is included in the span
+///   projection fixture; the source examples are not a complete enumeration of
+///   malformed child sequences.
 /// - witness: `lower::tests::a_repaired_declaration_is_refused`
 /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
 /// - witness: `lower::tests::a_tile_out_of_place_is_refused`
 /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
+/// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
 /// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FormFault
@@ -430,6 +432,12 @@ pub enum FormFault
     /// A closer of this family written once more than its openers: it closes
     /// the form early, and a closer after it closes nothing.
     ExtraClose(ClosingClass),
+    /// An opener of this family written once more than its closers: the
+    /// layout gives its line one closer fewer than it opens.
+    ExtraOpen(ClosingClass),
+    /// The opener a closer of this family answers, left out: the closer begins
+    /// a line indented past every opener still waiting for one.
+    MissingOpen(ClosingClass),
 }
 
 impl fmt::Display for FormFault
@@ -450,13 +458,68 @@ impl fmt::Display for FormFault
             Self::ExtraOperand => f.write_str("has an operand where it takes none"),
             Self::MisplacedTile => f.write_str("has a tile out of place"),
             Self::ExtraClose(close) => {
-                write!(f, "is closed early by one `{}` too many", match close {
-                    ClosingClass::Paren => ")",
-                    ClosingClass::Bracket => "]",
-                    ClosingClass::Brace => "}",
-                })
+                write!(f, "is closed early by one `{}` too many", Closer(close))
+            },
+            Self::ExtraOpen(close) => {
+                write!(f, "is left open by one `{}` too many", Opener(close))
+            },
+            Self::MissingOpen(close) => {
+                write!(
+                    f,
+                    "is missing the `{}` its `{}` closes",
+                    Opener(close),
+                    Closer(close)
+                )
             },
         }
+    }
+}
+
+/// The closer of a family, written as it is spelled.
+#[repr(transparent)]
+struct Closer(ClosingClass);
+
+impl fmt::Display for Closer
+{
+    /// Writes the closer.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match self.0 {
+            ClosingClass::Paren => ")",
+            ClosingClass::Bracket => "]",
+            ClosingClass::Brace => "}",
+        })
+    }
+}
+
+/// The plain opener of a family, written as it is spelled.
+#[repr(transparent)]
+struct Opener(ClosingClass);
+
+impl fmt::Display for Opener
+{
+    /// Writes the opener.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match self.0 {
+            ClosingClass::Paren => "(",
+            ClosingClass::Bracket => "[",
+            ClosingClass::Brace => "{",
+        })
     }
 }
 
@@ -2611,6 +2674,12 @@ mod tests
             &FormFault::ExtraClose(ClosingClass::Paren),
             &FormFault::ExtraClose(ClosingClass::Bracket),
             &FormFault::ExtraClose(ClosingClass::Brace),
+            &FormFault::ExtraOpen(ClosingClass::Paren),
+            &FormFault::ExtraOpen(ClosingClass::Bracket),
+            &FormFault::ExtraOpen(ClosingClass::Brace),
+            &FormFault::MissingOpen(ClosingClass::Paren),
+            &FormFault::MissingOpen(ClosingClass::Bracket),
+            &FormFault::MissingOpen(ClosingClass::Brace),
         ]));
         assert_apart(&render(&[
             &FragmentBoundary::Reserved(Unbuilt::Dup),

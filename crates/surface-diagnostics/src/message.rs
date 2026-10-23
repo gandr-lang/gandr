@@ -392,6 +392,24 @@ fn lowered(
                         ClosingClass::Brace => "}",
                     })
                 },
+                FormFault::ExtraOpen(close) => {
+                    write!(f, "one `{}` too many leaves this {form} open", match close {
+                        ClosingClass::Paren => "(",
+                        ClosingClass::Bracket => "[",
+                        ClosingClass::Brace => "{",
+                    })
+                },
+                FormFault::MissingOpen(close) => {
+                    write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
+                        ClosingClass::Paren => "(",
+                        ClosingClass::Bracket => "[",
+                        ClosingClass::Brace => "{",
+                    }, match close {
+                        ClosingClass::Paren => ")",
+                        ClosingClass::Bracket => "]",
+                        ClosingClass::Brace => "}",
+                    })
+                },
             }
         },
         LoweringRefusal::UnknownAttribute {
