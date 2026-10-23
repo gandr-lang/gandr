@@ -11,7 +11,9 @@
 //! constructor's position states: an annotation `(C(…) : T(…))`; the
 //! signature of the definition it is, `def x : T(…) ; def x = C(…) ;`; the
 //! answer of the body it ends, `+U (-F T(…))`, `() => T(…)` or a function's
-//! stated result, through a tail, a `pure` there or a `return`; its parent's
+//! stated result, through a tail, a `pure` there or a `return` — a result
+//! written as a top-level definition's application, `-> opt(Integer)` with
+//! `opt = \A. -F Maybe(A)`, read through the definition's body; its parent's
 //! classifier, for a field typed by the family itself or by one of its
 //! parameters; and, where it is written as an argument of a data family, that
 //! family's parameter at its place with the parameters before it replaced by
@@ -368,6 +370,7 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::module::Collected;
 use crate::module::Constructor;
+use crate::module::Container;
 use crate::module::DataIndex;
 use crate::module::Generators;
 use crate::module::Half;
@@ -453,6 +456,21 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The declaration writes a value, a function or nothing.
             Undeclared,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a constant has no body a decode of it reads through.
+    pub mod unfolding {
+        /// The constant stands for itself where a type decodes it.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The constant is no top-level definition written as one form,
+            /// or its declaration refused.
+            Opaque,
+            /// The definition's body did not lower.
+            Unlowered,
         }
     }
 }
@@ -2065,7 +2083,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   unannotated refusal for a constructor of a family with parameters
     ///   whose position states no type, that stands at no data family's
     ///   argument place, and that is passed at no parameter whose stated type
-    ///   names no entry of an implicit telescope.
+    ///   names no entry of an implicit telescope, and for one whose answer
+    ///   decodes a binder or a constant no top-level definition writes a body
+    ///   for.
     /// - panics: none.
     ///
     /// # Errors
@@ -2078,12 +2098,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   family at a signed thunk's tail, under a `run` and as a definition,
     ///   its recursive field and its parameter field classified with it; and
     ///   one written as a data family's argument, classified by its place; one
-    ///   passed to a parameter stating a closed type, classified by it.
+    ///   passed to a parameter stating a closed type, classified by it; one
+    ///   answering a definition's application, and one a declared constant's.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_parameterized_constructor_needs_its_classifier`
     /// - witness: `lower::native::tests::a_constructor_takes_its_classifier_from_the_type_it_answers_402`
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(planned)) if planned.fields == fields))]
     pub(super) fn construct(
         &mut self,
@@ -2147,6 +2169,16 @@ impl<'source> Lowerer<'_, 'source>
             },
             (None, None, None, None, None) => return Err(site.out(FragmentBoundary::Unannotated)),
         };
+        // A result decoding a parameter or a constant with no written body
+        // states no type the constructor can carry.
+        if let Classifier::Answered { answer, .. } = classifier
+            && answer.over == Over::Written
+            && let Some(&(Plan::Decode(code, ..) | Plan::Unquote(code, ..))) =
+                self.plans.get(answer.node)
+            && let Maybe::Absent(_) = self.decoded_definition(code)
+        {
+            return Err(site.out(FragmentBoundary::Unannotated));
+        }
         let family = self
             .collected
             .slots
@@ -6960,6 +6992,7 @@ impl<'source> Lowerer<'_, 'source>
                 else {
                     return Maybe::Absent(lowered::Absent::Unminted);
                 };
+                let written = self.unfolded(written, sink);
                 let gap = self
                     .scope
                     .telescope_binders(frame)
@@ -7477,6 +7510,179 @@ impl<'source> Lowerer<'_, 'source>
                 }
             },
             Maybe::Present(_) | Maybe::Absent(_) => answered,
+        }
+    }
+
+    /// `ty` read through each top-level definition whose application it
+    /// decodes: the decode of the definition's body applied to the same
+    /// arguments, reduced as [`gandr_core_term::decoded_comp_reading`] reduces
+    /// it, again while the reduct decodes another such application.
+    ///
+    /// # Specification
+    /// - requires: each definition body the chain reaches is minted or absent;
+    ///   [`Self::unfolded_definitions`] names them to the mint sweep.
+    /// - ensures: the first type of the chain that decodes no definition with a
+    ///   minted body, or whose decode does not reduce; `ty` itself when it
+    ///   decodes none. The nodes the reading makes are minted in the arena.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Each turn unfolds one definition, and the turns number at most the
+    /// slots; the inner walk descends an application spine to its head.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor returned against `opt(Integer)` with
+    ///   `opt` a static abstraction over a returner, against `opt(A)` at a type
+    ///   parameter, and against a definition that unfolds to `opt`.
+    /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
+    #[spec(ensures: |ret| ret == ty || sink.arena.comp_type(ret).is_some())]
+    fn unfolded(
+        &self,
+        ty: CompTypeId,
+        sink: &mut Sink<'_>,
+    ) -> CompTypeId
+    {
+        let mut read = ty;
+        let mut arguments = Vec::new();
+        for _definition in 0 .. self.collected.slots.len() {
+            let Some(&CompType::Element { code, ref target }) = sink.arena.comp_type(read)
+            else {
+                break;
+            };
+            let target = target.clone();
+            arguments.clear();
+            let mut head = code;
+            while let Some(&Value::StaticApplication(applied, argument)) = sink.arena.value(head) {
+                arguments.push(argument);
+                head = applied;
+            }
+            let Some(&Value::Constant(constant)) = sink.arena.value(head)
+            else {
+                break;
+            };
+            let Maybe::Present(body) = self.definition_body(constant)
+            else {
+                break;
+            };
+            let mut applied = body;
+            for &argument in arguments.iter().rev() {
+                applied = sink.arena.value_static_application(applied, argument);
+            }
+            let decoded = sink.arena.comp_type_element(applied, target);
+            let reduced = gandr_core_term::decoded_comp_reading(sink.arena, decoded);
+            if reduced == decoded {
+                break;
+            }
+            read = reduced;
+        }
+
+        read
+    }
+
+    /// Add to `into` the body of each top-level definition the type at `from`
+    /// decodes an application of, then of each definition that body applies in
+    /// turn, so the mint sweep reaches them before a constructor
+    /// [`Self::unfolded`] classifies by them.
+    ///
+    /// # Specification
+    /// - ensures: `into` gains each such body; nothing for a type that decodes
+    ///   no definition's application.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the minting order is the claim; the witness
+    ///   observes the constructor it lets mint.
+    ///
+    /// # Termination
+    /// Each turn steps into a static abstraction's body or onto a body not yet
+    /// added, and the turns number at most the plans.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::unfolded`].
+    /// - witness: `lower::native::tests::a_constructor_answers_a_definition_s_application_2112`
+    pub(super) fn unfolded_definitions(
+        &self,
+        from: NodeIndex,
+        into: &mut BTreeSet<NodeIndex>,
+    )
+    {
+        let mut at = from;
+        for _step in 0 .. usize::from(self.plans.count()) {
+            let code = match self.plans.get(at) {
+                Some(&Plan::StaticLambda(body)) => {
+                    at = body;
+                    continue;
+                },
+                Some(&(Plan::Decode(code, ..) | Plan::StaticApplication(code, _))) => code,
+                Some(_) | None => return,
+            };
+            let Maybe::Present(body) = self.decoded_definition(code)
+            else {
+                return;
+            };
+            if !into.insert(body) {
+                return;
+            }
+            at = body;
+        }
+    }
+
+    /// The node of the body of the top-level definition `code` names; a
+    /// binder names none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn decoded_definition(
+        &self,
+        code: Code,
+    ) -> Maybe<NodeIndex, unfolding::Absent>
+    {
+        match code {
+            Code::Constant(constant) => self.definition_written(constant),
+            Code::Bound { .. } => Maybe::Absent(unfolding::Absent::Opaque),
+        }
+    }
+
+    /// The node of the one form a top-level definition of `constant` writes
+    /// as its body.
+    ///
+    /// # Specification
+    /// trivial.
+    fn definition_written(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<NodeIndex, unfolding::Absent>
+    {
+        if let Some(slot) = self.collected.slots.get(usize::from(constant))
+            && slot.constant == constant
+            && let Container::TopLevel(_) = slot.container
+            && let Maybe::Present(Half {
+                operand: Operand::Written(body),
+                ..
+            }) = slot.definition
+            && let Maybe::Absent(_) = slot.refusal
+        {
+            return Maybe::Present(body.node);
+        }
+
+        Maybe::Absent(unfolding::Absent::Opaque)
+    }
+
+    /// The value the body of a top-level definition of `constant` lowered to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn definition_body(
+        &self,
+        constant: ConstantIndex,
+    ) -> Maybe<ValueId, unfolding::Absent>
+    {
+        match self.definition_written(constant) {
+            Maybe::Present(node) => match self.value_at(node) {
+                Maybe::Present(body) => Maybe::Present(body),
+                Maybe::Absent(_) => Maybe::Absent(unfolding::Absent::Unlowered),
+            },
+            Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 

@@ -1,0 +1,30 @@
+// A constructor standing where a body ends takes the type the body answers
+// even when the result is written as a definition's application: the
+// lowering reads the decode through the definition's body, as the checker
+// unfolds it. `Maybe` is the one `data-maybe.gandr` declares. Before #2112
+// such a constructor dropped its declaration.
+
+/// Optional values, `None` and `Some(x)`.
+import "./data-maybe.gandr" ;
+
+/// An optional computation's type, named once.
+@[ checks ]
+def opt : Type -> Type[-] ;
+def opt = \A. -F Maybe(A) ;
+
+/// The same type through a second name.
+@[ checks ]
+def optAgain : Type -> Type[-] ;
+def optAgain = \A. opt(A) ;
+
+/// A present value against the named type at `Integer` (#2112).
+@[ checks ]
+def someOne() -> opt(Integer) { Some(1) }
+
+/// An absent value against the named type at a type parameter (#2112).
+@[ checks ]
+def noneAt(A : Type) -> opt(A) { None }
+
+/// A present value through both names (#2112).
+@[ checks ]
+def someTwo() -> optAgain(Integer) { Some(2) }

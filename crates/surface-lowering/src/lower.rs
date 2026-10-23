@@ -12729,6 +12729,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 .filter(|&(position, _)| owns(position))
                 .map(|(_, answer)| answer.node),
         );
+        // A constructor answering a definition's application reads the
+        // definition's body, which the sweep below reaches after it.
+        let mut unfolded = BTreeSet::new();
+        for (position, answer) in &self.answers {
+            if owns(position) {
+                self.unfolded_definitions(answer.node, &mut unfolded);
+            }
+        }
+        manifests.extend(unfolded.into_iter().filter(owns));
         manifests.extend(
             self.inherited
                 .iter()
