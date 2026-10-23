@@ -2232,16 +2232,20 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a call read under `frame`, `head` its head and
-    ///   `applied` its arguments in the operand store.
+    ///   `applied` its arguments in the operand store, every one the call
+    ///   writes, the leading ones a descent leaves out of its application among
+    ///   them.
     /// - ensures: when `head` is a bare name of a declaration written with a
-    ///   parameter list and holding no refusal, each argument at a parameter
-    ///   written with a type maps to that type, the declaration and the call's
-    ///   arguments in [`Lowerer::parameter_typed`], read by a constructor
-    ///   written there as [`Classifier::Parameter`]; an argument written as a
-    ///   thunk or a bare lambda is answered by that type as a signed
-    ///   definition's is ([`Self::signed_answer`]); nothing changes for any
-    ///   other head, a binder's name or a refused declaration's among them: a
-    ///   refused declaration's parameter types never lower.
+    ///   parameter list and holding no refusal, or a descent `f[<]` into the
+    ///   declaration whose own recursion `f` names, each argument at a
+    ///   parameter written with a type maps to that type, the declaration and
+    ///   the call's arguments in [`Lowerer::parameter_typed`], read by a
+    ///   constructor written there as [`Classifier::Parameter`]; an argument
+    ///   written as a thunk or a bare lambda is answered by that type as a
+    ///   signed definition's is ([`Self::signed_answer`]); nothing changes for
+    ///   any other head, a binder's name, a local recursion's descent or a
+    ///   refused declaration's among them: a refused declaration's parameter
+    ///   types never lower.
     /// - fails: as [`Self::unwrapped`]; a name the head's own reading refuses
     ///   is refused there.
     /// - panics: none.
@@ -2255,11 +2259,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   before it, and a local function's name, which classifies nothing; a
     ///   lambda passed in a thunk and bare for a parameter typed `Empty =>
     ///   Integer` matches no arm on its binder; a bare constructor passed to a
-    ///   refused declaration is refused unannotated.
+    ///   refused declaration is refused unannotated; a constructor passed to a
+    ///   descent into a declaration's own recursion.
     /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
     /// - witness: `lower::native::tests::a_constructor_argument_reads_the_arguments_before_it_1876`
     /// - witness: `lower::native::tests::an_argument_lambda_s_binder_is_typed_by_its_parameter_1948`
     /// - witness: `lower::native::tests::a_refused_callee_classifies_no_argument_2126`
+    /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
     #[spec(
         captures: before = (self.parameter_typed.len(), self.thunked.len()),
         ensures: |ret| ret.is_err() || (self.parameter_typed.len() >= before.0 && self.thunked.len() >= before.1),
@@ -2272,25 +2278,10 @@ impl<'source> Lowerer<'_, 'source>
         applied: Stretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let named = self.tree.node(head.node).is_some_and(|node| {
-            matches!(
-                shape_of(self.pbg, node),
-                Ok(Shape::Form {
-                    former: Former::Name,
-                    ..
-                })
-            )
-        });
-        if !named {
-            return Ok(());
-        }
-        let name = self.name_at(head);
-        let Ok(Maybe::Present(Resolved::Declaration { constant, .. })) =
-            self.resolve_name(site, frame, name)
+        let Some(slot) = self.called_slot(site, frame, head)?
         else {
             return Ok(());
         };
-        let slot = SlotIndex::from(usize::from(constant));
         let refused = self
             .collected
             .slots
@@ -2337,6 +2328,83 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         Ok(())
+    }
+
+    /// The declaration the call at `site`, read under `frame`, calls through
+    /// its head `head`: one its bare name resolves to, or the one whose own
+    /// recursion a descent `f[<]` names.
+    ///
+    /// # Specification
+    /// - requires: `site` is a call read under `frame` and `head` its head.
+    /// - ensures: the slot of the declaration a bare-name head resolves to; for
+    ///   an instantiation naming a recursion, the slot of the declaration
+    ///   owning the call when that recursion's own name is the declaration's
+    ///   name tile; none otherwise, a local recursion's descent and a binder's
+    ///   name among them.
+    /// - fails: as [`Self::instantiated_recursion`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's or the binder walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::parameters_classify`].
+    /// - witness: `lower::native::tests::a_constructor_argument_takes_its_parameter_s_type_1833`
+    /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.is_none_or(|slot| self.collected.slots.get(usize::from(slot)).is_some())))]
+    fn called_slot(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        head: Placed,
+    ) -> Result<Option<SlotIndex>, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(head.node)
+        else {
+            return Ok(None);
+        };
+        match shape_of(self.pbg, node) {
+            Ok(Shape::Form {
+                former: Former::Name,
+                ..
+            }) => {
+                let name = self.name_at(head);
+                let Ok(Maybe::Present(Resolved::Declaration { constant, .. })) =
+                    self.resolve_name(site, frame, name)
+                else {
+                    return Ok(None);
+                };
+                let slot = SlotIndex::from(usize::from(constant));
+                Ok(self
+                    .collected
+                    .slots
+                    .get(usize::from(slot))
+                    .is_some()
+                    .then_some(slot))
+            },
+            Ok(Shape::Form {
+                former: Former::Instantiation,
+                ..
+            }) => {
+                let Some(binder) = self.instantiated_recursion(frame, head)?
+                else {
+                    return Ok(None);
+                };
+                let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+                else {
+                    return Ok(None);
+                };
+                let declared = self.collected.slots.get(usize::from(own));
+                let recursion = self.recursions.get(&binder);
+                Ok(declared
+                    .zip(recursion)
+                    .is_some_and(|(declared, recursion)| declared.named.node == recursion.named)
+                    .then_some(own))
+            },
+            Ok(Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_) => {
+                Ok(None)
+            },
+        }
     }
 
     /// The classifier the field `at` of the constructor written at `around`
@@ -10264,6 +10332,41 @@ impl<'source> Lowerer<'_, 'source>
         head: Placed,
     ) -> Result<ParameterAt, LoweringRefusal<'source>>
     {
+        Ok(ParameterAt(
+            self.instantiated_recursion(frame, head)?
+                .and_then(|binder| self.recursions.get(&binder))
+                .map_or(0, |recursion| {
+                    stretch(&self.parameters, recursion.uniform).len()
+                }),
+        ))
+    }
+
+    /// The frame binding the recursive function's own name the instantiation
+    /// `head`, read under `frame`, names.
+    ///
+    /// # Specification
+    /// - requires: `head` is an instantiation form.
+    /// - ensures: the binder the head's bare name resolves to under `frame`
+    ///   when it keys a recursion; none for a head naming anything else.
+    /// - fails: a fault reading the head's pieces or shape; the allowance
+    ///   refusal from the binder walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The form's or the binder walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::leading_parameters`] and
+    ///   [`Self::parameters_classify`].
+    /// - witness: `lower::native::tests::a_recursive_function_closes_a_fixpoint_over_its_staged_parameter`
+    /// - witness: `lower::native::tests::a_descent_call_s_constructor_argument_takes_its_parameter_s_type_2127`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |binder| binder.is_none_or(|binder| self.recursions.contains_key(&binder))))]
+    fn instantiated_recursion(
+        &mut self,
+        frame: Frame,
+        head: Placed,
+    ) -> Result<Option<ScopeId>, LoweringRefusal<'source>>
+    {
         let mut scratch = core::mem::take(&mut self.scratch);
         let read = read_pieces(self.pbg, self.tree, head.node, &mut scratch);
         let named = scratch.pieces.iter().find_map(|piece| match *piece {
@@ -10274,30 +10377,26 @@ impl<'source> Lowerer<'_, 'source>
         read?;
         let Some(named) = named
         else {
-            return Ok(ParameterAt(0));
+            return Ok(None);
         };
         let Some(node) = self.tree.node(named.node)
         else {
-            return Ok(ParameterAt(0));
+            return Ok(None);
         };
         let Shape::Form {
             former: Former::Name,
             ..
         } = shape_of(self.pbg, node)?
         else {
-            return Ok(ParameterAt(0));
+            return Ok(None);
         };
         let name = self.name_at(named);
-        Ok(ParameterAt(
-            match self.scope.resolve(frame, name, &mut self.fuel)? {
-                Maybe::Present(bound) => {
-                    self.recursions.get(&bound.binder).map_or(0, |recursion| {
-                        stretch(&self.parameters, recursion.uniform).len()
-                    })
-                },
-                Maybe::Absent(_) => 0,
+        Ok(match self.scope.resolve(frame, name, &mut self.fuel)? {
+            Maybe::Present(bound) if self.recursions.contains_key(&bound.binder) => {
+                Some(bound.binder)
             },
-        ))
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        })
     }
 
     /// Check the position the claim at `site` descends on against the one the
