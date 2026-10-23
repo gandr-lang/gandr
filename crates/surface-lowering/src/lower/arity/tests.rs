@@ -1423,6 +1423,37 @@ fn a_dependent_arrow_is_the_telescope_the_alias_abbreviates()
     );
 }
 
+/// #2179: a dependent arrow and a telescope whose binder is named as a type
+/// is, `(A : Type) -> A -> -F A`, bind it as the lowercase binder does, so
+/// the type a parameter list naming `A` declares reads back as written.
+#[test]
+fn a_dependent_arrow_binds_a_type_named_binder_2179()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def named : +U ((A : Type) -> A -> -F A) ; def lower : +U ((a : Type) -> a -> -F a) ; def \
+         aliased : (A : Type, A) => A ; def tail(A : Type, x : A) -> -F A { return x }",
+        &mut arena,
+    );
+    let signature = |name: &str| match outcome(&module, name) {
+        DeclarationOutcome::Uncompleted { declared_type }
+        | DeclarationOutcome::Completed { declared_type, .. } => declared_type,
+        other @ (DeclarationOutcome::Bodied { .. }
+        | DeclarationOutcome::Data(_)
+        | DeclarationOutcome::Codata(_)
+        | DeclarationOutcome::Abstract(_)
+        | DeclarationOutcome::World
+        | DeclarationOutcome::Refused(_)) => panic!("`{name}` declares a type, not {other:?}"),
+    };
+    for name in ["named", "aliased", "tail"] {
+        assert_eq!(
+            gandr_core_term::equal_type_syntax(&arena, signature(name), signature("lower")),
+            gandr_core_term::CertificateEquality::Equal,
+            "`{name}` declares the arrow its lowercase twin does"
+        );
+    }
+}
+
 #[test]
 fn each_label_names_what_it_labels()
 {

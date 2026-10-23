@@ -654,7 +654,7 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read the entries of a type list up to `closer`: each a bare type, or
-    /// `k : T` whose key is a bare lowercase word.
+    /// `k : T` whose key is a bare word, lowercase or named as a type is.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the form's opener.
@@ -672,8 +672,10 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — empty, positional and labelled lists, with and
-    ///   without a trailing comma.
+    ///   without a trailing comma, and a dependent arrow whose binder is named
+    ///   as a type is.
     /// - witness: `lower::arity::tests::a_telescope_type_lowers_by_its_arity`
+    /// - witness: `lower::arity::tests::a_dependent_arrow_binds_a_type_named_binder_2179`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| matches!(entry.held, Held::Operand(_)))))]
     pub(super) fn type_entries(
         &self,
@@ -686,7 +688,7 @@ impl<'source> Lowerer<'_, 'source>
         while let Maybe::Absent(_) = cursor.tile(closer) {
             let first = site.one(cursor.operands())?;
             let entry = if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
-                if !matches!(self.form_at(first)?, Some((name, _)) if name == FormName::TYPE_VARIABLE)
+                if !matches!(self.form_at(first)?, Some((name, _)) if name == FormName::TYPE_VARIABLE || name == FormName::TYPE_IDENTIFIER)
                 {
                     return Err(site.fault(first.span, FormFault::MisplacedTile));
                 }

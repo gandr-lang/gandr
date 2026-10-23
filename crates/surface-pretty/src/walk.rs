@@ -221,6 +221,7 @@ use crate::Fidelity;
 use crate::Form;
 use crate::Style;
 use crate::ValueDepth;
+use crate::Wildcards;
 use crate::compose::Compose;
 use crate::compose::Doc;
 use crate::compose::Glyphs;
@@ -3925,6 +3926,8 @@ pub enum Walked
         fidelity: Fidelity,
         /// Why each `?` the document holds was written.
         unspelled: BTreeSet<Unspelled>,
+        /// Whether the document writes a wildcard.
+        wildcards: Wildcards,
     },
     /// The source took more visits than one presentation makes.
     OverBudget,
@@ -4778,6 +4781,8 @@ struct Walk<'walk, 'names>
     fidelity: Fidelity,
     /// Why each `?` written so far was written.
     unspelled: BTreeSet<Unspelled>,
+    /// Whether a wildcard was written so far.
+    wildcards: Wildcards,
     /// How the presentation writes its thunks.
     bodies: Bodies,
     /// The spellings of the session types whose payloads are being walked,
@@ -7047,8 +7052,10 @@ impl Walk<'_, '_>
             },
             // A wildcard is a term the elaborator was asked to find; its `_`
             // reads back as a wildcard at the same place, which the checker
-            // answers alike, so it is written as the text wrote it.
+            // answers alike, so it is written as the text wrote it, and the
+            // presentation says it writes one.
             Former::Unreadable(Unreadable::Wildcard) => {
+                self.wildcards = Wildcards::Written;
                 return writes(Production("wildcard.expression"), self.atom(Glyphs("_")));
             },
             #[cfg_attr(
@@ -10183,6 +10190,7 @@ where
         recursive: source.recursive(),
         fidelity: Fidelity::Faithful,
         unspelled: BTreeSet::new(),
+        wildcards: Wildcards::Unwritten,
         bodies,
         protocols: Vec::new(),
         seconds: Vec::new(),
@@ -10368,6 +10376,7 @@ where
         doc,
         fidelity: walk.fidelity,
         unspelled: walk.unspelled,
+        wildcards: walk.wildcards,
     })
 }
 
@@ -10601,6 +10610,7 @@ mod tests
             recursive: None,
             fidelity: Fidelity::Faithful,
             unspelled: super::BTreeSet::new(),
+            wildcards: super::Wildcards::Unwritten,
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
             seconds: super::Vec::new(),
@@ -10694,6 +10704,7 @@ mod tests
             recursive: None,
             fidelity: Fidelity::Faithful,
             unspelled: super::BTreeSet::new(),
+            wildcards: super::Wildcards::Unwritten,
             bodies: super::Bodies::Opaque,
             protocols: super::Vec::new(),
             seconds: super::Vec::new(),

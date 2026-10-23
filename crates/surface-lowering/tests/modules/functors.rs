@@ -415,6 +415,38 @@ fn a_functor_reads_the_laws_of_its_model_parameter_1764()
     );
 }
 
+/// #2179: an instance's member stated at a parameter's operation is stated at
+/// the argument's own, which a source names, rather than at the witness the
+/// application checks it by, which no module exports.
+#[test]
+fn an_instance_names_its_argument_s_operations_2179()
+{
+    let source = [
+        SEMI,
+        REASSOCIATING,
+        ONE_POINT,
+        "module Turned = Reassociating(OnePoint) ;\ndef written : (x : Unit, y : Unit, z : Unit) \
+         => Path(Unit, OnePoint.mul(x, OnePoint.mul(y, z)), OnePoint.mul(OnePoint.mul(x, y), \
+         z)) ;\ndef written = Turned.reassoc ;\n",
+    ]
+    .concat();
+    let mut lowered = lower(source.as_str());
+    let instance = declared_type_of(&lowered, "Turned.reassoc", Role::Declared);
+    let written = declared_type_of(&lowered, "written", Role::Declared);
+    assert_eq!(
+        gandr_core_term::equal_type_syntax(&lowered.arena, instance, written),
+        gandr_core_term::CertificateEquality::Equal,
+        "the instance's member is stated at `OnePoint.mul`"
+    );
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "and the instance checks: {judgements:?}"
+    );
+}
+
 #[test]
 fn an_instance_can_be_an_argument()
 {

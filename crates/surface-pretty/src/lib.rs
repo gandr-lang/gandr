@@ -409,6 +409,19 @@ pub enum Fidelity
     Approximate,
 }
 
+/// Whether a presentation writes a wildcard `_`: a term the elaborator was
+/// asked to find and left unsolved, which reads back as itself only at the
+/// place it was written.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum Wildcards
+{
+    /// The text writes no wildcard.
+    #[default]
+    Unwritten,
+    /// The text writes a wildcard.
+    Written,
+}
+
 /// Which of the spellings the grammar parses a presentation writes where the
 /// core's shape admits more than one.
 ///
@@ -605,6 +618,8 @@ pub struct Presentation
     fidelity: Fidelity,
     /// Why each `?` the text holds was written.
     unspelled: BTreeSet<Unspelled>,
+    /// Whether the text writes a wildcard.
+    wildcards: Wildcards,
     /// Each declaration's name the text writes, in the order written.
     names: Vec<WrittenName>,
 }
@@ -631,6 +646,17 @@ impl Presentation
     pub const fn unspelled(&self) -> &BTreeSet<Unspelled>
     {
         &self.unspelled
+    }
+
+    /// Whether the text writes a wildcard `_`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn wildcards(&self) -> Wildcards
+    {
+        self.wildcards
     }
 
     /// Each declaration's name the text writes, where it stands and the
@@ -1300,6 +1326,15 @@ pub fn present_whole(
             .iter()
             .flat_map(|part| part.unspelled.iter().copied())
             .collect(),
+        wildcards: if parts
+            .iter()
+            .any(|part| part.wildcards == Wildcards::Written)
+        {
+            Wildcards::Written
+        }
+        else {
+            Wildcards::Unwritten
+        },
         names: written,
     }))
 }
@@ -1382,7 +1417,8 @@ where
                 doc,
                 fidelity,
                 unspelled,
-            } => (doc, fidelity, unspelled),
+                wildcards,
+            } => (doc, fidelity, unspelled, wildcards),
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -1395,15 +1431,16 @@ where
                 composer.text(Glyphs("?"))?,
                 Fidelity::Approximate,
                 BTreeSet::from([Unspelled::OverBudget]),
+                Wildcards::Unwritten,
             ),
         })
     };
-    let (text, fidelity, unspelled, names) = match layout {
+    let (text, fidelity, unspelled, wildcards, names) = match layout {
         Layout::Page(page) => {
             let mut meter = BuildMeter::new(BuildLimits::default());
             let mut builder = DocBuilder::try_new(&mut meter)?;
             let mut paged = Paged::new(&mut builder);
-            let (doc, fidelity, unspelled) = spelled(&mut paged)?;
+            let (doc, fidelity, unspelled, wildcards) = spelled(&mut paged)?;
             let doc = paged.handle(doc)?;
             let named = paged.into_names();
             let arena = builder.finish()?;
@@ -1412,19 +1449,26 @@ where
             let mut render_meter = RenderMeter::new(RenderLimits::default());
             let rendered = render(&arena, doc, &options, &mut render_meter)?;
             let names = named.placed(&rendered.marks);
-            (rendered.text, fidelity, unspelled, names)
+            (rendered.text, fidelity, unspelled, wildcards, names)
         },
         Layout::Line => {
             let mut line = OneLine::new();
-            let (doc, fidelity, unspelled) = spelled(&mut line)?;
+            let (doc, fidelity, unspelled, wildcards) = spelled(&mut line)?;
             let (text, names) = line.into_parts(doc)?;
-            (RenderedText::from(text), fidelity, unspelled, names)
+            (
+                RenderedText::from(text),
+                fidelity,
+                unspelled,
+                wildcards,
+                names,
+            )
         },
     };
     Ok(Presentation {
         text,
         fidelity,
         unspelled,
+        wildcards,
         names,
     })
 }
