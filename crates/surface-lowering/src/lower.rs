@@ -9254,7 +9254,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let _first = self.nullary.insert(head.node, site.at.node);
         }
         if !descends {
-            self.parameters_classify(site, frame, head, applied);
+            self.parameters_classify(site, frame, head, applied)?;
         }
         self.read(head.node, Reading::Head(frame));
         for position in applied.start .. applied.end {

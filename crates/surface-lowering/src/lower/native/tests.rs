@@ -2707,6 +2707,23 @@ fn a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A lambda passed as an argument types its binder by the type its callee
+/// writes for the parameter, as a signed definition's lambda does: a match of
+/// no arms on it switches on the empty data, the lambda in a thunk and bare,
+/// under an alias and under the arrow, and with the answer stated (#1948).
+#[test]
+fn an_argument_lambda_s_binder_is_typed_by_its_parameter_1948()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Empty : Type {}\ndef aliased(f : Empty => Integer, v : Empty) -> -F Integer { f(v) }\ndef arrowed(f : +U (Empty -> -F Integer), v : Empty) -> -F Integer { f(v) }\n@[ checks ]\ndef thunked(v : Empty) -> -F Integer { aliased(thunk { fn (x) { case x {} } }, v) }\n@[ checks ]\ndef bare(v : Empty) -> -F Integer { aliased(fn (x) { case x {} }, v) }\n@[ checks ]\ndef stated(v : Empty) -> -F Integer { aliased(thunk { fn (x) { case x -> -F Integer {} } }, v) }\n@[ checks ]\ndef underArrow(v : Empty) -> -F Integer { arrowed(thunk { fn (x) { case x {} } }, v) }\n",
+        ),
+        &mut arena,
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808()
 {
