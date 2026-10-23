@@ -421,32 +421,38 @@ required_state() {
 }
 
 # Queue the largest ready prefix of pull request `$1`'s stack (`prefix.jq`,
-# #1988), at most `queue_unit_cap` members (#2046). While a member of the
-# stack is queued nothing more is queued; otherwise the members are read
-# bottom up, and every one green on the trunk's required contexts is queued,
-# up to the first red or pending one, which is named and where the reading
-# stops, or up to the cap. The tail above it is the next stack, landed the
-# moment its own bottom goes green. `pr:land` runs this from any member, and
-# `pr:watch` the moment its pull request goes green. Prints one line on
-# stderr, and leaves its reading in `prefix_decision` (`prefix.jq`'s line),
-# `prefix_server` (the stack) and `prefix_queued` (its queued members).
-# Returns 0 when it queued the rest of the ready prefix or nothing was ready;
-# 3 while a pull request queued on its own carries the stack's commits
-# (`carried_queued`), while a queued member holds the stack, after queueing
-# a unit the cap cut short, or when the open members take no link above the
-# queued ones; `queue_stack`'s failure otherwise.
+# #1988), at most `queue_unit_cap` members (#2046). The members outside the
+# queue are read bottom up, and every one green on the trunk's required
+# contexts is queued, up to the first red or pending one, which is named and
+# where the reading stops, or up to the cap. A queued unit below the cap is
+# topped up the same way to the cap (#2096); one at the cap takes nothing
+# more. The tail above it is the next stack, landed the moment its own bottom
+# goes green. `pr:land` runs this from any member, and `pr:watch` the moment
+# its pull request goes green. Prints one line on stderr, and leaves its
+# reading in `prefix_decision` (`prefix.jq`'s line), `prefix_server` (the
+# stack) and `prefix_queued` (its queued members). Returns 0 when it queued
+# the rest of the ready prefix or nothing was ready; 3 while a pull request
+# queued on its own carries the stack's commits (`carried_queued`), while a
+# queued unit takes nothing more, after queueing a unit the cap cut short,
+# or when the open members take no link above the queued ones;
+# `queue_stack`'s failure otherwise.
 land_prefix() {
-  local server queued carried required cap number state states=() decision verdict upto stop status=0
+  local server queued carried required cap room number state states=() decision verdict upto stop status=0
   server=$(server_stack "$1")
   [[ $(jq length <<< "$server") != 0 ]] || { echo "PR #$1 is not open" >&2; return 2; }
   queued=$(queued_of "$server")
   carried=$(carried_queued "$server")
   required=$(required_contexts)
   cap=$(queue_unit_cap)
-  # A queued member holds the stack, and a unit reads one member past the cap.
-  [[ "$queued" == '[]' ]] || cap=-1
+  # A queued unit has the cap less its members left, none without a cap, and
+  # a reading goes one member past the room.
+  room=$cap
+  if [[ "$queued" != '[]' ]]; then
+    room=$(( cap > 0 ? cap - $(jq length <<< "$queued") : 0 ))
+    (( room > 0 )) || room=-1
+  fi
   for number in $(jq -r --argjson queued "$queued" '.[].number | select(IN($queued[]) | not)' <<< "$server"); do
-    (( cap < 0 || cap > 0 && ${#states[@]} / 2 > cap )) && break
+    (( room < 0 || room > 0 && ${#states[@]} / 2 > room )) && break
     state=$(required_state "$number" "$required")
     states+=("$number" "$state")
     [[ "$state" == green ]] || break

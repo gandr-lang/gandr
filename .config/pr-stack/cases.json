@@ -327,7 +327,7 @@
     "output": "land\t1262\t1258\tpending"
   },
   {
-    "name": "a stack with a member queued queues nothing more until it merges (#2046)",
+    "name": "a queued unit below the cap is topped up with its next green member, up to the cap (#2096)",
     "program": "prefix.jq",
     "input": {
       "server": [
@@ -340,7 +340,53 @@
       "states": { "1970": "green", "1971": "green" },
       "cap": 3
     },
-    "output": "busy\t1969"
+    "output": "land\t1970\t1971\tcapped"
+  },
+  {
+    "name": "a queued unit below the cap takes the whole green rest when it fits (#2096)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 2091, "head": "ci-2090-quenchant-pin" },
+        { "number": 2092, "head": "theory-1214-dialogue" },
+        { "number": 2095, "head": "surface-2051-stray-closer" }
+      ],
+      "queued": [2091, 2092],
+      "states": { "2095": "green" },
+      "cap": 3
+    },
+    "output": "land\t2095"
+  },
+  {
+    "name": "a queued unit at the cap takes nothing more until it merges (#2046)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 1939, "head": "surface-1834-imported-synonym" },
+        { "number": 1969, "head": "core-1314-prune" },
+        { "number": 1970, "head": "triage-1966-sweep-witnesses" },
+        { "number": 1971, "head": "surface-1416-linear-run" }
+      ],
+      "queued": [1939, 1969, 1970],
+      "states": { "1971": "green" },
+      "cap": 3
+    },
+    "output": "busy\t1970"
+  },
+  {
+    "name": "a queued unit whose next member is pending takes nothing more (#2096)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        { "number": 2091, "head": "ci-2090-quenchant-pin" },
+        { "number": 2092, "head": "theory-1214-dialogue" },
+        { "number": 2095, "head": "surface-2051-stray-closer" }
+      ],
+      "queued": [2091],
+      "states": { "2092": "pending", "2095": "green" },
+      "cap": 3
+    },
+    "output": "busy\t2091"
   },
   {
     "name": "a green stack longer than the cap queues its bottom cap members and names the next (#2046)",

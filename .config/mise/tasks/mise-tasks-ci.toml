@@ -1282,9 +1282,10 @@ fi
 # cases held by `check:pr-stack`), in units (#2046): every member green on
 # the trunk's required contexts is queued, up to the first red or pending
 # one, which the task names, and at most the smaller of the queue's
-# `max_entries_to_merge` and `max_entries_to_build` members at once; while a
-# unit is queued nothing more of the stack is, and the next unit goes in once
-# it merged. The queue merges a queued stack whole, so a longer unit waits
+# `max_entries_to_merge` and `max_entries_to_build` members at once; a
+# queued unit below that is topped up with the green members above it
+# (#2096), and once it is full the next unit goes in when it merged. The
+# queue merges a queued stack whole, so a longer unit waits
 # for every member's group to be built before any of it merges. The tail
 # above the prefix is the next stack. The task runs from any member, and the
 # caller's own pull request need not be in the prefix: with something below
