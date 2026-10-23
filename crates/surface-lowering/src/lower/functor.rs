@@ -225,31 +225,54 @@ impl<'source> Lowerer<'_, 'source>
         if deeper.0 {
             return Err(unknown);
         }
-        let found = self
-            .collected
-            .structures
-            .get(usize::from(parameter))
-            .and_then(|structure| {
-                structure.exports.iter().find_map(|&export| match export {
-                    Member::Slot(slot)
-                        if self
-                            .collected
-                            .slots
-                            .get(usize::from(slot))
-                            .is_some_and(|entry| entry.name == member) =>
-                    {
-                        Some(slot)
-                    },
-                    Member::Slot(_) | Member::Module(_) => None,
-                })
-            });
-        let Some(slot) = found
+        let Some(slot) = self.parameter_export(parameter, member)
         else {
             return Err(unknown);
         };
         self.select(site, slot)?;
 
         Ok(Read::Planned)
+    }
+
+    /// The value component the parameter at `parameter` states under `member`.
+    ///
+    /// A parameter's slots are entered in no name table, so its components are
+    /// found among its exports, as a path into it reads them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot the parameter exports under `member`; nothing for a
+    ///   name no exported slot bears, or a structure the collection does not
+    ///   hold.
+    /// - panics: none.
+    /// - executable: none — the result is the lookup itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a body reads a parameter's operation, a law of a
+    ///   parameter's model reads the operation it states, and a name the
+    ///   parameter does not state is found nowhere.
+    /// - witness: `tests::modules::functors::the_classic_functor_pair_checks`
+    /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `tests::modules::functors::a_functor_reads_the_laws_of_its_model_parameter_1764`
+    pub(super) fn parameter_export(
+        &self,
+        parameter: StructureIndex,
+        member: SurfaceName<'source>,
+    ) -> Option<SlotIndex>
+    {
+        let structure = self.collected.structures.get(usize::from(parameter))?;
+        structure.exports.iter().find_map(|&export| match export {
+            Member::Slot(slot)
+                if self
+                    .collected
+                    .slots
+                    .get(usize::from(slot))
+                    .is_some_and(|entry| entry.name == member) =>
+            {
+                Some(slot)
+            },
+            Member::Slot(_) | Member::Module(_) => None,
+        })
     }
 
     /// Plan the type path `head.selected`, written at `site`, when `head`
