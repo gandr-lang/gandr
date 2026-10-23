@@ -1798,6 +1798,46 @@ impl<'source> Collected<'source>
         })
     }
 
+    /// The type member `source`'s unqualified imports answer `name` with, and
+    /// the import that answers it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::imported_slot`], over the type members each
+    ///   imported source writes at its top level, the last of a name answering
+    ///   it.
+    /// - provides: the import fallback of a bare type head's member lookup.
+    /// - fails: [`Ambiguity`] for two imports writing a type member of one
+    ///   name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Ambiguity`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a synonym each of two sources writes, read through an
+    ///   import of either, through imports of both, and through an import of an
+    ///   importer, each answered exactly.
+    /// - witness: `tests::namespace::an_imported_top_level_type_member_names_its_type_1834`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(Maybe::Present((member, _))) => member.name == name,
+        Ok(Maybe::Absent(_)) => true,
+        Err(ref ambiguity) => ambiguity.import != ambiguity.other,
+    })]
+    pub fn imported_type_member(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<(TypeComponent<'source>, ByteSpan), imported::Absent>, Ambiguity>
+    {
+        self.through_imports(source, |target| {
+            self.type_members_in(Container::TopLevel(target))
+                .filter(|member| member.name == name)
+                .last()
+                .copied()
+        })
+    }
+
     /// What `lookup` answers in the sources `source` imports unqualified.
     ///
     /// # Specification

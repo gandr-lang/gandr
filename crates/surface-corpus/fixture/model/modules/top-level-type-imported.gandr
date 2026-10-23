@@ -1,0 +1,19 @@
+// A type member another source writes at its top level names its type in a
+// source importing it unqualified, as each of its declarations does.
+
+// The band, its width and the parameterised pair.
+import "./top-level-type.gandr" ;
+
+/// A narrower band, written at the imported synonym.
+@[ checks ]
+def innerBand : Band ;
+def innerBand = #{low = 400000, high = 600000} ;
+
+/// The imported width reads the band built here: two tenths.
+@[ runs("200000") ]
+def innerWidth() -> -F Integer { become width(innerBand) }
+
+/// The imported synonym with a parameter, applied here.
+@[ checks ]
+def innerBounds : Twice(Integer) ;
+def innerBounds = (400000, 600000) ;
