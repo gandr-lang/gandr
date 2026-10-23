@@ -82,6 +82,10 @@ const ASCRIPTION: Issue = Issue(1321);
 /// The issue writing the exemplars of the checker's unshown names.
 const CHECKER: Issue = Issue(1789);
 
+/// The issue settling which of the lowering and the checker refuses a case
+/// arm of another data type's constructor.
+const FOREIGN_ARM: Issue = Issue(2208);
+
 /// Why no source reaches an effectful former's refusal: only the kernel's
 /// readmission refuses it, and there the declaration stays on the checker's
 /// side instead of being refused.
@@ -124,7 +128,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 66_usize] = [
+const OWED: [(&str, Owed); 65_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -223,9 +227,21 @@ const OWED: [(&str, Owed); 66_usize] = [
     ("LoopUndecided", Owed::Unwritten(CHECKER)),
     ("SealSiteRepeated", Owed::Unwritten(CHECKER)),
     ("DataArgumentArity", Owed::Unwritten(CHECKER)),
-    ("UnknownConstructor", Owed::Unwritten(CHECKER)),
-    ("ConstructorArity", Owed::Unwritten(CHECKER)),
-    ("NonExhaustiveDataCase", Owed::Unwritten(CHECKER)),
+    ("UnknownConstructor", Owed::Unwritten(FOREIGN_ARM)),
+    (
+        "ConstructorArity",
+        Owed::Unreachable(Reason(
+            "the lowering refuses a constructor applied or matched at any count of operands but \
+             its own as `OutOfFragment.Arity`",
+        )),
+    ),
+    (
+        "NonExhaustiveDataCase",
+        Owed::Unreachable(Reason(
+            "the lowering's coverage refuses a case missing a constructor as \
+             `NonExhaustiveMatch` before the checker reads it",
+        )),
+    ),
     ("PathCode", Owed::Unwritten(CHECKER)),
     ("TranslatorStuck", Owed::Unwritten(CHECKER)),
     (
@@ -235,11 +251,16 @@ const OWED: [(&str, Owed); 66_usize] = [
              under none",
         )),
     ),
-    ("RideUnsupported", Owed::Unwritten(CHECKER)),
     ("BudgetExceeded", Owed::Unwritten(CHECKER)),
     ("Undecided", Owed::Unwritten(CHECKER)),
     ("EffectSignatureConflict", Owed::Unwritten(CHECKER)),
-    ("UnknownOperation", Owed::Unwritten(CHECKER)),
+    (
+        "UnknownOperation",
+        Owed::Unreachable(Reason(
+            "the lowering resolves an exercised operation by name, refusing an unknown one as \
+             unresolved, and mints no perform",
+        )),
+    ),
     (
         "ShiftWithoutReset",
         Owed::Unreachable(Reason(

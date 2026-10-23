@@ -1,0 +1,16 @@
+/// `RideUnsupported`: a ride between two distinct session codes whose motive is no run of them.
+module Evolution {
+  type SeatEnd = ?String. mu turn. +{
+    report : !String. &{ next : turn, retire : end },
+    handoff : !String. end
+  };
+  type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
+  @[ checks ]
+  def keep : Flow(Type, SeatEnd, Kept) ;
+  def keep = sim(SeatEnd, Kept) ;
+}
+
+@[ refuses("RideUnsupported") ]
+def listed : () => List(Evolution.Kept) ;
+
+def listed = thunk { become ride(\X. List(X), Evolution.keep, []) } ;
