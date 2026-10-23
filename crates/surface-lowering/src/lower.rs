@@ -600,6 +600,7 @@ use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::cursor;
 use crate::form::declined_feature;
 use crate::form::read_pieces;
 use crate::form::shape_of;
@@ -10805,9 +10806,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        // Each link is the module a name is selected from and the name, from
+        // the outermost; a link through a nested module, `Sealed.inner.T`, is
+        // two, the module selected from the operand and the type from it.
         let mut links: Vec<(Placed, Placed)> = Vec::new();
-        let (mut target, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
-        links.push((target, member));
+        let link = |links: &mut Vec<(Placed, Placed)>, target, nested, selected| match nested {
+            Maybe::Present(module) => {
+                links.push((module, selected));
+                links.push((target, module));
+            },
+            Maybe::Absent(_) => links.push((target, selected)),
+        };
+        let (mut target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
+        let through = matches!(nested, Maybe::Present(_));
+        link(&mut links, target, nested, member);
         let headed = match self.tree.node(target.node) {
             Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
                 former: Former::TypeHead,
@@ -10815,7 +10827,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }),
             None => false,
         };
-        if headed && let Maybe::Present(resolved) = self.aliased_member(site, target, member)? {
+        if headed
+            && !through
+            && let Maybe::Present(resolved) = self.aliased_member(site, target, member)?
+        {
             let none = Stretch {
                 start: self.operands.len(),
                 end: self.operands.len(),
@@ -10838,8 +10853,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     if let Maybe::Present(repaired) = chain.repair {
                         return Err(repaired.refusal(site.name));
                     }
-                    let (inner, selected) = Self::type_link(site, &chain.pieces, target.span)?;
-                    links.push((inner, selected));
+                    let (inner, nested, selected) =
+                        Self::type_link(site, &chain.pieces, target.span)?;
+                    link(&mut links, inner, nested, selected);
                     target = inner;
                 },
                 Shape::Form {
@@ -10958,11 +10974,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `pieces` is the reading of a type path covering `span`.
-    /// - ensures: the operand the type is selected from and the type name tile
-    ///   after its dot.
+    /// - ensures: the operand the type is selected from, the nested module the
+    ///   link names after its first dot when it names one, `inner` in
+    ///   `Sealed.inner.T`, and the type name tile after its last dot.
     /// - provides: the one-link half of [`Self::type_path`].
     /// - fails: yields the misplaced-tile refusal when the pieces are not an
-    ///   operand, a dot and a type name.
+    ///   operand, a dot, an optional module name and a dot, and a type name.
     /// - panics: none.
     ///
     /// # Errors
@@ -10970,18 +10987,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a one-link and a two-link path preserve their targets
-    ///   and selected names.
+    ///   and selected names, and a link through a nested module keeps the
+    ///   module.
     /// - witness: `tests::modules::a_qualified_type_reference_resolves_through_the_namespace`
+    /// - witness: `tests::modules::models::a_sealed_nested_model_s_sort_is_spelled_by_its_path_1311`
     #[spec(
         ensures: |ret| {
-            ret.as_ref().map_or(true, |&(target, selected)| {
+            ret.as_ref().map_or(true, |&(target, nested, selected)| {
                 pieces.first() == Some(&Piece::Operand(target))
                     && matches!(pieces.get(1), Some(&Piece::Tile { label: TileName::DOT, .. }))
-                    && pieces.get(2)
-                        == Some(&Piece::Tile {
-                            label: TileName::TYPE_IDENTIFIER,
-                            at: selected,
-                        })
+                    && match nested {
+                        Maybe::Present(module) => {
+                            pieces.get(2)
+                                == Some(&Piece::Tile {
+                                    label: TileName::TYPE_VARIABLE,
+                                    at: module,
+                                })
+                                && pieces.get(4)
+                                    == Some(&Piece::Tile {
+                                        label: TileName::TYPE_IDENTIFIER,
+                                        at: selected,
+                                    })
+                        },
+                        Maybe::Absent(_) => {
+                            pieces.get(2)
+                                == Some(&Piece::Tile {
+                                    label: TileName::TYPE_IDENTIFIER,
+                                    at: selected,
+                                })
+                        },
+                    }
             })
         },
     )]
@@ -10989,22 +11024,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
         site: Site,
         pieces: &[Piece],
         span: ByteSpan,
-    ) -> Result<(Placed, Placed), LoweringRefusal<'source>>
+    ) -> Result<(Placed, Maybe<Placed, cursor::Absent>, Placed), LoweringRefusal<'source>>
     {
         let mut cursor = Cursor::new(pieces, span);
         let Maybe::Present(Piece::Operand(target)) = cursor.read()
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
-        let (Maybe::Present(_dot), Maybe::Present(selected)) = (
-            cursor.tile(TileName::DOT),
-            cursor.tile(TileName::TYPE_IDENTIFIER),
-        )
+        let Maybe::Present(_dot) = cursor.tile(TileName::DOT)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let nested = cursor.tile(TileName::TYPE_VARIABLE);
+        if let Maybe::Present(_) = nested
+            && let Maybe::Absent(_) = cursor.tile(TileName::DOT)
+        {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        }
+        let Maybe::Present(selected) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
 
-        Ok((target, selected))
+        Ok((target, nested, selected))
     }
 
     /// Classify a universe, `Type[s, l]`.
