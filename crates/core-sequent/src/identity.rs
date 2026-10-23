@@ -153,7 +153,8 @@ use crate::boundary::ProducerArity;
 use crate::focus::FocusRefusal;
 use crate::il::Selector;
 
-/// A closed program an identity's image applies to its parts.
+/// A closed program an identity's image, or a call whose argument is a
+/// returned value, applies to its parts.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Combinator
 {
@@ -197,6 +198,10 @@ pub enum Combinator
         /// Whether the moved value is passed suspended.
         value: bool,
     },
+    /// `thunk(λf. λa. x ← force a; force f x)`: a call whose argument is a
+    /// returned value, `⟨c⟩`, the call and `c` each passed suspended and `c`
+    /// run first, as the kernel reads `E[c]` as `c to x. E[x]`.
+    RunArgument,
 }
 
 impl Combinator
@@ -218,7 +223,7 @@ impl Combinator
     #[spec(ensures: |ret| usize::from(ret) == match self {
         Self::Identity => 0_usize,
         Self::Inverse => 1_usize,
-        Self::Compose | Self::Wrap | Self::Pair | Self::Ride(_) | Self::Both(_) | Self::Forward | Self::Transport(_) | Self::TransportFrom { .. } => 2_usize,
+        Self::Compose | Self::Wrap | Self::Pair | Self::Ride(_) | Self::Both(_) | Self::Forward | Self::Transport(_) | Self::TransportFrom { .. } | Self::RunArgument => 2_usize,
     })]
     #[must_use]
     pub(crate) fn applied(self) -> ProducerArity
@@ -233,7 +238,8 @@ impl Combinator
             | Self::Both(_)
             | Self::Forward
             | Self::Transport(_)
-            | Self::TransportFrom { .. } => 2_usize,
+            | Self::TransportFrom { .. }
+            | Self::RunArgument => 2_usize,
         })
     }
 }
@@ -922,7 +928,8 @@ pub type RunCases = BTreeMap<ComputationId, RunCase>;
 /// - ensures: a closed thunk of `scratch` computing the combinator, as the
 ///   module tables state; the match of every run part the combinator moves
 ///   through is left in `cases`, at the placeholder that stands for it.
-/// - provides: what the focusing focuses and applies to an identity's parts.
+/// - provides: what the focusing focuses and applies to an identity's parts, or
+///   to a call and its returned argument.
 /// - fails: [`FocusRefusal::TranslationInvariant`] for a motive naming no type
 ///   of `core`, a transport motive no row reads, or an index overflow.
 /// - panics: none.
@@ -934,13 +941,15 @@ pub type RunCases = BTreeMap<ComputationId, RunCase>;
 /// - hypothesis: L3 — a composite, a function flow, rides at the decode of the
 ///   binder, a product, a sum, a list and a run type, and transports along
 ///   `ua`, a reflexivity, a native equivalence and a native product run to the
-///   values the kernel's rows compute.
+///   values the kernel's rows compute; a call whose argument is a returned
+///   transport runs to what its bind spelling runs to.
 /// - witness: `tests::run::rides_run_by_the_motives_action`
 /// - witness: `tests::run::a_function_flow_runs_in_variance_order`
 /// - witness: `tests::run::a_flow_product_runs_componentwise`
 /// - witness: `tests::run::transports_run_by_the_motives_action`
 /// - witness: `tests::run::native_paths_run_as_their_maps`
 /// - witness: `tests::run::a_run_moves_its_payloads_along_a_path`
+/// - witness: `tests::run::a_returned_argument_runs_before_its_call_2129`
 #[spec(ensures: |ret| match ret {
     | Ok(id) => matches!(scratch.value(id), Some(&Value::Thunk(_))),
     | Err(_) => true,
@@ -1090,6 +1099,17 @@ pub fn build(
                 let forced = scratch.computation_force(held);
                 body = scratch.computation_bind(forced, body);
             }
+            Ok(closed(scratch, body, Binders::from(2_u32)))
+        },
+        Combinator::RunArgument => {
+            // Under λf. λa: a = 0, f = 1.
+            let held = variable(scratch, DeBruijnIndex::from(0_u32));
+            let run = scratch.computation_force(held);
+            // Under x: x = 0, a = 1, f = 2.
+            let call = variable(scratch, DeBruijnIndex::from(2_u32));
+            let returned = variable(scratch, DeBruijnIndex::from(0_u32));
+            let applied = applied_once(scratch, call, returned);
+            let body = scratch.computation_bind(run, applied);
             Ok(closed(scratch, body, Binders::from(2_u32)))
         },
     }

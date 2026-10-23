@@ -104,3 +104,10 @@ def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> -F ((
 /// field a function moved along the path.
 @[ runs("+{.0 = +{.1 = unit}}") ]
 def secondLeft() -> -F ((Unit + Unit) + Unit) { become stepOnceLeft(leftward) }
+
+/// #2129: the same transport written as the call's argument, not bound by a
+/// definition first, runs to the same state.
+@[ runs("+{.0 = +{.1 = unit}}") ]
+def inlineLeft() -> -F ((Unit + Unit) + Unit) {
+  become stepOnceLeft(transport(\x. Model(Counter) with sort C = x, nestings, rightward))
+}
