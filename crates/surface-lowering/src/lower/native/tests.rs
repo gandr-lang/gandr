@@ -1749,6 +1749,92 @@ fn a_constructor_applies_to_its_fields()
     assert_accepted(&report);
 }
 
+/// A constructor under a classifier of another family of one shape keeps its
+/// own family, over the classifier's arguments, and stands ascribed the type
+/// written for it, which the checker refuses; under its own family's
+/// classifier it stands bare (#2075).
+#[test]
+fn a_constructor_keeps_its_family_under_another_s_classifier_2075()
+{
+    let mut arena = CoreArena::new();
+    let source = "data Celsius : Type { Cel : (x : Integer) --> Celsius; }\ndata Fahrenheit : Type { Fah : (x : Integer) --> Fahrenheit; }\ndata Box(a : Type) : Type { B : (x : a) --> Box(a); }\ndata Crate(a : Type) : Type { C : (x : a) --> Crate(a); }\ndef foreign = (Cel(20) : Fahrenheit);\ndef signed : Crate(Integer);\ndef signed = B(3);\ndef own = (Cel(20) : Celsius);\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    let celsius = ValueType::Data {
+        declaration: ConstantIndex::from(0_usize),
+        arguments: Vec::new(),
+    };
+    let Some(&Value::Ascribe { value, ty }) =
+        arena.value(body_named(&module, SurfaceName::from("foreign")))
+    else {
+        panic!("a constructor under another family's classifier stands ascribed it");
+    };
+    assert_eq!(
+        arena.value_type(ty),
+        Some(&ValueType::Data {
+            declaration: ConstantIndex::from(1_usize),
+            arguments: Vec::new(),
+        }),
+        "the ascription is the type the source wrote"
+    );
+    let Some(&Value::Constructor { datatype, tag, .. }) = arena.value(value)
+    else {
+        panic!("the ascribed value is the constructor");
+    };
+    assert_eq!(tag, ConstructorTag::from(0_usize));
+    assert_eq!(
+        arena.value_type(datatype),
+        Some(&celsius),
+        "`Cel` is classified at its own family, never read as `Fah`"
+    );
+    let Some(&Value::Ascribe { value, .. }) =
+        arena.value(body_named(&module, SurfaceName::from("signed")))
+    else {
+        panic!("a signature of another family ascribes the constructor too");
+    };
+    let Some(&Value::Constructor { datatype, .. }) = arena.value(value)
+    else {
+        panic!("the ascribed value is the constructor");
+    };
+    assert!(
+        matches!(
+            arena.value_type(datatype),
+            Some(ValueType::Data { declaration, arguments })
+                if *declaration == ConstantIndex::from(2_usize) && arguments.len() == 1_usize
+        ),
+        "`B` is classified at `Box`, over the argument `Crate(Integer)` gives"
+    );
+    let Some(&Value::Constructor { datatype, .. }) =
+        arena.value(body_named(&module, SurfaceName::from("own")))
+    else {
+        panic!("under its own family's classifier a constructor stands bare");
+    };
+    assert_eq!(arena.value_type(datatype), Some(&celsius));
+    let report = judged(&module, &mut arena);
+    let verdicts: Vec<Verdict> = report
+        .judged()
+        .iter()
+        .map(gandr_core_checker::Judged::verdict)
+        .collect();
+    let [
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Data,
+        Verdict::Refused(ref foreign),
+        Verdict::Refused(ref signed),
+        Verdict::Checked { .. },
+    ] = *verdicts
+    else {
+        panic!("the families and the own constructor check, the foreign two refuse: {report:?}");
+    };
+    for stated in [foreign, signed] {
+        assert!(
+            matches!(stated, gandr_core_checker::CheckRefusal::TypeMismatch(_)),
+            "a value of one family is no value of another of its shape: {stated:?}"
+        );
+    }
+}
+
 #[test]
 fn a_parameterized_constructor_needs_its_classifier()
 {

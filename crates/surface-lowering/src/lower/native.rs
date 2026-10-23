@@ -6792,9 +6792,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   family's parameter at the constructor's place with the parameters
     ///   before it replaced by the arguments written for them; or the family
     ///   over no arguments; the classifier's origin inserted and the written
-    ///   origin on the value; nothing when a field, the annotation, the answer
-    ///   or a slot's type or argument did not lower, or the answer is no
-    ///   returner.
+    ///   origin on the value; a classifier of another family than the
+    ///   constructor's own gives way to that family, over the classifier's
+    ///   arguments when it has as many as the family takes and over none
+    ///   otherwise, and the constructor so classified stands ascribed the
+    ///   classifier, so the checker meets the type the source wrote for it
+    ///   rather than the namesake constructor of another family of one shape;
+    ///   nothing when a field, the annotation, the answer or a slot's type or
+    ///   argument did not lower, or the answer is no returner.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -6802,6 +6807,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::construct`].
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_constructor_takes_its_slot_as_a_family_argument_421`
+    /// - witness: `lower::native::tests::a_constructor_keeps_its_family_under_another_s_classifier_2075`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
     pub(super) fn mint_constructor(
         &self,
@@ -6821,16 +6827,50 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let classifier =
+        let written =
             match self.classifier_type(constructed.classifier, constructed.family, sink, origin) {
                 Maybe::Present(id) => id,
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             };
+        // A constructor's tag counts within its own family: under a classifier
+        // of another family it would name that family's constructor of the
+        // same place.
+        let own = match sink.arena.value_type(written) {
+            Some(&gandr_core_term::ValueType::Data {
+                declaration,
+                ref arguments,
+            }) if declaration != constructed.family => {
+                let takes = match self.data_family(constructed.family) {
+                    Maybe::Present(count) => usize::from(count),
+                    Maybe::Absent(_) => 0_usize,
+                };
+                let carried = if arguments.len() == takes {
+                    arguments.clone()
+                }
+                else {
+                    Vec::new()
+                };
+                let id = sink.arena.value_type_data(constructed.family, carried);
+                sink.origins
+                    .record_value_type(id, origin.inserted(Insertion::Classifier));
+                Some(id)
+            },
+            _ => None,
+        };
+        let Some(classifier) = own
+        else {
+            let id = sink
+                .arena
+                .value_constructor(written, constructed.tag, fields);
+            return Maybe::Present(sink.value(id, origin));
+        };
         let id = sink
             .arena
             .value_constructor(classifier, constructed.tag, fields);
+        sink.origins.record_value(id, origin);
+        let ascribed = sink.arena.value_ascribe(id, written);
 
-        Maybe::Present(sink.value(id, origin))
+        Maybe::Present(sink.value(ascribed, origin))
     }
 
     /// The value type `classifier` names for a constructor of the family
