@@ -27,8 +27,7 @@ def stated(v : Empty) -> -F Integer {
 
 /// A lambda's binder matched with no arm (#534): the function form lowers to
 /// the lambda its arrow types, the binder `Empty`, as a parameter's written
-/// type does. A lambda passed as an argument takes no type from its callee's
-/// parameter yet (#1948).
+/// type does.
 @[ checks ]
 def viaLambda(x : Empty) -> -F Integer { case x {} }
 
@@ -46,6 +45,21 @@ def viaBare = fn (x) { case x {} } ;
 @[ checks ]
 def viaBareStated : Empty => Integer ;
 def viaBareStated = fn (x) { case x -> -F Integer {} } ;
+
+/// A function of a function on the empty type, applied to its element.
+@[ checks ]
+def applied(f : Empty => Integer, v : Empty) -> -F Integer { f(v) }
+
+/// A lambda passed as an argument: the callee's parameter types its binder
+/// as a signature types a definition's (#1948).
+@[ checks ]
+def viaArgument(v : Empty) -> -F Integer { applied(fn (x) { case x {} }, v) }
+
+/// The answer written on a passed lambda binder's match (#1948).
+@[ checks ]
+def viaArgumentStated(v : Empty) -> -F Integer {
+  applied(fn (x) { case x -> -F Integer {} }, v)
+}
 
 /// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
 @[ checks ]
