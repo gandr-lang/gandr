@@ -51,6 +51,11 @@ use crate::store::layout::PART;
 use crate::store::layout::VALUE;
 use crate::store::layout::VALUE_INDEX;
 
+mod image;
+
+pub use crate::store::prove::image::ProofImage;
+pub use crate::store::prove::image::ProofImageBuf;
+
 /// What a proof answers.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Question

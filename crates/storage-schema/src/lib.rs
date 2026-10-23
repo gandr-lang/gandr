@@ -137,6 +137,7 @@ pub mod store;
 
 pub use crate::error::LayoutFault;
 pub use crate::error::ManifestFault;
+pub use crate::error::ProofFault;
 pub use crate::error::Refusal;
 pub use crate::error::StoreError;
 pub use crate::manifest::MANIFEST_DOMAIN;
@@ -184,4 +185,6 @@ pub use crate::store::Store;
 pub use crate::store::edit::Edit;
 pub use crate::store::prove::Answer;
 pub use crate::store::prove::Proof;
+pub use crate::store::prove::ProofImage;
+pub use crate::store::prove::ProofImageBuf;
 pub use crate::store::prove::Question;

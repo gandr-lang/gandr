@@ -10,7 +10,11 @@ use gandr_storage_records::TreeParams;
 use gandr_storage_schema::Answer;
 use gandr_storage_schema::AttributeValue;
 use gandr_storage_schema::Liveness;
+use gandr_storage_schema::ManifestFault;
 use gandr_storage_schema::PartKey;
+use gandr_storage_schema::Proof;
+use gandr_storage_schema::ProofFault;
+use gandr_storage_schema::ProofImage;
 use gandr_storage_schema::Question;
 use gandr_storage_schema::Refusal;
 use gandr_storage_schema::Row;
@@ -484,4 +488,194 @@ fn the_root_is_a_function_of_the_contents_and_counters()
         first.root(),
         "a dead part's cells are not committed"
     );
+}
+
+/// The evidence tag a proof's image carries after its manifest.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct Tag(u8);
+
+/// Every kind of question against the committed keyed fixture, with the
+/// evidence tag its proof's image carries.
+///
+/// # Specification
+/// trivial.
+fn questions(fixture: &Keyed) -> [(Question, Tag); 6]
+{
+    let store = &fixture.store;
+    let [_, beta] = fixture.tasks;
+    let [first, ..] = fixture.attempts;
+    let [m0, m1, ..] = fixture.moves;
+    [
+        (
+            Question::Part {
+                object: object(store, &Name("Task")),
+                part: beta,
+            },
+            Tag(0x01),
+        ),
+        (
+            Question::Part {
+                object: object(store, &Name("Refusal")),
+                part: fixture.refusal,
+            },
+            Tag(0x02),
+        ),
+        (
+            Question::Arrow {
+                arrow: arrow(store, &Name("move_attempt")),
+                part: m1,
+            },
+            Tag(0x01),
+        ),
+        (
+            Question::Value {
+                attribute: attribute(store, &Name("move_receipt")),
+                part: m0,
+            },
+            Tag(0x01),
+        ),
+        (
+            Question::Preimage {
+                arrow: arrow(store, &Name("move_attempt")),
+                target: first,
+            },
+            Tag(0x03),
+        ),
+        (
+            Question::ValuePreimage {
+                attribute: attribute(store, &Name("subject_digest")),
+                value: AttributeValue::from(&Keyed::DIGEST[..]),
+            },
+            Tag(0x03),
+        ),
+    ]
+}
+
+#[test]
+fn every_kind_of_proof_round_trips_through_its_image()
+{
+    let fixture = committed();
+    let store = &fixture.store;
+    let manifest = store.manifest().encode();
+    let manifest: &[u8] = manifest.as_ref();
+    let length = u64::try_from(manifest.len()).expect("a manifest fits sixty-four bits");
+    for (question, tag) in questions(&fixture) {
+        let proof = store.prove(&question).expect("a proof");
+        let image = proof.encode();
+        let bytes: &[u8] = image.as_ref();
+        assert_eq!(
+            bytes.get(.. 8),
+            Some(&length.to_le_bytes()[..]),
+            "the manifest's length opens the image: {question:?}"
+        );
+        assert_eq!(
+            bytes.get(8 .. 8 + manifest.len()),
+            Some(manifest),
+            "then the manifest: {question:?}"
+        );
+        assert_eq!(
+            bytes.get(8 + manifest.len()),
+            Some(&tag.0),
+            "then the evidence tag: {question:?}"
+        );
+        let decoded = Proof::decode(ProofImage::from(bytes), store.schema(), params(), &question)
+            .expect("the image decodes");
+        assert_eq!(decoded, proof, "the proof the store made: {question:?}");
+        assert_eq!(
+            decoded.verify(store.root(), store.schema(), params(), &question),
+            proof.verify(store.root(), store.schema(), params(), &question),
+            "and it verifies to the same answer: {question:?}"
+        );
+    }
+}
+
+#[test]
+fn a_malformed_proof_image_is_refused_by_part()
+{
+    let fixture = committed();
+    let store = &fixture.store;
+    let decode = |bytes: &[u8], question: &Question| {
+        Proof::decode(ProofImage::from(bytes), store.schema(), params(), question)
+    };
+    let refused = |fault| Err(StoreError::Proof { fault });
+    let [_, (dead, _), _, (value, _), (preimage, _), _] = questions(&fixture);
+    let image = store.prove(&dead).expect("a dead part's proof").encode();
+    let bytes: &[u8] = image.as_ref();
+    let tag = 8 + store.manifest().encode().as_ref().len();
+
+    for end in 0 .. bytes.len() {
+        assert_eq!(
+            decode(bytes.get(.. end).expect("a prefix"), &dead),
+            refused(ProofFault::Truncated),
+            "a prefix of {end} bytes"
+        );
+    }
+    let mut trailing = bytes.to_vec();
+    trailing.push(0x00);
+    assert_eq!(
+        decode(&trailing, &dead),
+        refused(ProofFault::Trailing),
+        "a byte past the last node"
+    );
+    let mut evidence = bytes.to_vec();
+    *evidence.get_mut(tag).expect("the evidence tag") = 0x09;
+    assert_eq!(
+        decode(&evidence, &dead),
+        refused(ProofFault::Tag),
+        "an unknown evidence tag"
+    );
+    let mut neighbour = bytes.to_vec();
+    *neighbour.get_mut(tag + 1).expect("the predecessor's tag") = 0x07;
+    assert_eq!(
+        decode(&neighbour, &dead),
+        refused(ProofFault::Tag),
+        "an unknown neighbour tag"
+    );
+    let mut domain = bytes.to_vec();
+    *domain.get_mut(8).expect("the manifest's first byte") ^= 0x01;
+    assert_eq!(
+        decode(&domain, &dead),
+        Err(StoreError::Manifest {
+            fault: ManifestFault::Domain
+        }),
+        "a foreign manifest"
+    );
+    assert_eq!(
+        Proof::decode(ProofImage::from(bytes), &graph(), params(), &dead),
+        Err(StoreError::SchemaMismatch {
+            expected: graph().identity(),
+            found: store.schema().identity(),
+        }),
+        "a reader of another schema"
+    );
+
+    let run = store.prove(&preimage).expect("a preimage's proof").encode();
+    assert_eq!(
+        decode(run.as_ref(), &value),
+        Err(StoreError::WrongQuestion),
+        "a run offered for one cell"
+    );
+
+    let cell = store.prove(&value).expect("a value's proof").encode();
+    let mut forged = cell.as_ref().to_vec();
+    *forged.get_mut(tag + 9).expect("the value's first byte") ^= 0x01;
+    let forged = decode(&forged, &value).expect("a forged value still decodes");
+    assert!(
+        matches!(
+            forged.verify(store.root(), store.schema(), params(), &value),
+            Err(StoreError::Records(_))
+        ),
+        "and is refused by verification"
+    );
+
+    let rendered: Vec<String> = [ProofFault::Truncated, ProofFault::Tag, ProofFault::Trailing]
+        .into_iter()
+        .map(|fault| StoreError::Proof { fault }.to_string())
+        .collect();
+    assert_eq!(rendered, [
+        "malformed proof image: the proof image ends inside a part",
+        "malformed proof image: the proof image carries an unknown tag",
+        "malformed proof image: bytes follow the last node",
+    ]);
 }
