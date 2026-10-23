@@ -1144,6 +1144,8 @@ impl Label
             let mut layout = at;
             let mut documented = false;
             loop {
+                // A documentation node is never empty; the guard keeps an empty
+                // span from holding the layout where it is.
                 if let Some(doc) = doc_at(layout)
                     && usize::from(doc.end()) > layout
                 {
@@ -1521,6 +1523,7 @@ fn parameters(
 /// - witness: `signature::tests::each_head_reads_its_parameters`
 /// - witness: `signature::tests::a_parameter_reads_the_documentation_written_before_it_1116`
 /// - witness: `signature::tests::a_run_documents_only_what_it_is_written_before_1800`
+/// - witness: `signature::tests::only_a_function_type_and_a_list_s_own_separators_make_parameters_1810`
 fn entries(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1535,7 +1538,7 @@ fn entries(
     for &piece in pieces {
         let (span, named) = match piece {
             Piece::Doc(node) => {
-                if depth == Depth::default() && entry.is_none() {
+                if depth == Depth::default() {
                     append(&mut documented, documentation(grammar, tree, node));
                 }
                 continue;
@@ -1581,9 +1584,10 @@ fn entries(
 /// trivial.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a binder typed by a function and a constructor's
-///   telescope, each asserted at its parameters.
+/// - hypothesis: L3 — a binder typed by a function, a constructor's telescope
+///   and a type returning a function, each asserted at its parameters.
 /// - witness: `signature::tests::each_head_reads_its_parameters`
+/// - witness: `signature::tests::only_a_function_type_and_a_list_s_own_separators_make_parameters_1810`
 fn domains(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -2334,6 +2338,57 @@ mod tests
             ("n", "The predecessor."),
             ("p", "The pair."),
             ("i", "The index.")
+        ]);
+    }
+
+    /// #1810: a list's own parentheses nested inside a parameter, as a
+    /// binder writes them, keep the parameter whole, and a type returning a
+    /// function is no function type, so its head takes no parameter.
+    #[test]
+    fn only_a_function_type_and_a_list_s_own_separators_make_parameters_1810()
+    {
+        let text = "theory Lambda {\n  sort Tm : Type;\n  oper lam : (t : pi+ (x : Tm) . Tm) --> \
+                    Tm;\n  oper app : (t : Tm, u : Tm) --> Tm;\n}\ndef g : -F (Nat -> -F Nat) ;\n";
+        let grammar = grammar().expect("the grammar builds");
+        let roles = roles().expect("the roles build");
+        let parsed = parse(grammar, SourceText::from(text)).expect("the text parses");
+        let heads = Signatures::of(grammar, roles, parsed.tree(), &Unit::single());
+        let read: Vec<_> = heads
+            .own
+            .iter()
+            .map(|&((_, named), ref signature)| {
+                let parameters: Vec<_> = signature
+                    .parameters
+                    .iter()
+                    .map(|parameter| {
+                        signature
+                            .label
+                            .get(parameter.place.start .. parameter.place.end)
+                            .unwrap_or_default()
+                    })
+                    .collect();
+                (
+                    text.get(usize::from(named.start()) .. usize::from(named.end()))
+                        .unwrap_or_default(),
+                    signature.label.as_str(),
+                    parameters,
+                )
+            })
+            .collect();
+        assert_eq!(read, [
+            ("Lambda", "Lambda", Vec::new()),
+            ("Tm", "Tm : Type", Vec::new()),
+            (
+                "lam",
+                "lam : (t : pi+ (x : Tm) . Tm) --> Tm",
+                Vec::from(["t : pi+ (x : Tm) . Tm"])
+            ),
+            (
+                "app",
+                "app : (t : Tm, u : Tm) --> Tm",
+                Vec::from(["t : Tm", "u : Tm"])
+            ),
+            ("g", "g : -F (Nat -> -F Nat)", Vec::new()),
         ]);
     }
 }
