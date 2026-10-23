@@ -79,6 +79,20 @@ def last(m : +U (-F Integer & -F String & -F Integer)) -> -F Integer {
 @[ runs("3") ]
 def lasted() -> -F Integer { become last(chained) }
 
+/// A positional lazy record names no entry either, so each is observed by its
+/// position (#1104).
+@[ checks ]
+def spread(m : +U (-F Integer & -F String)) -> -F String {
+  become m.1
+}
+
+/// A position past a lazy product's last entry names nothing, and is refused
+/// as the unresolved name it is (#1104).
+@[ refuses("UnresolvedName") ]
+def beyond(m : +U (-F Integer & -F String)) -> -F String {
+  become m.2
+}
+
 @[ refuses("OutOfFragment.WrongSort") ]
 def unthunked : -F Integer & -F Integer ;
 
