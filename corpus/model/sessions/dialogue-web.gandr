@@ -12,8 +12,20 @@
 import "./seat-base.gandr" ;
 
 /// A dialogue that reports once and retires, the seat's send of its report
-/// logged before the operator takes the choice.
-@[ checks ]
+/// logged before the operator takes the choice. Its web is series-parallel:
+/// the seat's report beside the operator's choice, then the seat's tail
+/// beside the operator's close.
+@[ decomposes(
+  series(
+    event(right, 0),
+    event(left, 0),
+    event(left, 1),
+    parallel(event(left, 2), event(right, 1)),
+    event(right, 2),
+    event(right, 3),
+    parallel(series(event(left, 3), event(left, 4)), event(right, 4))
+  )
+) ]
 def retiring : Dialogue(Seat.SeatEnd) ;
 def retiring = dialogue(
   right(sent(Seat.task)),
@@ -29,8 +41,19 @@ def retiring = dialogue(
 ) ;
 
 /// The same play, the operator taking the choice before the seat's report is
-/// logged: the two moves are independent.
-@[ checks ]
+/// logged: the two moves are independent, so the log reads back the web
+/// `retiring` does.
+@[ decomposes(
+  series(
+    event(right, 0),
+    event(left, 0),
+    event(left, 1),
+    parallel(event(left, 2), event(right, 1)),
+    event(right, 2),
+    event(right, 3),
+    parallel(series(event(left, 3), event(left, 4)), event(right, 4))
+  )
+) ]
 def retiringLater : Dialogue(Seat.SeatEnd) ;
 def retiringLater = dialogue(
   right(sent(Seat.task)),
@@ -51,12 +74,6 @@ def retiringLater = dialogue(
 def commuted : Path(Dialogue(Seat.SeatEnd), retiring, retiringLater) ;
 def commuted = here(retiring) ;
 
-/// The web of the retiring dialogue is series-parallel: the seat's report
-/// beside the operator's choice, then the seat's tail beside the operator's
-/// close.
-@[ runs("series(event(right, 0), event(left, 0), event(left, 1), parallel(event(left, 2), event(right, 1)), event(right, 2), event(right, 3), parallel(series(event(left, 3), event(left, 4)), event(right, 4)))") ]
-def retiringWeb() -> -F Web { become decompose(retiring) }
-
 /// The two logs decompose to one web: a web is read off the dialogue it
 /// decomposes, so the path between the logs' webs is reflexivity too.
 @[ checks ]
@@ -64,8 +81,23 @@ def sameWeb : Path(Web, decompose(retiring), decompose(retiringLater)) ;
 def sameWeb = here(decompose(retiring)) ;
 
 /// A dialogue that hands off: the seat's notes sent before the operator takes
-/// the choice.
-@[ checks ]
+/// the choice. Its web leaves a prime node: the seat's notes precede its
+/// close and the operator's receipt, the operator's choice precedes only the
+/// receipt, and no module of the four joins them — the N-shape, the
+/// operator's receipt and close one factor.
+@[ decomposes(
+  series(
+    event(right, 0),
+    event(left, 0),
+    event(left, 1),
+    prime(
+      event(left, 2),
+      event(left, 3),
+      event(right, 1),
+      series(event(right, 2), event(right, 3))
+    )
+  )
+) ]
 def handedOff : Dialogue(Seat.SeatEnd) ;
 def handedOff = dialogue(
   right(sent(Seat.task)),
@@ -77,10 +109,3 @@ def handedOff = dialogue(
   right(received(Seat.notes)),
   right(closed)
 ) ;
-
-/// Its web leaves a prime node: the seat's notes precede its close and the
-/// operator's receipt, the operator's choice precedes only the receipt, and
-/// no module of the four joins them — the N-shape, the operator's receipt and
-/// close one factor.
-@[ runs("series(event(right, 0), event(left, 0), event(left, 1), prime(event(left, 2), event(left, 3), event(right, 1), series(event(right, 2), event(right, 3))))") ]
-def handedOffWeb() -> -F Web { become decompose(handedOff) }

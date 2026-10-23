@@ -198,8 +198,8 @@ impl CorpusRoot
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the fixture root admits every schema; the strict root admits
-    ///   `checks`, `runs` and `normalizes`, the schemas that assert at least
-    ///   what the root already requires.
+    ///   `checks`, `runs`, `normalizes` and `decomposes`, the schemas that
+    ///   assert at least what the root already requires.
     /// - provides: the guard that keeps a gating source from describing itself
     ///   green.
     /// - fails: [`CorpusRefusal::ExpectationOutsideFixtureRoot`], naming the
@@ -211,18 +211,18 @@ impl CorpusRoot
     /// meets an `owes` or `refuses` expectation.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both roots crossed with all five schemas at a
-    ///   nonempty byte span; exact results distinguish widened or narrowed
-    ///   admissions, swapped refused schemas and lost source spans. The
-    ///   end-to-end strict-root witness observes guarded settlement, not merely
-    ///   the admission tag.
+    /// - hypothesis: L3 — both roots crossed with all six schemas at a nonempty
+    ///   byte span; exact results distinguish widened or narrowed admissions,
+    ///   swapped refused schemas and lost source spans. The end-to-end
+    ///   strict-root witness observes guarded settlement, not merely the
+    ///   admission tag.
     /// - witness: `root::tests::the_admission_table_is_pinned`
     /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
     #[spec(
         ensures: |ret| {
     matches!(
         (self, schema, ret), (Self::Fixture, _, Ok(())) | (Self::Strict,
-        ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes, Ok(())) | (Self::Strict,
+        ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes | ExpectationSchema::Decomposes, Ok(())) | (Self::Strict,
         ExpectationSchema::Owes, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
         schema : ExpectationSchema::Owes, .. })) | (Self::Strict,
         ExpectationSchema::Refuses, Err(CorpusRefusal::ExpectationOutsideFixtureRoot {
@@ -244,11 +244,15 @@ impl CorpusRoot
                 | ExpectationSchema::Owes
                 | ExpectationSchema::Refuses
                 | ExpectationSchema::Runs
-                | ExpectationSchema::Normalizes,
+                | ExpectationSchema::Normalizes
+                | ExpectationSchema::Decomposes,
             )
             | (
                 Self::Strict,
-                ExpectationSchema::Checks | ExpectationSchema::Runs | ExpectationSchema::Normalizes,
+                ExpectationSchema::Checks
+                | ExpectationSchema::Runs
+                | ExpectationSchema::Normalizes
+                | ExpectationSchema::Decomposes,
             ) => Ok(()),
             (Self::Strict, ExpectationSchema::Owes | ExpectationSchema::Refuses) => {
                 Err(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span })
@@ -337,11 +341,13 @@ mod tests
             ),
             (CorpusRoot::Strict, ExpectationSchema::Runs, Ok(())),
             (CorpusRoot::Strict, ExpectationSchema::Normalizes, Ok(())),
+            (CorpusRoot::Strict, ExpectationSchema::Decomposes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Checks, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Owes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Refuses, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Runs, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Normalizes, Ok(())),
+            (CorpusRoot::Fixture, ExpectationSchema::Decomposes, Ok(())),
         ];
 
         for (root, schema, admitted) in table {

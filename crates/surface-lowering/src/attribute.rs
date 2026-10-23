@@ -182,6 +182,10 @@ quenchant_shape::reason_enum! {
             /// The payload is a word its schema reads as written, never as a
             /// value: [`super::AttributeSchema::Word`].
             Word,
+            /// The payload is a form its schema reads as its spelling, never
+            /// as a value: [`super::AttributeSchema::Spelled`]. The spelling
+            /// is filed beside the entry.
+            Spelled,
         }
     }
 }
@@ -540,6 +544,9 @@ pub enum AttributeSchema
     /// A bare marker, or a record whose fields are among those named, each a
     /// text literal, any of them left out.
     MarkerOrRecord(&'static [&'static str]),
+    /// One form written unquoted, read as its spelling and never lowered as a
+    /// value.
+    Spelled,
 }
 
 impl fmt::Display for AttributeSchema
@@ -580,6 +587,7 @@ impl fmt::Display for AttributeSchema
                 }
                 Ok(())
             },
+            Self::Spelled => f.write_str("an unquoted form"),
         }
     }
 }
@@ -681,12 +689,13 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 13_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 14_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
     ("runs", AttributeSchema::Text),
     ("normalizes", AttributeSchema::Text),
+    ("decomposes", AttributeSchema::Spelled),
     (RegisteredAttribute::DOC.0, AttributeSchema::Text),
     (
         RegisteredAttribute::EXPLICIT_EXITS.0,
@@ -873,9 +882,9 @@ impl AttributeRegistry
 ///   the one name it declares, and by the word schema, read as one of its
 ///   words; a word spelling none by no schema; any other value exactly by the
 ///   names, interface and marker-or-record schemas, each reading its shape off
-///   the lowered value; every other pair is refused, and the refusal is the
-///   missing one exactly when nothing was written for a schema that takes
-///   something.
+///   the lowered value; a word or any other value, unquoted, by the spelled
+///   schema; every other pair is refused, and the refusal is the missing one
+///   exactly when nothing was written for a schema that takes something.
 /// - provides: the one decision the payload half of the attribute pass makes,
 ///   separated from the diagnostics that report it.
 /// - fails: never — a refusal is a verdict here, not an error.
@@ -898,7 +907,10 @@ impl AttributeRegistry
             ) | (AttributeSchema::Integer, PayloadForm::Integer)
                 | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
                 | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
-                | (AttributeSchema::Names, PayloadForm::Word | PayloadForm::OtherValue)
+                | (
+                    AttributeSchema::Names | AttributeSchema::Spelled,
+                    PayloadForm::Word | PayloadForm::OtherValue
+                )
                 | (
                     AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
                     PayloadForm::OtherValue
@@ -913,6 +925,7 @@ impl AttributeRegistry
                     | AttributeSchema::Names
                     | AttributeSchema::Interface
                     | AttributeSchema::Word(_)
+                    | AttributeSchema::Spelled
             );
         matches!(ret, PayloadVerdict::Admitted) == admitted
             && matches!(ret, PayloadVerdict::Missing) == missing
@@ -936,7 +949,10 @@ pub const fn payload_verdict(
         | (AttributeSchema::Integer, PayloadForm::Integer)
         | (AttributeSchema::Text, PayloadForm::Text | PayloadForm::OtherText)
         | (AttributeSchema::MarkerOr(_), PayloadForm::Text)
-        | (AttributeSchema::Names, PayloadForm::Word | PayloadForm::OtherValue)
+        | (
+            AttributeSchema::Names | AttributeSchema::Spelled,
+            PayloadForm::Word | PayloadForm::OtherValue,
+        )
         | (
             AttributeSchema::Interface | AttributeSchema::MarkerOrRecord(_),
             PayloadForm::OtherValue,
@@ -947,7 +963,8 @@ pub const fn payload_verdict(
             | AttributeSchema::Text
             | AttributeSchema::Names
             | AttributeSchema::Interface
-            | AttributeSchema::Word(_),
+            | AttributeSchema::Word(_)
+            | AttributeSchema::Spelled,
             PayloadForm::Absent,
         ) => PayloadVerdict::Missing,
         (
@@ -983,7 +1000,7 @@ pub const fn payload_verdict(
             | PayloadForm::OtherValue,
         )
         | (
-            AttributeSchema::Names,
+            AttributeSchema::Names | AttributeSchema::Spelled,
             PayloadForm::Integer
             | PayloadForm::Text
             | PayloadForm::OtherText
@@ -1318,6 +1335,9 @@ pub struct AttributeTable
     /// Type member key to the relation, reflexivity and transport law its
     /// `identity` entry names, in that order, as the payload's components.
     interfaces: BTreeMap<UnitKey, Vec<ValueId>>,
+    /// Declaration key and attribute to the spelling of a payload its schema
+    /// reads unquoted: [`AttributeSchema::Spelled`].
+    spellings: BTreeMap<(UnitKey, RegisteredAttribute), String>,
 }
 
 impl AttributeTable
@@ -1335,6 +1355,7 @@ impl AttributeTable
             laws: BTreeMap::new(),
             worlds: BTreeMap::new(),
             interfaces: BTreeMap::new(),
+            spellings: BTreeMap::new(),
         }
     }
 
@@ -1605,6 +1626,57 @@ impl AttributeTable
         self.interfaces.get(&key).map_or(&[], Vec::as_slice)
     }
 
+    /// File `spelled`, the spelling of the payload the `attribute` entry filed
+    /// under `key` was written with, its schema reading it unquoted.
+    ///
+    /// # Specification
+    /// - requires: an entry of `attribute` whose schema is
+    ///   [`AttributeSchema::Spelled`] is filed under `key`.
+    /// - ensures: [`Self::spelled`] at `key` and `attribute` answers `spelled`.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a spelling filed under one key is read back from it,
+    ///   and from no other key or attribute.
+    /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
+    #[spec(ensures: self.spellings.contains_key(&(key, attribute)))]
+    #[inline]
+    pub fn file_spelled(
+        &mut self,
+        key: UnitKey,
+        attribute: RegisteredAttribute,
+        spelled: String,
+    )
+    {
+        let _replaced = self.spellings.insert((key, attribute), spelled);
+    }
+
+    /// The spelling of the payload the `attribute` entry filed under `key` was
+    /// written with, when its schema reads it unquoted.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the spelling filed under `key` and `attribute`; absent when
+    ///   none was.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::file_spelled`].
+    /// - witness: `lower::tests::a_spelled_payload_is_read_back_where_it_was_filed`
+    #[spec(ensures: |ret| ret.is_some() == self.spellings.contains_key(&(key, attribute)))]
+    #[inline]
+    #[must_use]
+    pub fn spelled(
+        &self,
+        key: UnitKey,
+        attribute: RegisteredAttribute,
+    ) -> Option<&String>
+    {
+        self.spellings.get(&(key, attribute))
+    }
+
     /// What the `deprecated` entry filed under `key` states, read off its
     /// payload in `arena`.
     ///
@@ -1838,6 +1910,7 @@ mod tests
             ("refuses", AttributeSchema::Text),
             ("runs", AttributeSchema::Text),
             ("normalizes", AttributeSchema::Text),
+            ("decomposes", AttributeSchema::Spelled),
             ("doc", AttributeSchema::Text),
             ("explicit_exits", AttributeSchema::Marker),
             ("explicit_runs", AttributeSchema::MarkerOr("effects")),
@@ -1904,6 +1977,7 @@ mod tests
             ("forms", "form"),
             ("identiy", "identity"),
             ("deprecate", "deprecated"),
+            ("decompose", "decomposes"),
         ];
 
         for (written, nearest) in expected {
@@ -2013,6 +2087,7 @@ mod tests
             (AttributeSchema::MarkerOrRecord(&["since", "note"]), [
                 A, I, I, I, I, I, A,
             ]),
+            (AttributeSchema::Spelled, [M, I, I, I, A, I, A]),
         ];
 
         for (schema, verdicts) in expected {

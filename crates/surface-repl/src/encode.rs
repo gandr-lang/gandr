@@ -647,7 +647,10 @@ pub fn encode_submission(
                 match (subject, &outcome) {
                     (
                         Subject::Probe { name: probe },
-                        &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
+                        &(Outcome::Checks(_)
+                        | Outcome::Runs(_)
+                        | Outcome::Normalizes(_)
+                        | Outcome::Decomposes(_)),
                     ) if probe == name => {
                         let spelling = type_of(resume, fragment);
                         let line = match spelling {
@@ -664,7 +667,10 @@ pub fn encode_submission(
                     },
                     (
                         Subject::Declarations,
-                        &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
+                        &(Outcome::Checks(_)
+                        | Outcome::Runs(_)
+                        | Outcome::Normalizes(_)
+                        | Outcome::Decomposes(_)),
                     ) => {
                         lines.push((
                             OutKind::Type,
@@ -676,7 +682,10 @@ pub fn encode_submission(
                     },
                     (
                         Subject::Prompt { name: probe, .. },
-                        &(Outcome::Checks(_) | Outcome::Runs(_) | Outcome::Normalizes(_)),
+                        &(Outcome::Checks(_)
+                        | Outcome::Runs(_)
+                        | Outcome::Normalizes(_)
+                        | Outcome::Decomposes(_)),
                     ) if probe == name => {
                         let spelling = type_of(resume, fragment);
                         lines.push((OutKind::Type, typed_line(fragment, &spelling)));
@@ -692,6 +701,7 @@ pub fn encode_submission(
                         | Outcome::Refuses(_)
                         | Outcome::Runs(_)
                         | Outcome::Normalizes(_)
+                        | Outcome::Decomposes(_)
                         | Outcome::RefusesRunning(..)),
                     ) => {},
                 }

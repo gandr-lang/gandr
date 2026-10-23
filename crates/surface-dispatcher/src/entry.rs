@@ -664,7 +664,11 @@ impl<'step> Entries<'step>
                             unsettlement: match (declaration.stated(), declaration.outcome()) {
                                 (&Stated::Verdict(Outcome::Checks(_)), _)
                                 | (
-                                    &Stated::Verdict(Outcome::Runs(_) | Outcome::Normalizes(_)),
+                                    &Stated::Verdict(
+                                        Outcome::Runs(_)
+                                        | Outcome::Normalizes(_)
+                                        | Outcome::Decomposes(_),
+                                    ),
                                     Outcome::Checks(_),
                                 ) => Unsettlement::Obligations,
                                 (
@@ -674,10 +678,11 @@ impl<'step> Entries<'step>
                                     _,
                                 ) => Unsettlement::Unproduced,
                                 (
-                                    &Stated::Verdict(Outcome::Runs(_)),
+                                    &Stated::Verdict(Outcome::Runs(_) | Outcome::Decomposes(_)),
                                     Outcome::Runs(_)
                                     | Outcome::Refuses(_)
                                     | Outcome::Normalizes(_)
+                                    | Outcome::Decomposes(_)
                                     | Outcome::RefusesRunning(..),
                                 ) => Unsettlement::RunOutcome,
                                 (
@@ -685,6 +690,7 @@ impl<'step> Entries<'step>
                                     Outcome::Normalizes(_)
                                     | Outcome::Refuses(_)
                                     | Outcome::Runs(_)
+                                    | Outcome::Decomposes(_)
                                     | Outcome::RefusesRunning(..),
                                 ) => Unsettlement::NormalForm,
                                 (&Stated::Malformed(_), _) => Unsettlement::Malformed,

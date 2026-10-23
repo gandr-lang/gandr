@@ -1,0 +1,16 @@
+/// `decomposes`: states the causal web a dialogue's modular decomposition is
+/// expected to read back. The left endpoint's close waits on its send alone,
+/// so it sits beside the right endpoint's receipt and close.
+module Ask {
+  type Asking = !String. end;
+}
+
+@[ decomposes(series(event(left, 0), parallel(event(left, 1), series(event(right, 0), event(right, 1))))) ]
+def asked : Dialogue(Ask.Asking) ;
+
+def asked = dialogue(
+  left(sent("yes")),
+  right(received("yes")),
+  left(closed),
+  right(closed)
+) ;
