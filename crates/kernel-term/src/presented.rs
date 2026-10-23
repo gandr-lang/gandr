@@ -59,6 +59,8 @@
 //! the termination admission establishes, each term has one normal form, and
 //! [`Presentation::apart`] then separates two terms whose normal forms, holding
 //! no unknown subterm of the type, first differ at two distinct constructors.
+//! A free type has no rule to rewrite a leaf, so it separates two terms whose
+//! first difference is two distinct constructors whatever leaves they hold.
 //! Both checkers call the one decision with the same fuel, each reading its
 //! own arena through a [`TermReading`] callback, so they refuse alike.
 //!
@@ -688,14 +690,16 @@ impl Presentation
     /// `read` reads one node of a term where the type stands: a constructor of
     /// the type, its fields appended in order to the vector it is handed; a
     /// reference whose definition is a closed term, unfolded; anything else, a
-    /// leaf, two leaves equal exactly when their ids are. The terms are apart
-    /// when the rules converge and the normal forms, holding no subterm of the
-    /// type that is not a constructor, first differ at two constructors with
-    /// distinct tags: by convergence two terms are equal exactly when their
-    /// normal forms are, and two constructor heads that differ make the normal
-    /// forms differ under every reading of the leaves of other types, which no
-    /// rule reads. A free type is the same decision with no rule to rewrite
-    /// by: constructor disjointness.
+    /// leaf, two leaves equal exactly when their ids are. Read side by side in
+    /// pre-order, every node before the first difference agrees, so the two
+    /// nodes there stand at one position of both terms. Two constructors with
+    /// distinct tags at that position make the terms apart: no path joins two
+    /// terms whose subterms at one position have distinct heads. A presented
+    /// type asks first that the rules converge and that the normal forms hold
+    /// no subterm of the type that is not a constructor, since a rule may
+    /// rewrite such a subterm into the other term. A free type has no rule to
+    /// rewrite by, so its terms may hold any leaves: the decision is the
+    /// unifier's conflict rule, disjointness under injectivity.
     ///
     /// # Specification
     /// - requires: `self` passed [`Self::validate`] against `table`; `read`
@@ -704,11 +708,13 @@ impl Presentation
     ///   [`Self::converges`] names them; else both terms flattened in pre-order
     ///   — where the type's own family stands, a constructor a node and a
     ///   definition its body, and elsewhere every subterm a leaf — and
-    ///   normalized; [`Apartness::Open`] when either normal form holds a leaf
-    ///   where the type's own family stands, the root included; else, read in
-    ///   pre-order side by side, [`Apartness::Apart`] when the first nodes to
-    ///   differ are two constructors, [`Apartness::Leaf`] when they are
-    ///   anything else, and [`Apartness::Agree`] when no node differs.
+    ///   normalized. A presented type is [`Apartness::Open`] when either normal
+    ///   form holds a leaf where the type's own family stands, the root
+    ///   included. Otherwise, read in pre-order side by side,
+    ///   [`Apartness::Apart`] when the first nodes to differ are two
+    ///   constructors; when they are anything else, [`Apartness::Open`] if a
+    ///   term holds a leaf where the family stands and [`Apartness::Leaf`] if
+    ///   not; and [`Apartness::Agree`] when no node differs.
     ///   [`Apartness::Undecided`] when the decision's fuel runs out first: one
     ///   unit per node read, rewritten, compared or copied, the same fuel at
     ///   every caller, so two checkers decide alike.
@@ -728,7 +734,9 @@ impl Presentation
     ///   and `Z` agree, `S(x)` and `Z` over a leaf of the type are open, a
     ///   reference to `S(Z)` is apart from `Z`, two marks over distinct leaves
     ///   differ at a leaf, two distinct words are apart, a self-referring
-    ///   definition runs out of fuel, and divergent rules are named.
+    ///   definition runs out of fuel, and divergent rules are named; over a
+    ///   free type, `S(x)` and `Z` are apart, `S(Z)` and `S(S(x))` are apart
+    ///   below their shared head, and `x` and `S(Z)` are open.
     /// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
     #[spec(ensures: |ret| !self.rules().is_empty() || !matches!(ret, Apartness::Diverges { .. }))]
     #[inline]
@@ -948,9 +956,10 @@ where
         }
         let _left = presentation.normalize(arities, left, |&()| (), fuel)?;
         let _right = presentation.normalize(arities, right, |&()| (), fuel)?;
-    }
-    if closure(table, left) == Closure::Open || closure(table, right) == Closure::Open {
-        return Ok(Apartness::Open);
+        // A rule may rewrite a leaf of the type into the other term.
+        if closure(table, left) == Closure::Open || closure(table, right) == Closure::Open {
+            return Ok(Apartness::Open);
+        }
     }
     for (one, other) in left.iter().zip(right.iter()) {
         fuel.charge()?;
@@ -964,14 +973,46 @@ where
                 }
             },
             (RuleTerm::Leaf(first), RuleTerm::Leaf(second)) if first == second => {},
-            (RuleTerm::Constructor { .. } | RuleTerm::Leaf(_), _) => return Ok(Apartness::Leaf),
+            (RuleTerm::Constructor { .. } | RuleTerm::Leaf(_), _) => {
+                return Ok(unsettled(table, left, right));
+            },
         }
     }
     if left.len() == right.len() {
         Ok(Apartness::Agree)
     }
     else {
-        Ok(Apartness::Leaf)
+        Ok(unsettled(table, left, right))
+    }
+}
+
+/// Why two terms that differ short of two distinct constructors are not shown
+/// apart.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Apartness::Open`] exactly when either term holds a leaf where
+///   the type's own family stands, or is not one term by `table`;
+///   [`Apartness::Leaf`] otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Presentation::apart`].
+/// - witness: `presented::tests::apartness_is_decided_by_normal_forms`
+#[spec(ensures: |ret| matches!(ret, Apartness::Open | Apartness::Leaf))]
+fn unsettled<T, L>(
+    table: &[Vec<RuleSlot<T>>],
+    left: &[RuleTerm<(), L>],
+    right: &[RuleTerm<(), L>],
+) -> Apartness
+where
+    T: Copy + Eq,
+{
+    if closure(table, left) == Closure::Open || closure(table, right) == Closure::Open {
+        Apartness::Open
+    }
+    else {
+        Apartness::Leaf
     }
 }
 
@@ -2851,6 +2892,32 @@ mod tests
             )]),
             Apartness::Apart,
             "a free type: constructors are disjoint, and nothing cancels"
+        );
+        let free = Presentation::default();
+        assert_eq!(
+            apart(&free, &numbers, &[C(1), L(7)], &[C(0)]),
+            Apartness::Apart,
+            "over a free type `S(x)` and `Z` differ at their heads whatever `x` is"
+        );
+        assert_eq!(
+            apart(&free, &numbers, &[C(1), C(0)], &[C(1), C(1), L(7)]),
+            Apartness::Apart,
+            "`S(Z)` and `S(S(x))` differ below their shared head"
+        );
+        assert_eq!(
+            apart(&free, &numbers, &[C(1), L(7)], &[C(1), C(0)]),
+            Apartness::Open,
+            "`S(x)` is `S(Z)` once `x` is `Z`"
+        );
+        assert_eq!(
+            apart(&free, &numbers, &[L(7)], &[C(1), C(0)]),
+            Apartness::Open,
+            "a leaf at the root may be any term"
+        );
+        assert_eq!(
+            apart(&free, &table, &marks, &[C(3), L(2)]),
+            Apartness::Leaf,
+            "a free type's marks first differ at their fields of another type"
         );
         let mut terms = Terms::default();
         let arities = [0_usize, 1, 1].map(FieldCount);
