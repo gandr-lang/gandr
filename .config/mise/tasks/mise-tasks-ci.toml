@@ -469,8 +469,9 @@ description = "Each CI lane's median job time over recent runs against its budge
 run = ".config/mise/scope cargo run --locked --quiet --package gandr-workflow-lane-budget --"
 
 # An enforcing shard's test listing, written to `CI_WITNESS_LISTING` for the
-# witness gate (`check:witnesses` with `CI_WITNESS_LISTINGS`). The flags are
-# the shard's test task's, so the listing builds nothing the shard did not.
+# shard's own witness gate (`check:witnesses` with `CI_WITNESS_LISTINGS`). The
+# flags are the shard's test task's, so the listing builds nothing the shard
+# did not.
 ["ci:witness-listing"]
 description = "List an enforcing shard's tests as nextest JSON for the witness gate"
 env.RUSTFLAGS = "--cfg anodized_panic"
