@@ -48,3 +48,51 @@ module PlusSquared = Squaring(Plus) ;
 /// Three doubled.
 @[ runs("6") ]
 def six() -> -F Integer { become PlusSquared.square(3) }
+
+/// A semigroup: a magma whose multiplication is associative.
+@[ checks ]
+theory Semi {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
+}
+
+/// A semigroup's law read at any of its models: the parameter states the law
+/// at its own multiplication, so the body can turn it round (#1764).
+module Reassociating(S : Model(Semi)) {
+  /// Associativity, read right to left.
+  @[ checks ]
+  def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path(
+    S.M,
+    S.mul(x, S.mul(y, z)),
+    S.mul(S.mul(x, y), z)
+  ) {
+    back(S.assoc(x, y, z))
+  }
+}
+
+/// The one-point semigroup: every product is the unit.
+module OnePoint : Model(Semi) {
+  type M = Unit;
+
+  def mul(a : Unit, b : Unit) -> -F Unit { unit }
+
+  /// Associativity, by computation: both sides are the unit.
+  @[ checks ]
+  def assoc(x : Unit, y : Unit, z : Unit) -> -F Path(
+    Unit,
+    mul(mul(x, y), z),
+    mul(x, mul(y, z))
+  ) {
+    here(unit)
+  }
+}
+
+/// The law turned round at the one-point semigroup.
+module OnePointReassociated = Reassociating(OnePoint) ;
+
+/// The turned law at three units, whose products are all the unit.
+@[ checks ]
+def reassociated() -> -F Path(Unit, unit, unit) {
+  become OnePointReassociated.reassoc(unit, unit, unit)
+}

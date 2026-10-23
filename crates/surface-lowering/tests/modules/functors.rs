@@ -375,6 +375,46 @@ fn a_functor_over_a_model_applies_to_one_1226()
     );
 }
 
+/// A semigroup, its law over its own multiplication.
+const SEMI: &str = "theory Semi {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule \
+                    assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));\n}\n";
+
+/// Associativity turned round at any model, read off the parameter's law.
+const REASSOCIATING: &str = "module Reassociating(S : Model(Semi)) {\n  def reassoc(x : S.M, y : \
+                             S.M, z : S.M) -> -F Path(S.M, S.mul(x, S.mul(y, z)), \
+                             S.mul(S.mul(x, y), z)) { back(S.assoc(x, y, z)) }\n}\n";
+
+/// The one-point semigroup, its law by computation.
+const ONE_POINT: &str = "module OnePoint : Model(Semi) {\n  type M = Unit;\n  def mul(a : Unit, \
+                         b : Unit) -> -F Unit { unit }\n  def assoc(x : Unit, y : Unit, z : \
+                         Unit) -> -F Path(Unit, mul(mul(x, y), z), mul(x, mul(y, z))) { \
+                         here(unit) }\n}\n";
+
+#[test]
+fn a_functor_reads_the_laws_of_its_model_parameter_1764()
+{
+    let source = [
+        SEMI,
+        REASSOCIATING,
+        ONE_POINT,
+        "module Turned = Reassociating(OnePoint) ;\n",
+    ]
+    .concat();
+    let mut lowered = lower(source.as_str());
+    let found = rows(&lowered);
+    assert!(
+        found.contains(&row("Turned.assoc", Role::Witness, Amounts::Completed)),
+        "the argument's law is matched against the law the parameter states: {found:?}"
+    );
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements
+            .iter()
+            .all(|&(_, judgement)| matches!(judgement, Judgement::Checked | Judgement::Declared)),
+        "and the body reading the law checks at the instance: {judgements:?}"
+    );
+}
+
 #[test]
 fn an_instance_can_be_an_argument()
 {
