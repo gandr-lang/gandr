@@ -3610,14 +3610,7 @@ impl<'pbg> Molder<'pbg>
     ///   left hole, and dropping the empty case refutes the closer at the
     ///   stream's end.
     /// - witness: `mold::tests::a_mold_is_refuted_only_by_a_token_that_cannot_stand_after_it`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the body walks the same candidate menus and contexts"
-        )
-    )]
-    #[spec(ensures: |ret| (ret == Follow::Possible) == (labels.is_empty() || self.pbg.mold(mold).is_ok_and(|ended| labels.iter().any(|&label| self.candidate_label(label).is_some_and(|label| self.pbg.candidates(label).iter().any(|&next| self.pbg.mold(next).is_ok_and(|def| self.pbg.step(def.rctx, Dir::Left).is_ok_and(|steps| steps.iter().any(|step| matches!(step.crossed, StepSym::Sort(sort) if sort == ended.sort || ended.sort == Sort::Item))))))))))]
+    #[spec(ensures: |ret| (ret == Follow::Possible) == (labels.is_empty() || self.pbg.mold(mold).is_ok_and(|ended| labels.iter().any(|&label| self.candidate_label(label).is_some_and(|label| bool::from(self.pbg.follows_form(label, ended.sort)))))))]
     fn after_form(
         &self,
         mold: MoldId,
@@ -3628,18 +3621,8 @@ impl<'pbg> Molder<'pbg>
         let precedes = labels.is_empty()
             || pbg.mold(mold).is_ok_and(|ended| {
                 labels.iter().any(|&label| {
-                    self.candidate_label(label).is_some_and(|label| {
-                        pbg.candidates(label).iter().any(|&next| {
-                            pbg.mold(next).is_ok_and(|def| {
-                                pbg.step(def.rctx, Dir::Left).is_ok_and(|steps| {
-                                    steps.iter().any(|step| {
-                                        matches!(step.crossed, StepSym::Sort(sort)
-                                            if sort == ended.sort || ended.sort == Sort::Item)
-                                    })
-                                })
-                            })
-                        })
-                    })
+                    self.candidate_label(label)
+                        .is_some_and(|label| bool::from(pbg.follows_form(label, ended.sort)))
                 })
             });
         if precedes {

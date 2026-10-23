@@ -301,6 +301,12 @@ mold_flag! {
     MoldInSet
 }
 
+mold_flag! {
+    /// Whether a token can stand right after a whole form of a sort: one of
+    /// its label's molds faces, on its left, a hole that form fills.
+    LabelFollowsForm
+}
+
 /// What the tile automaton reads of one mold off the table's columns: its
 /// bounds, its neighbour and membership flags, and the steps out of its
 /// context to the right.
@@ -326,7 +332,8 @@ pub struct MoldColumns<'table>
     pub right_steps: &'table [RCtxStep],
 }
 
-/// One declared label's two candidate menus.
+/// One declared label's two candidate menus, and the sorts of the holes its
+/// molds face on their left.
 ///
 /// # Specification
 /// trivial.
@@ -338,6 +345,130 @@ struct LabelMenus
     /// The molds it can take where no form is open, ascending: those without a
     /// same-form predecessor, and the form-first ones.
     fresh: Vec<MoldId>,
+    /// The sorts of the holes the label's molds face on their left: the union
+    /// of their [`left_holes`].
+    left_holes: HoleSorts,
+}
+
+/// A set of sorts of holes: one bit per sort, at its grout tag.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct HoleSorts(u8);
+
+impl HoleSorts
+{
+    /// The set holding `sort` alone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly one bit is set, the one at `sort`'s grout tag.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every label of the built-in grammar is asked after a
+    ///   form of each of the six sorts, and its answer compared with its molds'
+    ///   left steps; two sorts sharing a bit, or a bit at another tag, admit a
+    ///   token after a form of a sort none of its molds faces.
+    /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
+    #[spec(ensures: |ret| ret.0.is_power_of_two() && ret.0.trailing_zeros() == u32::from(u16::from(sort.grout_sort())))]
+    #[inline]
+    #[must_use]
+    fn of(sort: Sort) -> Self
+    {
+        Self(match sort {
+            Sort::Item => 0b1,
+            Sort::Pattern => 0b10,
+            Sort::Expression => 0b100,
+            Sort::Type => 0b1000,
+            Sort::Instantiation => 0b1_0000,
+            Sort::ModuleMember => 0b10_0000,
+        })
+    }
+
+    /// The sorts of either set.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    fn union(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self(self.0 | other.0)
+    }
+
+    /// Whether a whole form of `sort` fills one of the holes: one of `sort`,
+    /// or one of any sort when `sort` is [`Sort::Item`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the set holds `sort`, or, when `sort` is
+    ///   [`Sort::Item`], holds any sort.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in label after a form of each sort, and
+    ///   an undeclared label; reading another sort's bit, or answering a form
+    ///   of [`Sort::Item`] by its own bit alone, changes a row.
+    /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
+    #[spec(ensures: |ret| bool::from(ret) == if sort == Sort::Item { self != Self::default() } else { self.union(Self::of(sort)) == self })]
+    #[inline]
+    #[must_use]
+    fn follows(
+        self,
+        sort: Sort,
+    ) -> LabelFollowsForm
+    {
+        LabelFollowsForm::from(match sort {
+            Sort::Item => self.0 != 0,
+            Sort::Pattern
+            | Sort::Expression
+            | Sort::Type
+            | Sort::Instantiation
+            | Sort::ModuleMember => self.0 & Self::of(sort).0 != 0,
+        })
+    }
+}
+
+/// The sorts of the holes `mold` faces on its left: the sorts its context's
+/// left steps cross; none for a mold or a context past the columns.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: holds exactly the sorts `mold`'s context crosses stepping left.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the census of
+///   `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
+///   reads every built-in mold's left steps through the public queries and
+///   compares the answer the set gives; a dropped step, a tile step counted as
+///   a sort, or the right steps read instead change one of its rows.
+/// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
+#[spec(ensures: |ret| [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember].into_iter().all(|sort| (ret.union(HoleSorts::of(sort)) == ret) == usize::try_from(u32::from(mold)).ok().and_then(|at| molds.get(at)).and_then(|def| usize::try_from(u32::from(def.rctx)).ok()).and_then(|at| rctxs.get(at)).is_some_and(|data| data.left_steps.iter().any(|step| step.crossed == StepSym::Sort(sort)))))]
+#[inline]
+fn left_holes(
+    mold: MoldId,
+    molds: &[MoldDef],
+    rctxs: &[RCtxData],
+) -> HoleSorts
+{
+    usize::try_from(u32::from(mold))
+        .ok()
+        .and_then(|at| molds.get(at))
+        .and_then(|def| usize::try_from(u32::from(def.rctx)).ok())
+        .and_then(|at| rctxs.get(at))
+        .map(|data| {
+            data.left_steps
+                .iter()
+                .fold(HoleSorts::default(), |sorts, step| match step.crossed {
+                    StepSym::Sort(sort) => sorts.union(HoleSorts::of(sort)),
+                    StepSym::Tile(_) => sorts,
+                })
+        })
+        .unwrap_or_default()
 }
 
 /// The mold and context tables of a checked grammar.
@@ -730,8 +861,9 @@ impl MoldTable
     ///   unique and within the table.
     /// - ensures: each label's molds ascending, and each mold in exactly its
     ///   label's menu; each fresh menu is its label's menu filtered to the
-    ///   molds without a same-form predecessor or that open a form; the
-    ///   adjacency is ascending and unique, and the dense predecessor and
+    ///   molds without a same-form predecessor or that open a form; each
+    ///   label's left-hole sorts are the union of its molds' [`left_holes`];
+    ///   the adjacency is ascending and unique, and the dense predecessor and
     ///   successor flags are its incidence; each membership list is ascending
     ///   and holds exactly the molds its dense flag marks, and the form-last
     ///   list is the disjoint union of the complete-last and required-tail
@@ -749,6 +881,7 @@ impl MoldTable
     ///   membership of what they return.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
     /// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
     #[spec(ensures: |ret| {
         let count = ret.molds.len();
@@ -756,7 +889,7 @@ impl MoldTable
         let flag = |flags: &[bool], mold: MoldId| index(mold).and_then(|at| flags.get(at)).copied().unwrap_or(false);
         ret.bounds.len() == count && ret.has_pred.len() == count && ret.has_succ.len() == count && ret.is_first.len() == count && ret.is_complete_last.len() == count && ret.is_required_tail.len() == count && ret.successor_starts.len() == count.saturating_add(1)
             && ret.labels.values().map(|menus| menus.declared.len()).sum::<usize>() == count
-            && ret.labels.iter().all(|(label, menus)| menus.declared.is_sorted_by(|left, right| left < right) && menus.declared.iter().all(|&mold| index(mold).and_then(|at| ret.molds.get(at)).is_some_and(|def| def.label == label.0)) && menus.fresh.iter().copied().eq(menus.declared.iter().copied().filter(|&mold| !flag(&ret.has_pred, mold) || flag(&ret.is_first, mold))))
+            && ret.labels.iter().all(|(label, menus)| menus.declared.is_sorted_by(|left, right| left < right) && menus.declared.iter().all(|&mold| index(mold).and_then(|at| ret.molds.get(at)).is_some_and(|def| def.label == label.0)) && menus.fresh.iter().copied().eq(menus.declared.iter().copied().filter(|&mold| !flag(&ret.has_pred, mold) || flag(&ret.is_first, mold))) && menus.left_holes == menus.declared.iter().fold(HoleSorts::default(), |sorts, &mold| sorts.union(left_holes(mold, &ret.molds, &ret.rctxs))))
             && ret.adjacencies.is_sorted_by(|left, right| left < right)
             && {
                 let mut incidence = vec![(false, false); count];
@@ -869,6 +1002,12 @@ impl MoldTable
                     !pred || first
                 })
                 .collect();
+            menus.left_holes = menus
+                .declared
+                .iter()
+                .fold(HoleSorts::default(), |sorts, &mold| {
+                    sorts.union(left_holes(mold, &molds, &rctxs))
+                });
         }
         let fingerprint = fold_fingerprint(dag_fingerprint, &molds, &rctxs);
         let mut table = Self {
@@ -1384,6 +1523,28 @@ impl MoldTable
         self.labels
             .get(label.0)
             .map_or(&[], |menus| menus.fresh.as_slice())
+    }
+
+    /// Whether a token labelled `label` can stand right after a whole form of
+    /// `sort`: one of the label's molds faces, on its left, a hole of `sort`,
+    /// or a hole of any sort when `sort` is [`Sort::Item`]. An undeclared
+    /// label follows no form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) fn follows_form(
+        &self,
+        label: TileLabel,
+        sort: Sort,
+    ) -> LabelFollowsForm
+    {
+        self.labels
+            .get(label.0)
+            .map(|menus| menus.left_holes)
+            .unwrap_or_default()
+            .follows(sort)
     }
 
     /// Every declared label with its mold count, ascending by label.

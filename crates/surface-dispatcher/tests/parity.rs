@@ -89,6 +89,42 @@ struct Signed
     ty: ByteSpan,
 }
 
+/// One top-level form of a parsed text: its key, when it has one, and the
+/// span it covers.
+#[derive(Clone, Copy, Debug)]
+struct TopLevel
+{
+    /// The form's key.
+    key: Option<NodeKey>,
+    /// The span of the form.
+    span: ByteSpan,
+}
+
+/// The top-level forms of `text`, parsed once for every reading of them;
+/// none when it does not parse.
+///
+/// # Specification
+/// trivial.
+fn top_level(
+    grammar: &Pbg,
+    text: SourceText<'_>,
+) -> Vec<TopLevel>
+{
+    let Ok(parsed) = parse(grammar, text)
+    else {
+        return Vec::new();
+    };
+    let tree = parsed.tree();
+    tree.children(tree.root())
+        .filter_map(|form| {
+            tree.node(form).map(|node| TopLevel {
+                key: tree.key(form),
+                span: node.span(),
+            })
+        })
+        .collect()
+}
+
 /// The tokens of `text`, whitespace and comments left out.
 ///
 /// # Specification
@@ -106,29 +142,24 @@ fn tokens(fragment: SourceFragment<'_>) -> Vec<String>
         .collect()
 }
 
-/// The signatures `def name : T ;` among the top-level forms of `text`.
+/// The signatures `def name : T ;` among `forms`, the top-level forms of
+/// `text`.
 ///
 /// # Specification
 /// trivial.
 fn signed(
-    grammar: &Pbg,
     text: SourceText<'_>,
+    forms: &[TopLevel],
 ) -> Vec<Signed>
 {
-    let Ok(parsed) = parse(grammar, text)
-    else {
-        return Vec::new();
-    };
     let text = <&str>::from(text);
-    let tree = parsed.tree();
     let mut found = Vec::new();
     let mut read: Vec<(usize, usize)> = Vec::new();
-    for form in tree.children(tree.root()) {
-        let (Some(key), Some(node)) = (tree.key(form), tree.node(form))
+    for &TopLevel { key, span } in forms {
+        let Some(key) = key
         else {
             continue;
         };
-        let span = node.span();
         let Some(written) = text.get(usize::from(span.start()) .. usize::from(span.end()))
         else {
             continue;
@@ -396,7 +427,7 @@ fn census(
 ) -> Census
 {
     let mut census = Census::default();
-    let signatures = signed(grammar, written.text);
+    let signatures = signed(written.text, &top_level(grammar, written.text));
     if signatures.is_empty() {
         return census;
     }
@@ -442,7 +473,7 @@ fn misses(
 ) -> Vec<String>
 {
     let name: &str = name.as_ref();
-    let signatures = signed(grammar, written.text);
+    let signatures = signed(written.text, &top_level(grammar, written.text));
     if signatures.is_empty() {
         return Vec::new();
     }
@@ -511,7 +542,8 @@ fn misses(
             },
         };
         let mut wrote: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for signed in signed(grammar, SourceText::from(out.as_str())) {
+        let reformatted = SourceText::from(out.as_str());
+        for signed in signed(reformatted, &top_level(grammar, reformatted)) {
             if let Some(ty) =
                 out.get(usize::from(signed.ty.start()) .. usize::from(signed.ty.end()))
             {
@@ -1167,27 +1199,19 @@ fn apart(
     parted
 }
 
-/// Each top-level `def name = body ;` of `text`: the body's tokens, by name.
+/// Each `def name = body ;` among `forms`, the top-level forms of `text`:
+/// the body's tokens, by name.
 ///
 /// # Specification
 /// trivial.
 fn defined(
-    grammar: &Pbg,
     text: SourceText<'_>,
+    forms: &[TopLevel],
 ) -> BTreeMap<String, Vec<String>>
 {
     let mut found = BTreeMap::new();
-    let Ok(parsed) = parse(grammar, text)
-    else {
-        return found;
-    };
     let text = <&str>::from(text);
-    let tree = parsed.tree();
-    for form in tree.children(tree.root()) {
-        let Some(span) = tree.node(form).map(gandr_surface_syntax::Node::span)
-        else {
-            continue;
-        };
+    for &TopLevel { span, .. } in forms {
         let Some(written) = text.get(usize::from(span.start()) .. usize::from(span.end()))
         else {
             continue;
@@ -1204,28 +1228,19 @@ fn defined(
     found
 }
 
-/// Each top-level `def name(…) …`, `def name @[…] (…) …` or `def rec name(…)
-/// …` of `text`: the whole form's tokens, by name.
+/// Each `def name(…) …`, `def name @[…] (…) …` or `def rec name(…) …` among
+/// `forms`, the top-level forms of `text`: the whole form's tokens, by name.
 ///
 /// # Specification
 /// trivial.
 fn recursed(
-    grammar: &Pbg,
     text: SourceText<'_>,
+    forms: &[TopLevel],
 ) -> BTreeMap<String, Vec<String>>
 {
     let mut found = BTreeMap::new();
-    let Ok(parsed) = parse(grammar, text)
-    else {
-        return found;
-    };
     let text = <&str>::from(text);
-    let tree = parsed.tree();
-    for form in tree.children(tree.root()) {
-        let Some(span) = tree.node(form).map(gandr_surface_syntax::Node::span)
-        else {
-            continue;
-        };
+    for &TopLevel { span, .. } in forms {
         let Some(written) = text.get(usize::from(span.start()) .. usize::from(span.end()))
         else {
             continue;
@@ -1406,15 +1421,17 @@ fn bodies(
             .collect();
         let out = String::from(<&str>::from(out.text()));
         let mut signatures: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for signed in signed(grammar, SourceText::from(out.as_str())) {
+        let reformatted = SourceText::from(out.as_str());
+        let top = top_level(grammar, reformatted);
+        for signed in signed(reformatted, &top) {
             if let Some(ty) =
                 out.get(usize::from(signed.ty.start()) .. usize::from(signed.ty.end()))
             {
                 drop(signatures.insert(signed.name, tokens(SourceFragment::from(ty))));
             }
         }
-        let definitions = defined(grammar, SourceText::from(out.as_str()));
-        let recursions = recursed(grammar, SourceText::from(out.as_str()));
+        let definitions = defined(reformatted, &top);
+        let recursions = recursed(reformatted, &top);
         for declaration in &held {
             // The printer's spelling of the core the variant lowers to: a
             // call the sugared form writes at its read lowers to a nested
