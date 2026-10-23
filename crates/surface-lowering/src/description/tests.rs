@@ -42,6 +42,40 @@ fn data_lowering_preserves_constructor_fields()
     );
 }
 
+/// #1295: a constructor field written at grade `1` keeps that grade in its
+/// code, and one at `ω` keeps `ω`.
+#[test]
+fn a_graded_field_keeps_its_grade_in_the_code_1295()
+{
+    let grammar = grammar();
+    let source = r#"data Pair(a : Type) : Type {
+        Both : (1 first : a, ω second : a) --> Pair(a);
+    }"#;
+    let tree = parsed(&grammar, source.into());
+    let report = elaborate_descriptions(&grammar, &tree, &Unit::single()).unwrap();
+    assert_eq!(report.diagnostics, Vec::new());
+    let [ref entry] = *report.declarations.as_slice()
+    else {
+        panic!("one family")
+    };
+    let [ref both] = *entry.description.ctors.as_ref()
+    else {
+        panic!("one generator")
+    };
+    let CodeView::Prod(mut fields) = both.code.view()
+    else {
+        panic!("two fields")
+    };
+    assert!(matches!(fields.next().unwrap().view(), CodeView::Field {
+        grade: DescriptionGrade::Finite(Multiplicity(1)),
+        ..
+    }));
+    assert!(matches!(fields.next().unwrap().view(), CodeView::Field {
+        grade: DescriptionGrade::Omega,
+        ..
+    }));
+}
+
 #[test]
 fn codata_observations_preserve_their_codes()
 {

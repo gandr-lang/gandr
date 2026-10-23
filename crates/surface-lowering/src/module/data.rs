@@ -1149,10 +1149,11 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the generator's name tile.
-    /// - ensures: the generator's fields, named or bare, in order, and the
-    ///   indices its result states; the cursor stands past its result.
+    /// - ensures: the generator's fields, named or bare, in order, each past
+    ///   its grade `1` or `ω` where one is written, and the indices its result
+    ///   states; the cursor stands past its result.
     /// - fails: the declined constructor-block spelling and an attribute slot
-    ///   by name; a grade prefix by name; a telescope with no result; a result
+    ///   by name; any other grade by name; a telescope with no result; a result
     ///   other than the family over its parameters then one index per entry of
     ///   `kinds`, as an indexed family.
     /// - panics: none.
@@ -1187,6 +1188,14 @@ impl<'source> Collector<'_, 'source>
         let result = if let Maybe::Present(open) = cursor.tile(TileName::PAREN_OPEN) {
             loop {
                 let mut named = Maybe::Absent(field_name::Absent::Unnamed);
+                if let Maybe::Present(Piece::Tile { label, at }) = cursor.peek()
+                    && (label == TileName::OMEGA || label == TileName::NUMBER)
+                {
+                    if label == TileName::NUMBER && self.name_of(at).as_ref() != "1" {
+                        return Err(declined(at, FormName::GRADE, Unbuilt::FieldGrade));
+                    }
+                    let _grade = cursor.tile(label);
+                }
                 if let Maybe::Present(Piece::Tile { label, .. }) = cursor.peek()
                     && label == TileName::IDENTIFIER
                 {
