@@ -266,8 +266,10 @@ if [[ "$pending" != '[]' ]]; then
   # tracked file the working tree deleted is left out of the overlay here,
   # since macOS's tar cannot skip an unreadable name.
   # A seeded lane builds in its own copy, never in a shared target directory.
+  # The scratch is named for this process, so `wt:sweep` leaves it while the
+  # run lives and removes what a killed run left.
   [[ -z "$seed" ]] || unset CARGO_TARGET_DIR
-  scratch=$(mktemp -d)
+  scratch=$(mktemp -d "${TMPDIR:-/tmp}/gandr-scratch-$$.XXXXXX")
   trap 'for lane in "$scratch"/[0-9]*; do git worktree remove --force "$lane" 2> /dev/null || true; done; rm -rf "$scratch"; git worktree prune' EXIT
   for (( lane = 0; lane < lanes; lane++ )); do
     git worktree add --quiet --detach "$scratch/$lane" HEAD
