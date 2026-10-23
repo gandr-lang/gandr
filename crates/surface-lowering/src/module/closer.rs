@@ -352,30 +352,35 @@ impl<'source> Collector<'_, 'source>
     /// of their own, and so does the rest of the form after it. Each piece
     /// refuses as a form of the wrong sort at its own bytes, ahead of the
     /// closer that caused them. A closer is written twice when the one before
-    /// it on its line, past any blank, is the same; a closer that follows
-    /// anything else stands for an opener left out, not one written too often.
-    /// A run is every piece that begins on the doubled closer's line after the
-    /// attribute blocks leading it, when a bare tile stands before the closer
-    /// or a piece begins after it; a line of whole forms ended by a closer with
-    /// nothing after it keeps its refusals.
+    /// it on its line, past any blank, is the same, or when a closer earlier
+    /// on its line follows its own twin and closed the form early, leaving
+    /// this one alone; a closer that follows anything else stands for an
+    /// opener left out, not one written too often. A run is every piece that
+    /// begins on the doubled closer's line after the attribute blocks leading
+    /// it, when a bare tile stands before the closer or a piece begins after
+    /// it; a line of whole forms ended by a closer with nothing after it
+    /// keeps its refusals.
     ///
     /// # Specification
     /// - requires: `pieces` are the root pieces of one source, in order.
     /// - ensures: each run is led by its first piece and followed by the rest;
     ///   its last piece is at or after a piece beginning with a `)`, `]` or `}`
-    ///   that follows the same closer and is not first on its line, every piece
-    ///   of the run begins on that line, and the run's refusal is a malformed
-    ///   form at that closer, of its family, naming the form of the run's first
-    ///   piece; no piece belongs to two runs.
+    ///   that is not first on its line and follows the same closer or, earlier
+    ///   on its line, twin closers of its family; every piece of the run begins
+    ///   on that line, and the run's refusal is a malformed form at the second
+    ///   of the twins, of its family, naming the form of the run's first piece;
+    ///   no piece belongs to two runs.
     /// - panics: none.
     /// - executable: none — the clause restates the walk over the pieces.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a codata declaration whose universe's `]` is doubled
     ///   and an operation whose parameter's `)` is doubled refuse at the second
-    ///   closer; a closer after a word, an opener left out, keeps its own
-    ///   refusal.
+    ///   closer, and so does a shell block whose `}` is doubled before the
+    ///   line's last `}`; a closer after a word, an opener left out, keeps its
+    ///   own refusal.
     /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
+    /// - witness: `module::tests::a_fault_before_a_declaration_is_refused_where_it_was_written_2082`
     pub(super) fn torn_lines(
         &self,
         pieces: &[Placed],
@@ -396,19 +401,34 @@ impl<'source> Collector<'_, 'source>
             else {
                 continue;
             };
-            // Doubled: the closer before it, past any blank, is the same, and
-            // its line opens no more of the family before it than it closes.
+            // Doubled: the closer before it, past any blank, is the same, or
+            // a closer earlier on its line follows its own twin; and the line
+            // opens no more of the family before it than it closes. The
+            // refusal stands at the second of the twins.
             let opener = match written {
                 ")" => '(',
                 "]" => '[',
                 _ => '{',
             };
-            let doubled = text.get(line_of(start) .. start).is_some_and(|before| {
-                before.trim_end_matches([' ', '\t']).ends_with(written)
-                    && before.matches(opener).count() <= before.matches(written).count()
+            let line_start = line_of(start);
+            let twin = text.get(line_start .. start).and_then(|before| {
+                let balanced = before.matches(opener).count() <= before.matches(written).count();
+                let trimmed = before.trim_end_matches([' ', '\t']);
+                if !balanced {
+                    None
+                }
+                else if trimmed.ends_with(written) {
+                    Some(start)
+                }
+                else {
+                    let pair = [written, written].concat();
+                    trimmed
+                        .rfind(pair.as_str())
+                        .map(|at| line_start.saturating_add(at).saturating_add(1))
+                }
             });
-            let Some(close) =
-                ClosingClass::closing(DelimSpelling::from(written)).filter(|_| doubled)
+            let (Some(close), Some(twin)) =
+                (ClosingClass::closing(DelimSpelling::from(written)), twin)
             else {
                 continue;
             };
@@ -464,8 +484,8 @@ impl<'source> Collector<'_, 'source>
                 })
                 .unwrap_or(FormName::ROOT);
             let Ok(span) = ByteSpan::new(
-                ByteOffset::from(start),
-                ByteOffset::from(start.saturating_add(1)),
+                ByteOffset::from(twin),
+                ByteOffset::from(twin.saturating_add(1)),
             )
             else {
                 continue;

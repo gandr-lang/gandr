@@ -3597,8 +3597,9 @@ impl<'source> Collector<'_, 'source>
     ///   first word, refused at the child; it owns the child, its decorations,
     ///   its torn pieces and its terminator, and carries the decorations'
     ///   attributes, so an expectation written before a stray states its
-    ///   refusal. An unreadable decoration refuses the slot instead where it
-    ///   stands first.
+    ///   refusal. The first unreadable decoration refuses the slot instead: at
+    ///   itself when its fault spans bytes it wrote, so it is reported ahead of
+    ///   the child; at the child when its reading stopped short.
     /// - provides: a refusal for a root child no declaration owns, beside the
     ///   declarations the source keeps.
     /// - fails: never.
@@ -3612,6 +3613,7 @@ impl<'source> Collector<'_, 'source>
     ///   stray.
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
     /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
+    /// - witness: `module::tests::a_fault_before_a_declaration_is_refused_where_it_was_written_2082`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() == before.0.saturating_add(1)
@@ -3633,7 +3635,9 @@ impl<'source> Collector<'_, 'source>
         let mut attributed = Ok(());
         for &block in &decorations {
             if attributed.is_ok() {
-                attributed = self.decoration(block, child.node, &mut attributes);
+                attributed = self
+                    .decoration(block, child.node, &mut attributes)
+                    .map_err(|unread| (block.node, unread));
             }
         }
         let name = self
@@ -3656,8 +3660,16 @@ impl<'source> Collector<'_, 'source>
                 operand: Operand::Signature,
             });
             slot.attributes.append(&mut attributes);
-            if let Err(unread) = attributed {
-                slot.refuse(child.node, unread);
+            // A block whose fault names bytes it wrote stands before the
+            // child, so that fault is reported ahead of the child's own
+            // refusal; a block whose reading stopped short was torn by what
+            // follows it, and stays behind.
+            if let Err((block, unread)) = attributed {
+                let written = match unread.span() {
+                    Maybe::Present(span) => span.start() < span.end(),
+                    Maybe::Absent(_) => false,
+                };
+                slot.refuse(if written { block } else { child.node }, unread);
             }
         }
     }
@@ -10964,6 +10976,65 @@ mod tests
                 }] if *span == at(settled, "\n}", 1)
             ),
             "a declaration at the definition's indentation settles where it closed: {refused:?}"
+        );
+    }
+
+    /// Two faults each refused where it was written, not at the declaration
+    /// after it (#2082). A closer doubled earlier on its line closes the form
+    /// early, and the closer that ends the line stands alone: the line is
+    /// refused once, at the second of the twins. An attribute block with one
+    /// closer too many is refused at that closer, ahead of the declaration
+    /// it decorates.
+    #[test]
+    fn a_fault_before_a_declaration_is_refused_where_it_was_written_2082()
+    {
+        let pbg = grammar();
+        let refusals = |text: &'static str| {
+            let tree = repaired(&pbg, SourceText::from(text));
+            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+            collected
+                .slots
+                .iter()
+                .filter_map(|slot| match slot.refusal {
+                    Maybe::Present((_at, refusal)) => Some(refusal),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let second = |text: &str, written: &str| {
+            let start = text.find(written).unwrap().saturating_add(1);
+            span(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(1)),
+            )
+        };
+
+        let shell = "def today = #!{ echo $!{ date }}; } ;\ndef kept = 1 ;\n";
+        let refused = refusals(shell);
+        assert!(
+            matches!(
+                refused.as_slice(),
+                [LoweringRefusal::MalformedForm {
+                    span,
+                    fault: FormFault::ExtraClose(ClosingClass::Brace),
+                    ..
+                }] if *span == second(shell, "}}")
+            ),
+            "the line is refused once, at the second of the twins: {refused:?}"
+        );
+
+        let attribute = "@[ refuses(\"x\")) ]\nextern \"c\" from \"sensor\" {\n  def read(channel : i32) -> i64;\n}\ndef kept = 1 ;\n";
+        let refused = refusals(attribute);
+        assert!(
+            matches!(
+                refused.as_slice(),
+                [LoweringRefusal::MalformedForm {
+                    span,
+                    fault: FormFault::ExtraOperand,
+                    ..
+                }] if *span == second(attribute, "))")
+            ),
+            "the block is refused at its extra closer: {refused:?}"
         );
     }
 
