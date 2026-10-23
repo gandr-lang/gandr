@@ -1,11 +1,13 @@
-// A model whose carrier is manifest where a model of its theory is asked
-// (#2120): each theory with an unindexed sort takes one forgetting map from
-// `Model(T) with sort C = x` to `Model(T)`, at every carrier `x`, which puts
-// the carrier back as the record's first field. The checker applies it where
-// the one model stands at the other, solving `x` from the model's type, and
-// the run reads the application. The map is a family in the carrier, so a
-// manifest model carried along an equivalence of carriers is read alike once
-// forgotten.
+// A model whose sorts are manifest where a model of its theory is asked
+// (#2120): a model type fixing sorts of a theory takes one forgetting map
+// from `Model(T) with sort C = x` to `Model(T)`, at every carrier `x`, which
+// puts each fixed sort back as the field it is in the theory's record. The
+// checker applies it where the one model stands at the other, solving `x`
+// from the model's type, and the run reads the application. The map is a
+// family in the carrier, so a manifest model carried along an equivalence of
+// carriers is read alike once forgotten. A model fixing some of its theory's
+// sorts takes the map putting back those alone, every other sort staying the
+// field it is (#2132).
 
 // The counter, counting up and down modulo three, the negation between the
 // counts, and `observe`, which reads any counter.
@@ -31,3 +33,65 @@ def negatedManifest = transport(\x. Model(Counter) with sort C = x, countsNegate
 /// reads it as counting up reads.
 @[ runs("1") ]
 def observedCarried() -> -F Integer { become observe(negatedManifest) }
+
+/// A counter whose reading has a sort of its own: the counts and the
+/// readings, a zero, a step, a reading and the reading shown as an integer.
+@[ checks ]
+theory ReadCounter {
+  sort C : Type;
+  sort R : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> R;
+  oper shown : (r : R) --> Integer;
+}
+
+/// A consumer of any such counter: the reading after one step from zero,
+/// shown.
+@[ checks ]
+def observeShown(m : Model(ReadCounter)) -> -F Integer {
+  case m {
+    #{.zero = z, .incr = i, .read = r, .shown = s} => become s(r(i(z)))
+  }
+}
+
+/// An integer reading shown as it is.
+@[ checks ]
+def asIs(r : Integer) -> -F Integer { r }
+
+/// Counting up modulo three, its readings manifest at the integers and its
+/// counts a field: the record is the counts' type, the zero, the step, the
+/// reading and the showing.
+@[ checks ]
+def upReadings : Model(ReadCounter) with sort R = Integer ;
+def upReadings = (type(Unit + (Unit + Unit)), (Up.zero, (Up.incr, (Up.read, asIs)))) ;
+
+/// The counter with its readings manifest where any such counter is asked:
+/// the checker applies the map putting back the readings alone.
+@[ runs("1") ]
+def observedReadings() -> -F Integer { become observeShown(upReadings) }
+
+/// Counting up modulo three, both its sorts manifest: neither is a field.
+@[ checks ]
+def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer ;
+def upBoth = #{.zero = Up.zero, .incr = Up.incr, .read = Up.read, .shown = asIs} ;
+
+/// The counter with both sorts manifest where any such counter is asked: the
+/// map putting back both is another than the one putting back the readings.
+@[ runs("1") ]
+def observedBoth() -> -F Integer { become observeShown(upBoth) }
+
+/// The counter with both sorts manifest carried along negation of its
+/// counts, its readings fixed as they are.
+@[ checks ]
+def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer ;
+def negatedBoth = transport(
+  \x. Model(ReadCounter) with sort C = x with sort R = Integer,
+  countsNegated,
+  upBoth
+) ;
+
+/// The carried counter where any such counter is asked: the map is a family
+/// in the counts, so forgetting at the far end reads it as counting up reads.
+@[ runs("1") ]
+def observedNegatedBoth() -> -F Integer { become observeShown(negatedBoth) }

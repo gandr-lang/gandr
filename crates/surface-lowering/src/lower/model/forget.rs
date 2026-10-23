@@ -1,8 +1,8 @@
 //! Forgetting maps, as the lowering mints them.
 //!
-//! The slot a theory's forgetting map takes ([`crate::module::ForgetSlot`])
-//! carries a model of the theory whose unindexed sorts are manifest to a model
-//! of the theory, dropping the cell each manifest fixes:
+//! The slot a forgetting map takes ([`crate::module::ForgetSlot`]) carries a
+//! model of a theory whose sorts `C₁ … Cₙ` are manifest to a model of the
+//! theory, dropping the cell each manifest fixes:
 //!
 //! ```text
 //! T.forget : U((x₁ : Type) → … → (m : Model(T) with sort C₁ = x₁ …) → F Model(T))
@@ -10,10 +10,10 @@
 //! ```
 //!
 //! `r` destructures `m` as a reduct does ([`super::reduct`]) and returns `T`'s
-//! bundled record, each manifest sort's field the carrier it is fixed to and
-//! every other field the binder of its own. The checker inserts the map where
-//! a model with manifest sorts stands at `Model(T)`, solving the carriers from
-//! the model's type.
+//! bundled record, each fixed sort's field the carrier it is fixed to and
+//! every other field, an unfixed sort's among them, the binder of its own. The
+//! checker inserts the map where a model with those sorts manifest stands at
+//! `Model(T)`, solving the carriers from the model's type.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -103,11 +103,11 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `slot` is a forgetting slot of the current source.
     /// - ensures: the type `U((x₁ : Type) → … → M → F Model(T))`, one dependent
-    ///   arrow over the fuss-free universe per unindexed sort of `T`, in
+    ///   arrow over the fuss-free universe per sort the slot fixes, in
     ///   signature order, and `M` the record of `T`'s models with each such
     ///   sort manifest at the decode of its carrier; the body `thunk(λx₁ … λm.
     ///   r)`, `r` destructuring `m` as [`Destructured`] does and returning
-    ///   `T`'s record, each unindexed sort's field its carrier and every other
+    ///   `T`'s record, each fixed sort's field its carrier and every other
     ///   field the binder of the field of `M` of its name.
     /// - fails: [`Missing::Unlowered`] where either model type does not mint,
     ///   or an index outgrows what one holds.
@@ -140,20 +140,21 @@ impl<'source> Lowerer<'_, 'source>
             .first()
             .ok_or(Missing::Unlowered)?
             .signature;
-        // The manifest model drops every unindexed sort of the outermost
+        // The manifest model drops each sort the slot fixes of the outermost
         // theory, each read as the decode of its carrier.
         let mut theories = plain.bundled().theories.clone();
         let outermost = theories.first_mut().ok_or(Missing::Unlowered)?;
         let mut fixed: Vec<Name> = Vec::new();
         outermost.signature.components.retain(|component| {
-            let unindexed = matches!(
-                component.form,
-                Ok(ModelForm::Sort { ref indices }) if indices.is_empty()
-            );
-            if unindexed {
+            let manifest = plan.fixed.contains(&component.name)
+                && matches!(
+                    component.form,
+                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty()
+                );
+            if manifest {
                 fixed.push(component.name.clone());
             }
-            !unindexed
+            !manifest
         });
         let carriers = u32::try_from(fixed.len()).map_err(|_overflow| Missing::Unlowered)?;
         let last = carriers.checked_sub(1).ok_or(Missing::Unlowered)?;

@@ -169,10 +169,11 @@ fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
 }
 
 /// A model whose unindexed sorts are manifest stands where its theory's model
-/// is asked: the theory takes one forgetting map under its own name, which
-/// checks, and the checker inserts it at the carrier the model's type fixes,
-/// a type or a bound variable, past a law whose path the solver leaves to the
-/// conversion; a theory with no sort takes none.
+/// is asked: each theory a manifest model type names takes one forgetting map
+/// under its own name, which checks, and the checker inserts it at the carrier
+/// the model's type fixes, a type or a bound variable, past a law whose path
+/// the solver leaves to the conversion; a theory no manifest type names takes
+/// none.
 #[test]
 fn a_manifest_model_stands_where_its_theory_s_model_is_asked()
 {
@@ -195,8 +196,8 @@ fn a_manifest_model_stands_where_its_theory_s_model_is_asked()
     assert_eq!(
         forgets,
         ["Counter", "Sg"],
-        "each sorted theory takes one forgetting map under its own name, the sortless theory \
-         none"
+        "each theory a manifest names takes one forgetting map under its own name, the two \
+         counters fixing one carrier sharing it, the unnamed theory none"
     );
     assert_eq!(lowered.module.forgets().len(), 2);
     let judgements = verdicts(&mut lowered);
@@ -208,6 +209,44 @@ fn a_manifest_model_stands_where_its_theory_s_model_is_asked()
         "each forgetting map checks, and a model whose carrier is manifest stands where its \
          theory's model is asked, its carrier a type or a variable, a law or none: \
          {judgements:?}"
+    );
+}
+
+/// A model fixing some of its theory's sorts stands where the theory's model
+/// is asked, as one fixing all of them does: each set of sorts a manifest
+/// model type fixes takes its own forgetting map, which puts back those sorts
+/// and keeps the others the fields they are (#2132).
+#[test]
+fn a_model_fixing_some_sorts_stands_where_its_theory_s_model_is_asked_2132()
+{
+    let source = "theory Pairing {\n  sort A : Type;\n  sort B : Type;\n  oper left : A;\n  oper \
+                  right : B;\n}\ndef any(m : Model(Pairing)) -> -F Model(Pairing) { return m \
+                  }\ndef both(m : Model(Pairing) with sort A = Integer with sort B = Unit) -> \
+                  -F Model(Pairing) {\n  become any(m)\n}\ndef first(m : Model(Pairing) with \
+                  sort A = Integer) -> -F Model(Pairing) {\n  become any(m)\n}\ndef second(y : \
+                  Type, m : Model(Pairing) with sort B = y) -> -F Model(Pairing) {\n  become \
+                  any(m)\n}\ndef again(m : Model(Pairing) with sort A = Unit) -> -F \
+                  Model(Pairing) {\n  become any(m)\n}\n";
+    let mut lowered = lower(source);
+    let forgets: Vec<String> = rows(&lowered)
+        .into_iter()
+        .filter(|&(_, role, _)| role == Role::Derived)
+        .map(|(name, ..)| name)
+        .collect();
+    assert_eq!(
+        forgets,
+        ["Pairing", "Pairing", "Pairing"],
+        "both sorts, the first alone and the second alone take a map each; the first fixed \
+         again shares its map"
+    );
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.iter().all(|&(_, judgement)| matches!(
+            judgement,
+            Judgement::Checked | Judgement::Synthesised | Judgement::Declared
+        )),
+        "each map checks, and a model fixing both sorts, the first or the second stands where \
+         the pairing's model is asked: {judgements:?}"
     );
 }
 
