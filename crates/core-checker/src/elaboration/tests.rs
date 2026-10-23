@@ -1149,6 +1149,44 @@ fn two_arguments_disagreeing_on_an_implicit_are_apart_1216()
 }
 
 #[test]
+fn an_open_end_is_solved_from_its_point_1979()
+{
+    // `(here(0) : Path(Integer, 0, _))`: two rigid values are conversion's;
+    // the open end against the point that reaches it is bound to the point;
+    // a second, different point is then refuted against the same end.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (hole, open, _) = nominated(&mut arena, &mut deferrals);
+    let zero = arena.value_literal(integer_literal());
+    let one = gandr_kernel_term::Magnitude::from_decimal_text("1".into())
+        .expect("the digits are decimal");
+    let one = arena.value_literal(gandr_kernel_term::Literal::Integer(
+        gandr_kernel_term::IntegerLiteral::new(gandr_kernel_term::Sign::NonNegative, one),
+    ));
+    let outcomes = [(zero, one), (zero, open), (one, open)]
+        .map(|(point, end)| deferrals.unify_values(&mut arena, Binders::NONE, point, end));
+    assert_eq!(
+        outcomes,
+        [
+            super::Unified::Rigid,
+            super::Unified::Agreed,
+            super::Unified::Refuted
+        ],
+        "rigid values are left to conversion, the open end is solved, and a second point is apart"
+    );
+    let solutions = deferrals.solutions(&arena);
+    assert!(
+        solutions.as_ref().is_ok_and(|solved| solved.len() == 1
+            && solved.get(&hole).is_some_and(|&(end, scope)| {
+                scope == Binders::NONE
+                    && gandr_core_term::equal_certificate_syntax(&arena, end, zero)
+                        == gandr_core_term::CertificateEquality::Equal
+            })),
+        "the end is solved as the point, at the binders it was declared under: {solutions:?}"
+    );
+}
+
+#[test]
 fn an_implicit_no_argument_forces_is_unsolved_1216()
 {
     // `twice(3)`'s combination: met and declared, compared with nothing.
