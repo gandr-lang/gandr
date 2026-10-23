@@ -2647,6 +2647,72 @@ fn a_quoted_chain_is_quoted_1127()
     }
 }
 
+/// #1102: a call reads its arguments as expressions wherever it stands, so a
+/// quoted chain passed to a call a type writes is written `type(T)`, as it is
+/// in a definition's body: in a thunk a path type's endpoint holds, whose
+/// braces the grammar reads as an expression, and at the endpoint itself.
+/// Bare, the chain reads as the product of two terms and the printed type
+/// does not read back. The carrier stays in the type's own sort, where the
+/// chain stands bare.
+#[test]
+fn a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102()
+{
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let unit = core.value_type_product(&[]);
+    let pair = core.value_type_product(&[unit, integer]);
+    let code = core.value_quote(pair);
+    let pick = core.value_constant(ConstantIndex::from(0_usize));
+    let held = core.value_constant(ConstantIndex::from(1_usize));
+    let call = |core: &mut CoreArena, argument: ValueId| {
+        let forced = core.computation_force(pick);
+        let typed = core.computation_application(forced, code);
+        core.computation_application(typed, argument)
+    };
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let applied = call(&mut core, bound);
+    let lambda = core.computation_lambda(applied);
+    let suspended = core.value_thunk(lambda);
+    let returns_pair = core.comp_type_returner(pair);
+    let arrow = core.comp_type_arrow(pair, returns_pair);
+    let carrier = core.value_type_thunk(arrow);
+    let in_thunk = core.value_type_path(carrier, suspended, suspended);
+    let picked = call(&mut core, held);
+    let picked = core.value_returned(picked);
+    let at_endpoint = core.value_type_path(pair, picked, picked);
+    let names = [Name::from("pick"), Name::from("held")];
+    let source = CoreSource::new(&core, &names);
+    for (root, sugared, explicit) in [
+        (
+            in_thunk,
+            "Path(Unit * Integer => Unit * Integer, thunk { fn (a) { pick(type(Unit * Integer), \
+             a) } }, thunk { fn (a) { pick(type(Unit * Integer), a) } })",
+            "Path(+U (#{Unit, Integer} -> -F #{Unit, Integer}), thunk { fn (a) { \
+             pick(#{Unit, Integer}, a) } }, thunk { fn (a) { pick(#{Unit, Integer}, a) } })",
+        ),
+        (
+            at_endpoint,
+            "Path(Unit * Integer, pick(type(Unit * Integer), held), pick(type(Unit * Integer), \
+             held))",
+            "Path(#{Unit, Integer}, pick(#{Unit, Integer}, held), pick(#{Unit, Integer}, held))",
+        ),
+    ] {
+        for (form, expected) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented = presented_in(
+                &source,
+                Root::Type(CoreNode::ValueType(root)),
+                PageWidth::from(400_u32),
+                form,
+            );
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (expected, Fidelity::Faithful),
+                "{root:?} in the {form:?} form"
+            );
+        }
+    }
+}
+
 /// #800: the sugared form writes a thunk over a dependent arrow chain as the
 /// dependent alias, naming each binder its codomain reads and writing every
 /// other domain bare, where it wrote the explicit thunk before; the explicit

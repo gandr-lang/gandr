@@ -1588,26 +1588,34 @@ enum Surface
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a type for a type slot of a value or a computation that writes
-///   itself — an annotation, a binder's type, a typed bind's result — where the
-///   expression grammar embeds a type, and for a static abstraction's body,
-///   which the grammar reads as a type; `surface` itself otherwise. A quote, a
-///   nested or returned computation and an elided ascription write nothing of
-///   their own, so their slot is read as they are; a type former's value slot
-///   is read as the type is, since every type application reads its arguments
-///   in the type's own sort and a path or a flow whose endpoints are codes is
-///   over a universe, which reads them as types.
+/// - ensures: an expression for a thunk's body, which the grammar reads between
+///   the thunk's braces as an expression in either sort, so a type argument of
+///   a call there is quoted (#1102); a type for a type slot of a value or a
+///   computation that writes itself — an annotation, a binder's type, a typed
+///   bind's result — where the expression grammar embeds a type, and for a
+///   static abstraction's body, which the grammar reads as a type; `surface`
+///   itself otherwise. A quote, a nested or returned computation and an elided
+///   ascription write nothing of their own, so their slot is read as they are;
+///   a type former's value slot is read as the type is, since every type
+///   application reads its arguments in the type's own sort and a path or a
+///   flow whose endpoints are codes is over a universe, which reads them as
+///   types. A call reads its own head and arguments as expressions, which
+///   [`Walk::visit`] schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a quote as an argument, as a definition's body, as a
-///   static abstraction's body and as a decoded code in a type position
-///   distinguish the slots an expression reads from those a type reads.
+///   static abstraction's body, as a decoded code in a type position and as a
+///   call's argument in a thunk a path type's endpoint writes distinguish the
+///   slots an expression reads from those a type reads.
 /// - witness: `tests::goldens::a_type_no_expression_reads_is_quoted_839`
 /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
-#[spec(ensures: |ret| ret == if matches!(*former, Former::StaticLambda(_)) || (!matches!(*former,
+/// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
+#[spec(ensures: |ret| ret == if matches!(*former, Former::Thunk(_)) {
+    Surface::Expression
+} else if matches!(*former, Former::StaticLambda(_)) || (!matches!(*former,
     Former::Quote(_) | Former::QuoteComputation(_) | Former::Nested(_) | Former::Returned(_) | Former::Ascription { .. } | Former::Place { .. })
     && matches!(kind(former), Kind::Value | Kind::Computation)
     && matches!(admits, Admits::Type | Admits::ValueType | Admits::CompType))
@@ -1622,6 +1630,11 @@ fn surface_below<Node>(
     admits: Admits,
 ) -> Surface
 {
+    // A thunk's body is written between braces, which either grammar reads
+    // as an expression.
+    if matches!(*former, Former::Thunk(_)) {
+        return Surface::Expression;
+    }
     let writes_nothing = matches!(
         *former,
         Former::Quote(_)
@@ -7584,12 +7597,16 @@ impl Walk<'_, '_>
     ///   the head forces a recursive definition's own binder, each uniform
     ///   parameter ([`Self::uniform`]) is scheduled as its context binder
     ///   between the head and the first argument, outermost first, and the join
-    ///   counts them among the arguments. A forced thunk literal of at least as
-    ///   many abstractions as the call has arguments, whose body then returns,
-    ///   is scheduled instead as the value it returns, under one binder per
-    ///   argument standing for the argument, the first outermost: the type
-    ///   grammar has no call of a literal, and the reading back compares such a
-    ///   call as what it returns (#675).
+    ///   counts them among the arguments. A call standing where a type is read
+    ///   has the walk's surface set to an expression over its head and its
+    ///   arguments and restored past its join, since a call reads them as
+    ///   expressions wherever it stands: a type argument there is quoted
+    ///   (#1102). A forced thunk literal of at least as many abstractions as
+    ///   the call has arguments, whose body then returns, is scheduled instead
+    ///   as the value it returns, under one binder per argument standing for
+    ///   the argument, the first outermost: the type grammar has no call of a
+    ///   literal, and the reading back compares such a call as what it returns
+    ///   (#675).
     /// - provides: the one spelling the surface writes a call in.
     /// - fails: never.
     /// - panics: none.
@@ -7607,23 +7624,34 @@ impl Walk<'_, '_>
     ///   return stays a call; a recursive definition's call under one and two
     ///   uniform parameters observes them passed first, in order; a call
     ///   omitting an implicit, and one omitting its every argument, write only
-    ///   what the source wrote, and a call holding a wildcard writes its `_`.
+    ///   what the source wrote, and a call holding a wildcard writes its `_`; a
+    ///   call a path type's endpoint writes quotes its type argument.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
     /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
     /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
     /// - witness: `tests::goldens::a_call_leaves_out_the_implicits_it_omits_1216`
     /// - witness: `tests::goldens::a_call_writes_the_wildcards_it_holds_528`
+    /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
     #[spec(
-        captures: [entry = tasks.len()],
-        ensures: |()| tasks.get(entry..).is_some_and(|scheduled| {
-            let substituted = scheduled.iter().find_map(|task| if let Task::Substitute(Arity(count)) = *task { Some(count) } else { None });
+        captures: [entry = tasks.len(), surface = self.surface],
+        ensures: |()| tasks.get(entry..).is_some_and(|all| {
+            let substituted = all.iter().find_map(|task| if let Task::Substitute(Arity(count)) = *task { Some(count) } else { None });
             if let Some(count) = substituted {
                 return count > 0_usize
-                    && scheduled.iter().filter(|task| matches!(**task, Task::Unbind)).count() == count
-                    && scheduled.iter().filter(|task| matches!(**task, Task::Hold)).count() == count
-                    && count.checked_mul(3_usize).and_then(|all| all.checked_add(2_usize)) == Some(scheduled.len());
+                    && all.iter().filter(|task| matches!(**task, Task::Unbind)).count() == count
+                    && all.iter().filter(|task| matches!(**task, Task::Hold)).count() == count
+                    && count.checked_mul(3_usize).and_then(|every| every.checked_add(2_usize)) == Some(all.len());
             }
+            let scheduled = if surface == Surface::Expression {
+                all
+            } else if matches!(all.first(), Some(&Task::Surface(restored)) if restored == surface)
+                && matches!(all.last(), Some(&Task::Surface(Surface::Expression)))
+            {
+                all.get(1_usize .. all.len().saturating_sub(1_usize)).unwrap_or_default()
+            } else {
+                return false;
+            };
             let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
             else { return false; };
             arity.checked_add(1_usize) == Some(visits.len())
@@ -7701,6 +7729,13 @@ impl Walk<'_, '_>
         // A recursive definition's call of itself passes each uniform
         // parameter as itself, ahead of the arguments its fixpoint takes.
         let Arity(uniform) = self.uniform(source, head);
+        // A call reads its head and its arguments as expressions wherever it
+        // stands: where a type is read, the walk reads them as expressions
+        // and returns to the type past the call's join.
+        let switched = self.surface != Surface::Expression;
+        if switched {
+            tasks.push(Task::Surface(self.surface));
+        }
         tasks.push(Task::Join(Join::Apply(Arity(
             arguments.len().saturating_add(uniform),
         ))));
@@ -7735,6 +7770,9 @@ impl Walk<'_, '_>
                 depth,
             }
         });
+        if switched {
+            tasks.push(Task::Surface(Surface::Expression));
+        }
     }
 
     /// The body of the thunk at `node` where the walk leaves the thunk for the
