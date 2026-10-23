@@ -636,8 +636,9 @@ pub enum Refusal
         /// The former.
         former: UnadmittedFormer,
     },
-    /// A session type, a session action or an endpoint: the kernel has no
-    /// channels, so a declaration that names one stays on the checker's side,
+    /// A receive, an offer, or a linear variable a receive bound: the kernel
+    /// replays what a session computes but has no value for what a peer sends
+    /// or picks, so a declaration that names one stays on the checker's side,
     /// as a declaration whose former the kernel lacks does.
     Session
     {
@@ -3885,10 +3886,11 @@ enum Frame
         /// The mark.
         at: ComputationId,
     },
-    /// A split, awaiting the image of the projection binds it reduces to.
-    SplitReduct
+    /// A split or a session action, awaiting the image of the computation the
+    /// bridge rewrote it to.
+    Rewritten
     {
-        /// The split.
+        /// The split or the session action.
         at: ComputationId,
     },
     /// A dependent split, awaiting its scrutinee's image.
@@ -4996,8 +4998,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   erased by this machine is not minted again.
     /// - fails: [`Refusal::Withheld`] for a constant whose declaration did not
     ///   cross; [`Refusal::OutOfFragment`] for a former the fragment has no
-    ///   rule for; [`Refusal::Session`] for a session type, a session action or
-    ///   a linear-zone variable; [`Refusal::DanglingNode`] for an id `source`
+    ///   rule for; [`Refusal::Session`] for a receive, an offer or a
+    ///   linear-zone variable; [`Refusal::DanglingNode`] for an id `source`
     ///   does not hold; [`Refusal::Cyclic`] for a node reached again while its
     ///   own erasure waits; [`Refusal::CertificateDeclined`] for an unfolding
     ///   the normaliser does not certify. Nodes minted before the refusal stay
@@ -5876,9 +5878,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - ensures: ordinary computations open one continuation; a native case
     ///   queues its motive and every branch after the scrutinee; a sum case
     ///   queues every branch after the scrutinee; a lazy product queues every
-    ///   component after the first, and the empty one assembles at once.
+    ///   component after the first, and the empty one assembles at once. A
+    ///   split at the ambient motive and a send, a select, a close or a fork
+    ///   open the frame of the computation they rewrite to.
     /// - fails: [`Refusal::Cyclic`] for an open computation or
-    ///   [`Refusal::DanglingNode`] for an absent source.
+    ///   [`Refusal::DanglingNode`] for an absent source; [`Refusal::Session`]
+    ///   for a receive or an offer; [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::Memory`] for a placed buffer.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -6041,10 +6047,13 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 motive: SplitMotive::Ambient,
                 body,
             } => (
-                Frame::SplitReduct { at },
+                Frame::Rewritten { at },
                 TermNode::Computation(self.split_reduct(scrutinee, arity, body)),
             ),
-            Computation::Session(_) => return Err(Refusal::Session { at: node }),
+            Computation::Session(_) => (
+                Frame::Rewritten { at },
+                TermNode::Computation(self.session_reduct(at)?),
+            ),
             Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             Computation::Mark { body, .. } => (
                 Frame::UnmarkedComputation { at },
@@ -6115,15 +6124,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             ValueTypeView::Data { .. }
             | ValueTypeView::Record(_)
             | ValueTypeView::Sum(_)
-            | ValueTypeView::Product(_) => {
-                return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
-            },
-            ValueTypeView::Session(session) => {
-                if session.state() != session.protocol().root() {
-                    return Err(Refusal::Session {
-                        at: CoreNode::Type(TypeNode::Value(at)),
-                    });
-                }
+            | ValueTypeView::Product(_)
+            | ValueTypeView::Session(_) => {
                 return self.prepare_native(target, CoreNode::Type(TypeNode::Value(at)));
             },
             ValueTypeView::Flow {
@@ -7271,7 +7273,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Ok(self.erased_value(at, reduct))
             },
             (
-                Frame::UnmarkedComputation { at } | Frame::SplitReduct { at },
+                Frame::UnmarkedComputation { at } | Frame::Rewritten { at },
                 AnyNode::Computation(image),
             ) => Ok(self.erased_computation(at, image)),
             (Frame::SigmaSplitScrutinee { at, motive, body }, AnyNode::Value(scrutinee)) => {
@@ -7347,7 +7349,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::BindBody { .. }
                 | Frame::Project { .. }
                 | Frame::UnmarkedComputation { .. }
-                | Frame::SplitReduct { .. }
+                | Frame::Rewritten { .. }
                 | Frame::SigmaSplitBody { .. },
                 AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
@@ -7485,6 +7487,78 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     {
         self.memo().computations.insert(at, Image::Erased(erased));
         Step::Ascend(AnyNode::Computation(erased))
+    }
+
+    /// The computation a session action is erased to, minted into the source
+    /// arena: the kernel replays what the action computes and none of the
+    /// discipline the checker judged.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `send(c, v)` is `return v to _. return ()`, so the payload
+    ///   still crosses; a select and a close are `return ()`; a fork is its
+    ///   child, then its parent under the bind's one new binder. An endpoint
+    ///   names no value, and a fork's two linear binders bind none.
+    /// - fails: [`Refusal::DanglingNode`] for an absent source or one that is
+    ///   not a session action; [`Refusal::Session`] for a receive or an offer,
+    ///   whose payload or label the kernel has no value for;
+    ///   [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Memory`] for a
+    ///   placed buffer.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fork whose parent reads a variable bound outside it
+    ///   crosses and the kernel admits it; an unshifted parent reads the
+    ///   child's result instead, and a dropped payload leaves a send's value
+    ///   unchecked.
+    /// - witness: `bridge::tests::a_session_action_crosses_as_what_it_computes_1319`
+    /// - witness: `judgement::session::tests::a_fork_crosses_as_its_child_then_its_parent_1319`
+    #[spec(ensures: |ret| match ret {
+        | Ok(reduct) => self.arena.computation(reduct).is_some(),
+        | Err(Refusal::Session { at: site } | Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Memory } | Refusal::DanglingNode { node: site }) =>
+            site == CoreNode::Term(TermNode::Computation(at)),
+        | Err(_) => false,
+    })]
+    fn session_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<ComputationId, Refusal>
+    {
+        use gandr_core_term::session::SessionAction;
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let Some(&Computation::Session(ref action)) = self.arena.computation(at)
+        else {
+            return Err(Refusal::DanglingNode { node });
+        };
+        match *action {
+            SessionAction::Send { payload, .. } => {
+                let unit = self.arena.value_unit();
+                let done = self.arena.computation_return(unit);
+                let sent = self.arena.computation_return(payload);
+                Ok(self.arena.computation_bind(sent, done))
+            },
+            SessionAction::Select { .. } | SessionAction::Close { .. } => {
+                let unit = self.arena.value_unit();
+                Ok(self.arena.computation_return(unit))
+            },
+            SessionAction::Fork { child, parent, .. } => {
+                let parent = gandr_core_term::shift_computation_under(
+                    self.arena,
+                    parent,
+                    gandr_core_term::Binders::NONE,
+                    gandr_core_term::Binders::from(1_u32),
+                )
+                .settle(self.arena);
+                Ok(self.arena.computation_bind(child, parent))
+            },
+            SessionAction::Receive { .. } | SessionAction::Offer { .. } => {
+                Err(Refusal::Session { at: node })
+            },
+            SessionAction::Place { .. } => Err(Refusal::OutOfFragment {
+                at: node,
+                former: UnadmittedFormer::Memory,
+            }),
+        }
     }
 
     /// The projection binds a split of `scrutinee` into `body` reduces to,

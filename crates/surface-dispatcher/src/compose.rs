@@ -4842,6 +4842,71 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
         );
     }
 
+    /// A fork whose ends only close reaches the kernel as what it computes;
+    /// one whose parent receives stays on the checker's side until a receive
+    /// erases too.
+    #[test]
+    fn a_session_reaches_the_kernel_as_what_it_computes_1319()
+    {
+        let grammar = grammar();
+        let source = SourceText::from(
+            "def finished() -> -F Unit {
+  fork (seat : end) { close(seat) } as desk;
+  close(desk)
+}
+def delivered() -> -F Unit {
+  fork (seat : !Integer. end) { send(seat, 1); close(seat) } as desk;
+  recv(desk) as n;
+  close(desk)
+}
+",
+        );
+        let tree = parse(&grammar, source).expect("parses").into_tree();
+        let mut arena = CoreArena::new();
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .expect("the module lowers");
+        let verdicts = check_module(
+            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &adapt(&module),
+        );
+        assert!(
+            verdicts
+                .judged()
+                .iter()
+                .all(|judged| matches!(judged.verdict(), Verdict::Checked { .. })),
+            "both exchanges check"
+        );
+        let admission = readmitted(&mut arena, &verdicts, WHOLE, &Unretired)
+            .whole()
+            .0
+            .expect("a session the kernel does not replay yet is no disagreement");
+        let [ref finished, ref delivered] = *admission.readmitted()
+        else {
+            panic!("each declaration has one readmission outcome");
+        };
+        assert!(
+            matches!(
+                (finished.outcome(), delivered.outcome()),
+                (
+                    &bridge::Outcome::Defined { .. },
+                    &bridge::Outcome::Refused(bridge::Refusal::Session { .. })
+                ),
+            ),
+            "the closing fork crosses and the receive is refused: {:?}",
+            admission
+                .readmitted()
+                .iter()
+                .map(bridge::Readmitted::outcome)
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn a_judged_module_renders_before_its_admission()
     {

@@ -83,12 +83,14 @@
 //! endpoint read anywhere but as the subject of an action or as a payload
 //! sent whole is [`LinearityDefect::AsValue`].
 //!
-//! The kernel has no channels: a session type crosses only as a code, at its
-//! protocol's root, where a session statement relates it
-//! ([`crate::flow`]). The bridge refuses a declaration that holds an action,
-//! a session past its root or a linear variable as
-//! [`crate::bridge::Refusal::Session`], and the declaration stays on the
-//! checker's side, accepted and not re-derived.
+//! The kernel has no channels; readmission erases the discipline and the
+//! kernel replays what a session computes. A session type crosses as the
+//! kernel's session code rooted at the state it stands at, where a session
+//! statement relates it ([`crate::flow`]). A send crosses as its payload
+//! returned, a select and a close as the unit, a fork as its child and then
+//! its parent. A receive, an offer and a linear variable are still refused as
+//! [`crate::bridge::Refusal::Session`], and a declaration holding one stays
+//! on the checker's side, accepted and not re-derived.
 //!
 //! # References
 //!
