@@ -1,0 +1,10 @@
+/// `NotAnAbstractType`: a member typed at an abstract type whose declaration was refused.
+module Seat :> #{
+  mobile type Report,
+  progress : Report
+} {
+  @[ refuses("MarkUnfounded") ]
+  type Report = +U (Integer -> -F Integer);
+  @[ refuses("NotAnAbstractType") ]
+  def progress = thunk { fn (x) { return x } };
+}

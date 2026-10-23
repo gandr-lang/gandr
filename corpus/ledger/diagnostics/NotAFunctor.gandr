@@ -1,0 +1,9 @@
+/// `NotAFunctor`: a module binding applies a module that is no functor.
+@[ checks ]
+module Plain {
+  @[ runs("1") ]
+  def one = 1;
+}
+
+@[ refuses("NotAFunctor") ]
+module Applied = Plain(Plain) ;

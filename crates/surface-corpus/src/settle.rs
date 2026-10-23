@@ -1244,12 +1244,7 @@ pub fn settle_after<'source>(
             Produced::Unlowered(_) | Produced::Judged(Verdict::Refused(_))
                 if !header(module.attributes(), lowered).is_empty() =>
             {
-                expectation::read(
-                    root,
-                    header(module.attributes(), lowered).iter(),
-                    arena,
-                    |entry| spelled(module.attributes(), lowered, entry),
-                )?
+                refused_expected(root, arena, module, lowered)?
             },
             Produced::Unlowered(_)
             | Produced::Judged(
@@ -1658,6 +1653,49 @@ pub fn expected(
         arena,
         |entry| spelled(module.attributes(), lowered, entry),
     )
+}
+
+/// What the declaration `lowered` of `module` states under `root` once it is
+/// refused.
+///
+/// A name an application or a module's header binds writes no half, so the
+/// attributes before the form that introduced it state its refusal; a
+/// witness of it that checks keeps [`expected`]'s default.
+///
+/// # Specification
+/// - requires: as [`expected`].
+/// - ensures: the expectation reader's reading of [`header`]'s entries when
+///   there are any, and [`expected`]'s reading otherwise.
+/// - provides: the stated side of a refused declaration's settle comparison,
+///   for [`settle`] and for a reader that settles nothing.
+/// - fails: as the expectation reader.
+/// - panics: none.
+///
+/// # Errors
+/// [`SettleFault::UnreadablePayload`] when a payload is not its schema's
+/// literal of `arena`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an application refused at its binding and one refused at
+///   a witness each settle the attribute written before them, and the witnesses
+///   that check settle the default.
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[spec(ensures: |ref ret| ret.as_ref().map_or_else(|fault| matches!(*fault, SettleFault::UnreadablePayload { .. }), |_| true))]
+#[inline]
+pub fn refused_expected(
+    root: CorpusRoot,
+    arena: &CoreArena,
+    module: &LoweredModule<'_>,
+    lowered: &LoweredDeclaration<'_>,
+) -> Result<Expectations, SettleFault>
+{
+    let introduced = header(module.attributes(), lowered);
+    if introduced.is_empty() {
+        return expected(root, arena, module, lowered);
+    }
+    expectation::read(root, introduced.iter(), arena, |entry| {
+        spelled(module.attributes(), lowered, entry)
+    })
 }
 
 /// The spelling the lowering filed beside `entry`, an attribute of the
