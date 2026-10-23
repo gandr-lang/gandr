@@ -1,7 +1,9 @@
 // Two data types with one shape are distinct: a `Celsius` value is no
-// `Fahrenheit`. The mismatch is written as the run target, which the lowering
-// reads no final expression as yet (#1105), so that refusal stands in front
-// of the mismatch.
+// `Fahrenheit`, whether the source ascribes it the other type or names that
+// type through an alias; its twin, `model/data/one-shape-families.gandr`,
+// carries the value along the path an equivalence makes. The mismatch is
+// written again as the run target, which the lowering reads no final
+// expression as yet (#1105), so that refusal stands in front of the mismatch.
 
 /// A temperature in Celsius.
 @[ checks ]
@@ -14,6 +16,18 @@ data Celsius : Type {
 data Fahrenheit : Type {
   Fah : (x : Integer) --> Fahrenheit;
 }
+
+/// The Fahrenheit type under another name.
+type Temp = Fahrenheit ;
+
+/// A Celsius value ascribed Fahrenheit: the constructor keeps its own family,
+/// never read as the Fahrenheit constructor of its place (#2075).
+@[ refuses("TypeMismatch") ]
+def ascribed = (Cel(20) : Fahrenheit) ;
+
+/// A Celsius value ascribed Fahrenheit through the alias (#2075).
+@[ refuses("TypeMismatch") ]
+def aliased = (Cel(20) : Temp) ;
 
 /// A Celsius value annotated as Fahrenheit (#1105).
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
