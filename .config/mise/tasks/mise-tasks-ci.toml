@@ -1291,11 +1291,13 @@ fi
 # it red or pending the task says so and exits 0, and `pr:watch` lands the
 # stack the moment that one goes green; with units below it queued the task
 # queues each in turn until its own is. A chain of one is a plain landing, by
-# auto-merge; a longer one is linked (`gh stack link`) and queued as one group
-# by `gh stack merge` up to the unit's top, and the task waits on the
-# caller's pull request when it is in the queue. A stack whose top holds the
-# branch of a pull request queued on its own outside it (`carried_queued`)
-# waits for that one to merge and reads the stack again.
+# auto-merge, unless it is the last open member of a server stack, which
+# GitHub refuses auto-merge and `gh stack merge` queues; a longer one is
+# linked (`gh stack link`) and queued as one group by `gh stack merge` up to
+# the unit's top, and the task waits on the caller's pull request when it is
+# in the queue. A stack whose top holds the branch of a pull request queued on
+# its own outside it (`carried_queued`) waits for that one to merge and reads
+# the stack again.
 # Before any queueing, every open pull request on a branch the landing
 # deletes, outside it, is retargeted to main (`retarget_landing`, #1420); one
 # linked into the landing's stack is left alone (#1520).
