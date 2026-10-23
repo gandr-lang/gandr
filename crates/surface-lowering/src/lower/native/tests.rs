@@ -2689,6 +2689,24 @@ fn a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A lambda a signed definition writes bare, the checker inserting its thunk,
+/// types its binder by the signature's arrow as the thunked lambda does: a
+/// match of no arms on it switches on the empty data, under an alias and
+/// under the arrow, where the signature lies after the body in the arena, as
+/// a decorated declaration's does (#1944).
+#[test]
+fn a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Empty : Type {}\n@[ checks ]\ndef aliased : Empty => Integer ;\ndef aliased = fn (x) { case x {} } ;\n@[ checks ]\ndef bare : +U (Empty -> -F Integer) ;\ndef bare = fn (x) { case x {} } ;\n@[ checks ]\ndef stated : +U (Empty -> -F Integer) ;\ndef stated = fn (x) { case x -> -F Integer {} } ;\n",
+        ),
+        &mut arena,
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808()
 {

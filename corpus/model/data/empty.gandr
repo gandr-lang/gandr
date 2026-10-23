@@ -27,13 +27,25 @@ def stated(v : Empty) -> -F Integer {
 
 /// A lambda's binder matched with no arm (#534): the function form lowers to
 /// the lambda its arrow types, the binder `Empty`, as a parameter's written
-/// type does. The same lambda elsewhere is refused (#1944).
+/// type does. A lambda passed as an argument takes no type from its callee's
+/// parameter yet (#1948).
 @[ checks ]
 def viaLambda(x : Empty) -> -F Integer { case x {} }
 
 /// The answer written on a lambda binder's match (#534).
 @[ checks ]
 def viaStated(x : Empty) -> -F Integer { case x -> -F Integer {} }
+
+/// The same lambda written bare, the checker inserting its thunk: the
+/// signature's arrow types its binder as it types the thunk's (#1944).
+@[ checks ]
+def viaBare : Empty => Integer ;
+def viaBare = fn (x) { case x {} } ;
+
+/// The answer written on a bare lambda binder's match (#1944).
+@[ checks ]
+def viaBareStated : Empty => Integer ;
+def viaBareStated = fn (x) { case x -> -F Integer {} } ;
 
 /// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
 @[ checks ]

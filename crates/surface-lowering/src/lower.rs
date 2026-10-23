@@ -5562,6 +5562,51 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
+    /// Give every unowned node of the type written at `written` the
+    /// declaration `anchor` belongs to, ahead of the walk.
+    ///
+    /// # Specification
+    /// - requires: `written` is `anchor` or a node under it, so the walk would
+    ///   give it `anchor`'s owner.
+    /// - ensures: when `anchor` is owned, every node under `written`, itself
+    ///   included, that had no owner has `anchor`'s; nothing else changes.
+    /// - provides: the owner a name under a type resolves by where a lambda
+    ///   reads its binder's type before the walk reaches that type: a bare
+    ///   lambda's signature lies after its body in the arena.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare lambda signed `+U (Empty -> -F Integer)`
+    ///   matches no arm on its binder where its signature lies after its body.
+    /// - witness: `lower::native::tests::a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944`
+    #[spec(
+        captures: before = (
+            self.collected.owner.len(),
+            self.collected.owner_of(anchor),
+        ),
+        ensures: |_| self.collected.owner.len() == before.0
+            && self.collected.owner_of(anchor) == before.1,
+    )]
+    fn own_written(
+        &mut self,
+        written: NodeIndex,
+        anchor: NodeIndex,
+    )
+    {
+        let Maybe::Present(slot) = self.collected.owner_of(anchor)
+        else {
+            return;
+        };
+        let mut nodes = alloc::vec![written];
+        while let Some(node) = nodes.pop() {
+            if let Maybe::Absent(_) = self.collected.owner_of(node) {
+                self.collected.own(node, slot);
+            }
+            nodes.extend(self.tree.children(node));
+        }
+    }
+
     /// Give every child of `position` the manifest type components `position`
     /// sees.
     ///
@@ -7810,7 +7855,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The domain and the answered codomain of the arrow the lambda at `site`
     /// answers: a written arrow `A -> C`, parentheses stripped, or the next
     /// arrow a value function space `(A1, …, An) => B` stands for. A binder
-    /// the arrow or the space names, `(x : A)`, answers its type `A`.
+    /// the arrow or the space names, `(x : A)`, answers its type `A`. A lambda
+    /// a signed definition writes bare, `def f = fn (x) { … }`, answers what
+    /// the thunk the checker inserts around it would hand its body. The
+    /// binder's type takes the declaration its answer belongs to before the
+    /// walk reaches it ([`Self::own_written`]), so a name in it resolves where
+    /// the body reads it.
     ///
     /// # Specification
     /// - requires: `site` is a lambda in term position.
@@ -7831,11 +7881,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a lambda signed `+U (Empty -> -F Integer)` matches no
-    ///   arm on its binder, as a parameter of the same type does, and a lambda
-    ///   signed `Empty => Integer`, `(Empty, Integer) => Integer` or the
-    ///   telescope `(a : One) => Path(One, a, a)` lowers as under the thunked
-    ///   arrows the alias stands for.
+    ///   arm on its binder, as a parameter of the same type does, written in a
+    ///   thunk or bare, and a lambda signed `Empty => Integer`, `(Empty,
+    ///   Integer) => Integer` or the telescope `(a : One) => Path(One, a, a)`
+    ///   lowers as under the thunked arrows the alias stands for.
     /// - witness: `lower::native::tests::a_match_of_no_arms_switches_on_a_lambda_binder_its_arrow_types`
+    /// - witness: `lower::native::tests::a_bare_signed_lambda_s_binder_is_typed_as_in_its_thunk_1944`
     /// - witness: `lower::native::tests::a_lambda_under_a_value_function_alias_lowers_as_under_its_thunked_arrow_808`
     /// - witness: `lower::native::tests::a_lambda_under_a_telescope_alias_lowers_as_under_its_dependent_arrows_815`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |arrow| arrow.is_none_or(|(_, codomain)| matches!(codomain.over, native::Over::Written | native::Over::Returning | native::Over::Valued { .. }))))]
@@ -7844,7 +7895,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
         site: Site,
     ) -> Result<Option<(NodeIndex, native::Answer)>, LoweringRefusal<'source>>
     {
-        let Some(&answer) = self.answers.get(&site.at.node)
+        let Some(&answer) = self
+            .answers
+            .get(&site.at.node)
+            .or_else(|| self.thunked.get(&site.at.node))
         else {
             return Ok(None);
         };
@@ -7872,6 +7926,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Ok(None);
             }
             let bound = self.binder_type(domain, answer.frame)?.unwrap_or(domain);
+            self.own_written(bound, answer.node);
             return Ok(Some((bound, native::Answer {
                 node: codomain,
                 ..answer
@@ -7888,6 +7943,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(None);
         };
+        self.own_written(bound, answer.node);
         let next = taken.saturating_add(1_usize);
         let rest = if next < domains.len() {
             native::Answer {
