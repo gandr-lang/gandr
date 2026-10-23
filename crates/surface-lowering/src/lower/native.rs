@@ -3081,18 +3081,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   `cursor` stands at its `:`.
     /// - ensures: an annotation over a constructor standing as a value reads
     ///   `T` as a value type under the same frame, records it as the
-    ///   constructor's classifier, and adopts the constructor; an annotation
-    ///   over an injection does the same, the injection reading its summand's
-    ///   label among the sum `T` states; both keep no ascription, `T` already
-    ///   their classifier. An annotation over any other value is carried by the
-    ///   ascription its position already makes where there is one: the whole
-    ///   value of a definition no signature types, which `T` signs; the whole
-    ///   operand of a `return`; and a tail, where a path through a body ends, a
-    ///   value there that takes the `return` its polarity names, recorded with
-    ///   `T` for the mint to ascribe that return at. Anywhere else it is
-    ///   planned as a value ascription of the value at `T`: at a value
-    ///   position, at a subject's result or a tested position, which take the
-    ///   `return` they insert, and at an application's head, which forces it.
+    ///   constructor's classifier, and adopts the constructor, keeping no
+    ///   ascription: `T` is already its classifier. An annotation over an
+    ///   injection records `T` the same way, the injection reading its
+    ///   summand's label among the sum `T` states, and, since an injection
+    ///   keeps no type, is ascribed as any other value is. An annotation over
+    ///   any other value is carried by the ascription its position already
+    ///   makes where there is one: the whole value of a definition no signature
+    ///   types, which `T` signs; the whole operand of a `return`; and a tail,
+    ///   where a path through a body ends, a value there that takes the
+    ///   `return` its polarity names, recorded with `T` for the mint to ascribe
+    ///   that return at. Anywhere else it is planned as a value ascription of
+    ///   the value at `T`: at a value position, at a subject's result or a
+    ///   tested position, which take the `return` they insert, and at an
+    ///   application's head, which forces it.
     /// - fails: a wrong-sort refusal at a statement, as for any value standing
     ///   there; the unadmitted annotation refusal at a position that reads a
     ///   type or nothing; the hole's and the tiles' own faults.
@@ -3144,10 +3146,9 @@ impl<'source> Lowerer<'_, 'source>
         };
         let signs = self.annotated_definitions.contains_key(&site.at.node);
         let returned = self.ascribed.contains_key(&site.at.node);
-        let classified = matches!(self.form_at(inner)?, Some((_, Former::Injection)))
-            || matches!(self.applied_constructor(site, inner)?, Maybe::Present(_));
-        let carried = classified || signs || returned || tail;
-        if classified {
+        let constructed = matches!(self.applied_constructor(site, inner)?, Maybe::Present(_));
+        let carried = constructed || signs || returned || tail;
+        if constructed {
             let _held = self.ascribed.remove(&site.at.node);
         }
         let _colon = cursor.tile(TileName::COLON);
@@ -3155,7 +3156,7 @@ impl<'source> Lowerer<'_, 'source>
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         exhausted(site, &cursor)?;
         self.read(classifier.node, Reading::ValueType(frame));
-        if tail && !classified {
+        if tail && !constructed {
             let _first = self.ascribed.insert(site.at.node, classifier.node);
         }
         self.read(inner.node, Reading::Value(frame));

@@ -1381,6 +1381,43 @@ fn a_record_update_spells_its_base_and_the_fields_it_writes()
     );
 }
 
+/// An injection of unit ascribed `Bool` spells as the word it lowers from,
+/// `true` at the first summand and `false` at the second, still ascribed, so
+/// the spelling lowers back to the ascribed injection (#2168); unit injected
+/// into another sum, and another value injected into `Bool`, keep the
+/// injection.
+#[test]
+fn an_ascribed_truth_value_spells_as_its_word_2168()
+{
+    let mut core = CoreArena::new();
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let unit_type = core.value_type_product(&[]);
+    let boolean = core.value_type_sum(&[unit_type, unit_type]);
+    let not_bool = core.value_type_sum(&[unit_type, integer_type]);
+    let unit = core.value_unit();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let first = core.value_injection(Side::Left.into(), unit);
+    let second = core.value_injection(Side::Right.into(), unit);
+    let counted = core.value_injection(Side::Left.into(), one);
+    let truth = core.value_ascribe(first, boolean);
+    let falsity = core.value_ascribe(second, boolean);
+    let elsewhere = core.value_ascribe(first, not_bool);
+    let other = core.value_ascribe(counted, boolean);
+    let source = CoreSource::new(&core, &[]);
+    for (value, expected) in [
+        (truth, "(true : Bool)"),
+        (falsity, "(false : Bool)"),
+        (elsewhere, "(+{.0 = unit} : +{Unit, Integer})"),
+        (other, "(+{.0 = 1} : Bool)"),
+    ] {
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(value))),
+            faithful(Written(expected)),
+            "{expected} spells as written"
+        );
+    }
+}
+
 /// Every value-type and computation-type former of the core spells as the
 /// grammar parses it: the two bridges with their operand parenthesized
 /// unless atomic, a product, a sum or a lazy product between its braces with

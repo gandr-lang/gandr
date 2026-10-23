@@ -54,6 +54,23 @@ def bound() -> -F Integer {
   n
 }
 
+/// An injection annotated where the kernel synthesises the pair's type, its
+/// summand named by a label of the sum the annotation states: the injection
+/// keeps no type, so the annotation ascribes it (#2168).
+@[ runs("2") ]
+def injected() -> -F Integer {
+  run (b, n) <- pure ((+{.yes = unit} : +{yes : Unit, no : Unit}), 2);
+  n
+}
+
+/// The second summand of `Bool` written as an injection and annotated: it is
+/// ascribed as `(false : Bool)` is, and reads as that word (#2168).
+@[ runs("2") ]
+def falsity() -> -F Integer {
+  run (b, n) <- pure ((+{.1 = unit} : Bool), 2);
+  n
+}
+
 /// An integer doubled, the function the annotated argument is passed to.
 @[ checks ]
 def doubled(n : Integer) -> -F Integer { n + n }

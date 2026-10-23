@@ -7849,9 +7849,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: `(e)` reads its operand at its own reading and adopts it, the
     ///   answer its position states passed on; a comma list is read as a pair;
     ///   `(e : T)` is read as [`Self::annotated`] reads it, adopting a
-    ///   constructor or an injection that takes `T` as its classifier, or the
-    ///   value an ascription its position makes carries, and otherwise planned
-    ///   as a value ascription.
+    ///   constructor that takes `T` as its classifier, or the value an
+    ///   ascription its position makes carries, and otherwise planned as a
+    ///   value ascription, an injection among them, its label read in the sum
+    ///   `T` states.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
     /// - fails: yields the pair's own refusal, the annotation's refusal as
