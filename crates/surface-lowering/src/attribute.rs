@@ -1066,6 +1066,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Run
         | Former::Call
         | Former::Case
+        | Former::If
         | Former::Telescope
         | Former::List
         | Former::PackModel

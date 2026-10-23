@@ -532,6 +532,7 @@ impl<'source> Lowerer<'_, 'source>
             _ if held == Leaves::Never => (Leaves::Never, Breaks::Never),
             Former::Block | Former::Parenthesized => (held, broken),
             Former::Case | Former::Offer => (self.arms_leave(position, pieces), broken),
+            Former::If => (self.branches_leave(position, pieces), broken),
             Former::Name
             | Former::Constructor
             | Former::Hole
@@ -628,6 +629,57 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         leaves
+    }
+
+    /// What the paths of the conditional at `position`, which holds an exit,
+    /// do: always leave when every branch always does.
+    ///
+    /// # Specification
+    /// - requires: every computation of every branch of the conditional is
+    ///   surveyed, and one of its children holds an exit.
+    /// - ensures: always when the form has a branch and every branch has a
+    ///   computation that always leaves; sometimes otherwise, a form whose
+    ///   pieces do not read included.
+    /// - provides: the conditional's half of [`Self::leaves_of`].
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a conditional both of whose branches return ends its
+    ///   function with nothing after it, and one only one of whose branches
+    ///   returns continues its block.
+    /// - witness: `lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
+    #[spec(ensures: |ret| ret != Leaves::Never)]
+    fn branches_leave(
+        &self,
+        position: NodeIndex,
+        pieces: &mut Pieces,
+    ) -> Leaves
+    {
+        if read_pieces(self.pbg, self.tree, position, pieces).is_err() {
+            return Leaves::Sometimes;
+        }
+        let mut branch = None;
+        let mut every = None;
+        for piece in &pieces.pieces {
+            match *piece {
+                Piece::Tile { label, .. } if label == TileName::BRACE_OPEN => {
+                    branch = Some(Leaves::Never);
+                },
+                Piece::Tile { label, .. } if label == TileName::BRACE_CLOSE => {
+                    let ended = branch.take().unwrap_or(Leaves::Never);
+                    every = Some(every.map_or(ended, |held: Leaves| held.min(ended)));
+                },
+                Piece::Operand(computation) => {
+                    if let Some(held) = branch.as_mut() {
+                        *held = (*held).max(self.leaves_at(computation.node));
+                    }
+                },
+                Piece::Tile { .. } => {},
+            }
+        }
+
+        every.unwrap_or(Leaves::Sometimes).max(Leaves::Sometimes)
     }
 
     /// What the paths of the node at `position` do, as surveyed.

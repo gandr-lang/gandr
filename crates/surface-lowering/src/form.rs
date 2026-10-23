@@ -596,6 +596,10 @@ impl TileName
     pub const FOR: Self = Self("for");
     /// The `in` naming the list a `for` loop steps through.
     pub const IN: Self = Self("in");
+    /// The conditional keyword `if`, opening a conditional or its tail.
+    pub const IF: Self = Self("if");
+    /// The `else` before a conditional's false branch.
+    pub const ELSE: Self = Self("else");
     /// The bind keyword `run`, opening a statement or a run where a value is
     /// read.
     pub const RUN: Self = Self("run");
@@ -807,6 +811,10 @@ pub enum Former
     /// The match `case e -> T? { p => c, … }` over nominal data, integers,
     /// booleans, products and sums over labels.
     Case,
+    /// The conditional `if c -> T? { … } else { … }`, its false branch a block
+    /// or one more conditional: the match of its condition over the two
+    /// booleans.
+    If,
     /// The telescope value `#{…}`: the tuple of its positional entries, or the
     /// record of its labelled ones.
     Telescope,
@@ -965,7 +973,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 70_usize] = [
+    pub const ALL: [Self; 71_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -989,6 +997,7 @@ impl Former
         Self::Run,
         Self::Call,
         Self::Case,
+        Self::If,
         Self::Telescope,
         Self::List,
         Self::PackModel,
@@ -1034,7 +1043,7 @@ impl Former
         Self::World,
         Self::WorldDeclaration,
         Self::Reserved(Unbuilt::Dup),
-        Self::Unadmitted(Unbuilt::If),
+        Self::Unadmitted(Unbuilt::Glob),
         Self::Misplaced,
     ];
 }
@@ -1184,7 +1193,7 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("forall_type", Former::Unadmitted(Unbuilt::Forall)),
     ("glob_expression", Former::Unadmitted(Unbuilt::Glob)),
     ("host_escape", Former::Unadmitted(Unbuilt::HostEscape)),
-    ("if_expression", Former::Unadmitted(Unbuilt::If)),
+    ("if_expression", Former::If),
     (
         "intersection_type",
         Former::Unadmitted(Unbuilt::Intersection),
@@ -3521,7 +3530,7 @@ mod tests
     fn a_kind_outside_the_table_is_unadmitted()
     {
         for (kind, feature) in [
-            ("if_expression", Unbuilt::If),
+            ("glob_expression", Unbuilt::Glob),
             ("shell_block", Unbuilt::ShellBlock),
             ("union_type", Unbuilt::Union),
         ] {

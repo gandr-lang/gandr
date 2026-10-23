@@ -669,6 +669,8 @@ mod capability;
 
 mod closure;
 
+mod conditional;
+
 pub use closure::CarriedOrigins;
 pub use closure::ClosureLowering;
 pub use closure::Onto;
@@ -1283,7 +1285,7 @@ enum Ending
 /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
-    Former::Block | Former::Case | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
+    Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
     Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
@@ -1292,6 +1294,7 @@ fn ending(former: Former) -> Ending
         Former::Exit | Former::Become | Former::Break | Former::Continue => Ending::Exit,
         Former::Block
         | Former::Case
+        | Former::If
         | Former::Offer
         | Former::LazyRecord
         | Former::Parenthesized
@@ -1380,7 +1383,7 @@ fn ending(former: Former) -> Ending
 /// - witness: `lower::loops::tests::a_hole_ending_a_loop_body_is_left_to_be_filled`
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
-    Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
+    Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
     Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
@@ -1390,7 +1393,12 @@ fn iterating(former: Former) -> Ending
         Ending::Passes
             if matches!(
                 former,
-                Former::Block | Former::Case | Former::Offer | Former::Parenthesized | Former::Hole
+                Former::Block
+                    | Former::Case
+                    | Former::If
+                    | Former::Offer
+                    | Former::Parenthesized
+                    | Former::Hole
             ) =>
         {
             Ending::Passes
@@ -1448,6 +1456,7 @@ fn iterating(former: Former) -> Ending
                     | Former::Unary
                     | Former::Projection
                     | Former::Case
+                    | Former::If
                     | Former::Telescope
                     | Former::List
                     | Former::PackModel
@@ -1532,6 +1541,7 @@ const fn family_of(former: Former) -> Family
         | Former::Unary
         | Former::Projection
         | Former::Case
+        | Former::If
         | Former::Telescope
         | Former::List
         | Former::PackModel
@@ -2346,6 +2356,8 @@ enum Plan
     /// A conditional loop's fixpoint over the case of its condition: its body
     /// when the condition holds, leaving the loop with unit when it does not.
     While(NodeIndex, Block),
+    /// A conditional: the case of its condition over its two branches.
+    If(conditional::Conditional),
     /// A list loop's structural fixpoint over the case of the remaining list,
     /// applied to the list: its body on a cell, leaving the loop with unit on
     /// the empty list.
@@ -6082,6 +6094,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Run => self.run(site, cursor),
             Former::Call => self.call(site, cursor),
             Former::Case => self.case(site, cursor),
+            Former::If => self.conditional(site, cursor),
             Former::Telescope => self.telescope(site, cursor),
             Former::List => self.list(site, cursor),
             Former::PackModel => self.pack_model(site, cursor),
@@ -13134,7 +13147,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Recorded(_)
                 | Plan::Constructor(_)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::If(_) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -13398,6 +13411,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Block(block) => self.mint_block(block, sink).map(Lowered::Computation),
             Plan::Loop(body) => self.mint_loop(body, sink, origin),
             Plan::While(condition, body) => self.mint_while(condition, body, sink, origin),
+            Plan::If(conditional) => self.mint_conditional(conditional, sink, origin),
             Plan::For(list, body) => self.mint_for(list, body, sink, origin),
             Plan::Break => {
                 let unit = sink.arena.value_unit();
@@ -14522,6 +14536,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Block(_)
             | Plan::Loop(_)
             | Plan::While(..)
+            | Plan::If(_)
             | Plan::For(..)
             | Plan::Break
             | Plan::Reenter(_)
@@ -18703,6 +18718,7 @@ pub fn parse_literal(
         | Former::Run
         | Former::Call
         | Former::Case
+        | Former::If
         | Former::Telescope
         | Former::List
         | Former::PackModel
