@@ -1,0 +1,12 @@
+// An attribute block before a data family's member states the expectation
+// of the declaration the member is held apart as. Before a member that is
+// not held apart it states nothing, and the family is refused at the block
+// (#1462).
+
+/// A bit whose first constructor carries an expectation it cannot state.
+@[ refuses("MalformedForm") ]
+data Stray : Type {
+  @[ checks ]
+  Low : Stray;
+  High : Stray;
+}
