@@ -181,9 +181,9 @@ impl Disk
     ///
     /// # Adequacy
     /// - hypothesis: L3 — through [`Self::new`]'s witness; a second set
-    ///   replaces the first and an empty one stops serving the connection; five
-    ///   hundred watches and unwatches return while a followed file is
-    ///   rewritten without pause.
+    ///   replaces the first and an empty one stops serving the connection;
+    ///   watches and unwatches made for fifteen seconds, at most five hundred
+    ///   pairs, return while a followed file is rewritten without pause.
     /// - witness: `hub::tests::an_unwatching_client_is_told_of_a_rewritten_import`
     /// - witness: `disk::tests::a_connection_follows_exactly_what_it_named_last`
     /// - witness: `disk::tests::a_follow_returns_while_its_files_keep_changing_1898`
@@ -372,9 +372,13 @@ mod tests
     /// followers, and the hub stopped (#1898).
     ///
     /// The witness waits on progress, not on a deadline for the whole run:
-    /// it fails only when a window passes in which no follow returns, which
-    /// the deadlock does at once and a loaded machine, whose follows are
-    /// slow but keep returning, does not (#1921).
+    /// it fails only when no follow returns for a stall's length, which the
+    /// deadlock does at once and a loaded machine, whose follows are slow but
+    /// keep returning, does not (#1921). It follows for a span, at most a
+    /// count of pairs, so its cost is the span wherever it runs and a stall
+    /// is reported within the ceiling a test runs under: each pair re-arms
+    /// the system's watcher twice, 30 to 60 ms a pair on macOS, and the
+    /// deadlock came within 307 pairs in each of sixteen trials (#2124).
     #[test]
     fn a_follow_returns_while_its_files_keep_changing_1898()
     {
@@ -384,9 +388,16 @@ mod tests
         use core::sync::atomic::Ordering;
         use core::time::Duration;
         use std::sync::mpsc;
+        use std::time::Instant;
 
         /// How long no follow may return before the hub is taken as stopped.
         const STALL: Duration = Duration::from_secs(10);
+        /// How long the follows go on.
+        const SPAN: Duration = Duration::from_secs(15);
+        /// The most pairs of follows made within the span.
+        const PAIRS: u32 = 500;
+        /// How often the witness reads the follows' progress.
+        const LOOK: Duration = Duration::from_secs(1);
 
         let scratch = std::env::temp_dir().join(format!("gd-{}-1898", std::process::id()));
         drop(std::fs::remove_dir_all(&scratch));
@@ -417,7 +428,11 @@ mod tests
                 let peer = Peer::from(1_u64);
                 let one = BTreeSet::from([written.clone()]);
                 let both = BTreeSet::from([written, aside]);
-                for _ in 0_u32 .. 500_u32 {
+                let start = Instant::now();
+                for _ in 0_u32 .. PAIRS {
+                    if start.elapsed() >= SPAN {
+                        break;
+                    }
                     disk.follow(peer, &inbox.changes(), both.clone());
                     disk.follow(peer, &inbox.changes(), one.clone());
                     let _before = returned.fetch_add(1, Ordering::SeqCst);
@@ -427,14 +442,18 @@ mod tests
             })
         };
         let mut seen = returned.load(Ordering::SeqCst);
+        let mut moved = Instant::now();
         let answered = loop {
-            match finished.recv_timeout(STALL) {
+            match finished.recv_timeout(LOOK) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     let now = returned.load(Ordering::SeqCst);
-                    if now == seen {
+                    if now != seen {
+                        seen = now;
+                        moved = Instant::now();
+                    }
+                    else if moved.elapsed() >= STALL {
                         break Err(mpsc::RecvTimeoutError::Timeout);
                     }
-                    seen = now;
                 },
                 answered @ (Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected)) => break answered,
             }
