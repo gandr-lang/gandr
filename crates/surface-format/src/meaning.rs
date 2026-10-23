@@ -18,12 +18,12 @@ use core::mem::discriminant;
 use anodized::spec;
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Crossing;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_comp_type_syntax;
 use gandr_core_term::equal_type_syntax;
-use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
@@ -54,9 +54,13 @@ pub enum Agreement
     Unpaired,
 }
 
-/// The checker's half of the meaning check: the body it elaborates for each
-/// declaration of a lowered module, and where it carried a model to a model
-/// of a theory its own includes by a reduct.
+/// The checker's half of the meaning check: the bodies it elaborates and the
+/// maps it applies where a model crosses.
+///
+/// It answers the body it elaborates for each declaration of a lowered
+/// module, and where it carried a model to a model of a theory its own
+/// includes by a reduct, or put a manifest model's sorts back by a forgetting
+/// map.
 ///
 /// Two spellings of one program can lower to different cores and still be
 /// one program once the checker elaborates them: a nested call and the `run`
@@ -71,8 +75,9 @@ pub enum Agreement
 /// - ensures: an implementation answers, for each declaration of `module`
 ///   lowered into `arena`, in the module's order, the body the checker
 ///   elaborates for it, minting into `arena`, or none where it defines none;
-///   and each value of `module`'s lowering the checker applied a reduct to,
-///   with that reduct's constant.
+///   and each value of `module`'s lowering the checker applied a reduct or a
+///   forgetting map to, with the map's constant and the carriers it applied the
+///   map at, minted into `arena`.
 /// - provides: the elaborated half of [`crate::format_beside`]'s meaning check.
 /// - fails: not applicable to the trait itself.
 /// - panics: not applicable to the trait itself.
@@ -98,9 +103,10 @@ pub struct Elaboration
     /// defines nothing for.
     pub definitions: Vec<Option<ValueId>>,
     /// Each value of the module's lowering standing where a model of a theory
-    /// its own model's theory includes is asked, with the reduct the checker
-    /// applies there.
-    pub crossings: BTreeMap<ValueId, ConstantIndex>,
+    /// its own model's theory includes is asked, or where its theory's model
+    /// is asked of a model whose sorts are manifest: the map the checker
+    /// applies there, and the carriers it applies the map at before the value.
+    pub crossings: BTreeMap<ValueId, Crossing>,
 }
 
 /// The bodies a checker elaborated for two lowerings of one source, each in

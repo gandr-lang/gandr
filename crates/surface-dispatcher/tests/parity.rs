@@ -14,6 +14,7 @@ use std::path::Path;
 
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Crossing;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::equal_certificate_syntax;
@@ -250,6 +251,7 @@ const SIGNED: &[RewriteName] = &[
     RewriteName::LinearRun,
     RewriteName::InsertedThunk,
     RewriteName::InsertedReduct,
+    RewriteName::InsertedForget,
 ];
 
 /// The printer's form the source `text` declares at its head, which the
@@ -814,34 +816,46 @@ fn read(
         &mut gandr_surface_lowering::coincide::Decisions::none(),
     )
     .ok()?;
-    // Where the checker carries a model across by a reduct, and by which:
-    // read off its elaboration, which the lowered core the printer reads
-    // does not hold. A forgetting map, which the checker applies at the
-    // carriers it solves, is written by neither.
-    let crossings: Vec<(ValueId, ConstantIndex)> = if module.reducts().is_empty() {
-        Vec::new()
-    }
-    else {
-        gandr_surface_format::Elaborate::elaborate(
-            &gandr_surface_dispatcher::Elaborating,
-            &mut arena,
-            &module,
-        )
-        .crossings
-        .into_iter()
+    // Where the checker carries a model across by a reduct or a forgetting
+    // map, and by which: read off its elaboration, which the lowered core the
+    // printer reads does not hold.
+    let crossed: BTreeMap<ValueId, Crossing> =
+        if module.reducts().is_empty() && module.forgets().is_empty() {
+            BTreeMap::new()
+        }
+        else {
+            gandr_surface_format::Elaborate::elaborate(
+                &gandr_surface_dispatcher::Elaborating,
+                &mut arena,
+                &module,
+            )
+            .crossings
+        };
+    let crossings: Vec<(ValueId, ConstantIndex)> = crossed
+        .iter()
+        .map(|(&value, crossing)| (value, crossing.by))
         .filter(|&(_, reduct)| module.reducts().binary_search(&reduct).is_ok())
-        .collect()
-    };
+        .collect();
+    let forgettings = gandr_surface_format::forgettings(&module, &arena, &crossed);
     let owned = constant_names(&module);
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
     let constructors = families.naming(&names);
     let source = CoreSource::new(&arena, &names)
         .naming(&constructors)
-        .crossing(&crossings);
-    // A body leaves each written reduct's call to the checker, which applies
-    // the reduct where the call stands; a type, read by its value, keeps it.
-    let bodied = source.implying(module.reducts());
+        .crossing(&crossings)
+        .forgetting(&forgettings);
+    // A body leaves each written reduct's or forgetting map's call to the
+    // checker, which applies the map where the call stands; a type, read by
+    // its value, keeps it.
+    let mut implied: Vec<ConstantIndex> = module
+        .reducts()
+        .iter()
+        .chain(module.forgets())
+        .copied()
+        .collect();
+    implied.sort_unstable();
+    let bodied = source.implying(&implied);
     let mut read = Read::default();
     for declaration in module.declarations() {
         if usize::from(declaration.span().start()) < base {

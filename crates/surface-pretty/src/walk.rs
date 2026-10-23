@@ -228,6 +228,7 @@ use crate::compose::Glyphs;
 use crate::error::PresentationError;
 use crate::former::Component;
 use crate::former::Elided;
+use crate::former::Forgotten;
 use crate::former::Former;
 use crate::former::Name;
 use crate::former::Notation;
@@ -5051,6 +5052,72 @@ impl Walk<'_, '_>
             },
         });
         Ok(())
+    }
+
+    /// Schedules the forgetting map `forgotten` written around the value the
+    /// caller's next visit spells: `forget[sort C = A, …](m) at Model(T)`,
+    /// each sort the map puts back at its carrier's type, then the model.
+    ///
+    /// # Specification
+    /// - requires: the caller pushes the model's visit after this, so the model
+    ///   is visited first and its piece stands below the carriers'.
+    /// - ensures: one join over the model's piece and one carrier piece per
+    ///   sort, its parts pushed, and each carrier's type visited after the
+    ///   model, in the theory's order.
+    /// - provides: the explicit form's forgetting map at a crossed value.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the parts and the scheduled visits are read by the
+    ///   join, which the witness exercises whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a crossed argument spells as the map's form, each
+    ///   sort at its carrier, and a second sort after the first.
+    /// - witness: `tests::goldens::a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130`
+    fn forget<Node>(
+        &mut self,
+        forgotten: Forgotten<'_, Node>,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<Node>>,
+    ) where
+        Node: Copy,
+    {
+        let mut parts = Parts::default();
+        let _ = parts.text("forget[");
+        for (index, &(sort, _)) in forgotten.sorts.iter().enumerate() {
+            if index > 0_usize {
+                let _ = parts.text(", ");
+            }
+            let _ = writes(
+                Production("manifest_sort"),
+                parts
+                    .text(format!("sort {} = ", sort.as_ref()))
+                    .part(Part::Last(Binding::Arrow)),
+            );
+        }
+        let (theory, constant) = forgotten.theory;
+        let _ = parts
+            .text("](")
+            .piece(Binding::Arrow)
+            .text(") at Model(")
+            .named(String::from(theory.as_ref()), constant)
+            .text(")");
+        let pieces = Arity(parts.pieces);
+        self.forms.push(parts.parts);
+        tasks.push(Task::Join(writes(
+            Production("forget_model_expression"),
+            Join::Form {
+                pieces,
+                binding: Binding::Prefix,
+            },
+        )));
+        for &(_, carrier) in forgotten.sorts.iter().rev() {
+            tasks.push(Task::Visit {
+                node: carrier,
+                admits: Admits::ValueType,
+                depth,
+            });
+        }
     }
 
     /// Pushes the label an entry of a braced former is written after: `l : `
@@ -10241,13 +10308,23 @@ where
                     return Ok(Walked::OverBudget);
                 };
                 walk.remaining = left;
-                // The explicit form writes the reduct the checker applies to a
-                // value as its call around the value, and the sugared form a
-                // written reduct's call the checker would apply as its
-                // argument.
+                // The explicit form writes the forgetting map or the reduct the
+                // checker applies to a value as its form or call around the
+                // value, and the sugared form a written map's call the checker
+                // would apply as its model.
                 let crossed = core::mem::take(&mut walk.crossed);
                 let node = match walk.form {
                     Form::Explicit => {
+                        if !crossed && let Some(forgotten) = source.forgotten(node) {
+                            walk.crossed = true;
+                            walk.forget(forgotten, depth, &mut tasks);
+                            tasks.push(Task::Visit {
+                                node,
+                                admits,
+                                depth,
+                            });
+                            continue;
+                        }
                         if !crossed && let Some((reduct, constant)) = source.reduct(node) {
                             walk.name(reduct, Some(constant))?;
                             walk.crossed = true;

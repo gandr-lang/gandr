@@ -271,6 +271,7 @@ use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_levitation::Name;
 use gandr_theory_levitation::THEORY_CONSTRUCTORS;
 use gandr_theory_levitation::TheoryInclusion;
 use gandr_theory_levitation::theory_desc;
@@ -9123,6 +9124,36 @@ impl<'source> LoweredStructure<'source>
     }
 }
 
+/// A forgetting map a module mints, as a source writes it: `forget[sort C₁ =
+/// A₁, …](m) at Model(T)`, applied to by the reduct `T.S` when the map returns
+/// a model of a theory `S` that `T` includes.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `theory` is the position of a `theory` block, `onto` that of
+///   `theory` itself or of a theory it includes, and `sorts` the unindexed
+///   sorts of `theory` the map puts back, in the order its signature states
+///   them, which is the order of the map's carriers.
+/// - executable: none — the record is data the lowering reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pairing's map putting back both of its sorts records
+///   them in the signature's order, whichever order a source writes them in.
+/// - witness: `tests::modules::models::a_written_forgetting_map_takes_the_slot_it_names_2130`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Forgetting
+{
+    /// The map's position.
+    pub map: ConstantIndex,
+    /// The position of the theory whose models, those sorts manifest, the map
+    /// forgets.
+    pub theory: ConstantIndex,
+    /// The position of the theory the map returns a model of.
+    pub onto: ConstantIndex,
+    /// The sorts the map puts back, in signature order.
+    pub sorts: Vec<Name>,
+}
+
 /// One module, lowered: its declarations, its attributes, its origins, its
 /// imports, and the outermost scope its names were declared in.
 ///
@@ -9220,6 +9251,9 @@ pub struct LoweredModule<'source>
     reducts: Vec<ConstantIndex>,
     /// The forgetting maps the module mints, ascending by position.
     forgets: Vec<ConstantIndex>,
+    /// Each forgetting map the module mints as a source writes it, ascending
+    /// by the map's position.
+    forgettings: Vec<Forgetting>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -9269,6 +9303,7 @@ impl<'source> LoweredModule<'source>
             qualified: BTreeMap::new(),
             reducts: Vec::new(),
             forgets: Vec::new(),
+            forgettings: Vec::new(),
         }
     }
 
@@ -9368,6 +9403,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.forgets = forgets;
+        self
+    }
+
+    /// This module, carrying `forgettings`, each forgetting map it mints as a
+    /// source writes it, ascending by the map's position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_forgettings(
+        mut self,
+        forgettings: Vec<Forgetting>,
+    ) -> Self
+    {
+        self.forgettings = forgettings;
         self
     }
 
@@ -10026,6 +10077,19 @@ impl<'source> LoweredModule<'source>
     pub fn forgets(&self) -> &[ConstantIndex]
     {
         &self.forgets
+    }
+
+    /// Each forgetting map this module mints as a source writes it, ascending
+    /// by the map's position: the theory whose models it forgets, the theory
+    /// it returns a model of, and the sorts it puts back in signature order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn forgettings(&self) -> &[Forgetting]
+    {
+        &self.forgettings
     }
 
     /// The structured name of `declaration`: the path of the module it is

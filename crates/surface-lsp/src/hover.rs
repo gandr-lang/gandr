@@ -193,6 +193,7 @@ use gandr_surface_session::ClosureKey;
 use gandr_surface_session::Session;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
@@ -572,15 +573,17 @@ impl Style
 ///   written type's text or a term written as one name before ` : ` — and, for
 ///   a term checked against a type spelled otherwise, that type in a second
 ///   block; for a model standing where a model of a theory its own includes is
-///   asked, the reduct the checker applies there, applied to the model, in a
-///   block after; for a parameter's binder or a use of it, the `///` run
-///   written before the parameter after a blank line; about the node's range.
-///   Else, in the head of a declaration — from its form's start to the brace
-///   opening its own body, a member's keyword to its name — as on its name,
-///   about the head, and in the attributes before the head, about them. Else,
-///   on a tile, [`stubbed`]'s answer, about what it is about. Absent in layout
-///   and comments. Every type is spelled in `style`'s form, and every block is
-///   written as [`Code`] writes it in `style`'s markup.
+///   asked, the reduct the checker applies there, and for a model whose sorts
+///   are manifest standing where a model of its theory is asked, the forgetting
+///   map the checker applies there with the carriers it puts back, each applied
+///   to the model, in a block after; for a parameter's binder or a use of it,
+///   the `///` run written before the parameter after a blank line; about the
+///   node's range. Else, in the head of a declaration — from its form's start
+///   to the brace opening its own body, a member's keyword to its name — as on
+///   its name, about the head, and in the attributes before the head, about
+///   them. Else, on a tile, [`stubbed`]'s answer, about what it is about.
+///   Absent in layout and comments. Every type is spelled in `style`'s form,
+///   and every block is written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -601,8 +604,9 @@ impl Style
 ///   type in HTML, coloured by their roles; a documented parameter at its
 ///   binder and at a use, and an undocumented one; a run target's call, its
 ///   `;`, a name and an argument inside it, a stray and its `;`, the attribute
-///   of a run target the lowering refused, and a model the checker carries to
-///   an included theory's models by a reduct.
+///   of a run target the lowering refused, a model the checker carries to an
+///   included theory's models by a reduct, and a manifest model it reads as its
+///   theory's model by a forgetting map at the carriers it solves.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
@@ -621,6 +625,7 @@ impl Style
 /// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
 /// - witness: `hover::tests::a_run_target_and_a_stray_hover_as_declarations_2073`
 /// - witness: `hover::tests::a_model_hovers_the_reduct_the_checker_applies_2031`
+/// - witness: `hover::tests::a_manifest_model_hovers_the_forgetting_map_the_checker_applies_2130`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -1764,19 +1769,22 @@ fn lines(
 ///   entry's type; any other term's type alone; for a term checked against a
 ///   type spelled otherwise, a second block of that type after a line saying
 ///   so; for a model standing where a model of a theory its own includes is
-///   asked, a block of the reduct the checker applies there, applied to the
-///   term — its text when it is one line, else `…` — after a line saying so.
+///   asked or a model whose sorts are manifest standing where a model of its
+///   theory is asked, a block of the reduct or the forgetting map the checker
+///   applies there, applied to the term as the explicit form writes it — its
+///   text when it is one line, else `…` — after a line saying so.
 /// - provides: the node half of [`hover`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a use, a binder, a written type, a literal, a mismatched
-///   term and a model standing at an included theory's models are asserted at
-///   their exact texts.
+///   term, a model standing at an included theory's models and a manifest model
+///   standing at its theory's models are asserted at their exact texts.
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::html_hovers_colour_the_name_and_the_type`
 /// - witness: `hover::tests::a_model_hovers_the_reduct_the_checker_applies_2031`
+/// - witness: `hover::tests::a_manifest_model_hovers_the_forgetting_map_the_checker_applies_2130`
 #[spec(ensures: |ret| ret.starts_with(markup.opener().0))]
 fn typed(
     quoted: &Quoted<'_>,
@@ -1852,7 +1860,7 @@ fn typed(
             .unwrap_or("…");
         let mut applied = Code::new(markup);
         applied.printed(
-            SourceText::from(format!("{}({argument})", map.as_ref()).as_str()),
+            SourceText::from(map.around(SourceFragment::from(argument)).as_str()),
             Host::Term,
         );
         value.push_str("\n\nthe checker applies\n\n");
@@ -2068,8 +2076,10 @@ mod tests
 
     /// #2031: a model standing where a model of a theory its own includes is
     /// asked hovers the reduct the checker applies there, applied to it as
-    /// the explicit form writes it; a model with manifest sorts crosses by a
-    /// forgetting map no source names, and the function called names none.
+    /// the explicit form writes it; a model with manifest sorts crosses to an
+    /// included theory's model by a forgetting map composed with a reduct,
+    /// which the explicit form leaves to the checker, and the function called
+    /// names none.
     #[test]
     fn a_model_hovers_the_reduct_the_checker_applies_2031()
     {
@@ -2114,6 +2124,59 @@ mod tests
                 "`{needle}` at {past} names no reduct: {shown}"
             );
         }
+    }
+
+    /// #2130: a model whose sorts are manifest standing where a model of its
+    /// theory is asked hovers the forgetting map the checker applies there,
+    /// with the carriers it puts back, applied to it as the explicit form
+    /// writes it; a model whose carrier is selected off a binder names none.
+    #[test]
+    fn a_manifest_model_hovers_the_forgetting_map_the_checker_applies_2130()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/identity/model-counter-manifest.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+        let text = SourceText::from(written.as_str());
+        let index = LineIndex::new(written.as_str().into());
+        let session = checked(text);
+        let reading = Reading::of(text);
+        let hovering = hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed);
+        let at = |needle: &str, past: usize| {
+            let offset = written
+                .find(needle)
+                .expect("the source writes the call")
+                .saturating_add(past);
+            let position = Position::of_byte(&index, RenderOffset::from(offset))
+                .expect("the offset is on a boundary");
+            match hover(text, &session, &reading, &hovering, position, PLAIN) {
+                Maybe::Present(shown) => shown.contents.value,
+                Maybe::Absent(reason) => panic!("`{needle}` hovers nothing: {reason:?}"),
+            }
+        };
+        let applied = |call: &str| format!("\n\nthe checker applies\n\n{}", fenced(call.into()));
+        for (needle, past, call) in [
+            (
+                "observe(upManifest)",
+                "observe(".len(),
+                "forget[sort C = +{Unit, Bool}](upManifest) at Model(Counter)",
+            ),
+            (
+                "observeShown(upBoth)",
+                "observeShown(".len(),
+                "forget[sort C = +{Unit, Bool}, sort R = Integer](upBoth) at Model(ReadCounter)",
+            ),
+        ] {
+            let shown = at(needle, past);
+            assert!(
+                shown.ends_with(&applied(call)),
+                "`{needle}` names the forgetting map the checker applies: {shown}"
+            );
+        }
+        let shown = at("observe(b)", "observe(".len());
+        assert!(
+            !shown.contains("the checker applies"),
+            "`b`, whose carrier is selected off a binder, names no map: {shown}"
+        );
     }
 
     #[test]
