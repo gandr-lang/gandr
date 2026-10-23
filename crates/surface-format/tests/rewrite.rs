@@ -667,6 +667,56 @@ def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base)
     .assert_eq(formatted.text().as_ref());
 }
 
+/// #2166: a functor's instantiation copies its members, so a copy's composite
+/// stands at the functor body's span; its motive, spelled under the argument,
+/// is never the functor's own, and the explicit form keeps `back` where the
+/// functor cannot spell one.
+#[test]
+fn a_functor_s_composite_takes_no_motive_from_its_instantiation_2166()
+{
+    let grammar = grammar();
+    let source = "theory Semi {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
+}
+
+module Reassociating(S : Model(Semi)) {
+  def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path(
+    S.M,
+    S.mul(x, S.mul(y, z)),
+    S.mul(S.mul(x, y), z)
+  ) {
+    back(S.assoc(x, y, z))
+  }
+}
+
+module OnePoint : Model(Semi) {
+  type M = Unit;
+
+  def mul(a : Unit, b : Unit) -> -F Unit { unit }
+
+  def assoc(x : Unit, y : Unit, z : Unit) -> -F Path(
+    Unit,
+    mul(mul(x, y), z),
+    mul(x, mul(y, z))
+  ) {
+    here(unit)
+  }
+}
+
+module OnePointReassociated = Reassociating(OnePoint) ;
+";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Explicit,
+        ..FormatOptions::default()
+    };
+    let formatted = format(&grammar, &parsed, options).expect("the source formats");
+    assert_eq!(formatted.withdrawn(), &[]);
+    assert_eq!(<&str>::from(formatted.text()), source);
+}
+
 /// #803: a composite of types, its carrier `Type`, which the grammar keeps as
 /// the path type's own tile, sugars back from its transport as any other.
 #[test]

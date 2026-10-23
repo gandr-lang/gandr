@@ -15,6 +15,7 @@
 //! standing under a binder the source names nothing — has none, keeps its
 //! spelling and is reported.
 
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -23,9 +24,11 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::Naming;
 use gandr_surface_diagnostics::constant_names;
+use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_parser::Lexeme;
 use gandr_surface_parser::label;
@@ -42,6 +45,7 @@ use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
 
 /// One token of a spelled motive.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -221,8 +225,10 @@ impl Motives
 /// - requires: `module` was lowered from `text` into `arena`.
 /// - ensures: a motive for each transport the printer spells faithfully under
 ///   the names the source writes for the binders around it, in a type or a body
-///   alike; none for one standing under a binder the source names nothing, or
-///   outside every value declaration's roots.
+///   alike, read from a declaration a form of the source writes; none for one
+///   standing under a binder the source names nothing, outside every value
+///   declaration's roots, or only in a functor instantiation's copy of a
+///   member, which no form writes and whose names are the argument's.
 /// - provides: the motives the explicit form writes.
 /// - fails: never.
 /// - panics: none.
@@ -230,8 +236,10 @@ impl Motives
 /// # Adequacy
 /// - hypothesis: L3 — a motive spelled outside its binders names them `?` and
 ///   is withheld, so the explicit form keeps `then`; the test spells one under
-///   a declaration's parameter, in its type and its body.
+///   a declaration's parameter, in its type and its body, and one a functor's
+///   instantiation alone could spell.
 /// - witness: `tests::rewrite::a_composite_under_a_parameter_takes_its_motive_803`
+/// - witness: `tests::rewrite::a_functor_s_composite_takes_no_motive_from_its_instantiation_2166`
 #[spec(ensures: |ret| ret.reach == Reach::Derived)]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -288,11 +296,33 @@ pub fn motives(
         })
         .filter_map(|&(id, origin)| Some((within(origin.span(), base)?, id)))
         .collect();
+    // A functor's instantiation copies the functor's members, origins and
+    // all, under a name the application binds and no form writes: a
+    // composite is spelled only from a declaration a form writes, never from
+    // a copy, whose spelling names the argument's members rather than the
+    // parameter's.
+    let written: BTreeSet<ConstantIndex> = module
+        .declarations()
+        .iter()
+        .filter(|declaration| {
+            [
+                declaration.signature(),
+                declaration.definition(),
+                declaration.refused_form(),
+            ]
+            .iter()
+            .any(|half| matches!(*half, Maybe::Present(_)))
+        })
+        .map(LoweredDeclaration::constant)
+        .collect();
     let naming = Naming::of(module, text);
     let mut found = Vec::new();
-    for (_, roots) in naming.declarations() {
+    for (constant, roots) in naming.declarations() {
         if composites.is_empty() {
             break;
+        }
+        if !written.contains(&constant) {
+            continue;
         }
         let scoped = naming.scoped(arena, &owned, roots);
         let mut binders: Vec<Option<Name<'_>>> = Vec::new();
