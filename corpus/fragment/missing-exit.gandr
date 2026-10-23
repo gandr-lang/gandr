@@ -50,8 +50,7 @@ def nested(n : Nat) -> -F Nat {
 def thunked() -> -F Nat { pure Zero }
 
 @[ checks ]
-def lambda : +U (Nat -> -F Nat) ;
-def lambda = thunk { fn (n) { pure n } } ;
+def lambda(n : Nat) -> -F Nat { pure n }
 
 @[ checks ]
 def bound(n : Nat) -> -F Nat {

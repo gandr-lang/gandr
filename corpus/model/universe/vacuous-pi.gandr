@@ -14,8 +14,7 @@ def always(n : Nat) -> -F Type { return Nat }
 /// The identity over the constant family, at a dependent arrow whose codomain
 /// is the family applied at its binder.
 @[ checks ]
-def idAlways : +U ((x : Nat) -> -F always(x)) ;
-def idAlways = thunk { fn (x) { return x } } ;
+def idAlways(x : Nat) -> -F always(x) { return x }
 
 /// The same function at the plain arrow: `always(x)` reads to `Nat`, which
 /// ignores `x`, so the dependent arrow is the arrow to `Nat` (#577).

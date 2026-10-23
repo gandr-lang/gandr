@@ -1501,6 +1501,92 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
     .assert_eq(&laid(Form::Explicit));
 }
 
+/// A signature at a suspended function and the thunk holding a lambda after
+/// it are written as the function form, each binder a parameter at its
+/// domain, in either form: one binder and two, and a dependent domain naming
+/// its binder. A lambda short of the arrows and an annotated binder, at its
+/// domain or another type, keep their halves; so does a binder other than
+/// the one a dependent domain names, where the domain stays dependent: the
+/// sugared form writes an unread dependence as a plain domain (#1899).
+#[test]
+fn a_signed_lambda_merges_into_its_function_form_1899()
+{
+    let grammar = grammar();
+    let source = "def identity : +U (Integer -> -F Integer) ;\n\
+                  def identity = thunk { fn (n) { return n } } ;\n\
+                  \n\
+                  def add : (Integer, Integer) => Integer ;\n\
+                  def add = thunk { fn (a) { fn (b) { return (a + b) } } } ;\n\
+                  \n\
+                  def named : +U ((x : Integer) -> -F Integer) ;\n\
+                  def named = thunk { fn (x) { return x } } ;\n\
+                  \n\
+                  def stated : Integer => Integer ;\n\
+                  def stated = thunk { fn (x : Integer) { return x } } ;\n\
+                  \n\
+                  def short : +U (Integer -> Integer -> -F Integer) ;\n\
+                  def short = thunk { fn (a) { become add(a) } } ;\n\
+                  \n\
+                  def renamed : +U ((x : Integer) -> -F Integer) ;\n\
+                  def renamed = thunk { fn (y) { return y } } ;\n\
+                  \n\
+                  def mistyped : Integer => Integer ;\n\
+                  def mistyped = thunk { fn (x : String) { return 1 } } ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid = |form: Form| {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "nothing is withdrawn in {form:?}"
+        );
+        formatted.into_text()
+    };
+    expect![[r#"
+        def identity(n : Integer) -> -F Integer { n }
+
+        def add(a : Integer, b : Integer) -> -F Integer { return (a + b) }
+
+        def named(x : Integer) -> -F Integer { x }
+
+        def stated : Integer => Integer ;
+        def stated = thunk { fn (x : Integer) { x } } ;
+
+        def short : (Integer, Integer) => Integer ;
+        def short = thunk { fn (a) { become add(a) } } ;
+
+        def renamed(y : Integer) -> -F Integer { y }
+
+        def mistyped : Integer => Integer ;
+        def mistyped = thunk { fn (x : String) { 1 } } ;
+    "#]]
+    .assert_eq(&laid(Form::Sugared));
+    expect![[r#"
+        def identity(n : Integer) -> -F Integer { return n }
+
+        def add(a : Integer, b : Integer) -> -F Integer { return (a + b) }
+
+        def named(x : Integer) -> -F Integer { return x }
+
+        def stated : +U (Integer -> -F Integer) ;
+        def stated = thunk { fn (x : Integer) { return x } } ;
+
+        def short : +U (Integer -> Integer -> -F Integer) ;
+        def short = thunk { fn (a) { become add(a) } } ;
+
+        def renamed : +U ((x : Integer) -> -F Integer) ;
+        def renamed = thunk { fn (y) { return y } } ;
+
+        def mistyped : +U (Integer -> -F Integer) ;
+        def mistyped = thunk { fn (x : String) { return 1 } } ;
+    "#]]
+    .assert_eq(&laid(Form::Explicit));
+}
+
 /// The rewrites' sweep: every corpus source formats into either form, the
 /// formatter checking its meaning, and formats once in it.
 mod sweeps

@@ -1,6 +1,8 @@
 //! A signature and the definition after it written as one function form:
 //! `def f : () => B ; def f = thunk { c } ;` and `def f() -> -F B { c }`,
-//! which lower to the same thunk at the same type.
+//! which lower to the same thunk at the same type, and `def f : A => B ; def
+//! f = thunk { fn (x) { c } } ;` and `def f(x : A) -> -F B { c }`, the
+//! lambda's binders the function form's parameters.
 //!
 //! The merge reads two top-level forms, so it is not a respelling of one form
 //! as the other rewrites are: [`crate::format_beside`] offers each signature
@@ -109,19 +111,24 @@ pub fn candidate(written: &[Leaf<'_>]) -> Pairing
 /// The signature whose respelled leaves are `signature` and the definition
 /// after it, whose leaves are `written` as the source writes them and
 /// `definition` respelled, merged into one function form: the signature's
-/// leaves to its name, `()`, `->`, the returner its type suspends, then the
-/// definition's body in braces — what the thunk the source writes holds, or
-/// the computation the respelling left the checker to wrap.
+/// leaves to its name, the parameters, `->`, the returner its type
+/// suspends, then the definition's body in braces — what the thunk the
+/// source writes holds, or the computation the respelling left the checker
+/// to wrap, under one lambda binder per parameter.
 ///
 /// # Specification
 /// - requires: each slice is one top-level form's leaves, in offset order.
-/// - ensures: `None` unless the signature is `def f : () => B ;` or `def f : +U
-///   (-F B) ;` behind any attributes and documentation, the definition is
-///   written `def f = thunk { … } ;` under the same name, its thunk ungraded,
-///   and neither holds a comment after its documentation; otherwise the
-///   signature's leaves to the name, then `() -> -F B` with `B` parenthesised
-///   unless it is one token, one bracketed group or a name applied to one, then
-///   the body in braces.
+/// - ensures: `None` unless the signature is `def f : T ;` behind any
+///   attributes and documentation, `T` one of `() => B`, `+U (-F B)`, `D => B`
+///   with `D` one domain or a parenthesised list of them, or `+U (D1 -> … -> Dn
+///   -> -F B)`, the definition is written `def f = thunk { … } ;` under the
+///   same name, its thunk ungraded, holding one `fn (x) { … }` per domain each
+///   directly in the last, every binder bare and the name a dependent domain
+///   `(x : A)` gives it, and neither form holds a comment after its
+///   documentation; otherwise the signature's leaves to the name, then each
+///   binder `x : A` in parentheses, `A` its domain, then `-> -F B` with `B`
+///   parenthesised unless it is one token, one bracketed group or a name
+///   applied to one, then the innermost body in braces.
 /// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
 /// - fails: never.
 /// - panics: none.
@@ -129,14 +136,17 @@ pub fn candidate(written: &[Leaf<'_>]) -> Pairing
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a `become` thunk and a statement block merge in both
-///   forms, a thunk the respelling left out merges as its computation, and a
-///   graded thunk, a commented definition and a value definition stay apart.
+///   forms, a thunk the respelling left out merges as its computation, a one-
+///   and a two-binder lambda merge, and a graded thunk, a commented definition,
+///   a value definition, a lambda short of the arrows, an annotated binder and
+///   a binder a dependent domain names otherwise stay apart.
 /// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
+/// - witness: `tests::rewrite::a_signed_lambda_merges_into_its_function_form_1899`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|leaves| !leaves.is_empty()))]
 #[must_use]
-pub fn merged<'source>(
-    signature: &[Leaf<'source>],
-    (written, definition): (&[Leaf<'source>], &[Leaf<'source>]),
+pub fn merged<'leaves, 'source>(
+    signature: &'leaves [Leaf<'source>],
+    (written, definition): (&'leaves [Leaf<'source>], &'leaves [Leaf<'source>]),
 ) -> Option<Vec<Leaf<'source>>>
 {
     let head = signature
@@ -155,37 +165,12 @@ pub fn merged<'source>(
         Token(LeafIndex(named), name),
         Token(_, ":"),
         ref ty @ ..,
-        Token(LeafIndex(ended), ";"),
+        Token(_, ";"),
     ] = signed.as_slice()
     else {
         return None;
     };
-    let codomain = match *ty {
-        [
-            Token(_, "("),
-            Token(_, ")"),
-            Token(LeafIndex(arrow), "=>"),
-            ref result @ ..,
-        ]
-        | [
-            Token(_, "()"),
-            Token(LeafIndex(arrow), "=>"),
-            ref result @ ..,
-        ] if result.first().is_some_and(|&Token(_, first)| first != "[") => {
-            let leaves = trimmed(declared.get(arrow.saturating_add(1) .. ended)?);
-            Codomain::Result(leaves, atomic(result))
-        },
-        [
-            Token(_, "+U"),
-            Token(open, "("),
-            Token(_, "-F"),
-            ref returned @ ..,
-            Token(close, ")"),
-        ] if closing(&signed, open) == Some(close) && atomic(rowless(returned)) == Atomic::Yes => {
-            Codomain::Returner(trimmed(declared.get(open.0.saturating_add(1) .. close.0)?))
-        },
-        _ => return None,
-    };
+    let (domains, codomain) = abstracted(declared, ty)?;
     let source = tokens(written);
     let &[
         Token(_, "def"),
@@ -225,6 +210,7 @@ pub fn merged<'source>(
         },
         _ => definition.get(equals.saturating_add(1) .. ends)?,
     };
+    let (parameters, inside) = applied(body, &domains)?;
     let first = signature.first()?;
     let position = ByteSpan::new(first.span.start(), first.span.start()).unwrap_or(first.span);
     let made = |text: &'static str, material: Material| Leaf {
@@ -241,8 +227,20 @@ pub fn merged<'source>(
             .saturating_add(12_usize),
     );
     out.extend_from_slice(signature.get(..= head.saturating_add(named))?);
+    out.push(made("(", Material::Token));
+    for (index, &(binder, ty)) in parameters.iter().enumerate() {
+        if index > 0_usize {
+            out.extend([made(",", Material::Token), made(" ", Material::Whitespace)]);
+        }
+        out.extend_from_slice(binder);
+        out.extend([
+            made(" ", Material::Whitespace),
+            made(":", Material::Token),
+            made(" ", Material::Whitespace),
+        ]);
+        out.extend_from_slice(ty);
+    }
     out.extend([
-        made("(", Material::Token),
         made(")", Material::Token),
         made(" ", Material::Whitespace),
         made("->", Material::Token),
@@ -269,12 +267,293 @@ pub fn merged<'source>(
         made("{", Material::Token),
         made(" ", Material::Whitespace),
     ]);
-    out.extend_from_slice(trimmed(body));
+    out.extend_from_slice(inside);
     out.extend([made(" ", Material::Whitespace), made("}", Material::Token)]);
     for leaf in &mut out {
         leaf.owner = first.owner;
     }
     Some(out)
+}
+
+/// One domain a signature's type abstracts: the name a dependent domain
+/// `(x : A)` gives its binder, and the leaves of its type.
+#[derive(Clone, Copy, Debug)]
+struct Domain<'leaves, 'source>
+{
+    /// The binder's name, when the domain is dependent.
+    named: Option<&'leaves str>,
+    /// The domain's type.
+    ty: &'leaves [Leaf<'source>],
+}
+
+/// The domains and the returner of the type whose tokens are `ty`, among the
+/// leaves `declared`, when it is a function form's: `() => B`, `+U (-F B)`,
+/// `D => B` or `+U (D1 -> … -> Dn -> -F B)`.
+///
+/// # Specification
+/// trivial.
+fn abstracted<'leaves, 'source>(
+    declared: &'leaves [Leaf<'source>],
+    ty: &[Token<'leaves>],
+) -> Option<(Vec<Domain<'leaves, 'source>>, Codomain<'leaves, 'source>)>
+{
+    if let [
+        Token(_, "+U"),
+        Token(open, "("),
+        ref inner @ ..,
+        Token(close, ")"),
+    ] = *ty
+    {
+        if closing(ty, open) != Some(close) {
+            return None;
+        }
+        let segments = split(inner, Separator::Arrow);
+        let (&last, domains) = segments.split_last()?;
+        let [Token(_, "-F"), ref returned @ ..] = *last
+        else {
+            return None;
+        };
+        if atomic(rowless(returned)) == Atomic::No {
+            return None;
+        }
+        let domains = domains
+            .iter()
+            .map(|&segment| domain(declared, segment))
+            .collect::<Option<Vec<_>>>()?;
+        return Some((domains, Codomain::Returner(spanned(declared, last)?)));
+    }
+    let pieces = split(ty, Separator::Function);
+    let &[given, result] = pieces.as_slice()
+    else {
+        return None;
+    };
+    if result.first().is_none_or(|&Token(_, first)| first == "[") {
+        return None;
+    }
+    let domains = match *given {
+        [Token(_, "()")] => Vec::new(),
+        [Token(open, "("), ref listed @ .., Token(close, ")")]
+            if closing(given, open) == Some(close) =>
+        {
+            split(listed, Separator::Comma)
+                .into_iter()
+                .filter(|piece| !piece.is_empty())
+                .map(|piece| domain(declared, piece))
+                .collect::<Option<Vec<_>>>()?
+        },
+        _ => Vec::from([domain(declared, given)?]),
+    };
+    Some((
+        domains,
+        Codomain::Result(spanned(declared, result)?, atomic(result)),
+    ))
+}
+
+/// The domain whose tokens are `tokens`, among the leaves `declared`: `x :
+/// A`, in parentheses or not, names its binder.
+///
+/// # Specification
+/// trivial.
+fn domain<'leaves, 'source>(
+    declared: &'leaves [Leaf<'source>],
+    tokens: &[Token<'leaves>],
+) -> Option<Domain<'leaves, 'source>>
+{
+    let bare = match *tokens {
+        [Token(open, "("), ref inner @ .., Token(close, ")")]
+            if closing(tokens, open) == Some(close) =>
+        {
+            inner
+        },
+        _ => tokens,
+    };
+    if let [named @ Token(_, name), Token(_, ":"), ref ty @ ..] = *bare
+        && identifier(named) == Identifier::Yes
+    {
+        return Some(Domain {
+            named: Some(name),
+            ty: spanned(declared, ty)?,
+        });
+    }
+    Some(Domain {
+        named: None,
+        ty: spanned(declared, tokens)?,
+    })
+}
+
+/// One binder a lambda abstracts and the type the function form writes it
+/// at.
+type Parameter<'leaves, 'source> = (&'leaves [Leaf<'source>], &'leaves [Leaf<'source>]);
+
+/// The function form's parameters and its body, when `body`, the leaves of
+/// a thunk's computation, is one `fn (x) { … }` per domain of `domains`,
+/// each directly in the last and each binder bare: each binder beside its
+/// domain, and the innermost lambda's body. An annotated binder, `fn (x :
+/// A)`, lowers with its annotation, which the function form does not write.
+///
+/// # Specification
+/// trivial.
+fn applied<'leaves, 'source>(
+    body: &'leaves [Leaf<'source>],
+    domains: &[Domain<'leaves, 'source>],
+) -> Option<(Vec<Parameter<'leaves, 'source>>, &'leaves [Leaf<'source>])>
+{
+    if domains.is_empty() {
+        return Some((Vec::new(), trimmed(body)));
+    }
+    let all = tokens(body);
+    let mut rest = all.as_slice();
+    let mut parameters = Vec::with_capacity(domains.len());
+    for &Domain { named, ty } in domains {
+        let [Token(_, "fn"), ref lambda @ ..] = *rest
+        else {
+            return None;
+        };
+        let (binders, block) = matched(lambda)?;
+        let &[binder @ Token(_, name)] = binders
+        else {
+            return None;
+        };
+        if identifier(binder) == Identifier::No || named.is_some_and(|named| named != name) {
+            return None;
+        }
+        let (inside, after) = matched(block)?;
+        if !after.is_empty() || block.first().is_none_or(|&Token(_, open)| open != "{") {
+            return None;
+        }
+        parameters.push((spanned(body, &[binder])?, ty));
+        rest = inside;
+    }
+    Some((parameters, spanned(body, rest)?))
+}
+
+/// What a token list is split at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Separator
+{
+    /// A computation arrow, `->`.
+    Arrow,
+    /// A value function's arrow, `=>`.
+    Function,
+    /// A comma.
+    Comma,
+}
+
+impl Separator
+{
+    /// The separator `token` is, if any.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(Token(_, text): Token<'_>) -> Option<Self>
+    {
+        match text {
+            "->" => Some(Self::Arrow),
+            "=>" => Some(Self::Function),
+            "," => Some(Self::Comma),
+            _ => None,
+        }
+    }
+}
+
+/// `tokens` split at each `separator` outside every bracketed group.
+///
+/// # Specification
+/// trivial.
+fn split<'tokens, 'text>(
+    tokens: &'tokens [Token<'text>],
+    separator: Separator,
+) -> Vec<&'tokens [Token<'text>]>
+{
+    let mut pieces = Vec::new();
+    let mut depth = 0_usize;
+    let mut start = 0_usize;
+    for (at, &token) in tokens.iter().enumerate() {
+        let Token(_, text) = token;
+        if OPENERS.contains(&text) {
+            depth = depth.saturating_add(1);
+        }
+        else if CLOSERS.contains(&text) {
+            depth = depth.saturating_sub(1);
+        }
+        else if depth == 0 && Separator::of(token) == Some(separator) {
+            pieces.push(tokens.get(start .. at).unwrap_or_default());
+            start = at.saturating_add(1);
+        }
+    }
+    pieces.push(tokens.get(start ..).unwrap_or_default());
+    pieces
+}
+
+/// The tokens inside the group the first of `tokens` opens, and those after
+/// the token closing it.
+///
+/// # Specification
+/// trivial.
+fn matched<'tokens, 'text>(
+    tokens: &'tokens [Token<'text>]
+) -> Option<(&'tokens [Token<'text>], &'tokens [Token<'text>])>
+{
+    let mut depth = 0_usize;
+    for (at, &Token(_, text)) in tokens.iter().enumerate() {
+        if OPENERS.contains(&text) {
+            depth = depth.saturating_add(1);
+        }
+        else if CLOSERS.contains(&text) {
+            depth = depth.checked_sub(1)?;
+            if depth == 0 {
+                return Some((tokens.get(1 .. at)?, tokens.get(at.saturating_add(1) ..)?));
+            }
+        }
+        else if depth == 0 {
+            return None;
+        }
+    }
+    None
+}
+
+/// The leaves of `leaves` from the first of `tokens` to the last.
+///
+/// # Specification
+/// trivial.
+fn spanned<'leaves, 'source>(
+    leaves: &'leaves [Leaf<'source>],
+    tokens: &[Token<'_>],
+) -> Option<&'leaves [Leaf<'source>]>
+{
+    let (&Token(LeafIndex(first), _), &Token(LeafIndex(last), _)) =
+        (tokens.first()?, tokens.last()?);
+    leaves.get(first ..= last)
+}
+
+/// Whether a token is a name a binder may take.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Identifier
+{
+    /// It is.
+    Yes,
+    /// It is not.
+    No,
+}
+
+/// Whether `token` is a name a binder may take: a letter or `_`, then
+/// letters, digits and `_`.
+///
+/// # Specification
+/// trivial.
+fn identifier(Token(_, text): Token<'_>) -> Identifier
+{
+    let mut chars = text.chars();
+    if chars
+        .next()
+        .is_some_and(|first| first.is_alphabetic() || first == '_')
+        && chars.all(|next| next.is_alphanumeric() || next == '_')
+    {
+        Identifier::Yes
+    }
+    else {
+        Identifier::No
+    }
 }
 
 /// The returner a signature's type suspends.

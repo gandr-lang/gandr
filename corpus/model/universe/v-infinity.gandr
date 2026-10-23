@@ -56,8 +56,7 @@ def absurdSet(e : Empty) -> -F Vinf {
 
 /// No member: the empty set's picking function has nothing to pick from.
 @[ checks ]
-def none : +U (Empty -> -F Vinf) ;
-def none = thunk { fn (x) { absurdSet(x) } } ;
+def none(x : Empty) -> -F Vinf { absurdSet(x) }
 
 /// The empty set.
 @[ checks ]
