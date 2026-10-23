@@ -2066,6 +2066,13 @@ enum Frame
         /// The forced value.
         value: ValueId,
     },
+    /// A decomposition waits on the type its dialogue synthesises, which must
+    /// be a dialogue type; the decomposition returns a web.
+    Decompose
+    {
+        /// The dialogue decomposed.
+        dialogue: ValueId,
+    },
     /// An application waits on the type its head synthesises, which must be an
     /// arrow or a dependent arrow; the argument then checks against the
     /// domain.
@@ -2501,6 +2508,7 @@ impl Frame
             Self::ListCaseNil { .. } => FrameRole::ListCaseNil,
             Self::ListCaseCons => FrameRole::ListCaseCons,
             Self::Force { .. } => FrameRole::Force,
+            Self::Decompose { .. } => FrameRole::Decompose,
             Self::ApplicationHead { .. } => FrameRole::ApplicationHead,
             Self::ApplicationArgument { .. } => FrameRole::ApplicationArgument,
             Self::FixpointArgument { .. } => FrameRole::FixpointArgument,
@@ -2655,6 +2663,7 @@ impl Frame
             | Self::ListCaseScrutinee { .. }
             | Self::ListCaseNil { .. }
             | Self::Force { .. }
+            | Self::Decompose { .. }
             | Self::ApplicationHead { .. }
             | Self::ApplicationArgument { .. }
             | Self::FixpointArgument { .. }
@@ -3122,6 +3131,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ListCaseNil { .. }
                 | Frame::ListCaseCons
                 | Frame::Force { .. }
+                | Frame::Decompose { .. }
                 | Frame::ApplicationHead { .. }
                 | Frame::ApplicationArgument { .. }
                 | Frame::FixpointArgument { .. }
@@ -4691,9 +4701,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            Value::Recorded(_) => Err(CheckRefusal::NotSynthesisable {
+            Value::Recorded(_) | Value::Dialogue(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Run(term),
             }),
+            Value::Web(_) => {
+                let web = self.context.arena_mut().value_type_web();
+                Ok(Step::Ascend(Produced::ValueType(Relocated::from(web))))
+            },
             Value::Hole(hole) => {
                 if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) {
                     self.context.nominate(term, hole)?;
@@ -5031,6 +5045,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 })),
             },
             Value::Recorded(_) => self.check_recorded(term, expected),
+            Value::Dialogue(_) => self.check_dialogue(term, expected),
             // Against an identity at `Type`, a univalence checks its record
             // against the record type the two codes name, so a record literal
             // checks; the path it then synthesises meets `expected` at the
@@ -5120,6 +5135,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Then(..)
             | Value::FlowProduct(..)
             | Value::Forward(_)
+            | Value::Web(_)
             | Value::Ascribe { .. } => {
                 self.wait(Frame::ValueBridge {
                     at: term,
@@ -5272,6 +5288,55 @@ impl<'context, 'arena> Machine<'context, 'arena>
         Ok(Step::Ascend(Produced::Checked))
     }
 
+    /// Check the dialogue `term` against `expected`: each endpoint's moves
+    /// replay against its protocol, every message is received as sent and
+    /// the log is one linearization of the dialogue's causal web, then each
+    /// payload checks against the type its endpoint's move names.
+    ///
+    /// # Specification
+    /// - requires: `term` is a dialogue.
+    /// - ensures: one queued check per payload, the left endpoint's in move
+    ///   order and then the right's, once the dialogue type `expected` admits
+    ///   the dialogue.
+    /// - fails: as [`crate::flow::dialogue_premises`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a dialogue of one message checks, two logs of one
+    ///   dialogue check alike, a receipt of another payload is unmatched, a
+    ///   receipt logged before its send is inverted, and a move off its
+    ///   endpoint's protocol is refused at that move.
+    /// - witness: `flow::tests::a_dialogue_checks_by_its_web_and_refuses_by_move`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| ret.is_err() || (ret == Ok(Step::Ascend(Produced::Checked)) && self.frames.len() >= depth),
+    )]
+    fn check_dialogue(
+        &mut self,
+        term: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let premises = crate::flow::dialogue_premises(self.context, term, expected)?;
+        let owner = self.owner;
+        self.frames.extend(
+            premises
+                .iter()
+                .rev()
+                .map(|&(payload, payload_type)| Waiting {
+                    frame: Frame::NativeNext(Goal::Value {
+                        term: payload,
+                        direction: Direction::Check(payload_type),
+                    }),
+                    owner,
+                }),
+        );
+        Ok(Step::Ascend(Produced::Checked))
+    }
+
     /// Whether the argument `argument` a computation applies at a static Pi is
     /// rigid: a static lambda, a static definition and an unsaturated
     /// instance of one normalize away, and the kernel has no static lambda.
@@ -5350,7 +5415,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::FlowProduct(..)
             | Value::Forward(_)
             | Value::FunctionFlow(..)
-            | Value::Recorded(_) => false,
+            | Value::Recorded(_)
+            | Value::Dialogue(_)
+            | Value::Web(_) => false,
         };
         if normalizes_away {
             Err(CheckRefusal::StaticLambdaArgument { at: argument })
@@ -5646,6 +5713,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
+            Computation::Decompose(dialogue) => {
+                self.wait(Frame::Decompose { dialogue });
+                Ok(Step::Descend(Goal::Value {
+                    term: dialogue,
+                    direction: Direction::Synthesise,
+                }))
+            },
             Computation::Application(head, argument) => {
                 self.wait(Frame::ApplicationHead { head, argument });
                 Ok(Step::Descend(Goal::Computation {
@@ -5915,6 +5989,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Ride { .. }
             | Computation::TelescopeTransport { .. }
             | Computation::Force(_)
+            | Computation::Decompose(_)
             | Computation::Application(..)
             | Computation::Ascribe { .. }
             | Computation::Split {
@@ -6701,7 +6776,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }));
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(carrier))))
             },
-            ValueTypeView::Run(protocol) | ValueTypeView::Prefix(protocol) => {
+            ValueTypeView::Run(protocol)
+            | ValueTypeView::Prefix(protocol)
+            | ValueTypeView::Dialogue(protocol) => {
                 let universe = crate::flow::universe(self.context.arena_mut());
                 self.wait(Frame::RunProtocol);
                 Ok(Step::Descend(Goal::Value {
@@ -6718,6 +6795,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::String
             | ValueTypeView::Unit
             | ValueTypeView::Buffer
+            | ValueTypeView::Web
             | ValueTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
             ValueTypeView::Abstract(atom) => {
                 let _level = self.context.abstract_level(atom)?;
@@ -7103,6 +7181,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
+                | ValueTypeView::Dialogue(_)
+                | ValueTypeView::Web
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -7175,6 +7255,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
+                | ValueTypeView::Dialogue(_)
+                | ValueTypeView::Web
                 | ValueTypeView::Data { .. }
                 | ValueTypeView::Record(_)
                 | ValueTypeView::Sum(..)
@@ -8775,6 +8857,49 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     )),
                 }
             },
+            (Frame::Decompose { dialogue }, Produced::ValueType(synthesised)) => {
+                let synthesised = synthesised.settle(self.context.arena_mut());
+                let head = self.context.whnf_value_type(synthesised)?;
+                match value_type_view(self.context.arena(), head)? {
+                    ValueTypeView::Dialogue(_) | ValueTypeView::Unknown => {
+                        let web = self.context.arena_mut().value_type_web();
+                        let returner = self.context.arena_mut().comp_type_returner(web);
+                        Ok(Step::Ascend(Produced::CompType(returner)))
+                    },
+                    ValueTypeView::Data { .. }
+                    | ValueTypeView::Record(_)
+                    | ValueTypeView::Stack { .. }
+                    | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Path { .. }
+                    | ValueTypeView::Flow { .. }
+                    | ValueTypeView::Run(_)
+                    | ValueTypeView::Prefix(_)
+                    | ValueTypeView::Web
+                    | ValueTypeView::Sum(_)
+                    | ValueTypeView::List(_)
+                    | ValueTypeView::Integer
+                    | ValueTypeView::String
+                    | ValueTypeView::Unit
+                    | ValueTypeView::Thunk(_)
+                    | ValueTypeView::Universe { .. }
+                    | ValueTypeView::Lift { .. }
+                    | ValueTypeView::Element { .. }
+                    | ValueTypeView::Product(_)
+                    | ValueTypeView::StaticPi { .. }
+                    | ValueTypeView::Sigma { .. }
+                    | ValueTypeView::Abstract(_)
+                    | ValueTypeView::Staged { .. }
+                    | ValueTypeView::Kept { .. }
+                    | ValueTypeView::Capability { .. }
+                    | ValueTypeView::Buffer
+                    | ValueTypeView::Session(_)
+                    | ValueTypeView::World(_) => Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Value(dialogue),
+                        wanted: ExpectedShape::Dialogue,
+                        found: TypeNode::Value(synthesised),
+                    }),
+                }
+            },
             (Frame::FixpointArgument { head, expected }, Produced::ValueType(domain)) => {
                 let domain = domain.settle(self.context.arena_mut());
                 let arrow = self.context.arena_mut().comp_type_arrow(domain, expected);
@@ -9081,6 +9206,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::NonCovariantMotive { .. }
                     | CheckRefusal::RideUnsupported { .. }
                     | CheckRefusal::RunNotAdmitted { .. }
+                    | CheckRefusal::DialogueUnmatched { .. }
+                    | CheckRefusal::DialogueInverted { .. }
                     | CheckRefusal::ForwardUnsupported { .. }
                     | CheckRefusal::Boundary { .. }
                     | CheckRefusal::Access { .. }
@@ -9171,6 +9298,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::FixpointArgument { .. }
                 | Frame::SplitScrutinee { .. }
                 | Frame::Force { .. }
+                | Frame::Decompose { .. }
                 | Frame::ValueBridge { .. }
                 | Frame::FormElement(_)
                 | Frame::StaticSpine { .. }
@@ -9458,6 +9586,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Sum(_)
             | ValueTypeView::List(_)
             | ValueTypeView::Integer

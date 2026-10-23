@@ -596,6 +596,8 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::NonCovariantMotive { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::RunNotAdmitted { .. }
+        | CheckRefusal::DialogueUnmatched { .. }
+        | CheckRefusal::DialogueInverted { .. }
         | CheckRefusal::ForwardUnsupported { .. }
         | CheckRefusal::Boundary { .. }
         | CheckRefusal::Access { .. }
@@ -5596,7 +5598,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     return Err(Refusal::MachineInvariant);
                 },
             },
-            Value::Recorded(_) => return Err(unadmitted(UnadmittedFormer::Run)),
+            Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) => {
+                return Err(unadmitted(UnadmittedFormer::Run));
+            },
             Value::Ua { .. } => {
                 let Some(&path) = self.source.natives.get(&at)
                 else {
@@ -6009,6 +6013,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         | Value::Forward(_)
                         | Value::FunctionFlow(..)
                         | Value::Recorded(_)
+                        | Value::Dialogue(_)
+                        | Value::Web(_)
                         | Value::Returned(_)
                         | Value::Nested(_)
                         | Value::Run(_)
@@ -6146,7 +6152,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `tests::native_formers::empty_data_elimination_preserves_the_ambient_scope`
     /// - witness: `tests::native_formers::dependent_data_parameters_and_case_motives`
     #[spec(
-        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied(), continuations = self.arena.computation(at).map_or(Some(1_usize), |node| match *node { Computation::DataCase { ref branches, .. } => branches.len().checked_add(2), Computation::Case { ref branches, .. } => branches.len().checked_add(1), Computation::With(ref components) => Some(components.len()), Computation::Ascribe { .. } => Some(2_usize), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Force(_) | Computation::Decompose(_) | Computation::Split { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => Some(1_usize) })],
         ensures: |ret| match held {
             | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
             | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
@@ -6192,6 +6198,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
             Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
             Computation::Memory(_) => return Err(unadmitted(UnadmittedFormer::Memory)),
+            Computation::Decompose(_) => return Err(unadmitted(UnadmittedFormer::Run)),
             Computation::World(_) => return Err(Refusal::Located { at: node }),
             Computation::Ride {
                 motive,
@@ -6412,7 +6419,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     at: CoreNode::Type(TypeNode::Value(at)),
                 });
             },
-            ValueTypeView::Run(_) | ValueTypeView::Prefix(_) => {
+            ValueTypeView::Run(_)
+            | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web => {
                 return Err(Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(at)),
                     former: UnadmittedFormer::Run,
@@ -6770,7 +6780,9 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     | Value::FlowProduct(..)
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
-                    | Value::Recorded(_),
+                    | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_),
                     _,
                 ) => return Err(Refusal::MachineInvariant),
             };

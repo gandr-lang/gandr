@@ -102,6 +102,8 @@ impl Erasure<'_, '_>
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
                     | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
                     | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
@@ -170,6 +172,7 @@ impl Erasure<'_, '_>
                     | Computation::Return(_)
                     | Computation::Bind(..)
                     | Computation::Force(_)
+                    | Computation::Decompose(_)
                     | Computation::Split { .. }
                     | Computation::Hole(_)
                     | Computation::Mark { .. }
@@ -208,6 +211,8 @@ impl Erasure<'_, '_>
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
                     | ValueType::Prefix(_)
+                    | ValueType::Dialogue(_)
+                    | ValueType::Web
                     | ValueType::Base(_)
                     | ValueType::Sigma { .. }
                     | ValueType::List(_)
@@ -354,6 +359,8 @@ impl Erasure<'_, '_>
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
                     | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
                     | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
@@ -435,6 +442,7 @@ impl Erasure<'_, '_>
                     | Computation::Return(_)
                     | Computation::Bind(..)
                     | Computation::Force(_)
+                    | Computation::Decompose(_)
                     | Computation::Split { .. }
                     | Computation::Hole(_)
                     | Computation::Mark { .. }
@@ -518,6 +526,8 @@ impl Erasure<'_, '_>
                     | ValueType::Flow { .. }
                     | ValueType::Run(_)
                     | ValueType::Prefix(_)
+                    | ValueType::Dialogue(_)
+                    | ValueType::Web
                     | ValueType::Base(_)
                     | ValueType::Sigma { .. }
                     | ValueType::List(_)

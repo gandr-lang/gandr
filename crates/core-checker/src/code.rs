@@ -995,6 +995,8 @@ impl CodeDefinitions
             | Value::FunctionFlow(..)
             | Value::SessionRelated { .. }
             | Value::Recorded(_)
+            | Value::Dialogue(_)
+            | Value::Web(_)
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Univalence(..)
@@ -2246,7 +2248,8 @@ pub fn loose_reach(
                             .ok_or(CheckRefusal::MachineInvariant)?;
                         reach = reach.max(outside.saturating_sub(depth));
                     },
-                    Value::Primitive { .. }
+                    Value::Web(_)
+                    | Value::Primitive { .. }
                     | Value::Variable {
                         zone: Zone::Linear, ..
                     }
@@ -2270,6 +2273,16 @@ pub fn loose_reach(
                                     Maybe::Absent(_) => None,
                                 }),
                         );
+                    },
+                    Value::Dialogue(ref turns) => {
+                        work.extend(turns.iter().filter_map(
+                            |turn| match turn.movement.payload() {
+                                Maybe::Present(payload) => {
+                                    Some((CoreNode::Term(TermNode::Value(payload)), depth))
+                                },
+                                Maybe::Absent(_) => None,
+                            },
+                        ));
                     },
                     Value::PathProduct(first, second)
                     | Value::Funext(first, second)
@@ -2529,7 +2542,8 @@ pub fn loose_reach(
                     },
                     Computation::Return(value)
                     | Computation::Abandon(value)
-                    | Computation::Force(value) => {
+                    | Computation::Force(value)
+                    | Computation::Decompose(value) => {
                         work.push((CoreNode::Term(TermNode::Value(value)), depth));
                     },
                     Computation::Bind(bound, body) => {
@@ -2631,7 +2645,9 @@ pub fn loose_reach(
                         (CoreNode::Term(TermNode::Value(source)), depth),
                         (CoreNode::Term(TermNode::Value(target)), depth),
                     ]),
-                    ValueType::Run(session) | ValueType::Prefix(session) => {
+                    ValueType::Run(session)
+                    | ValueType::Prefix(session)
+                    | ValueType::Dialogue(session) => {
                         work.push((CoreNode::Term(TermNode::Value(session)), depth));
                     },
                     ValueType::Staged { base, .. } | ValueType::Kept { value: base, .. } => {
@@ -2661,7 +2677,8 @@ pub fn loose_reach(
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_)
                     | ValueType::Unknown
-                    | ValueType::Buffer => {},
+                    | ValueType::Buffer
+                    | ValueType::Web => {},
                     ValueType::Capability { ref authority, .. } => work.extend(
                         authority
                             .types()

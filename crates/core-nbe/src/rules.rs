@@ -2341,12 +2341,11 @@ fn plan_values(
             (right_source, right_fields),
         )? {
             None => Plan::Leaf(Settled::NotConvertible),
-            Some((&[], _)) => Plan::Leaf(Settled::Convertible),
-            Some((left_fields, right_fields)) => Plan::Decompose(
-                left_fields
-                    .iter()
-                    .zip(right_fields)
-                    .map(|(a, b)| Subgoal::Values(*a, *b))
+            Some(pairs) if pairs.is_empty() => Plan::Leaf(Settled::Convertible),
+            Some(pairs) => Plan::Decompose(
+                pairs
+                    .into_iter()
+                    .map(|(a, b)| Subgoal::Values(a, b))
                     .collect(),
             ),
         },

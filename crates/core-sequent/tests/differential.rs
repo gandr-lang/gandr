@@ -431,6 +431,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::ReturnedNonReturner
         | EvalFault::AppliedNonOperator
         | EvalFault::SessionAction
+        | EvalFault::Decomposition
         | EvalFault::MemoryForm
         | EvalFault::WorldForm
         | EvalFault::MachineInvariant => {

@@ -1,0 +1,14 @@
+/// `DialogueInverted`: a dialogue that logs a receipt before the send it matches.
+module Ask {
+  type Asking = !String. end;
+}
+
+@[ refuses("DialogueInverted") ]
+def foretold : Dialogue(Ask.Asking) ;
+
+def foretold = dialogue(
+  right(received("yes")),
+  left(sent("yes")),
+  left(closed),
+  right(closed)
+) ;

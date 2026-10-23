@@ -506,6 +506,10 @@ pub enum RefusalName
     RideUnsupported,
     /// A recorded run the protocol does not admit.
     RunNotAdmitted,
+    /// A dialogue move with no move of the other endpoint to match it.
+    DialogueUnmatched,
+    /// A dialogue logged against its causal order.
+    DialogueInverted,
     /// A `forward` whose translator the rule cannot image.
     ForwardUnsupported,
     /// A function flow's boundary that runs against its variance.
@@ -860,7 +864,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 200_usize] = [
+    pub const VOCABULARY: [Self; 202_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -922,6 +926,8 @@ impl RefusalName
         Self::NonCovariantMotive,
         Self::RideUnsupported,
         Self::RunNotAdmitted,
+        Self::DialogueUnmatched,
+        Self::DialogueInverted,
         Self::ForwardUnsupported,
         Self::Boundary,
         Self::UnresolvedName,
@@ -1301,6 +1307,8 @@ impl RefusalName
         | (Self::NonCovariantMotive, b"NonCovariantMotive")
         | (Self::RideUnsupported, b"RideUnsupported")
         | (Self::RunNotAdmitted, b"RunNotAdmitted")
+        | (Self::DialogueUnmatched, b"DialogueUnmatched")
+        | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
     ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_))
@@ -1440,6 +1448,8 @@ impl RefusalName
             Self::NonCovariantMotive => "NonCovariantMotive",
             Self::RideUnsupported => "RideUnsupported",
             Self::RunNotAdmitted => "RunNotAdmitted",
+            Self::DialogueUnmatched => "DialogueUnmatched",
+            Self::DialogueInverted => "DialogueInverted",
             Self::ForwardUnsupported => "ForwardUnsupported",
             Self::Boundary => "Boundary",
             Self::ShadowedBuiltin => "ShadowedBuiltin",
@@ -2181,6 +2191,8 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::NonCovariantMotive { .. }), RefusalName::NonCovariantMotive)
         | (Self::Checking(CheckRefusal::RideUnsupported { .. }), RefusalName::RideUnsupported)
         | (Self::Checking(CheckRefusal::RunNotAdmitted { .. }), RefusalName::RunNotAdmitted)
+        | (Self::Checking(CheckRefusal::DialogueUnmatched { .. }), RefusalName::DialogueUnmatched)
+        | (Self::Checking(CheckRefusal::DialogueInverted { .. }), RefusalName::DialogueInverted)
         | (Self::Checking(CheckRefusal::ForwardUnsupported { .. }), RefusalName::ForwardUnsupported)
         | (Self::Checking(CheckRefusal::Boundary { .. }), RefusalName::Boundary)
     )
@@ -2565,6 +2577,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
         | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
         | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
+        | (CheckRefusal::DialogueUnmatched { .. }, RefusalName::DialogueUnmatched)
+        | (CheckRefusal::DialogueInverted { .. }, RefusalName::DialogueInverted)
         | (CheckRefusal::ForwardUnsupported { .. }, RefusalName::ForwardUnsupported)
         | (CheckRefusal::Boundary { .. }, RefusalName::Boundary)
     ) && (!matches!(refusal, CheckRefusal::OutOfFragment { .. })
@@ -2701,6 +2715,8 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
         CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
         CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,
+        CheckRefusal::DialogueUnmatched { .. } => RefusalName::DialogueUnmatched,
+        CheckRefusal::DialogueInverted { .. } => RefusalName::DialogueInverted,
         CheckRefusal::ForwardUnsupported { .. } => RefusalName::ForwardUnsupported,
         CheckRefusal::Boundary { .. } => RefusalName::Boundary,
         CheckRefusal::TypeMismatch(_) => RefusalName::TypeMismatch,

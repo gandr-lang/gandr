@@ -93,6 +93,8 @@ impl Machine<'_, '_>
             | &Value::Forward(_)
             | &Value::FunctionFlow(..)
             | &Value::Recorded(_)
+            | &Value::Dialogue(_)
+            | &Value::Web(_)
             | &Value::Returned(_)
             | &Value::Nested(_)
             | &Value::Run(_)
@@ -163,6 +165,8 @@ impl Machine<'_, '_>
                 | &Value::Forward(_)
                 | &Value::FunctionFlow(..)
                 | &Value::Recorded(_)
+                | &Value::Dialogue(_)
+                | &Value::Web(_)
                 | &Value::Returned(_)
                 | &Value::Nested(_)
                 | &Value::Run(_)
@@ -701,6 +705,7 @@ impl Machine<'_, '_>
             | &Computation::Bind(..)
             | &Computation::Ascribe { .. }
             | &Computation::Force(_)
+            | &Computation::Decompose(_)
             | &Computation::Case { .. }
             | &Computation::Split { .. }
             | &Computation::RecordProjection(..)
@@ -818,6 +823,7 @@ impl Machine<'_, '_>
             | &Computation::Bind(..)
             | &Computation::Ascribe { .. }
             | &Computation::Force(_)
+            | &Computation::Decompose(_)
             | &Computation::Case { .. }
             | &Computation::Split { .. }
             | &Computation::RecordProjection(..)
@@ -921,6 +927,7 @@ impl Machine<'_, '_>
                     | &Computation::Bind(..)
                     | &Computation::Ascribe { .. }
                     | &Computation::Force(_)
+                    | &Computation::Decompose(_)
                     | &Computation::Case { .. }
                     | &Computation::Split { .. }
                     | &Computation::RecordProjection(..)
@@ -990,6 +997,7 @@ impl Machine<'_, '_>
                 | &Computation::Bind(..)
                 | &Computation::Ascribe { .. }
                 | &Computation::Force(_)
+                | &Computation::Decompose(_)
                 | &Computation::Case { .. }
                 | &Computation::Split { .. }
                 | &Computation::RecordProjection(..)
@@ -1297,6 +1305,8 @@ impl Machine<'_, '_>
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Sum(_)
             | ValueTypeView::List(_)
             | ValueTypeView::Integer

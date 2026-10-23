@@ -26,7 +26,7 @@ mod session;
 pub use crate::dialogue::DialogueRefusal;
 pub use crate::dialogue::DialogueWeb;
 pub use crate::dialogue::Event;
-pub use crate::dialogue::Side;
+pub use crate::dialogue::Facing;
 pub use crate::dialogue::Turn;
 pub use crate::dialogue::admit;
 pub use crate::relation::Decision;

@@ -732,6 +732,8 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Flow { .. }
             | ValueType::Run(_)
             | ValueType::Prefix(_)
+            | ValueType::Dialogue(_)
+            | ValueType::Web
             | ValueType::Base(_)
             | ValueType::Buffer
             | ValueType::Product(_)
@@ -895,6 +897,9 @@ impl<'arena> CoreSource<'arena>
                 && classifier.is_some() == matches!(self.arena.value_type(datatype), Some(ValueType::Data { arguments, .. }) if !arguments.is_empty()),
         | (Some(&Value::Recorded(ref moves)), Former::Recorded { payloads, .. }) =>
             usize::from(payloads) == moves.iter().filter(|step| matches!(step.payload(), Maybe::Present(_))).count(),
+        | (Some(&Value::Dialogue(ref moves)), Former::Dialogue { payloads, .. }) =>
+            usize::from(payloads) == moves.iter().filter(|turn| matches!(turn.movement.payload(), Maybe::Present(_))).count(),
+        | (Some(&Value::Web(ref pieces)), Former::Web(actual)) => core::ptr::eq(pieces.as_ptr(), actual.as_ptr()),
         (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Hole)) => hole.origin() == HoleOrigin::Written,
         (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Omitted)) => hole.origin() == HoleOrigin::Nominated,
         (Some(&Value::Hole(hole)), Former::Unreadable(Unreadable::Wildcard)) => hole.origin() == HoleOrigin::Wildcard,
@@ -1022,6 +1027,16 @@ impl<'arena> CoreSource<'arena>
                         .count(),
                 ),
             },
+            Value::Dialogue(ref moves) => Former::Dialogue {
+                moves,
+                payloads: Arity::from(
+                    moves
+                        .iter()
+                        .filter(|turn| matches!(turn.movement.payload(), Maybe::Present(_)))
+                        .count(),
+                ),
+            },
+            Value::Web(ref pieces) => Former::Web(pieces),
             Value::SessionRelated {
                 relation,
                 source,
@@ -1158,7 +1173,8 @@ impl<'arena> CoreSource<'arena>
         (Some(&ValueType::Unknown), Former::Unreadable(Unreadable::UnknownType)) | (Some(&ValueType::Lift { .. }), Former::Unreadable(Unreadable::Lift))
             | (Some(&ValueType::World(WorldType::Capability(_))), Former::Unreadable(Unreadable::WorldCapability))
             | (None, Former::Unreadable(Unreadable::Dangling))
-            | (Some(&ValueType::Buffer), Former::BufferType) => true,
+            | (Some(&ValueType::Buffer), Former::BufferType)
+            | (Some(&ValueType::Web), Former::WebType) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
         | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
         | (Some(&ValueType::Base(base)), Former::BaseType(actual)) => base == actual,
@@ -1170,7 +1186,8 @@ impl<'arena> CoreSource<'arena>
             sort == actual_sort && core::ptr::eq(core::ptr::from_ref(level), core::ptr::from_ref(actual_level)),
         | (Some(&ValueType::Element { code, .. }), Former::Element(actual))
         | (Some(&ValueType::Run(code)), Former::RunType(actual))
-        | (Some(&ValueType::Prefix(code)), Former::PrefixType(actual)) => actual == CoreNode::Value(code),
+        | (Some(&ValueType::Prefix(code)), Former::PrefixType(actual))
+        | (Some(&ValueType::Dialogue(code)), Former::DialogueType(actual)) => actual == CoreNode::Value(code),
         | (Some(&ValueType::Abstract(index)), Former::Abstract(name)) => self.names.get(usize::from(index))
             .is_some_and(|held| held.as_ref() == name.as_ref()),
         | (Some(&ValueType::Abstract(index)), Former::Unreadable(Unreadable::Unnamed)) => usize::from(index) >= self.names.len(),
@@ -1237,6 +1254,8 @@ impl<'arena> CoreSource<'arena>
             },
             ValueType::Run(code) => Former::RunType(CoreNode::Value(code)),
             ValueType::Prefix(code) => Former::PrefixType(CoreNode::Value(code)),
+            ValueType::Dialogue(code) => Former::DialogueType(CoreNode::Value(code)),
+            ValueType::Web => Former::WebType,
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -1459,7 +1478,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Computation::Mark { .. }), Former::Unreadable(Unreadable::Mark))
         | (None, Former::Unreadable(Unreadable::Dangling)) => true,
         | (Some(&Computation::Return(value)), Former::Return(actual))
-        | (Some(&Computation::Force(value)), Former::Force(actual)) => actual == CoreNode::Value(value),
+        | (Some(&Computation::Force(value)), Former::Force(actual))
+        | (Some(&Computation::Decompose(value)), Former::Decompose(actual)) => actual == CoreNode::Value(value),
         | (Some(&Computation::Lambda(body)), Former::Lambda(actual))
         | (Some(&Computation::Fixpoint { body, .. }), Former::Fixpoint(actual))
         | (Some(&Computation::Reset(body)), Former::Reset(actual))
@@ -1554,6 +1574,7 @@ impl<'arena> CoreSource<'arena>
                 ty: CoreNode::CompType(ty),
             },
             Computation::Force(thunk) => Former::Force(value(thunk)),
+            Computation::Decompose(dialogue) => Former::Decompose(value(dialogue)),
             Computation::Application(function, argument) => {
                 Former::Application(computation(function), value(argument))
             },
@@ -1959,6 +1980,9 @@ impl Source for CoreSource<'_>
             | Some(&Value::Recorded(ref moves)) => moves.iter()
                 .filter_map(|step| match step.payload() { Maybe::Present(payload) => Some(CoreNode::Value(payload)), Maybe::Absent(_) => None })
                 .nth(usize::from(index)),
+            | Some(&Value::Dialogue(ref moves)) => moves.iter()
+                .filter_map(|turn| match turn.movement.payload() { Maybe::Present(payload) => Some(CoreNode::Value(payload)), Maybe::Absent(_) => None })
+                .nth(usize::from(index)),
             | Some(_) | None => None,
         },
         | CoreNode::Computation(id) => self.arena.computation(id).is_some() || ret.is_none(),
@@ -1997,6 +2021,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
                 | ValueType::Prefix(_)
+                | ValueType::Dialogue(_)
+                | ValueType::Web
                 | ValueType::Base(_)
                 | ValueType::Buffer
                 | ValueType::List(_)
@@ -2031,7 +2057,15 @@ impl Source for CoreSource<'_>
                         Maybe::Absent(_) => None,
                     })
                     .nth(at),
-                Value::SessionRelated { .. }
+                Value::Dialogue(ref moves) => moves
+                    .iter()
+                    .filter_map(|turn| match turn.movement.payload() {
+                        Maybe::Present(payload) => Some(CoreNode::Value(payload)),
+                        Maybe::Absent(_) => None,
+                    })
+                    .nth(at),
+                Value::Web(_)
+                | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
                 | Value::FlowProduct(..)
@@ -2106,6 +2140,7 @@ impl Source for CoreSource<'_>
                 | Computation::Return(_)
                 | Computation::Bind(..)
                 | Computation::Force(_)
+                | Computation::Decompose(_)
                 | Computation::Split { .. }
                 | Computation::RecordProjection(..)
                 | Computation::TupleProjection(..)
@@ -2191,6 +2226,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
                 | ValueType::Prefix(_)
+                | ValueType::Dialogue(_)
+                | ValueType::Web
                 | ValueType::Base(_)
                 | ValueType::Buffer
                 | ValueType::Product(_)
@@ -2244,6 +2281,8 @@ impl Source for CoreSource<'_>
                 | Value::Mark { .. }
                 | Value::Reify(_)
                 | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
                 | Value::SessionRelated { .. }
                 | Value::Stay(_)
                 | Value::Then(..)
@@ -2280,6 +2319,7 @@ impl Source for CoreSource<'_>
                 | Computation::Return(_)
                 | Computation::Bind(..)
                 | Computation::Force(_)
+                | Computation::Decompose(_)
                 | Computation::Case { .. }
                 | Computation::Split { .. }
                 | Computation::DataCase { .. }

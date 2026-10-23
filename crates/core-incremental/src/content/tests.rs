@@ -1667,6 +1667,24 @@ fn projection_keeps_every_variadic_child()
             ])),
             both,
         ),
+        (
+            "dialogue",
+            ContentNode::Dialogue(Arc::from([
+                gandr_core_term::session::DialogueMove {
+                    endpoint: gandr_core_term::session::Endpoint::Left,
+                    movement: RecordedMove::Sent(index(1_usize)),
+                },
+                gandr_core_term::session::DialogueMove {
+                    endpoint: gandr_core_term::session::Endpoint::Right,
+                    movement: RecordedMove::Closed,
+                },
+                gandr_core_term::session::DialogueMove {
+                    endpoint: gandr_core_term::session::Endpoint::Right,
+                    movement: RecordedMove::Received(index(2_usize)),
+                },
+            ])),
+            both,
+        ),
     ];
     assert_projects_back(
         cases

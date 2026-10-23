@@ -569,6 +569,8 @@ fn head(
         | Value::Forward(_)
         | Value::FunctionFlow(..)
         | Value::Recorded(_)
+        | Value::Dialogue(_)
+        | Value::Web(_)
         | Value::Returned(_)
         | Value::Nested(_)
         | Value::Run(_)
@@ -884,6 +886,8 @@ const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
         | ValueType::Flow { .. }
         | ValueType::Run(_)
         | ValueType::Prefix(_)
+        | ValueType::Dialogue(_)
+        | ValueType::Web
         | ValueType::Staged { .. }
         | ValueType::Stack { .. }
         | ValueType::Session(_)

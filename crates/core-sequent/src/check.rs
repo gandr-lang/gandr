@@ -468,6 +468,7 @@ impl Walk<'_>
             },
             ProducerNode::Reify(_)
             | ProducerNode::Primitive { .. }
+            | ProducerNode::Decompose(_)
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_)
@@ -742,8 +743,9 @@ const fn dangling(node: NodeAddress) -> CheckRefusal
 /// The polarity a producer observes, or `None` when it takes the cut's.
 ///
 /// # Specification
-/// - ensures: positive for literals, constructors and thunks; negative for
-///   copattern objects; `None` for variables, constants and `μ`.
+/// - ensures: positive for literals, operations, decompositions, constructors
+///   and thunks; negative for copattern objects; `None` for variables,
+///   constants and `μ`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every producer node kind is assigned its exact intrinsic
@@ -751,7 +753,7 @@ const fn dangling(node: NodeAddress) -> CheckRefusal
 ///   and captures change the table observation.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
 #[spec(ensures: |ret| ret == match *node {
-    | ProducerNode::Reify(_) | ProducerNode::Primitive { .. } | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
+    | ProducerNode::Reify(_) | ProducerNode::Primitive { .. } | ProducerNode::Decompose(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => Some(Polarity::Positive),
     | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
 })]
@@ -760,6 +762,7 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
     match *node {
         ProducerNode::Reify(_)
         | ProducerNode::Primitive { .. }
+        | ProducerNode::Decompose(_)
         | ProducerNode::Literal(_)
         | ProducerNode::Code(_)
         | ProducerNode::Constructor { .. }

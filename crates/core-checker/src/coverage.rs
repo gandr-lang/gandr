@@ -695,6 +695,8 @@ impl Walker<'_, '_, '_>
                 | ValueType::Flow { .. }
                 | ValueType::Run(_)
                 | ValueType::Prefix(_)
+                | ValueType::Dialogue(_)
+                | ValueType::Web
                 | ValueType::Thunk(_)
                 | ValueType::Universe { .. }
                 | ValueType::Lift { .. }

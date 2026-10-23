@@ -460,6 +460,7 @@ impl Ownership
                 },
                 ProducerNode::Fixpoint { .. } => mark(0, usize::MAX, Share::Kept),
                 ProducerNode::Primitive { .. }
+                | ProducerNode::Decompose(_)
                 | ProducerNode::Variable { .. }
                 | ProducerNode::Constant(_)
                 | ProducerNode::Literal(_)
@@ -814,6 +815,7 @@ impl Ownership
                         | ProducerNode::Literal(_)
                         | ProducerNode::Code(_)
                         | ProducerNode::Primitive { .. }
+                        | ProducerNode::Decompose(_)
                         | ProducerNode::Reify(_) => {},
                     }
                 },

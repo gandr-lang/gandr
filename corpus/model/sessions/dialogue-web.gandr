@@ -1,0 +1,80 @@
+// A seat's dialogue with its operator: both endpoints' moves in the one
+// order a recorder saw them, the seat on the left following its protocol and
+// the operator on the right following the dual. A dialogue's logical time is
+// its causal web, not its log (Mazurkiewicz, _Trace Theory_,
+// doi:10.1007/3-540-17906-2_30): each endpoint's own order and each send
+// before its receipt. Two logs that commute independent moves are one
+// dialogue, and `decompose` reads the web's modular decomposition back as
+// data (Gallai, _Transitiv orientierbare Graphen_,
+// doi:10.1007/BF02020961).
+
+// The seat's protocol and its messages.
+import "./seat-base.gandr" ;
+
+/// A dialogue that reports once and retires, the seat's send of its report
+/// logged before the operator takes the choice.
+@[ checks ]
+def retiring : Dialogue(Seat.SeatEnd) ;
+def retiring = dialogue(
+  right(sent(Seat.task)),
+  left(received(Seat.task)),
+  left(selected(report)),
+  left(sent(Seat.progress)),
+  right(offered(report)),
+  right(received(Seat.progress)),
+  right(selected(retire)),
+  left(offered(retire)),
+  left(closed),
+  right(closed)
+) ;
+
+/// The same play, the operator taking the choice before the seat's report is
+/// logged: the two moves are independent.
+@[ checks ]
+def retiringLater : Dialogue(Seat.SeatEnd) ;
+def retiringLater = dialogue(
+  right(sent(Seat.task)),
+  left(received(Seat.task)),
+  left(selected(report)),
+  right(offered(report)),
+  left(sent(Seat.progress)),
+  right(received(Seat.progress)),
+  right(selected(retire)),
+  left(offered(retire)),
+  right(closed),
+  left(closed)
+) ;
+
+/// The two logs are one dialogue: they share every endpoint's moves and
+/// every send's receipt, so the path is reflexivity.
+@[ checks ]
+def commuted : Path(Dialogue(Seat.SeatEnd), retiring, retiringLater) ;
+def commuted = here(retiring) ;
+
+/// The web of the retiring dialogue is series-parallel: the seat's report
+/// beside the operator's choice, then the seat's tail beside the operator's
+/// close.
+@[ runs("series(event(right, 0), event(left, 0), event(left, 1), parallel(event(left, 2), event(right, 1)), event(right, 2), event(right, 3), parallel(series(event(left, 3), event(left, 4)), event(right, 4)))") ]
+def retiringWeb() -> -F Web { become decompose(retiring) }
+
+/// A dialogue that hands off: the seat's notes sent before the operator takes
+/// the choice.
+@[ checks ]
+def handedOff : Dialogue(Seat.SeatEnd) ;
+def handedOff = dialogue(
+  right(sent(Seat.task)),
+  left(received(Seat.task)),
+  left(selected(handoff)),
+  left(sent(Seat.notes)),
+  left(closed),
+  right(offered(handoff)),
+  right(received(Seat.notes)),
+  right(closed)
+) ;
+
+/// Its web leaves a prime node: the seat's notes precede its close and the
+/// operator's receipt, the operator's choice precedes only the receipt, and
+/// no module of the four joins them — the N-shape, the operator's receipt and
+/// close one factor.
+@[ runs("series(event(right, 0), event(left, 0), event(left, 1), prime(event(left, 2), event(left, 3), event(right, 1), series(event(right, 2), event(right, 3))))") ]
+def handedOffWeb() -> -F Web { become decompose(handedOff) }

@@ -516,6 +516,8 @@ impl CoreArena
                 | Value::Forward(_)
                 | Value::FunctionFlow(..)
                 | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
                 | Value::Returned(_)
                 | Value::Nested(_)
                 | Value::Run(_)
@@ -544,6 +546,7 @@ impl CoreArena
                 Computation::Transport(..)
                 | Computation::PathTransport { .. }
                 | Computation::Ride { .. }
+                | Computation::Decompose(_)
                 | Computation::TelescopeTransport { .. }
                 | Computation::Lambda(_)
                 | Computation::Fixpoint { .. }
@@ -2778,6 +2781,32 @@ impl CoreArena
         self.alloc_value(Value::Recorded(moves))
     }
 
+    /// Mint the dialogue of `moves`, in the order they were logged.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_dialogue(
+        &mut self,
+        moves: alloc::sync::Arc<[crate::session::DialogueMove]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Dialogue(moves))
+    }
+
+    /// Mint the decomposition `pieces`, its nodes in preorder.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_web(
+        &mut self,
+        pieces: alloc::sync::Arc<[crate::session::WebPiece]>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Web(pieces))
+    }
+
     /// Mint the directed identity `Flow(A, a, b)`.
     ///
     /// # Specification
@@ -2808,6 +2837,29 @@ impl CoreArena
     ) -> ValueTypeId
     {
         self.alloc_value_type(ValueType::Run(session))
+    }
+
+    /// Mint the dialogue type `Dialogue(s)` of the session code `s`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_dialogue(
+        &mut self,
+        session: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Dialogue(session))
+    }
+
+    /// Mint the decomposition type `Web`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_web(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Web)
     }
 
     /// Mint the prefix type `Prefix(s)` of the session code `s`.
@@ -2851,6 +2903,19 @@ impl CoreArena
             flow,
             value,
         })
+    }
+
+    /// Mint `decompose(d)` over the dialogue `d`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_decompose(
+        &mut self,
+        dialogue: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Decompose(dialogue))
     }
 
     /// Mint the value a pure computation returns, standing as a value.

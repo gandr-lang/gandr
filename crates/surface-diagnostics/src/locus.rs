@@ -768,7 +768,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             | CheckRefusal::MachineInvariant | CheckRefusal::CapabilityUngranted { .. } => ret.primary == Maybe::Present(Annotation {
                 span: declaration, label,
             }) && ret.context == UNNAMED,
-        CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } |
+        CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
         CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
@@ -906,6 +906,8 @@ fn checked(
         | CheckRefusal::SessionNotSubtype { at }
         | CheckRefusal::SessionCodeExpected { at }
         | CheckRefusal::RunNotAdmitted { at, .. }
+        | CheckRefusal::DialogueUnmatched { at, .. }
+        | CheckRefusal::DialogueInverted { at, .. }
         | CheckRefusal::ForwardUnsupported { at }
         | CheckRefusal::StageNotBelow { at, .. }
         | CheckRefusal::StagesDisagree { at, .. }
@@ -1663,6 +1665,17 @@ impl fmt::Display for Checked
                     "a run that is not a literal may take any offer its protocol makes, and the flow's target drops one",
                 ),
             },
+            | CheckRefusal::DialogueUnmatched { step, .. } => write!(
+                f,
+                "move {} of the dialogue has no move of the other endpoint to match it: a send its receipt does not agree with, or a receipt with nothing sent",
+                u32::from(step).saturating_add(1)
+            ),
+            | CheckRefusal::DialogueInverted { earlier, later, .. } => write!(
+                f,
+                "move {} of the dialogue is logged before move {}, which comes first in its causal order",
+                u32::from(later).saturating_add(1),
+                u32::from(earlier).saturating_add(1)
+            ),
             | CheckRefusal::ForwardUnsupported { .. } => f.write_str(
                 "a forward flow's translator is closed, maps between first-order codes, and sends every source leaf to a target position of its own type",
             ),
@@ -1725,6 +1738,7 @@ impl fmt::Display for Shape
             ExpectedShape::Capability => "a capability `Cap {op, …}`",
             ExpectedShape::Flow => "a flow type `Flow(A, a, b)`",
             ExpectedShape::Run => "a run type `Run(s)` or a prefix type `Prefix(s)`",
+            ExpectedShape::Dialogue => "a dialogue type `Dialogue(s)`",
         })
     }
 }
@@ -2874,6 +2888,15 @@ mod tests
                 at: value,
                 fault: RunFault::OfferNarrowed,
             },
+            CheckRefusal::DialogueUnmatched {
+                at: value,
+                step: gandr_core_checker::RunStep::from(1_u32),
+            },
+            CheckRefusal::DialogueInverted {
+                at: value,
+                earlier: gandr_core_checker::RunStep::from(2_u32),
+                later: gandr_core_checker::RunStep::from(1_u32),
+            },
             CheckRefusal::ForwardUnsupported { at: value },
             CheckRefusal::StageNotBelow {
                 at: value,
@@ -3307,6 +3330,8 @@ mod tests
                         | CheckRefusal::SessionNotSubtype { .. }
                         | CheckRefusal::SessionCodeExpected { .. }
                         | CheckRefusal::RunNotAdmitted { .. }
+                        | CheckRefusal::DialogueUnmatched { .. }
+                        | CheckRefusal::DialogueInverted { .. }
                         | CheckRefusal::ForwardUnsupported { .. }
                         | CheckRefusal::StageNotBelow { .. }
                         | CheckRefusal::StagesDisagree { .. }
@@ -4146,6 +4171,15 @@ mod tests
                 at: value,
                 fault: RunFault::OfferNarrowed,
             }),
+            title(CheckRefusal::DialogueUnmatched {
+                at: value,
+                step: gandr_core_checker::RunStep::from(1_u32),
+            }),
+            title(CheckRefusal::DialogueInverted {
+                at: value,
+                earlier: gandr_core_checker::RunStep::from(2_u32),
+                later: gandr_core_checker::RunStep::from(1_u32),
+            }),
         ];
         for (index, title) in runs.iter().enumerate() {
             for earlier in &runs[.. index] {
@@ -4154,6 +4188,16 @@ mod tests
         }
         assert_eq!(ordinals(&runs[0]), [1_usize], "the move, one-based");
         assert_eq!(ordinals(&runs[3]), [2_usize], "the moves the run made");
+        assert_eq!(
+            ordinals(&runs[5]),
+            [2_usize],
+            "the unmatched move, one-based"
+        );
+        assert_eq!(
+            ordinals(&runs[6]),
+            [2_usize, 3_usize],
+            "the move logged early, then the move it follows"
+        );
         let shapes = [
             ExpectedShape::Data,
             ExpectedShape::Record,
@@ -4173,6 +4217,7 @@ mod tests
             ExpectedShape::Capability,
             ExpectedShape::Flow,
             ExpectedShape::Run,
+            ExpectedShape::Dialogue,
         ]
         .into_iter()
         .map(|wanted| {

@@ -508,7 +508,7 @@ fn bridged(
                 => Some(Row::NonSynthesisableDefinition),
             CheckRefusal::StagesDisagree { .. } | CheckRefusal::ImplicitUnsolved { .. } |
             CheckRefusal::OpenSessionPayload { .. } |
-            CheckRefusal::AtomTransport { .. } |
+            CheckRefusal::AtomTransport { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
             CheckRefusal::NotADataType(_) | CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::DataFieldLevel { .. } | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::RepresentationAboveKind { .. } | CheckRefusal::NotAnAbstractType(_) | CheckRefusal::SealSiteRepeated(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::MissingRecordField { .. } | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::DependentStack { .. } | CheckRefusal::PathCode(_) | CheckRefusal::EndpointMismatch { .. } | CheckRefusal::CompoundEndpoint { .. } | CheckRefusal::FunextUnsupported { .. } | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::EquivUnsupported { .. } | CheckRefusal::UncertifiedStratum { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::NotOver { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::TypeMismatch(_) | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::ShapeMismatch { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::BudgetExceeded { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::AdmissionOrder { .. } | CheckRefusal::MachineInvariant | CheckRefusal::SortMismatch { .. } | CheckRefusal::LevelMismatch { .. } | CheckRefusal::DependentBind { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::FamilyArgumentClassifier { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::NegativeOccurrence(_) | CheckRefusal::NestedOccurrence(_) | CheckRefusal::IndexOccurrence(_) | CheckRefusal::NonUniformOccurrence(_) | CheckRefusal::CrossBlockReference { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::SessionMismatch { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityForged { .. } | CheckRefusal::CapabilityAmplified(_) | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityEscaped { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::CapabilityUngranted { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Located { .. } => None,
         };
         Row::ALL.into_iter().all(|row| rows.count(row)
@@ -578,7 +578,8 @@ fn checking_row(
                 | ExpectedShape::Session
                 | ExpectedShape::Capability
                 | ExpectedShape::Flow
-                | ExpectedShape::Run,
+                | ExpectedShape::Run
+                | ExpectedShape::Dialogue,
             ..
         }
         | CheckRefusal::NotSynthesisable {
@@ -657,6 +658,8 @@ fn checking_row(
         | CheckRefusal::NonCovariantMotive { .. }
         | CheckRefusal::RideUnsupported { .. }
         | CheckRefusal::RunNotAdmitted { .. }
+        | CheckRefusal::DialogueUnmatched { .. }
+        | CheckRefusal::DialogueInverted { .. }
         | CheckRefusal::ForwardUnsupported { .. }
         | CheckRefusal::Boundary { .. }
         | CheckRefusal::Located { .. } => {},
@@ -942,6 +945,16 @@ fn formers(
                         quenchant_shape::shape::Maybe::Absent(_) => None,
                     }));
                 },
+                Some(&Value::Dialogue(ref moves)) => {
+                    worklist.extend(moves.iter().filter_map(
+                        |turn| match turn.movement.payload() {
+                            quenchant_shape::shape::Maybe::Present(payload) => {
+                                Some(Node::Value(payload))
+                            },
+                            quenchant_shape::shape::Maybe::Absent(_) => None,
+                        },
+                    ));
+                },
                 Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
                 Some(
                     &(Value::Returned(computation)
@@ -965,7 +978,8 @@ fn formers(
                     | Value::StaticLambda(_)
                     | Value::StaticApplication(..)
                     | Value::Hole(_)
-                    | Value::Mark { .. }),
+                    | Value::Mark { .. }
+                    | Value::Web(_)),
                 )
                 | None => {},
             },
@@ -1088,6 +1102,9 @@ fn formers(
                 Some(&Computation::Force(forced)) => {
                     rows.mark(Row::ForceSynthesises);
                     worklist.push(Node::Value(forced));
+                },
+                Some(&Computation::Decompose(dialogue)) => {
+                    worklist.push(Node::Value(dialogue));
                 },
                 Some(&Computation::Bind(first, then)) => {
                     worklist.push(Node::Computation(first));

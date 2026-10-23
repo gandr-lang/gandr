@@ -61,6 +61,8 @@ use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
+use gandr_core_session::DialogueWeb;
+use gandr_core_session::Facing;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::Primitive;
@@ -203,9 +205,10 @@ impl Codes<'_>
 }
 
 /// One run's host state: the function's callees, handlers and frame
-/// windows, where its code is, the literals the run holds — the function's
-/// own, then those its calls made — and what the run moves into the caller's
-/// store: the host's payloads, the answer and the values a stuck run names.
+/// windows, where its code is, the heads and literals the run holds — the
+/// function's own, then those its calls made — and what the run moves into
+/// the caller's store: the host's payloads, the answer and the values a stuck
+/// run names.
 ///
 /// # Specification
 /// trivial.
@@ -219,8 +222,9 @@ pub struct Calls<'run, 'host>
     windows: &'run [Window],
     /// Each access's frame code with its unwind's code.
     unwinds: BTreeMap<Word, Word>,
-    /// The heads a head object names, by family.
-    heads: &'run [ConstructorTag],
+    /// The heads a head object names, by family: the function's own, then the
+    /// webs its decompositions made.
+    heads: Vec<ConstructorTag>,
     /// The codes a code object names, by family.
     code_table: &'run [gandr_core_term::ValueId],
     /// Where the run's code is.
@@ -353,7 +357,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 .iter()
                 .map(|&(ended, unwind)| (codes.label(ended), codes.label(unwind)))
                 .collect(),
-            heads: &lowered.heads,
+            heads: lowered.heads.clone(),
             code_table: &lowered.codes,
             codes,
             sites,
@@ -385,7 +389,7 @@ impl<'run, 'host> Calls<'run, 'host>
     ) -> Result<HeapValueId, TransferRefusal>
     {
         let tables = Tables {
-            heads: self.heads,
+            heads: &self.heads,
             literals: &self.literals,
             codes: self.code_table,
         };
@@ -548,6 +552,7 @@ impl<'run, 'host> Calls<'run, 'host>
             },
             Callee::Ended { unwind, .. } => self.ended(runtime, unwind, first, second),
             Callee::Reify(ref shape) => self.reify(runtime, shape),
+            Callee::Decompose => self.decompose(runtime, first),
             Callee::Undefined(_) | Callee::Cyclic(_) => Err(Refusal::Operands),
         };
         if matches!(answered, Err(Refusal::Operands)) && self.refused.is_none() {
@@ -566,7 +571,8 @@ impl<'run, 'host> Calls<'run, 'host>
                 | Callee::Element(_)
                 | Callee::Resumed
                 | Callee::Aborted
-                | Callee::Reify(_) => Some(Refused::Operands),
+                | Callee::Reify(_)
+                | Callee::Decompose => Some(Refused::Operands),
             };
         }
         answered
@@ -689,6 +695,70 @@ impl<'run, 'host> Calls<'run, 'host>
             unsafe {
                 give_up(runtime, argument, |object| owned(object, sites));
             }
+        }
+        Ok(made)
+    }
+
+    /// Decompose the dialogue the operand `dialogue` addresses: allocate its
+    /// web on `runtime`'s heap as a head object naming the web's entry in the
+    /// run's head table, which the web joins when no entry holds it yet.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for an operand that is no dialogue, a web whose
+    /// edges close a cycle or a table past a header's family width, or as the
+    /// allocation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a dialogue decomposes on both tiers to the web its
+    ///   moves' facings give, and two interleavings of one dialogue to one web.
+    /// - witness: `tests::forms::each_form_ends_alike_on_both_executors_as_its_program_states`
+    fn decompose(
+        &mut self,
+        runtime: &mut Runtime,
+        dialogue: Word,
+    ) -> Result<Word, Refusal>
+    {
+        let object = dialogue.to_pointer::<Word>();
+        // SAFETY: an operand is a positive value, which addresses an object.
+        let header = Header::from_word(unsafe { *object });
+        let row = usize::try_from(header.family())
+            .ok()
+            .filter(|_| header.kind() == Ok(Kind::Head));
+        let Some(&ConstructorTag::Dialogue(ref turns)) = row.and_then(|row| self.heads.get(row))
+        else {
+            return Err(Refusal::Operands);
+        };
+        let pieces = DialogueWeb::of(
+            turns
+                .iter()
+                .map(|turn| (turn.endpoint, Facing::of(&turn.movement))),
+        )
+        .decompose()
+        .map_err(|_cyclic| Refusal::Operands)?;
+        let web = ConstructorTag::Web(pieces);
+        let row = if let Some(row) = self.heads.iter().position(|head| *head == web) {
+            row
+        }
+        else {
+            self.heads.push(web);
+            self.heads.len().saturating_sub(1)
+        };
+        let width = |_overflow| Refusal::Operands;
+        let made = allocate(runtime, &[Header::new(
+            Kind::Head,
+            Tag::try_from(0_usize).map_err(width)?,
+            Arity::try_from(0_usize).map_err(width)?,
+            Family::try_from(row).map_err(width)?,
+        )
+        .word()])?;
+        let sites = self.sites;
+        // SAFETY: a counted call owns its operand, a value of the run's heap or
+        // an immortal constant, and reads it no more.
+        unsafe {
+            give_up(runtime, dialogue, |object| owned(object, sites));
         }
         Ok(made)
     }
@@ -877,7 +947,7 @@ impl<'run, 'host> Calls<'run, 'host>
             return Err(Refusal::Operands);
         };
         let tables = Tables {
-            heads: self.heads,
+            heads: &self.heads,
             literals: &self.literals,
             codes: self.code_table,
         };
@@ -910,7 +980,7 @@ impl<'run, 'host> Calls<'run, 'host>
             Offered::Resume(reply) => {
                 let mut laying = Laying {
                     store: self.store,
-                    heads: self.heads,
+                    heads: &self.heads,
                     code_table: self.code_table,
                     literals: &mut self.literals,
                     moved: &self.moved,
@@ -1523,7 +1593,9 @@ impl Laying<'_>
                     | ConstructorTag::ListNil
                     | ConstructorTag::ListCons
                     | ConstructorTag::Lift(_)
-                    | ConstructorTag::Recorded(_) => {
+                    | ConstructorTag::Recorded(_)
+                    | ConstructorTag::Dialogue(_)
+                    | ConstructorTag::Web(_) => {
                         let row = self
                             .heads
                             .iter()

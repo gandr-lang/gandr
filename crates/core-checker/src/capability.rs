@@ -394,6 +394,8 @@ pub fn authorise(
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Data { .. }
         | ValueTypeView::Record(_)
         | ValueTypeView::Sum(..)
@@ -641,6 +643,8 @@ where
                 ValueType::PathUniverse(..)
                 | ValueType::Run(_)
                 | ValueType::Prefix(_)
+                | ValueType::Dialogue(_)
+                | ValueType::Web
                 | ValueType::Base(_)
                 | ValueType::Universe { .. }
                 | ValueType::Element { .. }

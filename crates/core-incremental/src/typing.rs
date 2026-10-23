@@ -904,6 +904,25 @@ pub enum Refusal
         /// How it failed.
         fault: gandr_core_checker::RunFault,
     },
+    /// A dialogue whose message is not received as sent, at the unmatched
+    /// move's log position.
+    DialogueUnmatched
+    {
+        /// The dialogue.
+        at: Site,
+        /// The unmatched move's position in the log.
+        step: gandr_core_checker::RunStep,
+    },
+    /// A dialogue logged out of its causal order.
+    DialogueInverted
+    {
+        /// The dialogue.
+        at: Site,
+        /// The log position of the move the web orders first, logged second.
+        earlier: gandr_core_checker::RunStep,
+        /// The log position of the move the web orders second, logged first.
+        later: gandr_core_checker::RunStep,
+    },
     /// A `forward` whose translator the rule cannot image.
     ForwardUnsupported(Site),
     /// A function flow's boundary that runs against its variance.
@@ -1515,6 +1534,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let (CheckRefusal::SessionNotEquivalent { at }, &Refusal::SessionNotEquivalent(projected)) | (CheckRefusal::SessionNotSubtype { at }, &Refusal::SessionNotSubtype(projected)) | (CheckRefusal::SessionCodeExpected { at }, &Refusal::SessionCodeExpected(projected)) | (CheckRefusal::ForwardUnsupported { at }, &Refusal::ForwardUnsupported(projected)) | (CheckRefusal::Boundary { at }, &Refusal::Boundary(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::NonCovariantMotive { at }, &Refusal::NonCovariantMotive(projected)) | (CheckRefusal::RideUnsupported { at }, &Refusal::RideUnsupported(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::RunNotAdmitted { at, fault } = matched_left_value && let Refusal::RunNotAdmitted { at: projected, fault: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == fault }
+ else if let CheckRefusal::DialogueUnmatched { at, step } = matched_left_value && let Refusal::DialogueUnmatched { at: projected, step: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == step }
+ else if let CheckRefusal::DialogueInverted { at, earlier, later } = matched_left_value && let Refusal::DialogueInverted { at: projected, earlier: first, later: second } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && first == earlier && second == later }
  else if let CheckRefusal::Access { at, defect } = matched_left_value && let Refusal::Access { at: projected, defect: kept } = *matched_right_value { projected == self.core_site(at) && kept == defect }
  else if let CheckRefusal::Codata { at, fault } = matched_left_value && let Refusal::Codata { at: projected, fault: kept } = *matched_right_value { projected == self.core_site(at) && kept == fault }
  else if let CheckRefusal::Located { at, defect } = matched_left_value && let Refusal::Located { at: projected, defect: ref kept } = *matched_right_value { projected == self.core_site(at) && *kept == self.located(defect) }
@@ -1893,6 +1914,15 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             CheckRefusal::RunNotAdmitted { at, fault } => Refusal::RunNotAdmitted {
                 at: self.site(ArenaNode::Value(at)),
                 fault,
+            },
+            CheckRefusal::DialogueUnmatched { at, step } => Refusal::DialogueUnmatched {
+                at: self.site(ArenaNode::Value(at)),
+                step,
+            },
+            CheckRefusal::DialogueInverted { at, earlier, later } => Refusal::DialogueInverted {
+                at: self.site(ArenaNode::Value(at)),
+                earlier,
+                later,
             },
             CheckRefusal::ForwardUnsupported { at } => {
                 Refusal::ForwardUnsupported(self.site(ArenaNode::Value(at)))

@@ -1,0 +1,14 @@
+/// `DialogueUnmatched`: a receipt in a dialogue that no send of the other endpoint matches.
+module Ask {
+  type Asking = !String. end;
+}
+
+@[ refuses("DialogueUnmatched") ]
+def misheard : Dialogue(Ask.Asking) ;
+
+def misheard = dialogue(
+  left(sent("yes")),
+  right(received("no")),
+  left(closed),
+  right(closed)
+) ;

@@ -1812,6 +1812,111 @@ impl<V: Copy> RecordedMove<V>
     }
 }
 
+/// Which endpoint of a channel made a dialogue's move: `left` follows the
+/// dialogue's protocol and `right` its dual.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Endpoint
+{
+    /// `left`: the endpoint that follows the protocol.
+    Left,
+    /// `right`: the endpoint that follows the protocol's dual.
+    Right,
+}
+
+/// One move of a dialogue and the endpoint that made it: `left(m)` or
+/// `right(m)`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct DialogueMove<V = ValueId>
+{
+    /// The endpoint.
+    pub endpoint: Endpoint,
+    /// Its move, read from its own side.
+    pub movement: RecordedMove<V>,
+}
+
+/// Pair two dialogues' payloads as identity compares them: endpoint by
+/// endpoint, each endpoint's moves in its own order, so two logs that
+/// interleave the same moves differently pair alike.
+///
+/// # Specification
+/// - ensures: [`crate::CertificateEquality::Equal`] when each endpoint makes as
+///   many moves in `left` as in `right`, each of the same action and label as
+///   its counterpart, with `pair` called on every payload and its
+///   counterpart's; [`crate::CertificateEquality::Different`] at the first
+///   count, action or label that differs, the pairs before it already given.
+/// - panics: none.
+/// - executable: none — the pairing is the projection itself; a predicate
+///   restating it would project both dialogues again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two logs of one dialogue are one value, and a dialogue
+///   that moves an endpoint differently is another.
+/// - witness: `syntax::tests::each_value_former_equals_its_twin_and_differs_where_its_guard_does`
+#[inline]
+pub fn pair_dialogues<Pair>(
+    left: &[DialogueMove],
+    right: &[DialogueMove],
+    mut pair: Pair,
+) -> crate::CertificateEquality
+where
+    Pair: FnMut(ValueId, ValueId),
+{
+    for endpoint in [Endpoint::Left, Endpoint::Right] {
+        let mut theirs = right.iter().filter(|turn| turn.endpoint == endpoint);
+        for ours in left.iter().filter(|turn| turn.endpoint == endpoint) {
+            let Some(theirs) = theirs.next()
+            else {
+                return crate::CertificateEquality::Different;
+            };
+            match crate::syntax::move_pair(&ours.movement, &theirs.movement) {
+                crate::syntax::MovePair::Payloads(one, other) => pair(one, other),
+                crate::syntax::MovePair::Agreed => {},
+                crate::syntax::MovePair::Different => {
+                    return crate::CertificateEquality::Different;
+                },
+            }
+        }
+        if theirs.next().is_some() {
+            return crate::CertificateEquality::Different;
+        }
+    }
+    crate::CertificateEquality::Equal
+}
+
+/// One node of a dialogue's decomposition, in preorder: a series, parallel
+/// or prime node is followed by its factors, each written whole before the
+/// next.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum WebPiece
+{
+    /// `event(endpoint, n)`: the endpoint's move at position `n` among its
+    /// own moves, counted from zero.
+    Event
+    {
+        /// The endpoint.
+        endpoint: Endpoint,
+        /// The move's position among the endpoint's own moves.
+        index: usize,
+    },
+    /// `series(…)`: this many factors, every event of each before every
+    /// event of the next.
+    Series(usize),
+    /// `parallel(…)`: this many factors, no event of one ordered with an
+    /// event of another.
+    Parallel(usize),
+    /// `prime(…)`: this many factors, no proper union of which is a module.
+    Prime(usize),
+}
+
 impl CoreArena
 {
     /// Mint the endpoint type `session`.

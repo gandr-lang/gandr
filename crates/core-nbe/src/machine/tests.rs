@@ -740,7 +740,7 @@ enum Lifting
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
-          Value::Univalence(..) |
+          Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) |
           Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
@@ -754,6 +754,7 @@ enum Lifting
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(CoreTerm::Value(scrutinee)).chain(branches.iter().copied().map(CoreTerm::Computation))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [CoreTerm::Value(record)],
+          Computation::Decompose(_) |
           Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } | Computation::ListCase { list,on_nil,on_cons,.. } => ret.as_slice() == [CoreTerm::Value(list),CoreTerm::Computation(on_nil),CoreTerm::Computation(on_cons)],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
@@ -789,6 +790,8 @@ fn core_children(
             | Value::Forward(_)
             | Value::FunctionFlow(..)
             | Value::Recorded(_)
+            | Value::Dialogue(_)
+            | Value::Web(_)
             | Value::Ua { .. }
             | Value::Returned(_)
             | Value::Nested(_)
@@ -853,7 +856,8 @@ fn core_children(
                 | Computation::Project(..)
                 | Computation::Session(_)
                 | Computation::Memory(_)
-                | Computation::World(_) => {
+                | Computation::World(_)
+                | Computation::Decompose(_) => {
                     panic!("the pure fixture language has no runtime control formers")
                 },
                 Computation::ListFold {
@@ -1000,6 +1004,8 @@ fn canonical(
                             | Value::Forward(_)
                             | Value::FunctionFlow(..)
                             | Value::Recorded(_)
+                            | Value::Dialogue(_)
+                            | Value::Web(_)
                             | Value::Ua { .. }
                             | Value::Returned(_)
                             | Value::Nested(_)
@@ -1105,7 +1111,8 @@ fn canonical(
                             | Computation::Project(..)
                             | Computation::Session(_)
                             | Computation::Memory(_)
-                            | Computation::World(_) => {
+                            | Computation::World(_)
+                            | Computation::Decompose(_) => {
                                 panic!("the pure fixture language has no runtime control formers")
                             },
                             Computation::ListFold {
@@ -1208,7 +1215,7 @@ fn canonical(
          CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
-          Value::Univalence(..) |
+          Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) |
           Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
@@ -1222,6 +1229,7 @@ fn canonical(
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
           Computation::DataCase {scrutinee,ref branches,..} => ret.iter().copied().eq(core::iter::once(canon[&CoreTerm::Value(scrutinee)]).chain(branches.iter().map(|branch| canon[&CoreTerm::Computation(*branch)]))),
           Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [canon[&CoreTerm::Value(record)]],
+          Computation::Decompose(_) |
           Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
           Computation::ListFold { list,on_nil,on_cons,.. } | Computation::ListCase { list,on_nil,on_cons,.. } => ret.as_slice() == [canon[&CoreTerm::Value(list)],canon[&CoreTerm::Computation(on_nil)],canon[&CoreTerm::Computation(on_cons)]],
           Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
@@ -1462,6 +1470,8 @@ fn lifted_under(
                             | Value::Forward(_)
                             | Value::FunctionFlow(..)
                             | Value::Recorded(_)
+                            | Value::Dialogue(_)
+                            | Value::Web(_)
                             | Value::Ua { .. }
                             | Value::Returned(_)
                             | Value::Nested(_)
@@ -1539,7 +1549,8 @@ fn lifted_under(
                             | Computation::Project(..)
                             | Computation::Session(_)
                             | Computation::Memory(_)
-                            | Computation::World(_) => {
+                            | Computation::World(_)
+                            | Computation::Decompose(_) => {
                                 panic!("the pure fixture language has no runtime control formers")
                             },
                             Computation::Primitive { .. } => {
@@ -1828,7 +1839,7 @@ impl Kernel
              Node::Value(id) => core.value(id).is_some_and(|value| match *value {
               Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
               Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
-          Value::Univalence(..) |
+          Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) |
           Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => false,
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
@@ -1845,6 +1856,7 @@ impl Kernel
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
               Computation::DataCase {scrutinee,motive,ref branches,..} => ret.iter().copied().eq([Node::Value(scrutinee),Node::CompType(motive)].into_iter().chain(branches.iter().copied().map(Node::Computation))),
               Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_) => ret.as_slice() == [Node::Value(record)],
+          Computation::Decompose(_) |
           Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Split { .. } | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
               Computation::PathTransport { motive, path, value } => ret.as_slice() == [Node::ValueType(motive), Node::Value(path), Node::Value(value)],
               Computation::ListFold { element,result,list,on_nil,on_cons } => ret.as_slice() == [Node::ValueType(element),Node::ValueType(result),Node::Value(list),Node::Computation(on_nil),Node::Computation(on_cons)],
@@ -1862,6 +1874,7 @@ impl Kernel
              Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
+              ValueType::Dialogue(_) | ValueType::Web |
               ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Buffer | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false,
               ValueType::Path { carrier, left, right } => ret.as_slice() == [Node::ValueType(carrier), Node::Value(left), Node::Value(right)],
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
@@ -1911,6 +1924,8 @@ impl Kernel
                 | Value::Forward(_)
                 | Value::FunctionFlow(..)
                 | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
                 | Value::Ua { .. }
                 | Value::Reify(_) => {
                     panic!("the pure fixture language has no reified stacks")
@@ -1996,7 +2011,8 @@ impl Kernel
                     | Computation::Project(..)
                     | Computation::Session(_)
                     | Computation::Memory(_)
-                    | Computation::World(_) => {
+                    | Computation::World(_)
+                    | Computation::Decompose(_) => {
                         panic!("the pure fixture language has no runtime control formers")
                     },
                     Computation::ListFold {
@@ -2069,7 +2085,11 @@ impl Kernel
                         panic!("the kernel has no capability type")
                     },
                     ValueType::Buffer => panic!("the kernel has no buffer type"),
-                    ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) => {
+                    ValueType::Flow { .. }
+                    | ValueType::Run(_)
+                    | ValueType::Prefix(_)
+                    | ValueType::Dialogue(_)
+                    | ValueType::Web => {
                         panic!("the pure fixture language has no directed identity")
                     },
                     ValueType::Staged { .. } => panic!("a fixture term names no stage"),
@@ -2208,6 +2228,8 @@ impl Kernel
                     | Value::Forward(_)
                     | Value::FunctionFlow(..)
                     | Value::Recorded(_)
+                    | Value::Dialogue(_)
+                    | Value::Web(_)
                     | Value::Ua { .. }
                     | Value::Nested(_)
                     | Value::Run(_)
@@ -2443,6 +2465,9 @@ impl Kernel
                     Computation::World(_) => {
                         panic!("the kernel has no world form: a replay fixture has none")
                     },
+                    Computation::Decompose(_) => {
+                        panic!("the kernel has no decomposition: a replay fixture has none")
+                    },
                 };
                 self.computations.insert(id, copy);
             },
@@ -2478,7 +2503,11 @@ impl Kernel
                         panic!("the kernel has no capability type")
                     },
                     ValueType::Buffer => panic!("the kernel has no buffer type"),
-                    ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) => {
+                    ValueType::Flow { .. }
+                    | ValueType::Run(_)
+                    | ValueType::Prefix(_)
+                    | ValueType::Dialogue(_)
+                    | ValueType::Web => {
                         panic!("the pure fixture language has no directed identity")
                     },
                     ValueType::Staged { .. } => panic!("a fixture term names no stage"),
@@ -2768,9 +2797,9 @@ fn innermost(core: &mut CoreArena) -> ValueId
         ensures: |ret| core.value(ret).is_some_and(|value| match *value {
          Value::Thunk(body) => core.computation(body).is_some_and(|comp| match *comp {
          Computation::Lambda(body) => core.computation(body).is_some_and(|comp| match *comp {
-         Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
-         }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
-         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => false,
+         Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+         }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) => false,
         })
     )]
 fn identity(core: &mut CoreArena) -> ValueId
@@ -4268,10 +4297,10 @@ fn the_sink_off_run_keeps_no_derivation()
          Computation::Bind(bound,body) => matches!(core.computation(bound),Some(&Computation::Return(value)) if core.value(value) == Some(&Value::Constant(below)))
           && core.computation(body).is_some_and(|comp| match *comp {
            Computation::Return(value) => core.value(value).is_some_and(|value| match *value {
-            Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => false,
-           }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
-          }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => false,
-         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => false,
+            Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) => false,
+           }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+          }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
+         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) => false,
         })
     )]
 fn doubled(

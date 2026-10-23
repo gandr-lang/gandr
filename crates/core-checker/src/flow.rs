@@ -158,12 +158,16 @@ use anodized::spec;
 use gandr_core_nbe::CoreTerm;
 use gandr_core_nbe::FreeFault;
 use gandr_core_nbe::FreeIndices;
+use gandr_core_nbe::MachineVerdict;
+use gandr_core_session::DialogueRefusal;
+use gandr_core_session::Event;
 use gandr_core_session::Label;
 use gandr_core_session::Move;
 use gandr_core_session::Payload;
 use gandr_core_session::PayloadDigest;
 use gandr_core_session::Relation;
 use gandr_core_session::ReplayError;
+use gandr_core_session::Turn;
 use gandr_core_session::certified::TransportError;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
@@ -178,6 +182,8 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::instantiate_value_type;
 use gandr_core_term::relevel_value_type;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::ProtocolNode;
 use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::RecordedMove;
@@ -426,6 +432,8 @@ pub fn session_code(
         | ValueTypeView::Flow { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -1008,6 +1016,8 @@ pub fn endpoints(
         | ValueTypeView::Path { .. }
         | ValueTypeView::Run(_)
         | ValueTypeView::Prefix(_)
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Sum(_)
         | ValueTypeView::List(_)
         | ValueTypeView::Integer
@@ -1160,6 +1170,8 @@ pub fn covariant(
                 | Value::Forward(_)
                 | Value::FunctionFlow(..)
                 | Value::Recorded(_)
+                | Value::Dialogue(_)
+                | Value::Web(_)
                 | Value::Returned(_)
                 | Value::Nested(_)
                 | Value::Run(_)
@@ -1231,6 +1243,8 @@ pub fn covariant(
                 | ValueType::Session(_)
                 | ValueType::Capability { .. }
                 | ValueType::Buffer
+                | ValueType::Dialogue(_)
+                | ValueType::Web
                 | ValueType::World(_) => return Err(refused),
             },
             Position::CompType(id) => match *arena.comp_type(id).ok_or_else(|| dangling(node))? {
@@ -1510,6 +1524,8 @@ fn computed(
             | ValueType::Flow { .. }
             | ValueType::Run(_)
             | ValueType::Prefix(_)
+            | ValueType::Dialogue(_)
+            | ValueType::Web
             | ValueType::Base(_)
             | ValueType::Sigma { .. }
             | ValueType::Thunk(_)
@@ -1581,7 +1597,7 @@ pub fn admit(
     if let Some(found) = context.arena().value(head)
         && let Value::Recorded(ref moves) = *found
     {
-        let moves = skeleton(moves);
+        let moves: Vec<Move> = moves.iter().map(skeleton_move).collect();
         let protocols = (&engine(&left)?, &engine(&right)?);
         let advanced = if moving == Moving::Prefix {
             gandr_core_session::certified::advance_prefix(protocols, &evidence, &moves)
@@ -1683,6 +1699,8 @@ pub fn run_premises(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Dialogue(_)
+        | ValueTypeView::Web
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_) => {
             return Err(CheckRefusal::ShapeMismatch {
@@ -1705,14 +1723,344 @@ pub fn run_premises(
         return Err(CheckRefusal::MachineInvariant);
     };
     let moves = Arc::clone(recorded);
-    match gandr_core_session::replay(&engine(&session)?, &skeleton(&moves)) {
+    let skeleton: Vec<Move> = moves.iter().map(skeleton_move).collect();
+    match gandr_core_session::replay(&engine(&session)?, &skeleton) {
         Ok(_) => {},
         Err(ReplayError::IncompleteRun { .. }) if open_admitted => {},
         Err(ref error) => return Err(replay_refusal(at, error)),
     }
+    payload_premises(session, moves.iter())
+}
+
+/// The payloads of the dialogue `at` and the types its endpoints' protocols
+/// name for them, once the dialogue type `expected` admits it.
+///
+/// A dialogue logs both endpoints' moves on one channel; `Dialogue(S)` holds
+/// those whose left endpoint runs `S` to its close and whose right runs the
+/// dual. Admission is [`gandr_core_session::admit`] over the moves'
+/// skeletons: each endpoint replays against its protocol, the `k`-th move out
+/// of one endpoint meets the `k`-th move into the other under the same label,
+/// and no move is logged before one the dialogue's causal web orders first.
+/// Every receipt then converts with the payload sent. A refusal names its
+/// move by its position in the log.
+///
+/// # Specification
+/// - requires: `at` is a dialogue checked against `expected`.
+/// - ensures: one premise per payload move, the left endpoint's in its own
+///   order and then the right's, each at the payload type its endpoint's
+///   protocol names at that move; none against the unknown type.
+/// - fails: [`CheckRefusal::ShapeMismatch`] wanting a dialogue type for any
+///   other former; [`CheckRefusal::SessionCodeExpected`] at a protocol that is
+///   no session code; [`CheckRefusal::RunNotAdmitted`] at `at` with the log
+///   position of the first move an endpoint's monitor refuses, the left
+///   endpoint's first, or the log's length for an endpoint that stops before
+///   its close; [`CheckRefusal::DialogueUnmatched`] at the first send or
+///   selection the other endpoint does not receive or offer alike, at the first
+///   receipt or offer past every send, or at a receipt whose payload does not
+///   convert with the one sent; [`CheckRefusal::DialogueInverted`] at a move
+///   logged before one its web orders first.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a seat's dialogue checks in two interleavings; a receipt
+///   logged before its send is inverted; a receipt of another payload and an
+///   offer of another label are unmatched; a move off the seat's protocol is
+///   refused at its log position, and a dialogue that stops short at the log's
+///   end.
+/// - witness: `flow::tests::a_dialogue_checks_by_its_web_and_refuses_by_move`
+#[spec(ensures: |ret| match ret {
+    | Err(
+        CheckRefusal::RunNotAdmitted { at: site, .. }
+        | CheckRefusal::DialogueUnmatched { at: site, .. }
+        | CheckRefusal::DialogueInverted { at: site, .. },
+    ) => site == at,
+    | Ok(_) | Err(_) => true,
+})]
+pub fn dialogue_premises(
+    context: &mut CheckingContext<'_>,
+    at: ValueId,
+    expected: ValueTypeId,
+) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>
+{
+    let head = context.whnf_value_type(expected)?;
+    let protocol = match value_type_view(context.arena(), head)? {
+        ValueTypeView::Dialogue(protocol) => protocol,
+        ValueTypeView::Unknown => return Ok(Vec::new()),
+        ValueTypeView::Data { .. }
+        | ValueTypeView::Record(_)
+        | ValueTypeView::Stack { .. }
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Path { .. }
+        | ValueTypeView::Flow { .. }
+        | ValueTypeView::Run(_)
+        | ValueTypeView::Prefix(_)
+        | ValueTypeView::Web
+        | ValueTypeView::Sum(_)
+        | ValueTypeView::List(_)
+        | ValueTypeView::Integer
+        | ValueTypeView::String
+        | ValueTypeView::Unit
+        | ValueTypeView::Thunk(_)
+        | ValueTypeView::Universe { .. }
+        | ValueTypeView::Lift { .. }
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(_)
+        | ValueTypeView::StaticPi { .. }
+        | ValueTypeView::Sigma { .. }
+        | ValueTypeView::Abstract(_)
+        | ValueTypeView::Staged { .. }
+        | ValueTypeView::Kept { .. }
+        | ValueTypeView::Capability { .. }
+        | ValueTypeView::Buffer
+        | ValueTypeView::Session(_)
+        | ValueTypeView::World(_) => {
+            return Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(at),
+                wanted: ExpectedShape::Dialogue,
+                found: TypeNode::Value(expected),
+            });
+        },
+    };
+    let Maybe::Present(left) = session_code(context, protocol)?
+    else {
+        return Err(CheckRefusal::SessionCodeExpected { at: protocol });
+    };
+    let right = left.dual();
+    let Some(found) = context.arena().value(at)
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let Value::Dialogue(ref logged) = *found
+    else {
+        return Err(CheckRefusal::MachineInvariant);
+    };
+    let dialogue = Arc::clone(logged);
+    let turns: Vec<Turn> = dialogue
+        .iter()
+        .map(|turn| Turn {
+            side: turn.endpoint,
+            movement: skeleton_move(&turn.movement),
+        })
+        .collect();
+    let log = Log::of(&dialogue);
+    match gandr_core_session::admit((&engine(&left)?, &engine(&right)?), &turns) {
+        Ok(_web) => {},
+        Err(DialogueRefusal::Replay { side, ref error }) => {
+            return Err(
+                replay_fault(error).map_or(CheckRefusal::MachineInvariant, |fault| {
+                    CheckRefusal::RunNotAdmitted {
+                        at,
+                        fault: log.fault(side, fault),
+                    }
+                }),
+            );
+        },
+        Err(DialogueRefusal::Unmatched { event }) => {
+            return Err(CheckRefusal::DialogueUnmatched {
+                at,
+                step: log.event(event),
+            });
+        },
+        Err(DialogueRefusal::Inverted { earlier, later }) => {
+            return Err(CheckRefusal::DialogueInverted {
+                at,
+                earlier: log.event(earlier),
+                later: log.event(later),
+            });
+        },
+        Err(DialogueRefusal::Uncovered(_)) => return Err(CheckRefusal::MachineInvariant),
+    }
+    for sender in [Endpoint::Left, Endpoint::Right] {
+        let sent = dialogue
+            .iter()
+            .filter(|turn| turn.endpoint == sender)
+            .filter_map(|turn| sent_payload(&turn.movement));
+        let received = dialogue
+            .iter()
+            .zip(0_u32 ..)
+            .filter(|&(turn, _)| turn.endpoint != sender)
+            .filter_map(|(turn, position)| {
+                received_payload(&turn.movement).map(|payload| (payload, position))
+            });
+        for (sent, (received, position)) in sent.zip(received) {
+            let verdict = context
+                .definitions()
+                .convert_terms(context.arena(), sent, received)?;
+            if verdict != MachineVerdict::Convertible {
+                return Err(CheckRefusal::DialogueUnmatched {
+                    at,
+                    step: RunStep::from(position),
+                });
+            }
+        }
+    }
+    let moves_of = |side: Endpoint| {
+        dialogue
+            .iter()
+            .filter(move |turn| turn.endpoint == side)
+            .map(|turn| &turn.movement)
+    };
+    let mut premises = payload_premises(left, moves_of(Endpoint::Left))?;
+    premises.extend(payload_premises(right, moves_of(Endpoint::Right))?);
+    Ok(premises)
+}
+
+/// The payload a move sends, if it sends one.
+///
+/// # Specification
+/// trivial.
+fn sent_payload(movement: &RecordedMove) -> Option<ValueId>
+{
+    match *movement {
+        RecordedMove::Sent(payload) => Some(payload),
+        RecordedMove::Received(_)
+        | RecordedMove::Selected(_)
+        | RecordedMove::Offered(_)
+        | RecordedMove::Closed => None,
+    }
+}
+
+/// The payload a move receives, if it receives one.
+///
+/// # Specification
+/// trivial.
+fn received_payload(movement: &RecordedMove) -> Option<ValueId>
+{
+    match *movement {
+        RecordedMove::Received(payload) => Some(payload),
+        RecordedMove::Sent(_)
+        | RecordedMove::Selected(_)
+        | RecordedMove::Offered(_)
+        | RecordedMove::Closed => None,
+    }
+}
+
+/// Where each endpoint's moves sit in a dialogue's log.
+///
+/// # Specification
+/// trivial.
+struct Log
+{
+    /// The log position of each of the left endpoint's moves, in its order.
+    left: Vec<RunStep>,
+    /// The log position of each of the right endpoint's moves, in its order.
+    right: Vec<RunStep>,
+    /// The log's length: where an endpoint that stops short is refused.
+    end: RunStep,
+}
+
+impl Log
+{
+    /// The positions of `dialogue`'s moves.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(dialogue: &[DialogueMove]) -> Self
+    {
+        let (mut left, mut right) = (Vec::new(), Vec::new());
+        let mut end = 0_u32;
+        for turn in dialogue {
+            match turn.endpoint {
+                Endpoint::Left => left.push(RunStep::from(end)),
+                Endpoint::Right => right.push(RunStep::from(end)),
+            }
+            end = end.saturating_add(1);
+        }
+        Self {
+            left,
+            right,
+            end: RunStep::from(end),
+        }
+    }
+
+    /// The log position of the move `own` among the endpoint `side`'s own,
+    /// the log's end past its last.
+    ///
+    /// # Specification
+    /// trivial.
+    fn position(
+        &self,
+        side: Endpoint,
+        own: RunStep,
+    ) -> RunStep
+    {
+        let positions = match side {
+            Endpoint::Left => &self.left,
+            Endpoint::Right => &self.right,
+        };
+        usize::try_from(u32::from(own))
+            .ok()
+            .and_then(|own| positions.get(own))
+            .copied()
+            .unwrap_or(self.end)
+    }
+
+    /// The log position of the engine's event.
+    ///
+    /// # Specification
+    /// trivial.
+    fn event(
+        &self,
+        event: Event,
+    ) -> RunStep
+    {
+        self.position(event.side, step(event.at))
+    }
+
+    /// The endpoint `side`'s replay fault, its step moved to the log.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fault(
+        &self,
+        side: Endpoint,
+        fault: RunFault,
+    ) -> RunFault
+    {
+        match fault {
+            RunFault::WrongDirection(own) => RunFault::WrongDirection(self.position(side, own)),
+            RunFault::WrongLabel(own) => RunFault::WrongLabel(self.position(side, own)),
+            RunFault::ResumeAfterEnd(own) => RunFault::ResumeAfterEnd(self.position(side, own)),
+            RunFault::Incomplete(own) => RunFault::Incomplete(self.position(side, own)),
+            RunFault::OfferNarrowed => RunFault::OfferNarrowed,
+        }
+    }
+}
+
+/// The payloads of the moves `moves` and the types the session `session`
+/// names for them, stepping the session once per move.
+///
+/// # Specification
+/// - requires: `moves` replays against `session`.
+/// - ensures: one premise per payload move, in move order, at the payload type
+///   the session names at that move; the walk stops at the close.
+/// - fails: [`CheckRefusal::MachineInvariant`] at a move the session does not
+///   step by, which a replayed run never holds.
+/// - panics: none.
+/// - executable: none — the premises are the stepped session's own payload
+///   types; a predicate restating them would step it again.
+///
+/// # Errors
+/// - [`CheckRefusal::MachineInvariant`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a complete seat run checks with its three payloads, and
+///   each endpoint of a dialogue checks its own payloads at its protocol.
+/// - witness: `flow::tests::a_run_rides_forward_and_refuses_by_move`
+/// - witness: `flow::tests::a_dialogue_checks_by_its_web_and_refuses_by_move`
+pub fn payload_premises<'moves, Moves>(
+    session: SessionType,
+    moves: Moves,
+) -> Result<Vec<(ValueId, ValueTypeId)>, CheckRefusal>
+where
+    Moves: IntoIterator<Item = &'moves RecordedMove>,
+{
     let mut premises = Vec::new();
     let mut current = session;
-    for movement in moves.iter() {
+    for movement in moves {
         let next = match (current.step(), movement) {
             (Ok(ProtocolStep::Send { payload, next }), &RecordedMove::Sent(value))
             | (Ok(ProtocolStep::Receive { payload, next }), &RecordedMove::Received(value)) => {
@@ -1734,27 +2082,24 @@ pub fn run_premises(
     Ok(premises)
 }
 
-/// The engine's skeleton of a recorded run: every payload of one identity and
-/// one opaque digest, every label as written.
+/// The engine's skeleton of one recorded move: a payload of one identity and
+/// one opaque digest, a label as written.
 ///
 /// # Specification
 /// trivial.
-fn skeleton(moves: &[RecordedMove]) -> Vec<Move>
+pub fn skeleton_move(movement: &RecordedMove) -> Move
 {
     let payload = Payload {
         identity: gandr_core_session::ValueTypeId([0_u8; 32]),
         digest: PayloadDigest([0_u8; 32]),
     };
-    moves
-        .iter()
-        .map(|movement| match *movement {
-            RecordedMove::Sent(_) => Move::Send(payload),
-            RecordedMove::Received(_) => Move::Receive(payload),
-            RecordedMove::Selected(ref label) => Move::Select(Label::from(label.as_ref())),
-            RecordedMove::Offered(ref label) => Move::Offer(Label::from(label.as_ref())),
-            RecordedMove::Closed => Move::End,
-        })
-        .collect()
+    match *movement {
+        RecordedMove::Sent(_) => Move::Send(payload),
+        RecordedMove::Received(_) => Move::Receive(payload),
+        RecordedMove::Selected(ref label) => Move::Select(Label::from(label.as_ref())),
+        RecordedMove::Offered(ref label) => Move::Offer(Label::from(label.as_ref())),
+        RecordedMove::Closed => Move::End,
+    }
 }
 
 /// The move position of an engine index, saturating past `u32`.
@@ -1770,10 +2115,8 @@ fn step(index: gandr_core_session::MoveIndex) -> RunStep
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a refused move keeps its position and its kind — a wrong label, a
-///   wrong direction, a move after the close; an incomplete run keeps its
-///   length; a payload identity, which the skeleton never varies, and a broken
-///   protocol are machine invariants.
+/// - ensures: [`CheckRefusal::RunNotAdmitted`] at `at` with the fault
+///   [`replay_fault`] reads, or a machine invariant where it reads none.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1788,21 +2131,45 @@ fn replay_refusal(
     error: &ReplayError,
 ) -> CheckRefusal
 {
-    let fault = match *error {
+    replay_fault(error).map_or(CheckRefusal::MachineInvariant, |fault| {
+        CheckRefusal::RunNotAdmitted { at, fault }
+    })
+}
+
+/// The fault the monitor's replay error names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a refused move keeps its position and its kind — a wrong label, a
+///   wrong direction, a move after the close; an incomplete run keeps its
+///   length; a payload identity, which the skeleton never varies, and a broken
+///   protocol name none.
+/// - panics: none.
+/// - executable: none — each fault is the error's own position under another
+///   name; a predicate restating the match would be the match.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a paused run, a truncated one, one moving the wrong way
+///   and one moving past its close name distinct faults.
+/// - witness: `flow::tests::each_refusal_is_named`
+pub fn replay_fault(error: &ReplayError) -> Option<RunFault>
+{
+    match *error {
         ReplayError::Refused {
             at: index, reason, ..
         } => match reason {
-            gandr_core_session::Refusal::WrongLabel => RunFault::WrongLabel(step(index)),
-            gandr_core_session::Refusal::WrongDirection => RunFault::WrongDirection(step(index)),
-            gandr_core_session::Refusal::ResumeAfterEnd => RunFault::ResumeAfterEnd(step(index)),
-            gandr_core_session::Refusal::WrongPayloadIdentity => {
-                return CheckRefusal::MachineInvariant;
+            gandr_core_session::Refusal::WrongLabel => Some(RunFault::WrongLabel(step(index))),
+            gandr_core_session::Refusal::WrongDirection => {
+                Some(RunFault::WrongDirection(step(index)))
             },
+            gandr_core_session::Refusal::ResumeAfterEnd => {
+                Some(RunFault::ResumeAfterEnd(step(index)))
+            },
+            gandr_core_session::Refusal::WrongPayloadIdentity => None,
         },
-        ReplayError::IncompleteRun { at: index, .. } => RunFault::Incomplete(step(index)),
-        ReplayError::InvalidType(_) => return CheckRefusal::MachineInvariant,
-    };
-    CheckRefusal::RunNotAdmitted { at, fault }
+        ReplayError::IncompleteRun { at: index, .. } => Some(RunFault::Incomplete(step(index))),
+        ReplayError::InvalidType(_) => None,
+    }
 }
 
 /// The refusal of the run `at` for the consumer's transport error.

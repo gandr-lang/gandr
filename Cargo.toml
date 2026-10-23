@@ -317,9 +317,11 @@ path = "crates/core-nbe"
 path = "crates/core-sequent"
 
 # Contractive binary session types and their one relation engine: the
-# judgement decides endpoint equivalence and subtyping through it.
+# judgement decides endpoint equivalence and subtyping through it, and a
+# dialogue's causal web and its decomposition come from it.
 # consumers:
 # - core-checker
+# - runtime-emitter
 [workspace.dependencies.gandr-core-session]
 path = "crates/core-session"
 
@@ -330,6 +332,7 @@ path = "crates/core-session"
 # - core-incremental
 # - core-nbe
 # - core-sequent
+# - core-session
 # - core-unify
 # - kernel-core (dev)
 # - runtime-emitter
@@ -1095,6 +1098,7 @@ default-features = false
 # - core-incremental
 # - core-term
 # - core-sequent
+# - core-session
 # - core-unify
 # - kernel-core
 # - kernel-term

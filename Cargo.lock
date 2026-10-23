@@ -667,10 +667,12 @@ dependencies = [
 name = "gandr-core-session"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-term",
  "gandr-kernel-core",
  "gandr-kernel-term",
  "gandr-theory-deep-inference",
  "quenchant-anodized",
+ "quenchant-shape",
 ]
 
 [[package]]
@@ -776,6 +778,7 @@ name = "gandr-runtime-emitter"
 version = "0.0.0"
 dependencies = [
  "gandr-core-sequent",
+ "gandr-core-session",
  "gandr-core-term",
  "gandr-kernel-term",
  "gandr-runtime-stencils",

@@ -37,7 +37,10 @@ use gandr_core_term::hole::NominationIndex;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::primitive::Arguments;
 use gandr_core_term::primitive::PRELUDE;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::RecordedMove;
+use gandr_core_term::session::WebPiece;
 use gandr_core_term::ua::Description;
 use gandr_core_term::ua::Generator;
 use gandr_core_term::ua::Sides;
@@ -3731,6 +3734,89 @@ fn a_recorded_run_without_payloads_spells_its_moves_1871()
         agrees(&core, &names, CoreNode::Value(recorded));
         assert_eq!(
             spelled(&source, Root::Value(CoreNode::Value(recorded))),
+            (expected.to_owned(), Fidelity::Faithful),
+            "{expected}"
+        );
+    }
+}
+
+/// A dialogue spells each move beside its endpoint, in log order; a web each
+/// node over its factors and each event by its endpoint and its position,
+/// a node owed more factors than the pieces hold closed where they end; a
+/// decomposition as the builtin and the two types by their heads.
+#[test]
+fn a_dialogue_and_its_web_spell_as_the_surface_writes_them()
+{
+    use Endpoint::Left;
+    use Endpoint::Right;
+    let mut core = CoreArena::new();
+    let yes = core.value_literal(Literal::Text(StringLiteral::new(String::from("yes"))));
+    let turn = |endpoint, movement| DialogueMove { endpoint, movement };
+    let played = core.value_dialogue(Arc::from(vec![
+        turn(Left, RecordedMove::Sent(yes)),
+        turn(Right, RecordedMove::Received(yes)),
+        turn(Right, RecordedMove::Closed),
+        turn(Left, RecordedMove::Closed),
+    ]));
+    let event = |endpoint, index| WebPiece::Event { endpoint, index };
+    let series_parallel = core.value_web(Arc::from(vec![
+        WebPiece::Series(2),
+        event(Left, 0),
+        WebPiece::Parallel(2),
+        event(Left, 1),
+        WebPiece::Series(2),
+        event(Right, 0),
+        event(Right, 1),
+    ]));
+    let prime = core.value_web(Arc::from(vec![
+        WebPiece::Series(2),
+        event(Left, 0),
+        WebPiece::Prime(4),
+        event(Left, 1),
+        event(Left, 2),
+        event(Right, 0),
+        WebPiece::Series(2),
+        event(Right, 1),
+        event(Right, 2),
+    ]));
+    let cut = core.value_web(Arc::from(vec![WebPiece::Series(3), event(Right, 0)]));
+    let kept = core.value_constant(ConstantIndex::from(0_usize));
+    let decomposed = core.computation_decompose(kept);
+    let played_type = core.value_type_dialogue(kept);
+    let web_type = core.value_type_web();
+    let names = [Name::from("kept")];
+    for value in [played, series_parallel, prime, cut] {
+        agrees(&core, &names, CoreNode::Value(value));
+    }
+    agrees(&core, &names, CoreNode::Computation(decomposed));
+    let source = CoreSource::new(&core, &names);
+    let value = |id| Root::Value(CoreNode::Value(id));
+    for (root, expected) in [
+        (
+            value(played),
+            "dialogue(left(sent(\"yes\")), right(received(\"yes\")), right(closed), left(closed))",
+        ),
+        (
+            value(series_parallel),
+            "series(event(left, 0), parallel(event(left, 1), series(event(right, 0), event(right, 1))))",
+        ),
+        (
+            value(prime),
+            "series(event(left, 0), prime(event(left, 1), event(left, 2), event(right, 0), series(event(right, 1), event(right, 2))))",
+        ),
+        (value(cut), "series(event(right, 0))"),
+        (
+            Root::Computation(CoreNode::Computation(decomposed)),
+            "decompose(kept)",
+        ),
+        (
+            Root::Type(CoreNode::ValueType(played_type)),
+            "Dialogue(kept)",
+        ),
+        (Root::Type(CoreNode::ValueType(web_type)), "Web"),
+    ] {
+        assert_eq!(
+            spelled(&source, root),
             (expected.to_owned(), Fidelity::Faithful),
             "{expected}"
         );

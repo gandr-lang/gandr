@@ -135,7 +135,7 @@ impl Source for ContentSource<'_>
             ContentNode::UnknownType | ContentNode::UnknownComputationType => reason == Unreadable::UnknownType,
             ContentNode::ValueLift { .. } | ContentNode::TypeLift { .. } => reason == Unreadable::Lift,
             ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference) => reason == Unreadable::Unnamed && key(reference).is_none(),
-            ContentNode::BufferType | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
+            ContentNode::BufferType | ContentNode::WebType | ContentNode::DialogueType(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
             ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } => false,
         },
         (Some(&(ContentNode::Constant(ref reference) | ContentNode::Abstract(ref reference))), Former::Constant(name) | Former::Abstract(name)) => key(reference) == Some(name),
@@ -245,10 +245,15 @@ impl Source for ContentSource<'_>
                         | ContentNode::FunctionFlow(..)
                         | ContentNode::FlowProduct(..)
                         | ContentNode::Recorded(_)
+                        | ContentNode::Dialogue(_)
+                        | ContentNode::Web(_)
+                        | ContentNode::Decompose(_)
                         | ContentNode::Ride { .. }
                         | ContentNode::FlowType { .. }
                         | ContentNode::RunType(_)
                         | ContentNode::PrefixType(_)
+                        | ContentNode::DialogueType(_)
+                        | ContentNode::WebType
                         | ContentNode::Variable { .. }
                         | ContentNode::Constant(_)
                         | ContentNode::Literal(_)
@@ -509,6 +514,7 @@ impl Source for ContentSource<'_>
             ContentNode::Return(value) => Former::Return(value),
             ContentNode::Bind(bound, rest) => Former::Bind(bound, rest),
             ContentNode::Force(thunk) => Former::Force(thunk),
+            ContentNode::Decompose(dialogue) => Former::Decompose(dialogue),
             ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
             ContentNode::Funext(left, right) => Former::Funext(left, right),
             ContentNode::Equiv(forward, backward) => Former::Equiv(forward, backward),
@@ -534,6 +540,8 @@ impl Source for ContentSource<'_>
             ContentNode::FunctionFlow(domain, codomain) => Former::FunctionFlow(domain, codomain),
             ContentNode::RunType(code) => Former::RunType(code),
             ContentNode::PrefixType(code) => Former::PrefixType(code),
+            ContentNode::DialogueType(code) => Former::DialogueType(code),
+            ContentNode::WebType => Former::WebType,
             ContentNode::Ua {
                 stratum,
                 ref sides,
@@ -663,6 +671,16 @@ impl Source for ContentSource<'_>
                         .count(),
                 ),
             },
+            ContentNode::Dialogue(ref moves) => Former::Dialogue {
+                moves,
+                payloads: Arity::from(
+                    moves
+                        .iter()
+                        .filter(|turn| matches!(turn.movement.payload(), Maybe::Present(_)))
+                        .count(),
+                ),
+            },
+            ContentNode::Web(ref pieces) => Former::Web(pieces),
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -780,7 +798,18 @@ impl Source for ContentSource<'_>
                     Maybe::Absent(_) => None,
                 })
                 .nth(at),
-            ContentNode::RecordProjection(..)
+            ContentNode::Dialogue(ref moves) => moves
+                .iter()
+                .filter_map(|turn| match turn.movement.payload() {
+                    Maybe::Present(payload) => Some(payload),
+                    Maybe::Absent(_) => None,
+                })
+                .nth(at),
+            ContentNode::Web(_)
+            | ContentNode::Decompose(_)
+            | ContentNode::DialogueType(_)
+            | ContentNode::WebType
+            | ContentNode::RecordProjection(..)
             | ContentNode::TupleProjection(..)
             | ContentNode::Reify(_)
             | ContentNode::Stack { .. }
@@ -953,10 +982,15 @@ impl Source for ContentSource<'_>
             | ContentNode::FunctionFlow(..)
             | ContentNode::FlowProduct(..)
             | ContentNode::Recorded(_)
+            | ContentNode::Dialogue(_)
+            | ContentNode::Web(_)
+            | ContentNode::Decompose(_)
             | ContentNode::Ride { .. }
             | ContentNode::FlowType { .. }
             | ContentNode::RunType(_)
             | ContentNode::PrefixType(_)
+            | ContentNode::DialogueType(_)
+            | ContentNode::WebType
             | ContentNode::Variable { .. }
             | ContentNode::Constant(_)
             | ContentNode::Literal(_)

@@ -394,6 +394,8 @@ pub enum TypeAtom
     Void,
     /// `Buf`, the opaque buffer a receive places live and a send returns.
     Buffer,
+    /// `Web`, the causal webs `decompose` returns.
+    Web,
 }
 
 /// A unary type head: a type former of the fragment.
@@ -412,6 +414,10 @@ pub enum TypeFormer
     /// `Prefix(S)`, the value type of the recorded prefixes of the session
     /// code `S`, closed or still open, which is read as a value.
     Prefix,
+    /// `Dialogue(S)`, the value type of the complete dialogues over the
+    /// session code `S`, its left endpoint following `S` and its right the
+    /// dual, which is read as a value.
+    Dialogue,
 }
 
 /// The nullary type heads, with the spellings the surface writes them as.
@@ -429,13 +435,14 @@ pub enum TypeFormer
 ///   near spellings separating the absent branch.
 /// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 6_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 7_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
     ("Integer", TypeAtom::Integer),
     ("String", TypeAtom::Text),
     ("Buf", TypeAtom::Buffer),
+    ("Web", TypeAtom::Web),
 ];
 
 /// The unary type heads, with the spellings the surface writes them as.
@@ -453,12 +460,13 @@ const TYPE_ATOMS: [(&str, TypeAtom); 6_usize] = [
 ///   near spellings separating the absent branch.
 /// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
 /// - witness: `resolve::tests::a_nullary_head_answers_no_former`
-const TYPE_FORMERS: [(&str, TypeFormer); 5_usize] = [
+const TYPE_FORMERS: [(&str, TypeFormer); 6_usize] = [
     ("+U", TypeFormer::Thunk),
     ("-F", TypeFormer::Returner),
     ("List", TypeFormer::List),
     ("Run", TypeFormer::Run),
     ("Prefix", TypeFormer::Prefix),
+    ("Dialogue", TypeFormer::Dialogue),
 ];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
@@ -2148,6 +2156,7 @@ mod tests
             ("List", TypeFormer::List),
             ("Run", TypeFormer::Run),
             ("Prefix", TypeFormer::Prefix),
+            ("Dialogue", TypeFormer::Dialogue),
         ];
 
         for (spelling, former) in expected {

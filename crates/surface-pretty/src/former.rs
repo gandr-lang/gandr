@@ -92,8 +92,9 @@ where
     }
 }
 
-/// One move of a recorded run as the printer spells it: its action and, for a
-/// choice, the label it names.
+/// One move of a recorded run or a dialogue as the printer spells it: its
+/// action, for a choice the label it names, and in a dialogue the endpoint
+/// that makes it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Move<'text>
 {
@@ -101,6 +102,25 @@ pub struct Move<'text>
     pub action: gandr_core_term::session::ActionKind,
     /// The label a selection or an offer names; none for another move.
     pub label: Option<Name<'text>>,
+    /// The endpoint a dialogue's move belongs to; none in a recorded run.
+    pub endpoint: Option<gandr_core_term::session::Endpoint>,
+}
+
+/// The label a recorded move names, a selection's or an offer's.
+///
+/// # Specification
+/// trivial.
+fn named<V>(step: &gandr_core_term::session::RecordedMove<V>) -> Option<Name<'_>>
+{
+    match *step {
+        gandr_core_term::session::RecordedMove::Selected(ref label)
+        | gandr_core_term::session::RecordedMove::Offered(ref label) => {
+            Some(Name::from(label.as_ref()))
+        },
+        gandr_core_term::session::RecordedMove::Sent(_)
+        | gandr_core_term::session::RecordedMove::Received(_)
+        | gandr_core_term::session::RecordedMove::Closed => None,
+    }
 }
 
 /// Where a constructor's name stands to its fields.
@@ -184,15 +204,30 @@ where
         self.iter()
             .map(|step| Move {
                 action: step.kind(),
-                label: match *step {
-                    gandr_core_term::session::RecordedMove::Selected(ref label)
-                    | gandr_core_term::session::RecordedMove::Offered(ref label) => {
-                        Some(Name::from(label.as_ref()))
-                    },
-                    gandr_core_term::session::RecordedMove::Sent(_)
-                    | gandr_core_term::session::RecordedMove::Received(_)
-                    | gandr_core_term::session::RecordedMove::Closed => None,
-                },
+                label: named(step),
+                endpoint: None,
+            })
+            .collect()
+    }
+}
+
+impl<V> Moves for alloc::sync::Arc<[gandr_core_term::session::DialogueMove<V>]>
+where
+    V: Copy + core::fmt::Debug,
+{
+    /// Each move's action, the label of a selection or an offer, and the
+    /// endpoint that makes it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn moves(&self) -> alloc::vec::Vec<Move<'_>>
+    {
+        self.iter()
+            .map(|turn| Move {
+                action: turn.movement.kind(),
+                label: named(&turn.movement),
+                endpoint: Some(turn.endpoint),
             })
             .collect()
     }
@@ -544,6 +579,10 @@ pub enum Former<'source, Node>
     RunType(Node),
     /// The recorded prefixes of a session code, `Prefix(s)`.
     PrefixType(Node),
+    /// The complete dialogues of a session code, `Dialogue(s)`.
+    DialogueType(Node),
+    /// The causal webs a decomposition returns, `Web`.
+    WebType,
     /// The returner over its value: `v` where a path through a body ends,
     /// `pure v` anywhere else.
     Return(Node),
@@ -552,6 +591,8 @@ pub enum Former<'source, Node>
     Bind(Node, Node),
     /// A force of a thunk value: `force v`.
     Force(Node),
+    /// The causal web of a dialogue, `decompose(d)`.
+    Decompose(Node),
     /// An application of a computation to one value argument; the printer
     /// spells a spine of them as one call, `f(a, b)`, a forced value at its
     /// head as the value itself.
@@ -659,6 +700,20 @@ pub enum Former<'source, Node>
         /// How many of them carry a payload.
         payloads: Arity,
     },
+    /// A dialogue, `dialogue(left(sent(v)), right(received(v)))`: its moves
+    /// in log order, each tagged with its endpoint, each send's and receive's
+    /// payload a value the source answers by [`Source::component`] in move
+    /// order.
+    Dialogue
+    {
+        /// The moves, read for their endpoints, actions and labels.
+        moves: &'source dyn Moves,
+        /// How many of them carry a payload.
+        payloads: Arity,
+    },
+    /// A causal web's modular decomposition, `series(event(left, 0), …)`:
+    /// its pieces in preorder, each node followed by its factors.
+    Web(&'source [gandr_core_term::session::WebPiece]),
     /// The value a computation returns, standing where a value is read: the
     /// computation itself, `n + 1` as `add(n, 1)`.
     Returned(Node),

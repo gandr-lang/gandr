@@ -235,6 +235,11 @@ pub enum ConstructorTag
     /// a producer field in move order. A choice's label and a close live in
     /// the head, which carries no value.
     Recorded(alloc::sync::Arc<[gandr_core_term::session::RecordedMove<()>]>),
+    /// A dialogue: its moves in log order, each with the endpoint that made
+    /// it, each send's and receive's payload a producer field in log order.
+    Dialogue(alloc::sync::Arc<[gandr_core_term::session::DialogueMove<()>]>),
+    /// A web: a dialogue's decomposition in preorder. It carries no field.
+    Web(alloc::sync::Arc<[gandr_core_term::session::WebPiece]>),
 }
 
 impl ConstructorTag
@@ -245,7 +250,8 @@ impl ConstructorTag
     /// - requires: nothing.
     /// - ensures: a tuple's and a datatype constructor's own field count, a
     ///   record's label count, `0` for the empty list, `2` for a list cell, `1`
-    ///   for an injection and a lift, and a recorded run's sends and receives.
+    ///   for an injection and a lift, a recorded run's and a dialogue's sends
+    ///   and receives, and `0` for a web.
     /// - provides: the one arity table a constructor node is held to.
     /// - fails: never.
     /// - panics: none.
@@ -259,22 +265,24 @@ impl ConstructorTag
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match *self {
-        | Self::ListNil => matches!(ret, ProducerArity::ZERO),
+        | Self::ListNil | Self::Web(_) => matches!(ret, ProducerArity::ZERO),
         | Self::ListCons => matches!(ret, ProducerArity::TWO),
         | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
         | Self::Tuple(arity) | Self::Data { arity, .. } => ret == arity,
         | Self::Record(ref labels) => ret == ProducerArity::from(labels.len()),
         | Self::Recorded(ref moves) => ret == recorded_payloads(moves),
+        | Self::Dialogue(ref turns) => ret == dialogue_payloads(turns),
     })]
     pub fn producer_arity(&self) -> ProducerArity
     {
         match *self {
-            Self::ListNil => ProducerArity::ZERO,
+            Self::ListNil | Self::Web(_) => ProducerArity::ZERO,
             Self::ListCons => ProducerArity::TWO,
             Self::Injection(_) | Self::Lift(_) => ProducerArity::ONE,
             Self::Tuple(arity) | Self::Data { arity, .. } => arity,
             Self::Record(ref labels) => ProducerArity::from(labels.len()),
             Self::Recorded(ref moves) => recorded_payloads(moves),
+            Self::Dialogue(ref turns) => dialogue_payloads(turns),
         }
     }
 
@@ -307,7 +315,9 @@ impl ConstructorTag
             | Self::Injection(_)
             | Self::Lift(_)
             | Self::Data { .. }
-            | Self::Recorded(_) => ConsumerArity::ZERO,
+            | Self::Recorded(_)
+            | Self::Dialogue(_)
+            | Self::Web(_) => ConsumerArity::ZERO,
         }
     }
 }
@@ -325,6 +335,26 @@ fn recorded_payloads(moves: &[gandr_core_term::session::RecordedMove<()>]) -> Pr
             .filter(|movement| {
                 matches!(
                     movement,
+                    gandr_core_term::session::RecordedMove::Sent(())
+                        | gandr_core_term::session::RecordedMove::Received(())
+                )
+            })
+            .count(),
+    )
+}
+
+/// The producer fields of a dialogue: one per move that carries a payload.
+///
+/// # Specification
+/// trivial.
+fn dialogue_payloads(turns: &[gandr_core_term::session::DialogueMove<()>]) -> ProducerArity
+{
+    ProducerArity::from(
+        turns
+            .iter()
+            .filter(|turn| {
+                matches!(
+                    turn.movement,
                     gandr_core_term::session::RecordedMove::Sent(())
                         | gandr_core_term::session::RecordedMove::Received(())
                 )
@@ -518,6 +548,9 @@ pub enum ProducerNode
         /// Value-producing operands.
         arguments: gandr_core_term::primitive::Arguments<ProducerId>,
     },
+    /// The web of the dialogue a producer sends: its decomposition, computed
+    /// from the dialogue's moves.
+    Decompose(ProducerId),
     /// A bound producer variable in a zone of the unified context.
     Variable
     {
@@ -1530,6 +1563,7 @@ impl CommandArena
                         | gandr_core_term::control::StackFrame::Project(_) => true,
                     }),
                     | ProducerNode::Primitive { arguments, .. } => arguments.iter().all(|child| self.producer(*child).is_some()),
+                    | ProducerNode::Decompose(dialogue) => self.producer(dialogue).is_some(),
                     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) | ProducerNode::Code(_) => true,
                     | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
                         producers.iter().all(|child| self.producer(*child).is_some())
@@ -1825,6 +1859,7 @@ where
                 each(NodeAddress::Producer(argument), at)?;
             }
         },
+        ProducerNode::Decompose(dialogue) => each(NodeAddress::Producer(dialogue), at)?,
         ProducerNode::Variable { .. }
         | ProducerNode::Constant(_)
         | ProducerNode::Literal(_)
@@ -2108,6 +2143,7 @@ pub fn producer_named(node: &ProducerNode) -> core::option::IntoIter<(Zone, DeBr
         ProducerNode::Variable { zone, index } => Some((zone, index)),
         ProducerNode::Reify(_)
         | ProducerNode::Primitive { .. }
+        | ProducerNode::Decompose(_)
         | ProducerNode::Constant(_)
         | ProducerNode::Literal(_)
         | ProducerNode::Code(_)

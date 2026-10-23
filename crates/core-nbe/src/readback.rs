@@ -661,6 +661,8 @@ enum Task
     RunType,
     /// Assemble a prefix type over the session code on the stack.
     PrefixType,
+    /// Assemble a dialogue type over the session code on the stack.
+    DialogueType,
     /// Assemble a tuple from its components, this many on the stack.
     Tuple(usize),
     /// Assemble a native list cell.
@@ -2093,7 +2095,7 @@ fn run(
             && machine.value_types.len() == entry_value_types
             && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
             && machine.comps.len() == entry_comps && machine.comp_types.len() == entry_comp_types,
-        | Task::RunType | Task::PrefixType => machine.tasks.len() == entry_tasks
+        | Task::RunType | Task::PrefixType | Task::DialogueType => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types.saturating_add(1)
             && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
@@ -2211,7 +2213,7 @@ fn run(
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
         | Task::CapabilityType { source } => machine.tasks.len() == entry_tasks
             && machine.values.len() == entry_values && machine.comps.len() == entry_comps
-            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false })
+            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Web | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false })
             && machine.comp_types.len() == entry_comp_types
             && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some()),
         | Task::Arrow | Task::Pi => machine.tasks.len() == entry_tasks
@@ -2227,9 +2229,14 @@ fn run(
         | Task::Record(source) => matches!(core.value(source), Some(Value::Record(fields))
             if entry_values.checked_sub(fields.len()).and_then(|n| n.checked_add(1)) == Some(machine.values.len())
             && machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Record(result)) if fields.keys().eq(result.keys())))),
-        | Task::Recorded(source) => matches!(core.value(source), Some(Value::Recorded(moves))
-            if machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Recorded(result))
-                if result.len() == moves.len() && result.iter().zip(moves.iter()).all(|(read, written)| read.kind() == written.kind())))),
+        | Task::Recorded(source) => match (core.value(source), machine.values.last().and_then(|&id| core.value(id))) {
+            | (Some(&Value::Recorded(ref moves)), Some(&Value::Recorded(ref result))) =>
+                result.len() == moves.len() && result.iter().zip(moves.iter()).all(|(read, written)| read.kind() == written.kind()),
+            | (Some(&Value::Dialogue(ref moves)), Some(&Value::Dialogue(ref result))) =>
+                result.len() == moves.len() && result.iter().zip(moves.iter()).all(|(read, written)| read.endpoint == written.endpoint && read.movement.kind() == written.movement.kind()),
+            | (Some(&Value::Web(ref pieces)), Some(&Value::Web(ref result))) => pieces == result,
+            | _ => false,
+        },
         | Task::DataType(source) => matches!(core.value_type(source), Some(ValueType::Data { declaration, arguments })
             if entry_values.checked_sub(arguments.len()) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types.saturating_add(1)
@@ -2365,29 +2372,45 @@ fn step(
             Ok(())
         },
         Task::Recorded(source) => {
-            let Some(&Value::Recorded(ref moves)) = core.value(source)
+            let Some(written) = core.value(source).cloned()
             else {
                 return Err(ReadbackFault::MachineInvariant);
             };
-            let carried = moves.iter().filter_map(crate::eval::carried).count();
+            let carried = crate::eval::recording(&written)
+                .ok_or(ReadbackFault::MachineInvariant)?
+                .count();
             let start = machine
                 .values
                 .len()
                 .checked_sub(carried)
                 .ok_or(ReadbackFault::MachineInvariant)?;
             let mut payloads = machine.values.drain(start ..);
-            let mut read = Vec::with_capacity(moves.len());
-            for movement in moves.iter() {
-                read.push(
-                    movement.try_map(|_written| {
-                        payloads.next().ok_or(ReadbackFault::MachineInvariant)
-                    })?,
-                );
+            let mut next = |_written| payloads.next().ok_or(ReadbackFault::MachineInvariant);
+            let read = if let Value::Recorded(ref moves) = written {
+                let mut read = Vec::with_capacity(moves.len());
+                for movement in moves.iter() {
+                    read.push(movement.try_map(&mut next)?);
+                }
+                core.value_recorded(alloc::sync::Arc::from(read))
             }
+            else if let Value::Dialogue(ref moves) = written {
+                let mut read = Vec::with_capacity(moves.len());
+                for turn in moves.iter() {
+                    read.push(gandr_core_term::session::DialogueMove {
+                        endpoint: turn.endpoint,
+                        movement: turn.movement.try_map(&mut next)?,
+                    });
+                }
+                core.value_dialogue(alloc::sync::Arc::from(read))
+            }
+            else if let Value::Web(ref pieces) = written {
+                core.value_web(alloc::sync::Arc::clone(pieces))
+            }
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
             drop(payloads);
-            machine
-                .values
-                .push(core.value_recorded(alloc::sync::Arc::from(read)));
+            machine.values.push(read);
             Ok(())
         },
         Task::DataType(source) => {
@@ -2651,6 +2674,11 @@ fn step(
         Task::RunType => {
             let session = machine.pop_value()?;
             machine.value_types.push(core.value_type_run(session));
+            Ok(())
+        },
+        Task::DialogueType => {
+            let session = machine.pop_value()?;
+            machine.value_types.push(core.value_type_dialogue(session));
             Ok(())
         },
         Task::PrefixType => {
@@ -3167,7 +3195,7 @@ fn held_level(
         ValueType::Staged { base, stage } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StagedType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == stage && *child == base && *child_frame == frame && *child_binders == binders),
         ValueType::Kept { value, region } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::KeptType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == region && *child == value && *child_frame == frame && *child_binders == binders),
         ValueType::World(gandr_core_term::world::WorldType::At { inner, world }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LocatedType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == world && *child == inner && *child_frame == frame && *child_binders == binders),
-ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
 ValueType::Capability { ref authority, .. } => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::CapabilityType { source: quoted })
             && new_tasks.len() == authority.types().count().saturating_add(1)
@@ -3204,6 +3232,8 @@ ValueType::Run(session) => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::RunType, Task::QuotedCode { code: child, .. }] if *child == session),
 ValueType::Prefix(session) => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::PrefixType, Task::QuotedCode { code: child, .. }] if *child == session),
+ValueType::Dialogue(session) => machine.value_types.len() == entry_results
+            && matches!(new_tasks, [Task::DialogueType, Task::QuotedCode { code: child, .. }] if *child == session),
 },
 None => false,
 })) },
@@ -3309,12 +3339,21 @@ fn step_quoted_value_type(
                 binders,
             });
         },
+        ValueType::Dialogue(session) => {
+            machine.tasks.push(Task::DialogueType);
+            machine.tasks.push(Task::QuotedCode {
+                code: session,
+                frame,
+                binders,
+            });
+        },
         ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Universe { .. }
         | ValueType::Abstract(_)
         | ValueType::Unknown
         | ValueType::Buffer
+        | ValueType::Web
         | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => {
             machine.value_types.push(quoted);
         },
@@ -3697,8 +3736,11 @@ fn step_value(
         },
         DomainValue::Recorded { source, fields, .. } => {
             let fields = domain.fields(fields).map_err(ReadbackFault::Domain)?;
-            if !matches!(core.value(source), Some(Value::Recorded(moves))
-                if moves.iter().filter_map(crate::eval::carried).count() == fields.len())
+            if core
+                .value(source)
+                .and_then(crate::eval::recording)
+                .map(Iterator::count)
+                != Some(fields.len())
             {
                 return Err(ReadbackFault::MachineInvariant);
             }

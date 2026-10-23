@@ -521,6 +521,8 @@ fn first_order(
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Sum(_)
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
@@ -651,6 +653,8 @@ fn leaves(
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }
@@ -818,6 +822,8 @@ fn natural(
             | ValueTypeView::Flow { .. }
             | ValueTypeView::Run(_)
             | ValueTypeView::Prefix(_)
+            | ValueTypeView::Dialogue(_)
+            | ValueTypeView::Web
             | ValueTypeView::Thunk(_)
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }

@@ -198,11 +198,13 @@ use gandr_core_term::effect::capability::RegionBinder;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::session::ActionKind;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
 use gandr_core_term::session::ProtocolNode;
 use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::SessionRelation;
+use gandr_core_term::session::WebPiece;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -418,11 +420,11 @@ enum Kind
 /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
-    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::Product(_) | Former::RecordType(_)
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::WebType | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::Located { .. } | Former::Kept { .. }),
+        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -431,8 +433,8 @@ enum Kind
         | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
         | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
-        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Annotated { .. }),
-    | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_)
+        | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
+    | Kind::Computation => matches!(*former, Former::Return(_) | Former::Bind(..) | Former::Force(_) | Former::Decompose(_)
         | Former::Application(..) | Former::Lambda(_) | Former::Primitive { .. } | Former::Transport(..)
         | Former::PathTransport { .. } | Former::Ride { .. } | Former::TelescopeTransport { .. } | Former::Fixpoint(_) | Former::Case { .. }
         | Former::Split { .. } | Former::DataCase { .. } | Former::RecordProjection(..) | Former::TupleProjection(..)
@@ -450,6 +452,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::PathUniverse(..)
         | Former::BaseType(_)
         | Former::BufferType
+        | Former::WebType
         | Former::Product(_)
         | Former::RecordType(_)
         | Former::Sum(_)
@@ -468,6 +471,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Data { .. }
         | Former::RunType(_)
         | Former::PrefixType(_)
+        | Former::DialogueType(_)
         | Former::Located { .. }
         | Former::Kept { .. } => Kind::ValueType,
         Former::Returner(_)
@@ -512,11 +516,14 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Run(_)
         | Former::Constructor { .. }
         | Former::Recorded { .. }
+        | Former::Dialogue { .. }
+        | Former::Web(_)
         | Former::Annotated { .. }
         | Former::Returned(_) => Kind::Value,
         Former::Return(_)
         | Former::Bind(..)
         | Former::Force(_)
+        | Former::Decompose(_)
         | Former::Application(..)
         | Former::Lambda(_)
         | Former::Primitive { .. }
@@ -1051,7 +1058,7 @@ where
 #[spec(ensures: |ref ret| match *former {
     | Former::Product(arity) | Former::Sum(arity) | Former::RecordType(arity) => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } | Former::Recorded { payloads: arity, .. } => ret.len() == usize::from(arity)
+    | Former::Tuple(arity) | Former::Record(arity) | Former::Primitive { arity, .. } | Former::Recorded { payloads: arity, .. } | Former::Dialogue { payloads: arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Data { arity, .. } | Former::Codata { arity, .. } => ret.len() == usize::from(arity)
         && ret.iter().all(|slot| slot.admits == Admits::Stated && slot.binds == Binds::NONE),
@@ -1091,7 +1098,7 @@ where
         ret.len() == indexed.saturating_add(match mode { AccessMode::Exclusive { .. } => 2_usize, AccessMode::Shared => 1_usize })
             && ret.get(indexed).is_some_and(|slot| slot.binds == Binds { zone: Zone::Linear, count: 1_usize })
     },
-    | Former::BaseType(_) | Former::BufferType | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
+    | Former::BaseType(_) | Former::BufferType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
@@ -1155,6 +1162,9 @@ where
         Former::Tuple(arity)
         | Former::Primitive { arity, .. }
         | Former::Recorded {
+            payloads: arity, ..
+        }
+        | Former::Dialogue {
             payloads: arity, ..
         } => components(arity, Admits::Value, Binds::NONE, None),
         Former::Data { arity, .. } | Former::Codata { arity, .. } => {
@@ -1248,6 +1258,8 @@ where
         | Former::Forward(child)
         | Former::RunType(child)
         | Former::PrefixType(child)
+        | Former::DialogueType(child)
+        | Former::Decompose(child)
         | Former::Return(child)
         | Former::Abandon(child)
         | Former::Force(child)
@@ -1527,6 +1539,8 @@ where
         },
         Former::BaseType(_)
         | Former::BufferType
+        | Former::WebType
+        | Former::Web(_)
         | Former::Universe { .. }
         | Former::Abstract(_)
         | Former::Capability { .. }
@@ -2145,6 +2159,10 @@ enum Bracket
     Run,
     /// The recorded prefixes of a session code, `Prefix(s)`.
     Prefix,
+    /// The complete dialogues of a session code, `Dialogue(s)`.
+    Dialogue,
+    /// A dialogue's causal web, `decompose(d)`.
+    Decompose,
     /// A type quoted where an expression stands, `type(T)`.
     TypeQuote,
     /// A loop's end with a value, `break(v)`.
@@ -2191,6 +2209,8 @@ impl Bracket
             Self::Arrow => "arrow(",
             Self::Run => "Run(",
             Self::Prefix => "Prefix(",
+            Self::Dialogue => "Dialogue(",
+            Self::Decompose => "decompose(",
             Self::TypeQuote => "type(",
             Self::Break => "break(",
         })
@@ -4479,6 +4499,131 @@ fn literal(literal: &Literal) -> Spelled
     })
 }
 
+/// A causal web's modular decomposition as the surface writes it:
+/// `series(…)`, `parallel(…)` and `prime(…)` over their factors, and a leaf
+/// `event(left, 0)` naming a move by its endpoint and its position in that
+/// endpoint's order.
+///
+/// # Specification
+/// - requires: nothing; a node owed more factors than the pieces hold is closed
+///   where the pieces end.
+/// - ensures: one call per piece in preorder, each node's factors between its
+///   parentheses, separated by `, `; one line.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the series-parallel and the prime web of the goldens
+///   observe nesting, separators and leaves; a dropped parenthesis or a swapped
+///   endpoint changes the text.
+/// - witness: `tests::goldens::a_dialogue_and_its_web_spell_as_the_surface_writes_them`
+#[spec(ensures: |ret| !ret.contains('\n')
+    && ret.matches('(').count() == ret.matches(')').count()
+    && ret.matches("event(").count() == pieces.iter().filter(|piece| matches!(**piece, WebPiece::Event { .. })).count())]
+fn web_spelled(pieces: &[WebPiece]) -> String
+{
+    alloc::string::ToString::to_string(&WebSpelling(pieces))
+}
+
+/// A causal web's pieces, written as [`web_spelled`] spells them.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+struct WebSpelling<'pieces>(&'pieces [WebPiece]);
+
+impl core::fmt::Display for WebSpelling<'_>
+{
+    /// Write each piece in preorder, each node's factors between its
+    /// parentheses.
+    ///
+    /// # Specification
+    /// - ensures: as [`web_spelled`].
+    /// - fails: propagates the formatter's write failure.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes neither its sink's accepted bytes
+    ///   nor a query for a failed write; [`web_spelled`] states the text.
+    ///
+    /// # Errors
+    /// Returns the formatter's error when its sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`web_spelled`].
+    /// - witness: `tests::goldens::a_dialogue_and_its_web_spell_as_the_surface_writes_them`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        // Each open node's factors still owed, and whether one is written.
+        let mut open: Vec<(usize, Factors)> = Vec::new();
+        for &piece in self.0 {
+            if let Some(&mut (_, ref mut factors)) = open.last_mut() {
+                if *factors == Factors::Begun {
+                    f.write_str(", ")?;
+                }
+                *factors = Factors::Begun;
+            }
+            let owed = match piece {
+                WebPiece::Event { endpoint, index } => {
+                    let side = match endpoint {
+                        Endpoint::Left => "left",
+                        Endpoint::Right => "right",
+                    };
+                    write!(f, "event({side}, {index})")?;
+                    0_usize
+                },
+                WebPiece::Series(factors) => {
+                    f.write_str("series(")?;
+                    factors
+                },
+                WebPiece::Parallel(factors) => {
+                    f.write_str("parallel(")?;
+                    factors
+                },
+                WebPiece::Prime(factors) => {
+                    f.write_str("prime(")?;
+                    factors
+                },
+            };
+            if owed > 0_usize {
+                open.push((owed, Factors::Unbegun));
+                continue;
+            }
+            if !matches!(piece, WebPiece::Event { .. }) {
+                f.write_str(")")?;
+            }
+            // The piece is whole: each node it completes closes in turn.
+            while let Some(&mut (ref mut left, _)) = open.last_mut() {
+                *left = left.saturating_sub(1_usize);
+                if *left > 0_usize {
+                    break;
+                }
+                let _ = open.pop();
+                f.write_str(")")?;
+            }
+        }
+        for _ in open {
+            f.write_str(")")?;
+        }
+        Ok(())
+    }
+}
+
+/// Whether an open web node has written a factor yet.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Factors
+{
+    /// None yet: the next factor follows the parenthesis.
+    Unbegun,
+    /// One or more: the next follows a separator.
+    Begun,
+}
+
 /// The walk's state: the builder it writes into, the finished pieces, the
 /// open binders and what it has had to approximate.
 struct Walk<'walk, 'names>
@@ -5601,6 +5746,11 @@ impl Walk<'_, '_>
                 | Former::FunctionFlow(..)
                 | Former::RunType(_)
                 | Former::PrefixType(_)
+                | Former::DialogueType(_)
+                | Former::WebType
+                | Former::Dialogue { .. }
+                | Former::Web(_)
+                | Former::Decompose(_)
                 | Former::Return(_)
                 | Former::Bind(..)
                 | Former::Force(_)
@@ -6393,6 +6543,9 @@ impl Walk<'_, '_>
             Former::BufferType => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Buf")));
             },
+            Former::WebType => {
+                return writes(Production("type_identifier"), self.atom(Glyphs("Web")));
+            },
             Former::Product(arity) if usize::from(arity) == 0 => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Unit")));
             },
@@ -6626,6 +6779,8 @@ impl Walk<'_, '_>
             | Former::Codata { .. }
             | Former::Constructor { .. }
             | Former::Recorded { .. }
+            | Former::Dialogue { .. }
+            | Former::Web(_)
             | Former::Primitive { .. }
             | Former::Transport(..)
             | Former::PathTransport { .. }
@@ -6868,6 +7023,14 @@ impl Walk<'_, '_>
             Former::RunType(_) => Some(writes(
                 Production("type_application"),
                 Join::Bracket(Bracket::Run),
+            )),
+            Former::DialogueType(_) => Some(writes(
+                Production("type_application"),
+                Join::Bracket(Bracket::Dialogue),
+            )),
+            Former::Decompose(_) => Some(writes(
+                Production("call_expression"),
+                Join::Bracket(Bracket::Decompose),
             )),
             Former::PrefixType(_) => Some(writes(
                 Production("type_application"),
@@ -8455,12 +8618,23 @@ impl Walk<'_, '_>
                     },
                 }
             },
-            Former::Recorded { moves, .. } => {
-                let _ = parts.text("recorded(");
+            Former::Recorded { moves, .. } | Former::Dialogue { moves, .. } => {
+                let head = if matches!(*former, Former::Dialogue { .. }) {
+                    "dialogue("
+                }
+                else {
+                    "recorded("
+                };
+                let _ = parts.text(head);
                 for (index, step) in moves.moves().into_iter().enumerate() {
                     if index > 0_usize {
                         let _ = parts.text(",").part(Part::Space);
                     }
+                    let _ = match step.endpoint {
+                        Some(Endpoint::Left) => parts.text("left("),
+                        Some(Endpoint::Right) => parts.text("right("),
+                        None => &mut parts,
+                    };
                     let _ = match step.action {
                         ActionKind::Send => parts.text("sent(").piece(Binding::Sequence).text(")"),
                         ActionKind::Receive => {
@@ -8476,8 +8650,15 @@ impl Walk<'_, '_>
                         },
                         ActionKind::Close => parts.text("closed"),
                     };
+                    if step.endpoint.is_some() {
+                        let _ = parts.text(")");
+                    }
                 }
                 let _ = parts.part(Part::Tight).text(")");
+                writes(Production("call_expression"), Binding::Atom)
+            },
+            Former::Web(pieces) => {
+                let _ = parts.text(web_spelled(pieces));
                 writes(Production("call_expression"), Binding::Atom)
             },
             Former::Constructor {
@@ -9227,6 +9408,9 @@ impl Walk<'_, '_>
             | Former::FunctionFlow(..)
             | Former::RunType(_)
             | Former::PrefixType(_)
+            | Former::DialogueType(_)
+            | Former::WebType
+            | Former::Decompose(_)
             | Former::Return(_)
             | Former::Bind(..)
             | Former::Force(_)
@@ -9296,7 +9480,7 @@ impl Walk<'_, '_>
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
             Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
-                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
+                | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
             Join::ValueFunction(Arity(domains), _) => domains.checked_add(1_usize),
@@ -9666,6 +9850,8 @@ impl Walk<'_, '_>
                     | Bracket::Forward
                     | Bracket::Run
                     | Bracket::Prefix
+                    | Bracket::Dialogue
+                    | Bracket::Decompose
                     | Bracket::TypeQuote
                     | Bracket::Break => {
                         let body = self.pop()?;

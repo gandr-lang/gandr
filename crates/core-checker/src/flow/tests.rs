@@ -10,6 +10,8 @@ use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::PayloadCount;
 use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
@@ -233,6 +235,24 @@ fn seat(
     arena.value_quote(ty)
 }
 
+/// `movement` with its payload, if any, the word's string literal.
+///
+/// # Specification
+/// trivial.
+fn texted(
+    arena: &mut CoreArena,
+    movement: &RecordedMove<Word>,
+) -> RecordedMove
+{
+    match *movement {
+        RecordedMove::Sent(word) => RecordedMove::Sent(word.text(arena)),
+        RecordedMove::Received(word) => RecordedMove::Received(word.text(arena)),
+        RecordedMove::Selected(ref label) => RecordedMove::Selected(label.clone()),
+        RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
+        RecordedMove::Closed => RecordedMove::Closed,
+    }
+}
+
 /// A recorded run of `moves`, each payload a string.
 ///
 /// # Specification
@@ -244,15 +264,28 @@ fn run(
 {
     let moves: Vec<RecordedMove> = moves
         .iter()
-        .map(|movement| match *movement {
-            RecordedMove::Sent(word) => RecordedMove::Sent(word.text(arena)),
-            RecordedMove::Received(word) => RecordedMove::Received(word.text(arena)),
-            RecordedMove::Selected(ref label) => RecordedMove::Selected(label.clone()),
-            RecordedMove::Offered(ref label) => RecordedMove::Offered(label.clone()),
-            RecordedMove::Closed => RecordedMove::Closed,
-        })
+        .map(|movement| texted(arena, movement))
         .collect();
     arena.value_recorded(Arc::from(moves))
+}
+
+/// A dialogue of `turns`, in log order, each payload a string.
+///
+/// # Specification
+/// trivial.
+fn dialogue(
+    arena: &mut CoreArena,
+    turns: &[(Endpoint, RecordedMove<Word>)],
+) -> ValueId
+{
+    let moves: Vec<DialogueMove> = turns
+        .iter()
+        .map(|&(endpoint, ref movement)| DialogueMove {
+            endpoint,
+            movement: texted(arena, movement),
+        })
+        .collect();
+    arena.value_dialogue(Arc::from(moves))
 }
 
 /// The seat run that reports once and retires.
@@ -640,6 +673,170 @@ fn a_run_rides_forward_and_refuses_by_move()
             }))
         )),
         "runs and rides stay on the checker's side, moved by the recorded-run consumer: {outcomes:?}"
+    );
+}
+
+#[test]
+fn a_dialogue_checks_by_its_web_and_refuses_by_move()
+{
+    use Endpoint::Left;
+    use Endpoint::Right;
+    let mut arena = CoreArena::new();
+    let end = seat(&mut arena, Seat::End);
+    let played = arena.value_type_dialogue(end);
+    let report = || RecordedMove::Selected(Branch::Report.label());
+    let offered = |branch: Branch| RecordedMove::Offered(branch.label());
+    let retire = || RecordedMove::Selected(Branch::Retire.label());
+    // The seat reports once and retires, its report logged before the
+    // operator takes the choice, then after it: one dialogue.
+    let first = dialogue(&mut arena, &[
+        (Right, RecordedMove::Sent(Word::Task)),
+        (Left, RecordedMove::Received(Word::Task)),
+        (Left, report()),
+        (Left, RecordedMove::Sent(Word::Progress)),
+        (Right, offered(Branch::Report)),
+        (Right, RecordedMove::Received(Word::Progress)),
+        (Right, retire()),
+        (Left, offered(Branch::Retire)),
+        (Left, RecordedMove::Closed),
+        (Right, RecordedMove::Closed),
+    ]);
+    let second = dialogue(&mut arena, &[
+        (Right, RecordedMove::Sent(Word::Task)),
+        (Left, RecordedMove::Received(Word::Task)),
+        (Left, report()),
+        (Right, offered(Branch::Report)),
+        (Left, RecordedMove::Sent(Word::Progress)),
+        (Right, RecordedMove::Received(Word::Progress)),
+        (Right, retire()),
+        (Left, offered(Branch::Retire)),
+        (Right, RecordedMove::Closed),
+        (Left, RecordedMove::Closed),
+    ]);
+    let (first_constant, second_constant) = (
+        arena.value_constant(ConstantIndex::from(0_usize)),
+        arena.value_constant(ConstantIndex::from(1_usize)),
+    );
+    let commuted = arena.value_type_path(played, first_constant, second_constant);
+    let reflexivity = arena.value_here(first_constant);
+    // The seat's receipt logged before the operator's send.
+    let inverted = dialogue(&mut arena, &[
+        (Left, RecordedMove::Received(Word::Task)),
+        (Right, RecordedMove::Sent(Word::Task)),
+        (Left, report()),
+        (Left, RecordedMove::Sent(Word::Progress)),
+        (Right, offered(Branch::Report)),
+        (Right, RecordedMove::Received(Word::Progress)),
+        (Right, retire()),
+        (Left, offered(Branch::Retire)),
+        (Left, RecordedMove::Closed),
+        (Right, RecordedMove::Closed),
+    ]);
+    // The seat hears other than the task sent.
+    let misheard = dialogue(&mut arena, &[
+        (Right, RecordedMove::Sent(Word::Task)),
+        (Left, RecordedMove::Received(Word::Progress)),
+        (Left, report()),
+        (Left, RecordedMove::Sent(Word::Progress)),
+        (Right, offered(Branch::Report)),
+        (Right, RecordedMove::Received(Word::Progress)),
+        (Right, retire()),
+        (Left, offered(Branch::Retire)),
+        (Left, RecordedMove::Closed),
+        (Right, RecordedMove::Closed),
+    ]);
+    // The seat selects the report, the operator offers the hand-off: each
+    // endpoint follows its protocol, and the two do not agree.
+    let misoffered = dialogue(&mut arena, &[
+        (Right, RecordedMove::Sent(Word::Task)),
+        (Left, RecordedMove::Received(Word::Task)),
+        (Left, report()),
+        (Left, RecordedMove::Sent(Word::Progress)),
+        (Right, offered(Branch::Handoff)),
+        (Right, RecordedMove::Received(Word::Notes)),
+        (Left, offered(Branch::Retire)),
+        (Left, RecordedMove::Closed),
+        (Right, RecordedMove::Closed),
+    ]);
+    // The seat sends where its protocol receives.
+    let crossed = dialogue(&mut arena, &[
+        (Left, RecordedMove::Sent(Word::Task)),
+        (Right, RecordedMove::Received(Word::Task)),
+        (Left, RecordedMove::Closed),
+        (Right, RecordedMove::Closed),
+    ]);
+    // The dialogue logged up to the retirement, neither endpoint closed.
+    let short = dialogue(&mut arena, &[
+        (Right, RecordedMove::Sent(Word::Task)),
+        (Left, RecordedMove::Received(Word::Task)),
+        (Left, report()),
+        (Left, RecordedMove::Sent(Word::Progress)),
+        (Right, offered(Branch::Report)),
+        (Right, RecordedMove::Received(Word::Progress)),
+        (Right, retire()),
+        (Left, offered(Branch::Retire)),
+    ]);
+    let report = judged(&mut arena, &[
+        declaration(At(0), played, first),
+        declaration(At(1), played, second),
+        declaration(At(2), commuted, reflexivity),
+        declaration(At(3), played, inverted),
+        declaration(At(4), played, misheard),
+        declaration(At(5), played, misoffered),
+        declaration(At(6), played, crossed),
+        declaration(At(7), played, short),
+    ]);
+    for position in [0, 1, 2] {
+        assert!(
+            matches!(
+                verdict(&report, At(position)),
+                Some(Verdict::Checked { .. })
+            ),
+            "declaration {position} checks: {report:?}"
+        );
+    }
+    assert_eq!(
+        [3, 4, 5, 6, 7].map(|position| verdict(&report, At(position))),
+        [
+            Some(Verdict::Refused(CheckRefusal::DialogueInverted {
+                at: inverted,
+                earlier: RunStep::from(1_u32),
+                later: RunStep::from(0_u32),
+            })),
+            Some(Verdict::Refused(CheckRefusal::DialogueUnmatched {
+                at: misheard,
+                step: RunStep::from(1_u32),
+            })),
+            Some(Verdict::Refused(CheckRefusal::DialogueUnmatched {
+                at: misoffered,
+                step: RunStep::from(2_u32),
+            })),
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: crossed,
+                fault: RunFault::WrongDirection(RunStep::from(0_u32)),
+            })),
+            Some(Verdict::Refused(CheckRefusal::RunNotAdmitted {
+                at: short,
+                fault: RunFault::Incomplete(RunStep::from(8_u32)),
+            })),
+        ],
+        "each refusal names its move by its position in the log"
+    );
+    let readmission = bridge::readmit(&mut arena, &report);
+    let outcomes: Vec<_> = readmission
+        .readmitted()
+        .iter()
+        .map(|entry| entry.outcome().clone())
+        .collect();
+    assert!(
+        [0, 1].iter().all(|&position| matches!(
+            outcomes.get(position),
+            Some(Outcome::Refused(bridge::Refusal::OutOfFragment {
+                former: UnadmittedFormer::Run,
+                ..
+            }))
+        )),
+        "dialogues stay on the checker's side, as runs do: {outcomes:?}"
     );
 }
 

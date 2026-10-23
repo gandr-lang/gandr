@@ -430,6 +430,8 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::NonCovariantMotive(_)) => "non-covariant-motive",
         Typing::Refused(Refusal::RideUnsupported(_)) => "ride-unsupported",
         Typing::Refused(Refusal::RunNotAdmitted { .. }) => "run-not-admitted",
+        Typing::Refused(Refusal::DialogueUnmatched { .. }) => "dialogue-unmatched",
+        Typing::Refused(Refusal::DialogueInverted { .. }) => "dialogue-inverted",
         Typing::Refused(Refusal::ForwardUnsupported(_)) => "forward-unsupported",
         Typing::Refused(Refusal::Boundary(_)) => "boundary",
         Typing::Refused(Refusal::Access { .. }) => "access",

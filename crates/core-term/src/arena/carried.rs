@@ -171,7 +171,8 @@ impl CoreArena
             | Value::Constant(_)
             | Value::Literal(_)
             | Value::ListNil
-            | Value::Hole(_) => {},
+            | Value::Hole(_)
+            | Value::Web(_) => {},
             Value::PathRefl(body)
             | Value::Here(body)
             | Value::Injection(_, body)
@@ -223,6 +224,14 @@ impl CoreArena
             Value::Recorded(ref moves) => {
                 for movement in moves.iter() {
                     if let quenchant_shape::shape::Maybe::Present(payload) = movement.payload() {
+                        self.value_into(&mut union, payload, at);
+                    }
+                }
+            },
+            Value::Dialogue(ref moves) => {
+                for turn in moves.iter() {
+                    if let quenchant_shape::shape::Maybe::Present(payload) = turn.movement.payload()
+                    {
                         self.value_into(&mut union, payload, at);
                     }
                 }
@@ -472,7 +481,9 @@ impl CoreArena
                 self.value_into(&mut union, stack, at);
                 self.computation_into(&mut union, body, at);
             },
-            Computation::Abandon(stack) => self.value_into(&mut union, stack, at),
+            Computation::Abandon(stack) | Computation::Decompose(stack) => {
+                self.value_into(&mut union, stack, at);
+            },
             Computation::With(ref components) => {
                 for &component in components {
                     self.computation_into(&mut union, component, at);
@@ -571,14 +582,15 @@ impl CoreArena
                 self.value_into(&mut union, left, at);
                 self.value_into(&mut union, right, at);
             },
-            ValueType::Run(session) | ValueType::Prefix(session) => {
+            ValueType::Run(session) | ValueType::Prefix(session) | ValueType::Dialogue(session) => {
                 self.value_into(&mut union, session, at);
             },
             ValueType::Base(_)
             | ValueType::Universe { .. }
             | ValueType::Abstract(_)
             | ValueType::Unknown
-            | ValueType::Buffer => {},
+            | ValueType::Buffer
+            | ValueType::Web => {},
             ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                 for &component in components {
                     self.value_type_into(&mut union, component, at);

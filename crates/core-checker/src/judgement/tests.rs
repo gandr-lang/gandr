@@ -3840,7 +3840,7 @@ proptest! {
                 | Value::Hole(_)
                 | Value::Mark { .. }
                 | Value::Ascribe { .. }
-                | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => {
+                | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) => {
                     prop_assert!(false, "the recipe mints no pair, injection, lift, quote, static operator, hole, mark or ascription");
                 },
             }
@@ -3900,7 +3900,7 @@ proptest! {
                 | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Resume(..) | Computation::Abandon(_)
                 | Computation::Exercise { .. } | Computation::Scope { .. }
                 | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..)
-                | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) => {
+                | Computation::Hole(_) | Computation::Mark { .. } | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => {
                     prop_assert!(false, "the recipe mints no former outside the fragment, no hole and no mark");
                 },
             }

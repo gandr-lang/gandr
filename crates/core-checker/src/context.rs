@@ -3481,6 +3481,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Flow { .. }
                 | ValueTypeView::Run(_)
                 | ValueTypeView::Prefix(_)
+                | ValueTypeView::Dialogue(_)
+                | ValueTypeView::Web
                 | ValueTypeView::Sum(_)
                 | ValueTypeView::List(_)
                 | ValueTypeView::Integer
@@ -3789,6 +3791,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Flow { .. }
                     | ValueTypeView::Run(_)
                     | ValueTypeView::Prefix(_)
+                    | ValueTypeView::Dialogue(_)
+                    | ValueTypeView::Web
                     | ValueTypeView::Data { .. }
                     | ValueTypeView::Record(_)
                     | ValueTypeView::Sum(..)
@@ -3823,6 +3827,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::FunctionFlow(..)
             | Value::SessionRelated { .. }
             | Value::Recorded(_)
+            | Value::Dialogue(_)
+            | Value::Web(_)
             | Value::Funext(..)
             | Value::Equiv(..)
             | Value::Univalence(..)

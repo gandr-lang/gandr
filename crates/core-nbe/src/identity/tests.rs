@@ -16,6 +16,8 @@ use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::identity::back;
 use gandr_core_term::identity::cong;
 use gandr_core_term::identity::then;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::PayloadCount;
 use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
@@ -23,6 +25,7 @@ use gandr_core_term::session::ProtocolState;
 use gandr_core_term::session::ProtocolSyntax;
 use gandr_core_term::session::RecordedMove;
 use gandr_core_term::session::SessionType;
+use gandr_core_term::session::WebPiece;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::NullSink;
 use gandr_kernel_strata::Level;
@@ -1205,6 +1208,103 @@ fn a_recorded_run_keeps_its_choices_and_moves_its_payloads()
     assert_eq!(decided(one, other), MachineVerdict::Convertible);
     assert_eq!(decided(one, negated), MachineVerdict::NotConvertible);
     assert_eq!(decided(one, elsewhere), MachineVerdict::NotConvertible);
+}
+
+#[test]
+fn a_dialogue_and_its_web_read_back_as_written()
+{
+    // `!Bool. end` against its dual: the send, the receipt and both closes.
+    // A dialogue compares endpoint by endpoint, so the logs that close in
+    // either order are one dialogue; a payload or an endpoint that differs is
+    // another. A web is data and compares as the decomposition it is.
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let [truth, falsity] =
+        [Side::Left, Side::Right].map(|side| core.value_injection(side.into(), unit));
+    let turn = |endpoint, movement| DialogueMove { endpoint, movement };
+    let dialogue = |core: &mut CoreArena, sent: ValueId, heard: ValueId, closes: [Endpoint; 2]| {
+        core.value_dialogue(Arc::from([
+            turn(Endpoint::Left, RecordedMove::Sent(sent)),
+            turn(Endpoint::Right, RecordedMove::Received(heard)),
+            turn(closes[0], RecordedMove::Closed),
+            turn(closes[1], RecordedMove::Closed),
+        ]))
+    };
+    let in_order = [Endpoint::Left, Endpoint::Right];
+    let one = dialogue(&mut core, truth, truth, in_order);
+    let returned = core.computation_return(one);
+    assert_eq!(
+        normalises_to(&mut core, returned, returned),
+        CertificateEquality::Equal,
+        "a dialogue reads back as written"
+    );
+    let event = |endpoint, index| WebPiece::Event { endpoint, index };
+    let pieces = |tail: WebPiece| {
+        Arc::from([
+            WebPiece::Series(2),
+            event(Endpoint::Left, 0),
+            WebPiece::Parallel(2),
+            event(Endpoint::Left, 1),
+            WebPiece::Series(2),
+            event(Endpoint::Right, 0),
+            tail,
+        ])
+    };
+    let web = core.value_web(pieces(event(Endpoint::Right, 1)));
+    let returned = core.computation_return(web);
+    assert_eq!(
+        normalises_to(&mut core, returned, returned),
+        CertificateEquality::Equal,
+        "a web reads back as written"
+    );
+
+    let [commuted, misheard, crossed] = [
+        dialogue(&mut core, truth, truth, [Endpoint::Right, Endpoint::Left]),
+        dialogue(&mut core, truth, falsity, in_order),
+        core.value_dialogue(Arc::from([
+            turn(Endpoint::Left, RecordedMove::Sent(truth)),
+            turn(Endpoint::Left, RecordedMove::Received(truth)),
+            turn(Endpoint::Left, RecordedMove::Closed),
+            turn(Endpoint::Right, RecordedMove::Closed),
+        ])),
+    ];
+    let other_web = core.value_web(pieces(event(Endpoint::Left, 2)));
+    let mut domain = DomainArena::new();
+    let [one, commuted, misheard, crossed, web, other_web] = evaluated(&core, &mut domain, [
+        one, commuted, misheard, crossed, web, other_web,
+    ]);
+    let chain = LoweredChain::new();
+    let environment = DefinitionalEnvironment::new();
+    let definitions = Definitions::new(&chain, &environment, environment.root());
+    let mut decided = |one, other| {
+        decide::<NullSink, NullMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            Problem::values(one, other),
+            &mut NullSink,
+        )
+        .expect("the machine answers")
+        .verdict()
+    };
+    assert_eq!(
+        [
+            decided(one, commuted),
+            decided(one, misheard),
+            decided(one, crossed),
+            decided(web, web),
+            decided(web, other_web),
+        ],
+        [
+            MachineVerdict::Convertible,
+            MachineVerdict::NotConvertible,
+            MachineVerdict::NotConvertible,
+            MachineVerdict::Convertible,
+            MachineVerdict::NotConvertible,
+        ],
+        "the closes commute; a payload, an endpoint or a web's event that differs does not"
+    );
 }
 
 #[test]

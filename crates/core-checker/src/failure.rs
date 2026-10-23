@@ -226,6 +226,8 @@ pub enum FrameRole
     FixpointArgument,
     /// A force waits on its value's type.
     Force,
+    /// A decomposition waits on its dialogue's type.
+    Decompose,
     /// An application waits on its head's type.
     ApplicationHead,
     /// An application's argument is being checked.
@@ -429,6 +431,7 @@ impl fmt::Display for FrameRole
             Self::ListCaseCons => "ListCaseCons",
             Self::FixpointArgument => "FixpointArgument",
             Self::Force => "Force",
+            Self::Decompose => "Decompose",
             Self::ApplicationHead => "ApplicationHead",
             Self::ApplicationArgument => "ApplicationArgument",
             Self::LambdaBody => "LambdaBody",

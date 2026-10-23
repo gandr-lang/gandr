@@ -71,6 +71,8 @@ use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place as AccessPlace;
 use gandr_core_term::session::ActionKind;
+use gandr_core_term::session::DialogueMove;
+use gandr_core_term::session::Endpoint;
 use gandr_core_term::session::PayloadCount;
 use gandr_core_term::session::PayloadSlot;
 use gandr_core_term::session::Protocol;
@@ -81,6 +83,7 @@ use gandr_core_term::session::RecursionIndex;
 use gandr_core_term::session::SessionAction;
 use gandr_core_term::session::SessionRelation;
 use gandr_core_term::session::SessionType;
+use gandr_core_term::session::WebPiece;
 use gandr_core_term::support::Scope;
 use gandr_core_term::support::Thinning;
 use gandr_kernel_strata::Level;
@@ -1261,6 +1264,156 @@ fn read_index(reader: &mut Reader<'_>) -> Result<NodeIndex, CodecError>
     Ok(NodeIndex::from(count.0))
 }
 
+/// Write one recorded move: its action's tag, then its payload or label.
+///
+/// # Specification
+/// trivial.
+fn write_move<Out>(
+    writer: &mut Writer<'_, Out>,
+    step: &RecordedMove<NodeIndex>,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match *step {
+        RecordedMove::Sent(payload) => {
+            writer.tag(Tag(0));
+            write_index(writer, payload)?;
+        },
+        RecordedMove::Received(payload) => {
+            writer.tag(Tag(1));
+            write_index(writer, payload)?;
+        },
+        RecordedMove::Selected(ref label) => {
+            writer.tag(Tag(2));
+            writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+        },
+        RecordedMove::Offered(ref label) => {
+            writer.tag(Tag(3));
+            writer.bytes(Bytes(label.as_ref().as_bytes()))?;
+        },
+        RecordedMove::Closed => writer.tag(Tag(4)),
+    }
+    Ok(())
+}
+
+/// Read one recorded move [`write_move`] wrote.
+///
+/// # Specification
+/// trivial.
+fn read_move(reader: &mut Reader<'_>) -> Result<RecordedMove<NodeIndex>, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        0 => RecordedMove::Sent(read_index(reader)?),
+        1 => RecordedMove::Received(read_index(reader)?),
+        2 => RecordedMove::Selected(read_field_label(reader)?),
+        3 => RecordedMove::Offered(read_field_label(reader)?),
+        4 => RecordedMove::Closed,
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
+/// Write a dialogue move's endpoint: `0` for the left, `1` for the right.
+///
+/// # Specification
+/// trivial.
+fn write_side<Out>(
+    writer: &mut Writer<'_, Out>,
+    endpoint: Endpoint,
+) where
+    Out: Sink,
+{
+    writer.tag(Tag(match endpoint {
+        Endpoint::Left => 0,
+        Endpoint::Right => 1,
+    }));
+}
+
+/// Read an endpoint [`write_side`] wrote.
+///
+/// # Specification
+/// trivial.
+fn read_side(reader: &mut Reader<'_>) -> Result<Endpoint, CodecError>
+{
+    match reader.tag()?.0 {
+        0 => Ok(Endpoint::Left),
+        1 => Ok(Endpoint::Right),
+        _ => Err(CodecError::Corrupt),
+    }
+}
+
+/// Read a log position written as one word.
+///
+/// # Specification
+/// - fails: [`CodecError::Corrupt`] for a word past `u32`.
+/// - panics: none.
+/// - executable: none — a parse whose failure is the word's width.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a dialogue's refusals round-trip with the log positions
+///   they name.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+fn read_step(reader: &mut Reader<'_>) -> Result<RunStep, CodecError>
+{
+    Ok(RunStep::from(
+        u32::try_from(reader.word()?.0).map_err(|_cause| CodecError::Corrupt)?,
+    ))
+}
+
+/// Write one piece of a web: its kind's tag, then an event's endpoint and
+/// position or a node's factor count.
+///
+/// # Specification
+/// trivial.
+fn write_piece<Out>(
+    writer: &mut Writer<'_, Out>,
+    piece: WebPiece,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    match piece {
+        WebPiece::Event { endpoint, index } => {
+            writer.tag(Tag(0));
+            write_side(writer, endpoint);
+            writer.count(Count(index))
+        },
+        WebPiece::Series(factors) => {
+            writer.tag(Tag(1));
+            writer.count(Count(factors))
+        },
+        WebPiece::Parallel(factors) => {
+            writer.tag(Tag(2));
+            writer.count(Count(factors))
+        },
+        WebPiece::Prime(factors) => {
+            writer.tag(Tag(3));
+            writer.count(Count(factors))
+        },
+    }
+}
+
+/// Read one web piece [`write_piece`] wrote.
+///
+/// # Specification
+/// trivial.
+fn read_piece(reader: &mut Reader<'_>) -> Result<WebPiece, CodecError>
+{
+    Ok(match reader.tag()?.0 {
+        0 => {
+            let endpoint = read_side(reader)?;
+            WebPiece::Event {
+                endpoint,
+                index: reader.count()?.0,
+            }
+        },
+        1 => WebPiece::Series(reader.count()?.0),
+        2 => WebPiece::Parallel(reader.count()?.0),
+        3 => WebPiece::Prime(reader.count()?.0),
+        _ => return Err(CodecError::Corrupt),
+    })
+}
+
 /// Write the region a capability or a kept type lives in: the held region, a
 /// scope's at its depth, or a definition's region binder at its ordinal.
 ///
@@ -1549,26 +1702,27 @@ where
             writer.tag(Tag(0x65));
             writer.count(Count(moves.len()))?;
             for step in moves.iter() {
-                match *step {
-                    RecordedMove::Sent(payload) => {
-                        writer.tag(Tag(0));
-                        write_index(writer, payload)?;
-                    },
-                    RecordedMove::Received(payload) => {
-                        writer.tag(Tag(1));
-                        write_index(writer, payload)?;
-                    },
-                    RecordedMove::Selected(ref label) => {
-                        writer.tag(Tag(2));
-                        writer.bytes(Bytes(label.as_ref().as_bytes()))?;
-                    },
-                    RecordedMove::Offered(ref label) => {
-                        writer.tag(Tag(3));
-                        writer.bytes(Bytes(label.as_ref().as_bytes()))?;
-                    },
-                    RecordedMove::Closed => writer.tag(Tag(4)),
-                }
+                write_move(writer, step)?;
             }
+        },
+        ContentNode::Dialogue(ref turns) => {
+            writer.tag(Tag(0x6D));
+            writer.count(Count(turns.len()))?;
+            for turn in turns.iter() {
+                write_side(writer, turn.endpoint);
+                write_move(writer, &turn.movement)?;
+            }
+        },
+        ContentNode::Web(ref pieces) => {
+            writer.tag(Tag(0x6E));
+            writer.count(Count(pieces.len()))?;
+            for &piece in pieces.iter() {
+                write_piece(writer, piece)?;
+            }
+        },
+        ContentNode::Decompose(dialogue) => {
+            writer.tag(Tag(0x83));
+            write_index(writer, dialogue)?;
         },
         ContentNode::Ride {
             motive,
@@ -1598,6 +1752,11 @@ where
             writer.tag(Tag(0x6C));
             write_index(writer, code)?;
         },
+        ContentNode::DialogueType(code) => {
+            writer.tag(Tag(0x6F));
+            write_index(writer, code)?;
+        },
+        ContentNode::WebType => writer.tag(Tag(0x82)),
         ContentNode::Perform {
             ref signature,
             ref operation,
@@ -3565,6 +3724,11 @@ fn read_effect_row(
                     | ContentNode::FlowType { .. } => tag == 0x67,
                     | ContentNode::RunType(_) => tag == 0x68,
                     | ContentNode::PrefixType(_) => tag == 0x6C,
+                    | ContentNode::Dialogue(_) => tag == 0x6D,
+                    | ContentNode::Web(_) => tag == 0x6E,
+                    | ContentNode::DialogueType(_) => tag == 0x6F,
+                    | ContentNode::WebType => tag == 0x82,
+                    | ContentNode::Decompose(_) => tag == 0x83,
                     | ContentNode::Perform { .. } => tag == 0x74,
                     | ContentNode::Handle { .. } => tag == 0x75,
                     | ContentNode::Exercise { .. } => tag == 0x7B,
@@ -3822,17 +3986,31 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let count = reader.count()?;
             let mut moves = Vec::new();
             for _ in 0 .. count.0 {
-                moves.push(match reader.tag()?.0 {
-                    0 => RecordedMove::Sent(read_index(reader)?),
-                    1 => RecordedMove::Received(read_index(reader)?),
-                    2 => RecordedMove::Selected(read_field_label(reader)?),
-                    3 => RecordedMove::Offered(read_field_label(reader)?),
-                    4 => RecordedMove::Closed,
-                    _ => return Err(CodecError::Corrupt),
-                });
+                moves.push(read_move(reader)?);
             }
             ContentNode::Recorded(moves.into())
         },
+        0x6D => {
+            let count = reader.count()?;
+            let mut turns = Vec::new();
+            for _ in 0 .. count.0 {
+                let endpoint = read_side(reader)?;
+                turns.push(DialogueMove {
+                    endpoint,
+                    movement: read_move(reader)?,
+                });
+            }
+            ContentNode::Dialogue(turns.into())
+        },
+        0x6E => {
+            let count = reader.count()?;
+            let mut pieces = Vec::new();
+            for _ in 0 .. count.0 {
+                pieces.push(read_piece(reader)?);
+            }
+            ContentNode::Web(pieces.into())
+        },
+        0x83 => ContentNode::Decompose(read_index(reader)?),
         0x66 => ContentNode::Ride {
             motive: read_index(reader)?,
             flow: read_index(reader)?,
@@ -3845,6 +4023,8 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         0x68 => ContentNode::RunType(read_index(reader)?),
         0x6C => ContentNode::PrefixType(read_index(reader)?),
+        0x6F => ContentNode::DialogueType(read_index(reader)?),
+        0x82 => ContentNode::WebType,
         0x74 => {
             let payload = read_index(reader)?;
             let signature = read_effect_signature(reader)?;
@@ -6730,6 +6910,17 @@ where
             writer.tag(Tag(kind));
             writer.word(Word(u64::from(u32::from(step))));
         },
+        Refusal::DialogueUnmatched { at, step } => {
+            writer.tag(Tag(87));
+            write_site(writer, at)?;
+            writer.word(Word(u64::from(u32::from(step))));
+        },
+        Refusal::DialogueInverted { at, earlier, later } => {
+            writer.tag(Tag(88));
+            write_site(writer, at)?;
+            writer.word(Word(u64::from(u32::from(earlier))));
+            writer.word(Word(u64::from(u32::from(later))));
+        },
         Refusal::ForwardUnsupported(at) => {
             writer.tag(Tag(70));
             write_site(writer, at)?;
@@ -6934,6 +7125,8 @@ where
                     | Refusal::NonCovariantMotive(_) => 67,
                     | Refusal::RideUnsupported(_) => 68,
                     | Refusal::RunNotAdmitted { .. } => 69,
+                    | Refusal::DialogueUnmatched { .. } => 87,
+                    | Refusal::DialogueInverted { .. } => 88,
                     | Refusal::ForwardUnsupported(_) => 70,
                     | Refusal::Boundary(_) => 71,
                     | Refusal::Access { .. } => 76,
@@ -7321,6 +7514,22 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             };
             Refusal::RunNotAdmitted { at, fault }
         },
+        87 => {
+            let at = read_site(reader)?;
+            Refusal::DialogueUnmatched {
+                at,
+                step: read_step(reader)?,
+            }
+        },
+        88 => {
+            let at = read_site(reader)?;
+            let earlier = read_step(reader)?;
+            Refusal::DialogueInverted {
+                at,
+                earlier,
+                later: read_step(reader)?,
+            }
+        },
         28 => Refusal::NegativeOccurrence(read_occurrence_site(reader)?),
         29 => Refusal::NestedOccurrence(read_occurrence_site(reader)?),
         30 => Refusal::IndexOccurrence(read_occurrence_site(reader)?),
@@ -7562,7 +7771,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
 ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
-ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
+ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,
         _ => false,
@@ -7981,6 +8190,8 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::NonCovariantMotive(_)
             | Refusal::RideUnsupported(_)
             | Refusal::RunNotAdmitted { .. }
+            | Refusal::DialogueUnmatched { .. }
+            | Refusal::DialogueInverted { .. }
             | Refusal::ForwardUnsupported(_)
             | Refusal::Boundary(_)
             | Refusal::Access { .. }
