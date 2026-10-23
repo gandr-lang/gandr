@@ -448,6 +448,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "derive_declaration",
     "equivalence_type",
     "for_expression",
+    "forget_model_expression",
     "glob_expression",
     "handle_expression",
     "hold_statement",
@@ -558,7 +559,8 @@ pub fn built_in() -> Result<Pbg, PbgError>
 /// # Specification
 /// - requires: `precs` is [`built_in_prec_table`]'s table.
 /// - ensures: the term rules, then the type-and-shell rules, then the circuit
-///   rules.
+///   rules, then the forgetting map's form, last so that it renumbers no mold
+///   before it and loses every tie to them.
 /// - fails: a group a rule list names is missing from `precs`.
 /// - panics: none.
 ///
@@ -576,6 +578,7 @@ fn built_in_rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
     let mut rules = term::rules(precs)?;
     rules.extend(type_shell::rules(precs)?);
     rules.extend(circuit::rules(precs)?);
+    rules.extend(term::forgetting(precs)?);
     Ok(rules)
 }
 

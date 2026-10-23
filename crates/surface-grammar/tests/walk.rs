@@ -47,15 +47,14 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// the named attribute payload: `decomposes(primes = 2)`, an `=` after the
-/// payload's expression.
-const BUILT_IN_FINGERPRINT: u64 = 0xab78_e2c2_4d96_8f98;
+/// the forgetting map written out, `forget[sort C = A, …](m) at Model(T)`.
+const BUILT_IN_FINGERPRINT: u64 = 0x0608_7f8d_61b5_b345;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3128);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3136);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 89;
@@ -73,13 +72,13 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("&", 4),
     ("&&", 1),
     ("'", 2),
-    ("(", 216),
-    (")", 220),
+    ("(", 217),
+    (")", 221),
     ("*", 2),
     ("+", 7),
     ("++", 1),
     ("+U", 1),
-    (",", 229),
+    (",", 231),
     ("-", 4),
     ("-->", 27),
     ("->", 14),
@@ -122,15 +121,15 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 41),
+    ("[", 42),
     ("\\", 1),
-    ("]", 47),
+    ("]", 48),
     ("_", 44),
     ("abort", 1),
     ("access", 1),
     ("acquire", 20),
     ("as", 85),
-    ("at", 2),
+    ("at", 3),
     ("become", 1),
     ("bind", 9),
     ("break", 2),
@@ -165,6 +164,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("for", 1),
     ("forall", 1),
     ("force", 1),
+    ("forget", 1),
     ("fork", 40),
     ("from", 1),
     ("glob", 1),

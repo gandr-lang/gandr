@@ -94,6 +94,9 @@ pub enum Unbuilt
     /// A module packed at its model type, `pack M at Model(T)`, of a shape the
     /// lowering does not read.
     PackModel,
+    /// A model's manifest sorts forgotten, `forget[sort C = A, …](m) at
+    /// Model(T)`, of a shape the lowering does not read.
+    ForgetModel,
     /// The type of a packed module, `package [T, …] P`.
     PackageType,
     /// The statement `unpack … = e ;`.
@@ -276,11 +279,12 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 85_usize] = [
+    pub const ALL: [Self; 86_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
         Self::PackModel,
+        Self::ForgetModel,
         Self::PackageType,
         Self::Unpack,
         Self::Annotation,
@@ -390,6 +394,7 @@ impl Unbuilt
             Self::Index => "index_expression",
             Self::Pack => "pack_expression",
             Self::PackModel => "pack_model_expression",
+            Self::ForgetModel => "forget_model_expression",
             Self::PackageType => "package_type",
             Self::Unpack => "unpack_statement",
             Self::Annotation => "annotation_expression",
@@ -577,7 +582,8 @@ impl Unbuilt
             | Self::CellMember
             | Self::ConstructorBlockMember
             | Self::GeneratorAttribute
-            | Self::ModelSignature => TrackingIssue::UNFILED,
+            | Self::ModelSignature
+            | Self::ForgetModel => TrackingIssue::UNFILED,
         }
     }
 }

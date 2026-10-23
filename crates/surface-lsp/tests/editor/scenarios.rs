@@ -99,6 +99,7 @@ const COUNTED: &[&str] = &[
     "expression for_expression",
     "expression for_expression name",
     "expression force_expression",
+    "expression forget_model_expression",
     "expression glob_expression",
     "expression glob_expression name",
     "expression handle_expression",
