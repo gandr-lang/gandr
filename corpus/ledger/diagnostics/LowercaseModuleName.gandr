@@ -1,0 +1,5 @@
+/// `LowercaseModuleName`: a top-level module named with a lowercase initial.
+@[ refuses("LowercaseModuleName") ]
+module lower {
+  def two = 2;
+}

@@ -51,7 +51,7 @@ use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::Stated;
-use gandr_surface_corpus::expected;
+use gandr_surface_corpus::refused_expected;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::FragmentBoundary;
@@ -75,16 +75,13 @@ pub(super) const DIAGNOSTICS: &str = "diagnostics";
 /// The issue writing the exemplars of the lowering's unshown names.
 const LOWERING: Issue = Issue(1788);
 
-/// The issue letting a fixture state a type member's own refusal.
-const TYPE_MEMBER: Issue = Issue(1087);
+/// The issue reading a type component that binds parameters under an opaque
+/// ascription: the form a type family member's telescope is checked against.
+const ASCRIPTION: Issue = Issue(1321);
 
-/// The issue letting a fixture state a refusal at a module's header or a
-/// functor application.
-const MODULE_HEADER: Issue = Issue(1274);
-
-/// The issue letting a fixture state the refusal of a data family's member held
-/// apart.
-const DATA_MEMBER: Issue = Issue(1462);
+/// The issue carrying a codata declaration's self reference at other
+/// arguments to the checker as it is written.
+const CODATA_SELF: Issue = Issue(2188);
 
 /// The issue writing the exemplars of the checker's unshown names.
 const CHECKER: Issue = Issue(1789);
@@ -125,7 +122,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 83_usize] = [
+const OWED: [(&str, Owed); 73_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -170,11 +167,8 @@ const OWED: [(&str, Owed); 83_usize] = [
             "the tokenizer forms only number and text lexemes the literal reader accepts",
         )),
     ),
-    ("PhaseDependence", Owed::Unwritten(TYPE_MEMBER)),
-    ("NotAFunctor", Owed::Unwritten(MODULE_HEADER)),
-    ("UnreadAscription", Owed::Unwritten(MODULE_HEADER)),
-    ("FamilyTelescope", Owed::Unwritten(TYPE_MEMBER)),
-    ("LowercaseModuleName", Owed::Unwritten(MODULE_HEADER)),
+    ("UnreadAscription", Owed::Unwritten(ASCRIPTION)),
+    ("FamilyTelescope", Owed::Unwritten(ASCRIPTION)),
     ("RulesUndecided", Owed::Unwritten(LOWERING)),
     (
         "Unminted",
@@ -189,17 +183,16 @@ const OWED: [(&str, Owed); 83_usize] = [
              refused as ill-formed first",
         )),
     ),
-    ("UnstatedComponent.Inherited", Owed::Unwritten(TYPE_MEMBER)),
+    ("UnstatedComponent.Inherited", Owed::Unwritten(LOWERING)),
     (
         "UndescribedMember.HigherOrderField",
-        Owed::Unwritten(DATA_MEMBER),
+        Owed::Unwritten(LOWERING),
     ),
     (
         "UndescribedMember.DependentField",
-        Owed::Unwritten(DATA_MEMBER),
+        Owed::Unwritten(LOWERING),
     ),
-    ("UndescribedMember.NativeDecode", Owed::Unwritten(LOWERING)),
-    ("UndescribedMember.NoOutput", Owed::Unwritten(DATA_MEMBER)),
+    ("UndescribedMember.NoOutput", Owed::Unwritten(LOWERING)),
     (
         "UndescribedMember.AggregatedOutput",
         Owed::Unreachable(Reason(
@@ -208,11 +201,11 @@ const OWED: [(&str, Owed); 83_usize] = [
     ),
     (
         "UndescribedMember.EmptyOperation",
-        Owed::Unwritten(DATA_MEMBER),
+        Owed::Unwritten(LOWERING),
     ),
     (
         "UndescribedMember.UnrepresentableOperation",
-        Owed::Unwritten(DATA_MEMBER),
+        Owed::Unwritten(LOWERING),
     ),
     ("UndescribedMember.MixedPolarity", Owed::Unwritten(LOWERING)),
     (
@@ -226,9 +219,6 @@ const OWED: [(&str, Owed); 83_usize] = [
         )),
     ),
     ("LoopUndecided", Owed::Unwritten(CHECKER)),
-    ("AbstractKindNotUniverse", Owed::Unwritten(TYPE_MEMBER)),
-    ("RepresentationAboveKind", Owed::Unwritten(TYPE_MEMBER)),
-    ("NotAnAbstractType", Owed::Unwritten(CHECKER)),
     ("SealSiteRepeated", Owed::Unwritten(CHECKER)),
     ("DataArgumentArity", Owed::Unwritten(CHECKER)),
     ("UnknownConstructor", Owed::Unwritten(CHECKER)),
@@ -251,12 +241,9 @@ const OWED: [(&str, Owed); 83_usize] = [
     ("ShiftWithoutReset", Owed::Unwritten(CHECKER)),
     ("DependentStack", Owed::Unwritten(CHECKER)),
     ("UnboundEndpoint", Owed::Unwritten(CHECKER)),
-    ("CodataUndeclared", Owed::Unwritten(CHECKER)),
-    ("CodataOccurrence", Owed::Unwritten(CHECKER)),
-    ("CodataObservationLevel", Owed::Unwritten(CHECKER)),
+    ("CodataOccurrence", Owed::Unwritten(CODATA_SELF)),
     ("CodataArity", Owed::Unwritten(CHECKER)),
     ("HostWorldUndeclared", Owed::Unwritten(CHECKER)),
-    ("MarkUnfounded", Owed::Unwritten(CHECKER)),
     ("EntryUngranted", Owed::Unwritten(CHECKER)),
     (
         "OutOfFragment.ValueLift",
@@ -535,9 +522,12 @@ fn refused(
         refusal: refusal.to_string(),
     })?;
     let shown =
-        module.declarations().iter().any(|declaration| {
-            match subject {
-        Subject::Named(name) => expected(CorpusRoot::Fixture, &arena, &module, declaration)
+        module
+            .declarations()
+            .iter()
+            .any(|declaration| {
+                match subject {
+        Subject::Named(name) => refused_expected(CorpusRoot::Fixture, &arena, &module, declaration)
             .is_ok_and(|expectations| {
                 matches!(
                     expectations.stated,
@@ -562,7 +552,7 @@ fn refused(
             )
         ),
     }
-        });
+            });
     if shown {
         Ok(())
     }

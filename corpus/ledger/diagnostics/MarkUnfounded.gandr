@@ -1,0 +1,5 @@
+/// `MarkUnfounded`: a type marked `mobile` whose representation cannot cross to another world.
+module Alone :> #{ mobile type Report } {
+  @[ refuses("MarkUnfounded") ]
+  type Report = +U (Integer -> -F Integer);
+}
