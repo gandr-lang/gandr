@@ -505,8 +505,8 @@ struct Engine<'arena>
     results: Vec<Node>,
     /// The nodes a wrap marks, each with its mark.
     sites: BTreeMap<Node, MarkIndex>,
-    /// The values a crossing applies a reduct to, each with the reduct.
-    crossings: BTreeMap<ValueId, ConstantIndex>,
+    /// The values a crossing applies a map to, each with the crossing.
+    crossings: BTreeMap<ValueId, Crossing>,
     /// Each run a crossing minted beside the value it applies the reduct to,
     /// in minting order.
     crossed: Vec<(ValueId, ValueId)>,
@@ -1144,11 +1144,14 @@ impl<'arena> Engine<'arena>
             return rewritten;
         }
         if let (Node::Value(held), Node::Value(id)) = (node, rewritten)
-            && let Some(&reduct) = self.crossings.get(&held)
+            && let Some(crossing) = self.crossings.get(&held)
         {
-            let constant = self.arena.value_constant(reduct);
-            let forced = self.arena.computation_force(constant);
-            let applied = self.arena.computation_application(forced, id);
+            let constant = self.arena.value_constant(crossing.by);
+            let mut applied = self.arena.computation_force(constant);
+            for &carrier in &crossing.carriers {
+                applied = self.arena.computation_application(applied, carrier);
+            }
+            let applied = self.arena.computation_application(applied, id);
             let run = self.arena.value_run(applied);
             self.crossed.push((id, run));
             return Node::Value(run);
@@ -5427,18 +5430,20 @@ pub fn wrap_marks(
     node_term(wrapped, subject)
 }
 
-/// Apply, within `subject`, the reduct `crossings` gives each value it names
-/// to that value, as a run, reporting every node it rewrote and every run it
+/// Apply, within `subject`, the map `crossings` gives each value it names to
+/// that value, as a run, reporting every node it rewrote and every run it
 /// minted.
 ///
 /// # Specification
-/// - requires: `subject` is live in `arena`.
+/// - requires: `subject` is live in `arena`; each crossing's carriers are read
+///   where the value it names stands.
 /// - ensures: `subject` rebuilt with every named value `v`, its own children
-///   rebuilt first, standing as the run `run(r(v))` of its reduct `r`;
-///   `subject` itself when `crossings` names nothing it reaches; `carried`
-///   gains one pair per node the rebuild carried over — a named value beside
-///   the value it stands as inside its run, when that is another — and `runs`
-///   each run minted, in minting order.
+///   rebuilt first, standing as the run `run(r(x₁, …, xₙ, v))` of its
+///   crossing's map `r` applied to the crossing's carriers `xᵢ`, outermost
+///   first, then to `v`; `subject` itself when `crossings` names nothing it
+///   reaches; `carried` gains one pair per node the rebuild carried over — a
+///   named value beside the value it stands as inside its run, when that is
+///   another — and `runs` each run minted, in minting order.
 /// - provides: the body whose runs the nested elaboration binds before their
 ///   regions, as a run the source wrote.
 /// - fails: never.
@@ -5446,8 +5451,10 @@ pub fn wrap_marks(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a crossed argument of a call and an uncrossed sibling
-///   separate the run minted at the one from the identity on the other.
+///   separate the run minted at the one from the identity on the other; a
+///   crossing with a carrier applies the map to the carrier before the value.
 /// - witness: `rewrite::tests::a_crossing_runs_its_reduct_at_exactly_the_named_values`
+/// - witness: `rewrite::tests::a_crossing_applies_its_carriers_before_the_value`
 #[spec(captures: [held = carried.len(), minted = runs.len()],
     ensures: |ret| carried.len() >= held && runs.len() >= minted
         && (runs.len() > minted || ret == subject))]
@@ -5455,7 +5462,7 @@ pub fn wrap_marks(
 pub fn cross_reducts(
     arena: &mut CoreArena,
     subject: ValueId,
-    crossings: &BTreeMap<ValueId, ConstantIndex>,
+    crossings: &BTreeMap<ValueId, Crossing>,
     carried: &mut Vec<Carried>,
     runs: &mut Vec<ValueId>,
 ) -> ValueId
@@ -5485,6 +5492,26 @@ pub fn cross_reducts(
         Node::Value(id) => id,
         Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => subject,
     }
+}
+
+/// A crossing the value bridge recorded at a value: the map and its carriers.
+///
+/// The map is a reduct or a forgetting map; its carriers are what it takes
+/// before the value, outermost first, read where the value stands. A reduct
+/// takes none; a forgetting map takes the type each manifest sort it forgets is
+/// fixed to.
+///
+/// # Specification
+/// - executable: none — a data declaration the checker records and
+///   [`cross_reducts`] reads.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Crossing
+{
+    /// The map's constant.
+    pub by: ConstantIndex,
+    /// The values the map is applied to before the crossed value, outermost
+    /// first.
+    pub carriers: Vec<ValueId>,
 }
 
 /// How the checker decided a computation written where a value is read.

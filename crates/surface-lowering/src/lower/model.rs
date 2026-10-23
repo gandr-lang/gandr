@@ -2003,10 +2003,6 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let below = match self.origin_at(bundled.named) {
-            Maybe::Present(named) => named.inserted(Insertion::Model),
-            Maybe::Absent(_) => origin.inserted(Insertion::Model),
-        };
         let fixed: Option<Vec<(&Name, ValueTypeId)>> = bundled
             .manifests
             .iter()
@@ -2018,6 +2014,42 @@ impl<'source> Lowerer<'_, 'source>
         let Some(fixed) = fixed
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        self.mint_bundle_fixed(bundled, &fixed, sink, origin)
+    }
+
+    /// Mint a theory's models as a type, the outermost theory's manifest sorts
+    /// read as the types `fixed` gives them rather than as `bundled` writes
+    /// them.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_bundle`]; each type of `fixed` is read where
+    ///   the record stands.
+    /// - ensures: as [`Self::mint_bundle`], each sort `fixed` names read as the
+    ///   type beside it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per theory of the finite bundle.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_bundle`], and a forgetting map's
+    ///   domain, its carrier manifest at a bound code.
+    /// - witness: `tests::modules::models::a_manifest_model_type_writes_its_sort_as_its_type`
+    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
+    pub(super) fn mint_bundle_fixed(
+        &self,
+        bundled: &Bundled,
+        fixed: &[(&Name, ValueTypeId)],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let below = match self.origin_at(bundled.named) {
+            Maybe::Present(named) => named.inserted(Insertion::Model),
+            Maybe::Absent(_) => origin.inserted(Insertion::Model),
         };
         let mut minted: Vec<Option<ValueTypeId>> = vec![None; bundled.theories.len()];
         for (place, theory) in bundled.theories.iter().enumerate().rev() {
@@ -2031,7 +2063,7 @@ impl<'source> Lowerer<'_, 'source>
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
             let top = if place == 0 { origin } else { below };
-            let manifests = if place == 0 { fixed.as_slice() } else { &[] };
+            let manifests = if place == 0 { fixed } else { &[] };
             let Ok(id) =
                 self.bundle_type(&theory.signature, &nested, manifests, sink, (top, below))
             else {
@@ -3271,5 +3303,7 @@ fn member_read<'source>(
 }
 
 mod derived;
+
+mod forget;
 
 mod reduct;

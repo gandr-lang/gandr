@@ -256,6 +256,7 @@ pub use crate::relocation::Relocated;
 pub use crate::relocation::Relocation;
 pub use crate::rewrite::Binders;
 pub use crate::rewrite::Carried;
+pub use crate::rewrite::Crossing;
 pub use crate::rewrite::Nesting;
 pub use crate::rewrite::Renaming;
 pub use crate::rewrite::Unenclosed;

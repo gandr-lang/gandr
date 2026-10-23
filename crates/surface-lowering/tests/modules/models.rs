@@ -3,6 +3,8 @@
 //! signature a module writes out by hand, and each component a module does
 //! not supply refused by name.
 
+use alloc::collections::BTreeSet;
+
 use gandr_core_term::CertificateEquality;
 use gandr_core_term::Value;
 use gandr_core_term::equal_type_syntax;
@@ -135,10 +137,12 @@ fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
          <- Monoid.Semigroup(endo) ;\n  become multiplies(s)\n}}\n"
     );
     let mut lowered = lower(source.as_str());
+    let listed: BTreeSet<_> = lowered.module.reducts().iter().collect();
     let reducts: Vec<String> = rows(&lowered)
         .into_iter()
-        .filter(|&(_, role, _)| role == Role::Derived)
-        .map(|(name, ..)| name)
+        .zip(lowered.module.declarations())
+        .filter(|&(_, declaration)| listed.contains(&declaration.constant()))
+        .map(|((name, ..), _)| name)
         .collect();
     assert_eq!(
         reducts,
@@ -161,6 +165,49 @@ fn a_model_of_an_extension_stands_where_the_included_model_is_asked()
         )),
         "every reduct checks, and the monoid stands where the semigroup is asked, by the reduct \
          inserted and by the reduct named: {judgements:?}"
+    );
+}
+
+/// A model whose unindexed sorts are manifest stands where its theory's model
+/// is asked: the theory takes one forgetting map under its own name, which
+/// checks, and the checker inserts it at the carrier the model's type fixes,
+/// a type or a bound variable, past a law whose path the solver leaves to the
+/// conversion; a theory with no sort takes none.
+#[test]
+fn a_manifest_model_stands_where_its_theory_s_model_is_asked()
+{
+    let source = "theory Counter {\n  sort C : Type;\n  oper start : () --> C;\n  oper step : (c \
+                  : C) --> C;\n}\ntheory Constant {\n  oper k : Integer;\n}\ntheory Sg {\n  sort \
+                  M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule assoc : mul(mul(x, y), \
+                  z) ==> mul(x, mul(y, z));\n}\ndef any(m : Model(Counter)) -> -F \
+                  Model(Counter) { return m }\ndef closed(m : Model(Counter) with sort C = \
+                  Integer) -> -F Model(Counter) {\n  become any(m)\n}\ndef open(x : Type, m : \
+                  Model(Counter) with sort C = x) -> -F Model(Counter) {\n  become \
+                  any(m)\n}\ndef anySg(s : Model(Sg)) -> -F Model(Sg) { return s }\ndef \
+                  lawful(m : Model(Sg) with sort M = Integer) -> -F Model(Sg) {\n  become \
+                  anySg(m)\n}\n";
+    let mut lowered = lower(source);
+    let forgets: Vec<String> = rows(&lowered)
+        .into_iter()
+        .filter(|&(_, role, _)| role == Role::Derived)
+        .map(|(name, ..)| name)
+        .collect();
+    assert_eq!(
+        forgets,
+        ["Counter", "Sg"],
+        "each sorted theory takes one forgetting map under its own name, the sortless theory \
+         none"
+    );
+    assert_eq!(lowered.module.forgets().len(), 2);
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.iter().all(|&(_, judgement)| matches!(
+            judgement,
+            Judgement::Checked | Judgement::Synthesised | Judgement::Declared
+        )),
+        "each forgetting map checks, and a model whose carrier is manifest stands where its \
+         theory's model is asked, its carrier a type or a variable, a law or none: \
+         {judgements:?}"
     );
 }
 
@@ -1059,9 +1106,15 @@ fn a_derived_rule_reads_the_model_it_quantifies_over()
     );
     let mut lowered = lower(source.as_str());
     let found = rows(&lowered);
+    // The theory's forgetting map is derived too, from its block.
+    let forgets: BTreeSet<_> = lowered.module.forgets().iter().collect();
     let derived: Vec<_> = found
         .iter()
-        .filter(|&&(_, role, _)| role == Role::Derived)
+        .zip(lowered.module.declarations())
+        .filter(|&(&(_, role, _), declaration)| {
+            role == Role::Derived && !forgets.contains(&declaration.constant())
+        })
+        .map(|(row, _)| row)
         .collect();
     let paths: Vec<&str> = derived
         .iter()

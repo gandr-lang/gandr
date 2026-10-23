@@ -1234,10 +1234,10 @@ fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
         report.nested_elaborations()[&ConstantIndex::from(2_usize)]
             .crossings()
             .iter()
-            .map(|(&at, &reduct)| (at, reduct))
+            .map(|(&at, crossing)| (at, crossing.by, crossing.carriers.len()))
             .collect::<Vec<_>>(),
-        [(site, ConstantIndex::from(0_usize))],
-        "the crossing is recorded at the argument, by the reduct"
+        [(site, ConstantIndex::from(0_usize), 0)],
+        "the crossing is recorded at the argument, by the reduct, at no carrier"
     );
     let readmission = crate::bridge::readmit(&mut arena, &report);
     assert!(
@@ -1254,6 +1254,137 @@ fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
             Verdict::Refused(CheckRefusal::TypeMismatch(_))
         ),
         "with no reduct kept, the wide nesting is refused where the narrow pair is asked: {:?}",
+        unkept.judged()[2].verdict()
+    );
+}
+
+#[test]
+fn a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier()
+{
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(index),
+        )
+    };
+    // A pointed type's models, `Σ(c : U). El(c)`; with its carrier manifest
+    // at `x`, a model is the point alone, `El(x)`.
+    let check = |kept: &[ConstantIndex]| {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let bound = variable(&mut arena, 0);
+        let point = arena.value_type_element(bound, Level::zero());
+        let model = arena.value_type_sigma(small, point);
+        // `forget : U(Π(x : U). El(x) → F Σ(c : U). El(c))`.
+        let forget_type = {
+            let returns = arena.comp_type_returner(model);
+            let arrow = arena.comp_type_arrow(point, returns);
+            let pi = arena.comp_type_pi(small, arrow);
+            arena.value_type_thunk(pi)
+        };
+        // `forget = thunk(λx. λm. return (x, m))`.
+        let forget = {
+            let carrier = variable(&mut arena, 1);
+            let manifest = variable(&mut arena, 0);
+            let pair = arena.value_tuple(&[carrier, manifest]);
+            let returned = arena.computation_return(pair);
+            let inner = arena.computation_lambda(returned);
+            let outer = arena.computation_lambda(inner);
+            arena.value_thunk(outer)
+        };
+        // `taker = thunk(λp. return 0)`, asking for a pointed type's model.
+        let integer_returns = arena.comp_type_returner(integer);
+        let taker_arrow = arena.comp_type_arrow(model, integer_returns);
+        let taker_type = arena.value_type_thunk(taker_arrow);
+        let taker = {
+            let zero = arena.value_literal(crate::fixture::integer_literal());
+            let returned = arena.computation_return(zero);
+            let lambda = arena.computation_lambda(returned);
+            arena.value_thunk(lambda)
+        };
+        // `user = thunk(λm. taker(m))`, `m` an integer: a model whose carrier
+        // is manifest at the integers.
+        let user_arrow = arena.comp_type_arrow(integer, integer_returns);
+        let user_type = arena.value_type_thunk(user_arrow);
+        let site = variable(&mut arena, 0);
+        let user = {
+            let called = call(&mut arena, ConstantIndex::from(1_usize), site);
+            let lambda = arena.computation_lambda(called);
+            arena.value_thunk(lambda)
+        };
+        // `thunk(λm. bind forget(⌜Integer⌝, m) as n. taker(n))`.
+        let quoted = arena.value_quote(integer);
+        let expected = {
+            let manifest = variable(&mut arena, 0);
+            let map = arena.value_constant(ConstantIndex::from(0_usize));
+            let forced = arena.computation_force(map);
+            let at_carrier = arena.computation_application(forced, quoted);
+            let forgot = arena.computation_application(at_carrier, manifest);
+            let bound = variable(&mut arena, 0);
+            let called = call(&mut arena, ConstantIndex::from(1_usize), bound);
+            let ran = arena.computation_bind(forgot, called);
+            let lambda = arena.computation_lambda(ran);
+            arena.value_thunk(lambda)
+        };
+        let report = {
+            let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            context.keep_reducts(kept);
+            check_module(&mut context, &[
+                declaration(At(0), Maybe::Present(forget_type), Maybe::Present(forget)),
+                declaration(At(1), Maybe::Present(taker_type), Maybe::Present(taker)),
+                declaration(At(2), Maybe::Present(user_type), Maybe::Present(user)),
+            ])
+        };
+        (arena, report, (site, quoted), expected)
+    };
+    let (mut arena, report, (site, quoted), expected) = check(&[ConstantIndex::from(0_usize)]);
+    let Verdict::Checked { body, .. } = report.judged()[2].verdict()
+    else {
+        panic!(
+            "the manifest model checks where the pointed type's model is asked: {:?}",
+            report.judged()[2].verdict()
+        );
+    };
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, body, expected),
+        gandr_core_term::CertificateEquality::Equal,
+        "the forgetting map runs at the integers' code and the manifest model"
+    );
+    let crossings = report.nested_elaborations()[&ConstantIndex::from(2_usize)].crossings();
+    let [(&at, crossing)] = crossings.iter().collect::<Vec<_>>()[..]
+    else {
+        panic!("one crossing is recorded: {crossings:?}");
+    };
+    assert_eq!(
+        (at, crossing.by),
+        (site, ConstantIndex::from(0_usize)),
+        "the crossing is recorded at the argument, by the forgetting map"
+    );
+    let &[carrier] = crossing.carriers.as_slice()
+    else {
+        panic!("the map takes one carrier: {crossing:?}");
+    };
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, carrier, quoted),
+        gandr_core_term::CertificateEquality::Equal,
+        "the carrier solved is the integers' code"
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel re-derives the application of the forgetting map: {readmission:?}"
+    );
+    let (_, unkept, ..) = check(&[]);
+    assert!(
+        matches!(
+            unkept.judged()[2].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "with no forgetting map kept, the manifest model is refused where the model is asked: {:?}",
         unkept.judged()[2].verdict()
     );
 }

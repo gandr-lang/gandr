@@ -384,6 +384,7 @@ pub use self::plicity::TelescopeEntry;
 pub use self::plicity::merged;
 pub use self::receiver::ReceiverMode;
 use self::receiver::receiver_of;
+pub use self::reduct::ForgetSlot;
 pub use self::reduct::ReductSlot;
 pub use self::sealing::AbstractSlot;
 pub use self::sealing::ComponentPlace;
@@ -1383,6 +1384,9 @@ pub struct Collected<'source>
     /// Each reduct's plan, by its slot: one per theory a `theory` block
     /// includes, directly or through another.
     pub reducts: BTreeMap<SlotIndex, ReductSlot>,
+    /// Each forgetting map's plan, by its slot: one per theory whose models
+    /// bundle and which declares an unindexed sort.
+    pub forgets: BTreeMap<SlotIndex, ForgetSlot>,
     /// The theories each `theory` block includes, by its slot: each with the
     /// inclusion composed along the way first reached, in the order reached.
     pub included: BTreeMap<SlotIndex, Vec<(SlotIndex, TheoryInclusion)>>,
@@ -2634,6 +2638,7 @@ pub fn begin_collection<'source>(
         operation_names: BTreeMap::new(),
         derived: BTreeMap::new(),
         reducts: BTreeMap::new(),
+        forgets: BTreeMap::new(),
         included: BTreeMap::new(),
         abstracts: BTreeMap::new(),
         unread_expectations: BTreeMap::new(),
@@ -4475,7 +4480,8 @@ impl<'source> Collector<'_, 'source>
     ///   before refuses the block as a duplicate. Each `include` the block
     ///   writes is kept among the declared uses, its name tile beside the slot
     ///   owning the theory it includes; a block whose slot stands unrefused
-    ///   takes its reducts' slots after it ([`Self::reducts`]).
+    ///   takes its reducts' slots after it, then its forgetting map's when its
+    ///   models bundle and it presents an unindexed sort ([`Self::reducts`]).
     /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
     ///   is the presentation's value.
     /// - panics: none.
@@ -9167,6 +9173,8 @@ pub struct LoweredModule<'source>
     qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
     /// The reducts the module mints, ascending by position.
     reducts: Vec<ConstantIndex>,
+    /// The forgetting maps the module mints, ascending by position.
+    forgets: Vec<ConstantIndex>,
 }
 
 impl<'source> LoweredModule<'source>
@@ -9214,6 +9222,7 @@ impl<'source> LoweredModule<'source>
             supplies: BTreeMap::new(),
             qualified: BTreeMap::new(),
             reducts: Vec::new(),
+            forgets: Vec::new(),
         }
     }
 
@@ -9297,6 +9306,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.reducts = reducts;
+        self
+    }
+
+    /// This module, carrying `forgets`, the positions of the forgetting maps
+    /// it mints, ascending.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_forgets(
+        mut self,
+        forgets: Vec<ConstantIndex>,
+    ) -> Self
+    {
+        self.forgets = forgets;
         self
     }
 
@@ -9925,6 +9950,20 @@ impl<'source> LoweredModule<'source>
     pub fn reducts(&self) -> &[ConstantIndex]
     {
         &self.reducts
+    }
+
+    /// The forgetting maps this module mints, ascending by position: each
+    /// carries a model of a theory whose unindexed sorts are manifest to a
+    /// model of the theory, and the checker inserts it, at the carriers it
+    /// solves, where the first stands at the second.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn forgets(&self) -> &[ConstantIndex]
+    {
+        &self.forgets
     }
 
     /// The structured name of `declaration`: the path of the module it is

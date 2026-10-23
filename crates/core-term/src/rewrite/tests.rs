@@ -31,6 +31,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::Binders;
 use super::Carried;
+use super::Crossing;
 use super::Nesting;
 use super::Node;
 use super::Renaming;
@@ -2678,7 +2679,10 @@ fn a_crossing_runs_its_reduct_at_exactly_the_named_values()
     let returned = arena.computation_return(pair);
     let subject = arena.value_thunk(returned);
     let reduct = ConstantIndex::from(7_usize);
-    let crossings = BTreeMap::from([(crossed, reduct)]);
+    let crossings = BTreeMap::from([(crossed, Crossing {
+        by: reduct,
+        carriers: Vec::new(),
+    })]);
     let (mut carried, mut runs) = (Vec::new(), Vec::new());
     let rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
     let Some(&Value::Thunk(body)) = arena.value(rebuilt)
@@ -2736,6 +2740,51 @@ fn a_crossing_runs_its_reduct_at_exactly_the_named_values()
     assert!(
         mark == arena.watermark() && none.is_empty() && minted.is_empty(),
         "a subject reaching no crossed value mints nothing"
+    );
+}
+
+#[test]
+fn a_crossing_applies_its_carriers_before_the_value()
+{
+    let mut arena = CoreArena::new();
+    let crossed = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let integer = arena.value_type_base(BaseType::Integer);
+    let carrier = arena.value_quote(integer);
+    let returned = arena.computation_return(crossed);
+    let subject = arena.value_thunk(returned);
+    let forget = ConstantIndex::from(3_usize);
+    let crossings = BTreeMap::from([(crossed, Crossing {
+        by: forget,
+        carriers: Vec::from([carrier]),
+    })]);
+    let (mut carried, mut runs) = (Vec::new(), Vec::new());
+    let _rebuilt = cross_reducts(&mut arena, subject, &crossings, &mut carried, &mut runs);
+    let &[run] = runs.as_slice()
+    else {
+        panic!("one run is minted for the one crossed value: {runs:?}");
+    };
+    let Some(&Value::Run(applied)) = arena.value(run)
+    else {
+        panic!("a crossed value stands as a run");
+    };
+    let Some(&Computation::Application(head, argument)) = arena.computation(applied)
+    else {
+        panic!("the run applies the map to the value");
+    };
+    assert_eq!(argument, crossed, "the value is the last argument");
+    let Some(&Computation::Application(forced, first)) = arena.computation(head)
+    else {
+        panic!("the map is applied to its carrier before the value");
+    };
+    assert_eq!(first, carrier, "the carrier is the first argument");
+    let Some(&Computation::Force(map)) = arena.computation(forced)
+    else {
+        panic!("the head of the application forces the map");
+    };
+    assert_eq!(
+        arena.value(map),
+        Some(&Value::Constant(forget)),
+        "the run forces the map the crossing names"
     );
 }
 

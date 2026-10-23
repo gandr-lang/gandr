@@ -1839,6 +1839,7 @@ fn judge_closure<'held>(
         context.enter_at(entry.clone());
         context.keep_pattern_holes(&holes);
         context.keep_reducts(module.reducts());
+        context.keep_reducts(module.forgets());
         run.judge(&mut context, &declarations, |_, _, _| {});
         context.checkpoint()
     };
@@ -2494,6 +2495,7 @@ where
         };
         context.keep_pattern_holes(&holes);
         context.keep_reducts(module.reducts());
+        context.keep_reducts(module.forgets());
         if let Some(ref written) = written {
             run.keep_typings();
             context.keep_formations(Formations::Firsts(wanted_types(written)));
@@ -3516,6 +3518,7 @@ impl gandr_surface_format::Elaborate for Elaborating
         context.enter_at(entry);
         context.keep_pattern_holes(&pattern_holes(module));
         context.keep_reducts(module.reducts());
+        context.keep_reducts(module.forgets());
         let report = check_module(&mut context, &declarations);
         let definitions = report.definitions();
         gandr_surface_format::Elaboration {
@@ -3528,7 +3531,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 .nested_elaborations()
                 .values()
                 .flat_map(|elaboration| elaboration.crossings().iter())
-                .map(|(&value, &reduct)| (value, reduct))
+                .map(|(&value, crossing)| (value, crossing.by))
                 .collect(),
         }
     }

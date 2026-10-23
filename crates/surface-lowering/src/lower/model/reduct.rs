@@ -19,7 +19,10 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Binders;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComponentCount;
+use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -38,20 +41,23 @@ use crate::lower::Lowerer;
 use crate::lower::Reading;
 use crate::lower::Sink;
 use crate::lower::Site;
+use crate::model::Dependent;
+use crate::model::ModelSignature;
 use crate::model::derive;
+use crate::module::ComponentPlace;
 use crate::module::SlotIndex;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 
-/// A theory a reduct reads: the theories of its bundled record, the record's
-/// type, and how many sorts and operations its signature holds before its
-/// laws.
+/// A theory a reduct or a forgetting map reads: the theories of its bundled
+/// record, the record's type, and how many sorts and operations its signature
+/// holds before its laws.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug)]
-struct Bundle
+pub(super) struct Bundle
 {
     /// The record's theories, the theory itself first.
     bundled: Bundled,
@@ -61,6 +67,199 @@ struct Bundle
     sorts: usize,
     /// The operations it presents.
     operations: usize,
+}
+
+impl Bundle
+{
+    /// The record's theories, the theory itself first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(super) const fn bundled(&self) -> &Bundled
+    {
+        &self.bundled
+    }
+
+    /// The record's type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(super) const fn model(&self) -> ValueTypeId
+    {
+        self.model
+    }
+}
+
+/// How a lambda over a model of a bundled record destructures it into one
+/// binder per field, the last innermost: split link by link where the record
+/// nests as pairs — a binding link a dependent pair, split at the returner the
+/// lambda returns at, which reads no binder — each split taking the rest of
+/// the nesting the one before it bound, and each field bound by its
+/// projection where the record is labelled.
+///
+/// # Specification
+/// - executable: none — a data declaration [`Destructured::of`] fills.
+#[derive(Clone, Debug)]
+pub(super) struct Destructured
+{
+    /// How many fields the record holds.
+    count: usize,
+    /// Whether each field's link binds.
+    binds: Vec<Dependent>,
+    /// Whether the record nests as pairs.
+    paired: bool,
+}
+
+impl Destructured
+{
+    /// How a model of the record `signature` bundles is destructured.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn of(signature: &ModelSignature) -> Self
+    {
+        let binds = bundle_dependence(signature);
+        let paired = binds.iter().any(|binds| binds.0);
+        Self {
+            count: signature.components.len(),
+            binds,
+            paired,
+        }
+    }
+
+    /// The index the field at the place `field` is bound at where the body
+    /// the destructuring wraps stands.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a labelled record, the field's distance from the last;
+    ///   for pairs, zero for the last field and, for each one before it, the
+    ///   odd index of the first component of the split binding it; nothing past
+    ///   the record or past what an index holds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::mint_reducts`].
+    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    #[spec(ensures: |ret| ret.is_none() || usize::from(field) < self.count)]
+    pub(super) fn bound_at(
+        &self,
+        field: ComponentPlace,
+    ) -> Option<DeBruijnIndex>
+    {
+        let field = usize::from(field);
+        let last = self.count.checked_sub(1)?;
+        let index = if !self.paired {
+            last.checked_sub(field)?
+        }
+        else if field == last {
+            0
+        }
+        else {
+            last.checked_sub(field)?
+                .checked_sub(1)?
+                .checked_mul(2)?
+                .checked_add(1)?
+        };
+        u32::try_from(index).ok().map(DeBruijnIndex::from)
+    }
+
+    /// How many binders the destructuring places between the model and the
+    /// body it wraps.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one per field for a labelled record; two per split, one split
+    ///   per field but the last, for pairs; nothing past what an index holds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's manifest model, its fields labelled, read
+    ///   past its own binders.
+    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    #[spec(ensures: |ret| ret.is_none_or(|depth| {
+        usize::try_from(u32::from(depth)).is_ok_and(|depth| depth <= self.count.saturating_mul(2))
+    }))]
+    pub(super) fn depth(&self) -> Option<Binders>
+    {
+        let depth = if self.paired {
+            self.count.saturating_sub(1).checked_mul(2)?
+        }
+        else {
+            self.count
+        };
+        u32::try_from(depth).ok().map(Binders::from)
+    }
+
+    /// `body` under the destructuring of the model standing at index zero
+    /// where the destructuring begins, every node minted carrying `origin`.
+    ///
+    /// # Specification
+    /// - requires: `self` was made of `signature`; `body` reads each field at
+    ///   [`Self::bound_at`] and anything outside the model past [`Self::depth`]
+    ///   more binders; `returner` reads no binder.
+    /// - ensures: for pairs, one split per field but the last, outermost first,
+    ///   each of the rest the one before it bound — a dependent split at
+    ///   `returner` where the field's link binds; for a labelled record, one
+    ///   bind per field of its projection, the first outermost, each reading
+    ///   the model past the fields bound before it; `body` itself for no field.
+    /// - fails: nothing past what an index holds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Lowerer::mint_reducts`], and a forgetting map's
+    ///   labelled manifest model.
+    /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    /// - witness: `tests::modules::models::a_manifest_model_stands_where_its_theory_s_model_is_asked`
+    #[spec(ensures: |ret| ret.is_none_or(|wrapped| sink.arena.computation(wrapped).is_some()))]
+    pub(super) fn wrap(
+        &self,
+        signature: &ModelSignature,
+        (body, returner): (ComputationId, CompTypeId),
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<ComputationId>
+    {
+        let mut destructured = body;
+        if self.paired {
+            for link in self.binds.iter().take(self.count.saturating_sub(1)).rev() {
+                let rest = sink
+                    .arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(rest, origin);
+                let pair = ComponentCount::from(2_usize);
+                destructured = if link.0 {
+                    sink.arena
+                        .computation_dependent_split(rest, pair, returner, destructured)
+                }
+                else {
+                    sink.arena.computation_split(rest, pair, destructured)
+                };
+                sink.origins.record_computation(destructured, origin);
+            }
+            return Some(destructured);
+        }
+        for (field, component) in signature.components.iter().enumerate().rev() {
+            // `m` stands past the binders of the fields before this one.
+            let index = u32::try_from(field).ok()?;
+            let model = sink
+                .arena
+                .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
+            sink.origins.record_value(model, origin);
+            let projection = sink.arena.computation_record_projection(
+                model,
+                FieldLabel::from(String::from(component.name.as_ref())),
+            );
+            sink.origins.record_computation(projection, origin);
+            destructured = sink.arena.computation_bind(projection, destructured);
+            sink.origins.record_computation(destructured, origin);
+        }
+        Some(destructured)
+    }
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -191,33 +390,9 @@ impl<'source> Lowerer<'_, 'source>
             list.get(at)
                 .map(|&position| offset.saturating_add(usize::from(position)))
         };
-        // `m` is destructured into one binder per field, the last innermost:
-        // split link by link where the record nests as pairs — a binding link
-        // a dependent pair, split at the reduct's own returner, which reads no
-        // binder — each split taking the rest of the nesting the one before it
-        // bound, and each field bound by its projection where the record is
-        // labelled.
-        let count = including.components.len();
-        let binds = bundle_dependence(including);
-        let paired = binds.iter().any(|binds| binds.0);
+        let destructuring = Destructured::of(including);
         let returner = sink.arena.comp_type_returner(target.model);
         sink.origins.record_comp_type(returner, below);
-        let last = count.checked_sub(1).ok_or(Missing::Unlowered)?;
-        let bound_at = |field: usize| {
-            let index = if !paired {
-                last.checked_sub(field)?
-            }
-            else if field == last {
-                0
-            }
-            else {
-                last.checked_sub(field)?
-                    .checked_sub(1)?
-                    .checked_mul(2)?
-                    .checked_add(1)?
-            };
-            u32::try_from(index).ok().map(DeBruijnIndex::from)
-        };
         let mut fields = Vec::with_capacity(included.components.len());
         for (place, member) in included.components.iter().enumerate() {
             let index = placed(place)
@@ -227,7 +402,7 @@ impl<'source> Lowerer<'_, 'source>
                         .get(at)
                         .is_some_and(|held| held.name == member.name)
                 })
-                .and_then(bound_at)
+                .and_then(|at| destructuring.bound_at(ComponentPlace(at)))
                 .ok_or(Missing::Unlowered)?;
             let field = sink.arena.value_variable(Zone::Intuitionistic, index);
             sink.origins.record_value(field, below);
@@ -235,42 +410,11 @@ impl<'source> Lowerer<'_, 'source>
         }
         let record =
             packed_record(included, &fields, sink, (below, below)).ok_or(Missing::Unlowered)?;
-        let mut destructured = sink.arena.computation_return(record);
-        sink.origins.record_computation(destructured, below);
-        if paired {
-            for link in binds.iter().take(last).rev() {
-                let rest = sink
-                    .arena
-                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-                sink.origins.record_value(rest, below);
-                let pair = ComponentCount::from(2_usize);
-                destructured = if link.0 {
-                    sink.arena
-                        .computation_dependent_split(rest, pair, returner, destructured)
-                }
-                else {
-                    sink.arena.computation_split(rest, pair, destructured)
-                };
-                sink.origins.record_computation(destructured, below);
-            }
-        }
-        else {
-            for (field, component) in including.components.iter().enumerate().rev() {
-                // `m` stands past the binders of the fields before this one.
-                let index = u32::try_from(field).map_err(|_overflow| Missing::Unlowered)?;
-                let model = sink
-                    .arena
-                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index));
-                sink.origins.record_value(model, below);
-                let projection = sink.arena.computation_record_projection(
-                    model,
-                    FieldLabel::from(String::from(component.name.as_ref())),
-                );
-                sink.origins.record_computation(projection, below);
-                destructured = sink.arena.computation_bind(projection, destructured);
-                sink.origins.record_computation(destructured, below);
-            }
-        }
+        let returned = sink.arena.computation_return(record);
+        sink.origins.record_computation(returned, below);
+        let destructured = destructuring
+            .wrap(including, (returned, returner), sink, below)
+            .ok_or(Missing::Unlowered)?;
         let lambda = sink.arena.computation_lambda(destructured);
         sink.origins.record_computation(lambda, below);
         let body = sink.arena.value_thunk(lambda);
@@ -303,7 +447,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::mint_reducts`].
     /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |bundle| sink.arena.value_type(bundle.model).is_some()))]
-    fn reduct_bundle(
+    pub(super) fn reduct_bundle(
         &self,
         theory: SlotIndex,
         sink: &mut Sink<'_>,

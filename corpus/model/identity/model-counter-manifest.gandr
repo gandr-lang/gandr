@@ -1,0 +1,33 @@
+// A model whose carrier is manifest where a model of its theory is asked
+// (#2120): each theory with an unindexed sort takes one forgetting map from
+// `Model(T) with sort C = x` to `Model(T)`, at every carrier `x`, which puts
+// the carrier back as the record's first field. The checker applies it where
+// the one model stands at the other, solving `x` from the model's type, and
+// the run reads the application. The map is a family in the carrier, so a
+// manifest model carried along an equivalence of carriers is read alike once
+// forgotten.
+
+// The counter, counting up and down modulo three, the negation between the
+// counts, and `observe`, which reads any counter.
+import "./model-counter.gandr" ;
+
+/// Counting up modulo three, its carrier manifest: the carrier is no field,
+/// so the record is the zero, the step and the reading.
+@[ checks ]
+def upManifest : Model(Counter) with sort C = Unit + (Unit + Unit) ;
+def upManifest = #{.zero = Up.zero, .incr = Up.incr, .read = Up.read} ;
+
+/// The manifest counter where a counter is asked: the checker applies the
+/// forgetting map at the counts.
+@[ runs("1") ]
+def observedManifest() -> -F Integer { become observe(upManifest) }
+
+/// The manifest counter carried along negation.
+@[ checks ]
+def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) ;
+def negatedManifest = transport(\x. Model(Counter) with sort C = x, countsNegated, upManifest) ;
+
+/// The carried counter where a counter is asked: forgetting at the far end
+/// reads it as counting up reads.
+@[ runs("1") ]
+def observedCarried() -> -F Integer { become observe(negatedManifest) }

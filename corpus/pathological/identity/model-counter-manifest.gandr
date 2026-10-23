@@ -1,0 +1,22 @@
+// What forgetting a manifest carrier refuses: a model of a theory with the
+// counter's carrier but not its reading is no counter once forgotten.
+// `../../model/identity/model-counter-manifest.gandr` forgets a counter's
+// manifest carrier.
+
+// The counter, and `observe`, which reads any counter.
+import "../../model/identity/model-counter.gandr" ;
+
+/// A ticker: a carrier, a zero and a step, and no reading.
+@[ checks ]
+theory Ticker {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+}
+
+/// A ticker over the integers, its carrier manifest, where a counter is
+/// asked: forgetting its carrier makes a ticker, which has no reading.
+@[ refuses("TypeMismatch") ]
+def tickerObserved(m : Model(Ticker) with sort C = Integer) -> -F Integer {
+  become observe(m)
+}
