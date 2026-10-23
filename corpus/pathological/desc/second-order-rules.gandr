@@ -36,7 +36,7 @@ theory LetTwice {
 
 /// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap, and
 /// a second-order rule takes part in no critical pair, even one whose reducts
-/// agree (#1326).
+/// agree (#2116).
 @[ refuses("RulesOverlapSecondOrder") ]
 theory LetOverlap {
   sort Tm : Type+;
