@@ -5,17 +5,29 @@
 // its inverses are determined by its map, which needs function extensionality
 // from a homotopy at any two functions; `funext` decides closed first-order
 // functions only, and `ua` gives the rest
-// (`../../model/identity/funext-from-ua.gandr`). The same refusal at a
-// stratum code waits on its type printing back (#1102).
+// (`../../model/identity/funext-from-ua.gandr`).
 
 // Univalence over the user universe: `idtoequiv`.
 import "../../model/identity/univalence.gandr" ;
+// The magma's degree telescope and its path at the stratum code.
+import "../../model/higher-cells/ua-type.gandr" ;
 
 /// `ua` of the identity record at reflexivity, read as reflexivity: the case
 /// `J` leaves of `uaEta`, refused (#520).
 @[ refuses("EndpointMismatch") ]
 def uaEtaRefl(a : Type) -> -F Path(Path(Type, a, a), ua(idtoequiv(a, a, here(a))), here(a)) {
   here(here(a))
+}
+
+/// `ua` of the packaged stratum path, read as the path itself: refused at the
+/// stratum code as at reflexivity (#520).
+@[ refuses("EndpointMismatch") ]
+def uaEtaStratum() -> -F Path(
+  Path(Type, AtStratum.Tel, AtStratum.Tel),
+  ua(idtoequiv(AtStratum.Tel, AtStratum.Tel, AtStratum.opposite)),
+  AtStratum.opposite
+) {
+  here(AtStratum.opposite)
 }
 
 /// Two functions that agree at every point are one function, from the
