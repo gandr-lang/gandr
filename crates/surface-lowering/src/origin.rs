@@ -238,7 +238,8 @@ pub enum Insertion
     /// method and the arguments, never the view, the application to it, the
     /// split of a written-through result or the write-back. And a node of the
     /// hold and the pair a written-through method's body is wrapped in,
-    /// located at the declaration.
+    /// located at the declaration. And the view a bare index `s[e]` of a held
+    /// slot reads its element through, located at the index.
     Method,
     /// A node of the bind a lambda's parameter written with its type is read
     /// through, every one located at the lambda: the source writes

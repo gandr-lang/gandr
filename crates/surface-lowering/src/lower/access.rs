@@ -143,6 +143,15 @@ pub(super) enum Accessed
         /// where the place stands.
         element: NodeIndex,
     },
+    /// A bare index `s[e]` of a held slot: the element at `e`, read through a
+    /// shared view of it that answers what it views.
+    Element
+    {
+        /// The held slot lent, a linear index where the index stands.
+        held: DeBruijnIndex,
+        /// The index `e`, read as a value where the index stands.
+        index: NodeIndex,
+    },
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -523,16 +532,20 @@ impl<'source> Lowerer<'_, 'source>
     ///   and an exclusive access's missing unwind minted as `pure unit` at
     ///   `origin`; a method's place `self[e]` minted as `hold p = self ; access
     ///   shared p[e] as v { run _ : a <- pure v ; pure e }`, `a` the element
-    ///   type, every node below the hold marked as inserted for the method; the
-    ///   first absence among the children otherwise.
+    ///   type, every node below the hold marked as inserted for the method; a
+    ///   held slot's element `s[e]` minted as `access shared s[e] as v { pure v
+    ///   }`, its body marked as inserted for the read; the first absence among
+    ///   the children otherwise.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the counter's forms, an unwind written and one left
-    ///   out, a shared access with none, and a method's place.
+    ///   out, a shared access with none, a method's place and a held slot's
+    ///   element.
     /// - witness: `lower::access::tests::the_counter_lowers_to_its_memory_forms`
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
+    /// - witness: `lower::method::tests::a_bare_index_reads_its_held_element`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -639,6 +652,25 @@ impl<'source> Lowerer<'_, 'source>
                     value: receiver,
                     body: lent,
                     grade: HoldGrade::Many,
+                }
+            },
+            Accessed::Element { held, index } => {
+                let index = match self.value_at(index) {
+                    Maybe::Present(index) => index,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                let inner = origin.inserted(Insertion::Method);
+                let viewed = sink
+                    .arena
+                    .value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+                sink.origins.record_value(viewed, inner);
+                let body = sink.arena.computation_return(viewed);
+                sink.origins.record_computation(body, inner);
+                MemoryForm::Access {
+                    mode: AccessMode::Shared,
+                    held,
+                    place: Place::At { index },
+                    body,
                 }
             },
         };

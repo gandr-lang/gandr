@@ -323,8 +323,8 @@ fn a_view_method_answering_no_place_is_refused()
          Integer {{ self[0] }}\n  def computed @[m : Mode] (self : m List(Integer)) -> -F \
          View[m](Integer) {{ pure 0 }}\n  def crossed @[m : Mode, n : Mode] (self : m \
          List(Integer)) -> -F View[n](Integer) {{ self[0] }}\n}}\ndef stray(v : \
-         View[m](Integer)) -> -F Integer {{ pure 0 }}\ndef bare(i : Integer) -> -F Integer {{ \
-         hold xs = pair; run y <- xs[i]; pure y }}\n"
+         View[m](Integer)) -> -F Integer {{ pure 0 }}\ndef bare(xs : List(Integer), i : Integer) \
+         -> -F Integer {{ run y <- xs[i]; pure y }}\n"
     );
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
@@ -346,9 +346,29 @@ fn a_view_method_answering_no_place_is_refused()
                 ..
             }
         ),
-        "an index outside a method's body is not yet a read of its place: {:?}",
+        "an index of a list no slot holds is no read of a place: {:?}",
         refusal_of(&module, SurfaceName::from("bare"))
     );
+}
+
+#[test]
+fn a_bare_index_reads_its_held_element()
+{
+    let source = format!(
+        "{PLACES}def element(i : Integer) -> -F Integer {{ hold xs = pair; run y <- xs[i]; pure \
+         y }}\ndef zeroth() -> -F Integer {{ hold xs = pair; run y <- xs[0]; pure y }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for (name, place) in [("element", "%0"), ("zeroth", "literal")] {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        assert_eq!(
+            forms(&arena, tail),
+            ["hold", &format!("access shared @0[{place}]"), "read @0"],
+            "`{name}` holds the list and answers the element its shared view sees"
+        );
+    }
+    assert_accepted(&judged(&module, &mut arena));
 }
 
 #[test]

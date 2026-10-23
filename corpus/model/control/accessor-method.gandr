@@ -40,6 +40,30 @@ def later() -> -F Integer {
   pure y
 }
 
+/// The element at an index of a held list, read without a method: a bare
+/// index is the view of its place used without a block, lent shared for the
+/// read.
+@[ runs("2") ]
+def bare() -> -F Integer {
+  hold xs = pair;
+  run y <- xs[1];
+  pure y
+}
+
+/// The same read at an index a parameter carries.
+@[ checks ]
+def bareAt(i : Integer) -> -F Integer {
+  hold xs = pair;
+  run y <- xs[i];
+  pure y
+}
+
+/// The read a call of it makes, at the first index.
+@[ runs("1") ]
+def bareFirst() -> -F Integer {
+  bareAt(0)
+}
+
 /// The first element read through a view the block lends shared: the block
 /// only reads it.
 @[ runs("2") ]

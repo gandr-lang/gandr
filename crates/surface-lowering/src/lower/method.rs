@@ -117,6 +117,7 @@ use crate::namespace::Recognized;
 use crate::namespace::Segment;
 use crate::origin::Insertion;
 use crate::origin::Origin;
+use crate::resolve::Bound;
 use crate::resolve::Frame;
 use crate::resolve::ScopeId;
 use crate::resolve::binder_site;
@@ -283,6 +284,24 @@ quenchant_shape::reason_enum! {
             /// The function is no method, or its method reads or takes its
             /// receiver.
             NotWrittenThrough,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an index's head names no held slot.
+    pub mod unlent {
+        /// The index's head lends no held slot.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The head is no bare name.
+            Unnamed,
+            /// The name resolves to nothing, or to a binder that holds no
+            /// slot.
+            Unheld,
+            /// The form is an instantiation whose bracket holds no number: a
+            /// claim, never an element.
+            Claimed,
         }
     }
 }
@@ -946,9 +965,10 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is an index; `cursor` stands at its head.
     /// - ensures: the body of a method answering a view stands as its place, as
-    ///   [`Self::view_place`] plans it.
+    ///   [`Self::view_place`] plans it; an index whose head names a held slot
+    ///   stands as the element there, as [`Self::element`] plans it.
     /// - fails: [`FragmentBoundary::Unadmitted`] for an index anywhere else;
-    ///   the place's refusals.
+    ///   the place's and the element's refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -956,20 +976,191 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a method answering the element at a parameter's
-    ///   index, and an index outside a method's body.
+    ///   index, a held list's element at a name, and an index of a list no slot
+    ///   holds.
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
-    #[spec(ensures: |ret| ret.is_err() || self.view_places.contains_key(&site.at.node))]
+    /// - witness: `lower::method::tests::a_bare_index_reads_its_held_element`
+    #[spec(ensures: |ret| ret.is_err() || self.view_places.contains_key(&site.at.node)
+        || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. }))))]
     pub(super) fn index_form(
         &mut self,
         site: Site,
         cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        match self.view_places.get(&site.at.node) {
-            Some(&place) => self.view_place(site, cursor, place),
-            None => Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Index))),
+        if let Some(&place) = self.view_places.get(&site.at.node) {
+            return self.view_place(site, cursor, place);
         }
+        match self.lent_head(site)? {
+            Maybe::Present(lent) => self.element(site, cursor, lent),
+            Maybe::Absent(_) => Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Index))),
+        }
+    }
+
+    /// The held slot the head of the index or instantiation at `site` names,
+    /// as the binder its name resolves to where the form stands.
+    ///
+    /// # Specification
+    /// - requires: `site` is an index `s[e]` or an instantiation `s[0]`.
+    /// - ensures: the binder of the innermost name the head spells, when the
+    ///   head is a bare name, that binder is a slot a `hold` binds, and an
+    ///   instantiation's bracket holds one number; nothing is planned or
+    ///   recorded.
+    /// - fails: a fault reading the form's pieces or the head's form; the
+    ///   resolution's exhausted allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held list's name at a name and at a number, and a
+    ///   parameter's name no slot holds.
+    /// - witness: `lower::method::tests::a_bare_index_reads_its_held_element`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |lent| match *lent {
+        | Maybe::Present(bound) => self.held.contains(&bound.binder),
+        | Maybe::Absent(_) => true,
+    }))]
+    pub(super) fn lent_head(
+        &mut self,
+        site: Site,
+    ) -> Result<Maybe<Bound, unlent::Absent>, LoweringRefusal<'source>>
+    {
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, site.at.node, &mut scratch);
+        let parts = match *scratch.pieces.as_slice() {
+            [Piece::Operand(head), _, Piece::Operand(resident), ..] => {
+                Maybe::Present((head, resident))
+            },
+            _ => Maybe::Absent(unlent::Absent::Unnamed),
+        };
+        self.scratch = scratch;
+        read?;
+        let Maybe::Present((head, resident)) = parts
+        else {
+            return Ok(Maybe::Absent(unlent::Absent::Unnamed));
+        };
+        if !matches!(self.form_at(head)?, Some((_, Former::Name))) {
+            return Ok(Maybe::Absent(unlent::Absent::Unnamed));
+        }
+        if matches!(self.form_at(site.at)?, Some((_, Former::Instantiation))) {
+            let mut pieces = Pieces::new();
+            read_pieces(self.pbg, self.tree, resident.node, &mut pieces)?;
+            if !matches!(*pieces.pieces.as_slice(), [Piece::Tile {
+                label: TileName::NUMBER,
+                ..
+            }]) {
+                return Ok(Maybe::Absent(unlent::Absent::Claimed));
+            }
+        }
+        let name = self.name_at(head);
+        match self
+            .scope
+            .resolve(site.reading.frame(), name, &mut self.fuel)?
+        {
+            Maybe::Present(bound)
+                if bound.zone == Zone::Linear && self.held.contains(&bound.binder) =>
+            {
+                Ok(Maybe::Present(bound))
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Ok(Maybe::Absent(unlent::Absent::Unheld)),
+        }
+    }
+
+    /// Classify the element `s[e]` at `site` of the held slot `lent` names, its
+    /// pieces under `cursor`: a view of the place used without a block, a read
+    /// of it.
+    ///
+    /// # Specification
+    /// - requires: `site` is an index `s[e]` or the instantiation a number in
+    ///   the bracket molds as, `s[0]`; `lent` is the binder `s` resolves to
+    ///   where the form stands, a held slot; `cursor` stands at its head.
+    /// - ensures: the form stands as a computation, planned as the access that
+    ///   lends the slot shared at `e` and answers what its view sees; `e` reads
+    ///   as a value under the form's frame, an instantiation's number planned
+    ///   as its literal; the head's name keeps the slot it names.
+    /// - fails: the wrong-sort refusal where no computation is read;
+    ///   [`FragmentBoundary::Unadmitted`] for a bracket holding anything but
+    ///   one index; a malformed-literal refusal for an instantiation's number
+    ///   out of shape; a fault naming the form for a tile out of place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The element's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held list read at a name and at a number, each
+    ///   asserted as the access it mints.
+    /// - witness: `lower::method::tests::a_bare_index_reads_its_held_element`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Access(super::access::Accessed::Element { .. }))))]
+    pub(super) fn element(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+        lent: Bound,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Computation)?;
+        let indexed = matches!(self.form_at(site.at)?, Some((_, Former::Access)));
+        let head = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
+        let resident = site.one(cursor.operands())?;
+        if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
+            let unbuilt = if indexed {
+                Unbuilt::Index
+            }
+            else {
+                Unbuilt::RecursiveClaim
+            };
+            return Err(site.out(FragmentBoundary::Unadmitted(unbuilt)));
+        }
+        closed(site, &mut cursor, TileName::BRACKET_CLOSE)?;
+        if let Maybe::Present(_) = cursor.peek() {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        }
+        self.resolved(head.span, Resolved::Binder(lent));
+        if indexed {
+            self.read(resident.node, Reading::Value(frame));
+        }
+        else {
+            // A number in the bracket molds as an instantiation's type literal,
+            // which no value reading takes: it is planned as its literal here.
+            let mut pieces = Pieces::new();
+            read_pieces(self.pbg, self.tree, resident.node, &mut pieces)?;
+            let &[
+                Piece::Tile {
+                    label: TileName::NUMBER,
+                    at: number,
+                },
+            ] = pieces.pieces.as_slice()
+            else {
+                return Err(site.out(FragmentBoundary::Reserved(Unbuilt::RecursiveClaim)));
+            };
+            let Maybe::Present(literal) =
+                super::parse_literal(Former::Number, self.text_at(number))
+            else {
+                return Err(LoweringRefusal::MalformedLiteral {
+                    span: number.span,
+                    form: FormName::NUMBER,
+                });
+            };
+            let numbered = Site {
+                at: resident,
+                name: FormName::NUMBER,
+                reading: Reading::Value(frame),
+            };
+            self.plan(numbered, Plan::Literal(literal));
+        }
+        self.plan(
+            site,
+            Plan::Access(super::access::Accessed::Element {
+                held: lent.index,
+                index: resident.node,
+            }),
+        );
+
+        Ok(())
     }
 
     /// Record the body `block` of a method answering a view of element type
