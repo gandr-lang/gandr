@@ -124,7 +124,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 68_usize] = [
+const OWED: [(&str, Owed); 66_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -226,7 +226,6 @@ const OWED: [(&str, Owed); 68_usize] = [
     ("UnknownConstructor", Owed::Unwritten(CHECKER)),
     ("ConstructorArity", Owed::Unwritten(CHECKER)),
     ("NonExhaustiveDataCase", Owed::Unwritten(CHECKER)),
-    ("AbsentTupleComponent", Owed::Unwritten(CHECKER)),
     ("PathCode", Owed::Unwritten(CHECKER)),
     ("TranslatorStuck", Owed::Unwritten(CHECKER)),
     (
@@ -236,15 +235,31 @@ const OWED: [(&str, Owed); 68_usize] = [
              under none",
         )),
     ),
-    ("SessionCodeExpected", Owed::Unwritten(CHECKER)),
     ("RideUnsupported", Owed::Unwritten(CHECKER)),
     ("BudgetExceeded", Owed::Unwritten(CHECKER)),
     ("Undecided", Owed::Unwritten(CHECKER)),
     ("EffectSignatureConflict", Owed::Unwritten(CHECKER)),
     ("UnknownOperation", Owed::Unwritten(CHECKER)),
-    ("ShiftWithoutReset", Owed::Unwritten(CHECKER)),
-    ("DependentStack", Owed::Unwritten(CHECKER)),
-    ("UnboundEndpoint", Owed::Unwritten(CHECKER)),
+    (
+        "ShiftWithoutReset",
+        Owed::Unreachable(Reason(
+            "the lowering mints a shift only for a `return` in a handled subject, and mints that \
+             subject's body under its delimiter",
+        )),
+    ),
+    (
+        "DependentStack",
+        Owed::Unreachable(Reason(
+            "the lowering mints no stack literal, so no stack bind is judged",
+        )),
+    ),
+    (
+        "UnboundEndpoint",
+        Owed::Unreachable(Reason(
+            "the lowering resolves every endpoint an action names to the binder a fork or a \
+             receive introduces",
+        )),
+    ),
     (
         "CodataArity",
         Owed::Unreachable(Reason(

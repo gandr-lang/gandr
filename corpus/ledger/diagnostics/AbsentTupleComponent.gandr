@@ -1,0 +1,5 @@
+/// `AbsentTupleComponent`: a positional projection of the unit, a product of no components.
+@[ refuses("AbsentTupleComponent") ]
+def none(u : Unit) -> -F Unit {
+  u.0
+}
