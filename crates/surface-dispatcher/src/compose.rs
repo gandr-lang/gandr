@@ -2248,7 +2248,7 @@ where
 /// - hypothesis: L3 — every corpus source judged with its table answers each
 ///   position as its table typed alone does, and settles as it settles without
 ///   one.
-/// - witness: `tests::corpus::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
+/// - witness: `tests::corpus::sweeps::a_judgement_s_table_answers_as_the_table_typed_alone_1521`
 #[inline]
 pub fn judge_member_tabled<'source>(
     root: CorpusRoot,
