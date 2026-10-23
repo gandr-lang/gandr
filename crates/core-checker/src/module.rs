@@ -509,6 +509,9 @@ pub struct ModuleReport
     /// The family each transport or ride above level zero formed its motive
     /// as, by node.
     motives: BTreeMap<ComputationId, ValueTypeId>,
+    /// The payload type each send and each receive the run checked moves, by
+    /// node.
+    payloads: BTreeMap<ComputationId, ValueTypeId>,
     /// The reflexivities the run checked, by node.
     reflexivities: BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's type conversions
@@ -710,6 +713,26 @@ impl ModuleReport
     pub const fn motives(&self) -> &BTreeMap<ComputationId, ValueTypeId>
     {
         &self.motives
+    }
+
+    /// The payload type each send and each receive the run checked moves, by
+    /// node: the type a send's value was checked at, and the type a receive
+    /// opened its slot at — a value's payload type, or the session or buffer
+    /// at the payload's weak head.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a received value crosses as an assumption of the
+    ///   recorded type and a sent one ascribed it, so an emptied table leaves
+    ///   the receive uncrossed and a sent injection unchecked by the kernel.
+    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    #[inline]
+    #[must_use]
+    pub const fn payloads(&self) -> &BTreeMap<ComputationId, ValueTypeId>
+    {
+        &self.payloads
     }
 
     /// The reflexivities the run checked, by node, with the dialogues relating
@@ -1846,6 +1869,7 @@ pub fn check_declaration_supported(
     && &ret.flows == context.flows()
     && &ret.directed == context.directed()
     && &ret.motives == context.motives()
+    && &ret.payloads == context.payloads()
     && &ret.reflexivities == context.reflexivities()
     && &ret.relations == context.relations()
     && &ret.natives == context.natives()
@@ -2167,6 +2191,7 @@ impl ModuleRun
             flows: context.flows().clone(),
             directed: context.directed().clone(),
             motives: context.motives().clone(),
+            payloads: context.payloads().clone(),
             reflexivities: context.reflexivities().clone(),
             relations: context.relations().clone(),
             laws: context.laws().clone(),
@@ -2287,7 +2312,8 @@ where
 /// - witness: `elaboration::tests::a_filled_ride_above_level_zero_readmits_at_its_recorded_motive_1837`
 #[spec(ensures: context.funexts().keys().all(|at| report.funexts.contains_key(at))
     && context.relations().keys().all(|at| report.relations.contains_key(at))
-    && context.motives().keys().all(|at| report.motives.contains_key(at)))]
+    && context.motives().keys().all(|at| report.motives.contains_key(at))
+    && context.payloads().keys().all(|at| report.payloads.contains_key(at)))]
 pub fn absorb(
     report: &mut ModuleReport,
     context: &CheckingContext<'_>,
@@ -2317,6 +2343,9 @@ pub fn absorb(
     report
         .motives
         .extend(context.motives().iter().map(|(&at, &family)| (at, family)));
+    report
+        .payloads
+        .extend(context.payloads().iter().map(|(&at, &moved)| (at, moved)));
     report.reflexivities.extend(
         context
             .reflexivities()

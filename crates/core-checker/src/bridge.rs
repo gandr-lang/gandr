@@ -1548,6 +1548,7 @@ impl Crossed
             environment: environment.clone(),
             positions: Positions {
                 native: positions.native.clone(),
+                assumed: positions.assumed.clone(),
                 admitted: positions.admitted.clone(),
                 definitions: CodeDefinitions::new(),
                 unfoldings: positions.unfoldings.clone(),
@@ -1912,6 +1913,7 @@ where
         flows: report.flows(),
         directed: report.directed(),
         motives: report.motives(),
+        payloads: report.payloads(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
         laws: report.laws(),
@@ -2426,6 +2428,9 @@ struct Source<'source>
     /// The family each transport or ride above level zero formed its motive
     /// as, by node.
     motives: &'source BTreeMap<ComputationId, ValueTypeId>,
+    /// The payload type each send and each receive the judgement checked
+    /// moves, by node.
+    payloads: &'source BTreeMap<ComputationId, ValueTypeId>,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's conversions
@@ -2565,7 +2570,10 @@ enum Erased
 ///   `positions` with its staged declaration appended to the exports. A refused
 ///   erasure or a declined certificate discards the session and a rejection is
 ///   truncated by the kernel, so the environment is as it was on every outcome
-///   but an admission. The replayed verdicts are returned beside the outcome.
+///   but an admission, save the assumptions admitted first for the values its
+///   receives read and the choices its offers take, each an axiom the audit of
+///   whatever reads it names. The replayed verdicts are returned beside the
+///   outcome.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -2579,18 +2587,19 @@ enum Erased
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
 #[spec(
-    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len()],
+    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), assumed = positions.assumed.len()],
     ensures: |ret| match ret.0 {
         | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
-            environment.entries().len().checked_sub(entries) == Some(1)
-            && positions.exports.len().checked_sub(exports) == Some(1)
+            environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed).and_then(|fresh| fresh.checked_add(1))
+            && positions.exports.len().checked_sub(exports) == positions.assumed.len().checked_sub(assumed).and_then(|fresh| fresh.checked_add(1))
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
             && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
         | Outcome::Refused(_) | Outcome::Rejected(_) =>
-            environment.entries().len() == entries
-            && positions.exports.len() == exports && positions.admitted.len() == crossed,
+            environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed)
+            && positions.exports.len().checked_sub(exports) == positions.assumed.len().checked_sub(assumed)
+            && positions.admitted.len() == crossed,
         | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
     },
 )]
@@ -2606,23 +2615,31 @@ fn cross<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    let next = ConstantIndex::from(environment.entries().len());
-    let base = ConstantIndex::from(usize::from(next).saturating_add(1));
-    let own = [(constant, next)];
-    let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
-        Offer::Data(_) | Offer::Codata(_) => &own,
-        Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
-    };
-    let staged = match stage(
-        environment,
-        arena,
-        (source, &*positions),
-        offer,
-        vouch,
-        (crossing, base),
-    ) {
-        Ok(staged) => staged,
-        Err(refused) => return refused,
+    let staged = loop {
+        let next = ConstantIndex::from(environment.entries().len());
+        let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+        let own = [(constant, next)];
+        let crossing: &[(ConstantIndex, ConstantIndex)] = match offer {
+            Offer::Data(_) | Offer::Codata(_) => &own,
+            Offer::Abstract(_) | Offer::Definition { .. } | Offer::Axiom { .. } => &[],
+        };
+        match stage(
+            environment,
+            arena,
+            (source, &*positions),
+            offer,
+            vouch,
+            (crossing, base),
+        ) {
+            Ok(staged) => break staged,
+            Err(refused) => {
+                if let Maybe::Absent(_) =
+                    assumed_for(environment, arena, source, positions, &refused.0, vouch)
+                {
+                    return refused;
+                }
+            },
+        }
     };
     let staged_as = staged.declaration.declaration().clone();
     let admitted = match environment.add_decl(staged.declaration) {
@@ -2983,7 +3000,8 @@ fn settle(
 /// - ensures: one outcome per member, in order: each admitted as [`cross`]
 ///   records an admission when the kernel admits the block, and otherwise every
 ///   member sharing the refusal or rejection of the member that failed, the
-///   environment as it was.
+///   environment as it was but for the assumptions admitted as [`cross`] admits
+///   them.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -2992,9 +3010,9 @@ fn settle(
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-#[spec(captures: entries = environment.entries().len(), ensures: |ret| ret.len() == members.len()
+#[spec(captures: [entries = environment.entries().len(), assumed = positions.assumed.len()], ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
-        || environment.entries().len() == entries))]
+        || environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed)))]
 fn cross_block<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -3006,47 +3024,56 @@ fn cross_block<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
-    let next = environment.entries().len();
-    let crossing = members
-        .iter()
-        .enumerate()
-        .map(|(offset, &(constant, _))| {
-            (constant, ConstantIndex::from(next.saturating_add(offset)))
-        })
-        .collect::<Vec<_>>();
-    let base = ConstantIndex::from(next.saturating_add(members.len()));
-    let mut staged: Vec<Staged> = Vec::with_capacity(members.len());
-    for &(constant, offer) in members {
-        match stage(
-            environment,
-            arena,
-            (source, &*positions),
-            offer,
-            vouch,
-            (&crossing, base),
-        ) {
-            Ok(member) => staged.push(member),
-            Err((outcome, replayed)) => {
-                // The block crosses whole or not at all: what staged is
-                // abandoned, latest first, and every member shares the
-                // refusal.
-                for member in staged.into_iter().rev() {
-                    environment.abandon(member.declaration);
-                }
-                return members
-                    .iter()
-                    .map(|&(member, _)| {
-                        if member == constant {
-                            (outcome.clone(), replayed.clone())
-                        }
-                        else {
-                            (outcome.clone(), Vec::new())
-                        }
-                    })
-                    .collect();
-            },
+    let staged = 'block: loop {
+        let next = environment.entries().len();
+        let crossing = members
+            .iter()
+            .enumerate()
+            .map(|(offset, &(constant, _))| {
+                (constant, ConstantIndex::from(next.saturating_add(offset)))
+            })
+            .collect::<Vec<_>>();
+        let base = ConstantIndex::from(next.saturating_add(members.len()));
+        let mut staged: Vec<Staged> = Vec::with_capacity(members.len());
+        for &(constant, offer) in members {
+            match stage(
+                environment,
+                arena,
+                (source, &*positions),
+                offer,
+                vouch,
+                (&crossing, base),
+            ) {
+                Ok(member) => staged.push(member),
+                Err((outcome, replayed)) => {
+                    // The block crosses whole or not at all: what staged is
+                    // abandoned, latest first, and every member shares the
+                    // refusal, unless an assumption it waited on is admitted
+                    // and the block staged again past it.
+                    for member in staged.into_iter().rev() {
+                        environment.abandon(member.declaration);
+                    }
+                    if let Maybe::Present(_) =
+                        assumed_for(environment, arena, source, positions, &outcome, vouch)
+                    {
+                        continue 'block;
+                    }
+                    return members
+                        .iter()
+                        .map(|&(member, _)| {
+                            if member == constant {
+                                (outcome.clone(), replayed.clone())
+                            }
+                            else {
+                                (outcome.clone(), Vec::new())
+                            }
+                        })
+                        .collect();
+                },
+            }
         }
-    }
+        break staged;
+    };
     let exported = staged
         .iter()
         .map(|member| member.declaration.declaration().clone())
@@ -3083,6 +3110,172 @@ where
     }
 }
 
+/// What the kernel assumes for a session action whose result the peer
+/// decides.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum Assumption
+{
+    /// A received value, of the type its receive opened its slot at.
+    Receive(ValueTypeId),
+    /// An offer's choice among this many arms.
+    Offer(usize),
+}
+
+/// The assumption the session action at `at` crosses under, if it is one.
+///
+/// # Specification
+/// - ensures: for a receive the judgement recorded a value's type for, that
+///   type received; for an offer, its choice among its arms; otherwise none — a
+///   received endpoint names no value, and a received buffer does not cross.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a received value and an offered choice each cross under
+///   their assumption, and a received endpoint crosses with none.
+/// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+#[spec(ensures: |ret| ret.is_none() || matches!(at, CoreNode::Term(TermNode::Computation(_))))]
+fn wanted(
+    arena: &CoreArena,
+    source: Source<'_>,
+    at: CoreNode,
+) -> Option<Assumption>
+{
+    use gandr_core_term::session::SessionAction;
+    let CoreNode::Term(TermNode::Computation(at)) = at
+    else {
+        return None;
+    };
+    let Some(&Computation::Session(ref action)) = arena.computation(at)
+    else {
+        return None;
+    };
+    match *action {
+        SessionAction::Receive { .. } => {
+            let &opened = source.payloads.get(&at)?;
+            let view = value_type_view(arena, opened).ok()?;
+            (!matches!(view, ValueTypeView::Session(_) | ValueTypeView::Buffer))
+                .then_some(Assumption::Receive(opened))
+        },
+        SessionAction::Offer { ref arms, .. } => Some(Assumption::Offer(arms.len())),
+        SessionAction::Send { .. }
+        | SessionAction::Select { .. }
+        | SessionAction::Close { .. }
+        | SessionAction::Fork { .. }
+        | SessionAction::Place { .. } => None,
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a refusal admitted no session assumption.
+    mod assumption {
+        /// The reason no axiom was admitted.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The refusal is not a session action's.
+            Unsessioned,
+            /// The action reads no assumption: a received endpoint, a receive
+            /// the judgement recorded no type for, or an action that is neither
+            /// a receive nor an offer.
+            Unwanted,
+            /// The assumption the action reads is admitted already.
+            Admitted,
+            /// The axiom's type did not erase.
+            Unstaged,
+            /// The kernel refused the axiom.
+            Refused,
+        }
+    }
+}
+
+/// Admit the assumption a session refusal `refused` waits on, when it is one
+/// not admitted yet.
+///
+/// # Specification
+/// - requires: as [`cross`].
+/// - ensures: the kernel position of the axiom admitted exactly when `refused`
+///   refuses a session action whose assumption ([`wanted`]) was missing and is
+///   now admitted, so staging again gets past that action; the environment
+///   grown by that axiom alone.
+/// - provides: a position or [`Absent`]: `Unsessioned` for another refusal,
+///   `Unwanted` for an action that reads no assumption, `Admitted` for one
+///   already admitted, and `Unstaged` or `Refused` for an axiom the erasure or
+///   the kernel refused.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration reading a received value, and one taking an
+///   offer's choice, are each admitted once their assumption is, and every
+///   assumption one receive's type or one arm count needs is admitted once.
+/// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+///
+/// [`Absent`]: assumption::Absent
+#[spec(
+    captures: [entries = environment.entries().len(), assumed = positions.assumed.len()],
+    ensures: |ret| matches!(ret, Maybe::Present(_)) == (positions.assumed.len() > assumed)
+        && environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed),
+)]
+fn assumed_for<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    refused: &Outcome,
+    vouch: &Vouch,
+) -> Maybe<ConstantIndex, assumption::Absent>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let &Outcome::Refused(Refusal::Session { at }) = refused
+    else {
+        return Maybe::Absent(assumption::Absent::Unsessioned);
+    };
+    let Some(wanted) = wanted(arena, source, at)
+    else {
+        return Maybe::Absent(assumption::Absent::Unwanted);
+    };
+    if positions.assumed.contains_key(&wanted) {
+        return Maybe::Absent(assumption::Absent::Admitted);
+    }
+    let (result, action) = match wanted {
+        Assumption::Receive(payload) => (payload, "receive"),
+        Assumption::Offer(arms) => {
+            let unit = arena.value_type_unit();
+            let choices = core::iter::repeat_n(unit, arms).collect::<Vec<_>>();
+            (arena.value_type_sum(&choices), "offer")
+        },
+    };
+    let returner = arena.comp_type_returner(result);
+    let declared = arena.value_type_thunk(returner);
+    let base = ConstantIndex::from(environment.entries().len().saturating_add(1));
+    let Ok(staged) = stage(
+        environment,
+        arena,
+        (source, &*positions),
+        Offer::Axiom { declared },
+        vouch,
+        (&[], base),
+    )
+    else {
+        return Maybe::Absent(assumption::Absent::Unstaged);
+    };
+    let ordinal = positions.assumed.len();
+    let ordinal = crate::alloc::format!("{ordinal}");
+    let name = StructuredName::from(
+        ["session", action, ordinal.as_str()]
+            .into_iter()
+            .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+            .collect::<Vec<_>>(),
+    );
+    let declaration = staged.declaration.declaration().clone().named(name);
+    let Ok(admitted) = environment.add_decl(staged.declaration)
+    else {
+        return Maybe::Absent(assumption::Absent::Refused);
+    };
+    positions.assumed.insert(wanted, admitted.position());
+    positions.exports.push(declaration);
+    Maybe::Present(admitted.position())
+}
+
 /// The kernel position each module declaration that crossed took, and the
 /// bodies the crossed and the static definitions unfold to on either side.
 #[derive(Clone, Debug, Default)]
@@ -3090,6 +3283,9 @@ struct Positions
 {
     /// Native rows cross as explicitly audited, typed opaque constants.
     native: BTreeMap<gandr_core_term::primitive::Primitive, ConstantIndex>,
+    /// The kernel position of each assumption a received value or an
+    /// offered choice crosses under, admitted the first time one is read.
+    assumed: BTreeMap<Assumption, ConstantIndex>,
     /// Module position to kernel position.
     admitted: BTreeMap<ConstantIndex, ConstantIndex>,
     /// The crossed and the static definitions' core bodies, by module
@@ -3929,6 +4125,15 @@ enum Frame
     {
         /// The split or the session action.
         at: ComputationId,
+    },
+    /// A received value or an offered choice, awaiting the image of what
+    /// reads it: bound to the assumption the kernel admitted for it.
+    Assumed
+    {
+        /// The receive or the offer.
+        at: ComputationId,
+        /// The assumption's kernel position.
+        position: ConstantIndex,
     },
     /// A dependent split, awaiting its scrutinee's image.
     SigmaSplitScrutinee
@@ -6092,10 +6297,10 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::Rewritten { at },
                 TermNode::Computation(self.split_reduct(scrutinee, arity, body)),
             ),
-            Computation::Session(_) => (
-                Frame::Rewritten { at },
-                TermNode::Computation(self.session_reduct(at)?),
-            ),
+            Computation::Session(_) => {
+                let (frame, reduct) = self.session_reduct(at)?;
+                (frame, TermNode::Computation(reduct))
+            },
             Computation::Hole(hole) => return Err(Refusal::Hole { at: node, hole }),
             Computation::Mark { body, .. } => (
                 Frame::UnmarkedComputation { at },
@@ -7330,6 +7535,11 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 Frame::UnmarkedComputation { at } | Frame::Rewritten { at },
                 AnyNode::Computation(image),
             ) => Ok(self.erased_computation(at, image)),
+            (Frame::Assumed { at, position }, AnyNode::Computation(image)) => {
+                let assumption = target.value_constant(position);
+                let assumed = target.computation_force(assumption);
+                Ok(self.erased_computation(at, target.computation_bind(assumed, image)))
+            },
             (Frame::SigmaSplitScrutinee { at, motive, body }, AnyNode::Value(scrutinee)) => {
                 self.frames.push(Frame::SigmaSplitMotive {
                     at,
@@ -7404,6 +7614,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 | Frame::Project { .. }
                 | Frame::UnmarkedComputation { .. }
                 | Frame::Rewritten { .. }
+                | Frame::Assumed { .. }
                 | Frame::SigmaSplitBody { .. },
                 AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
@@ -7544,31 +7755,42 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     }
 
     /// The computation a session action is erased to, minted into the source
-    /// arena: the kernel replays what the action computes and none of the
-    /// discipline the checker judged.
+    /// arena, with the frame that awaits its image: the kernel replays what the
+    /// action computes and none of the discipline the checker judged.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `send(c, v)` is `return v to _. return ()`, so the payload
-    ///   still crosses; a select and a close are `return ()`; a fork is its
-    ///   child, then its parent under the bind's one new binder. An endpoint
-    ///   names no value, and a fork's two linear binders bind none.
+    /// - ensures: `send(c, v)` is `(return v : F T) to _. return ()`, `T` the
+    ///   payload type the judgement checked `v` at, so the payload still
+    ///   crosses and the kernel checks it there — unascribed where no type is
+    ///   recorded — and `return ()` for an endpoint sent; a select and a close
+    ///   are `return ()`; a fork is its child, then its parent under the bind's
+    ///   one new binder; a receive of an endpoint is `return () to _.` its body
+    ///   — each awaited as rewritten. A receive of a value is its body reading
+    ///   the payload as the bind's variable, and an offer a case on that
+    ///   variable over its arms in label order, each arm past the bind's and
+    ///   the case's binders — each awaited bound to the assumption admitted for
+    ///   it. An endpoint names no value, and the linear binders bind none.
     /// - fails: [`Refusal::DanglingNode`] for an absent source or one that is
-    ///   not a session action; [`Refusal::Session`] for a receive or an offer,
-    ///   whose payload or label the kernel has no value for;
-    ///   [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Memory`] for a
-    ///   placed buffer.
+    ///   not a session action; [`Refusal::Session`] for a receive the judgement
+    ///   recorded no type for, or a received value or an offer whose assumption
+    ///   is not admitted; [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::Memory`] for a placed or a received buffer.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a fork whose parent reads a variable bound outside it
     ///   crosses and the kernel admits it; an unshifted parent reads the
     ///   child's result instead, and a dropped payload leaves a send's value
-    ///   unchecked.
+    ///   unchecked. A returned received value, the seat exchange's receives and
+    ///   offers, and a delegation each cross, the first two bound to their
+    ///   assumptions and the delegation to none.
     /// - witness: `bridge::tests::a_session_action_crosses_as_what_it_computes_1319`
     /// - witness: `judgement::session::tests::a_fork_crosses_as_its_child_then_its_parent_1319`
+    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
     #[spec(ensures: |ret| match ret {
-        | Ok(reduct) => self.arena.computation(reduct).is_some(),
+        | Ok((ref frame, reduct)) => self.arena.computation(reduct).is_some()
+            && matches!(*frame, Frame::Rewritten { at: site } | Frame::Assumed { at: site, .. } if site == at),
         | Err(Refusal::Session { at: site } | Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Memory } | Refusal::DanglingNode { node: site }) =>
             site == CoreNode::Term(TermNode::Computation(at)),
         | Err(_) => false,
@@ -7576,7 +7798,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     fn session_reduct(
         &mut self,
         at: ComputationId,
-    ) -> Result<ComputationId, Refusal>
+    ) -> Result<(Frame, ComputationId), Refusal>
     {
         use gandr_core_term::session::SessionAction;
         let node = CoreNode::Term(TermNode::Computation(at));
@@ -7584,16 +7806,30 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
         else {
             return Err(Refusal::DanglingNode { node });
         };
+        let rewritten = Frame::Rewritten { at };
         match *action {
             SessionAction::Send { payload, .. } => {
                 let unit = self.arena.value_unit();
                 let done = self.arena.computation_return(unit);
-                let sent = self.arena.computation_return(payload);
-                Ok(self.arena.computation_bind(sent, done))
+                if matches!(
+                    self.arena.value(payload),
+                    Some(&Value::Variable {
+                        zone: gandr_core_term::Zone::Linear,
+                        ..
+                    })
+                ) {
+                    return Ok((rewritten, done));
+                }
+                let mut sent = self.arena.computation_return(payload);
+                if let Some(&moved) = self.source.payloads.get(&at) {
+                    let returner = self.arena.comp_type_returner(moved);
+                    sent = self.arena.computation_ascribe(sent, returner);
+                }
+                Ok((rewritten, self.arena.computation_bind(sent, done)))
             },
             SessionAction::Select { .. } | SessionAction::Close { .. } => {
                 let unit = self.arena.value_unit();
-                Ok(self.arena.computation_return(unit))
+                Ok((rewritten, self.arena.computation_return(unit)))
             },
             SessionAction::Fork { child, parent, .. } => {
                 let parent = gandr_core_term::shift_computation_under(
@@ -7603,10 +7839,61 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     gandr_core_term::Binders::from(1_u32),
                 )
                 .settle(self.arena);
-                Ok(self.arena.computation_bind(child, parent))
+                Ok((rewritten, self.arena.computation_bind(child, parent)))
             },
-            SessionAction::Receive { .. } | SessionAction::Offer { .. } => {
-                Err(Refusal::Session { at: node })
+            SessionAction::Receive { body, .. } => {
+                let Some(&opened) = self.source.payloads.get(&at)
+                else {
+                    return Err(Refusal::Session { at: node });
+                };
+                let view = value_type_view(self.arena, opened)?;
+                if matches!(view, ValueTypeView::Buffer) {
+                    return Err(Refusal::OutOfFragment {
+                        at: node,
+                        former: UnadmittedFormer::Memory,
+                    });
+                }
+                let endpoint = matches!(view, ValueTypeView::Session(_));
+                let assumed = self
+                    .positions
+                    .assumed
+                    .get(&Assumption::Receive(opened))
+                    .copied();
+                let rest = gandr_core_term::delinearise(self.arena, body);
+                if endpoint {
+                    let unit = self.arena.value_unit();
+                    let none = self.arena.computation_return(unit);
+                    return Ok((rewritten, self.arena.computation_bind(none, rest)));
+                }
+                assumed.map_or(Err(Refusal::Session { at: node }), |position| {
+                    Ok((Frame::Assumed { at, position }, rest))
+                })
+            },
+            SessionAction::Offer { ref arms, .. } => {
+                let Some(&position) = self.positions.assumed.get(&Assumption::Offer(arms.len()))
+                else {
+                    return Err(Refusal::Session { at: node });
+                };
+                // The arms are copied out of the action, which borrows the
+                // arena each shift writes to, and shifted in place.
+                let mut branches = arms.values().copied().collect::<Vec<_>>();
+                for branch in &mut branches {
+                    *branch = gandr_core_term::shift_computation_under(
+                        self.arena,
+                        *branch,
+                        gandr_core_term::Binders::NONE,
+                        gandr_core_term::Binders::from(2_u32),
+                    )
+                    .settle(self.arena);
+                }
+                let choice = self.arena.value_variable(
+                    gandr_core_term::Zone::Intuitionistic,
+                    gandr_kernel_term::DeBruijnIndex::from(0_u32),
+                );
+                Ok((
+                    Frame::Assumed { at, position },
+                    self.arena.computation_case(choice, &branches),
+                ))
             },
             SessionAction::Place { .. } => Err(Refusal::OutOfFragment {
                 at: node,

@@ -402,6 +402,55 @@ enum Rewrite
     /// Read every decode of the binder the depth names at the engine's level,
     /// and leave every other node as it stands.
     Relevel,
+    /// Read the linear binder the count names, counted from the walk's root,
+    /// as one intuitionistic binder just outside the root: its variable
+    /// becomes the intuitionistic variable counting past the depth to that
+    /// binder, and every free intuitionistic index rises by one. Every other
+    /// linear index stands, the binder's own slot unread, so a session
+    /// action's subject and a memory form's slot keep their names.
+    Delinearise(Binders),
+}
+
+impl Rewrite
+{
+    /// The rewrite a child standing past `binders` linear binders takes.
+    ///
+    /// # Specification
+    /// - ensures: a delinearisation counting `binders` more; every other
+    ///   rewrite, which reads no linear index, unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a payload read under a nested receive and under a
+    ///   fork's halves is the one the count names, and a payload of the nested
+    ///   receive stays linear.
+    /// - witness: `rewrite::tests::a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319`
+    #[spec(ensures: |ret| match self {
+        | Self::Delinearise(linear) => ret == Self::Delinearise(linear.beyond(binders)),
+        | _ => ret == self,
+    })]
+    fn past_linear(
+        self,
+        binders: Binders,
+    ) -> Self
+    {
+        match self {
+            Self::Delinearise(linear) => Self::Delinearise(linear.beyond(binders)),
+            Self::Relocate(_)
+            | Self::Substitute(_)
+            | Self::Instantiate(..)
+            | Self::Rotate(_)
+            | Self::Fill(..)
+            | Self::Solve(..)
+            | Self::Wrap
+            | Self::Environment
+            | Self::Elaborate
+            | Self::Rename
+            | Self::Abstract(..)
+            | Self::Splice(_)
+            | Self::Relevel => self,
+        }
+    }
 }
 
 /// Whether an instantiation met the binder it instantiates beneath a node.
@@ -735,6 +784,21 @@ impl<'arena> Engine<'arena>
             );
             let _previous = self.memo.insert((node, depth, rewrite), abstracted);
             self.results.push(abstracted);
+            return;
+        }
+        if let (Rewrite::Delinearise(linear), Node::Value(id)) = (rewrite, node)
+            && self.arena.value(id)
+                == Some(&Value::Variable {
+                    zone: Zone::Linear,
+                    index: DeBruijnIndex::from(linear.0),
+                })
+        {
+            let read = Node::Value(
+                self.arena
+                    .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(depth.0)),
+            );
+            let _previous = self.memo.insert((node, depth, rewrite), read);
+            self.results.push(read);
             return;
         }
         if let Node::Value(id) = node
@@ -1140,7 +1204,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Environment
             | Rewrite::Rename
             | Rewrite::Abstract(..)
-            | Rewrite::Relevel => Maybe::Absent(()),
+            | Rewrite::Relevel
+            | Rewrite::Delinearise(_) => Maybe::Absent(()),
         }
     }
 
@@ -1413,6 +1478,13 @@ impl<'arena> Engine<'arena>
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1))),
                 | Some(_) | None => ret == Occurrence::Answered(id),
             },
+            | Rewrite::Delinearise(_) => if u32::from(index) < depth.0 {
+                ret == Occurrence::Answered(id)
+            } else {
+                matches!(ret, Occurrence::Answered(answer) if matches!(self.arena.value(answer),
+                    Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
+                        if Some(u32::from(*actual)) == u32::from(index).checked_add(1)))
+            },
             | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel => {
                 ret == Occurrence::Answered(id)
             },
@@ -1485,6 +1557,22 @@ impl<'arena> Engine<'arena>
                     )
                 },
                 Some(_) | None => Occurrence::Answered(id),
+            },
+            Rewrite::Delinearise(_) => {
+                if position < depth {
+                    Occurrence::Answered(id)
+                }
+                else {
+                    // reason: a raised index clamps at the representable ceiling.
+                    let raised = u32::from(arith::saturating_add(
+                        arith::Int::from(position.0),
+                        arith::Int::from(1_u32),
+                    ));
+                    Occurrence::Answered(
+                        self.arena
+                            .value_variable(Zone::Intuitionistic, DeBruijnIndex::from(raised)),
+                    )
+                }
             },
             Rewrite::Fill(..)
             | Rewrite::Solve(..)
@@ -1577,8 +1665,10 @@ impl<'arena> Engine<'arena>
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach `node`.
     /// - ensures: one open task per child, pushed in reverse so the children
-    ///   close in order, each at the depth its position sits at; a leaf and an
-    ///   unreadable node push nothing.
+    ///   close in order, each at the depth its position sits at and under the
+    ///   node's rewrite, a delinearisation counting the linear binder a session
+    ///   action or a memory form opens over the child; a leaf and an unreadable
+    ///   node push nothing.
     /// - provides: the only statement of where the core language binds.
     /// - fails: never.
     /// - panics: none.
@@ -1651,7 +1741,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
     }],
         ensures: self.results.len() == ready && pending.checked_add(children) == Some(self.tasks.len())
             && self.tasks.get(pending..).is_some_and(|tasks| tasks.iter().all(|task|
-                matches!(task, Task::Open(_, at, step) if *step == rewrite && (*at == depth || *at == depth.deeper() || *at == depth.deeper().deeper() || Some(*at) == split)))),
+                matches!(task, Task::Open(_, at, step) if (*step == rewrite || *step == rewrite.past_linear(Binders::ONE)) && (*at == depth || *at == depth.deeper() || *at == depth.deeper().deeper() || Some(*at) == split)))),
     )]
     fn push_children(
         &mut self,
@@ -2021,13 +2111,15 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     self.tasks.push(open(Node::Value(scrutinee), depth));
                 },
                 // A fork binds into the linear zone: the intuitionistic depth
-                // its child and parent stand at is the fork's own.
+                // its child and parent stand at is the fork's own, and a
+                // delinearisation counts the linear binders each child is past.
                 Some(&Computation::Session(ref action)) => {
+                    let step = rewrite.past_linear(action.child_binders());
                     self.tasks.extend(
                         action
                             .computations()
                             .rev()
-                            .map(|child| open(Node::Computation(child), depth)),
+                            .map(|child| Task::Open(Node::Computation(child), depth, step)),
                     );
                     self.tasks.extend(
                         action
@@ -2043,13 +2135,17 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     );
                 },
                 // A memory form binds only into the linear zone: every child
-                // stands at the form's own intuitionistic depth.
+                // stands at the form's own intuitionistic depth, past the
+                // linear binders the form opens over it.
                 Some(&Computation::Memory(ref form)) => {
-                    self.tasks.extend(
-                        form.computations()
-                            .rev()
-                            .map(|child| open(Node::Computation(child), depth)),
-                    );
+                    self.tasks
+                        .extend(form.scoped().rev().map(|(child, binders)| {
+                            Task::Open(
+                                Node::Computation(child),
+                                depth,
+                                rewrite.past_linear(binders),
+                            )
+                        }));
                     self.tasks.extend(
                         form.values()
                             .rev()
@@ -4356,6 +4452,48 @@ pub fn abstract_constant_value_type(
     ) {
         Node::ValueType(id) => id,
         Node::Value(_) | Node::Computation(_) | Node::CompType(_) => subject,
+    }
+}
+
+/// Read a receive's body with its payload bound intuitionistically.
+///
+/// Every read of the payload's linear binder becomes the variable of one
+/// intuitionistic binder just outside `body`, and every free intuitionistic
+/// index rises past it.
+///
+/// # Specification
+/// - requires: `body` names a computation of `arena` read under the payload's
+///   linear binder, innermost.
+/// - ensures: `body` read under one intuitionistic binder more, innermost,
+///   which each read of the payload names; every other linear index stands, so
+///   a session action's subject and a memory form's slot keep their names and
+///   the payload's linear slot stays, unread.
+/// - provides: the continuation a receive's erasure binds its payload in.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a payload read at the root, under a nested receive and
+///   under a fork's halves becomes the one new binder counted past the
+///   intuitionistic binders between; a free intuitionistic index rises by one;
+///   the nested receive's own payload and every action subject stay as they
+///   were.
+/// - witness: `rewrite::tests::a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319`
+#[spec(ensures: |ret| ret == body || arena.computation(ret).is_some())]
+#[inline]
+#[must_use]
+pub fn delinearise(
+    arena: &mut CoreArena,
+    body: ComputationId,
+) -> ComputationId
+{
+    match Engine::new(arena).run(
+        Node::Computation(body),
+        Binders::NONE,
+        Rewrite::Delinearise(Binders::NONE),
+    ) {
+        Node::Computation(id) => id,
+        Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => body,
     }
 }
 
