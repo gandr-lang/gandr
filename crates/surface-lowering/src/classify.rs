@@ -1162,13 +1162,13 @@ mod tests
                 "grade",
                 FragmentSort::CompType,
                 FragmentBoundary::Unadmitted(Unbuilt::ThunkGrade),
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             ),
             (
                 "parameter",
                 FragmentSort::Declaration,
                 FragmentBoundary::Unadmitted(Unbuilt::TypeParameter),
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::TYPE_PARAMETER),
             ),
         ];
 
