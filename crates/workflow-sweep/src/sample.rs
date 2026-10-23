@@ -1,5 +1,6 @@
-//! A sweep's sample: a hashed slice of its candidates at a fixed size, at
-//! least one of each class, and every candidate a change touches.
+//! A sweep's sample: at least one of each class, then the sources a change
+//! touches in an order keyed by its commit, then a hashed slice of the rest,
+//! to a fixed size.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -7,6 +8,7 @@ use alloc::collections::BTreeSet;
 use anodized::spec;
 
 use crate::changed::Changed;
+use crate::changed::Head;
 use crate::corpus::Class;
 use crate::corpus::CorpusName;
 use crate::corpus::Source;
@@ -17,8 +19,8 @@ use crate::corpus::Source;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SampleName(pub &'static str);
 
-/// How many sources a sample draws by rank, before its class floor and the
-/// changed sources join.
+/// How many sources a sample visits: its class floor, then the changed
+/// sources, then its ranked slice, until this many are taken.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SampleSize(pub usize);
@@ -37,8 +39,8 @@ pub struct Sample
     pub size: SampleSize,
 }
 
-/// A source's place in a sample's ranking: the BLAKE3 digest of the sample's
-/// name, a zero byte and the source's name.
+/// A source's place in a sample's ranking: the BLAKE3 digest of a key, the
+/// sample's name, a zero byte and the source's name.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Rank([u8; 32]);
@@ -50,27 +52,33 @@ impl Sample
     /// # Specification
     /// - requires: nothing.
     /// - ensures: ranks every candidate by the BLAKE3 digest of the sample's
-    ///   name, a zero byte and the candidate's name, ascending; takes the
-    ///   first-ranked candidate of every class present, then candidates in rank
-    ///   order until the sample's size is reached, then every candidate
-    ///   `changed` touches; returns what it took in the candidates' order. The
-    ///   result holds `size` candidates, or all of them when fewer, or one per
-    ///   class when there are more classes than that, plus the changed ones
-    ///   beyond either.
-    /// - provides: a slice that is the same on every machine and every run,
-    ///   that moves by at most one source when one is added or removed, that
-    ///   keeps every class and every changed source.
+    ///   name, a zero byte and the candidate's name, ascending, and every
+    ///   candidate `changed` touches by the same digest with the commit it was
+    ///   read at first; takes the first-ranked candidate of every class
+    ///   present, then the touched candidates in their order, then candidates
+    ///   in rank order, until the sample's size is reached; returns what it
+    ///   took in the candidates' order. The result holds `size` candidates, or
+    ///   all of them when fewer, or one per class when there are more classes
+    ///   than that; every touched candidate is among them when they and the
+    ///   classes fit the size.
+    /// - provides: a slice whose cost is the size's whatever the change, the
+    ///   same on every machine for one commit, that moves by at most one source
+    ///   when one is added or removed, that keeps every class, and that visits
+    ///   a change wider than the size a different part at each commit — the
+    ///   rest is the nightly profile's.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a corpus of three classes sampled at one, at four and
-    ///   past its length, with a changed source ranked last; an unsalted rank,
-    ///   a dropped class floor, a size overshoot, a lost changed source or a
-    ///   reordered result fails the witness, and an added candidate moves at
-    ///   most one choice.
+    ///   past its length, with a changed source ranked last, and a change
+    ///   touching every source at two commits; an unsalted rank, a dropped
+    ///   class floor, a size overshoot, a lost changed source, a touched source
+    ///   ranked below the slice, an unkeyed rotation or a reordered result
+    ///   fails the witness, and an added candidate moves at most one choice.
     /// - witness: `sample::tests::a_sample_keeps_every_class_and_every_change`
+    /// - witness: `sample::tests::a_wide_change_is_visited_at_the_size_a_part_per_commit`
     /// - witness: `sample::tests::an_added_source_moves_at_most_one_choice`
-    #[spec(ensures: |ret| ret.iter().all(|kept| candidates.iter().any(|candidate| candidate.name == kept.name)) && changed.names().all(|name| candidates.iter().all(|candidate| candidate.name != *name) || ret.iter().any(|kept| kept.name == *name)))]
+    #[spec(ensures: |ret| ret.iter().all(|kept| candidates.iter().any(|candidate| candidate.name == kept.name)) && ret.len() <= self.size.0.max(candidates.iter().map(|candidate| &candidate.class).collect::<BTreeSet<_>>().len()) && (changed.names().filter(|name| candidates.iter().any(|candidate| candidate.name == **name)).count().saturating_add(candidates.iter().map(|candidate| &candidate.class).collect::<BTreeSet<_>>().len()) > self.size.0 || changed.names().all(|name| candidates.iter().all(|candidate| candidate.name != *name) || ret.iter().any(|kept| kept.name == *name))))]
     #[inline]
     #[must_use]
     pub fn select(
@@ -79,10 +87,11 @@ impl Sample
         changed: &Changed,
     ) -> Vec<Source>
     {
+        let unkeyed = Head::default();
         let mut ranked: Vec<(Rank, usize)> = candidates
             .iter()
             .enumerate()
-            .map(|(at, source)| (self.rank(source), at))
+            .map(|(at, source)| (self.rank(&unkeyed, source), at))
             .collect();
         ranked.sort_unstable();
         let mut taken: BTreeSet<usize> = BTreeSet::new();
@@ -94,20 +103,25 @@ impl Sample
                 let _first = taken.insert(at);
             }
         }
-        for &(_, at) in &ranked {
-            if taken.len() >= self.size.0 {
-                break;
-            }
-            let _ranked = taken.insert(at);
-        }
         let mut by_name: BTreeMap<&CorpusName, usize> = BTreeMap::new();
         for (at, source) in candidates.iter().enumerate() {
             let _first = by_name.entry(&source.name).or_insert(at);
         }
-        for name in changed.names() {
-            if let Some(&at) = by_name.get(name) {
-                let _changed = taken.insert(at);
+        let mut touched: Vec<(Rank, usize)> = changed
+            .names()
+            .filter_map(|name| by_name.get(name).copied())
+            .filter_map(|at| {
+                candidates
+                    .get(at)
+                    .map(|source| (self.rank(changed.head(), source), at))
+            })
+            .collect();
+        touched.sort_unstable();
+        for &(_, at) in touched.iter().chain(&ranked) {
+            if taken.len() >= self.size.0 {
+                break;
             }
+            let _taken = taken.insert(at);
         }
         taken
             .into_iter()
@@ -115,16 +129,19 @@ impl Sample
             .collect()
     }
 
-    /// `source`'s rank in this sample.
+    /// `source`'s rank in this sample under `key`: the empty key ranks the
+    /// slice, a change's commit its touched sources.
     ///
     /// # Specification
     /// trivial.
     fn rank(
         &self,
+        key: &Head,
         source: &Source,
     ) -> Rank
     {
         let mut hasher = blake3::Hasher::new();
+        key.key(&mut hasher);
         let _name = hasher.update(self.name.0.as_bytes());
         let _separator = hasher.update(&[0]);
         let _source = hasher.update(source.name.as_ref().as_bytes());
@@ -142,6 +159,7 @@ mod tests
     use super::SampleName;
     use super::SampleSize;
     use crate::changed::Changed;
+    use crate::changed::Head;
     use crate::corpus::Class;
     use crate::corpus::CorpusName;
     use crate::corpus::Source;
@@ -240,16 +258,48 @@ mod tests
             .expect("a source outside the sample");
         let changed: Changed = core::iter::once(outside.name.clone()).collect();
         let with_change = at(4).select(&corpus, &changed);
-        assert_eq!(with_change.len(), 5, "a changed source joins the slice");
+        assert_eq!(with_change.len(), 4, "a changed source keeps the size");
         assert!(
             with_change.contains(outside),
             "the changed source is visited"
         );
         let visited: BTreeSet<&CorpusName> =
             with_change.iter().map(|source| &source.name).collect();
-        assert!(
-            four.iter().all(|kept| visited.contains(&kept.name)),
-            "the slice itself is unchanged"
+        assert_eq!(
+            four.iter()
+                .filter(|kept| !visited.contains(&kept.name))
+                .count(),
+            1,
+            "the changed source displaces the slice's last-ranked source alone"
+        );
+    }
+
+    #[test]
+    fn a_wide_change_is_visited_at_the_size_a_part_per_commit()
+    {
+        let corpus = corpus();
+        let sample = Sample {
+            name: SampleName("a sweep"),
+            size: SampleSize(6),
+        };
+        let every: Changed = corpus.iter().map(|source| source.name.clone()).collect();
+        let at = |head: &str| every.clone().at(Head::from(head));
+        let one = sample.select(&corpus, &at("1914"));
+        let other = sample.select(&corpus, &at("1946"));
+        assert_eq!(
+            (one.len(), other.len()),
+            (6, 6),
+            "a change touching every source is visited at the size"
+        );
+        assert_eq!(
+            one,
+            sample.select(&corpus, &at("1914")),
+            "one commit visits one part"
+        );
+        assert_ne!(
+            names(&one),
+            names(&other),
+            "another commit visits another part"
         );
     }
 

@@ -65,19 +65,27 @@
 //! them — because membership in the corpus is location. The slice keeps the
 //! first-ranked source of every class, so no class goes unvisited.
 //!
-//! **The change is always in.** Every candidate the change adds or modifies
-//! joins the slice, measured against the revision `GANDR_SWEEP_BASE` names or,
-//! unset, where `HEAD` left `origin/main` — the merge-base selection the
-//! obligations report applies to witnesses. A run that cannot list the change
-//! fails rather than sample without it. A change touching more sources than a
-//! sweep's bound affords fails that bound; the sweep's own cost is the thing
-//! to cut.
+//! **The change first, at the size.** The candidates the change adds or
+//! modifies are taken before the ranked slice, measured against the revision
+//! `GANDR_SWEEP_BASE` names or, unset, where `HEAD` left `origin/main` — the
+//! merge-base selection the obligations report applies to witnesses. A run
+//! that cannot list the change fails rather than sample without it. The
+//! sample's stated size is the count its sweep measured to fit the 30 s
+//! bound, and it caps the change too: a change touching more sources than
+//! that visits as many as the size, ranked by the digest of the commit the
+//! change was read at, the sweep's name and the source, so each commit of a
+//! wide change — each push, each merge-queue entry — visits another part of
+//! it and the nightly profile visits the rest. A failure names its source,
+//! and the commit replays the part. The alternative was every touched source
+//! beyond the size, which put a change touching hundreds of sources past the
+//! bound in every sampled sweep at once; a raised bound was refused, since the
+//! bound is what keeps a sweep a test.
 //!
 //! **A layout is no change.** A modified source the formatter lays out to the
 //! text it lays the base's out to holds the base's tokens and comments in the
 //! base's order — the invariant `gandr-surface-format` checks on every text
 //! it returns — so every sweep reads it as before, and it leaves the change.
-//! A corpus-wide layout then keeps every sample at its stated size; the
+//! A corpus-wide layout then leaves every sample its ranked slice; the
 //! nightly profile, visiting every source over its rotation, is the backstop.
 //! The alternative was every touched file in, which put the corpus's layout
 //! pass past the 30 s bound in every sample at once (#492).

@@ -125,8 +125,8 @@ const TABLES_WHOLE_STRIDE: usize = if cfg!(anodized_panic) { 16 } else { 1 };
 /// `crates/surface-grammar/`, `crates/surface-syntax/`) reaches every record,
 /// and the plain lane runs the whole matrix for it, about a minute; the
 /// enforcing shards keep the sample, where the whole matrix would take half an
-/// hour. The sample, [`RECOVERY`], parses forty-eight sources and every source
-/// the change touches: each one's whole row and the rows of every sixteenth
+/// hour. The sample, [`RECOVERY`], parses forty-eight sources, those the
+/// change touches first: each one's whole row and the rows of every sixteenth
 /// significant token. Every source's record is still required to exist, and
 /// every record to have a source, under every profile.
 #[test]

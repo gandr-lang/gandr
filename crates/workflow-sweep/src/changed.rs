@@ -2,6 +2,9 @@
 //! from: the merge-base selection the obligations report applies to
 //! witnesses, applied to a sweep's inputs.
 //!
+//! The change carries the commit it was read at, which keys the rotation a
+//! sample takes the touched sources by.
+//!
 //! A source whose change is layout alone is no change: when the formatter
 //! lays out the base's text and the working tree's text to one text, the two
 //! hold the same tokens and comments in the same order — the invariant
@@ -31,13 +34,57 @@ use crate::error::SweepError;
 /// The variable naming the revision a change is measured against.
 pub const BASE: &str = "GANDR_SWEEP_BASE";
 
-/// The corpus sources a change adds or modifies, by name.
+/// The corpus sources a change adds or modifies, by name, and the commit the
+/// change was read at.
 ///
 /// # Specification
-/// - provides: the names a sample takes whatever their rank.
+/// - provides: the names a sample takes before its ranked slice, and the key
+///   that rotates which of them it takes when they outnumber its size.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Changed
+{
+    /// The touched sources.
+    names: BTreeSet<CorpusName>,
+    /// The commit the change was read at; empty when none was.
+    head: Head,
+}
+
+/// The commit a change was read at, as Git spells its object name: the key
+/// of the rotation a sample takes the touched sources by.
+///
+/// # Specification
+/// trivial.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Changed(BTreeSet<CorpusName>);
+pub(crate) struct Head(String);
+
+impl Head
+{
+    /// Feeds the key to `hasher`; the empty key feeds nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn key(
+        &self,
+        hasher: &mut blake3::Hasher,
+    )
+    {
+        let _keyed = hasher.update(self.0.as_bytes());
+    }
+}
+
+#[cfg(test)]
+impl From<&str> for Head
+{
+    /// The key spelled `spelled`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(spelled: &str) -> Self
+    {
+        Self(spelled.to_owned())
+    }
+}
 
 /// A revision Git resolves: a commit, a branch, or an expression such as
 /// `HEAD^`.
@@ -81,7 +128,8 @@ impl Changed
     /// - ensures: every `.gandr` file below `corpus` that the working tree adds
     ///   or modifies against the base, and every untracked one Git does not
     ///   ignore, named below `corpus` — less every modified source the
-    ///   formatter lays out to the text it lays the base's out to.
+    ///   formatter lays out to the text it lays the base's out to — keyed by
+    ///   the commit `HEAD` names.
     /// - provides: a sample's changed-files rule; the working tree, not `HEAD`,
     ///   is compared, so an uncommitted edit counts.
     /// - fails: [`SweepError::Git`] when an invocation cannot run, exits
@@ -97,11 +145,13 @@ impl Changed
     /// - hypothesis: L3 — the base's own resolution is Git's; against a
     ///   committed corpus, an uncommitted edit and an untracked source are
     ///   listed by their names below the corpus and an edited non-source is
-    ///   not, and a base that does not exist is refused naming the command.
-    ///   Reading `HEAD` instead of the working tree, dropping untracked files,
-    ///   or treating a failed command as an empty change fails the witness.
+    ///   not, the key is the commit `HEAD` names, and a base that does not
+    ///   exist is refused naming the command. Reading `HEAD` instead of the
+    ///   working tree, dropping untracked files, keying by the base, or
+    ///   treating a failed command as an empty change fails the witness.
     /// - witness: `changed::tests::a_change_lists_its_modified_and_untracked_sources_and_a_missing_base_is_refused`
     /// - witness: `changed::tests::a_layout_alone_is_no_change_492`
+    /// - witness: `changed::tests::an_added_source_is_a_change_683`
     #[inline]
     pub fn asked(corpus: &Path) -> Result<Self, SweepError>
     {
@@ -194,7 +244,11 @@ impl Changed
             }
         }
         names.extend(untracked.lines().filter(source).map(CorpusName::from));
-        Ok(Self(names))
+        let head = git(corpus, GitArgs(&["rev-parse", "HEAD"]))?;
+        Ok(Self {
+            names,
+            head: Head(head.trim().to_owned()),
+        })
     }
 
     /// The changed sources, by name, ascending.
@@ -204,7 +258,29 @@ impl Changed
     #[inline]
     pub fn names(&self) -> impl Iterator<Item = &CorpusName>
     {
-        self.0.iter()
+        self.names.iter()
+    }
+
+    /// The commit the change was read at.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn head(&self) -> &Head
+    {
+        &self.head
+    }
+
+    /// This change, read at `head`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    pub(crate) fn at(
+        self,
+        head: Head,
+    ) -> Self
+    {
+        Self { head, ..self }
     }
 }
 
@@ -239,7 +315,7 @@ fn laid_out(
 
 impl FromIterator<CorpusName> for Changed
 {
-    /// The change touching exactly `names`.
+    /// The change touching exactly `names`, read at no commit.
     ///
     /// # Specification
     /// trivial.
@@ -248,7 +324,10 @@ impl FromIterator<CorpusName> for Changed
     where
         Names: IntoIterator<Item = CorpusName>,
     {
-        Self(iter.into_iter().collect())
+        Self {
+            names: iter.into_iter().collect(),
+            head: Head::default(),
+        }
     }
 }
 
@@ -406,7 +485,7 @@ mod tests
 
     /// #683: a source the change commits and the base lacks is in the change —
     /// there is no base text to lay out, and the sweep must not ask Git for
-    /// one.
+    /// one. The change is keyed by the commit it was read at, not its base.
     #[test]
     fn an_added_source_is_a_change_683()
     {
@@ -427,14 +506,18 @@ mod tests
             GitArgs(&["commit", "--quiet", "-m", "adds a source"]),
         );
         let changed = Changed::against(&corpus, Revision::from("HEAD^"));
+        let head = super::git(&corpus, GitArgs(&["rev-parse", "HEAD"]));
         std::fs::remove_dir_all(&scratch).expect("the scratch repository is removed");
+        let changed = changed.expect("the base resolves");
         assert_eq!(
-            changed
-                .expect("the base resolves")
-                .names()
-                .collect::<Vec<_>>(),
+            changed.names().collect::<Vec<_>>(),
             [&CorpusName::from("fixture/model/added.gandr")],
             "the committed addition is the change"
+        );
+        assert_eq!(
+            changed.head.0,
+            head.expect("HEAD resolves").trim(),
+            "the change is keyed by HEAD"
         );
     }
 }

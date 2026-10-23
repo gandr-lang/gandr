@@ -15,7 +15,7 @@ The corpus sources a sweep test visits: a stated, hashed and stratified sample u
 
 **Why.** Every test is held to 30 s on every pull request and merge-queue entry, and no test leaves those lanes. A sweep over the whole corpus does not fit that bound, so it runs twice: over a bounded sample on every landing, and whole nightly. The nightly run is itself held to fifteen minutes summed over its jobs, twenty at the most, and the costliest sweeps do not fit it whole: each visits one slice of the corpus a night over the nights it states, every input within them, and the typing types one part of every source a night, every keystroke within its nights. The sample, the slice and the part are deterministic and stated, so a failure reproduces anywhere.
 
-**How.** nextest names the running profile in `NEXTEST_PROFILE`. A sample ranks its candidates by the BLAKE3 digest of the sweep's name and the source's path below `crates/surface-corpus`, keeps the first-ranked source of every class — `strict`, and each directory below `fixture`, the pending set among them — fills to its size in rank order, and adds every candidate the change adds or modifies. The change is measured against the revision `GANDR_SWEEP_BASE` names, or where `HEAD` left `origin/main` when it is unset; a source whose change is layout alone — the formatter lays it and its base out to one text — is no change. The [crate docs](src/lib.rs) record the alternatives and the reversal.
+**How.** nextest names the running profile in `NEXTEST_PROFILE`. A sample ranks its candidates by the BLAKE3 digest of the sweep's name and the source's path below `crates/surface-corpus`, keeps the first-ranked source of every class — `strict`, and each directory below `fixture`, the pending set among them — then takes the candidates the change adds or modifies, then fills in rank order, stopping at its size. A change wider than the size is ranked by the digest with the commit `HEAD` names first, so each commit visits another part of it and the nightly profile the rest. The change is measured against the revision `GANDR_SWEEP_BASE` names, or where `HEAD` left `origin/main` when it is unset; a source whose change is layout alone — the formatter lays it and its base out to one text — is no change. The [crate docs](src/lib.rs) record the alternatives and the reversal.
 
 ## Provided features
 
@@ -35,7 +35,7 @@ The corpus sources a sweep test visits: a stated, hashed and stratified sample u
 cargo nextest run -p gandr-surface-format                          # the sampled sweep
 cargo nextest run --profile sweeps -p gandr-surface-format         # the whole corpus
 GANDR_SWEEP_NIGHT=20744 cargo nextest run --profile nightly -p gandr-surface-parser  # the slice of night 20744
-GANDR_SWEEP_BASE=HEAD~3 cargo nextest run -p gandr-surface-format  # the last three commits' sources join the sample
+GANDR_SWEEP_BASE=HEAD~3 cargo nextest run -p gandr-surface-format  # the last three commits' sources lead the sample
 cargo nextest run -p gandr-workflow-sweep
 ```
 
