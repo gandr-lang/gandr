@@ -1780,7 +1780,18 @@ enum Canonical
 /// across both, into `out`; `seen` is scratch.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: `out` holds one node per node of `first` then `second`, in order,
+///   a symbol as itself and a variable as the ordinal of its first occurrence
+///   across both; nothing of a previous call remains.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — a clause would restate the renumbering node by node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`TheoryRules::joins`]: the derived rule's sides read
+///   so are the peak's two normal forms read so.
+/// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
 fn canonical_flats(
     first: &[Flat],
     second: &[Flat],
@@ -1801,7 +1812,18 @@ fn canonical_flats(
 /// across both, into `out`; `seen` is scratch.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: `out` holds one node per node of `left` then `right`, in order, a
+///   symbol as itself and a variable or an instantiation of one by the ordinal
+///   of the variable's first occurrence across both, an instantiation keeping
+///   its argument count; nothing of a previous call remains.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — a clause would restate the renumbering node by node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`canonical_flats`].
+/// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
 fn canonical_sides(
     left: &[TheoryNode],
     right: &[TheoryNode],
