@@ -1689,6 +1689,20 @@ struct Stretch
     end: usize,
 }
 
+/// One segment of an interpolated string, in written order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum TextSegment
+{
+    /// A run of text between the quotes and the interpolations, its escapes
+    /// decoded.
+    Text(StringLiteral),
+    /// The expression an interpolation `${ e }` holds, read as a value.
+    Operand(NodeIndex),
+}
+
 /// What a block statement does with the value its computation returns, or
 /// the fork, the receive or the hold it is.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -2211,6 +2225,10 @@ enum Plan
         gandr_core_term::primitive::Primitive,
         gandr_core_term::primitive::Arguments<NodeIndex>,
     ),
+    /// An interpolated string: the segments in the lowerer's segment store,
+    /// each appended after the ones before it by the prelude's
+    /// `string.append`.
+    Interpolated(gandr_core_term::primitive::Primitive, Stretch),
     /// The unit value.
     Unit,
     /// A boolean literal: the unit injected into the side of `Bool` it names,
@@ -2891,6 +2909,9 @@ struct Lowerer<'run, 'source>
     faults: BTreeMap<SlotIndex, LoweringRefusal<'source>>,
     /// The arguments every planned application reads, stretch by stretch.
     operands: Vec<NodeIndex>,
+    /// The segments every planned interpolated string reads, stretch by
+    /// stretch.
+    segments: Vec<TextSegment>,
     /// The statements every planned block reads, stretch by stretch.
     statements: Vec<Statement>,
     /// The parameters every planned function reads, stretch by stretch.
@@ -4442,6 +4463,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             modelled: BTreeMap::new(),
             faults: BTreeMap::new(),
             operands: Vec::new(),
+            segments: Vec::new(),
             statements: Vec::new(),
             parameters: Vec::new(),
             scope: Scope::new(),
@@ -7194,29 +7216,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a string; `pieces` is its reading.
     /// - ensures: a string standing as a value with no interpolation is planned
-    ///   as its decoded text.
+    ///   as its decoded text; a string with an interpolation is planned as
+    ///   [`Self::interpolation`] reads it.
     /// - provides: the text half of the literal reading.
-    /// - fails: yields the wrong-sort refusal outside value position; an
-    ///   interpolation is a form the fragment does not admit; a string missing
-    ///   a delimiter is a malformed literal.
+    /// - fails: yields the wrong-sort refusal outside value position; a string
+    ///   missing a delimiter is a malformed literal; an interpolation refuses
+    ///   as [`Self::interpolation`] does.
     /// - panics: none.
     ///
     /// # Errors
     /// The string's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — quoted strings decode their escapes; interpolation
-    ///   and malformed text retain their distinct located refusals.
+    /// - hypothesis: L3 — quoted strings decode their escapes; an interpolated
+    ///   string is planned apart from a plain one, and malformed text retains
+    ///   its located refusal.
     /// - witness: `lower::tests::a_text_literal_is_the_bytes_between_its_quotes`
     /// - witness: `lower::tests::a_text_literal_lowers_with_its_escapes_decoded`
-    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - witness: `lower::tests::an_interpolated_string_appends_its_segments_in_order`
     /// - witness: `lower::tests::a_malformed_text_literal_is_refused`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&Plan::Literal(Literal::Text(_)))
+                    Some(&(Plan::Literal(Literal::Text(_)) | Plan::Interpolated(..)))
                 )
         },
     )]
@@ -7226,13 +7250,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = self.require(site, Produced::Value)?;
         let interpolated = pieces.pieces.iter().any(
             |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::INTERPOLATION),
         );
         if interpolated {
-            return Err(site.folded(FormName::INTERPOLATION, FragmentBoundary::Unadmitted));
+            return self.interpolation(site, pieces);
         }
+        let _frame = self.require(site, Produced::Value)?;
         let Maybe::Present(literal) = parse_literal(Former::Text, self.text_at(site.at))
         else {
             return Err(LoweringRefusal::MalformedLiteral {
@@ -7242,6 +7266,93 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
 
         self.plan(site, Plan::Literal(literal));
+
+        Ok(())
+    }
+
+    /// Classify a string holding an interpolation `"…${ e }…"`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a string; `pieces` is its reading and holds an
+    ///   interpolation opener.
+    /// - ensures: the string is planned as a computation over its segments in
+    ///   written order: each run of text between a quote, an opener and a
+    ///   closer with its escapes decoded as one, and each interpolated
+    ///   expression read as a value under the string's frame. An empty run is
+    ///   no segment.
+    /// - provides: the reading the mint folds into `string.append` calls.
+    /// - fails: yields the wrong-sort refusal where a computation may not
+    ///   stand; a string missing its closing quote is a malformed literal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The string's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a string opening and closing on text, one opening on
+    ///   an interpolation and one holding a lone interpolation are each
+    ///   asserted as the exact append chain they mint.
+    /// - witness: `lower::tests::an_interpolated_string_appends_its_segments_in_order`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(self.plans.get(site.at.node), Some(&Plan::Interpolated(..)))
+        },
+    )]
+    fn interpolation(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        use gandr_core_term::primitive::PRELUDE;
+        let frame = self.require(site, Produced::Computation)?;
+        let closed = matches!(
+            (pieces.pieces.first(), pieces.pieces.last()),
+            (Some(&Piece::Tile { label: opened, .. }), Some(&Piece::Tile { label: closing, .. }))
+                if pieces.pieces.len() > 1 && opened == TileName::QUOTE && closing == TileName::QUOTE
+        );
+        if !closed {
+            return Err(LoweringRefusal::MalformedLiteral {
+                span: site.at.span,
+                form: site.name,
+            });
+        }
+        let Some(&append) = PRELUDE
+            .iter()
+            .find(|row| row.name().as_ref() == "string.append")
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        let start = self.segments.len();
+        let mut run = String::new();
+        for &piece in &pieces.pieces {
+            match piece {
+                Piece::Tile { label, at }
+                    if label == TileName::STRING_FRAGMENT || label == TileName::ESCAPE_SEQUENCE =>
+                {
+                    run.push_str(self.text_at(at).as_ref());
+                },
+                Piece::Tile { .. } => {
+                    if !run.is_empty() {
+                        let decoded = decode_escapes(SourceFragment::from(run.as_str()));
+                        self.segments
+                            .push(TextSegment::Text(StringLiteral::new(decoded)));
+                        run.clear();
+                    }
+                },
+                Piece::Operand(operand) => {
+                    self.read(operand.node, Reading::Value(frame));
+                    self.segments.push(TextSegment::Operand(operand.node));
+                },
+            }
+        }
+        let segments = Stretch {
+            start,
+            end: self.segments.len(),
+        };
+
+        self.plan(site, Plan::Interpolated(append, segments));
 
         Ok(())
     }
@@ -12984,7 +13095,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Recorded(_)
                 | Plan::Constructor(_)
                 | Plan::Packed(_) => Some(Produced::Value),
-                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
+                | Plan::CompHole(_) | Plan::PrimitiveCall(..) | Plan::Interpolated(..) | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(..) | Plan::Block(_) | Plan::Loop(_) | Plan::While(..) | Plan::For(..) | Plan::Break | Plan::Reenter(_) | Plan::Application(..) | Plan::Called(..) | Plan::Case(_) | Plan::EmptyCase(_) | Plan::Copattern(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Derived(_) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Scope(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::Action(..) | Plan::Access(_) | Plan::Ride(..) | Plan::FlowThen(..) | Plan::World(world::Worlded::Hold { .. } | world::Worlded::Migrate { .. }) => {
                     Some(Produced::Computation)
                 },
                 | Plan::Atom(_)
@@ -13120,6 +13231,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let id = sink.arena.computation_primitive(primitive, arguments);
                     sink.computation(id, origin)
                 })
+            },
+            Plan::Interpolated(append, segments) => {
+                self.mint_interpolated(append, segments, sink, origin)
             },
             Plan::Unplanned => Maybe::Absent(lowered::Absent::Unminted),
             Plan::Variable(index, binder) => {
@@ -14327,6 +14441,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Constant(_)
             | Plan::Primitive(_)
             | Plan::PrimitiveCall(..)
+            | Plan::Interpolated(..)
             | Plan::Unit
             | Plan::Boolean(_)
             | Plan::Literal(_)
@@ -15198,6 +15313,84 @@ impl<'run, 'source> Lowerer<'run, 'source>
             .get(usize::from(position))
             .copied()
             .unwrap_or(Maybe::Absent(lowered::Absent::Unminted))
+    }
+
+    /// Mint an interpolated string as `string.append` calls folded from the
+    /// left.
+    ///
+    /// # Specification
+    /// - requires: `segments` is a stretch of the segment store that
+    ///   [`Self::interpolation`] planned.
+    /// - ensures: each text segment mints its literal and each operand reads
+    ///   its own value; the first two segments are appended, and each later
+    ///   segment is appended to the nested run of the call before it, so the
+    ///   answer is the segments' text in written order. A string whose one
+    ///   segment is an interpolation appends it to the empty string, so it
+    ///   stands at `String` as any other string does.
+    /// - fails: an operand that did not lower as a value leaves the string
+    ///   unminted, with that operand's reason.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::interpolation`].
+    /// - witness: `lower::tests::an_interpolated_string_appends_its_segments_in_order`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
+    fn mint_interpolated(
+        &self,
+        append: gandr_core_term::primitive::Primitive,
+        segments: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        use gandr_core_term::primitive::Arguments;
+        let mut first = None;
+        let mut called = None;
+        for segment in stretch(&self.segments, segments) {
+            let value = match *segment {
+                TextSegment::Text(ref text) => {
+                    let id = sink.arena.value_literal(Literal::Text(text.clone()));
+                    sink.origins.record_value(id, origin);
+                    id
+                },
+                TextSegment::Operand(node) => match self.value_at(node) {
+                    Maybe::Present(id) => id,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                },
+            };
+            let left = match (called, first) {
+                (Some(previous), _) => {
+                    sink.origins.record_computation(previous, origin);
+                    let nested = sink.arena.value_nested(previous);
+                    sink.origins
+                        .record_value(nested, origin.inserted(Insertion::Nested));
+                    nested
+                },
+                (None, Some(left)) => left,
+                (None, None) => {
+                    first = Some(value);
+                    continue;
+                },
+            };
+            called = Some(
+                sink.arena
+                    .computation_primitive(append, Arguments::Binary([left, value])),
+            );
+        }
+        let id = match (called, first) {
+            (Some(id), _) => id,
+            (None, Some(lone)) => {
+                let empty = sink
+                    .arena
+                    .value_literal(Literal::Text(StringLiteral::new(String::new())));
+                sink.origins.record_value(empty, origin);
+                sink.arena
+                    .computation_primitive(append, Arguments::Binary([empty, lone]))
+            },
+            (None, None) => return Maybe::Absent(lowered::Absent::Unminted),
+        };
+
+        Maybe::Present(sink.computation(id, origin))
     }
 
     /// The value `position` lowered to.
@@ -20296,6 +20489,87 @@ mod tests
         );
     }
 
+    /// The append chain the nested `value` mints, its literals quoted, walked
+    /// by an explicit stack: each entry a value still to spell or the text
+    /// written between them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn appended(
+        arena: &CoreArena,
+        value: gandr_core_term::ValueId,
+    ) -> String
+    {
+        let mut spelled = String::new();
+        let mut pending = Vec::from([Ok(value)]);
+        while let Some(next) = pending.pop() {
+            let value = match next {
+                Ok(value) => value,
+                Err(between) => {
+                    spelled.push_str(between);
+                    continue;
+                },
+            };
+            match arena.value(value) {
+                Some(&Value::Literal(Literal::Text(ref text))) => {
+                    let content: &str = text.as_ref();
+                    spelled.push('"');
+                    spelled.push_str(content);
+                    spelled.push('"');
+                },
+                Some(&Value::Nested(called)) => match arena.computation(called) {
+                    Some(&Computation::Primitive {
+                        primitive,
+                        ref arguments,
+                    }) if primitive.name().as_ref() == "string.append" => {
+                        pending.push(Err(")"));
+                        for (position, &argument) in arguments.iter().enumerate().rev() {
+                            pending.push(Ok(argument));
+                            pending.push(Err(if position == 0 { "append(" } else { ", " }));
+                        }
+                    },
+                    _ => spelled.push_str("<not an append>"),
+                },
+                _ => spelled.push_str("<not a text or an append>"),
+            }
+        }
+        spelled
+    }
+
+    #[test]
+    fn an_interpolated_string_appends_its_segments_in_order()
+    {
+        let rows = [
+            (
+                r#"def s = "a\t${ "b" }c" ;"#,
+                "append(append(\"a\t\", \"b\"), \"c\")",
+            ),
+            (r#"def s = "${ "b" }c" ;"#, r#"append("b", "c")"#),
+            (r#"def s = "${ "b" }" ;"#, r#"append("", "b")"#),
+            (r#"def s = "${ "a" }${ "b" }" ;"#, r#"append("a", "b")"#),
+            // The printer's spellings read back as the appends they were
+            // printed from: a nested append on the left, a text right of
+            // text, an empty text on the right, an escaped opener.
+            (
+                r#"def s = "${ "hello ${ "a" }" }!" ;"#,
+                r#"append(append("hello ", "a"), "!")"#,
+            ),
+            (r#"def s = "hello ${ "!" }" ;"#, r#"append("hello ", "!")"#),
+            (r#"def s = "${ "a" }${ "" }" ;"#, r#"append("a", "")"#),
+            (r#"def s = "a\${${ "b" }" ;"#, r#"append("a${", "b")"#),
+        ];
+        for (source, expected) in rows {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            let body = body_of(outcomes(&module)[0]);
+            assert_eq!(
+                appended(&arena, body),
+                expected,
+                "`{source}` appends its text and interpolations in written order"
+            );
+        }
+    }
+
     #[test]
     fn force_and_application_lower_over_their_children()
     {
@@ -22319,15 +22593,6 @@ mod tests
             (
                 "def a = ((3 : Integer), 1) ;",
                 unadmitted(9_usize, 22_usize, FormName::ANNOTATION, FragmentSort::Value),
-            ),
-            (
-                "def a = \"a${b}\" ;",
-                unadmitted(
-                    8_usize,
-                    15_usize,
-                    FormName::INTERPOLATION,
-                    FragmentSort::Value,
-                ),
             ),
         ];
         for (source, expected) in rows {

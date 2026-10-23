@@ -1,14 +1,33 @@
-@[ refuses("OutOfFragment.string_interpolation") ]
+// A string interpolates `${ e }`: its text and each interpolated string are
+// appended in written order by the prelude's `string.append`. An interpolation
+// reads a `String`; no other value is formatted into one.
+
+/// A parameter interpolated between two runs of text.
+@[ checks ]
 def greet(name: String) -> -F String {
   return "hello ${ name }!"
 }
 
-@[ refuses("OutOfFragment.string_interpolation") ]
-def describe(user: String, count: Integer) -> -F String {
-  return "user=${ user }\trow=${ #{ n = count } }\n"
+/// A call interpolated, run where the string reads it, between escapes.
+@[ runs("\"<hello types!>\\t\"") ]
+def greeted() -> -F String {
+  return "<${ greet("types") }>\t"
 }
 
-@[ refuses("OutOfFragment.string_interpolation") ]
-def price() -> -F String {
+/// A lone interpolation is the string it holds.
+@[ runs("\"machines\"") ]
+def alone() -> -F String {
+  return "${ "machines" }"
+}
+
+/// A `$` that opens no interpolation is text.
+@[ checks ]
+def price(count: String) -> -F String {
   return "total: $5.00 for ${ count } items"
+}
+
+/// A record is not a string, and an interpolation formats nothing into one.
+@[ refuses("ShapeMismatch") ]
+def describe(user: String, count: Integer) -> -F String {
+  return "user=${ user }\trow=${ #{ n = count } }\n"
 }

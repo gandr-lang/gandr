@@ -577,7 +577,6 @@ fn tracked_form(
         | FormName::RELEASE_STATEMENT => TrackingIssue::SHARED_SESSIONS,
         FormName::STAGED_TYPE => TrackingIssue::PLACED_STAGE,
         FormName::UNKNOWN_TYPE => TrackingIssue::UNKNOWN_TYPE,
-        FormName::INTERPOLATION => TrackingIssue::INTERPOLATION,
         FormName::CASE_WITH_VIEW => TrackingIssue::CASE_VIEW,
         _ => TrackingIssue::UNFILED,
     }
@@ -1191,12 +1190,6 @@ mod tests
                 FragmentSort::ValueType,
                 FragmentBoundary::Reserved,
                 FailureClass::Unimplemented(TrackingIssue::UNKNOWN_TYPE),
-            ),
-            (
-                "string_interpolation",
-                FragmentSort::Value,
-                FragmentBoundary::Reserved,
-                FailureClass::Unimplemented(TrackingIssue::INTERPOLATION),
             ),
             (
                 "case_with_view",
