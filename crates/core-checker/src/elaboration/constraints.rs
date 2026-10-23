@@ -535,6 +535,61 @@ impl Deferrals
         {
             return Unified::Rigid;
         }
+        self.pose(arena, scope, left, right)
+    }
+
+    /// Pose the value `left` against `right`, under `scope` intuitionistic
+    /// binders, to the solver when a side is a metavariable: a wildcard a
+    /// type holds against the term a judgement compares it with.
+    ///
+    /// # Specification
+    /// - requires: both values are read in the context of `scope` binders, at
+    ///   one type.
+    /// - ensures: [`Unified::Rigid`], with nothing changed, unless a side is a
+    ///   metavariable; otherwise the solver's run over the one equation:
+    ///   [`Unified::Refuted`] when it refutes it, and [`Unified::Agreed`] when
+    ///   it solves it or puts it in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path's open end against the point that reaches it
+    ///   is bound to the point, a second, different point is refuted, and two
+    ///   rigid values are left to conversion.
+    /// - witness: `elaboration::tests::an_open_end_is_solved_from_its_point_1979`
+    #[spec(
+        captures: before = usize::from(self.metas.count()),
+        ensures: |ret| usize::from(self.metas.count()) == before
+            && (ret == Unified::Rigid || before > 0),
+    )]
+    pub fn unify_values(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        left: ValueId,
+        right: ValueId,
+    ) -> Unified
+    {
+        let (left, right) = (Side::Value(left), Side::Value(right));
+        if self.nominated.is_empty()
+            || (self.decoded(arena, left).is_none() && self.decoded(arena, right).is_none())
+        {
+            return Unified::Rigid;
+        }
+        self.pose(arena, scope, left, right)
+    }
+
+    /// The solver's run over the one equation `left` against `right`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pose(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        left: Side,
+        right: Side,
+    ) -> Unified
+    {
         let equation = gandr_core_unify::Equation::new(scope, left, right);
         match gandr_core_unify::solve(arena, &mut self.metas, &[equation]) {
             gandr_core_unify::Verdict::Solved | gandr_core_unify::Verdict::Postponed => {

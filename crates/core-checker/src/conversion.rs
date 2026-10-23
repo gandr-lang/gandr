@@ -353,6 +353,18 @@ mod through
     }
 }
 
+/// Why a pair poses no equation to the solver.
+mod open
+{
+    /// The reason the pair is compared as written.
+    #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub(super) enum Absent
+    {
+        /// Neither side is a hole or a mark: the pair is compared as written.
+        Closed,
+    }
+}
+
 /// What reading a pair through its relocations found.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Read
@@ -895,17 +907,19 @@ fn endpoints_agree(
 ///   they are the same variable or constant, quotes of agreeing types, static
 ///   applications of agreeing heads to agreeing arguments, or static lambdas
 ///   over agreeing bodies; two data indices agree when either root is a hole or
-///   a mark or they are equal as syntax; [`Agreement::Apart`] at the first
-///   rigid disagreement. Inside the elaboration run a bare owed flex–rigid
-///   equation is accumulated instead: agreement is then conditional on those
-///   residuals, and a later rigid disagreement still answers `Apart`. A pair
-///   not deferred whose side is the decode of a metavariable a call nominated
-///   is posed to the solver: a solved or postponed equation agrees, and a
-///   refuted one answers `Apart`. Two staged types agree invariantly at one
-///   stage and agreeing bases; under subtyping a found staged type agrees with
-///   a wanted one whose stage its own fits within, and with an unstaged type as
-///   its base, while an unstaged type against a staged one, or a stage the
-///   order refuses, is [`Agreement::NotBelow`].
+///   a mark the solver does not refute against the other side, or they are
+///   equal as syntax, and two endpoints by the same rule or when they convert
+///   as endpoints; [`Agreement::Apart`] at the first rigid disagreement. Inside
+///   the elaboration run a bare owed flex–rigid equation is accumulated
+///   instead: agreement is then conditional on those residuals, and a later
+///   rigid disagreement still answers `Apart`. A pair not deferred whose side
+///   is the decode of a metavariable a call nominated is posed to the solver: a
+///   solved or postponed equation agrees, and a refuted one answers `Apart`.
+///   Two staged types agree invariantly at one stage and agreeing bases; under
+///   subtyping a found staged type agrees with a wanted one whose stage its own
+///   fits within, and with an unstaged type as its base, while an unstaged type
+///   against a staged one, or a stage the order refuses, is
+///   [`Agreement::NotBelow`].
 /// - fails: the refusal a view gives for a node outside the fragment or a
 ///   dangling id, the unfolding's refusal when a decode or a code does not
 ///   reduce, and [`CheckRefusal::MachineInvariant`] when the binders open pass
@@ -986,18 +1000,20 @@ fn convert(
         let comps =
             |a: CompTypeId, b: CompTypeId| variance.comps(Relocated::from(a), Relocated::from(b));
         let agrees = match pairing {
-            Pairing::Terms(left, right) => {
-                root_knowledge(context, left)? == Knowledge::Unknown
-                    || root_knowledge(context, right)? == Knowledge::Unknown
-                    || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+            Pairing::Terms(left, right) => match pose_open(context, left, right)? {
+                Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
+                Maybe::Absent(open::Absent::Closed) => {
+                    gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
                         == gandr_core_term::CertificateEquality::Equal
+                },
             },
-            Pairing::Endpoints(left, right) => {
-                root_knowledge(context, left)? == Knowledge::Unknown
-                    || root_knowledge(context, right)? == Knowledge::Unknown
-                    || gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
+            Pairing::Endpoints(left, right) => match pose_open(context, left, right)? {
+                Maybe::Present(unified) => unified != crate::elaboration::Unified::Refuted,
+                Maybe::Absent(open::Absent::Closed) => {
+                    gandr_core_term::equal_certificate_syntax(context.arena(), left, right)
                         == gandr_core_term::CertificateEquality::Equal
-                    || endpoints_agree(context, left, right)? == Agreement::Convertible
+                        || endpoints_agree(context, left, right)? == Agreement::Convertible
+                },
             },
             Pairing::Assignable(left, right) => {
                 let left = value_head(context, left)?;
@@ -2383,6 +2399,44 @@ fn root_knowledge(
     else {
         Ok(Knowledge::Known)
     }
+}
+
+/// The verdict on `left` and `right` when one of them is a hole or a mark: a
+/// metavariable among them is posed to the solver against the other side.
+///
+/// # Specification
+/// - requires: both values are read at one type in the context's open binders.
+/// - ensures: [`open::Absent::Closed`] when neither side is a hole or a mark;
+///   otherwise the solver's verdict on the equation, which is
+///   [`crate::elaboration::Unified::Refuted`] only when a side is a
+///   metavariable the other refutes, the solution or the postponed equation
+///   left in the context's store.
+/// - fails: [`CheckRefusal::DanglingNode`] for an id the arena does not hold; a
+///   machine invariant as [`CheckingContext::unify_values`] raises it.
+/// - panics: none.
+/// - executable: none — the verdict is the solver's, which
+///   [`crate::elaboration::Deferrals::unify_values`] specifies.
+///
+/// # Errors
+/// - [`CheckRefusal`] — as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type's open end met at the value bridge against a
+///   known end is solved to it; a hole no judgement nominated stays unknown.
+/// - witness: `bridge::tests::an_ascription_solves_the_wildcard_its_type_holds_1979`
+/// - witness: `conversion::tests::the_unknown_type_is_consistent_beside_a_differing_former`
+fn pose_open(
+    context: &mut CheckingContext<'_>,
+    left: ValueId,
+    right: ValueId,
+) -> Result<Maybe<crate::elaboration::Unified, open::Absent>, CheckRefusal>
+{
+    if root_knowledge(context, left)? == Knowledge::Known
+        && root_knowledge(context, right)? == Knowledge::Known
+    {
+        return Ok(Maybe::Absent(open::Absent::Closed));
+    }
+    Ok(Maybe::Present(context.unify_values(left, right)?))
 }
 
 #[cfg(test)]

@@ -2,13 +2,18 @@
 // evidence, so a record whose law does not hold builds no path: the law is a
 // field that does not check. The codes `ua` relates are codes of `Type`, so a
 // record between types one universe up is refused at its code. And `ua` after
-// `idtoequiv` is not the path by conversion, the law the model source owes.
+// `idtoequiv` is not the path by conversion, the law the model source owes. A
+// wildcard at a path's end is the end `ua` forces, so a declared type naming
+// another end is apart from it.
 
 // Two points, one point, the collapse of the first onto the second and the
 // map back with its one round trip.
 import "./equiv-fibres.gandr" ;
 // The paths between types packaged as records, `idtoequiv`.
 import "../../model/identity/univalence.gandr" ;
+// The circle, the presented integers and `winding`.
+import "../../model/identity/circle-base.gandr" ;
+import "../../model/identity/circle.gandr" ;
 
 /// The collapse made a path between `Two` and `One`, refused at the left
 /// inverse's round trip: `pick(collapse(x))` is `Yes` at every `x`, so
@@ -54,3 +59,10 @@ def uaEtaByConversion(a : Type) -> -F Path(
 ) {
   here(here(a))
 }
+
+/// The loops' path to the integers ascribed a type whose right end is a
+/// wildcard, declared to end at the unit type: `ua(winding)` forces the
+/// wildcard to the integers, which the unit type is not (#1979).
+@[ refuses("TypeMismatch") ]
+def loopsAreUnit : Path(Type, Path(Circle, Base, Base), Unit) ;
+def loopsAreUnit = (ua(winding) : Path(Type, Path(Circle, Base, Base), _)) ;

@@ -9579,14 +9579,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   three values stand under the judgement's binders.
     /// - ensures: success exactly when the point converts to the left endpoint
     ///   and to the right one: the same node or the same syntax at once, a hole
-    ///   or a mark consistently with anything, each with the empty dialogue,
-    ///   and otherwise by the normaliser's conversion with every definition
-    ///   admitted so far unfolding, returned endpoints held and an unread call
-    ///   of a binder whose calls return ([`crate::divergence::returning`])
-    ///   discarded ([`crate::code::CodeDefinitions::relate_terms`]), with the
-    ///   trace it recorded. On success the context records the two dialogues at
-    ///   `at`. A side the normaliser cannot run — a native primitive, which
-    ///   only the runtime computes — converts by syntax alone.
+    ///   or a mark consistently with anything, a metavariable among them posed
+    ///   to the solver against the other side and refuted only when the solver
+    ///   refutes it, each with the empty dialogue, and otherwise by the
+    ///   normaliser's conversion with every definition admitted so far
+    ///   unfolding, returned endpoints held and an unread call of a binder
+    ///   whose calls return ([`crate::divergence::returning`]) discarded
+    ///   ([`crate::code::CodeDefinitions::relate_terms`]), with the trace it
+    ///   recorded. On success the context records the two dialogues at `at`. A
+    ///   side the normaliser cannot run — a native primitive, which only the
+    ///   runtime computes — converts by syntax alone.
     /// - provides: the endpoint condition of reflexivity's rule, and the
     ///   dialogues the kernel replays for it.
     /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
@@ -9625,11 +9627,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
             let arena = self.context.arena();
             let syntactic = point == endpoint
                 || gandr_core_term::equal_certificate_syntax(arena, point, endpoint)
-                    == gandr_core_term::CertificateEquality::Equal
-                || [point, endpoint].into_iter().any(|side| {
-                    matches!(arena.value(side), Some(Value::Hole(_) | Value::Mark { .. }))
-                });
+                    == gandr_core_term::CertificateEquality::Equal;
             if syntactic {
+                continue;
+            }
+            let open = [point, endpoint]
+                .into_iter()
+                .any(|side| matches!(arena.value(side), Some(Value::Hole(_) | Value::Mark { .. })));
+            if open {
+                if self.context.unify_values(point, endpoint)?
+                    == crate::elaboration::Unified::Refuted
+                {
+                    return Err(CheckRefusal::EndpointMismatch { at, left, right });
+                }
                 continue;
             }
             if returning.is_none() {

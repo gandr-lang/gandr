@@ -1,6 +1,6 @@
 // The refusals of the wildcard (#528): a wildcard nothing forces, one forced
-// apart from the type its caller expects, one where a computation is read,
-// and one in an ascription's type, which the store does not yet serve.
+// apart from the type its caller expects, and one where a computation is
+// read.
 
 // `idAt`, the identity at a type passed explicitly.
 import "../../model/holes/wildcard.gandr" ;
@@ -22,9 +22,3 @@ def ranWildcard() -> -F Integer {
   run x <- _;
   x
 }
-
-/// A path's right end left in an ascription's type for `here(3)` to force:
-/// the ascription's type is not posed to the store, so nothing solves it
-/// (#1979).
-@[ refuses("ImplicitUnsolved") ]
-def endForced() -> -F Path(Integer, 3, 3) { (here(3) : Path(Integer, 3, _)) }
