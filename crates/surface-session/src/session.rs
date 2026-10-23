@@ -1567,6 +1567,12 @@ pub struct Session<Store, Blocks>
     threads: Threads,
     /// The kernel admission the latest judgement left to run.
     admission: Maybe<Pending, admission::Absent>,
+    /// The checkpoints of the latest admission taken, in item order: how far
+    /// the next admission's revision leads with the same items.
+    admitted: Vec<ItemCheckpoint>,
+    /// The readmissions of runs reaching past the closure into the session's
+    /// own declarations, for its later admissions to resume.
+    runs: closures::Runs<{ closures::SESSION_RUNS_HELD }>,
     /// Whether each judgement keeps the type table of its revision.
     tables: Tables,
 }
@@ -1602,8 +1608,9 @@ struct Pending
 
 /// A kernel admission taken off its session, to run on another thread.
 ///
-/// It holds the admission, the checkpoints of the judgement that left it, and
-/// the readmission the process holds for the items it leads with.
+/// It holds the admission, the checkpoints of the judgement that left it, the
+/// readmission the process or the session holds for the items it leads with,
+/// and how many leading declarations its readmission records for a later one.
 ///
 /// # Specification
 /// - requires: constructed by [`Session::admission`].
@@ -1623,9 +1630,12 @@ pub struct Detached
     pending: Pending,
     /// The checkpoint of each item the judgement judged, in order.
     checkpoints: Vec<ItemCheckpoint>,
-    /// The readmission the process holds for the longest run of leading
-    /// items whose checkpoints are these, when it holds one.
+    /// The readmission the process or the session holds for the longest run of
+    /// leading items whose checkpoints are these, when either holds one.
     found: Option<Arc<ClosureAdmission>>,
+    /// How many leading declarations the readmission records for a later
+    /// admission to resume, as [`Session::admission`] chose.
+    record: usize,
 }
 
 /// A detached admission that ran whole, to settle into its session.
@@ -1651,7 +1661,8 @@ pub struct Ran
     closure: String,
     /// The checkpoint of each item the judgement judged, in order.
     checkpoints: Vec<ItemCheckpoint>,
-    /// The readmission it resumed from, when the process held one.
+    /// The readmission it resumed from, when the process or the session held
+    /// one.
     found: Option<Arc<ClosureAdmission>>,
 }
 
@@ -1664,10 +1675,11 @@ impl Detached
     /// - requires: nothing.
     /// - ensures: while every poll answers wanted, [`Polled::Whole`] with what
     ///   [`Admission::admit_resuming`] answers, resuming from the held
-    ///   readmission; retired before a declaration, [`Polled::Retired`], and
-    ///   the record of the declarations crossed before it, when the readmission
-    ///   made one, is held in the process's store under the closure's text and
-    ///   their checkpoints, for a later admission to resume.
+    ///   readmission and recording its first `record` declarations; retired
+    ///   before a declaration, [`Polled::Retired`], and the record of the
+    ///   declarations crossed before it, when the readmission made one, is held
+    ///   in the process's store under the closure's text and their checkpoints,
+    ///   for a later admission to resume.
     /// - provides: the half of an admission that runs off the session's thread.
     /// - fails: never; a disagreement is in the answer.
     /// - panics: none.
@@ -1679,9 +1691,9 @@ impl Detached
     /// - witness: `tests::session::a_retired_admission_leaves_what_it_crossed_to_the_next_1547`
     #[inline]
     #[spec(
-        captures: [boundary = self.pending.boundary],
+        captures: [judged = self.checkpoints.len()],
         ensures: |ret| match ret {
-            Polled::Whole(ref ran) => ran.boundary == boundary,
+            Polled::Whole(ref ran) => ran.checkpoints.len() == judged,
             Polled::Retired(..) => true,
         },
     )]
@@ -1701,13 +1713,14 @@ impl Detached
                 },
             checkpoints,
             found,
+            record,
         } = self;
         let resumed = found
             .as_deref()
             .map_or(Maybe::Absent(crossed::Absent::Unasked), |found| {
                 Maybe::Present(found.crossed())
             });
-        match admission.admit_retiring(LeadingCount::from(boundary), resumed, retirement) {
+        match admission.admit_retiring(LeadingCount::from(record), resumed, retirement) {
             Polled::Whole(resumption) => Polled::Whole(Ran {
                 resumption,
                 boundary,
@@ -1813,6 +1826,8 @@ impl<Store, Blocks> Session<Store, Blocks>
             forms: FormStore::default(),
             threads: Width::PerformanceCores.threads(),
             admission: Maybe::Absent(admission::Absent::Idle),
+            admitted: Vec::new(),
+            runs: closures::Runs::new(),
             tables: Tables::Unkept,
         }
     }
@@ -1981,6 +1996,8 @@ impl<Store, Blocks> Session<Store, Blocks>
                 forms,
                 threads,
                 admission: Maybe::Absent(admission::Absent::Idle),
+                admitted: Vec::new(),
+                runs: closures::Runs::new(),
                 tables: Tables::Unkept,
             },
             restored,
@@ -2966,14 +2983,16 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   of their tree then in the block store, or none when the checkpoint
     ///   store keeps nothing ([`KernelCheckpoint::Discarded`]); and how many
     ///   declarations the kernel was offered of how many were judged; or the
-    ///   first refusal. The readmission of the import closure the revision was
-    ///   laid out after is resumed from the one the process holds for the
-    ///   closure's text whose declarations' checkpoints — content, consulted
-    ///   answers and typing — are pointwise those of the latest resume, and is
-    ///   held for the next admission otherwise
-    ///   ([`readmit_resuming`](gandr_core_checker::bridge::readmit_resuming));
-    ///   the closure's declarations then cross only when no such readmission is
-    ///   held. Either way the session holds no admission after.
+    ///   first refusal. The readmission resumes from the one the process or the
+    ///   session holds for the closure's text under the longest run of leading
+    ///   declarations whose checkpoints — content, consulted answers and typing
+    ///   — are pointwise those of the latest resume, the closure's and past
+    ///   them the document's own, and records its first declarations for the
+    ///   next admission as [`Session::admission`] chooses
+    ///   ([`readmit_resuming`](gandr_core_checker::bridge::readmit_resuming)):
+    ///   the kernel is offered the declarations past the run it resumed alone,
+    ///   none when a revision changed no declaration of the one admitted before
+    ///   it. Either way the session holds no admission after.
     /// - provides: the half of a submission that runs beside the interactive
     ///   loop: what the kernel re-derives, and the latency until the artifact
     ///   exists.
@@ -2991,10 +3010,13 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   document laid out after its import closure offers the kernel its own
     ///   declarations alone once the closure was admitted, the artifact the
     ///   whole composition exports, and the whole closure again once a source
-    ///   of it changed.
+    ///   of it changed; a revision that changes no declaration offers the
+    ///   kernel none, and one that changes a declaration it changed before
+    ///   offers that declaration and those after it.
     /// - witness: `tests::session::a_judged_revision_reports_before_its_admission`
     /// - witness: `tests::session::an_edit_to_its_own_text_readmits_the_document_alone_776`
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+    /// - witness: `tests::session::an_admission_resumes_the_declarations_a_revision_left_alone_2102`
     #[spec(ensures: |ret| matches!(self.admission, Maybe::Absent(admission::Absent::Idle))
         && ret.as_ref().is_ok_and(|admitted| match *admitted {
             Maybe::Present(ref admitted) => admitted.crossed() <= admitted.judged(),
@@ -3018,10 +3040,15 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: with no admission held, [`admission::Absent::Idle`];
-    ///   otherwise the admission, the checkpoints of the latest resume, and the
-    ///   readmission the process holds for the closure's text under the longest
-    ///   run of them it holds one for. Either way the session holds no
-    ///   admission after.
+    ///   otherwise the admission, the checkpoints of the latest resume, the
+    ///   readmission the process or the session holds for the closure's text
+    ///   under the longest run of them either holds one for, and how many
+    ///   leading declarations its readmission records: the closure's when the
+    ///   closure holds a declaration and no readmission held covers it,
+    ///   otherwise as many as lead with the checkpoints of the admission taken
+    ///   before — every one when the revision changed none — and at least the
+    ///   closure's. The checkpoints are kept for the next admission's choice,
+    ///   and the session holds no admission after.
     /// - provides: what [`Detached::run`] runs on another thread, so the
     ///   session answers while the kernel works.
     /// - fails: never.
@@ -3043,17 +3070,47 @@ impl<Store, Blocks> Session<Store, Blocks>
             Maybe::Present(resume) => resume.checkpoints().items().to_vec(),
             Maybe::Absent(_) => Vec::new(),
         };
-        let found = closures::find(SourceText::from(pending.closure.as_str()), &checkpoints);
+        let text = SourceText::from(pending.closure.as_str());
+        let found = match (
+            closures::find(text, &checkpoints),
+            self.runs.find(text, &checkpoints),
+        ) {
+            (Some(shared), Some(own)) => {
+                Some(if own.crossed().boundary() > shared.crossed().boundary() {
+                    own
+                }
+                else {
+                    shared
+                })
+            },
+            (shared, own) => shared.or(own),
+        };
+        let covered = found
+            .as_deref()
+            .is_some_and(|found| usize::from(found.crossed().boundary()) >= pending.boundary);
+        let record = if pending.boundary > 0 && !covered {
+            pending.boundary
+        }
+        else {
+            self.admitted
+                .iter()
+                .zip(&checkpoints)
+                .take_while(|&(admitted, judged)| admitted == judged)
+                .count()
+                .max(pending.boundary)
+        };
+        self.admitted.clone_from(&checkpoints);
         Maybe::Present(Detached {
             pending,
             checkpoints,
             found,
+            record,
         })
     }
 
-    /// Keep what an admission that ran whole made: the closure's readmission
-    /// for the next admission, and the artifact's checkpoint in the block
-    /// store.
+    /// Keep what an admission that ran whole made: the record of its leading
+    /// declarations for the next admission, and the artifact's checkpoint in
+    /// the block store.
     ///
     /// # Specification
     /// - requires: `ran` ran an admission [`Session::admission`] took from this
@@ -3091,11 +3148,19 @@ impl<Store, Blocks> Session<Store, Blocks>
             checkpoints,
             found,
         } = ran;
-        let held = match (resumption.crossed, checkpoints.get(.. boundary)) {
-            (Maybe::Present(crossed), Some(leading)) => {
-                Some(closures::keep(closure, leading.to_vec(), crossed))
+        let held = match resumption.crossed {
+            Maybe::Present(crossed) => {
+                let reach = usize::from(crossed.boundary());
+                checkpoints.get(.. reach).map(|leading| {
+                    if reach > boundary {
+                        self.runs.keep(closure, leading.to_vec(), crossed)
+                    }
+                    else {
+                        closures::keep(closure, leading.to_vec(), crossed)
+                    }
+                })
             },
-            _ => found.filter(|found| {
+            Maybe::Absent(_) => found.filter(|found| {
                 usize::from(resumption.resumed) == usize::from(found.crossed().boundary())
             }),
         };
