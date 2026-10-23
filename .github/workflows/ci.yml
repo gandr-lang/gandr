@@ -986,10 +986,11 @@ jobs:
   # uploads it, and main's push promotes it (`promote-cargo-clippy-crate`)
   # rather than linting the tested commit again (#2045); a push no queue run
   # tested lints, prunes and saves the state itself.
-  # Both passes cover the workspace: the plain expansion keeps each predicate
-  # as `(true || predicate)` with no panic, which is code the enforcing pass
-  # never lints. The plain pass is also the plain graph's compile check over
-  # every target, which the plain test lane no longer builds.
+  # The enforcing pass lints the workspace; the plain pass lints only the
+  # targets that carry `cfg(not(anodized_panic))` code, which the enforcing
+  # pass never compiles (`check:clippy-plain-only`, which fails on such a
+  # file outside its list). Linting the whole plain graph again cost the
+  # lane a pass over the workspace for that one target (#2070).
   cargo-clippy-crate:
     name: check Clippy wall
     needs: *rust-needs
@@ -1017,9 +1018,9 @@ jobs:
             target/enforcing/debug
           key: &clippy-state-key clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ github.sha }}
           restore-keys: clippy-state-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
-      - name: lint every target
+      - name: lint the plain-only targets
         id: clippy-plain
-        run: cargo clippy --locked --workspace --all-targets -- --deny warnings
+        run: mise run check:clippy-plain-only
       - name: lint every target with specification enforcement
         id: clippy-enforcing
         run: mise run check:clippy-enforcing
