@@ -398,6 +398,9 @@ jobs:
   # - `stacked`: a pull request whose base is not the trunk, a stack member
   #   (#2045). Its run is the lint, Clippy and formatting; the merge group
   #   tests its tree, and the reports run on the stack's bottom;
+  # - `rebased`: a push that is GitHub's own rebase of the change, its patch
+  #   unchanged (#2070). Every lane skips, so the required checks pass at
+  #   once, and the group run tests the tree;
   # - the pin-file tag of this checkout and whether it is published
   #   (`.github/actions/find-image`, shared with every image workflow): a
   #   pull request from a fork cannot publish with its read-only token, so a
@@ -430,10 +433,11 @@ jobs:
       actions: read
       pull-requests: read
     outputs:
-      rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') }}
-      extension: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') }}
-      parser: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') }}
+      rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      extension: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      parser: ${{ github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') && steps.rebased.outputs.rebased != 'true' }}
       stacked: ${{ github.event_name == 'pull_request' && github.base_ref != github.event.repository.default_branch }}
+      rebased: ${{ steps.rebased.outputs.rebased == 'true' }}
       image: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
       build: ${{ steps.image.outputs.tag != '' && steps.image.outputs.found == 'false' && !github.event.pull_request.head.repo.fork }}
       run-id: &queue-run ${{ steps.run.outputs.run-id || steps.previous.outputs.run-id }}
@@ -471,6 +475,43 @@ jobs:
         run: >-
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
           jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/")) | tostring)' >> "$GITHUB_OUTPUT"
+      # GitHub rebases a stack's members itself when a member below merges
+      # (its committer is `web-flow`), and no setting turns that off (#2070).
+      # A rebase that leaves the change's patch as it was, measured against
+      # its fork from the trunk before and after, ran its checks already on
+      # the head it replaced; the group run tests the tree. Any other push,
+      # or a reading that fails, runs the lanes.
+      - id: rebased
+        name: recognize GitHub's rebase of an unchanged change
+        if: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          CI_BEFORE: ${{ github.event.before }}
+          CI_HEAD: ${{ github.event.pull_request.head.sha }}
+          CI_TRUNK: ${{ github.event.repository.default_branch }}
+        run: |
+          committer=$(gh api "repos/$GH_REPO/commits/$CI_HEAD" --jq '.committer.login // ""')
+          if [[ $committer != web-flow ]]; then
+            echo rebased=false >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          refs=("$CI_BEFORE" "$CI_HEAD" "+refs/heads/$CI_TRUNK:refs/remotes/origin/$CI_TRUNK")
+          git fetch --quiet --no-tags --depth=50 origin "${refs[@]}"
+          patch() {
+            local fork
+            for _ in $(seq 20); do
+              if fork=$(git merge-base "origin/$CI_TRUNK" "$1"); then
+                git diff --no-renames "$fork" "$1" | git patch-id --stable | cut -d ' ' -f 1
+                return
+              fi
+              git fetch --quiet --no-tags --deepen=100 origin "${refs[@]}"
+            done
+            return 1
+          }
+          before=$(patch "$CI_BEFORE")
+          after=$(patch "$CI_HEAD")
+          printf 'rebased=%s\n' "$([[ -n $before && $before == "$after" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - id: image
         name: find the published image
         uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
@@ -1572,11 +1613,12 @@ jobs:
         run: mise run ci:mutants-landed
 
   # Formatting and workflow security lint share the treefmt pass. It runs
-  # over a failed image build and fails pulling the missing image (`ci-image`).
+  # over a failed image build and fails pulling the missing image (`ci-image`),
+  # and skips GitHub's rebase of an unchanged change (`rebased`, #2070).
   format-gate:
     name: check formatting and lint gates (treefmt)
     needs: *rust-needs
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && github.event_name != 'push' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.rebased != 'true' && github.event_name != 'push' && github.event_name != 'schedule' && github.actor != 'dependabot[bot]' }}
     runs-on: *linux
     permissions: *image-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]

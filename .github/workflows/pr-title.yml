@@ -61,8 +61,11 @@ jobs:
   title:
     name: lint the pull request title
     # A dependabot pull request never lands: its update reaches main through
-    # a maintainer's pull request, so it runs no CI.
-    if: ${{ github.actor != 'dependabot[bot]' }}
+    # a maintainer's pull request, so it runs no CI. A push changes no title:
+    # the check skips, so it holds at once on the new head, GitHub's own
+    # rebase of a stack member among them (#2070); the queue lints the
+    # header that lands.
+    if: ${{ github.actor != 'dependabot[bot]' && github.event.action != 'synchronize' }}
     runs-on: *linux
     timeout-minutes: 5
     steps:
