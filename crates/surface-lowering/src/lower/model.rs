@@ -1342,7 +1342,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the admission position of the member the module declares
-    ///   under the operation's name, beside the model's reading of it.
+    ///   under the operation's name, or a functor parameter states under it
+    ///   ([`Self::parameter_export`]), beside the model's reading of it.
     /// - fails: an operation the model does not declare, or one the module does
     ///   not define, as unlowered; a refused member, with its refusal.
     /// - panics: none.
@@ -1351,8 +1352,10 @@ impl<'source> Lowerer<'_, 'source>
     /// [`Missing`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — `comp` reads the member `comp`.
+    /// - hypothesis: L3 — `comp` reads the member `comp`, and a law of a
+    ///   parameter's model reads the operation the parameter states.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+    /// - witness: `tests::modules::functors::a_functor_reads_the_laws_of_its_model_parameter_1764`
     #[spec(ensures: |ret| ret.is_err() || operations.contains_key(name))]
     fn operation_constant(
         &self,
@@ -1365,10 +1368,12 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(Missing::Unlowered);
         };
-        let Some(&slot) = self
+        let Some(slot) = self
             .collected
             .by_name
             .get(&(Container::Module(structure), member))
+            .copied()
+            .or_else(|| self.parameter_export(structure, member))
         else {
             return Err(Missing::Unlowered);
         };
