@@ -1378,6 +1378,7 @@ impl<R: Reach> Reaches<R>
                             scrutinee,
                             motive,
                             ref branches,
+                            ..
                         } => {
                             tasks.push(ReachTask::OpenValue(scrutinee));
                             tasks.push(ReachTask::OpenCompType(motive));
@@ -2070,7 +2071,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
     /// - witness: `support::tests::saturated_reach_remains_conservative_beneath_a_binder`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     #[spec(ensures: |ret| ret == match arena.computation(id) {
-        Some(&Computation::DataCase { scrutinee, motive, ref branches }) => branches.iter().fold(self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()), |depth, id| depth.join(self.cached_comp(*id))),
+        Some(&Computation::DataCase { scrutinee, motive, ref branches, .. }) => branches.iter().fold(self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()), |depth, id| depth.join(self.cached_comp(*id))),
         Some(&Computation::SigmaSplit { scrutinee, motive, body }) => self.cached_value(scrutinee).join(self.cached_comp_type(motive).under_binder()).join(self.cached_comp(body).under_binder().under_binder()),
         Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => self.cached_value(record),
         None => R::widest(),
@@ -2103,6 +2104,7 @@ Value::QuoteComputation(ty) => self.cached_comp_type(ty),
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             } => branches.iter().fold(
                 self.cached_value(scrutinee)
                     .join(self.cached_comp_type(motive).under_binder()),

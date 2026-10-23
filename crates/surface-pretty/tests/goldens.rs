@@ -3553,6 +3553,59 @@ fn an_elaborated_body_prints_with_its_exits_elided()
     }
 }
 
+/// A case on an indexed family writes each arm under its fields alone: the
+/// equation each branch binds past them is not written, and a branch that
+/// eliminates its equation by the case of no branches is the arm the source
+/// left out, so it is not written either; its checked content spells as its
+/// arena does (#1314).
+#[test]
+fn a_pruned_arm_is_left_unwritten_1314()
+{
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let vec = core.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let returns_vec = core.comp_type_returner(vec);
+    // `VNil` binds its equation alone and eliminates it.
+    let absurd = core.computation_data_case(bound, returns_vec, Vec::new(), Vec::new());
+    let nil = core.computation_lambda(absurd);
+    // `VCons(n, h, t)` binds its equation past its fields and returns `h`.
+    let head = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+    let returns_head = core.computation_return(head);
+    let mut cons = returns_head;
+    for _binder in 0_usize .. 4 {
+        cons = core.computation_lambda(cons);
+    }
+    let data_case = core.computation_data_case_with_equations(
+        bound,
+        returns_vec,
+        (
+            vec![nil, cons],
+            [0_usize, 3]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+        ),
+        gandr_kernel_term::EquationCount::from(1_usize),
+    );
+    let matched = core.computation_lambda(data_case);
+    let names = [Name::from("kept"), Name::from("Vec")];
+    let mut constructors = Constructors::default();
+    constructors.family(Name::from("Vec"), [
+        (Name::from("VNil"), Arity::from(0_usize)),
+        (Name::from("VCons"), Arity::from(3_usize)),
+    ]);
+    constructors.case(data_case, Name::from("Vec"));
+    let source = CoreSource::new(&core, &names).naming(&constructors);
+    agrees(&core, &names, CoreNode::Computation(matched));
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(matched))),
+        (
+            "fn (a) { case a { VCons(b, c, d) => c } }".to_owned(),
+            Fidelity::Faithful
+        ),
+        "the pruned `VNil` arm and the equation are not written"
+    );
+}
+
 /// A recorded run whose moves carry no payload spells as written: the empty
 /// run and a run of choices alone, each read back to itself (#1871).
 #[test]

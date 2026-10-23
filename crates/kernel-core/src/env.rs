@@ -2666,6 +2666,7 @@ fn reach(
                     scrutinee,
                     motive,
                     ref branches,
+                    ..
                 }) => pending.extend(
                     [AnyNode::Value(scrutinee), AnyNode::CompType(motive)]
                         .into_iter()

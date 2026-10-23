@@ -2130,6 +2130,7 @@ fn push_rewrite_children(
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             }) => {
                 tasks.extend(
                     branches
@@ -3239,6 +3240,7 @@ fn close_computation(
             scrutinee,
             motive,
             ref branches,
+            equations,
         } => {
             let mut rewritten = None;
             for (index, original) in branches.iter().copied().enumerate().rev() {
@@ -3258,10 +3260,11 @@ fn close_computation(
                 id
             }
             else {
-                arena.computation_data_case(
+                arena.computation_data_case_with_equations(
                     value,
                     classifier,
                     rewritten.unwrap_or_else(|| branches.clone()),
+                    equations,
                 )
             }
         },

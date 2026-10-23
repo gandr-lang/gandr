@@ -702,9 +702,10 @@ pub fn stage_field(
 /// `StageNotBelow` there.
 ///
 /// # Specification
-/// - requires: `branch` is the telescope over one binder per entry of `fields`
-///   that [`crate::former::branch_type`] built over `datatype`: a Π where the
-///   rest names the field, a plain arrow otherwise.
+/// - requires: `branch` is a telescope [`crate::former::branch_type`] built
+///   over `datatype`, opening with one binder per entry of `fields`: a Π where
+///   the rest names the field, a plain arrow otherwise; an indexed family's
+///   equations follow them, kept as they stand.
 /// - ensures: the same telescope, each field under the same former, with each
 ///   field domain's placed occurrences of `datatype` — or of any family of its
 ///   mutual block, the [`families`] of it — at `child` through [`stage_field`];

@@ -2486,6 +2486,7 @@ fn step(
             let Computation::DataCase {
                 ref branches,
                 ref arities,
+                equations,
                 ..
             } = *matched_native_node
             else {
@@ -2502,7 +2503,12 @@ fn step(
             let branches = machine.comps.drain(start ..).collect();
             machine
                 .comps
-                .push(core.computation_data_case(scrutinee, motive, branches, arities));
+                .push(core.computation_data_case_with_equations(
+                    scrutinee,
+                    motive,
+                    (branches, arities),
+                    equations,
+                ));
             Ok(())
         },
         Task::Projection(projector) => {

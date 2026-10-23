@@ -787,8 +787,9 @@ impl<Node> Slot<Node>
 }
 
 /// One branch of a data case as the printer reads it: its body below the
-/// lambdas binding its constructor's fields, the constructor's name, how
-/// many fields the body stands under, and where the name stands to them.
+/// lambdas binding its constructor's fields and its equations, the
+/// constructor's name, how many fields the body stands under, and where the
+/// name stands to them.
 #[derive(Clone, Copy, Debug)]
 struct Arm<'source, Node>
 {
@@ -800,9 +801,16 @@ struct Arm<'source, Node>
     name: Option<Name<'source>>,
     /// How many field binders the body stands under.
     fields: usize,
+    /// How many equation binders it stands under past them, one per index of
+    /// an indexed family.
+    equations: usize,
     /// Where the name stands to its field binders: a letter of a word
     /// before the rest, `loop ∷ p`.
     placement: Placement,
+    /// Whether the branch eliminates its equation by the case of no
+    /// branches: an arm the source left out, which the lowering prunes and
+    /// the printer does not write.
+    pruned: bool,
 }
 
 /// Branch `index` of the data case `case`.
@@ -810,22 +818,26 @@ struct Arm<'source, Node>
 /// # Specification
 /// - requires: nothing; a malformed source is admissible.
 /// - ensures: when the source names the constructor and the branch is that many
-///   lambdas deep, at most [`DEPTH_LIMIT`], the body below them, the name and
-///   the field count; otherwise the whole branch, no name and no fields.
+///   lambdas deep, then one more per equation of the case, at most
+///   [`DEPTH_LIMIT`], the body below them, the name, the field and equation
+///   counts, and whether the body is the case of no branches on the innermost
+///   equation; otherwise the whole branch, no name, no fields and no equation.
 /// - provides: the one reading of a branch both the child table and the pattern
 ///   share, so a pattern names exactly the binders its body opens.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Termination
-/// The loop peels one lambda per field, at most [`DEPTH_LIMIT`].
+/// The loop peels one lambda per field and equation, at most [`DEPTH_LIMIT`].
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a data case over a nullary and a unary constructor spells
-///   each branch under its pattern, the unary one's field bound.
+///   each branch under its pattern, the unary one's field bound; a case on a
+///   vector one long writes its `VCons` arm alone.
 /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
 /// - witness: `tests::goldens::a_constructor_at_the_depth_limit_binds_every_field`
-#[spec(ensures: |ret| ret.name.is_some() || ret.fields == 0_usize)]
+/// - witness: `tests::goldens::a_pruned_arm_is_left_unwritten_1314`
+#[spec(ensures: |ret| ret.name.is_some() || (ret.fields == 0_usize && ret.equations == 0_usize && !ret.pruned))]
 fn arm<S>(
     source: &S,
     case: S::Node,
@@ -839,30 +851,72 @@ where
         body: branch,
         name: None,
         fields: 0_usize,
+        equations: 0_usize,
         placement: Placement::Applied,
+        pruned: false,
     };
     let (Some(branch), Some((name, fields, placement))) = (branch, source.constructor(case, index))
     else {
         return unknown;
     };
     let fields = usize::from(fields);
-    if u32::try_from(fields).is_ok_and(|count| count > DEPTH_LIMIT.0) {
+    let equations = if let Former::DataCase { equations, .. } = source.read(case) {
+        usize::from(equations)
+    }
+    else {
+        0_usize
+    };
+    let binders = fields.saturating_add(equations);
+    if u32::try_from(binders).is_ok_and(|count| count > DEPTH_LIMIT.0) {
         return unknown;
     }
     let mut body = branch;
-    for _ in 0_usize .. fields {
+    for _ in 0_usize .. binders {
         let Former::Lambda(inner) = source.read(body)
         else {
             return unknown;
         };
         body = inner;
     }
+    let pruned = equations > 0_usize
+        && matches!(
+            source.read(body),
+            Former::DataCase { arity, scrutinee, .. }
+                if usize::from(arity) == 0_usize
+                    && matches!(
+                        source.read(scrutinee),
+                        Former::Variable { zone: Zone::Intuitionistic, index }
+                            if index == DeBruijnIndex::from(0_u32)
+                    )
+        );
     Arm {
         body: Some(body),
         name: Some(name),
         fields,
+        equations,
         placement,
+        pruned,
     }
+}
+
+/// The arity of the arms the printer writes of the data case `case` of
+/// `arity` branches: every branch but a pruned one.
+///
+/// # Specification
+/// trivial.
+fn written_arms<S>(
+    source: &S,
+    case: S::Node,
+    arity: crate::former::Arity,
+) -> crate::former::Arity
+where
+    S: Source + ?Sized,
+{
+    crate::former::Arity::from(
+        (0_usize .. usize::from(arity))
+            .filter(|&index| !arm(source, case, Component::from(index)).pruned)
+            .count(),
+    )
 }
 
 /// The children `former` reads at `node`, each with what its position
@@ -881,7 +935,7 @@ where
 /// - hypothesis: L3 — as [`slots`].
 /// - witness: `tests::goldens::a_case_nothing_types_writes_its_motive_815`
 #[spec(ensures: |ref ret| if let Former::DataCase { motive, arity, .. } = *former {
-    ret.len() == usize::from(arity).saturating_add(1_usize).saturating_add(usize::from(case_motive(source, motive, admits) == Motive::Written))
+    ret.len() == usize::from(written_arms(source, node, arity)).saturating_add(1_usize).saturating_add(usize::from(case_motive(source, motive, admits) == Motive::Written))
 } else {
     true
 })]
@@ -1015,7 +1069,7 @@ where
     | Former::Fixpoint(_) => ret.last().is_some_and(|slot| slot.binds.count > 0_usize),
     | Former::Case { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize)
         && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
-    | Former::DataCase { arity, .. } => ret.len() == usize::from(arity).saturating_add(1_usize).saturating_add(usize::from(written == Motive::Written))
+    | Former::DataCase { arity, .. } => ret.len() == usize::from(written_arms(source, node, arity)).saturating_add(1_usize).saturating_add(usize::from(written == Motive::Written))
         && ret.first().is_some_and(|slot| slot.admits == Admits::Value && slot.binds == Binds::NONE),
     | Former::Thunk(_) => ret.len() == match bodies { Bodies::Spelled => 1_usize, Bodies::Opaque => 0_usize },
     | Former::Session { payloads, .. } => ret.len() == usize::from(payloads)
@@ -1347,19 +1401,24 @@ where
             scrutinee,
             motive,
             arity,
+            ..
         } => {
             let mut slots = Vec::from([value(scrutinee)]);
             if written == Motive::Written {
                 slots.push(Slot::of(motive, Admits::CompType, Binds::ONE));
             }
-            slots.extend((0_usize .. usize::from(arity)).map(|index| {
+            // A pruned arm is not written; every other stands under its
+            // fields and its equations, of which its pattern names the fields.
+            slots.extend((0_usize .. usize::from(arity)).filter_map(|index| {
                 let arm = arm(source, node, Component::from(index));
-                Slot {
+                (!arm.pruned).then_some(Slot {
                     node: arm.body,
                     admits,
-                    binds: Binds::intuitionistic(OpenBinders(arm.fields)),
+                    binds: Binds::intuitionistic(OpenBinders(
+                        arm.fields.saturating_add(arm.equations),
+                    )),
                     label: None,
-                }
+                })
             }));
             slots
         },
@@ -7844,21 +7903,22 @@ impl Walk<'_, '_>
     ///   constructor written against its family as [`children`] reads its
     ///   classifier; a primitive and an operation as a call of their name;
     ///   `transport(…)` over its motive — `\a. M`, or `+U M` for a telescope —
-    ///   and operands; `v.l` and `v.i`; `case v { … }` with one arm per branch,
-    ///   its pattern `+{.i = a}`, `#{a, b}` or a constructor's applied to its
-    ///   field binders, `?` for a constructor the source cannot name; `handle {
-    ///   c } with { pure(x) => r, oper op(p, k) => b }`, the scope's head
-    ///   `handle c : I`; `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`,
-    ///   `offer(e) { l => c }`, `close(e)` and `fork (a : S) { t } as a ; u`,
-    ///   each endpoint named by its binder; a resumption of a continuation
-    ///   binder with a returned value as the continuation's call, `k(v)`; a
-    ///   return ascribed its returner as the annotated value `(v : T)`, under a
-    ///   `pure` unless a body ends there, its two pieces the value and the type
-    ///   the visit shaped. The forms the grammar does not write — native
-    ///   transport, a fixpoint `rec f { c }`, a fold, any other resumption
-    ///   `resume(k, c)`, `reset { c }`, `shift k { c }`, a lazy product `&{c,
-    ///   …}` and its observation `c.0`, and a positional projection off
-    ///   anything but a name, `(v.1).0` — make the presentation approximate.
+    ///   and operands; `v.l` and `v.i`; `case v { … }` with one arm per branch
+    ///   but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
+    ///   constructor's applied to its field binders, its equations unwritten,
+    ///   `?` for a constructor the source cannot name; `handle { c } with {
+    ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`;
+    ///   `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`, `offer(e) { l => c
+    ///   }`, `close(e)` and `fork (a : S) { t } as a ; u`, each endpoint named
+    ///   by its binder; a resumption of a continuation binder with a returned
+    ///   value as the continuation's call, `k(v)`; a return ascribed its
+    ///   returner as the annotated value `(v : T)`, under a `pure` unless a
+    ///   body ends there, its two pieces the value and the type the visit
+    ///   shaped. The forms the grammar does not write — native transport, a
+    ///   fixpoint `rec f { c }`, a fold, any other resumption `resume(k, c)`,
+    ///   `reset { c }`, `shift k { c }`, a lazy product `&{c, …}` and its
+    ///   observation `c.0`, and a positional projection off anything but a
+    ///   name, `(v.1).0` — make the presentation approximate.
     /// - provides: the spelling of every former without a join of its own.
     /// - fails: never.
     /// - panics: none.
@@ -8290,10 +8350,15 @@ impl Walk<'_, '_>
                     let _ = parts.text(" -> ").piece(Binding::Prefix);
                 }
                 let _ = parts.text(" {").part(Part::Open);
+                let mut shown = 0_usize;
                 for index in 0_usize .. usize::from(arity) {
                     let arm = arm(source, node, Component::from(index));
+                    if arm.pruned {
+                        continue;
+                    }
                     let name = self.spelled(arm.name, Unspelled::Unreadable(Unreadable::Unnamed));
-                    let _ = parts.separated(Component::from(index)).text(name);
+                    let _ = parts.separated(Component::from(shown)).text(name);
+                    shown = shown.saturating_add(1_usize);
                     if arm.placement == Placement::Consed {
                         let _ = parts
                             .text(" ")

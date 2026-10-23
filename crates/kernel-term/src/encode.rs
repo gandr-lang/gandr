@@ -1474,7 +1474,14 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&Value::StaticApplication(..)) => tags::NODE_V_STATIC_APPLICATION,
         },
         AnyNode::Computation(id) => match arena.computation(id) {
-            Some(&Computation::DataCase { .. }) => tags::NODE_C_DATA_CASE,
+            Some(&Computation::DataCase { equations, .. }) => {
+                if equations == crate::EquationCount::NONE {
+                    tags::NODE_C_DATA_CASE
+                }
+                else {
+                    tags::NODE_C_INDEXED_DATA_CASE
+                }
+            },
             Some(&Computation::SigmaSplit { .. }) => tags::NODE_C_SIGMA_SPLIT,
             Some(&Computation::RecordProjection(..)) => tags::NODE_C_RECORD_PROJECTION,
             Some(&Computation::TupleProjection(..)) => tags::NODE_C_TUPLE_PROJECTION,
@@ -1719,9 +1726,20 @@ fn encode_entry(
             },
         },
         AnyNode::Computation(id) => match arena.computation(id) {
-            Some(&Computation::DataCase { ref branches, .. }) => {
-                out.put_tag(tags::NODE_C_DATA_CASE);
-                out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
+            Some(&Computation::DataCase {
+                ref branches,
+                equations,
+                ..
+            }) => {
+                if equations == crate::EquationCount::NONE {
+                    out.put_tag(tags::NODE_C_DATA_CASE);
+                    out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
+                }
+                else {
+                    out.put_tag(tags::NODE_C_INDEXED_DATA_CASE);
+                    out.put_uvarint(WireU64::from(WireUsize::from(branches.len())));
+                    out.put_uvarint(WireU64::from(WireUsize::from(usize::from(equations))));
+                }
             },
             Some(&Computation::SigmaSplit { .. }) => out.put_tag(tags::NODE_C_SIGMA_SPLIT),
             Some(&Computation::RecordProjection(_, ref label)) => {

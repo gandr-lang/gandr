@@ -98,7 +98,7 @@
 //! | `0x69` | Flow product, two flow children | Admitted |
 //! | `0x6A` | Dependent pair type, first factor and second factor under its binder | Admitted |
 //! | `0x6B` | Dependent split, scrutinee, motive under its binder and body under the two components | Admitted |
-//! | `0x6C` | Unassigned | Refused |
+//! | `0x6C` | Indexed case, scrutinee, motive and counted branches, inline branch and equation counts | Admitted |
 //! | `0x6D` | Univalence, bi-invertible record child | Admitted |
 //! | `0x6E` | Codata application, declaration and counted value arguments | Admitted |
 //! | `0x6F` | List case, list and two branch children | Admitted |
@@ -922,6 +922,13 @@ pub const NODE_C_SIGMA_SPLIT: WireTag = WireTag(0x6B);
 pub const NODE_V_UNIVALENCE: WireTag = WireTag(0x6D);
 /// Node tag: nominal codata application with a counted argument vector.
 pub const NODE_CT_CODATA: WireTag = WireTag(0x6E);
+/// Node tag: a case over an indexed family, whose branches bind their fields
+/// and then one equation per index.
+///
+/// The branch count and the equation count are inline before the scrutinee,
+/// the motive and the branches. A case binding no equation is
+/// [`NODE_C_DATA_CASE`].
+pub const NODE_C_INDEXED_DATA_CASE: WireTag = WireTag(0x6C);
 /// Composition seam: the first output feeds the second input.
 pub const SEAM_SEQUENCE: WireTag = WireTag(0);
 /// Composition seam: the second output also feeds back into the first input.
@@ -1108,7 +1115,7 @@ pub struct NodeTagDescription
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && match max_token_bound { Some(bound) => bound.0 >= 1, None => true },
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1160,7 +1167,7 @@ const fn row(
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
 #[spec(
-    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
+    requires: !matches!(tag.0, 0x01 | 0x0B) && (tag.0 <= NODE_V_STATIC_APPLICATION.0 || (tag.0 >= NODE_VT_PATH_UNIVERSE.0 && tag.0 <= NODE_C_TRANSPORT.0) || matches!(tag, NODE_VT_PATH | NODE_V_HERE | NODE_C_PATH_TRANSPORT | NODE_V_HIGHER | NODE_V_RETURNED | NODE_C_TELESCOPE_TRANSPORT | NODE_VT_BRIDGE | NODE_V_HIGHER_EVALUATION | NODE_C_RELATED_APPLICATION | NODE_V_QUANTIFIED_EVALUATION | NODE_VT_FLOW_UNIVERSE | NODE_V_SESSION_FLOW | NODE_VT_FLOW | NODE_V_STAY | NODE_V_FORWARD_FLOW | NODE_V_FUNCTION_FLOW | NODE_V_THEN | NODE_C_RIDE | NODE_VT_LIST | NODE_V_LIST_NIL | NODE_VT_SESSION | NODE_V_SESSION_PATH | NODE_V_LIST_CONS | NODE_C_LIST_FOLD | NODE_C_LIST_CASE | NODE_C_TELESCOPE_RIDE | NODE_V_FLOW_PRODUCT | NODE_VT_SIGMA | NODE_C_SIGMA_SPLIT | NODE_V_UNIVALENCE | NODE_CT_CODATA | NODE_C_INDEXED_DATA_CASE) || (tag.0 >= NODE_VT_DATA.0 && tag.0 <= NODE_C_PROJECT.0))
             && !matches!(tag, NODE_VT_BASE | NODE_V_VARIABLE | NODE_V_CONSTANT | NODE_VT_ABSTRACT | NODE_V_LIST_NIL),
     ensures: |ret| ret.tag.0 == tag.0
             && matches!((ret.child_arity, child_arity), (ChildArity::Fixed(a), ChildArity::Fixed(b)) | (ChildArity::Counted(a), ChildArity::Counted(b)) if a == b)
@@ -1260,7 +1267,7 @@ const fn bounded_alias(
 /// - witness: `tags::tests::the_reserved_sharing_block_sits_above_the_frozen_block`
 /// - witness: `tags::tests::every_row_states_one_token_and_agrees_with_its_verdicts`
 /// - witness: `tags::tests::the_base_atom_row_is_the_one_verdict_split`
-pub const NODE_TAG_TABLE: [NodeTagDescription; 77] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 78] = [
     row(
         NODE_VT_BASE,
         ChildArity::Fixed(0),
@@ -1344,6 +1351,7 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 77] = [
     unbounded(NODE_V_UNIVALENCE, ChildArity::Fixed(1)),
     unbounded(NODE_CT_CODATA, ChildArity::Counted(0)),
     unbounded(NODE_C_LIST_CASE, ChildArity::Fixed(3)),
+    unbounded(NODE_C_INDEXED_DATA_CASE, ChildArity::Counted(2)),
 ];
 
 #[cfg(test)]
@@ -1426,7 +1434,7 @@ mod tests
                         None => false,
                     },
                     AnyNode::Computation(id) => match ret.0.computation(id) {
-                        Some(&crate::Computation::DataCase { .. }) => row.tag == super::NODE_C_DATA_CASE,
+                        Some(&crate::Computation::DataCase { equations, .. }) => row.tag == if equations == crate::EquationCount::NONE { super::NODE_C_DATA_CASE } else { super::NODE_C_INDEXED_DATA_CASE },
                         Some(&crate::Computation::RecordProjection(..)) => row.tag == super::NODE_C_RECORD_PROJECTION,
                         Some(&crate::Computation::TupleProjection(..)) => row.tag == super::NODE_C_TUPLE_PROJECTION,
                         Some(&crate::Computation::Lambda(_)) => row.tag == super::NODE_C_LAMBDA,
@@ -1619,6 +1627,12 @@ mod tests
         let univalence = arena.value_univalence(pair);
         let codata = arena.comp_type_codata(ConstantIndex::from(0_usize), alloc::vec![unit]);
         let list_case = arena.computation_list_case(cons, ret, ret);
+        let indexed_case = arena.computation_data_case_with_equations(
+            constructor,
+            returner,
+            alloc::vec![ret],
+            crate::EquationCount::from(1_usize),
+        );
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(universe),
@@ -1697,6 +1711,7 @@ mod tests
             AnyNode::Value(univalence),
             AnyNode::CompType(codata),
             AnyNode::Computation(list_case),
+            AnyNode::Computation(indexed_case),
         ];
         (arena, nodes)
     }
@@ -1869,10 +1884,14 @@ mod tests
             assigned[usize::from(u8::from(super::NODE_C_LIST_CASE))],
             "the list case holds its byte"
         );
-        for unassigned in core::iter::once(0x6C_u8).chain(0x70_u8 ..= u8::MAX) {
+        assert!(
+            assigned[usize::from(u8::from(super::NODE_C_INDEXED_DATA_CASE))],
+            "the indexed case holds its byte"
+        );
+        for unassigned in 0x70_u8 ..= u8::MAX {
             assert!(
                 !assigned[usize::from(unassigned)],
-                "every byte above the dependent split but univalence's, codata's and the list case's is unassigned: {unassigned:#04x}"
+                "every byte above the list case is unassigned: {unassigned:#04x}"
             );
         }
     }
@@ -1906,7 +1925,7 @@ mod tests
             .chain(0x48 ..= 0x4F)
             .chain([0x50, 0x51, 0x52, 0x5a, 0x5b, 0x5c])
             .chain(0x5d ..= 0x6b)
-            .chain([0x6D, 0x6E, 0x6F])
+            .chain([0x6D, 0x6E, 0x6F, 0x6C])
             .collect();
         let actual: Vec<_> = NODE_TAG_TABLE.iter().map(|row| u8::from(row.tag)).collect();
         assert_eq!(actual, expected);

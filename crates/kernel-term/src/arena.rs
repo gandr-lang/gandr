@@ -71,6 +71,7 @@ use crate::base::Literal;
 use crate::term::Computation;
 use crate::term::ConstantIndex;
 use crate::term::DeBruijnIndex;
+use crate::term::EquationCount;
 use crate::term::Summand;
 use crate::term::Value;
 use crate::types::CompType;
@@ -920,7 +921,7 @@ impl TermArena
     /// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
     #[spec(
         requires: match computation {
-            Computation::DataCase { scrutinee, motive, ref branches } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
+            Computation::DataCase { scrutinee, motive, ref branches, .. } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && branches.iter().all(|branch| self.computation(*branch).is_some()),
             Computation::SigmaSplit { scrutinee, motive, body } => self.value(scrutinee).is_some() && self.comp_type(motive).is_some() && self.computation(body).is_some(),
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.value(record).is_some(),
             Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.computation(body).is_some(),
@@ -3059,7 +3060,7 @@ Value::Quote(quoted) => ret.as_slice() == [AnyNode::ValueType(quoted)],
 Value::QuoteComputation(quoted) => ret.as_slice() == [AnyNode::CompType(quoted)],
 }),
         AnyNode::Computation(id) => match self.computation(id) {
-            Some(&Computation::DataCase { scrutinee, motive, ref branches }) => ret.iter().copied().eq([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))),
+            Some(&Computation::DataCase { scrutinee, motive, ref branches, .. }) => ret.iter().copied().eq([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))),
             Some(&Computation::SigmaSplit { scrutinee, motive, body }) => ret.as_slice() == [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)],
             Some(&(Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _))) => ret.as_slice() == [AnyNode::Value(record)],
             None => ret.is_empty(),
@@ -3234,6 +3235,7 @@ ValueType::Element { code, .. } => ret.as_slice() == [AnyNode::Value(code)],
                     scrutinee,
                     motive,
                     ref branches,
+                    ..
                 }) => {
                     children.extend([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]);
                     children.extend(branches.iter().copied().map(AnyNode::Computation));
@@ -3629,7 +3631,8 @@ impl TermArena
         self.alloc_value(Value::Record(fields))
     }
 
-    /// Mint a case whose motive binds its scrutinee and branches bind fields.
+    /// Mint a case whose motive binds its scrutinee and branches bind fields,
+    /// over a family indexed by nothing.
     ///
     /// # Specification
     /// trivial.
@@ -3641,10 +3644,28 @@ impl TermArena
         branches: Vec<ComputationId>,
     ) -> ComputationId
     {
+        self.computation_data_case_with_equations(scrutinee, motive, branches, EquationCount::NONE)
+    }
+
+    /// Mint a case whose branches bind their fields, then `equations` index
+    /// equations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case_with_equations(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        branches: Vec<ComputationId>,
+        equations: EquationCount,
+    ) -> ComputationId
+    {
         self.alloc_computation(Computation::DataCase {
             scrutinee,
             motive,
             branches,
+            equations,
         })
     }
 

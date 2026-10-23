@@ -671,11 +671,12 @@ impl Machine<'_, '_>
         let signature = former::signature(self.context, datatype)?;
         // reason: the arities are minted from the declaration, never written,
         // and a runtime sizes the constructors' cells by them.
-        let (motive, count, stated) = match self.computation(term)? {
+        let (motive, count, stated, equations) = match self.computation(term)? {
             &Computation::DataCase {
                 ref motive,
                 ref branches,
                 ref arities,
+                equations,
                 ..
             } => (
                 *motive,
@@ -684,6 +685,7 @@ impl Machine<'_, '_>
                     .iter()
                     .map(|&arity| usize::from(arity))
                     .eq(signature.constructors().iter().map(alloc::vec::Vec::len)),
+                usize::from(equations),
             ),
             &Computation::Primitive { .. }
             | &Computation::Transport(..)
@@ -725,6 +727,11 @@ impl Machine<'_, '_>
         let looped = crate::loops::loops(self.context, datatype).len();
         if count != constructors && (looped == 0 || constructors.checked_add(looped) != Some(count))
         {
+            return Err(CheckRefusal::NonExhaustiveDataCase(term));
+        }
+        // A branch at an indexed family binds one equation per index past its
+        // fields; the case states how many, so the evaluators need no lookup.
+        if equations != signature.indices().len() {
             return Err(CheckRefusal::NonExhaustiveDataCase(term));
         }
         if !stated {

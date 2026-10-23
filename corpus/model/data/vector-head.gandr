@@ -1,0 +1,27 @@
+// A case that prunes: an arm whose constructor cannot stand at the
+// scrutinee's index is left out. Each branch of a case on an indexed family
+// binds, past its fields, the path from the index its constructor states to
+// the scrutinee's; a left-out arm eliminates that path, its two ends apart,
+// which needs no rule beyond the case of no arms (Cockx, Devriese and
+// Piessens, _Unifiers as equivalences_, doi:10.1145/2951913.2951917). An arm
+// whose ends are not apart cannot be left out; that is in the pathological
+// twin.
+
+// The naturals the lengths count in.
+import "./data-base.gandr" ;
+
+// The vectors and the vector two long.
+import "./vectors.gandr" ;
+
+/// The first element of a vector at least one long: `VNil` stands at zero,
+/// apart from `Succ(n)`, so its arm is left out.
+@[ checks ]
+def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> -F Integer {
+  case v {
+    VCons(m, h, t) => h
+  }
+}
+
+/// The first element of the vector two long.
+@[ runs("1") ]
+def pairHead() -> -F Integer { become vhead(Succ(Zero), pair()) }

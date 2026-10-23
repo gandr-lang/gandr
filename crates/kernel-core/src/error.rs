@@ -558,7 +558,9 @@ pub enum KernelError
     /// An indexed family's constructor states a result index of another
     /// length than its family's index telescope, or presents rules.
     IndexedSignature,
-    /// A case does not provide exactly one branch per constructor.
+    /// A case does not provide exactly one branch per constructor, or its
+    /// branches bind another number of index equations than its family has
+    /// indices.
     NonExhaustiveDataCase,
     /// A data declaration's own family stands under a function's domain where
     /// no stage reaches it: at other arguments, inside a term, or through a

@@ -177,6 +177,7 @@ fn children(
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             } => [V(scrutinee), C(motive)]
                 .into_iter()
                 .chain(branches.iter().copied().map(M))
@@ -528,6 +529,7 @@ fn translate(
                         scrutinee,
                         motive,
                         ref branches,
+                        ..
                     } => core.computation_data_case(
                         values[&scrutinee],
                         comp_types[&motive],

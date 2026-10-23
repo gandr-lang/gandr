@@ -1324,6 +1324,7 @@ where
                     scrutinee,
                     motive,
                     ref branches,
+                    ..
                 }) => {
                     pending.push((AnyNode::Value(scrutinee), reach));
                     pending.push((AnyNode::CompType(motive), reach));

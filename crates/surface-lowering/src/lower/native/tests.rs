@@ -3413,6 +3413,86 @@ fn a_case_over_a_family_of_parameters_reads_its_answer_unabstracted()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A case on a vector one past `n` with no `VNil` arm lowers with one
+/// equation per branch: `VCons` binds its three fields and the equation, and
+/// the left-out `VNil` binds the equation alone and eliminates it by the case
+/// of no branches. The checker admits it, `Zero` apart from `Succ(n)`.
+#[test]
+fn a_constructor_no_row_admits_at_one_index_is_pruned()
+{
+    let mut arena = CoreArena::new();
+    let source = concat!(
+        "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n",
+        "data Vec(a : Type) : Nat -> Type { VNil : Vec(a, Zero); ",
+        "VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n)); }\n",
+        "def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> -F Integer ",
+        "{ case v { VCons(m, h, t) => h } }\n",
+    );
+    let module = lowered(SourceText::from(source), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("vhead")));
+    let reached = reachable(&arena, tail);
+    let cases: Vec<_> = reached
+        .iter()
+        .filter_map(|&at| match arena.computation(at) {
+            Some(&Computation::DataCase {
+                ref branches,
+                equations,
+                ..
+            }) if !branches.is_empty() => Some((branches.clone(), equations)),
+            _ => None,
+        })
+        .collect();
+    let [(ref branches, equations)] = *cases
+    else {
+        panic!("the body cases once on the vector: {cases:?}");
+    };
+    assert_eq!(
+        usize::from(equations),
+        1,
+        "each branch binds the one index's equation"
+    );
+    let lambdas = |mut at: ComputationId| {
+        let mut count = 0_usize;
+        while let Some(&Computation::Lambda(body)) = arena.computation(at) {
+            count = count.saturating_add(1);
+            at = body;
+        }
+        (count, at)
+    };
+    let [nil, cons] = **branches
+    else {
+        panic!("one branch per constructor: {branches:?}");
+    };
+    assert_eq!(
+        lambdas(cons).0,
+        4,
+        "`VCons` binds its three fields, then its equation"
+    );
+    let (bound, absurd) = lambdas(nil);
+    assert_eq!(bound, 1, "`VNil` binds its equation alone");
+    let Some(&Computation::DataCase {
+        scrutinee,
+        ref branches,
+        ..
+    }) = arena.computation(absurd)
+    else {
+        panic!(
+            "the left-out arm is a case: {:?}",
+            arena.computation(absurd)
+        );
+    };
+    assert!(branches.is_empty(), "of no branches");
+    assert_eq!(
+        arena.value(scrutinee),
+        Some(&Value::Variable {
+            zone: gandr_core_term::Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        }),
+        "on its equation"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A leaf's copy of an arm keeps each written use naming the pattern variable
 /// that binds it, so a split's components are named where the arm reads them;
 /// the swapped pair tells a copy bound at the wrong component apart. A

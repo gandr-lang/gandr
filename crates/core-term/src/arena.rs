@@ -2427,7 +2427,8 @@ impl CoreArena
     }
 
     /// Eliminate nominal data with an explicit motive and field functions,
-    /// each constructor's branch taking `arities`' count of its fields.
+    /// each constructor's branch taking `arities`' count of its fields, over a
+    /// family indexed by nothing.
     ///
     /// # Specification
     /// trivial.
@@ -2440,11 +2441,37 @@ impl CoreArena
         arities: alloc::vec::Vec<gandr_kernel_term::FieldCount>,
     ) -> ComputationId
     {
+        self.computation_data_case_with_equations(
+            scrutinee,
+            motive,
+            (branches, arities),
+            gandr_kernel_term::EquationCount::NONE,
+        )
+    }
+
+    /// Eliminate nominal data whose constructors' branches each take
+    /// `arities`' count of fields, then `equations` index equations.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_data_case_with_equations(
+        &mut self,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        (branches, arities): (
+            alloc::vec::Vec<ComputationId>,
+            alloc::vec::Vec<gandr_kernel_term::FieldCount>,
+        ),
+        equations: gandr_kernel_term::EquationCount,
+    ) -> ComputationId
+    {
         self.alloc_computation(Computation::DataCase {
             scrutinee,
             motive,
             branches,
             arities,
+            equations,
         })
     }
 

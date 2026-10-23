@@ -148,6 +148,16 @@ fn every_node_former_round_trips_under_its_own_frame()
             arities: [0_usize, 2]
                 .map(gandr_kernel_term::FieldCount::from)
                 .to_vec(),
+            equations: gandr_kernel_term::EquationCount::NONE,
+        },
+        ContentNode::DataCase {
+            scrutinee: a,
+            motive: b,
+            branches: vec![c, d],
+            arities: [0_usize, 2]
+                .map(gandr_kernel_term::FieldCount::from)
+                .to_vec(),
+            equations: gandr_kernel_term::EquationCount::from(1_usize),
         },
         ContentNode::RecordProjection(a, label("x")),
         ContentNode::TupleProjection(a, Component::from(1_usize)),

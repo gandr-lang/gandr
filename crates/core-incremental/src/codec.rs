@@ -1375,14 +1375,21 @@ where
             motive,
             ref branches,
             ref arities,
+            equations,
         } => {
-            writer.tag(Tag(0x54));
+            // A case with no equation keeps its bytes; one over an indexed
+            // family states how many its branches take.
+            let owed = usize::from(equations);
+            writer.tag(Tag(if owed == 0 { 0x54 } else { 0x5E }));
             write_index(writer, scrutinee)?;
             write_index(writer, motive)?;
             write_indices(writer, branches)?;
             writer.count(Count(arities.len()))?;
             for &arity in arities {
                 writer.count(Count(usize::from(arity)))?;
+            }
+            if owed != 0 {
+                writer.count(Count(owed))?;
             }
         },
         ContentNode::RecordProjection(record, ref label) => {
@@ -3531,7 +3538,7 @@ fn read_effect_row(
                     ContentNode::RecordType(_) => tag == 0x51,
                     ContentNode::Constructor { .. } => tag == 0x52,
                     ContentNode::Record(_) => tag == 0x53,
-                    ContentNode::DataCase { .. } => tag == 0x54,
+                    ContentNode::DataCase { equations, .. } => tag == if usize::from(equations) == 0 { 0x54 } else { 0x5E },
                     ContentNode::RecordProjection(..) => tag == 0x55,
                     ContentNode::TupleProjection(..) => tag == 0x5A,
                     ContentNode::Split(..) => tag == 0x5B,
@@ -3663,18 +3670,31 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             fields: read_indices(reader)?,
         },
         0x53 => ContentNode::Record(read_fields(reader)?),
-        0x54 => ContentNode::DataCase {
-            scrutinee: read_index(reader)?,
-            motive: read_index(reader)?,
-            branches: read_indices(reader)?,
-            arities: {
-                let count = reader.count()?;
-                let mut arities = Vec::new();
-                for _ in 0 .. count.0 {
-                    arities.push(gandr_kernel_term::FieldCount::from(reader.count()?.0));
+        0x54 | 0x5E => {
+            let scrutinee = read_index(reader)?;
+            let motive = read_index(reader)?;
+            let branches = read_indices(reader)?;
+            let count = reader.count()?;
+            let mut arities = Vec::new();
+            for _ in 0 .. count.0 {
+                arities.push(gandr_kernel_term::FieldCount::from(reader.count()?.0));
+            }
+            let equations = if tag.0 == 0x5E {
+                match reader.count()?.0 {
+                    0 => return Err(CodecError::Corrupt),
+                    owed => gandr_kernel_term::EquationCount::from(owed),
                 }
-                arities
-            },
+            }
+            else {
+                gandr_kernel_term::EquationCount::NONE
+            };
+            ContentNode::DataCase {
+                scrutinee,
+                motive,
+                branches,
+                arities,
+                equations,
+            }
         },
         0x55 => ContentNode::RecordProjection(read_index(reader)?, read_field_label(reader)?),
         0x5A => ContentNode::TupleProjection(

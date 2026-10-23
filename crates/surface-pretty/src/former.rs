@@ -748,6 +748,9 @@ pub enum Former<'source, Node>
         motive: Node,
         /// How many branches it has.
         arity: Arity,
+        /// The equations each branch binds past its fields, one per index of
+        /// an indexed family; none otherwise.
+        equations: Arity,
     },
     /// A record field's projection, `v.l`.
     RecordProjection(Node, Name<'source>),

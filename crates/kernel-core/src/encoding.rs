@@ -1532,7 +1532,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
     #[spec(
         requires: match *computation {
-            Computation::DataCase { scrutinee, motive, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee)) && self.placed.contains_key(&AnyNode::CompType(motive)) && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
+            Computation::DataCase { scrutinee, motive, ref branches, .. } => self.placed.contains_key(&AnyNode::Value(scrutinee)) && self.placed.contains_key(&AnyNode::CompType(motive)) && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
             Computation::SigmaSplit { scrutinee, motive, body } => [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].iter().all(|child| self.placed.contains_key(child)),
             Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
             Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
@@ -1554,7 +1554,7 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *computation {
-            Computation::DataCase { .. } => gandr_kernel_term::NODE_C_DATA_CASE,
+            Computation::DataCase { equations, .. } => if equations == gandr_kernel_term::EquationCount::NONE { gandr_kernel_term::NODE_C_DATA_CASE } else { gandr_kernel_term::NODE_C_INDEXED_DATA_CASE },
             Computation::SigmaSplit { .. } => gandr_kernel_term::NODE_C_SIGMA_SPLIT,
             Computation::RecordProjection(..) => gandr_kernel_term::NODE_C_RECORD_PROJECTION,
             Computation::TupleProjection(..) => gandr_kernel_term::NODE_C_TUPLE_PROJECTION,
@@ -1588,9 +1588,17 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
                 scrutinee,
                 motive,
                 ref branches,
+                equations,
             } => {
-                record.put_tag(gandr_kernel_term::NODE_C_DATA_CASE);
-                record.put_count(ComponentCount(branches.len()));
+                if equations == gandr_kernel_term::EquationCount::NONE {
+                    record.put_tag(gandr_kernel_term::NODE_C_DATA_CASE);
+                    record.put_count(ComponentCount(branches.len()));
+                }
+                else {
+                    record.put_tag(gandr_kernel_term::NODE_C_INDEXED_DATA_CASE);
+                    record.put_count(ComponentCount(branches.len()));
+                    record.put_count(ComponentCount(usize::from(equations)));
+                }
                 record.put_content(self.content_of(AnyNode::Value(scrutinee)));
                 record.put_content(self.content_of(AnyNode::CompType(motive)));
                 for branch in branches {
@@ -2170,7 +2178,7 @@ None => opened.eq((core::iter::empty()).map(Some)),
         AnyNode::Computation(id) => match arena.computation(id) {
             Some(&Computation::ListFold { element, result, list, on_nil, on_cons }) => opened.eq([AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].into_iter().map(Some)),
             Some(&Computation::ListCase { list, on_nil, on_cons }) => opened.eq([AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].into_iter().map(Some)),
-            Some(&Computation::DataCase {scrutinee,motive,ref branches}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
+            Some(&Computation::DataCase {scrutinee,motive,ref branches,..}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive)].into_iter().chain(branches.iter().copied().map(AnyNode::Computation))).map(Some)),
             Some(&Computation::SigmaSplit {scrutinee,motive,body}) => opened.eq(([AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].into_iter()).map(Some)),
             Some(&(Computation::RecordProjection(record,_) | Computation::TupleProjection(record,_))) => opened.eq((core::iter::once(AnyNode::Value(record))).map(Some)),
             None => opened.eq((core::iter::empty()).map(Some)),
@@ -2354,6 +2362,7 @@ fn push_children(
                 scrutinee,
                 motive,
                 ref branches,
+                ..
             }) => tasks.extend(
                 ([AnyNode::Value(scrutinee), AnyNode::CompType(motive)]
                     .into_iter()

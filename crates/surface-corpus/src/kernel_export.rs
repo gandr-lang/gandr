@@ -2045,6 +2045,7 @@ mod kernel_presented_readmission
             scrutinee,
             motive,
             branches,
+            ..
         }) = arena.computation(case).cloned()
         else {
             panic!("`mirror` cases on its argument");
@@ -2300,6 +2301,7 @@ mod kernel_presented_readmission
                 scrutinee,
                 motive,
                 branches,
+                ..
             }) = arena.computation(case).cloned()
             else {
                 panic!("`sect` cases on its argument");
@@ -2408,6 +2410,7 @@ mod kernel_open_fold_readmission
             scrutinee,
             motive,
             branches,
+            ..
         }) = arena.computation(case).cloned()
         else {
             panic!("`wind` cases on its argument");
@@ -2523,6 +2526,7 @@ mod kernel_loop_elimination_readmission
             scrutinee,
             motive,
             branches,
+            ..
         }) = arena.computation(case).cloned()
         else {
             panic!("`invLooper` cases on its argument");
