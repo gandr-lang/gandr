@@ -1164,12 +1164,6 @@ mod tests
                 FragmentBoundary::Unadmitted(Unbuilt::ThunkGrade),
                 FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             ),
-            (
-                "parameter",
-                FragmentSort::Declaration,
-                FragmentBoundary::Unadmitted(Unbuilt::TypeParameter),
-                FailureClass::Unimplemented(TrackingIssue::TYPE_PARAMETER),
-            ),
         ];
 
         for (form, sort, boundary, class) in rows {

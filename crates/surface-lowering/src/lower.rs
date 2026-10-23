@@ -8265,7 +8265,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let mut listed = true;
                 while let Maybe::Present(piece) = ahead.read() {
                     match piece {
-                        Piece::Tile { label, at } if listed && label == TileName::IDENTIFIER => {
+                        Piece::Tile { label, at }
+                            if listed && TileName::BINDERS.contains(&label) =>
+                        {
                             names.push(self.name_at(at));
                         },
                         Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE => {
@@ -8286,20 +8288,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     let _close = cursor.tile(TileName::PAREN_CLOSE);
                     break;
                 },
-                Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => at,
                 Maybe::Present(Piece::Tile { label, at }) if TileName::BINDERS.contains(&label) => {
-                    let parameter = Site {
-                        at,
-                        name: FormName::PARAMETER,
-                        ..function
-                    };
-                    return Err(parameter.out(FragmentBoundary::Unadmitted(Unbuilt::TypeParameter)));
+                    let _binder = cursor.tile(label);
+                    at
                 },
                 Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
                     return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
                 },
             };
-            let _binder = cursor.tile(TileName::IDENTIFIER);
             let declared = match cursor.tile(TileName::COLON) {
                 Maybe::Present(_) => {
                     // A receiver's mode word, which the collection read.
@@ -22712,16 +22708,6 @@ mod tests
                     FormName::ANNOTATION,
                     FragmentSort::Computation,
                     Unbuilt::Annotation,
-                ),
-            ),
-            (
-                "def f(A) { return 1 }",
-                unadmitted(
-                    6_usize,
-                    7_usize,
-                    FormName::PARAMETER,
-                    FragmentSort::Declaration,
-                    Unbuilt::TypeParameter,
                 ),
             ),
             (

@@ -229,8 +229,6 @@ pub enum Unbuilt
     UnknownConstructor,
     /// A number written with a fractional part.
     Fractional,
-    /// A function parameter named by a type variable or a type identifier.
-    TypeParameter,
     /// An infix form the lowering does not read: an operator outside the
     /// prelude's vocabulary, or a word `g ∷ w` whose letter names no loop.
     InfixForm,
@@ -287,7 +285,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 92_usize] = [
+    pub const ALL: [Self; 91_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -356,7 +354,6 @@ impl Unbuilt
         Self::Val,
         Self::UnknownConstructor,
         Self::Fractional,
-        Self::TypeParameter,
         Self::InfixForm,
         Self::PrefixOperator,
         Self::EmptyCase,
@@ -472,7 +469,6 @@ impl Unbuilt
             Self::Val => "val_statement",
             Self::UnknownConstructor => "constructor",
             Self::Fractional => "number",
-            Self::TypeParameter => "parameter",
             Self::InfixForm => "binary_expression",
             Self::PrefixOperator => "unary_expression",
             Self::EmptyCase => "case_expression",
@@ -548,7 +544,6 @@ impl Unbuilt
             Self::CaseView => TrackingIssue::CASE_VIEW,
             Self::If => TrackingIssue::IF_EXPRESSION,
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
-            Self::TypeParameter => TrackingIssue::TYPE_PARAMETER,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
             Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
             Self::Interpolation

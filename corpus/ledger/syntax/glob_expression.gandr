@@ -1,6 +1,7 @@
 /// `glob_expression`: a globular structure: its cells and its homs.
-/// The checker does not reach this form yet; #1996 tracks it.
-@[ refuses("OutOfFragment.parameter") ]
+/// The checker does not reach this form yet: no type `Glob` is declared for
+/// it to answer, so the signature is refused first; #1207 tracks it.
+@[ refuses("UnresolvedTypeHead") ]
 def path_glob(A : Type) -> Glob {
   glob {
     cells = A;
