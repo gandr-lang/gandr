@@ -164,6 +164,7 @@ pub use crate::model::SurfaceForm;
 pub use crate::model::Sym;
 pub use crate::model::Tile;
 pub use crate::model::TileLabel;
+pub use crate::mold::HoleFollows;
 pub use crate::mold::MoldDef;
 pub use crate::mold::MoldHasPredecessor;
 pub use crate::mold::MoldHasRequiredTail;

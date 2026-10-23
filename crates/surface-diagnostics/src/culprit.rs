@@ -182,6 +182,12 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
                 "its closing tile belongs here"
             },
             FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => "the form stops here",
+            FormFault::Repaired(Repair::Diverged(Ending::Tile(_))) => {
+                "a tile of the form belongs here"
+            },
+            FormFault::Repaired(Repair::Diverged(Ending::Unnamed)) => {
+                "the form leaves its shape here"
+            },
             FormFault::ExtraOperand => "an operand the form does not take",
             FormFault::MisplacedTile => "out of place",
             FormFault::ExtraClose(ClosingClass::Paren) => "one `)` too many",
@@ -493,6 +499,8 @@ mod tests
             Repair::GhostClose(ClosingClass::Brace),
             Repair::Unended(Ending::Tile(TileName::SEMICOLON)),
             Repair::Unended(Ending::Unnamed),
+            Repair::Diverged(Ending::Tile(TileName::SEMICOLON)),
+            Repair::Diverged(Ending::Unnamed),
             Repair::Keyword(StrayKeyword {
                 written: TileName::SEMICOLON,
                 offer: Offer::Unspelled,
@@ -512,7 +520,7 @@ mod tests
         labels.dedup();
         assert_eq!(
             labels.len(),
-            9_usize,
+            11_usize,
             "each repair names what the source left out"
         );
     }
@@ -576,6 +584,12 @@ mod tests
                     "its closing tile belongs here"
                 },
                 FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => "the form stops here",
+                FormFault::Repaired(Repair::Diverged(Ending::Tile(_))) => {
+                    "a tile of the form belongs here"
+                },
+                FormFault::Repaired(Repair::Diverged(Ending::Unnamed)) => {
+                    "the form leaves its shape here"
+                },
                 FormFault::ExtraOperand => "an operand the form does not take",
                 FormFault::MisplacedTile => "out of place",
                 FormFault::ExtraClose(ClosingClass::Paren) => "one `)` too many",

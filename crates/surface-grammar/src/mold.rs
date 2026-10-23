@@ -292,6 +292,11 @@ mold_flag! {
 }
 
 mold_flag! {
+    /// Whether a hole can follow a mold within its form.
+    HoleFollows
+}
+
+mold_flag! {
     /// Whether a mold belongs to a tile set.
     MoldInSet
 }

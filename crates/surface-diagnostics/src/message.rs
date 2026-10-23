@@ -373,6 +373,12 @@ fn lowered(
                 FormFault::Repaired(Repair::Unended(Ending::Unnamed)) => {
                     write!(f, "this {form} stops before it is finished")
                 },
+                FormFault::Repaired(Repair::Diverged(Ending::Tile(tile))) => {
+                    write!(f, "this {form} is missing its `{}` here", tile.as_ref())
+                },
+                FormFault::Repaired(Repair::Diverged(Ending::Unnamed)) => {
+                    write!(f, "this {form} has an operand it does not take here")
+                },
                 FormFault::ExtraOperand => {
                     write!(f, "this {form} has an operand it does not take")
                 },

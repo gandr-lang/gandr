@@ -59,6 +59,9 @@ use anodized::spec;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RegexShape;
+use gandr_surface_grammar::RegexView;
+use gandr_surface_grammar::Sym;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -111,6 +114,20 @@ quenchant_shape::reason_enum! {
             /// The repair is one of the form's own children, and no form
             /// inside it holds one the form's minted close could follow from.
             Own,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a form the parser closed holds no point where its written
+    /// children leave its rule's shape.
+    pub mod diverged {
+        /// Every operand stands in a hole the rule places there.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No operand follows a tile no hole follows, and no hole holds
+            /// two operands where the rule writes no two holes side by side.
+            InShape,
         }
     }
 }
@@ -1374,6 +1391,11 @@ pub enum Repair
     /// the parser's postfix grout, the ghost end it appends to a form whose
     /// end is no paired closer (a definition's `;`, a string's `"`).
     Unended(Ending),
+    /// The point where a form the parser closed at its end first leaves its
+    /// rule's shape, which that close follows from: an operand right after a
+    /// tile no hole follows, or a second operand in a hole that holds one. The
+    /// ending names the tile the rule writes there.
+    Diverged(Ending),
 }
 
 /// A reserved word standing where its form takes a term, and the tile the
@@ -1468,6 +1490,10 @@ impl fmt::Display for Repair
                 write!(f, "a closing `{}` the source never wrote", tile.0)
             },
             Self::Unended(Ending::Unnamed) => f.write_str("an end the source never wrote"),
+            Self::Diverged(Ending::Tile(tile)) => {
+                write!(f, "an operand where its `{}` belongs", tile.0)
+            },
+            Self::Diverged(Ending::Unnamed) => f.write_str("an operand its rule places nowhere"),
         }
     }
 }
@@ -1961,8 +1987,11 @@ impl Default for Pieces
 ///   When that first repair is a minted close of a form of several tiles and a
 ///   form inside it holds a repair too, the deepest such repair — the first in
 ///   source order among equals — is reported instead, naming the form that
-///   holds it: the outer close follows from the inner form's. Reading layout,
-///   documentation or a repair node itself leaves both fields empty.
+///   holds it: the outer close follows from the inner form's. A minted close or
+///   a ghost end, the form's own or the inner one reported, gives way to the
+///   point where its form first leaves its rule's shape when that point comes
+///   before it ([`earliest`]). Reading layout, documentation or a repair node
+///   itself leaves both fields empty.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
@@ -2153,9 +2182,13 @@ pub fn read_pieces<'source>(
         )
     {
         let inner = nested_repair(pbg, tree, &read.pieces)?;
-        if let Maybe::Present(inner) = inner {
-            read.repair = Maybe::Present(inner);
-        }
+        read.repair = match (inner, read.repair) {
+            (Maybe::Present(inner), _) => Maybe::Present(inner),
+            (Maybe::Absent(_), Maybe::Present(found)) => {
+                Maybe::Present(earliest(pbg, tree, position, found))
+            },
+            (Maybe::Absent(_), Maybe::Absent(reason)) => Maybe::Absent(reason),
+        };
     }
     Ok(())
 }
@@ -2273,8 +2306,9 @@ fn unended(
 /// - ensures: among the grout and minted closes standing as children of a form
 ///   inside one of the operands, the one at the greatest depth, the first in
 ///   source order among equals, with the name of the form whose child it is; a
-///   ghost end is read as that form's [`Repair::Unended`]; absent when no
-///   operand holds one.
+///   ghost end is read as that form's [`Repair::Unended`], and a minted close
+///   or a ghost end as its form's [`earliest`]; absent when no operand holds
+///   one.
 /// - provides: the inner repair a minted close or a ghost end follows from.
 /// - fails: [`LoweringRefusal::UnknownMold`] for a holding form whose mold
 ///   `pbg` does not hold.
@@ -2357,15 +2391,385 @@ fn nested_repair<'source>(
             }
         }
     }
-    Ok(match deepest {
+    let (holder, found) = match deepest {
         Maybe::Present((_, holder, found))
             if found.repair == Repair::Grout(GroutShape::Postfix) =>
         {
-            Maybe::Present(unended(pbg, tree, holder, found))
+            (holder, unended(pbg, tree, holder, found))
         },
-        Maybe::Present((_, _, found)) => Maybe::Present(found),
-        Maybe::Absent(reason) => Maybe::Absent(reason),
-    })
+        Maybe::Present((_, holder, found)) => (holder, found),
+        Maybe::Absent(reason) => return Ok(Maybe::Absent(reason)),
+    };
+    Ok(Maybe::Present(earliest(pbg, tree, holder, found)))
+}
+
+/// The repair a form the parser closed is reported by: the point where the
+/// form at `form` first leaves its rule's shape when that point comes before
+/// `found`, its minted close or ghost end, and `found` otherwise.
+///
+/// # Specification
+/// - requires: `found` is a repair among the children of `form`.
+/// - ensures: when `found` is a [`Repair::GhostClose`] or a [`Repair::Unended`]
+///   and [`diverged()`]'s point starts before it, the point standing in
+///   `found`'s form: `found`'s own repair there when the form writes none of
+///   its tiles past the point, so the close belongs there, and
+///   [`Repair::Diverged`] otherwise; `found` unchanged in every other case.
+/// - provides: the mark at the first place the source went wrong, not at the
+///   end the parser closed the form at.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type missing a comma between its type and its
+///   first endpoint is marked at the comma's gap, a labelled sum missing its
+///   `{` at the brace's gap, a group left open before a stray `;` at the gap
+///   its `)` belongs in, and a module never closed keeps its close.
+/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+/// - witness: `tests::modules::a_repaired_container_keeps_its_member`
+#[spec(ensures: |ret| ret == found || (ret.nested == found.nested && (ret.repair == found.repair || matches!(ret.repair, Repair::Diverged(_))) && ret.span.start() < found.span.start()))]
+fn earliest(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+    found: Repaired,
+) -> Repaired
+{
+    if !matches!(found.repair, Repair::GhostClose(_) | Repair::Unended(_)) {
+        return found;
+    }
+    match diverged(pbg, tree, form) {
+        Maybe::Present(point) if point.at.start() < found.span.start() => Repaired {
+            span: point.at,
+            repair: if point.closing {
+                found.repair
+            }
+            else {
+                Repair::Diverged(point.ending)
+            },
+            nested: found.nested,
+        },
+        Maybe::Present(_) | Maybe::Absent(_) => found,
+    }
+}
+
+/// Where a form's written children first leave its rule's shape.
+///
+/// # Specification
+/// - requires: built by [`diverged()`] from one form.
+/// - ensures: `at` is an empty point; `closing` holds when the form writes none
+///   of its own tiles past it.
+/// - provides: what [`earliest`] reports.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the form is absent from the value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`earliest`].
+/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Divergence
+{
+    /// The empty point just past the written child before the stray operand.
+    at: ByteSpan,
+    /// The tile the rule writes after the last own tile before the point.
+    ending: Ending,
+    /// The stray operand is a second one in the form's last hole: no own tile
+    /// follows it.
+    closing: bool,
+}
+
+/// The first point the written children of the form at `form` leave its
+/// rule's shape, with the tile the rule writes there.
+///
+/// # Specification
+/// - requires: `form` is a node of `tree`, molded under `pbg`.
+/// - ensures: reading the form's written children in order, the first operand
+///   that follows one of the form's own tiles no hole follows, or follows
+///   another operand when the rule writes no two holes side by side; `at` is
+///   the empty point just past the written child before it; `ending` is the one
+///   label every same-form successor of the last own tile before it carries,
+///   [`Ending::Unnamed`] when they differ or none is written; and `closing`
+///   holds for a second operand no own tile follows. Absent for a node that is
+///   no rule's form, and for one whose operands all stand where its rule places
+///   holes.
+/// - provides: where a form the parser closed went wrong.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`earliest`].
+/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(point) => point.at.start() == point.at.end(),
+    | Maybe::Absent(_) => true,
+})]
+fn diverged(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Maybe<Divergence, diverged::Absent>
+{
+    let absent = Maybe::Absent(diverged::Absent::InShape);
+    let Some(NodeLabel::Meld(mold)) = tree.node(form).map(Node::label)
+    else {
+        return absent;
+    };
+    let Ok(rule) = pbg.rule_of(mold)
+    else {
+        return absent;
+    };
+    let own_tile = |held: &Node| match held.label() {
+        NodeLabel::Tile(child)
+            if pbg
+                .rule_of(child)
+                .is_ok_and(|held_rule| held_rule.name == rule.name) =>
+        {
+            Some(child)
+        },
+        NodeLabel::Tile(_)
+        | NodeLabel::Meld(_)
+        | NodeLabel::Wald
+        | NodeLabel::Grout { .. }
+        | NodeLabel::GhostClose { .. }
+        | NodeLabel::Space
+        | NodeLabel::Doc => None,
+    };
+    // economy: the walk runs only over a form the parser closed for the
+    // source, so a clean tree never pays for it.
+    let side_by_side = holes(rule.regex.view()).side_by_side;
+    let mut own: Maybe<MoldId, nested::Absent> = Maybe::Absent(nested::Absent::Own);
+    let mut operand_before = false;
+    let mut end = ByteOffset::from(0_usize);
+    let mut children = tree.children(form);
+    while let Some(child) = children.next() {
+        let Some(held) = tree.node(child)
+        else {
+            continue;
+        };
+        if matches!(
+            held.label(),
+            NodeLabel::Grout { .. }
+                | NodeLabel::GhostClose { .. }
+                | NodeLabel::Space
+                | NodeLabel::Doc
+        ) {
+            continue;
+        }
+        if let Some(tile) = own_tile(held) {
+            own = Maybe::Present(tile);
+            operand_before = false;
+        }
+        else {
+            let stray = if operand_before {
+                !side_by_side
+            }
+            else {
+                matches!(own, Maybe::Present(before) if !bool::from(pbg.hole_follows(before)))
+            };
+            if stray {
+                return Maybe::Present(Divergence {
+                    at: ByteSpan::new(end, end).unwrap_or_else(|_| held.span()),
+                    ending: next_tile(pbg, own),
+                    closing: operand_before
+                        && !children.any(|later| tree.node(later).and_then(own_tile).is_some()),
+                });
+            }
+            operand_before = true;
+        }
+        end = held.span().end();
+    }
+    absent
+}
+
+/// The tile every same-form successor of `own` carries.
+///
+/// # Specification
+/// trivial.
+fn next_tile(
+    pbg: &Pbg,
+    own: Maybe<MoldId, nested::Absent>,
+) -> Ending
+{
+    let Maybe::Present(own) = own
+    else {
+        return Ending::Unnamed;
+    };
+    let mut labels = pbg
+        .mold_successors(own)
+        .iter()
+        .filter_map(|&(_, next)| pbg.mold(next).ok().map(|def| def.label));
+    match labels.next() {
+        Some(first) if labels.all(|label| label == first) => Ending::Tile(TileName(first)),
+        Some(_) | None => Ending::Unnamed,
+    }
+}
+
+/// Whether a part of a rule can begin and end with a hole.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Ends
+{
+    /// The part can begin with a hole.
+    first: bool,
+    /// The part can end with a hole.
+    last: bool,
+}
+
+impl Ends
+{
+    /// Neither end a hole.
+    const TILES: Self = Self {
+        first: false,
+        last: false,
+    };
+
+    /// Both ends the one hole.
+    const HOLE: Self = Self {
+        first: true,
+        last: true,
+    };
+}
+
+/// What a rule's regular expression, or a part of it, says of its holes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Holes
+{
+    /// The part can match nothing.
+    empty: bool,
+    /// Whether the part can begin and end with a hole.
+    ends: Ends,
+    /// The part can write two holes side by side.
+    side_by_side: bool,
+}
+
+impl Holes
+{
+    /// The empty word's: no hole at all.
+    const NOTHING: Self = Self {
+        empty: true,
+        ends: Ends::TILES,
+        side_by_side: false,
+    };
+
+    /// This part, then the part `after`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn then(
+        self,
+        after: Self,
+    ) -> Self
+    {
+        let meeting = self.ends.last && after.ends.first;
+        Self {
+            empty: self.empty && after.empty,
+            ends: Ends {
+                first: self.ends.first || (self.empty && after.ends.first),
+                last: after.ends.last || (after.empty && self.ends.last),
+            },
+            side_by_side: self.side_by_side || after.side_by_side || meeting,
+        }
+    }
+
+    /// This part, or the part `other`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn or(
+        self,
+        other: Self,
+    ) -> Self
+    {
+        Self {
+            empty: self.empty || other.empty,
+            ends: Ends {
+                first: self.ends.first || other.ends.first,
+                last: self.ends.last || other.ends.last,
+            },
+            side_by_side: self.side_by_side || other.side_by_side,
+        }
+    }
+}
+
+/// What the part `regex` of a rule says of its holes.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `side_by_side` exactly when some word the part matches writes two
+///   holes with no tile between them, and `empty` and `ends` as [`Holes`]
+///   states them.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// Each part is pushed once unread and once read, and a part's children are
+/// strictly smaller subtrees of a finite expression.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type's rule writes no two holes side by side and a
+///   module's repeated members do.
+/// - witness: `lower::tests::a_closed_form_is_marked_where_it_first_leaves_its_shape_1829`
+#[spec(ensures: |ret| !ret.side_by_side || !matches!(regex.shape(), RegexShape::Empty | RegexShape::Sym(_)))]
+fn holes(regex: RegexView<'_>) -> Holes
+{
+    // economy: read only for a form the parser closed, over one rule's
+    // expression.
+    let mut parts = alloc::vec![(regex, false)];
+    let mut read: Vec<Holes> = Vec::new();
+    while let Some((part, children_read)) = parts.pop() {
+        let shape = part.shape();
+        if !children_read {
+            parts.push((part, true));
+            match shape {
+                RegexShape::Seq(items) | RegexShape::Alt(items) => {
+                    parts.extend(items.into_iter().rev().map(|item| (item, false)));
+                },
+                RegexShape::Optional(inner) | RegexShape::Repeat(inner) => {
+                    parts.push((inner, false));
+                },
+                RegexShape::Empty | RegexShape::Sym(_) => {},
+            }
+            continue;
+        }
+        let mut take = |count: usize| read.split_off(read.len().saturating_sub(count));
+        let holes = match shape {
+            RegexShape::Empty => Holes::NOTHING,
+            RegexShape::Sym(Sym::Sort(_)) => Holes {
+                empty: false,
+                ends: Ends::HOLE,
+                side_by_side: false,
+            },
+            RegexShape::Sym(Sym::Tile(_)) => Holes {
+                empty: false,
+                ..Holes::NOTHING
+            },
+            RegexShape::Seq(items) => take(items.len())
+                .into_iter()
+                .fold(Holes::NOTHING, Holes::then),
+            RegexShape::Alt(items) => take(items.len()).into_iter().fold(
+                Holes {
+                    empty: false,
+                    ..Holes::NOTHING
+                },
+                Holes::or,
+            ),
+            RegexShape::Optional(_) => {
+                let once = take(1_usize).pop().unwrap_or(Holes::NOTHING);
+                Holes {
+                    empty: true,
+                    ..once
+                }
+            },
+            RegexShape::Repeat(_) => {
+                let once = take(1_usize).pop().unwrap_or(Holes::NOTHING);
+                Holes {
+                    empty: true,
+                    ..once.then(once)
+                }
+            },
+        };
+        read.push(holes);
+    }
+    read.pop().unwrap_or(Holes::NOTHING)
 }
 
 /// The repair a grout child `grout` of shape `shape` reads as: a

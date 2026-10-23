@@ -24129,6 +24129,70 @@ mod tests
         );
     }
 
+    /// #1829: a form the parser closed at its end is marked where its written
+    /// tiles first leave its rule's shape, not at the close.
+    #[test]
+    fn a_closed_form_is_marked_where_it_first_leaves_its_shape_1829()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        for (source, point, form, ending, why) in [
+            (
+                "def four : Path(Integer 4, 4) ;\ndef four = here(4) ;\n",
+                23_usize,
+                "path_type",
+                crate::form::Ending::Unnamed,
+                "a path type missing the comma after its type is marked at the comma's gap, \
+                 where a second operand stands in a hole that holds one",
+            ),
+            (
+                "def either : Integer + String ;\ndef either = +.0 = 1} ;\n",
+                46_usize,
+                "labelled_sum_expression",
+                crate::form::Ending::Tile(crate::form::TileName::BRACE_OPEN),
+                "a labelled sum missing its `{` is marked at the brace's gap, where an operand \
+                 follows a tile no hole follows, and names the brace",
+            ),
+        ] {
+            let tree = repaired(&pbg, SourceText::from(source));
+            assert_eq!(
+                refusal_in(&pbg, &tree),
+                LoweringRefusal::MalformedForm {
+                    span: at(point, point),
+                    form: FormName::from(NamedKind(form)),
+                    fault: FormFault::Repaired(Repair::Diverged(ending)),
+                },
+                "{why}"
+            );
+        }
+        let tree = repaired(&pbg, SourceText::from("def x = ( 1 ;\n"));
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: at(11_usize, 11_usize),
+                form: FormName::from(NamedKind("parenthesized_expression")),
+                fault: FormFault::Repaired(Repair::GhostClose(
+                    gandr_surface_syntax::ClosingClass::Paren,
+                )),
+            },
+            "a group left open before a stray `;` is missing its `)` where the `;` stands \
+             in its last hole, not at the end of the source"
+        );
+        let tree = repaired(
+            &pbg,
+            SourceText::from("module M {\n  def a = 1 ;\n  def b = 2 ;\n"),
+        );
+        assert!(
+            matches!(refusal_in(&pbg, &tree), LoweringRefusal::MalformedForm {
+                span,
+                fault: FormFault::Repaired(Repair::GhostClose(_)),
+                ..
+            } if span == at(38_usize, 38_usize)),
+            "a module never closed keeps its close at its end: its rule writes its members \
+             side by side"
+        );
+    }
+
     #[test]
     fn a_juxtaposed_operand_is_refused()
     {

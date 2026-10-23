@@ -526,6 +526,17 @@ fn mold_bounds_follow_context_nullability() -> Result<(), Box<dyn Error>>
         paren.bounds(open)?,
         "an opener faces its operand on the right only"
     );
+    let follows = |grammar: &Pbg, label| {
+        bool::from(grammar.hole_follows(only_mold(grammar, TileLabel(label))))
+    };
+    assert!(
+        follows(&pbg, "+") && follows(&paren, "("),
+        "a hole follows an infix operator and an opener"
+    );
+    assert!(
+        !follows(&pbg, "x") && !follows(&paren, ")"),
+        "no hole follows an atom or a closer"
+    );
     Ok(())
 }
 
