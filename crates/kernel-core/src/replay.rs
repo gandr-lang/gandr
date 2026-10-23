@@ -304,6 +304,7 @@
 //! Reconsider on an unmaintained release, a high-risk advisory or a need the
 //! existing strategy API cannot express.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 use core::iter::Peekable;
@@ -412,8 +413,9 @@ impl From<ParameterCount> for u32
     }
 }
 
-/// The definitions a replay may unfold, by admission position, and the
-/// presented types whose terms it rewrites.
+/// The definitions a replay may unfold, by admission position, the presented
+/// types whose terms it rewrites, and the relations lawful atoms read their
+/// identities as.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Unfoldings
 {
@@ -421,6 +423,8 @@ pub struct Unfoldings
     bodies: Vec<Unfoldable>,
     /// The rules of every presented type the replay's terms may hold.
     presentations: crate::presented::Presentations,
+    /// The relation of each lawful atom, at its admission position.
+    identities: BTreeMap<ConstantIndex, ValueId>,
 }
 
 impl Unfoldings
@@ -455,6 +459,7 @@ impl Unfoldings
         Self {
             bodies,
             presentations: crate::presented::Presentations::default(),
+            identities: BTreeMap::new(),
         }
     }
 
@@ -485,6 +490,64 @@ impl Unfoldings
     pub const fn presentations(&self) -> &crate::presented::Presentations
     {
         &self.presentations
+    }
+
+    /// These unfoldings, the replay reading the identity of every lawful atom
+    /// among `entries` through the atom's relation.
+    ///
+    /// # Specification
+    /// - requires: `entries` is the admission log the replay's terms were
+    ///   admitted in.
+    /// - ensures: [`Self::identity`] answers the relation of each abstract type
+    ///   among `entries` whose interface states its law, at its admission
+    ///   position, and nothing at any other position.
+    /// - provides: where a transport along a lawful atom's evidence reads the
+    ///   fibre the relation returns.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause quantifies over every entry of the
+    ///   admission log, which a predicate may not iterate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport along a lawful atom's evidence into the
+    ///   fibre its relation reads as the unit type returns the unit once the
+    ///   atom is identified, and sticks before.
+    /// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+    #[inline]
+    #[must_use]
+    pub fn identifying(
+        self,
+        entries: &[crate::env::AdmittedDeclaration],
+    ) -> Self
+    {
+        let mut identities = BTreeMap::new();
+        for (position, entry) in entries.iter().enumerate() {
+            if let gandr_kernel_term::DeclarationContent::AbstractType {
+                interface: quenchant_shape::shape::Maybe::Present(interface),
+                ..
+            } = *entry.content()
+                && let quenchant_shape::shape::Maybe::Present(_) = interface.law()
+            {
+                let _previous =
+                    identities.insert(ConstantIndex::from(position), interface.relation());
+            }
+        }
+        Self { identities, ..self }
+    }
+
+    /// The relation the lawful atom at `atom` reads its identity as, when it
+    /// is identified.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn identity(
+        &self,
+        atom: ConstantIndex,
+    ) -> Option<ValueId>
+    {
+        self.identities.get(&atom).copied()
     }
 
     /// How the constant `constant` unfolds.
@@ -5988,7 +6051,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     focus = reduct;
                                     progress = Progress::Reduced;
                                 },
-                                crate::path_universe::Reduction::Stuck => break,
+                                crate::path_universe::Reduction::Stuck => {
+                                    match crate::element_identity::atom_fibre_beta(
+                                        self.arena,
+                                        self.unfoldings,
+                                        term,
+                                    )
+                                    .map_err(|_unreadable_term| unreadable())?
+                                    {
+                                        crate::path_universe::Reduction::Reduced(reduct) => {
+                                            focus = reduct;
+                                            progress = Progress::Reduced;
+                                        },
+                                        crate::path_universe::Reduction::Stuck => break,
+                                    }
+                                },
                             }
                         },
                         Some(&Computation::Ride {

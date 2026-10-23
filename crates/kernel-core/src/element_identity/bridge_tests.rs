@@ -2,6 +2,7 @@
 //! universe and recursive codes, its refusal at a sealed type, and the
 //! identity reading of the same codes beside each.
 
+use alloc::boxed::Box;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 
@@ -9,6 +10,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::AtomInterface;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::Computation;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
@@ -16,6 +18,7 @@ use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::SealExtent;
 use gandr_kernel_term::SealScope;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
@@ -43,6 +46,7 @@ use crate::identity_recursion::function_fixtures::higher;
 use crate::identity_recursion::function_fixtures::normal_form;
 use crate::identity_recursion::function_fixtures::pointwise;
 use crate::identity_recursion::function_fixtures::thunk_type;
+use crate::path_universe::Reduction;
 
 /// The value universe at the constant level `level`.
 ///
@@ -886,6 +890,97 @@ fn a_lawful_atom_reads_its_relation_as_its_identity()
     environment
         .add_decl(declaration)
         .expect("J over the atom, derived in the singleton");
+}
+
+#[test]
+fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937()
+{
+    // An atom over `Unit` relating its elements by `Unit`, two sealed points
+    // `a` and `b` of it, and the relation's evidence between them.
+    let mut environment = Environment::new();
+    let atom = lawful_atom(
+        &mut environment,
+        TermArena::value_type_unit,
+        unit_contraction,
+    )
+    .expect("a lawful atom");
+    let first = sealed_point(&mut environment, atom);
+    let second = sealed_point(&mut environment, atom);
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let a = arena.value_constant(first);
+    let b = arena.value_constant(second);
+    let identity = arena.value_type_path(sealed, a, b);
+    let unit = arena.value_unit();
+    let declaration = staging.def(LevelSignature::monomorphic(), identity, unit);
+    let evidence = environment
+        .add_decl(declaration)
+        .expect("the relation's evidence is an identity")
+        .position();
+    let identified = crate::replay::Unfoldings::default().identifying(environment.entries());
+
+    // In the family of paths back to `a`, `(y : A, z : Path(A, a, y)) =>
+    // Path(A, y, a)`, every fibre is the relation's, the unit type: along the
+    // evidence the transport returns the unit.
+    let mut staging = environment.stage();
+    let arena = staging.arena();
+    let sealed = arena.value_type_abstract(atom);
+    let a = arena.value_constant(first);
+    let b = arena.value_constant(second);
+    let path = arena.value_constant(evidence);
+    let end = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(sealed, a, end);
+    let endpoint = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let back = arena.value_type_path(sealed, endpoint, a);
+    let returns = arena.comp_type_returner(back);
+    let entry = arena.comp_type_pi(singleton, returns);
+    let motive = arena.comp_type_pi(sealed, entry);
+    let start = arena.value_here(a);
+    let over = arena.value_here(path);
+    let step = super::TelescopeStep {
+        motive,
+        path,
+        start,
+        over,
+        value: start,
+    };
+    let Ok(Reduction::Reduced(reduct)) = super::atom_fibre_beta(arena, &identified, step)
+    else {
+        panic!("a transport into a lawful atom's unit fibre reduces");
+    };
+    let Some(&Computation::Return(returned)) = arena.computation(reduct)
+    else {
+        panic!("the reduct returns a value");
+    };
+    assert_eq!(arena.value(returned), Some(&Value::Tuple(Box::default())));
+    assert_eq!(
+        super::atom_fibre_beta(arena, &crate::replay::Unfoldings::default(), step),
+        Ok(Reduction::Stuck),
+        "unfoldings identifying no atom leave the transport stuck"
+    );
+    let along_here = super::TelescopeStep {
+        path: start,
+        ..step
+    };
+    assert_eq!(
+        super::atom_fibre_beta(arena, &identified, along_here),
+        Ok(Reduction::Stuck),
+        "along reflexivity the row leaves the transport to the reflexive rows"
+    );
+
+    // The kernel admits the unit's reflexivity as an identity from that
+    // transport to the unit, in the fibre at `b`.
+    let transported = arena.computation_telescope_transport(motive, path, start, over, start);
+    let moved = arena.value_returned(transported);
+    let fibre = arena.value_type_path(sealed, b, a);
+    let unit = arena.value_unit();
+    let declared = arena.value_type_path(fibre, moved, unit);
+    let reflexive = arena.value_here(unit);
+    let declaration = staging.def(LevelSignature::monomorphic(), declared, reflexive);
+    environment
+        .add_decl(declaration)
+        .expect("the transport along the evidence is the unit");
 }
 
 #[test]

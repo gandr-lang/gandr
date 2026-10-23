@@ -278,6 +278,7 @@ use gandr_core_term::Transparency;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -471,6 +472,9 @@ pub struct LoweredChain
     /// How many constructors each data declaration takes, by admission
     /// position: where a case's loop arms start after its constructors'.
     constructors: BTreeMap<ConstantIndex, gandr_kernel_term::ConstructorCount>,
+    /// The relation each lawful atom reads its identity as, by admission
+    /// position.
+    identities: BTreeMap<ConstantIndex, ValueId>,
 }
 
 impl LoweredChain
@@ -545,6 +549,7 @@ impl LoweredChain
             bodies,
             presentations: BTreeMap::new(),
             constructors: BTreeMap::new(),
+            identities: BTreeMap::new(),
         })
     }
 
@@ -657,6 +662,36 @@ impl LoweredChain
     )
     {
         let _replaced = self.constructors.insert(constant, constructors);
+    }
+
+    /// Record that the lawful atom at `atom` reads its identity as
+    /// `relation`.
+    ///
+    /// # Specification
+    /// - requires: `relation` is a closed core value in the arena the run
+    ///   evaluates against: the relation of the atom's interface, whose
+    ///   interface states its law.
+    /// - ensures: [`Definitions::identity`] answers `relation` at `atom` for
+    ///   every run over this chain; an earlier record at `atom` is replaced.
+    /// - provides: where a transport along the atom's evidence reads the fibre
+    ///   the relation gives the endpoints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport along a lawful atom's evidence into the
+    ///   fibre its relation reads as the unit type returns the unit once the
+    ///   atom is recorded, and sticks before.
+    /// - witness: `identity::tests::telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937`
+    #[inline]
+    #[spec(ensures: self.identities.get(&atom) == Some(&relation))]
+    pub fn identify(
+        &mut self,
+        atom: ConstantIndex,
+        relation: ValueId,
+    )
+    {
+        let _replaced = self.identities.insert(atom, relation);
     }
 
     /// The definitions, in admission order.
@@ -1103,6 +1138,20 @@ impl<'run> Definitions<'run>
     ) -> Option<gandr_kernel_term::ConstructorCount>
     {
         self.chain.constructors.get(&constant).copied()
+    }
+
+    /// The relation the lawful atom at `atom` reads its identity as, when
+    /// the chain recorded it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn identity(
+        &self,
+        atom: ConstantIndex,
+    ) -> Option<ValueId>
+    {
+        self.chain.identities.get(&atom).copied()
     }
 
     /// The types of words whose cells loop in the sort admitted at `sort`, by
@@ -7509,8 +7558,10 @@ fn move_payloads(
 ///   when both identities are reflexivity the operand returns unchanged; when
 ///   only the path is `here(c)` the operand transports along the identity over
 ///   it in the fibre `z. C[c, z]`; along any other path, into a returned type
-///   `Path(Unit, l, r)`, it returns the unit, that fibre's one inhabitant; over
-///   any other stuck path the transport stacks on the path's spine.
+///   `Path(Unit, l, r)`, or `Path(A, l, r)` at a lawful atom `A` whose relation
+///   returns the unit type's code outright ([`relation_code`]), it returns the
+///   unit, that fibre's one inhabitant; over any other stuck path the transport
+///   stacks on the path's spine.
 /// - provides: the telescope transport's computation rules, a subset of the
 ///   kernel's, and its stuck form.
 /// - fails: [`EvalFault::MachineInvariant`] for a missing operand, or a motive
@@ -7536,6 +7587,7 @@ fn move_payloads(
 /// - witness: `identity::tests::telescope_transport_along_a_stuck_path_is_stuck`
 /// - witness: `identity::tests::telescope_transport_along_native_evidence_in_a_constant_motive_returns_its_value`
 /// - witness: `identity::tests::telescope_transport_into_the_unit_fibre_returns_the_unit_1886`
+/// - witness: `identity::tests::telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937`
 #[spec(
     captures: [values = machine.values.len(), comps = machine.comps.len(), tasks = machine.tasks.len()],
     ensures: |ret| ret.is_err() || (machine.values.len() == values.saturating_sub(4_usize)
@@ -7572,14 +7624,23 @@ fn step_telescope_transport(
             return Ok(());
         }
     }
-    // Into an identity at the unit type, the transport along any path that is
-    // no reflexivity returns the unit, that fibre's one inhabitant.
+    // Into an identity at the unit type, or at a lawful atom whose relation
+    // returns the unit type's code outright, the transport along any path
+    // that is no reflexivity returns the unit, that fibre's one inhabitant.
     let carried = *domain.value(path).ok_or(dangling)?;
     let carrier = match returned.and_then(|body| core.value_type(body)) {
         Some(&ValueType::Path { carrier, .. }) => core.value_type(carrier),
         _ => None,
     };
-    if let Some(&ValueType::Product(ref parts)) = carrier
+    let fibre = match carrier {
+        Some(&ValueType::Abstract(atom)) => machine
+            .definitions
+            .identity(atom)
+            .and_then(|relation| relation_code(core, &machine.definitions, relation))
+            .and_then(|code| core.value_type(code)),
+        _ => carrier,
+    };
+    if let Some(&ValueType::Product(ref parts)) = fibre
         && parts.is_empty()
         && !matches!(carried, DomainValue::Here { .. })
     {
@@ -7640,6 +7701,66 @@ fn step_telescope_transport(
         | DomainValue::Lift { .. }
         | DomainValue::Code { .. }
         | DomainValue::StaticLambda { .. } => Err(EvalFault::TransportedNonPath),
+    }
+}
+
+/// The type whose code the relation `relation` returns outright: read through
+/// the definitions it names, its thunk and its two λs, a body `return ⌜T⌝`
+/// gives `T`.
+///
+/// # Specification
+/// - requires: nothing — any value is admissible input.
+/// - ensures: `Some(t)` exactly when `relation`, each constant it is replaced
+///   by that constant's manifest body while the positions descend, is a thunk
+///   of two λs whose body returns the quote of `t`; `None` otherwise, a
+///   relation that computes its code included.
+/// - provides: the telescope transport's lawful atom row, which the kernel's
+///   replay reads by the same walk.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a relation returning the unit type's code reads to the
+///   unit type, one returning another type's code to that type.
+/// - witness: `identity::tests::telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937`
+#[spec(ensures: |ret| ret.is_none_or(|quoted| core.value_type(quoted).is_some()))]
+fn relation_code(
+    core: &CoreArena,
+    definitions: &Definitions<'_>,
+    relation: ValueId,
+) -> Option<ValueTypeId>
+{
+    let mut held = relation;
+    let mut ceiling = None;
+    let thunked = loop {
+        if let Some(&Value::Constant(constant)) = core.value(held) {
+            if ceiling.is_some_and(|above| constant >= above) {
+                return None;
+            }
+            ceiling = Some(constant);
+            held = definitions.definition(constant)?;
+            continue;
+        }
+        if let Some(&Value::Thunk(body)) = core.value(held) {
+            break body;
+        }
+        return None;
+    };
+    let Some(&Computation::Lambda(first)) = core.computation(thunked)
+    else {
+        return None;
+    };
+    let Some(&Computation::Lambda(second)) = core.computation(first)
+    else {
+        return None;
+    };
+    let Some(&Computation::Return(code)) = core.computation(second)
+    else {
+        return None;
+    };
+    match core.value(code) {
+        Some(&Value::Quote(quoted)) if core.value_type(quoted).is_some() => Some(quoted),
+        _ => None,
     }
 }
 

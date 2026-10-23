@@ -581,20 +581,24 @@ fn read_returned(
 }
 
 /// The unfoldings a judgement's readings run at: the body of every admitted
-/// definition, every other entry opaque, and the judgement's presentations.
+/// definition, every other entry opaque, the judgement's presentations and
+/// its lawful atoms' relations.
 ///
 /// # Specification
 /// - ensures: one unfolding per entry of `judgement`, in order — the body of a
 ///   definition, [`Unfoldable::Opaque`] for a datatype, a codata type, an axiom
-///   or an abstract type — presenting the judgement's presentations.
+///   or an abstract type — presenting the judgement's presentations and
+///   identifying its entries' lawful atoms.
 /// - executable: none — the unfoldings expose no per-constant listing to
 ///   compare with the entries.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a returned endpoint read through a definition, and a
-///   decode read through a call into a thunk, each read at these unfoldings.
+/// - hypothesis: L3 — a returned endpoint read through a definition, a decode
+///   read through a call into a thunk, and a transport along a lawful atom's
+///   evidence into its unit fibre, each read at these unfoldings.
 /// - witness: `element_identity::tests::a_returned_endpoint_reads_at_a_mode_switch`
 /// - witness: `check::tests::a_pair_checks_at_a_fibre_decoding_a_call_into_its_first_component_721`
+/// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
 fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 {
     Unfoldings::new(
@@ -611,6 +615,7 @@ fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
             .collect(),
     )
     .presenting(judgement.presentations.clone())
+    .identifying(judgement.entries)
 }
 
 /// The shape an introduction form needs of the type it checks at, for the
@@ -2669,7 +2674,7 @@ fn resolve_constant(
 /// - ensures: [`Unfoldable::Body`] at each definition's position and
 ///   [`Unfoldable::Opaque`] at every data declaration, axiom and abstract type,
 ///   one entry per admitted declaration, presenting the judgement's
-///   presentations.
+///   presentations and identifying its entries' lawful atoms.
 /// - provides: the unfoldings a persisted higher evaluation and a universe
 ///   path's round trips replay under, so a function either relates may name
 ///   what was admitted before it; and the bodies a respect obligation's cong
@@ -2708,6 +2713,7 @@ fn admitted_unfoldings(judgement: Judgement<'_>) -> Unfoldings
             .collect(),
     )
     .presenting(judgement.presentations.clone())
+    .identifying(judgement.entries)
 }
 
 /// Run the checker machine from an initial goal and context to a verdict,

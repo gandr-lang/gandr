@@ -1818,6 +1818,11 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             .seals
             .mint(declared.site())
             .map_err(|_minted| CheckRefusal::SealSiteRepeated(declared.site()))?;
+        if let Maybe::Present(interface) = declared.interface()
+            && let Maybe::Present(_) = interface.law()
+        {
+            self.definitions.identify(constant, interface.relation());
+        }
         let _previous = self.sealed.insert(constant, Sealed { declared, level });
         Ok(atom)
     }
