@@ -15,6 +15,7 @@
 //! | Integer arithmetic | `add`, `sub`, `mul`, `int.div`, `int.mod`, `neg` | Integer operands and result |
 //! | Integer comparison | `eq`, `ne`, `lt`, `le`, `gt`, `ge` | Integer operands, boolean result |
 //! | Boolean logic | `and`, `or`, `bool.not` | Boolean operands and result |
+//! | Text | `string.append` | String operands and result |
 //! | Integer combinators | `prim.id`, `prim.const` | Integer operands and result |
 //!
 //! Booleans are `Unit + Unit`, with the left injection true. Division truncates
@@ -31,7 +32,8 @@
 //! a larger arithmetic surface and LGPL licensing. Revisit if measured
 //! arithmetic workloads justify a different backend without changing integer
 //! semantics. Native operands borrow decimal payloads until arithmetic requires
-//! conversion.
+//! conversion, and text operands their contents until an append writes one
+//! result.
 //!
 //! Native execution belongs to the sequent runtime. The pure normalizer reports
 //! `EvalFault::NativePrimitive` rather than inventing a native reduction rule.
@@ -65,6 +67,7 @@
 //! `bridge::tests::native_operations_cross_as_audited_assumptions` checks the
 //! exported axiom, reference remapping and audit.
 
+use alloc::string::String;
 use core::fmt;
 use core::ops::Add as _;
 use core::ops::Mul as _;
@@ -80,6 +83,7 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::StringLiteral;
 use num_bigint::BigInt;
 
 use crate::CompTypeId;
@@ -139,6 +143,8 @@ pub enum PrimitiveType
     Integer,
     /// The canonical boolean sum `Unit + Unit`, true on the left.
     Boolean,
+    /// A string of Unicode scalar values.
+    Text,
 }
 
 impl PrimitiveType
@@ -160,6 +166,7 @@ impl PrimitiveType
                 let unit = arena.value_type_unit();
                 arena.value_type_sum(&[unit, unit])
             },
+            Self::Text => arena.value_type_base(BaseType::String),
         }
     }
 }
@@ -212,6 +219,8 @@ enum Operation
     Or,
     /// Boolean negation.
     Not,
+    /// The first string followed by the second.
+    Append,
 }
 
 /// A table-owned native primitive. Callers cannot manufacture a mismatched row.
@@ -356,16 +365,25 @@ pub const PRELUDE: &[Primitive] = &[
         result: PrimitiveType::Boolean,
         operation: Operation::Not,
     }),
+    Primitive(&Definition {
+        name: "string.append",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Text, PrimitiveType::Text],
+        result: PrimitiveType::Text,
+        operation: Operation::Append,
+    }),
 ];
 
 /// A native scalar supplied to or returned from the table evaluator.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Scalar<Integer = IntegerLiteral>
+pub enum Scalar<Integer = IntegerLiteral, Text = StringLiteral>
 {
     /// An exact integer, in the syntax's canonical decimal representation.
     Integer(Integer),
     /// A boolean's injection side; left is true.
     Boolean(Side),
+    /// A string.
+    Text(Text),
 }
 
 /// Why a native evaluation cannot produce its result.
@@ -520,7 +538,8 @@ impl Primitive
     /// # Specification
     /// - requires: nothing; unchecked callers receive typed refusals.
     /// - ensures: exact integer arithmetic; division truncates toward zero,
-    ///   remainder has the dividend's sign; booleans use left for true.
+    ///   remainder has the dividend's sign; booleans use left for true; an
+    ///   append is the first string's characters followed by the second's.
     /// - fails: arity before argument classifiers, then zero division; invalid
     ///   decimal conversion is named separately.
     /// - panics: none.
@@ -531,15 +550,16 @@ impl Primitive
     ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
-    ///   beyond machine width and every boolean pair distinguish operation and
-    ///   error drift.
+    ///   beyond machine width, every boolean pair and two strings appended in
+    ///   both orders distinguish operation and error drift.
     /// - witness: `primitive::tests::exact_arithmetic_and_errors`
     /// - witness: `primitive::tests::comparisons_and_booleans`
+    /// - witness: `primitive::tests::an_append_writes_the_first_string_then_the_second`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| value.classifier() == self.0.result))]
     #[inline]
     pub fn evaluate(
         self,
-        arguments: &[Scalar<&IntegerLiteral>],
+        arguments: &[Scalar<&IntegerLiteral, &StringLiteral>],
     ) -> Result<Scalar, PrimitiveError>
     {
         if arguments.len() != self.0.arguments.len() {
@@ -557,7 +577,21 @@ impl Primitive
             return Ok(match *first {
                 Scalar::Integer(integer) => Scalar::Integer(integer.clone()),
                 Scalar::Boolean(side) => Scalar::Boolean(side),
+                Scalar::Text(text) => Scalar::Text(text.clone()),
             });
+        }
+        // Only `string.append` takes text, the classifiers say: a text
+        // operand is its first.
+        if let Scalar::Text(left) = *first {
+            let Some(&Scalar::Text(right)) = arguments.get(1)
+            else {
+                return Err(PrimitiveError::ArgumentType);
+            };
+            let (left, right): (&str, &str) = (left.as_ref(), right.as_ref());
+            let mut appended = String::with_capacity(left.len().saturating_add(right.len()));
+            appended.push_str(left);
+            appended.push_str(right);
+            return Ok(Scalar::Text(StringLiteral::new(appended)));
         }
         if let Scalar::Boolean(left) = *first {
             let right = match arguments.get(1) {
@@ -580,7 +614,8 @@ impl Primitive
                 | Operation::Lt
                 | Operation::Le
                 | Operation::Gt
-                | Operation::Ge => return Err(PrimitiveError::ArgumentType),
+                | Operation::Ge
+                | Operation::Append => return Err(PrimitiveError::ArgumentType),
             };
             return Ok(Scalar::Boolean(if answer {
                 Side::Left
@@ -617,7 +652,12 @@ impl Primitive
             Operation::Le => left <= right,
             Operation::Gt => left > right,
             Operation::Ge => left >= right,
-            Operation::First | Operation::Neg | Operation::And | Operation::Or | Operation::Not => {
+            Operation::First
+            | Operation::Neg
+            | Operation::And
+            | Operation::Or
+            | Operation::Not
+            | Operation::Append => {
                 return Err(PrimitiveError::ArgumentType);
             },
         };
@@ -661,7 +701,7 @@ impl From<PrimitiveName> for &'static str
     }
 }
 
-impl<Integer> Scalar<Integer>
+impl<Integer, Text> Scalar<Integer, Text>
 {
     /// The native classifier of this scalar.
     ///
@@ -674,11 +714,12 @@ impl<Integer> Scalar<Integer>
         match *self {
             Self::Integer(_) => PrimitiveType::Integer,
             Self::Boolean(_) => PrimitiveType::Boolean,
+            Self::Text(_) => PrimitiveType::Text,
         }
     }
 }
 
-impl<Integer: core::borrow::Borrow<IntegerLiteral>> Scalar<Integer>
+impl<Integer: core::borrow::Borrow<IntegerLiteral>, Text> Scalar<Integer, Text>
 {
     /// Convert the canonical integer payload into the arithmetic
     /// representation.
@@ -720,17 +761,18 @@ impl<Integer: core::borrow::Borrow<IntegerLiteral>> Scalar<Integer>
 
 impl Scalar
 {
-    /// Borrow an operand without cloning its decimal payload.
+    /// Borrow an operand without cloning its decimal or text payload.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn borrowed(&self) -> Scalar<&IntegerLiteral>
+    pub const fn borrowed(&self) -> Scalar<&IntegerLiteral, &StringLiteral>
     {
         match *self {
             Self::Integer(ref value) => Scalar::Integer(value),
             Self::Boolean(side) => Scalar::Boolean(side),
+            Self::Text(ref text) => Scalar::Text(text),
         }
     }
 
@@ -751,6 +793,7 @@ impl Scalar
                 let unit = arena.value_unit();
                 arena.value_injection(side.into(), unit)
             },
+            Self::Text(text) => arena.value_literal(Literal::Text(text)),
         }
     }
 }

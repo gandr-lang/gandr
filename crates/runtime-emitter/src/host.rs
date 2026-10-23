@@ -72,6 +72,7 @@ use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
+use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::Summand;
 use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::COUNT_IMMORTAL;
@@ -281,7 +282,7 @@ pub enum Refused
     },
     /// The prelude refused a primitive's operands.
     Primitive(PrimitiveError),
-    /// A primitive's operand is neither an integer nor a boolean.
+    /// A primitive's operand is neither an integer, a boolean nor a string.
     NonScalar(Word),
     /// This access's body answered with its view never ended.
     Unended(CommandId),
@@ -414,7 +415,7 @@ impl<'run, 'host> Calls<'run, 'host>
         self.refused.as_ref()
     }
 
-    /// The integer or boolean the operand `word` addresses.
+    /// The integer, boolean or string the operand `word` addresses.
     ///
     /// # Specification
     /// trivial.
@@ -440,7 +441,8 @@ impl<'run, 'host> Calls<'run, 'host>
                 .and_then(|entry| self.literals.get(entry))
             {
                 Some(&Literal::Integer(ref integer)) => Ok(Scalar::Integer(integer.clone())),
-                Some(&(Literal::Text(_) | Literal::Numeric(_))) | None => Err(Refusal::Operands),
+                Some(&Literal::Text(ref text)) => Ok(Scalar::Text(text.clone())),
+                Some(&Literal::Numeric(_)) | None => Err(Refusal::Operands),
             },
             Ok(Kind::Injection) if usize::from(header.arity()) == 1 => {
                 // SAFETY: an injection holds its one field after its header.
@@ -609,9 +611,12 @@ impl<'run, 'host> Calls<'run, 'host>
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the named primitive calls answer the sum, the product
-    ///   past 64 bits and the comparison they state on both tiers.
+    ///   past 64 bits and the comparison they state on both tiers, and a string
+    ///   appended answers its text there and a string added to an integer is
+    ///   refused by the prelude.
     /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
     /// - witness: `tests::agreement::a_fused_program_answers_what_its_unfused_lowering_answers`
+    /// - witness: `tests::forms::each_form_ends_alike_on_both_executors_as_its_program_states`
     fn primitive(
         &mut self,
         runtime: &mut Runtime,
@@ -636,7 +641,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 },
             }
         }
-        let borrowed: Vec<Scalar<&IntegerLiteral>> =
+        let borrowed: Vec<Scalar<&IntegerLiteral, &StringLiteral>> =
             operands.iter().map(Scalar::borrowed).collect();
         let answer = match callee.evaluate(&borrowed) {
             Ok(answer) => answer,
@@ -647,8 +652,8 @@ impl<'run, 'host> Calls<'run, 'host>
         };
         let width = |_overflow| Refusal::Operands;
         let made = match answer {
-            Scalar::Integer(integer) => {
-                if let Some(bits) = integer_word(&integer) {
+            Scalar::Integer(integer) => match integer_word(&integer) {
+                Some(bits) => {
                     let header = Header::new(
                         Kind::Integer,
                         Tag::try_from(0_usize).map_err(width)?,
@@ -656,20 +661,10 @@ impl<'run, 'host> Calls<'run, 'host>
                         Family::UNNAMED,
                     );
                     allocate(runtime, &[header.word(), bits])
-                }
-                else {
-                    let entry = self.literals.len();
-                    let header = Header::new(
-                        Kind::Literal,
-                        Tag::try_from(0_usize).map_err(width)?,
-                        Arity::try_from(0_usize).map_err(width)?,
-                        Family::try_from(entry).map_err(width)?,
-                    );
-                    let answer = allocate(runtime, &[header.word()])?;
-                    self.literals.push(Literal::Integer(integer));
-                    Ok(answer)
-                }
+                },
+                None => self.literal(runtime, Literal::Integer(integer)),
             },
+            Scalar::Text(text) => self.literal(runtime, Literal::Text(text)),
             Scalar::Boolean(side) => {
                 let unit = Header::new(
                     Kind::Tuple,
@@ -696,6 +691,39 @@ impl<'run, 'host> Calls<'run, 'host>
             }
         }
         Ok(made)
+    }
+
+    /// Allocate `literal` on `runtime`'s heap as an object naming its entry in
+    /// the run's literal table, which it joins.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] for a table past a header's family width, or as
+    /// the allocation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — as [`Self::primitive`]: a product past 64 bits and an
+    ///   appended string read back as the literals they were written as.
+    /// - witness: `tests::agreement::the_named_programs_agree_on_both_executors`
+    /// - witness: `tests::forms::each_form_ends_alike_on_both_executors_as_its_program_states`
+    fn literal(
+        &mut self,
+        runtime: &mut Runtime,
+        literal: Literal,
+    ) -> Result<Word, Refusal>
+    {
+        let width = |_overflow| Refusal::Operands;
+        let header = Header::new(
+            Kind::Literal,
+            Tag::try_from(0_usize).map_err(width)?,
+            Arity::try_from(0_usize).map_err(width)?,
+            Family::try_from(self.literals.len()).map_err(width)?,
+        );
+        let answer = allocate(runtime, &[header.word()])?;
+        self.literals.push(literal);
+        Ok(answer)
     }
 
     /// The handler whose frame resumes at `code`, when one does.

@@ -3112,6 +3112,7 @@ impl Positions
                     let unit = arena.value_type_unit();
                     arena.value_type_sum(&[unit, unit])
                 },
+                PrimitiveType::Text => arena.value_type_base(BaseType::String),
             };
             let result = classifier(arena, primitive.result());
             let mut computation = arena.comp_type_returner(result);
