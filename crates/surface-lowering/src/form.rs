@@ -328,7 +328,8 @@ impl FormName
     /// The word pattern `g ∷ p` or `back(g) ∷ p`: a loop's letter, or its
     /// inverse, consed onto the rest of a word.
     pub const CONS_PATTERN: Self = Self("cons_pattern");
-    /// The wildcard pattern `_`.
+    /// The wildcard `_`: a pattern that matches anything, and in a term a hole
+    /// the elaborator answers with the term its equations force.
     pub const WILDCARD: Self = Self("wildcard");
     /// The tuple pattern `(p, q, …)`: a bind statement's binder splits the
     /// tuple its computation returns.
@@ -1039,6 +1040,7 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
+    ("wildcard", Former::Hole),
     ("number", Former::Number),
     ("boolean", Former::Boolean),
     ("string", Former::Text),
@@ -1167,7 +1169,6 @@ pub const FORMERS: [(&str, Former); 131_usize] = [
     ("unknown_type", Former::Unadmitted),
     ("variable_expansion", Former::Unadmitted),
     ("variable_name", Former::Unadmitted),
-    ("wildcard", Former::Unadmitted),
 ];
 
 /// The former a form of named kind `kind` is read as.

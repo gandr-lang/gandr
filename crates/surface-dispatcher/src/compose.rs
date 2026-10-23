@@ -5488,6 +5488,67 @@ def delivered() -> -F Unit {
     }
 
     #[test]
+    fn a_body_holding_a_wildcard_prints_back_as_written_528()
+    {
+        // The lowered body, before the checker fills its wildcard, prints as
+        // the text it was read from, so the printing reads back as a
+        // wildcard at the same place rather than as a call short of an
+        // argument.
+        let grammar = grammar();
+        let written = "fn (a) { idAt(_, a) }";
+        let text = format!(
+            "def idAt(a : Type, y : a) -> -F a {{ return y }}\ndef loose : +U (Integer -> -F \
+             Integer) ;\ndef loose = thunk {{ {written} }} ;\n"
+        );
+        let mut lowerings = LoweringCount::default();
+        let Lowered::Module { module, arena } =
+            lower_source(&grammar, SourceText::from(text.as_str()), &mut lowerings)
+                .expect("the module lowers")
+                .into_lowered()
+        else {
+            panic!("the module is read");
+        };
+        let spelled = constant_names(&module);
+        let names: Vec<Name<'_>> = spelled
+            .iter()
+            .map(|name| Name::from(name.as_str()))
+            .collect();
+        let body = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == "loose")
+            .map(|declaration| match declaration.outcome() {
+                DeclarationOutcome::Completed { body, .. }
+                | DeclarationOutcome::Bodied { body } => body,
+                other @ (DeclarationOutcome::Uncompleted { .. }
+                | DeclarationOutcome::Data(_)
+                | DeclarationOutcome::Codata(_)
+                | DeclarationOutcome::Abstract(_)
+                | DeclarationOutcome::World
+                | DeclarationOutcome::Refused(_)) => {
+                    panic!("`loose` lowers a body, not {other:?}")
+                },
+            })
+            .expect("`loose` is declared");
+        let Some(&Value::Thunk(computation)) = arena.value(body)
+        else {
+            panic!("`loose` is a suspended function");
+        };
+        let presentation = present_computation(
+            &CoreSource::new(&arena, &names),
+            CoreNode::Computation(computation),
+            PageWidth::from(100_u32),
+            Form::Explicit.into(),
+        )
+        .expect("the body lays out");
+        assert_eq!(
+            (presentation.to_string(), presentation.fidelity()),
+            (String::from(written), Fidelity::Faithful),
+            "the wildcard prints back where the text wrote it"
+        );
+    }
+
+    #[test]
     fn the_sugared_form_reads_back_to_the_term_it_prints()
     {
         let types = [

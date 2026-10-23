@@ -34,13 +34,33 @@ use crate::syntax::Zone;
 fn a_nominated_hole_shares_no_name_with_a_written_one()
 {
     let nominated = |index: u32| HoleId::nominated(NominationIndex::from(index));
+    let wildcard = |index: u32| HoleId::wildcard(NominationIndex::from(index));
     let first = nominated(0).expect("the first index is named");
-    let last = nominated((1 << 31_u32) - 1).expect("the last index is named");
+    let last = nominated((1 << 30_u32) - 1).expect("the last index is named");
     assert_eq!(u32::from(first), u32::MAX);
-    assert_eq!(u32::from(last), 1 << 31_u32);
+    assert_eq!(u32::from(last), 3 << 30_u32);
     assert_eq!([first.origin(), last.origin()], [HoleOrigin::Nominated; 2]);
     assert_ne!(nominated(1), Some(first), "two indices name two holes");
-    assert_eq!(nominated(1 << 31_u32), None, "the half has no more names");
+    assert_eq!(
+        nominated(1 << 30_u32),
+        None,
+        "the quarter has no more names"
+    );
+    let first_wildcard = wildcard(0).expect("the first wildcard is named");
+    let last_wildcard = wildcard((1 << 30_u32) - 1).expect("the last wildcard is named");
+    assert_eq!(u32::from(first_wildcard), 1 << 31_u32);
+    assert_eq!(u32::from(last_wildcard), (3 << 30_u32) - 1);
+    assert_eq!(
+        [first_wildcard.origin(), last_wildcard.origin()],
+        [HoleOrigin::Wildcard; 2],
+        "a wildcard's name says it is one"
+    );
+    assert_ne!(
+        wildcard(0),
+        nominated(0),
+        "a wildcard and an omitted implicit at one index are two holes"
+    );
+    assert_eq!(wildcard(1 << 30_u32), None, "the quarter has no more names");
     for written in [0_u32, 1, (1 << 31_u32) - 1] {
         assert_eq!(
             HoleId::from(written).origin(),

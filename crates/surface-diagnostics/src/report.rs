@@ -119,6 +119,7 @@ use gandr_surface_lowering::DeprecatedUse;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::Omitted;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::RunOperand;
 use gandr_surface_lowering::RunSpelling;
@@ -1174,22 +1175,32 @@ impl fmt::Display for MessageText<'_>
                 origins,
                 ..
             } => match origins.omitted(at) {
-                Maybe::Present(omitted) => {
-                    let (function, implicit) = (omitted.function(), omitted.implicit());
-                    match unsolved(reason) {
-                        Maybe::Present(why) => write!(
-                            f,
-                            "the solver cannot determine the implicit `{implicit}` this call to \
-                             `{function}` omits: {why}; supply it as `{function}[{implicit} = \
-                             …](…)`"
-                        ),
-                        Maybe::Absent(()) => write!(
-                            f,
-                            "the implicit `{implicit}` this call to `{function}` omits is \
-                             determined by neither its arguments nor the type it is checked \
-                             against; supply it as `{function}[{implicit} = …](…)`"
-                        ),
-                    }
+                Maybe::Present(&Omitted::Implicit {
+                    ref function,
+                    ref implicit,
+                }) => match unsolved(reason) {
+                    Maybe::Present(why) => write!(
+                        f,
+                        "the solver cannot determine the implicit `{implicit}` this call to \
+                         `{function}` omits: {why}; supply it as `{function}[{implicit} = \
+                         …](…)`"
+                    ),
+                    Maybe::Absent(()) => write!(
+                        f,
+                        "the implicit `{implicit}` this call to `{function}` omits is determined \
+                         by neither its arguments nor the type it is checked against; supply it \
+                         as `{function}[{implicit} = …](…)`"
+                    ),
+                },
+                Maybe::Present(&Omitted::Wildcard) => match unsolved(reason) {
+                    Maybe::Present(why) => write!(
+                        f,
+                        "the solver cannot determine the term this `_` stands for: {why}; write \
+                         the term"
+                    ),
+                    Maybe::Absent(()) => f.write_str(
+                        "no equation determines the term this `_` stands for; write the term",
+                    ),
                 },
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },

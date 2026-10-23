@@ -538,57 +538,25 @@ pub enum ComponentName
     Labelled(FieldLabel),
 }
 
-/// The implicit a hole a call nominated stands for: the function the call
-/// applies and the implicit it omits, as written.
+/// What a hole the elaborator nominated stands for: the implicit a call omits,
+/// as written, or a wildcard.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Omitted
-{
-    /// The function the call applies.
-    function: String,
-    /// The implicit the call omits.
-    implicit: String,
-}
-
-impl Omitted
+pub enum Omitted
 {
     /// The implicit `implicit` of `function`, which a call omits.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub const fn new(
+    Implicit
+    {
+        /// The function the call applies.
         function: String,
+        /// The implicit the call omits.
         implicit: String,
-    ) -> Self
-    {
-        Self { function, implicit }
-    }
-
-    /// The function the call applies.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn function(&self) -> crate::resolve::SurfaceName<'_>
-    {
-        crate::resolve::SurfaceName::from(self.function.as_str())
-    }
-
-    /// The implicit the call omits.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    #[must_use]
-    pub fn implicit(&self) -> crate::resolve::SurfaceName<'_>
-    {
-        crate::resolve::SurfaceName::from(self.implicit.as_str())
-    }
+    },
+    /// A wildcard `_` written where a value is read, for the term the
+    /// equations force.
+    Wildcard,
 }
 
 /// Every minted core node's origin, by family, and the declaration origins.
@@ -2114,7 +2082,7 @@ impl OriginTable
         self.omitted.push((id, omitted));
     }
 
-    /// The implicit the hole `id` stands for, when a call nominated it.
+    /// What the hole `id` stands for, when the elaborator nominated it.
     ///
     /// # Specification
     /// - requires: nothing — an unrecorded id is admissible input.

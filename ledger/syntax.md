@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x7d3e7201b5626440`
-- Rules: 160 — 159 committed, 1 internal
-- Molds: 3113
+- Grammar fingerprint: `0xb8eb1a28d798b76d`
+- Rules: 161 — 160 committed, 1 internal
+- Molds: 3114
 - Attributes: 13
 
 ## Reading a form
@@ -62,7 +62,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 
-## `expression` — 83 rules
+## `expression` — 84 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -96,6 +96,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`view_expression`](../corpus/ledger/syntax/view_expression.gandr) | `EXPRESSION as ‹identifier› ⟨block⟩` | `expression.postfix` | `view_expression` * | admitted | Keyword, VariableDef, Other, Operator, Number, VariableParam |
 | [`index_expression`](../corpus/ledger/syntax/index_expression.gandr) | `EXPRESSION [ EXPRESSION ]` | `expression.postfix` | `index_expression` * | admitted | Other |
 | [`hole`](../corpus/ledger/syntax/hole.gandr) | `? ⦅ ‹hole_name› ⦆?` | `expression.atom` | `hole` | admitted | Hole, Label |
+| [`wildcard.expression`](../corpus/ledger/syntax/wildcard.expression.gandr) | `_` | `expression.atom` | `wildcard` | admitted | Variable |
 | [`parenthesized_expression`](../corpus/ledger/syntax/parenthesized_expression.gandr) | `( ⦅ ) ‖ EXPRESSION ⦅ ) ‖ , ⦅ EXPRESSION ⦅ , EXPRESSION ⦅ , EXPRESSION ⦆* ⦆? ⦅ , ⦆? ⦆? ) ‖ : TYPE ) ⦆ ⦆` | `expression.atom` | `parenthesized_expression` | admitted | Other |
 | [`type_quote_expression`](../corpus/ledger/syntax/type_quote_expression.gandr) | `type( TYPE )` | `expression.atom` | `type_quote_expression` * | admitted | Keyword, Other |
 | [`list_expression`](../corpus/ledger/syntax/list_expression.gandr) | `[ ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? ]` | `expression.atom` | `list_expression` | admitted | Other |

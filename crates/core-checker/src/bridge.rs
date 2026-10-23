@@ -168,9 +168,15 @@
 //! `every_checked_static_declaration_is_readmitted` assert it, the second over
 //! the relative monad's operators written with and without the static spelling;
 //! `a_static_lambda_crosses_only_as_a_closed_operator` asserts both arms of the
-//! open-lambda refusal. The definition's normal body and the normaliser's trace
-//! differ because the trace walks the unnormalized body and names operators
-//! absent from the normal form.
+//! open-lambda refusal. The skip drops nothing: a replay's verdict is a
+//! function of the content it replays, so the repeat replayed on its own, in
+//! a declaration of its own, records the step and the verdict the kept one did;
+//! only its redex's digest differs, since each declaration numbers the static
+//! operators it names from its own position
+//! (`a_skipped_repeat_records_what_its_own_replay_records_528`). The
+//! definition's normal body and the normaliser's trace differ because the
+//! trace walks the unnormalized body and names operators absent from the
+//! normal form.
 //!
 //! Each step is certified and replayed on its own, by rules the kernel already
 //! has, because the machine produces no trace under a quote. The alternatives
@@ -4456,8 +4462,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   erased verbatim, every static operator they name numbered and its body
     ///   erased verbatim, the certificate's trace read at the kernel's
     ///   positions, a static lambda's step prefixed by the unfolding of its
-    ///   operator. Each replays as a convertibility claim. `target` holds the
-    ///   images minted and nothing the replay minted.
+    ///   operator. Each replays as a convertibility claim. A certificate whose
+    ///   step and instance an earlier one had is skipped: by the purity clause
+    ///   of [`replay`](fn@gandr_kernel_core::replay), its replay's verdict is a
+    ///   function of the content the earlier one replayed, so it would record
+    ///   the same [`Replayed`]. `target` holds the images minted and nothing
+    ///   the replay minted.
     /// - fails: [`Refusal::CertificateDeclined`] naming the first declined
     ///   certificate and preserving its [`ReplayDecline`], beside the verdicts
     ///   replayed up to it; the refusal erasing a side gives. An impossible
@@ -4483,6 +4493,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   declined.
     /// - witness: `bridge::tests::every_readmission_certificate_replays`
     /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    /// - witness: `bridge::tests::a_skipped_repeat_records_what_its_own_replay_records_528`
     /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
     #[spec(ensures: |ret| match ret {
         | Ok(ref entries) => {
