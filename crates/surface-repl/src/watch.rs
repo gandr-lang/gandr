@@ -23,7 +23,7 @@ use notify::Event;
 use notify::EventKind;
 use notify::RecommendedWatcher;
 use notify::RecursiveMode;
-use notify::Watcher as _;
+use notify::Watcher;
 
 /// What the watcher's thread reads: the loaded files by the path the system
 /// reports for each, and those noticed since the face last read a line.
@@ -76,12 +76,13 @@ fn noticed<Notice>(
     }
 }
 
-/// A watch over the files a loop loaded.
+/// A watch over the files a loop loaded, through the watcher `W`, the
+/// system's own unless a test stands another in.
 #[derive(Debug)]
-pub struct DiskWatch
+pub struct DiskWatch<W = RecommendedWatcher>
 {
-    /// The system's watcher.
-    watcher: RecommendedWatcher,
+    /// The watcher.
+    watcher: W,
     /// The directories it watches, resolved.
     directories: BTreeSet<PathBuf>,
     /// The files it follows, as the loop last named them.
@@ -108,8 +109,9 @@ impl DiskWatch
     /// The watcher's error when it cannot start.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a loaded file rewritten twice is noticed once, by the
-    ///   path it was loaded by, and again after the next follow.
+    /// - hypothesis: L3 — the handler it installs is [`noticed`], whose witness
+    ///   hands a loaded file rewritten twice once, by the path it was loaded
+    ///   by, and again after the next follow.
     /// - witness: `watch::tests::a_loaded_file_rewritten_is_noticed_once_per_line`
     #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|watch|
         watch.loaded.is_empty() && watch.directories.is_empty()))]
@@ -132,7 +134,12 @@ impl DiskWatch
             watched,
         })
     }
+}
 
+impl<W> DiskWatch<W>
+where
+    W: Watcher,
+{
     /// Follow exactly `loaded`, the files the loop holds, now that the face
     /// read a line.
     ///
@@ -148,8 +155,8 @@ impl DiskWatch
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — through [`Self::new`]'s witness, a file followed is
-    ///   noticed and noticed again after the next follow.
+    /// - hypothesis: L3 — a file followed is noticed once and noticed again
+    ///   after the next follow.
     /// - witness: `watch::tests::a_loaded_file_rewritten_is_noticed_once_per_line`
     #[spec(ensures: lock(&self.watched).noticed.is_empty())]
     #[inline]
@@ -193,16 +200,27 @@ impl DiskWatch
 #[cfg(test)]
 mod tests
 {
-    use core::time::Duration;
+    use alloc::collections::BTreeSet;
+    use alloc::sync::Arc;
+    use alloc::vec::Vec;
     use std::path::Path;
     use std::path::PathBuf;
-    use std::sync::mpsc;
+
+    use notify::Event;
+    use notify::EventKind;
+    use notify::NullWatcher;
+    use notify::event::DataChange;
+    use notify::event::ModifyKind;
 
     use super::DiskWatch;
+    use super::noticed;
 
-    /// How long a notice is waited for.
-    const PATIENCE: Duration = Duration::from_secs(10);
-
+    /// The watch is driven by the event the system reports for a rewrite,
+    /// handed to [`noticed`] as the system's watcher hands it, rather than by
+    /// waiting on that watcher: under a loaded file system its stream starts
+    /// seconds late and delivers nothing for longer than any wait a test can
+    /// afford, while what is asserted here is which events make a notice
+    /// (#1968).
     #[test]
     fn a_loaded_file_rewritten_is_noticed_once_per_line()
     {
@@ -210,31 +228,41 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the directory is made");
         let file = directory.join("loaded.gandr");
         std::fs::write(&file, "def a = 1 ;\n").expect("the file writes");
-        let (noticing, notices) = mpsc::channel::<PathBuf>();
-        let mut watch = DiskWatch::new(move |path: &Path| {
-            let _sent = noticing.send(path.to_path_buf());
-        })
-        .expect("the watcher starts");
+        let mut watch = DiskWatch {
+            watcher: NullWatcher,
+            directories: BTreeSet::new(),
+            loaded: Vec::new(),
+            watched: Arc::default(),
+        };
         watch.follow(core::iter::once(file.as_path()));
-        std::fs::write(&file, "def a = 2 ;\n").expect("the file writes");
+        let rewritten = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
+            .add_path(std::fs::canonicalize(&file).expect("the file resolves"));
+        let mut notices: Vec<PathBuf> = Vec::new();
+        noticed(&watch.watched, &rewritten, &mut |path: &Path| {
+            notices.push(path.to_path_buf());
+        });
         assert_eq!(
-            notices.recv_timeout(PATIENCE).ok(),
-            Some(file.clone()),
+            notices,
+            core::slice::from_ref(&file),
             "the rewrite is noticed by the path the file was loaded by"
         );
-        std::fs::write(&file, "def a = 3 ;\n").expect("the file writes");
-        assert!(
-            notices.recv_timeout(Duration::from_millis(500)).is_err(),
+        noticed(&watch.watched, &rewritten, &mut |path: &Path| {
+            notices.push(path.to_path_buf());
+        });
+        assert_eq!(
+            notices,
+            core::slice::from_ref(&file),
             "a second rewrite before the next line makes no second notice"
         );
         watch.follow(core::iter::once(file.as_path()));
-        std::fs::write(&file, "def a = 4 ;\n").expect("the file writes");
+        noticed(&watch.watched, &rewritten, &mut |path: &Path| {
+            notices.push(path.to_path_buf());
+        });
         assert_eq!(
-            notices.recv_timeout(PATIENCE).ok(),
-            Some(file.clone()),
+            notices,
+            [file.clone(), file.clone()],
             "after the next line the file is noticed again"
         );
-        drop(watch);
         drop(std::fs::remove_dir_all(&directory));
     }
 }
