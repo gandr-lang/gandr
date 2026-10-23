@@ -933,6 +933,7 @@ mod kernel_corpus_partition
     use alloc::vec::Vec;
 
     use anodized::spec;
+    use gandr_kernel_term::StructuredName;
     use gandr_storage_records::RecordCount;
     use gandr_storage_records::TreeParams;
 
@@ -973,9 +974,11 @@ mod kernel_corpus_partition
     /// # Specification
     /// - requires: `shard` is below `SHARDS`.
     /// - ensures: no withheld declaration names one that crossed; each manifest
-    ///   counts its header, every native the source uses and every declaration
-    ///   that crossed; and each artifact holds exactly those natives and
-    ///   declarations, in admission order, under their names.
+    ///   counts its header, every native the source uses, every session
+    ///   assumption and every declaration that crossed; each session assumption
+    ///   is numbered in admission order; and each artifact holds exactly those
+    ///   natives and declarations besides the assumptions, in admission order,
+    ///   under their names.
     /// - panics: when any of those fails.
     ///
     /// # Adequacy
@@ -1002,6 +1005,36 @@ mod kernel_corpus_partition
                     usize::from(named)
                 );
             }
+            let (manifest, store) = commit(&exported.artifact);
+            let read = manifest
+                .read_under(&store, TreeParams::current())
+                .unwrap_or_else(|refusal| panic!("{path}: the records read back: {refusal}"));
+            // A received value or an offered choice crosses under an
+            // assumption the readmission admits ahead of the first declaration
+            // that reads it, named `session.receive.<n>` or `session.offer.<n>`
+            // with `n` its admission ordinal; every other record is a native
+            // or a declaration.
+            let session_assumption = |name: &StructuredName| match *name.segments() {
+                [ref session, ref action, ref ordinal]
+                    if session.as_ref() == "session"
+                        && matches!(action.as_ref(), "receive" | "offer") =>
+                {
+                    ordinal.as_ref().parse::<usize>().ok()
+                },
+                _ => None,
+            };
+            let (assumed, held): (Vec<&StructuredName>, Vec<&StructuredName>) = read
+                .declarations()
+                .iter()
+                .map(|marked| marked.declaration().name())
+                .partition(|&name| session_assumption(name).is_some());
+            for (ordinal, &name) in assumed.iter().enumerate() {
+                assert_eq!(
+                    session_assumption(name),
+                    Some(ordinal),
+                    "{path}: the session assumptions are numbered in admission order: {assumed:?}"
+                );
+            }
             let crossed = exported
                 .classes
                 .iter()
@@ -1009,31 +1042,23 @@ mod kernel_corpus_partition
                     matches!(class, Class::Defined | Class::Assumed | Class::Data)
                 })
                 .count()
-                .saturating_add(exported.natives.len());
-            let (manifest, store) = commit(&exported.artifact);
+                .saturating_add(exported.natives.len())
+                .saturating_add(assumed.len());
             assert_eq!(
                 RecordCount(
                     u64::try_from(crossed.saturating_add(1)).expect("a count fits sixty-four bits")
                 ),
                 manifest.record_count(),
-                "{path}: the manifest counts the header, every native the source uses and every \
-                 declaration that crossed"
+                "{path}: the manifest counts the header, every native the source uses, every \
+                 session assumption and every declaration that crossed"
             );
-            let read = manifest
-                .read_under(&store, TreeParams::current())
-                .unwrap_or_else(|refusal| panic!("{path}: the records read back: {refusal}"));
-            let names = read
-                .declarations()
-                .iter()
-                .map(|marked| marked.declaration().name());
             let expected = exported.natives.iter().chain(&exported.crossed_names);
             assert!(
-                expected.clone().eq(names.clone()),
-                "{path}: the artifact holds exactly the natives the source uses and the \
-                 declarations that crossed, in admission order, under their names: {:?} against \
-                 {:?}",
+                expected.clone().eq(held.iter().copied()),
+                "{path}: besides the session assumptions, the artifact holds exactly the natives \
+                 the source uses and the declarations that crossed, in admission order, under \
+                 their names: {:?} against {held:?}",
                 expected.collect::<Vec<_>>(),
-                names.collect::<Vec<_>>()
             );
         }
     }

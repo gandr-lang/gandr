@@ -4842,9 +4842,9 @@ module M : #{ x: Integer, z: Integer } { def x = 1; }"#,
         );
     }
 
-    /// A fork whose ends only close reaches the kernel as what it computes;
-    /// one whose parent receives stays on the checker's side until a receive
-    /// erases too.
+    /// A fork whose ends only close reaches the kernel as what it computes,
+    /// and one whose parent receives as the same, the received value read from
+    /// an assumption of its type.
     #[test]
     fn a_session_reaches_the_kernel_as_what_it_computes_1319()
     {
@@ -4885,7 +4885,7 @@ def delivered() -> -F Unit {
         let admission = readmitted(&mut arena, &verdicts, WHOLE, &Unretired)
             .whole()
             .0
-            .expect("a session the kernel does not replay yet is no disagreement");
+            .expect("both sides admit each exchange");
         let [ref finished, ref delivered] = *admission.readmitted()
         else {
             panic!("each declaration has one readmission outcome");
@@ -4895,10 +4895,10 @@ def delivered() -> -F Unit {
                 (finished.outcome(), delivered.outcome()),
                 (
                     &bridge::Outcome::Defined { .. },
-                    &bridge::Outcome::Refused(bridge::Refusal::Session { .. })
+                    &bridge::Outcome::Defined { .. }
                 ),
             ),
-            "the closing fork crosses and the receive is refused: {:?}",
+            "the closing fork and the receive both cross: {:?}",
             admission
                 .readmitted()
                 .iter()

@@ -345,6 +345,11 @@ pub struct CheckingContext<'arena>
     /// zero formed its motive as, by node: its written motive with the
     /// binder's decodes read at the carrier's level.
     motives: BTreeMap<ComputationId, ValueTypeId>,
+    /// The payload type each send and each receive the judgement checked
+    /// moves, by node: the type a send's value was checked at, and the type a
+    /// receive opened its slot at — a value's payload type, or the session or
+    /// buffer at the payload's weak head.
+    payloads: BTreeMap<ComputationId, ValueTypeId>,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -540,6 +545,8 @@ pub struct Checkpoint
     directed: BTreeMap<ValueId, crate::forward::Directed>,
     /// [`CheckingContext::motives`].
     motives: BTreeMap<ComputationId, ValueTypeId>,
+    /// [`CheckingContext::payloads`].
+    payloads: BTreeMap<ComputationId, ValueTypeId>,
     /// [`CheckingContext::reflexivities`].
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
     /// [`CheckingContext::nesting`].
@@ -678,6 +685,7 @@ impl<'arena> CheckingContext<'arena>
             flows: BTreeMap::new(),
             directed: BTreeMap::new(),
             motives: BTreeMap::new(),
+            payloads: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -749,6 +757,7 @@ impl<'arena> CheckingContext<'arena>
             ref flows,
             ref directed,
             ref motives,
+            ref payloads,
             ref reflexivities,
             ref nesting,
             ref relating,
@@ -795,6 +804,7 @@ impl<'arena> CheckingContext<'arena>
             flows: flows.clone(),
             directed: directed.clone(),
             motives: motives.clone(),
+            payloads: payloads.clone(),
             reflexivities: reflexivities.clone(),
             nesting: nesting.clone(),
             relating: relating.clone(),
@@ -865,6 +875,7 @@ impl<'arena> CheckingContext<'arena>
             flows,
             directed,
             motives,
+            payloads,
             reflexivities,
             nesting,
             relating,
@@ -912,6 +923,7 @@ impl<'arena> CheckingContext<'arena>
             flows,
             directed,
             motives,
+            payloads,
             reflexivities,
             nesting,
             relating,
@@ -2783,6 +2795,49 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         self.motives.insert(at, family);
+    }
+
+    /// The payload type each send and each receive the judgement checked
+    /// moves, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ModuleReport::payloads`], which a run copies
+    ///   from this table.
+    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    ///
+    /// [`ModuleReport::payloads`]: crate::ModuleReport::payloads
+    #[inline]
+    #[must_use]
+    pub const fn payloads(&self) -> &BTreeMap<ComputationId, ValueTypeId>
+    {
+        &self.payloads
+    }
+
+    /// Record the payload type the send or receive at `at` moves.
+    ///
+    /// # Specification
+    /// - requires: `moved` is read where the action stands: the type a send's
+    ///   value is checked at, or the type a receive opens its slot at.
+    /// - ensures: `at` has a recorded type: the first recorded, when one node
+    ///   is judged more than once.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a received value crosses as an assumption of the
+    ///   recorded type, a sent one ascribed it, and the kernel checks the body
+    ///   that reads each.
+    /// - witness: `judgement::session::tests::a_received_value_crosses_as_an_assumption_1319`
+    #[spec(ensures: self.payloads.contains_key(&at))]
+    pub(crate) fn record_payload(
+        &mut self,
+        at: ComputationId,
+        moved: ValueTypeId,
+    )
+    {
+        let _first = self.payloads.entry(at).or_insert(moved);
     }
 
     /// The reflexivities the judgement checked, by node.
