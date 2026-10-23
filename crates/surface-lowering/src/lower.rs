@@ -2385,9 +2385,10 @@ enum Plan
     /// The copattern block over the computations in the lowerer's operand
     /// store, in order: one lazy product of them all.
     Copattern(Stretch),
-    /// One entry of the lazy record the thunk at the node holds: the thunk
-    /// forced, then projected at the entry's position.
-    Observe(NodeIndex, arity::Observed),
+    /// One entry of the lazy record or the codata the node holds: a thunk
+    /// forced, when thunked, or a call run, then projected at the entry's
+    /// position.
+    Observe(NodeIndex, arity::Observed, arity::Thunked),
     /// One entry of the record or the dependent record the name at the node
     /// holds, with the type over labels it is stated with and the label
     /// selected when it was selected by label: projected at the label off a
@@ -14119,7 +14120,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Sum(summands) => self.mint_sum(summands, sink, origin),
             Plan::With(entries) => self.mint_with(entries, sink, origin),
             Plan::Copattern(clauses) => self.mint_copattern(clauses, sink, origin),
-            Plan::Observe(subject, observed) => self.mint_observe(subject, observed, sink, origin),
+            Plan::Observe(subject, observed, thunked) => {
+                self.mint_observe(subject, observed, thunked, sink, origin)
+            },
             Plan::Select(subject, selected, ref labelled) => {
                 self.mint_select(subject, selected, labelled.as_ref(), sink, origin)
             },

@@ -2567,6 +2567,97 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// The result type the declaration a call names writes after its
+    /// parameter list.
+    ///
+    /// # Specification
+    /// - requires: `site` is the form `call` stands in, read under `frame`.
+    /// - ensures: the operand written after `->` in the declaration form of the
+    ///   slot the call's head names, as [`Self::called_slot`] reads it, when
+    ///   `call` is a call, the declaration is a function written with a
+    ///   parameter list in the source being lowered, refuses nothing and writes
+    ///   a result; nothing otherwise, a declaration of another source among
+    ///   them, since that source's own scope resolves its result's names.
+    /// - provides: the type an observation off a call reads its entries from.
+    /// - fails: as [`Self::called_slot`]; the refusals the tree's molds yield.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The walk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call's stream observed by label, by position and in
+    ///   an operand.
+    /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |result| result.is_none_or(|result| result.node != call.node)))]
+    pub(super) fn called_result(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        call: Placed,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
+    {
+        if !matches!(self.form_at(call)?, Some((_, Former::Call))) {
+            return Ok(None);
+        }
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, call.node, &mut scratch);
+        let head = scratch.pieces.first().and_then(|piece| match *piece {
+            Piece::Operand(head) => Some(head),
+            Piece::Tile { .. } => None,
+        });
+        self.scratch = scratch;
+        read?;
+        let Some(head) = head
+        else {
+            return Ok(None);
+        };
+        let Some(slot) = self.called_slot(site, frame, head)?
+        else {
+            return Ok(None);
+        };
+        let Some(declared) = self.collected.slots.get(usize::from(slot))
+        else {
+            return Ok(None);
+        };
+        let Maybe::Present(Half {
+            declaration: form,
+            operand: Operand::Function,
+            ..
+        }) = declared.definition
+        else {
+            return Ok(None);
+        };
+        if declared.refused().0
+            || self.source_of.get(usize::from(form.node)) != Some(&self.current.source)
+        {
+            return Ok(None);
+        }
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, form.node, &mut scratch);
+        // The parameter list closes at the form's first `)`: a parameter's
+        // own parentheses stand inside its operand.
+        let mut after = scratch
+            .pieces
+            .iter()
+            .skip_while(|piece| {
+                !matches!(**piece, Piece::Tile { label, .. } if label == TileName::PAREN_CLOSE)
+            })
+            .skip(1_usize);
+        let result = match (after.next(), after.next()) {
+            (Some(&Piece::Tile { label, .. }), Some(&Piece::Operand(result)))
+                if label == TileName::ARROW =>
+            {
+                Some(result)
+            },
+            _ => None,
+        };
+        self.scratch = scratch;
+        read?;
+
+        Ok(result)
+    }
+
     /// The classifier the field `at` of the constructor written at `around`
     /// gives a constructor written in it, from the constructor's own,
     /// `classifier`.

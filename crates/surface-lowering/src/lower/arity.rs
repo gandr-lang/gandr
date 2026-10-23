@@ -2422,17 +2422,23 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Classify a selection `m.l` or `m.i` as an observation when `m` is a name
     /// whose written type is a thunked lazy record, a thunked lazy product
-    /// chain or a thunked codata family.
+    /// chain or a thunked codata family, or a call whose callee writes one of
+    /// those types, unthunked, as its result.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: planned when the position reads a computation and the
-    ///   selection is one link off a name whose binder or declaration was
-    ///   written with the type `+U &{…}`, `+U (C & D & …)` or `+U F(…)` for a
-    ///   codata family `F`: the entry or the observation the label names, or
-    ///   the number `i` places, counted from zero as a copattern block's and an
-    ///   injection's positions are, of the thunk the name holds, read as a
-    ///   value under the form's frame; nothing is planned otherwise.
+    /// - ensures: planned when the position reads a term, a value read through
+    ///   the bridge from the computation the observation is, and the selection
+    ///   is one link off a name whose binder or declaration was written with
+    ///   the type `+U &{…}`, `+U (C & D & …)` or `+U F(…)` for a codata family
+    ///   `F`: the entry or the observation the label names, or the number `i`
+    ///   places, counted from zero as a copattern block's and an injection's
+    ///   positions are, of the thunk the name holds, read as a value under the
+    ///   form's frame; planned the same way off a call whose callee's written
+    ///   result, as [`Self::called_result`] reads it, is `&{…}`, `C & D & …` or
+    ///   `F(…)`, the call read as the computation it runs under the form's
+    ///   frame and its result's head resolved under the outermost frame;
+    ///   nothing is planned otherwise.
     /// - fails: the unresolved-name refusal for a label the lazy record or the
     ///   family lacks, a label of a lazy product chain, and a position past the
     ///   last entry or observation; the name's own resolution refusals.
@@ -2445,10 +2451,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — each entry of a lazy record of three, a label it
     ///   lacks, and each observation of a stream, by label and by position;
     ///   each entry of a lazy product chain by position, and a position past
-    ///   its last.
+    ///   its last; a call's stream observed by label, by position and in an
+    ///   operand, and a label its family lacks.
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_codata_answer`
     /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
+    /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Observe(..))))]
     pub(super) fn observation(
         &mut self,
@@ -2456,7 +2464,10 @@ impl<'source> Lowerer<'_, 'source>
         pieces: &Pieces,
     ) -> Result<Planned, LoweringRefusal<'source>>
     {
-        if !matches!(site.reading, Reading::Computation(_) | Reading::Head(_)) {
+        if !matches!(
+            site.reading,
+            Reading::Computation(_) | Reading::Head(_) | Reading::Value(_)
+        ) {
             return Ok(Planned(false));
         }
         let (target, selected, numbered) =
@@ -2476,27 +2487,37 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 (target, selected, true)
             };
-        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
-            return Ok(Planned(false));
-        }
         let frame = site.reading.frame();
-        let named = Site {
-            at: target,
-            name: FormName::IDENTIFIER,
-            reading: Reading::Value(frame),
-        };
-        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-            Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
-        };
-        let Maybe::Present(declared) = declared
-        else {
-            return Ok(Planned(false));
-        };
+        let (declared, thunked, resolved) =
+            if matches!(self.form_at(target)?, Some((_, Former::Name))) {
+                let named = Site {
+                    at: target,
+                    name: FormName::IDENTIFIER,
+                    reading: Reading::Value(frame),
+                };
+                let declared = match self.resolve_name(named, frame, self.name_at(target))? {
+                    Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+                    Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+                    Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+                };
+                let Maybe::Present(declared) = declared
+                else {
+                    return Ok(Planned(false));
+                };
+                (declared, Thunked(true), frame)
+            }
+            else {
+                // A call's callee writes its result in its own declaration, at
+                // the outermost frame of the source both stand in.
+                let Some(result) = self.called_result(site, frame, target)?
+                else {
+                    return Ok(Planned(false));
+                };
+                (result.node, Thunked(false), Frame::Outermost)
+            };
         let label = self.name_at(selected);
         let (index, count) =
-            match self.stated_entries(site, declared, Former::LazyRecordType, Thunked(true))? {
+            match self.stated_entries(site, declared, Former::LazyRecordType, thunked)? {
                 Maybe::Present(stated) => {
                     let Place(index) = if numbered {
                         Self::positioned(label, selected, &stated)?
@@ -2508,7 +2529,7 @@ impl<'source> Lowerer<'_, 'source>
                 },
                 Maybe::Absent(_) => {
                     let Maybe::Present(observed) =
-                        self.stated_observations(site, (declared, frame), Thunked(true))?
+                        self.stated_observations(site, (declared, resolved), thunked)?
                     else {
                         return Ok(Planned(false));
                     };
@@ -2531,8 +2552,17 @@ impl<'source> Lowerer<'_, 'source>
                 },
             };
         let frame = self.require(site, Produced::Computation)?;
-        self.read(target.node, Reading::Value(frame));
-        self.plan(site, Plan::Observe(target.node, Observed { index, count }));
+        let subject = if thunked.0 {
+            Reading::Value(frame)
+        }
+        else {
+            Reading::Computation(frame)
+        };
+        self.read(target.node, subject);
+        self.plan(
+            site,
+            Plan::Observe(target.node, Observed { index, count }, thunked),
+        );
 
         Ok(Planned(true))
     }
@@ -3571,37 +3601,51 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(Lowered::Computation(with))
     }
 
-    /// Mint an observation: the thunk forced, then projected at the entry it
-    /// selects.
+    /// Mint an observation: the thunk forced, or the call run, then projected
+    /// at the entry it selects.
     ///
     /// # Specification
     /// - requires: the subject is already minted or absent.
-    /// - ensures: `force m` projected at the selected entry's index, every node
-    ///   with the written origin; nothing when the subject did not lower.
+    /// - ensures: `force m` projected at the selected entry's index when
+    ///   `thunked`, the subject's own computation projected there otherwise,
+    ///   every node with the written origin; nothing when the subject did not
+    ///   lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::observation`].
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
+    /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_observe(
         &self,
         subject: NodeIndex,
         observed: Observed,
+        thunked: Thunked,
         sink: &mut Sink<'_>,
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let thunk: ValueId = match self.value_at(subject) {
-            Maybe::Present(thunk) => thunk,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        let observing = if thunked.0 {
+            let thunk: ValueId = match self.value_at(subject) {
+                Maybe::Present(thunk) => thunk,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            let forced = sink.arena.computation_force(thunk);
+            sink.origins.record_computation(forced, origin);
+            forced
+        }
+        else {
+            match self.computation_at(subject) {
+                Maybe::Present(run) => run,
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            }
         };
-        let forced = sink.arena.computation_force(thunk);
-        sink.origins.record_computation(forced, origin);
-        let projected = sink
-            .arena
-            .computation_project(gandr_kernel_term::Component::from(observed.index), forced);
+        let projected = sink.arena.computation_project(
+            gandr_kernel_term::Component::from(observed.index),
+            observing,
+        );
         sink.origins.record_computation(projected, origin);
 
         Maybe::Present(Lowered::Computation(projected))
