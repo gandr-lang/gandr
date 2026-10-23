@@ -422,6 +422,7 @@ pub use crate::theory_rules::CriticalPeak;
 pub use crate::theory_rules::OperationRank;
 pub use crate::theory_rules::PRESENTATION_CODE;
 pub use crate::theory_rules::PRESENTATION_FUEL;
+pub use crate::theory_rules::PeakSearch;
 pub use crate::theory_rules::SidePosition;
 pub use crate::theory_rules::SymbolKind;
 pub use crate::theory_rules::TheoryNode;

@@ -841,13 +841,13 @@ impl TheoryRules
                             self.normalize(
                                 &self.rules,
                                 &mut work.by_outer,
-                                &mut work.bindings,
+                                (&mut work.bindings, &mut work.rewritten),
                                 fuel,
                             )?;
                             self.normalize(
                                 &self.rules,
                                 &mut work.by_inner,
-                                &mut work.bindings,
+                                (&mut work.bindings, &mut work.rewritten),
                                 fuel,
                             )?;
                             Ok(Verdict::from(work.by_outer == work.by_inner))
@@ -870,13 +870,15 @@ impl TheoryRules
 
     /// The first critical pair of these rules whose two normal forms under
     /// them are `rule`'s two sides: the peak a completion that derived `rule`
-    /// from these rules names for it.
+    /// from these rules names for it, sought in `search`'s buffers.
     ///
     /// # Specification
     /// - requires: these rules are well formed.
     /// - ensures: [`Some`] with the first peak, in order of the outer rule, the
     ///   position and the inner rule, that [`Self::decide`] would replay for
-    ///   `rule` appended after these rules; [`None`] when none does.
+    ///   `rule` appended after these rules; [`None`] when none does. What
+    ///   `search` held before is never read, so one search serves every rule a
+    ///   caller asks about.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     ///
@@ -893,10 +895,11 @@ impl TheoryRules
     pub fn peak_of(
         &self,
         rule: &TheoryRule,
+        search: &mut PeakSearch,
         fuel: &mut RewriteFuel,
     ) -> Result<Option<CriticalPeak>, Exhausted>
     {
-        let mut work = PairBuffers::default();
+        let work = &mut search.0;
         for (outer, overlapped) in self.rules.iter().enumerate() {
             for (position, &node) in overlapped.left().iter().enumerate() {
                 if !matches!(node, TheoryNode::Symbol(_)) {
@@ -911,7 +914,7 @@ impl TheoryRules
                         position: SidePosition(position),
                         inner: RuleIndex::from(inner),
                     };
-                    if self.joins(&self.rules, peak, rule, &mut work, fuel)? == Verdict::Holds {
+                    if self.joins(&self.rules, peak, rule, work, fuel)? == Verdict::Holds {
                         return Ok(Some(peak));
                     }
                 }
@@ -1260,15 +1263,37 @@ impl TheoryRules
         {
             return Ok(Verdict::Fails);
         }
-        self.normalize(before, &mut work.by_outer, &mut work.bindings, fuel)?;
-        self.normalize(before, &mut work.by_inner, &mut work.bindings, fuel)?;
-        canonical_flats(&work.by_outer, &work.by_inner, &mut work.canonical);
-        canonical_sides(rule.left(), rule.right(), &mut work.stated);
+        self.normalize(
+            before,
+            &mut work.by_outer,
+            (&mut work.bindings, &mut work.rewritten),
+            fuel,
+        )?;
+        self.normalize(
+            before,
+            &mut work.by_inner,
+            (&mut work.bindings, &mut work.rewritten),
+            fuel,
+        )?;
+        canonical_flats(
+            &work.by_outer,
+            &work.by_inner,
+            (&mut work.canonical, &mut work.seen_nodes),
+        );
+        canonical_sides(
+            rule.left(),
+            rule.right(),
+            (&mut work.stated, &mut work.seen_ordinals),
+        );
         let split = rule.left().len();
         if (work.by_outer.len(), &work.canonical) == (split, &work.stated) {
             return Ok(Verdict::Holds);
         }
-        canonical_flats(&work.by_inner, &work.by_outer, &mut work.canonical);
+        canonical_flats(
+            &work.by_inner,
+            &work.by_outer,
+            (&mut work.canonical, &mut work.seen_nodes),
+        );
         Ok(Verdict::from(
             (work.by_inner.len(), &work.canonical) == (split, &work.stated),
         ))
@@ -1476,11 +1501,10 @@ impl TheoryRules
         &self,
         rules: &[TheoryRule],
         term: &mut Vec<Flat>,
-        bindings: &mut Vec<Option<Span>>,
+        (bindings, built): (&mut Vec<Option<Span>>, &mut Vec<Flat>),
         fuel: &mut RewriteFuel,
     ) -> Result<(), Exhausted>
     {
-        let mut built: Vec<Flat> = Vec::new();
         let mut cursor = term.len();
         'rewrite: loop {
             while let Some(start) = cursor.checked_sub(1) {
@@ -1753,47 +1777,47 @@ enum Canonical
 }
 
 /// `first` then `second`, each variable renumbered by its first occurrence
-/// across both, into `out`.
+/// across both, into `out`; `seen` is scratch.
 ///
 /// # Specification
 /// trivial.
 fn canonical_flats(
     first: &[Flat],
     second: &[Flat],
-    out: &mut Vec<Canonical>,
+    (out, seen): (&mut Vec<Canonical>, &mut Vec<Node>),
 )
 {
     out.clear();
-    let mut seen: Vec<Node> = Vec::new();
+    seen.clear();
     for &node in first.iter().chain(second) {
         out.push(match node {
             Flat::Symbol(symbol, _) => Canonical::Symbol(symbol),
-            Flat::Variable(variable) => Canonical::Variable(first_seen(&mut seen, variable)),
+            Flat::Variable(variable) => Canonical::Variable(first_seen(seen, variable)),
         });
     }
 }
 
 /// `left` then `right`, each variable renumbered by its first occurrence
-/// across both, into `out`.
+/// across both, into `out`; `seen` is scratch.
 ///
 /// # Specification
 /// trivial.
 fn canonical_sides(
     left: &[TheoryNode],
     right: &[TheoryNode],
-    out: &mut Vec<Canonical>,
+    (out, seen): (&mut Vec<Canonical>, &mut Vec<Ordinal>),
 )
 {
     out.clear();
-    let mut seen: Vec<Ordinal> = Vec::new();
+    seen.clear();
     for &node in left.iter().chain(right) {
         out.push(match node {
             TheoryNode::Symbol(symbol) => Canonical::Symbol(symbol),
             TheoryNode::Variable(variable) => {
-                Canonical::Variable(first_seen(&mut seen, ordinal(variable)))
+                Canonical::Variable(first_seen(seen, ordinal(variable)))
             },
             TheoryNode::Instance(variable, count) => {
-                Canonical::Instance(first_seen(&mut seen, ordinal(variable)), count)
+                Canonical::Instance(first_seen(seen, ordinal(variable)), count)
             },
         });
     }
@@ -1848,6 +1872,15 @@ struct OrderBuffers
     higher: Vec<bool>,
 }
 
+/// The buffers [`TheoryRules::peak_of`] seeks a peak in, kept by its caller
+/// so that a search for each of many rules allocates them once.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug, Default)]
+pub struct PeakSearch(PairBuffers);
+
 /// The buffers a critical pair is built and normalized in, reused across
 /// pairs.
 ///
@@ -1878,10 +1911,17 @@ struct PairBuffers
     by_inner: Vec<Flat>,
     /// A matched left side's bindings.
     bindings: Vec<Option<Span>>,
+    /// A firing rule's right side, built before it replaces its redex.
+    rewritten: Vec<Flat>,
     /// The pair's normal forms, renumbered.
     canonical: Vec<Canonical>,
     /// A derived rule's sides, renumbered.
     stated: Vec<Canonical>,
+    /// The pair's variables, in the order their renumbering first meets them.
+    seen_nodes: Vec<Node>,
+    /// The derived rule's variables, in the order their renumbering first
+    /// meets them.
+    seen_ordinals: Vec<Ordinal>,
 }
 
 /// One node of the unifier's graph.

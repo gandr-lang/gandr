@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use super::CriticalPeak;
 use super::OperationRank;
 use super::PRESENTATION_CODE;
+use super::PeakSearch;
 use super::SidePosition;
 use super::SymbolKind;
 use super::TheoryNode;
@@ -163,8 +164,9 @@ fn a_groups_completion_replays_from_its_peaks()
         position: SidePosition::from(1_usize),
         inner: RuleIndex::from(1_usize),
     };
+    let mut search = PeakSearch::default();
     assert_eq!(
-        written.peak_of(&right_inverse, &mut fuel()),
+        written.peak_of(&right_inverse, &mut search, &mut fuel()),
         Ok(Some(peak)),
         "the derived rule joins the inverse law overlapped by the involution"
     );
@@ -183,7 +185,11 @@ fn a_groups_completion_replays_from_its_peaks()
         "the involution's own overlap joins, so it derives nothing"
     );
     let unreached = rule(&[s!(0), v!(0), s!(1), v!(0)], &[v!(0)]);
-    assert_eq!(written.peak_of(&unreached, &mut fuel()), Ok(None));
+    assert_eq!(
+        written.peak_of(&unreached, &mut search, &mut fuel()),
+        Ok(None),
+        "a search left holding the last pair still finds no peak for a side no pair reaches"
+    );
     let mut overstated = written;
     overstated.derive(unreached, peak);
     assert_eq!(
