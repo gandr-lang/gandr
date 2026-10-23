@@ -308,6 +308,10 @@ impl<A: CellAlphabet> CellStore<A>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a new store and one holding a cell answer apart.
+    /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> CellStoreEmptyStatus

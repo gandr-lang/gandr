@@ -143,6 +143,10 @@ impl AsRef<str> for Sym
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a symbol reads back the spelling it was made from.
+    /// - witness: `pattern::tests::a_symbol_reads_back_its_spelling_and_a_pattern_its_groundness`
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -578,6 +582,11 @@ impl ProdPat
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a ground pattern and one holding a metavariable
+    ///   answer apart.
+    /// - witness: `pattern::tests::a_symbol_reads_back_its_spelling_and_a_pattern_its_groundness`
     #[inline]
     #[must_use]
     pub fn is_ground(&self) -> GroundPatternStatus
@@ -761,6 +770,11 @@ impl<'pattern> ProdRef<'pattern>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a ground subtree and one holding a metavariable
+    ///   answer apart.
+    /// - witness: `pattern::tests::a_symbol_reads_back_its_spelling_and_a_pattern_its_groundness`
     #[inline]
     #[must_use]
     pub fn is_ground(self) -> GroundPatternStatus
@@ -2607,6 +2621,18 @@ fn splice_cons_argument(
 mod tests
 {
     use super::*;
+
+    #[test]
+    fn a_symbol_reads_back_its_spelling_and_a_pattern_its_groundness()
+    {
+        assert_eq!("Succ", Sym::new("Succ").as_ref());
+        let ground = ProdPat::ctor("Succ", [ProdPat::ctor("Zero", [])]);
+        let open = ProdPat::ctor("Succ", [ProdPat::meta("x")]);
+        assert!(bool::from(ground.is_ground()));
+        assert!(bool::from(ground.to_ref().is_ground()));
+        assert!(!bool::from(open.is_ground()));
+        assert!(!bool::from(open.to_ref().is_ground()));
+    }
 
     #[test]
     fn pattern_children_preserve_order_and_bounds()

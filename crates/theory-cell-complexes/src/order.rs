@@ -141,6 +141,7 @@ use crate::polarity::Polarity;
 /// - witness: `order::tests::a_size_difference_that_substitution_could_reverse_is_an_obstruction`
 /// - witness: `order::tests::an_equal_size_pair_is_oriented_by_the_path_order`
 /// - witness: `order::tests::an_equal_size_pair_the_path_order_cannot_separate_stays_an_obstruction`
+/// - witness: `order::tests::an_equal_size_pair_with_different_holes_stays_an_obstruction`
 /// - witness: `order::tests::the_frame_defining_shape_is_not_oriented_forwards_and_that_is_stated`
 /// - witness: `tests::order::the_order_is_a_strict_order_over_generated_patterns`
 /// - witness: `tests::order::the_path_order_survives_a_uniform_hole_instantiation`
@@ -1269,6 +1270,22 @@ mod tests
             reduction_cmp(&left, &right),
             "a path order does not order metavariables, so this pair is left to the engine"
         );
+    }
+
+    #[test]
+    fn an_equal_size_pair_with_different_holes_stays_an_obstruction()
+    {
+        // A hole against a constructor of the same size: the path order would
+        // separate them, but a substitution could grow the hole past it.
+        let hole = CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), ConsPat::meta("a"));
+        let ground = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Zero", []),
+            ConsPat::meta("a"),
+        );
+        assert_eq!(hole.size(), ground.size(), "the hypothesis: equal size");
+        assert_eq!(Ordering::Equal, reduction_cmp(&hole, &ground));
+        assert_eq!(Ordering::Equal, reduction_cmp(&ground, &hole));
     }
 
     #[test]

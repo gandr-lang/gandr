@@ -1880,6 +1880,7 @@ mod tests
     {
         let cell = frame_defining_cell(&Sym::new("Succ"));
         let mut store = CellStore::new();
+        assert!(bool::from(store.is_empty()), "a new store is empty");
         for index in [0, usize::MAX] {
             assert_eq!(
                 Maybe::Absent(cell_lookup::Absent::Unissued),
@@ -1918,6 +1919,10 @@ mod tests
             assert_eq!(expected, store.insert(offered.clone()));
             assert_eq!(expected, store.insert(offered.clone()));
             assert_eq!(CellCount::from(index.saturating_add(1)), store.len());
+            assert!(
+                !bool::from(store.is_empty()),
+                "a store holding a cell is not empty"
+            );
             for (held_index, held) in cells.iter().take(index.saturating_add(1)).enumerate() {
                 assert_eq!(
                     Maybe::Present(held),

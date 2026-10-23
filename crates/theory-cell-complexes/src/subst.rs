@@ -373,6 +373,7 @@ impl Subst
     /// - witness: `subst::tests::unification_resolves_triangular_bindings`
     /// - witness: `tests::subst::every_unifier_equates_its_two_sides`
     /// - witness: `subst::tests::substitution_applies_once_then_resolves_both_categories`
+    /// - witness: `subst::tests::a_binding_chain_resolves_through_every_pass_it_needs`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -827,6 +828,7 @@ fn match_prod_step<'pattern, 'target>(
 ///   distinguish ignored frame clashes and conflicting end bindings.
 /// - witness: `subst::tests::failed_walks_preserve_existing_and_staged_bindings`
 /// - witness: `subst::tests::a_many_continuation_frame_matches_and_unifies_port_by_port`
+/// - witness: `subst::tests::a_consumer_variable_met_twice_agrees_with_equal_ends_only`
 ///
 /// # Errors
 /// As the failure clause states.
@@ -1737,6 +1739,60 @@ mod tests
                 assert!(bool::from(subst.is_empty()));
             }
         }
+    }
+
+    #[test]
+    fn a_consumer_variable_met_twice_agrees_with_equal_ends_only()
+    {
+        let cut = |cons| CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), cons);
+        let pattern = cut(ConsPat::operation("divmod", [ProdPat::meta("n")], [
+            ConsPat::meta("q"),
+            ConsPat::meta("q"),
+        ]));
+        let zero = || ProdPat::ctor("Zero", []);
+        let same = cut(ConsPat::operation("divmod", [zero()], [
+            ConsPat::top(),
+            ConsPat::top(),
+        ]));
+        let mut matched = Subst::new();
+        assert!(
+            bool::from(match_cmd(&pattern, &same, &mut matched)),
+            "the second `q` agrees with the first"
+        );
+        assert_eq!(
+            Maybe::Present(&ConsPat::top()),
+            matched.get_cons(&MetaVar::consumer("q"))
+        );
+        let apart = cut(ConsPat::operation("divmod", [zero()], [
+            ConsPat::frame("Succ", ConsPat::top()),
+            ConsPat::top(),
+        ]));
+        let mut refused = Subst::new();
+        assert!(
+            !bool::from(match_cmd(&pattern, &apart, &mut refused)),
+            "the second `q` disagrees with the first"
+        );
+    }
+
+    #[test]
+    fn a_binding_chain_resolves_through_every_pass_it_needs()
+    {
+        let x = MetaVar::producer("x");
+        let zero = ProdPat::ctor("Zero", []);
+        let mut subst = substitution_from(
+            BTreeMap::from([
+                (x.clone(), ProdPat::meta("y")),
+                (MetaVar::producer("y"), ProdPat::meta("z")),
+                (MetaVar::producer("z"), zero.clone()),
+            ]),
+            BTreeMap::new(),
+        );
+        subst.resolve();
+        assert_eq!(
+            Maybe::Present(&zero),
+            subst.get_prod(&x),
+            "`x` reaches `Zero` through `y` and `z`"
+        );
     }
 
     #[test]
