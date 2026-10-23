@@ -628,6 +628,54 @@ fn fresh_menus_keep_exactly_the_form_openers() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
+/// #2213: a token can stand right after a whole form exactly when one of its
+/// label's molds faces, on its left, a hole that form fills — of the form's
+/// sort, or of any sort after an item. The walk over every candidate's left
+/// steps is the reading; the grammar answers it off one index per label.
+#[test]
+fn a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213()
+-> Result<(), Box<dyn Error>>
+{
+    let pbg = built_in()?;
+    let sorts = [
+        Sort::Item,
+        Sort::Pattern,
+        Sort::Expression,
+        Sort::Type,
+        Sort::Instantiation,
+        Sort::ModuleMember,
+    ];
+    let mut answers = BTreeSet::new();
+    for (label, _count) in pbg.candidate_counts() {
+        for sort in sorts {
+            let walked = pbg.candidates(label).iter().any(|&mold| {
+                pbg.mold(mold).is_ok_and(|def| {
+                    pbg.step(def.rctx, Dir::Left).is_ok_and(|steps| {
+                        steps.iter().any(|step| {
+                            matches!(step.crossed, StepSym::Sort(crossed)
+                                if crossed == sort || sort == Sort::Item)
+                        })
+                    })
+                })
+            });
+            let answered = bool::from(pbg.follows_form(label, sort));
+            assert_eq!(answered, walked, "{label} after a form of {sort:?}");
+            let _fresh = answers.insert((sort, answered));
+        }
+    }
+    for sort in sorts {
+        assert!(
+            answers.contains(&(sort, true)) && answers.contains(&(sort, false)),
+            "some label follows a form of {sort:?} and some does not"
+        );
+        assert!(
+            !bool::from(pbg.follows_form(TileLabel("no such label"), sort)),
+            "an undeclared label follows no form of {sort:?}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn form_membership_flags_agree_with_their_lists() -> Result<(), Box<dyn Error>>
 {

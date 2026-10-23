@@ -100,6 +100,7 @@ use crate::check::validate_assumption_3;
 use crate::check::validate_operator_form;
 use crate::mold::FrozenTable;
 use crate::mold::HoleFollows;
+use crate::mold::LabelFollowsForm;
 use crate::mold::MoldDef;
 use crate::mold::MoldHasPredecessor;
 use crate::mold::MoldHasRequiredTail;
@@ -2009,6 +2010,39 @@ impl Pbg
     ) -> &[MoldId]
     {
         self.molds.fresh_candidates(label)
+    }
+
+    /// Whether a token labelled `label` can stand right after a whole form of
+    /// `sort`: one of its [`candidates`](Self::candidates) faces, on its
+    /// left, a hole of `sort` — of any sort when `sort` is [`Sort::Item`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when some mold of `label` has a context whose
+    ///   [`step`](Self::step) to the left crosses a hole of `sort`, or a hole
+    ///   of any sort when `sort` is [`Sort::Item`]; false for an undeclared
+    ///   label.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in label after a form of each of the six
+    ///   sorts, and an undeclared label, compared with the walk over its
+    ///   candidates' left steps; a dropped mold, a tile step read as a hole,
+    ///   the right steps read instead or a form of [`Sort::Item`] answered by
+    ///   its own sort alone changes a row. Construction proves each label's
+    ///   left-hole sorts exact once; the predicate checks that a label which
+    ///   follows a form has a mold.
+    /// - witness: `tests::walk::a_label_follows_a_form_exactly_when_one_of_its_molds_faces_its_sort_2213`
+    #[spec(ensures: |ret| !bool::from(ret) || !self.molds.candidates(label).is_empty())]
+    #[inline]
+    #[must_use]
+    pub fn follows_form(
+        &self,
+        label: TileLabel,
+        sort: Sort,
+    ) -> LabelFollowsForm
+    {
+        self.molds.follows_form(label, sort)
     }
 
     /// Every declared label with how many molds it can take, ascending by
