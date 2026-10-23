@@ -241,10 +241,10 @@
 //! escapes its one use is refused by name: [`CheckRefusal::SessionMismatch`]
 //! for an action its state does not admit, [`CheckRefusal::Linearity`] for an
 //! endpoint left, reused, captured, sent or declared. Session types relate
-//! through `gandr-core-session`'s engine. A session code crosses to the kernel
-//! only at its protocol's root, as the kernel's own session code, so a
-//! declaration holding an endpoint stays on the checker's side. The rules,
-//! the frames and the decisions are in [`session`].
+//! through `gandr-core-session`'s engine. Readmission erases the discipline:
+//! a session type crosses as the kernel's own session code, rooted at the
+//! state it stands at, and an action as what it computes. The rules, the
+//! frames and the decisions are in [`session`].
 //!
 //! # Temporary access
 //!
