@@ -102,8 +102,9 @@ env:
   # first needs it, and the image jobs wait for it.
   GANDR_CI_IMAGE: ${{ vars.GANDR_CI_IMAGE }}
   # The corpus sweeps sample the corpus and add every source the change adds
-  # or modifies; a queue entry's first parent is the base it lands on. The
-  # lanes that run sweeps fetch that parent.
+  # or modifies; a pull request's first parent is the base it lands on, and
+  # the lanes that run sweeps fetch that parent. A merge group's change runs
+  # from its base on main instead (`sweep-base`, #2101), which its lanes fetch.
   GANDR_SWEEP_BASE: HEAD^
 
 jobs:
@@ -394,9 +395,14 @@ jobs:
   #   bases and failed fetches or diffs force the checks, never skip them; the
   #   queue always checks its complete merge result; a Rust-only pull request
   #   or queue entry does not pay for the extension lane; a change to the
-  #   parser, its grammar or its syntax tree reaches every recovery record
-  #   (#1434). The daily run gates nothing and reads none; nor does a push
-  #   whose head a merge group built and tested, as a queue landing's is;
+  #   parser, its grammar, its syntax tree or a corpus source reaches every
+  #   recovery record (#1434, #2101). A merge group's change is read from its
+  #   base on main, the merge base the compare API names, never from its
+  #   parent: a later entry's parent is the entry below it, so its own diff
+  #   alone would miss a stale record the entries below it left (#2101);
+  #   that base is also the sweeps' (`sweep-base`). The daily run gates
+  #   nothing and reads none; nor does a push whose head a merge group built
+  #   and tested, as a queue landing's is;
   # - `unbuilt`: a push to main whose head no merge group built (#2084), a
   #   chain pushed by hand. No run has tested its tree, so it runs every
   #   lane a merge group runs, the recovery sweep, the extension, the
@@ -436,8 +442,9 @@ jobs:
     outputs:
       rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
       extension: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
-      parser: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') && steps.rebased.outputs.rebased != 'true' }}
+      parser: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name == 'merge_group' && steps.group-base.outcome != 'success' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.parser == 'true') && steps.rebased.outputs.rebased != 'true' }}
       unbuilt: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' }}
+      sweep-base: ${{ steps.group-base.outputs.sha }}
       stacked: ${{ github.event_name == 'pull_request' && github.base_ref != github.event.repository.default_branch }}
       rebased: ${{ steps.rebased.outputs.rebased == 'true' }}
       image: ${{ steps.image.outputs.tag != '' && (steps.image.outputs.found == 'true' || !github.event.pull_request.head.repo.fork) && format('ghcr.io/gandr-lang/gandr-ci:{0}', steps.image.outputs.tag) || '' }}
@@ -449,7 +456,6 @@ jobs:
       baseline-sha: ${{ steps.baseline.outputs.sha }}
       baseline-created: ${{ steps.baseline.outputs.created }}
     env:
-      CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
       CI_SHA: ${{ github.sha }}
       CI_GATE: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
       CI_QUEUE_STATE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' }}
@@ -457,22 +463,34 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - *git-checkout
+      - id: group-base
+        name: find the merge group's base on main
+        if: ${{ github.event_name == 'merge_group' }}
+        continue-on-error: true
+        env:
+          CI_TRUNK: ${{ github.event.repository.default_branch }}
+        run: >-
+          gh api "repos/$GH_REPO/compare/$CI_TRUNK...$CI_SHA"
+          --jq '"sha=" + .merge_base_commit.sha' >> "$GITHUB_OUTPUT"
       - id: fetch
         name: fetch the comparison tree
         if: ${{ env.CI_GATE == 'true' }}
         continue-on-error: true
+        env: &change-base
+          CI_BASE_SHA: ${{ steps.group-base.outputs.sha || github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: git fetch --depth=1 origin "$CI_BASE_SHA"
       - id: filter
         name: filter changed paths
         if: ${{ env.CI_GATE == 'true' && steps.fetch.outcome == 'success' }}
         continue-on-error: true
+        env: *change-base
         # One pipeline, no shell control flow or third-party filter action.
         # NUL framing preserves filenames; no-renames retains source deletions.
         # pipefail makes a failed diff distinguishable from an empty diff.
         shell: bash
         run: >-
           git diff --no-renames --name-only -z "$CI_BASE_SHA" HEAD |
-          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/")) | tostring)' >> "$GITHUB_OUTPUT"
+          jq -rRs '(split("\u0000")) as $paths | "rust=" + ($paths | any(length > 0 and ((endswith(".md") or startswith("docs/") or startswith("LICENSE") or . == ".gitignore") | not)) | tostring), "extension=" + ($paths | any(startswith("contrib/gandr-vscode/") or . == "aube-lock.yaml" or . == "aube.lock" or . == ".oxlintrc.json" or . == "treefmt.toml" or . == ".config/mise/tasks/mise-tasks-check.toml" or . == ".github/workflows/ci.yml") | tostring), "parser=" + ($paths | any(startswith("crates/surface-parser/") or startswith("crates/surface-grammar/") or startswith("crates/surface-syntax/") or (startswith("corpus/") and endswith(".gandr"))) | tostring)' >> "$GITHUB_OUTPUT"
       # GitHub rebases a stack's members itself when a member below merges
       # (its committer is `web-flow`), and no setting turns that off (#2070).
       # A rebase that leaves the change's patch as it was, measured against
@@ -592,14 +610,17 @@ jobs:
   # The enforcing run is the full test pass on each platform. The plain lane
   # compiles and runs only what enforcement removes, the corpus roots; the
   # documentation lane runs the private-item rustdoc and the documentation
-  # examples beside it, units no other plain gate builds; plain Clippy covers
-  # the rest of the plain graph's compilation. On main's push the Linux test
-  # lanes run only when no queue run tested the commit, and then build on
-  # main's state and cache theirs as main's.
+  # examples beside it, units no other plain gate builds; plain Clippy lints
+  # the plain-only targets. On main's push the Linux test lanes run only when
+  # no queue run tested the commit, and then build on main's state and cache
+  # theirs as main's. A pull request, stacked or not, whose change reaches
+  # the recovery records (`parser`) runs the plain lane too, its full
+  # recovery sweep included, so a stale record is red on the pull request
+  # rather than first in the queue (#2101).
   cargo-test-plain-only:
     name: test plain-only targets (linux)
     needs: *rust-needs
-    if: &test-lane ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'pull_request' && needs.prepare.outputs.parser == 'true') }}
     runs-on: *linux
     permissions: &build-state-read-permissions
       contents: read
@@ -614,6 +635,15 @@ jobs:
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace
+      # A merge group's sweeps read the whole group's change, from its base
+      # on main: the entry below it is its parent (#2101).
+      - name: fetch the merge group's base
+        if: ${{ needs.prepare.outputs.sweep-base != '' }}
+        env:
+          CI_SWEEP_BASE: ${{ needs.prepare.outputs.sweep-base }}
+        run: |
+          git fetch --depth=1 origin "$CI_SWEEP_BASE"
+          echo "GANDR_SWEEP_BASE=$CI_SWEEP_BASE" >> "$GITHUB_ENV"
       - *identify-build-state
       - *install-policy-tools
       - *setup-rust
@@ -766,7 +796,7 @@ jobs:
   cargo-test-docs:
     name: document the workspace (linux)
     needs: *rust-needs
-    if: *test-lane
+    if: &test-lane ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
