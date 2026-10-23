@@ -542,7 +542,7 @@ fn value_spelling(
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
             Some(&Value::Reify(_) | &Value::ListNil | &Value::ListCons(..) | &Value::Constructor { .. } | &Value::Record(_) | &Value::Primitive { .. }
 | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_) | &Value::Ascribe { .. }
-| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Univalence(..) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Returned(_) | &Value::Nested(_) | &Value::Run(_) | &Value::PathProduct(..) |
+| &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Univalence(..) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Returned(_) | &Value::Nested(_) | &Value::Run(_) | &Value::RecordUpdate { .. } | &Value::PathProduct(..) |
 &Value::SessionRelated { .. } | &Value::Stay(_) | &Value::Then(..) | &Value::FlowProduct(..) | &Value::Forward(_) | &Value::FunctionFlow(..) | &Value::Recorded(_) | &Value::Dialogue(_) | &Value::Web(_) |
 &Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
             },
@@ -2335,6 +2335,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                     | Value::Returned(_)
                     | Value::Nested(_)
                     | Value::Run(_)
+                    | Value::RecordUpdate { .. }
                     | Value::Constant(_)
                     | Value::Literal(_)
                     | Value::Injection(..)
@@ -2740,6 +2741,57 @@ fn a_crossing_runs_its_reduct_at_exactly_the_named_values()
     assert!(
         mark == arena.watermark() && none.is_empty() && minted.is_empty(),
         "a subject reaching no crossed value mints nothing"
+    );
+}
+
+#[test]
+fn an_update_builds_the_kept_fields_beside_the_overlay()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| crate::FieldLabel::from(String::from(name));
+    let base = arena.value_constant(ConstantIndex::from(0_usize));
+    let other = arena.value_constant(ConstantIndex::from(1_usize));
+    let unit = arena.value_unit();
+    let overlay = arena.value_record(BTreeMap::from([(label("b"), unit)]));
+    let named = arena.value_record_update(base, overlay);
+    let unnamed = arena.value_record_update(other, overlay);
+    let pair = arena.value_tuple(&[named, unnamed]);
+    let returned = arena.computation_return(pair);
+    let subject = arena.value_thunk(returned);
+    let updates = BTreeMap::from([(named, Vec::from([label("a")]))]);
+    let mut carried = Vec::new();
+    let rebuilt = super::build_updates(&mut arena, subject, &updates, &mut carried);
+    let expected = {
+        let kept = arena.computation_record_projection(base, label("a"));
+        let kept = arena.value_returned(kept);
+        let record = arena.value_record(BTreeMap::from([(label("a"), kept), (label("b"), unit)]));
+        let pair = arena.value_tuple(&[record, unnamed]);
+        let returned = arena.computation_return(pair);
+        arena.value_thunk(returned)
+    };
+    assert_eq!(
+        crate::equal_certificate_syntax(&arena, rebuilt, expected),
+        crate::CertificateEquality::Equal,
+        "the named update stands as the record of `⟨b.a⟩` beside the overlay's `b`, and the \
+         unnamed one stands as written"
+    );
+    assert!(
+        carried.contains(&Carried::Value(subject, rebuilt))
+            && !carried
+                .iter()
+                .any(|&pair| matches!(pair, Carried::Value(held, _) if held == unnamed)),
+        "the rebuild reports the subject, and the unnamed update carried to itself is no pair: \
+         {carried:?}"
+    );
+    let mark = arena.watermark();
+    let mut none = Vec::new();
+    assert_eq!(
+        super::build_updates(&mut arena, unnamed, &updates, &mut none),
+        unnamed
+    );
+    assert!(
+        mark == arena.watermark() && none.is_empty(),
+        "a subject reaching no named update mints nothing"
     );
 }
 

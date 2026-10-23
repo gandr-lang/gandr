@@ -189,6 +189,10 @@ impl CoreArena
             | Value::FunctionFlow(first, second)
             | Value::ListCons(first, second)
             | Value::StaticApplication(first, second)
+            | Value::RecordUpdate {
+                base: first,
+                overlay: second,
+            }
             | Value::Ua {
                 forward: first,
                 backward: second,

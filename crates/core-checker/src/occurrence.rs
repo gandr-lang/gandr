@@ -1262,7 +1262,11 @@ where
                             ..
                         }
                         | Value::ListCons(first, second)
-                        | Value::StaticApplication(first, second)),
+                        | Value::StaticApplication(first, second)
+                        | Value::RecordUpdate {
+                            base: first,
+                            overlay: second,
+                        }),
                     ) => {
                         pending.push((AnyNode::Value(first), reach));
                         pending.push((AnyNode::Value(second), reach));

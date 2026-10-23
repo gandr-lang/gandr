@@ -752,6 +752,7 @@ impl Machine<'_, '_>
                 | Value::Returned { .. }
                 | Value::Nested { .. }
                 | Value::Run { .. }
+                | Value::RecordUpdate { .. }
                 | Value::Variable { .. }
                 | Value::Constant { .. }
                 | Value::Thunk { .. }

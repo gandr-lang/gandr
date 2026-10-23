@@ -326,6 +326,27 @@ pub(super) enum Arranged<'source>
     Labelled(Vec<Entry<'source>>),
 }
 
+/// What the hole-led entries of a telescope value read as.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: a telescope's entries in written order; an update's base and the
+///   fields it writes, in written order.
+/// - executable: none — [`Lowerer::hole_entries`] reads it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a record and an update over the same labels lower to
+///   different formers.
+/// - witness: `lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum Telescoped<'source>
+{
+    /// The telescope's own entries.
+    Entries(Vec<Entry<'source>>),
+    /// The update `#{ e | l = a, … }`: its base, and the fields it writes.
+    Update(Placed, Vec<Entry<'source>>),
+}
+
 /// The zone a type form is read in: a protocol's, or every other type's.
 ///
 /// # Specification
@@ -730,18 +751,20 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Read the hole-led entries of a telescope value up to `}`: each a
-    /// positional `e`, or the shorthand `l = e` whose key is a bare name.
+    /// positional `e`, or the shorthand `l = e` whose key is a bare name; or
+    /// the update `#{ e | l = a, … }`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the telescope's `#{`.
-    /// - ensures: every entry in written order, the cursor exhausted.
-    /// - fails: the update `#{ e | … }` by the update's name; a key that is not
-    ///   a bare name, a misplaced tile, and a hole's own fault.
+    /// - ensures: every entry in written order, the cursor exhausted; for an
+    ///   update, its base and the fields it writes.
+    /// - fails: a key that is not a bare name, a misplaced tile — a `|` after
+    ///   any entry but one positional first one — and a hole's own fault.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::OutOfFragment`] and
-    /// [`LoweringRefusal::MalformedForm`].
+    /// [`LoweringRefusal::MalformedForm`] and
+    /// [`LoweringRefusal::UnknownMold`].
     ///
     /// # Termination
     /// Every round consumes at least one piece of the finite cursor or
@@ -751,13 +774,16 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — the unit, positional entries, the shorthand, and an
     ///   update.
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
-    /// - witness: `lower::arity::tests::a_record_update_is_declined_by_name`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |entries| entries.iter().all(|entry| !matches!(entry.key, Key::Index(..)))))]
+    /// - witness: `lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |read| match *read {
+        | Telescoped::Entries(ref entries) => entries.iter().all(|entry| !matches!(entry.key, Key::Index(..))),
+        | Telescoped::Update(_, ref written) => !written.is_empty(),
+    }))]
     fn hole_entries(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
-    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    ) -> Result<Telescoped<'source>, LoweringRefusal<'source>>
     {
         let mut entries = Vec::new();
         while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
@@ -778,10 +804,14 @@ impl<'source> Lowerer<'_, 'source>
                     held: Held::Operand(first),
                 }
             };
-            if let Maybe::Present(_) = cursor.at(TileName::BAR) {
-                return Err(site.folded(
-                    FormName::RECORD_UPDATE,
-                    FragmentBoundary::Unadmitted(Unbuilt::RecordUpdate),
+            // An update's base is the telescope's one positional entry.
+            if let Maybe::Present(bar) = cursor.tile(TileName::BAR) {
+                if !entries.is_empty() || entry.key != Key::Positional {
+                    return Err(site.fault(bar.span, FormFault::MisplacedTile));
+                }
+                return Ok(Telescoped::Update(
+                    first,
+                    self.update_fields(site, cursor, bar)?,
                 ));
             }
             entries.push(entry);
@@ -789,7 +819,56 @@ impl<'source> Lowerer<'_, 'source>
         }
         exhausted(site, cursor)?;
 
-        Ok(entries)
+        Ok(Telescoped::Entries(entries))
+    }
+
+    /// Read the fields an update writes, `l = e, …`, up to `}`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the update's `|`, at `bar`.
+    /// - ensures: one labelled entry per field in written order, the cursor
+    ///   exhausted.
+    /// - fails: a misplaced tile where a field's name or its `=` should stand,
+    ///   and at `bar` when no field is written; a hole's own fault.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    ///
+    /// # Termination
+    /// Every round consumes at least one piece of the finite cursor or
+    /// refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an update of one field and of two.
+    /// - witness: `lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |written| !written.is_empty() && written.iter().all(|entry| matches!(entry.key, Key::Label(..)))))]
+    fn update_fields(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        bar: Placed,
+    ) -> Result<Vec<Entry<'source>>, LoweringRefusal<'source>>
+    {
+        let mut written = Vec::new();
+        while let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
+            let Maybe::Present(word) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            closed(site, cursor, TileName::EQUALS)?;
+            written.push(Entry {
+                key: Key::Label(self.name_at(word), word),
+                held: Held::Operand(site.one(cursor.operands())?),
+            });
+            separated(site, cursor, TileName::BRACE_CLOSE)?;
+        }
+        exhausted(site, cursor)?;
+        if written.is_empty() {
+            return Err(site.fault(bar.span, FormFault::MisplacedTile));
+        }
+
+        Ok(written)
     }
 
     /// Read the entries of a telescope pattern up to `}`: each a punned
@@ -1567,15 +1646,16 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify a telescope value, `#{a, …}`, `#{.l = a, …}` or `#{l = a,
-    /// …}`.
+    /// …}`, or the update `#{e | l = a, …}`.
     ///
     /// # Specification
     /// - requires: `site` is a telescope value in term position.
     /// - ensures: positional entries, in index order, plan the tuple of their
-    ///   values, of any arity; labelled entries plan the record over them; each
-    ///   entry is read as a value under the form's frame.
-    /// - fails: the wrong-sort refusal where no value is read; the update by
-    ///   its own name; the entries' and the labels' own refusals.
+    ///   values, of any arity; labelled entries plan the record over them; an
+    ///   update plans its base beside the record of the fields it writes; each
+    ///   entry and an update's base is read as a value under the form's frame.
+    /// - fails: the wrong-sort refusal where no value is read; the entries' and
+    ///   the labels' own refusals, an update's field written twice among them.
     /// - panics: none.
     ///
     /// # Errors
@@ -1586,8 +1666,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   dotted labels and by the shorthand, each asserted as the exact core
     ///   value.
     /// - witness: `lower::arity::tests::a_telescope_value_lowers_by_its_arity`
-    /// - witness: `lower::arity::tests::a_record_update_is_declined_by_name`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Tuple(_) | Plan::Record(_)))))]
+    /// - witness: `lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&(Plan::Tuple(_) | Plan::Record(_) | Plan::RecordUpdate(..)))))]
     pub(super) fn telescope(
         &mut self,
         site: Site,
@@ -1600,7 +1680,19 @@ impl<'source> Lowerer<'_, 'source>
             self.dotted_entries(site, &mut cursor, TileName::EQUALS)?
         }
         else {
-            self.hole_entries(site, &mut cursor)?
+            match self.hole_entries(site, &mut cursor)? {
+                Telescoped::Entries(entries) => entries,
+                Telescoped::Update(base, written) => {
+                    let Arranged::Labelled(written) = arrange(site, written)?
+                    else {
+                        return Err(site.fault(base.span, FormFault::MisplacedTile));
+                    };
+                    self.read(base.node, Reading::Value(frame));
+                    let fields = self.fields(&written, Reading::Value(frame));
+                    self.plan(site, Plan::RecordUpdate(base.node, fields));
+                    return Ok(());
+                },
+            }
         };
         let plan = match arrange(site, entries)? {
             Arranged::Positional(entries) => {
@@ -3152,6 +3244,43 @@ impl<'source> Lowerer<'_, 'source>
             }
         }
         let id = sink.arena.value_record(minted);
+
+        Maybe::Present(sink.value(id, origin))
+    }
+
+    /// Mint a record update: its base, beside the record of the fields it
+    /// writes.
+    ///
+    /// # Specification
+    /// - requires: the base and every field are already minted or absent.
+    /// - ensures: the update of the base by the record keyed by the fields'
+    ///   labels, both with the written origin; nothing when the base or a field
+    ///   did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::telescope`].
+    /// - witness: `lower::arity::tests::a_record_update_lowers_to_its_base_and_its_fields`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Value(_))))]
+    pub(super) fn mint_record_update(
+        &self,
+        base: NodeIndex,
+        fields: &BTreeMap<FieldLabel, NodeIndex>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let base = match self.value_at(base) {
+            Maybe::Present(id) => id,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let overlay = match self.mint_record(fields, sink, origin) {
+            Maybe::Present(Lowered::Value(overlay)) => overlay,
+            Maybe::Present(_) => return Maybe::Absent(lowered::Absent::OtherSort),
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let id = sink.arena.value_record_update(base, overlay);
 
         Maybe::Present(sink.value(id, origin))
     }

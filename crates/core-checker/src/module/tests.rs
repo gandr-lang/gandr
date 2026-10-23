@@ -1144,6 +1144,133 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
     );
 }
 
+/// A checked record update elaborates to the record of the fields its overlay
+/// writes beside each kept field of its base, read off the base by a
+/// projection; a base written as a call runs once, bound before the record,
+/// and each kept field reads the record it bound. The kernel re-derives both
+/// bodies.
+#[test]
+fn a_record_update_builds_its_base_s_kept_fields_beside_its_overlay()
+{
+    let mut arena = CoreArena::new();
+    let label = |name: &str| gandr_kernel_term::FieldLabel::from(alloc::string::String::from(name));
+    let integer = arena.value_type_base(BaseType::Integer);
+    let string = arena.value_type_base(BaseType::String);
+    let zero = arena.value_literal(integer_literal());
+    let word = arena.value_literal(text_literal());
+    let [bound, argument, expected_argument, expected_bound] = [(); 4].map(|()| {
+        arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        )
+    });
+    // `r = #{a = 0, b = 0}` and `s = #{r | b = "", c = 0}`.
+    let pair_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("a"), integer),
+        (label("b"), integer),
+    ]));
+    let updated_type = arena.value_type_record(alloc::collections::BTreeMap::from([
+        (label("a"), integer),
+        (label("b"), string),
+        (label("c"), integer),
+    ]));
+    let pair = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), zero),
+        (label("b"), zero),
+    ]));
+    let r = arena.value_constant(ConstantIndex::from(0_usize));
+    let overlay = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("b"), word),
+        (label("c"), zero),
+    ]));
+    let updated = arena.value_record_update(r, overlay);
+    let kept_a = arena.computation_record_projection(r, label("a"));
+    let kept_a = arena.value_returned(kept_a);
+    let expected_updated = arena.value_record(alloc::collections::BTreeMap::from([
+        (label("a"), kept_a),
+        (label("b"), word),
+        (label("c"), zero),
+    ]));
+    // `point = fn (n) { return #{a = n, b = n} }` and
+    // `moved = fn (n) { return #{point(n) | a = 0} }`.
+    let returns_pair = arena.comp_type_returner(pair_type);
+    let to_pair = arena.comp_type_arrow(integer, returns_pair);
+    let to_pair = arena.value_type_thunk(to_pair);
+    let point = {
+        let both = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("a"), bound),
+            (label("b"), bound),
+        ]));
+        let returned = arena.computation_return(both);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    let written_a = arena.value_record(alloc::collections::BTreeMap::from([(label("a"), zero)]));
+    let moved = {
+        let called = call(&mut arena, ConstantIndex::from(2_usize), argument);
+        let called = arena.value_nested(called);
+        let update = arena.value_record_update(called, written_a);
+        let returned = arena.computation_return(update);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    let expected_moved = {
+        let called = call(&mut arena, ConstantIndex::from(2_usize), expected_argument);
+        let kept_b = arena.computation_record_projection(expected_bound, label("b"));
+        let kept_b = arena.value_returned(kept_b);
+        let record = arena.value_record(alloc::collections::BTreeMap::from([
+            (label("a"), zero),
+            (label("b"), kept_b),
+        ]));
+        let returned = arena.computation_return(record);
+        let bound = arena.computation_bind(called, returned);
+        let lambda = arena.computation_lambda(bound);
+        arena.value_thunk(lambda)
+    };
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(pair_type), Maybe::Present(pair)),
+            declaration(At(1), Maybe::Present(updated_type), Maybe::Present(updated)),
+            declaration(At(2), Maybe::Present(to_pair), Maybe::Present(point)),
+            declaration(At(3), Maybe::Present(to_pair), Maybe::Present(moved)),
+        ])
+    };
+    for (position, expected, what) in [
+        (
+            1_usize,
+            expected_updated,
+            "the kept `a` is read off `r` beside the written fields",
+        ),
+        (
+            3_usize,
+            expected_moved,
+            "the call is bound once, and the kept `b` is read off the record it bound",
+        ),
+    ] {
+        let Verdict::Checked { body, .. } = report.judged()[position].verdict()
+        else {
+            panic!(
+                "the update checks: {:?}",
+                report.judged()[position].verdict()
+            );
+        };
+        assert_eq!(
+            gandr_core_term::equal_certificate_syntax(&arena, body, expected),
+            gandr_core_term::CertificateEquality::Equal,
+            "{what}"
+        );
+    }
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel re-derives the built records: {readmission:?}"
+    );
+}
+
 #[test]
 fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
 {

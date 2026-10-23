@@ -98,6 +98,7 @@ impl Machine<'_, '_>
             | &Value::Returned(_)
             | &Value::Nested(_)
             | &Value::Run(_)
+            | &Value::RecordUpdate { .. }
             | &Value::Variable { .. }
             | &Value::Constant(_)
             | &Value::Literal(_)
@@ -170,6 +171,7 @@ impl Machine<'_, '_>
                 | &Value::Returned(_)
                 | &Value::Nested(_)
                 | &Value::Run(_)
+                | &Value::RecordUpdate { .. }
                 | &Value::Variable { .. }
                 | &Value::Constant(_)
                 | &Value::Literal(_)
@@ -1198,6 +1200,136 @@ impl Machine<'_, '_>
         };
         let result = self.context.arena_mut().comp_type_returner(part);
         Ok(Step::Ascend(Produced::CompType(result)))
+    }
+
+    /// Read a record update's base at the type it synthesised, then
+    /// synthesise its overlay.
+    ///
+    /// # Specification
+    /// - requires: `at` is a record update whose base synthesised `base`.
+    /// - ensures: success waits on the overlay's type, `base` in hand, and
+    ///   descends to synthesise the overlay.
+    /// - fails: a base whose classifier is no record at its weak head refuses
+    ///   as a shape mismatch at the base, wanting a record, before the overlay
+    ///   is read.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::ShapeMismatch`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::native_update`].
+    /// - witness: `judgement::tests::a_record_update_extends_retypes_and_refuses_a_non_record_base`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(Goal::Value { direction: Direction::Synthesise, .. }))))]
+    pub(super) fn update_base(
+        &mut self,
+        at: ValueId,
+        base: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let &Value::RecordUpdate {
+            base: updated,
+            overlay,
+        } = self.value(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let _fields = self.record_fields(updated, base)?;
+        self.wait(Frame::UpdateOverlay { at, base });
+        Ok(Step::Descend(Goal::Value {
+            term: overlay,
+            direction: Direction::Synthesise,
+        }))
+    }
+
+    /// Synthesize a record update's type: its base's record with each field
+    /// its overlay writes standing at the overlay's type.
+    ///
+    /// # Specification
+    /// - requires: `at` is a record update whose base synthesised `base` and
+    ///   whose overlay synthesised `overlay`.
+    /// - ensures: success ascends the record type holding, at each label the
+    ///   overlay writes, the overlay's field type — a label the base lacks
+    ///   extends it, one the base has at another type retypes it — and at each
+    ///   other label of the base the base's; the base's labels the overlay does
+    ///   not write are recorded as `at`'s kept labels.
+    /// - fails: a base or an overlay whose classifier is no record at its weak
+    ///   head refuses as a shape mismatch at that operand, wanting a record.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::ShapeMismatch`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an overlay writing a label the base lacks, one
+    ///   writing a label at another type and a base of another shape separate
+    ///   extension, retyping and the refusal.
+    /// - witness: `judgement::tests::a_record_update_extends_retypes_and_refuses_a_non_record_base`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Ascend(Produced::ValueType(_)))))]
+    pub(super) fn native_update(
+        &mut self,
+        at: ValueId,
+        base: ValueTypeId,
+        overlay: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let &Value::RecordUpdate {
+            base: updated,
+            overlay: written,
+        } = self.value(at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        let mut fields = self.record_fields(updated, base)?;
+        let overlaid = self.record_fields(written, overlay)?;
+        let kept = fields
+            .keys()
+            .filter(|label| !overlaid.contains_key(*label))
+            .cloned()
+            .collect();
+        fields.extend(overlaid);
+        self.context.record_update(at, kept);
+        let record = self.context.arena_mut().value_type_record(fields);
+        Ok(Step::Ascend(Produced::ValueType(record.into())))
+    }
+
+    /// The fields of the record type `classifier` names at its weak head, the
+    /// type `operand` synthesised.
+    ///
+    /// # Specification
+    /// - requires: `operand` synthesised `classifier`.
+    /// - ensures: success returns the record's fields, label by label.
+    /// - fails: a shape mismatch at `operand`, wanting a record, when the weak
+    ///   head is no record.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`CheckRefusal::ShapeMismatch`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::native_update`].
+    /// - witness: `judgement::tests::a_record_update_extends_retypes_and_refuses_a_non_record_base`
+    #[spec(ensures: |ret| match ret { Err(CheckRefusal::ShapeMismatch { at, wanted, found }) => at == TermNode::Value(operand) && wanted == ExpectedShape::Record && found == TypeNode::Value(classifier), Ok(_) | Err(_) => true })]
+    fn record_fields(
+        &mut self,
+        operand: ValueId,
+        classifier: ValueTypeId,
+    ) -> Result<
+        alloc::collections::BTreeMap<gandr_kernel_term::FieldLabel, ValueTypeId>,
+        CheckRefusal,
+    >
+    {
+        let head = self.context.whnf_value_type(classifier)?;
+        if let Some(&ValueType::Record(ref fields)) = self.context.arena().value_type(head) {
+            Ok(fields.clone())
+        }
+        else {
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(operand),
+                wanted: ExpectedShape::Record,
+                found: TypeNode::Value(classifier),
+            })
+        }
     }
 
     /// Open a dependent split's motive binder over the scrutinee's classifier

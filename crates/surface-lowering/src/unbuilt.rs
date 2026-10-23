@@ -100,8 +100,6 @@ pub enum Unbuilt
     Unpack,
     /// An annotation `(e : T)` read where a type, or nothing, is read.
     Annotation,
-    /// A record update, `#{ e | l = v, … }`.
-    RecordUpdate,
     /// A number literal written with the `f32` suffix, which has no atom yet:
     /// the integer widths and `f64` are built.
     TypedNumber,
@@ -282,7 +280,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 88_usize] = [
+    pub const ALL: [Self; 87_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -290,7 +288,6 @@ impl Unbuilt
         Self::PackageType,
         Self::Unpack,
         Self::Annotation,
-        Self::RecordUpdate,
         Self::TypedNumber,
         Self::ShellBlock,
         Self::FieldGrade,
@@ -402,7 +399,6 @@ impl Unbuilt
             Self::PackageType => "package_type",
             Self::Unpack => "unpack_statement",
             Self::Annotation => "annotation_expression",
-            Self::RecordUpdate => "record_update_expression",
             Self::TypedNumber => "typed_number",
             Self::ShellBlock => "shell_block",
             Self::FieldGrade => "grade.declaration",
@@ -513,7 +509,6 @@ impl Unbuilt
             Self::Pack | Self::PackModel | Self::PackageType | Self::Unpack => {
                 TrackingIssue::PACKAGES
             },
-            Self::RecordUpdate => TrackingIssue::RECORD_UPDATE,
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
             Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,

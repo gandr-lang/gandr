@@ -490,6 +490,20 @@ pub enum Value
     /// synthesises; elaboration replaces it by the variable of the bind it
     /// mints.
     Run(ComputationId),
+    /// A record update `#{ base | l = v, … }`: before elaboration only. It
+    /// synthesises `base`'s record classifier with each of `overlay`'s fields
+    /// laid over it — a label `base` lacks extends the record, a label it has
+    /// takes the overlay's field and that field's type — and elaboration
+    /// replaces it by the record of `base`'s other fields, each the value its
+    /// projection returns, beside `overlay`'s, so neither the kernel nor the
+    /// evaluator meets it.
+    RecordUpdate
+    {
+        /// The record updated.
+        base: ValueId,
+        /// The record of the fields laid over it.
+        overlay: ValueId,
+    },
     /// A bound value variable, in a named zone of the unified context.
     Variable
     {
@@ -616,7 +630,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -644,6 +658,7 @@ impl Value
             | Self::Returned(_)
             | Self::Nested(_)
             | Self::Run(_)
+            | Self::RecordUpdate { .. }
             | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Literal(_)
@@ -2666,8 +2681,17 @@ fn equal_syntax(
                     | (&Value::Univalence(a, b), &Value::Univalence(c, d))
                     | (&Value::Then(a, b), &Value::Then(c, d))
                     | (&Value::FlowProduct(a, b), &Value::FlowProduct(c, d))
-                    | (&Value::FunctionFlow(a, b), &Value::FunctionFlow(c, d)) =
-                        (matched_left_value, matched_right_value)
+                    | (&Value::FunctionFlow(a, b), &Value::FunctionFlow(c, d))
+                    | (
+                        &Value::RecordUpdate {
+                            base: a,
+                            overlay: b,
+                        },
+                        &Value::RecordUpdate {
+                            base: c,
+                            overlay: d,
+                        },
+                    ) = (matched_left_value, matched_right_value)
                     {
                         pending.extend([V(a, c), V(b, d)]);
                     }
@@ -4750,6 +4774,17 @@ mod tests
             same,
             alloc::vec![other_type, other_value],
             "an ascription (#1543)",
+        ));
+        let written = |name| arena.value_record(core::iter::once((label(name), unit)).collect());
+        let [overlay, other_overlay] = ["a", "b"].map(written);
+        let [twin, same] = [(); 2].map(|()| arena.value_record_update(unit, overlay));
+        let other_base = arena.value_record_update(pair, overlay);
+        let other_fields = arena.value_record_update(unit, other_overlay);
+        cases.push((
+            twin,
+            same,
+            alloc::vec![other_base, other_fields],
+            "a record update",
         ));
 
         for (twin, same, others, what) in cases {

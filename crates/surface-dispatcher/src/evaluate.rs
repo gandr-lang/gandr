@@ -2101,7 +2101,7 @@ Value::StaticApplication(..) | Value::Hole(_) | Value::Web(_))) | None => ret.is
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
 &Value::Univalence(..) |
-&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::PathProduct(..) |
+&(Value::ListCons(..) | Value::PathRefl(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::PathProduct(..) |
 Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) |
 Value::PathEquiv { .. } | Value::Tuple(_) | Value::Injection(..) |
 Value::Lift { .. } | Value::Thunk(_) | Value::Mark { .. } | Value::Ascribe { .. })) => true,
@@ -2163,7 +2163,11 @@ fn references(
                         | Value::ListCons(first, second)
                         | Value::Then(first, second)
                         | Value::FlowProduct(first, second)
-                        | Value::FunctionFlow(first, second)),
+                        | Value::FunctionFlow(first, second)
+                        | Value::RecordUpdate {
+                            base: first,
+                            overlay: second,
+                        }),
                     ) => {
                         pending.extend([Node::Value(first), Node::Value(second)]);
                     },

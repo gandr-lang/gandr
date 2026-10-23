@@ -2054,6 +2054,11 @@ where
             writer.tag(Tag(0x4E));
             write_index(writer, computation)?;
         },
+        ContentNode::RecordUpdate(base, overlay) => {
+            writer.tag(Tag(0x84));
+            write_index(writer, base)?;
+            write_index(writer, overlay)?;
+        },
         ContentNode::Variable { zone, index } => {
             writer.tag(Tag(0x01));
             writer.tag(match zone {
@@ -3836,6 +3841,7 @@ fn read_effect_row(
                     | ContentNode::Returned(_) => tag == 0x48,
                     | ContentNode::Nested(_) => tag == 0x4D,
                     | ContentNode::Run(_) => tag == 0x4E,
+                    | ContentNode::RecordUpdate(..) => tag == 0x84,
                     | ContentNode::Funext(..) => tag == 0x49,
                     | ContentNode::Equiv(..) => tag == 0x4A,
                     | ContentNode::Univalence(..) => tag == 0x4F,
@@ -4492,6 +4498,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         0x48 => ContentNode::Returned(read_index(reader)?),
         0x4D => ContentNode::Nested(read_index(reader)?),
         0x4E => ContentNode::Run(read_index(reader)?),
+        0x84 => ContentNode::RecordUpdate(read_index(reader)?, read_index(reader)?),
         0x49 => ContentNode::Funext(read_index(reader)?, read_index(reader)?),
         0x4A => ContentNode::Equiv(read_index(reader)?, read_index(reader)?),
         0x4F => ContentNode::Univalence(read_index(reader)?, read_index(reader)?),
@@ -7858,7 +7865,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
         Ok(()) => answer.nodes().iter().all(|node| !matches!(*node.former(),ContentNode::Unresolved(_))),
         Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => answer.nodes().iter().find_map(|node| match *(node.former()) {
 ContentNode::Unresolved(ref found) => Some(*found),
-ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) |
+ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) |
 ContentNode::Data { .. } | ContentNode::RecordType(_) | ContentNode::Constructor { .. } | ContentNode::Record(_) | ContentNode::DataCase { .. } | ContentNode::RecordProjection(..) | ContentNode::TupleProjection(..) | ContentNode::Reify(_) | ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Perform { .. } | ContentNode::Handle { .. } | ContentNode::Exercise { .. } | ContentNode::Scope { .. } | ContentNode::Capability { .. } | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::Project(..) | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::PathEquiv { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Recorded(_) | ContentNode::Dialogue(_) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Injection(..) | ContentNode::Thunk(_) | ContentNode::ValueLift { .. } | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Memory(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::KeptType { .. } | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::TypeLift { .. } | ContentNode::Element { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Returner { .. } | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::ComputationElement { .. } | ContentNode::UnknownComputationType => None
 }) == Some(sort),
         Err(CodecError::Unrepresentable) => true,

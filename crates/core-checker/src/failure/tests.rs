@@ -110,6 +110,8 @@ fn every_role_has_its_own_name()
         FrameRole::ThenSecond,
         FrameRole::FlowProductFirst,
         FrameRole::FlowProductSecond,
+        FrameRole::UpdateBase,
+        FrameRole::UpdateOverlay,
         FrameRole::RideFlow,
         FrameRole::RideMotive,
         FrameRole::RideValue,

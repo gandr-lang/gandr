@@ -2370,6 +2370,9 @@ enum Plan
     List(Stretch),
     /// The record of the values its labels name: `#{ .l = v, … }`.
     Record(BTreeMap<FieldLabel, NodeIndex>),
+    /// The update of its base by the record of the values its labels name:
+    /// `#{ b | l = v, … }`.
+    RecordUpdate(NodeIndex, BTreeMap<FieldLabel, NodeIndex>),
     /// The injection of its value into the summand at this index.
     Injection(Summand, NodeIndex),
     /// The copattern block over the computations in the lowerer's operand
@@ -13604,6 +13607,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 | Plan::Tuple(_)
                 | Plan::List(_)
                 | Plan::Record(_)
+                | Plan::RecordUpdate(..)
                 | Plan::Injection(..)
                 | Plan::StaticLambda(_)
                 | Plan::Thunk(_)
@@ -13841,6 +13845,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Tuple(members) => self.mint_tuple(members, sink, origin),
             Plan::List(elements) => self.mint_list(elements, sink, origin),
             Plan::Record(ref fields) => self.mint_record(fields, sink, origin),
+            Plan::RecordUpdate(base, ref fields) => {
+                self.mint_record_update(base, fields, sink, origin)
+            },
             Plan::Injection(summand, body) => self.mint_injection(summand, body, sink, origin),
             Plan::ValueFunction(domains, codomain) => {
                 self.mint_value_function(domains, codomain, sink, origin)
@@ -15025,6 +15032,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Tuple(_)
             | Plan::List(_)
             | Plan::Record(_)
+            | Plan::RecordUpdate(..)
             | Plan::Injection(..)
             | Plan::ValueFunction(..)
             | Plan::Telescope(..)

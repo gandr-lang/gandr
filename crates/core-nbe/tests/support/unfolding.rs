@@ -129,7 +129,7 @@ pub struct Unfolded(pub u64);
                     Value::Recorded(ref moves) => 1_u64.saturating_add(u64::try_from(moves.iter().filter(|movement| matches!(movement, gandr_core_term::session::RecordedMove::Sent(_) | gandr_core_term::session::RecordedMove::Received(_))).count()).unwrap_or(u64::MAX)),
                     Value::Dialogue(ref turns) => 1_u64.saturating_add(u64::try_from(turns.iter().filter(|turn| matches!(turn.movement, gandr_core_term::session::RecordedMove::Sent(_) | gandr_core_term::session::RecordedMove::Received(_))).count()).unwrap_or(u64::MAX)),
                     Value::Univalence(..) |
-                    Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::StaticApplication(_, _) | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } => 3,
+                    Value::ListCons(..) | Value::PathProduct(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::StaticApplication(_, _) | Value::Then(..) | Value::FlowProduct(..) | Value::FunctionFlow(..) | Value::Ascribe { .. } | Value::RecordUpdate { .. } => 3,
                     Value::PathEquiv { .. } | Value::SessionRelated { .. } => 4,
                     Value::PathRefl(_) | Value::Here(_) | Value::Stay(_) | Value::Forward(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::StaticLambda(_) | Value::Injection(_, _) | Value::Lift { .. } | Value::Thunk(_) | Value::Quote(_) | Value::QuoteComputation(_) | Value::Mark { .. } => 2,
                 }
@@ -296,7 +296,11 @@ pub fn unfolded(
                     ..
                 }
                 | Value::ListCons(first, second)
-                | Value::StaticApplication(first, second) => {
+                | Value::StaticApplication(first, second)
+                | Value::RecordUpdate {
+                    base: first,
+                    overlay: second,
+                } => {
                     pending.push(CoreNode::Value(first));
                     pending.push(CoreNode::Value(second));
                 },

@@ -429,6 +429,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::Domain(_)
         | EvalFault::BoundNonReturner
         | EvalFault::ReturnedNonReturner
+        | EvalFault::RecordUpdate
         | EvalFault::AppliedNonOperator
         | EvalFault::SessionAction
         | EvalFault::Decomposition

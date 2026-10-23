@@ -166,6 +166,10 @@ fn shown(
                     ),
                     fields.values().map(|&field| Root::Value(field)).collect(),
                 ),
+                Some(&Value::RecordUpdate { base, overlay }) => (String::from("update"), vec![
+                    Root::Value(base),
+                    Root::Value(overlay),
+                ]),
                 Some(&Value::Returned(computation)) => {
                     (String::from("returned"), vec![Root::Computation(
                         computation,
@@ -737,18 +741,40 @@ fn a_telescope_value_lowers_by_its_arity()
 }
 
 #[test]
-fn a_record_update_is_declined_by_name()
+fn a_record_update_lowers_to_its_base_and_its_fields()
 {
-    let source = "def r = #{n = 1} ; def s = #{r | n = 2} ;";
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "def r = #{n = 1} ; def one = #{r | n = 2} ; def written = #{n = 2} ; def two = #{r | n = \
+         2, m = \"a\",} ; def both = #{m = \"a\", n = 2} ;",
+        &mut arena,
+    );
+    let over = |record: &str| {
+        [String::from("update"), String::from("const0")]
+            .into_iter()
+            .chain(body(&arena, &module, record))
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(
+        body(&arena, &module, "one"),
+        over("written"),
+        "the update holds its base beside the record of the field it writes"
+    );
+    assert_eq!(
+        body(&arena, &module, "two"),
+        over("both"),
+        "the fields it writes make one record keyed by them, a trailing comma closing them"
+    );
+    let source = "def r = #{n = 1} ; def twice = #{r | n = 2, n = 3} ;";
     assert_eq!(
         refused(source),
-        LoweringRefusal::OutOfFragment {
-            span: at(source, "#{r | n = 2}", 0_usize),
-            form: FormName::RECORD_UPDATE,
-            sort: FragmentSort::Value,
-            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::RecordUpdate),
+        LoweringRefusal::DuplicateDefinition {
+            span: at(source, "n", 2_usize),
+            name: SurfaceName::from("n"),
+            first: at(source, "n", 1_usize),
         },
-        "the update parses and is declined by its own name"
+        "an update writes a field once"
     );
 }
 

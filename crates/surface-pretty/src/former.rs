@@ -527,6 +527,10 @@ pub enum Former<'source, Node>
     /// A record value of this many fields, which the source answers in label
     /// order by [`Source::component`] and [`Source::label`]: `#{.l = a, …}`.
     Record(Arity),
+    /// A record update of its base by this many fields, before elaboration,
+    /// which the source answers in label order by [`Source::component`] and
+    /// [`Source::label`]: `#{b | l = a, …}`.
+    RecordUpdate(Node, Arity),
     /// An injection into the summand at this position: `+{.i = v}`.
     Injection(Component, Node),
     /// A suspended computation over its body: `thunk { c }` in a presentation
@@ -1252,15 +1256,16 @@ pub trait Source
     /// - ensures: the handle of the component at `index` when [`read`] answers
     ///   a [`Former::Product`], a [`Former::Sum`], a [`Former::Tuple`], a
     ///   [`Former::With`], a [`Former::Lazy`], a [`Former::Record`], a
-    ///   [`Former::RecordType`], a [`Former::Session`], a [`Former::Data`], a
-    ///   [`Former::Codata`], a [`Former::Constructor`], a
-    ///   [`Former::Primitive`], a [`Former::Case`], a [`Former::DataCase`], a
-    ///   [`Former::Handle`], a [`Former::Scope`] or a [`Former::Offer`] for
-    ///   `node` and `index` is below its arity: a record's fields in label
-    ///   order, a session type's payloads in slot order, a family's arguments
-    ///   and a constructor's fields in telescope order, a primitive's
-    ///   arguments, a case's branches, a handler's operation clauses and an
-    ///   offer's arms in order; none otherwise.
+    ///   [`Former::RecordUpdate`], a [`Former::RecordType`], a
+    ///   [`Former::Session`], a [`Former::Data`], a [`Former::Codata`], a
+    ///   [`Former::Constructor`], a [`Former::Primitive`], a [`Former::Case`],
+    ///   a [`Former::DataCase`], a [`Former::Handle`], a [`Former::Scope`] or a
+    ///   [`Former::Offer`] for `node` and `index` is below its arity: a
+    ///   record's fields and the fields an update writes in label order, a
+    ///   session type's payloads in slot order, a family's arguments and a
+    ///   constructor's fields in telescope order, a primitive's arguments, a
+    ///   case's branches, a handler's operation clauses and an offer's arms in
+    ///   order; none otherwise.
     /// - provides: the children of an n-ary former, which a [`Former`] counts
     ///   but does not hold.
     /// - fails: never; a missing component is an absence, which the printer
@@ -1281,6 +1286,7 @@ pub trait Source
     /// - witness: `tests::goldens::n_ary_products_and_sums_spell_between_their_braces`
     /// - witness: `tests::goldens::session_types_spell_their_protocol_and_payloads`
     /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::a_record_update_spells_its_base_and_the_fields_it_writes`
     /// - witness: `content_source::tests::value_ty_covers_every_reachable_former`
     fn component(
         &self,
@@ -1288,16 +1294,17 @@ pub trait Source
         index: Component,
     ) -> Option<Self::Node>;
 
-    /// The label of entry `index` of the record, the record type, the
-    /// handler or the offer `node` names.
+    /// The label of entry `index` of the record, the record update, the record
+    /// type, the handler or the offer `node` names.
     ///
     /// # Specification
     /// - requires: nothing; any handle and any position are admissible.
     /// - ensures: the label of the entry [`component`] answers at `index` when
-    ///   [`read`] answers a [`Former::Record`] or a [`Former::RecordType`] —
-    ///   its field's label —, a [`Former::Handle`] or a [`Former::Scope`] — the
-    ///   operation its clause answers — or a [`Former::Offer`] — its arm's
-    ///   label — for `node` and `index` is below its arity; none otherwise.
+    ///   [`read`] answers a [`Former::Record`], a [`Former::RecordUpdate`] or a
+    ///   [`Former::RecordType`] — its field's label —, a [`Former::Handle`] or
+    ///   a [`Former::Scope`] — the operation its clause answers — or a
+    ///   [`Former::Offer`] — its arm's label — for `node` and `index` is below
+    ///   its arity; none otherwise.
     /// - provides: the labels a record's fields, a handler's clauses and an
     ///   offer's arms are written under, which a [`Former`] counts but does not
     ///   hold.
@@ -1314,6 +1321,7 @@ pub trait Source
     ///   under its own label, and a handler's clauses each under its operation;
     ///   a shifted or swapped label changes the golden.
     /// - witness: `tests::goldens::records_spell_their_fields_in_label_order`
+    /// - witness: `tests::goldens::a_record_update_spells_its_base_and_the_fields_it_writes`
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     fn label(
         &self,

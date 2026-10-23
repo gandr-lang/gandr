@@ -14,7 +14,7 @@ def three = #{1, "a", unit} ;
 def reordered : #{Integer, String} ;
 def reordered = #{.1 = "b", .0 = 2} ;
 
-@[ refuses("OutOfFragment.record_update_expression") ]
+@[ refuses("ShapeMismatch") ]
 def bumped = #{reordered | n = 4} ;
 
 @[ refuses("TypeMismatch") ]

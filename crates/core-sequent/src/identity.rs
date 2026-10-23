@@ -1240,6 +1240,7 @@ fn rebuilt(
         | Value::Returned(_)
         | Value::Nested(_)
         | Value::Run(_)
+        | Value::RecordUpdate { .. }
         | Value::Variable { .. }
         | Value::Constant(_)
         | Value::Literal(_)
@@ -1335,6 +1336,7 @@ pub fn each_field<Each>(
         | Value::Returned(_)
         | Value::Nested(_)
         | Value::Run(_)
+        | Value::RecordUpdate { .. }
         | Value::Variable { .. }
         | Value::Constant(_)
         | Value::Literal(_)

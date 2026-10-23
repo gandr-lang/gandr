@@ -283,7 +283,11 @@ impl Image
                     ..
                 }
                 | Value::ListCons(ref mut first, ref mut second)
-                | Value::StaticApplication(ref mut first, ref mut second),
+                | Value::StaticApplication(ref mut first, ref mut second)
+                | Value::RecordUpdate {
+                    base: ref mut first,
+                    overlay: ref mut second,
+                },
             )
             | Self::Computation(
                 Computation::Transport(ref mut first, ref mut second)
@@ -746,6 +750,7 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | Value::Returned(_)
                                 | Value::Nested(_)
                                 | Value::Run(_)
+                                | Value::RecordUpdate { .. }
                                 | Value::Variable { .. }
                                 | Value::Constant(_)
                                 | Value::Literal(_)

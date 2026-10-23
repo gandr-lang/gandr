@@ -1,11 +1,11 @@
-// A record update of a value that is no record is refused. The update is
-// written as the run target, and the lowering admits no record update yet
-// (#1110), so that refusal stands in front of it.
+// A record update of a value that is no record is refused: the base's type is
+// read before the fields the update writes, and an integer is no record.
 
 /// An integer.
 @[ checks ]
 def n = 5;
 
-/// The integer updated as if a record (#1110).
-@[ refuses("OutOfFragment.record_update_expression") ]
+/// The integer updated as if a record: a shape mismatch at `n`, wanting a
+/// record.
+@[ refuses("ShapeMismatch") ]
 #{ n | x = 1 }

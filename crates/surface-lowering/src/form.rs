@@ -172,7 +172,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 73_usize] = [
+    pub const ALL: [Self; 72_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -216,7 +216,6 @@ impl FormName
         Self::TUPLE_PATTERN,
         Self::TELESCOPE_PATTERN,
         Self::LABELLED_SUM_PATTERN,
-        Self::RECORD_UPDATE,
         Self::SELECT_SESSION_TYPE,
         Self::OFFER_SESSION_TYPE,
         Self::HOLE,
@@ -367,9 +366,6 @@ impl FormName
     pub const TELESCOPE_PATTERN: Self = Self("telescope_pattern");
     /// The injection pattern `+{ .l = p }`.
     pub const LABELLED_SUM_PATTERN: Self = Self("labelled_sum_pattern");
-    /// The record update `#{ e | l = v, … }`, folded into the telescope
-    /// value so it is declined by name.
-    pub const RECORD_UPDATE: Self = Self("record_update_expression");
     /// The session select: the sum over labels `+{…}` whose entries are
     /// session types.
     pub const SELECT_SESSION_TYPE: Self = Self("select_session_type");

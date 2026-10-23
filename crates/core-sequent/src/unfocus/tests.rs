@@ -284,6 +284,7 @@ fn closing_substitution_distinguishes_binders_and_zones()
             | Value::Returned(_)
             | Value::Nested(_)
             | Value::Run(_)
+            | Value::RecordUpdate { .. }
             | Value::Variable { .. }
             | Value::Literal(_)
             | Value::Injection(..)

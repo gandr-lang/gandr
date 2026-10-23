@@ -1397,7 +1397,7 @@ mod tests
                 .count(FailureClass::Unimplemented(TrackingIssue::PROJECTION)),
             other
                 .refusals()
-                .count(FailureClass::Unimplemented(TrackingIssue::RECORD_UPDATE)),
+                .count(FailureClass::Unimplemented(TrackingIssue::TYPED_NUMBER)),
             "an unimplemented refusal is counted whatever issue it names"
         );
         total.absorb(&other);

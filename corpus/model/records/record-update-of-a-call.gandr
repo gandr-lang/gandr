@@ -1,0 +1,11 @@
+// A record update whose base is a call: the call runs before the update, and
+// the fields the update keeps are read off the record it returns.
+
+/// A point placed at `n` across, two up.
+@[ checks ]
+def placed(n : Integer) -> -F #{x : Integer, y : Integer} { #{x = n, y = 2} }
+
+/// The run target updates the point a call returns at `x`: `y` is the one
+/// the call returned.
+@[ runs("#{.x = 9, .y = 2}") ]
+#{ placed(1) | x = 9 }

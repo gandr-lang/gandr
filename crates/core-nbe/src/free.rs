@@ -460,7 +460,7 @@ impl FreeIndices
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
             Value::Constant(_) | Value::Literal(_) =>
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
-            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => true,
+            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => true,
         }),
         CoreTerm::Computation(id) => core.computation(id).is_some(),
     }))]
@@ -1157,9 +1157,11 @@ Err(_) => false,
                         ..
                     }
                     | Value::ListCons(first, second)
-                    | Value::StaticApplication(first, second) => {
-                        two(value(first), value(second), Lowering::NONE)
-                    },
+                    | Value::StaticApplication(first, second)
+                    | Value::RecordUpdate {
+                        base: first,
+                        overlay: second,
+                    } => two(value(first), value(second), Lowering::NONE),
                     Value::StaticLambda(body) => one(value(body), Lowering::ONE),
                     Value::Injection(_, body) | Value::Lift { body, .. } => {
                         one(value(body), Lowering::NONE)

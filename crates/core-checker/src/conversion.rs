@@ -1991,6 +1991,7 @@ fn convert(
                                         | Value::Returned(_)
                                         | Value::Nested(_)
                                         | Value::Run(_)
+                                        | Value::RecordUpdate { .. }
                                         | Value::Constructor { .. }
                                         | Value::Record(_)
                                         | Value::Primitive { .. }

@@ -1357,6 +1357,30 @@ fn records_spell_their_fields_in_label_order()
     }
 }
 
+/// A record update spells its base, then each field it writes after its
+/// undotted label, in label order whatever order they were given in, as the
+/// grammar writes the update.
+#[test]
+fn a_record_update_spells_its_base_and_the_fields_it_writes()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let base = core.value_record(BTreeMap::from([(FieldLabel::from(String::from("a")), one)]));
+    let two = integer(&mut core, Sign::NonNegative, Written("2"));
+    let written = text(&mut core, Written("two"));
+    let overlay = core.value_record(BTreeMap::from([
+        (FieldLabel::from(String::from("b")), written),
+        (FieldLabel::from(String::from("a")), two),
+    ]));
+    let update = core.value_record_update(base, overlay);
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Value(CoreNode::Value(update))),
+        faithful(Written("#{#{.a = 1} | a = 2, b = \"two\"}")),
+        "the update spells its base and the fields it writes"
+    );
+}
+
 /// Every value-type and computation-type former of the core spells as the
 /// grammar parses it: the two bridges with their operand parenthesized
 /// unless atomic, a product, a sum or a lazy product between its braces with
