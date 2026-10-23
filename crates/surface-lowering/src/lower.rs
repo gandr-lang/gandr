@@ -13908,7 +13908,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Carrier(code, selected, ref label) => {
                 self.mint_carrier(code, selected, label.as_ref(), sink, origin)
             },
-            Plan::FixedCarrier(code, written) => self.mint_fixed_carrier(code, written, sink),
+            Plan::FixedCarrier(code, written) => {
+                self.mint_fixed_carrier(code, written, sink, origin)
+            },
             Plan::Called(code, arguments) => self
                 .mint_called(code, arguments, sink, origin)
                 .map(Lowered::Computation),

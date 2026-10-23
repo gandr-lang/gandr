@@ -13,6 +13,7 @@ use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentSort;
+use gandr_surface_lowering::Labelled;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::TelescopeFault;
@@ -440,6 +441,39 @@ fn a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158()
         handed("Model(Pairing) with sort A = Integer"),
         (Some(Judgement::Checked), Some(Judgement::Mismatched)),
         "a pairing whose second carrier is its own field hands no value of `m`'s"
+    );
+}
+
+/// A type path through a model binder is written where a reader points (#2182):
+/// the head `a` of `a.C` is labelled at `a`'s written type, whether the sort is
+/// projected off `a`'s record or fixed by `a`'s type, and a fixed sort, which
+/// mints no node at the path, stands in there.
+#[test]
+fn a_carrier_path_s_head_and_a_fixed_path_answer_2182()
+{
+    let source = "theory Counter {\n  sort C : Type;\n  oper zero : C;\n}\ndef plain(a : \
+                  Model(Counter), c : a.C) -> -F Integer { return 0 }\ndef fixed(b : \
+                  Model(Counter) with sort C = Integer, c : b.C) -> -F Integer { c }\n";
+    let lowered = lower(source);
+    let origins = lowered.module.origins();
+    for head in ["a", "b"] {
+        let at = span_of(source, format!("{head}.C"), 0_usize);
+        assert!(
+            origins.labels().iter().any(|label| {
+                label.span.start() == at.start()
+                    && usize::from(label.span.end()) == usize::from(at.start()).saturating_add(1)
+                    && matches!(label.labelled, Labelled::ValueType { .. })
+            }),
+            "`{head}` in `{head}.C` answers at its binder's type"
+        );
+    }
+    let fixed = span_of(source, "b.C", 0_usize);
+    assert!(
+        origins
+            .stand_ins()
+            .iter()
+            .any(|&(_, origin)| origin.span() == fixed),
+        "the fixed carrier stands in at its path"
     );
 }
 
