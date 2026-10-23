@@ -822,6 +822,35 @@ impl CodeDefinitions
         );
     }
 
+    /// Record that the lawful atom at `atom` reads its identity as
+    /// `relation`: a transport along its evidence reads the fibre the
+    /// relation returns.
+    ///
+    /// # Specification
+    /// - requires: `relation` is the relation of the atom's interface, whose
+    ///   interface states its law.
+    /// - ensures: the lowered chain records `relation` at `atom`.
+    /// - provides: the one place a lawful atom's relation reaches the checker's
+    ///   evaluation.
+    /// - panics: none.
+    /// - executable: none — the lowered chain is read only through an
+    ///   evaluation's definitions; the witness observes the transport there.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transport along a lawful atom's evidence into the
+    ///   fibre its relation reads as the unit type returns the unit, and the
+    ///   definition using it checks.
+    /// - witness: `bridge::tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937`
+    #[inline]
+    pub fn identify(
+        &mut self,
+        atom: ConstantIndex,
+        relation: ValueId,
+    )
+    {
+        self.lowered.identify(atom, relation);
+    }
+
     /// The body recorded at `constant`.
     ///
     /// # Specification

@@ -447,6 +447,82 @@ fn telescope_transport_into_the_unit_fibre_returns_the_unit_1886()
 }
 
 #[test]
+fn telescope_transport_into_a_unit_fibred_atom_returns_the_unit_1937()
+{
+    // At the atom `A` (position 0), the family of paths back to `origin`
+    // (position 1), `(y : A, z : Path(A, origin, y)) => Path(A, y, origin)`,
+    // along rigid evidence (position 2).
+    let mut core = CoreArena::new();
+    let atom = core.value_type_abstract(ConstantIndex::from(0_usize));
+    let origin = core.value_constant(ConstantIndex::from(1_usize));
+    let evidence = stuck(&mut core, ConstantIndex::from(2_usize));
+    let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let singleton = core.value_type_path(atom, origin, end);
+    let end = core.value_variable(gandr_core_term::Zone::Intuitionistic, 1_u32.into());
+    let back = core.value_type_path(atom, end, origin);
+    let returned = core.comp_type_returner(back);
+    let entry = core.comp_type_pi(singleton, returned);
+    let motive = core.comp_type_pi(atom, entry);
+    let start = core.value_here(origin);
+    let over = core.value_here(evidence);
+    let transported = core.computation_telescope_transport(motive, evidence, start, over, start);
+    let relating = |core: &mut CoreArena, related: ValueTypeId| {
+        let code = core.value_quote(related);
+        let body = core.computation_return(code);
+        let inner = core.computation_lambda(body);
+        let outer = core.computation_lambda(inner);
+        core.value_thunk(outer)
+    };
+    let unit = core.value_type_unit();
+    let to_unit = relating(&mut core, unit);
+    let text = text_type(&mut core);
+    let to_text = relating(&mut core, text);
+    let environment = DefinitionalEnvironment::new();
+    let normal = |core: &mut CoreArena, relation: Option<ValueId>| {
+        let mut chain = LoweredChain::new();
+        if let Some(relation) = relation {
+            chain.identify(ConstantIndex::from(0_usize), relation);
+        }
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(core, &mut domain, definitions, ample(), transported)
+            .expect("the transport evaluates");
+        let read = readback_computation(
+            core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the transport reads back");
+        core.value_thunk(read)
+    };
+    let centre = core.value_unit();
+    let centre = core.computation_return(centre);
+    let centre = core.value_thunk(centre);
+    let held = core.value_thunk(transported);
+    let unit_fibred = normal(&mut core, Some(to_unit));
+    assert_eq!(
+        equal_certificate_syntax(&core, unit_fibred, centre),
+        CertificateEquality::Equal,
+        "an atom whose relation reads as the unit type returns the unit fibre's one inhabitant"
+    );
+    let text_fibred = normal(&mut core, Some(to_text));
+    assert_eq!(
+        equal_certificate_syntax(&core, text_fibred, held),
+        CertificateEquality::Equal,
+        "an atom whose relation reads as another type leaves the transport stuck on its path"
+    );
+    let unidentified = normal(&mut core, None);
+    assert_eq!(
+        equal_certificate_syntax(&core, unidentified, held),
+        CertificateEquality::Equal,
+        "an atom the chain does not identify leaves the transport stuck on its path"
+    );
+}
+
+#[test]
 fn a_telescope_motive_reads_an_entry_when_its_returned_type_names_one()
 {
     let mut core = CoreArena::new();

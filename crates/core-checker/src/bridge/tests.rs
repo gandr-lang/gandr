@@ -1938,6 +1938,53 @@ fn a_lawful_atom_reads_its_relation_as_its_identity_in_both_checkers()
 }
 
 #[test]
+fn j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_checks_and_replays_1937()
+{
+    // In the family of paths back to the atom's first point, `(y : atom, z :
+    // Path(atom, first, y)) => Path(atom, y, first)`, every fibre is the
+    // relation's, the unit type: along the relation's evidence the transport
+    // is the unit, so the unit's reflexivity is an identity from it to the
+    // unit, in both checkers.
+    let mut arena = CoreArena::new();
+    let mut module = interfaced_atom_module(&mut arena, Stated::Lawful);
+    let atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
+    let first = arena.value_constant(ConstantIndex::from(4_usize));
+    let second = arena.value_constant(ConstantIndex::from(5_usize));
+    let evidence = arena.value_constant(ConstantIndex::from(6_usize));
+    let end = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let singleton = arena.value_type_path(atom, first, end);
+    let endpoint = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let back = arena.value_type_path(atom, endpoint, first);
+    let returns = arena.comp_type_returner(back);
+    let entry = arena.comp_type_pi(singleton, returns);
+    let motive = arena.comp_type_pi(atom, entry);
+    let start = arena.value_here(first);
+    let over = arena.value_here(evidence);
+    let transported = arena.computation_telescope_transport(motive, evidence, start, over, start);
+    let moved = arena.value_returned(transported);
+    let fibre = arena.value_type_path(atom, second, first);
+    let one = arena.value_unit();
+    let declared = arena.value_type_path(fibre, moved, one);
+    let reflexive = arena.value_here(one);
+    module.push(declaration(
+        At(9),
+        Maybe::Present(declared),
+        Maybe::Present(reflexive),
+    ));
+    let (report, readmission) = judge_and_readmit(&mut arena, &module);
+    let verdict = report.judged().last().map(Judged::verdict);
+    assert!(
+        matches!(verdict, Some(Verdict::Checked { .. })),
+        "the transport along the evidence is the unit: {verdict:?}"
+    );
+    let outcome = readmission.readmitted().last().map(Readmitted::outcome);
+    assert!(
+        matches!(outcome, Some(Outcome::Defined { .. })),
+        "the kernel admits it: {outcome:?}"
+    );
+}
+
+#[test]
 fn an_atom_stating_no_law_refuses_the_relation_s_evidence_by_name()
 {
     // The same atom whose interface states no law: the relation is no

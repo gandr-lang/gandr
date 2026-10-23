@@ -75,3 +75,20 @@ def backToOrigin(
     here(Point.origin)
   )
 }
+
+/// Based path induction in the family of paths back to `origin`, along the
+/// relation's evidence: each fibre of the family is the relation's, the unit
+/// type, so the transport is that type's one inhabitant (#1937).
+@[ checks ]
+def backAlong : Path(
+  Path(Point.T, Point.other, Point.origin),
+  transport(
+    +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Path(Point.T, y, Point.origin)),
+    originOther,
+    here(Point.origin),
+    here(originOther),
+    here(Point.origin)
+  ),
+  unit
+) ;
+def backAlong = here(unit) ;

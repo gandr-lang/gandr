@@ -322,6 +322,7 @@ use gandr_kernel_strata::Level;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
+use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::DeclarationContent;
@@ -2806,6 +2807,128 @@ where
             ))
         },
         None => Err(KernelError::ArenaFault),
+    }
+}
+
+/// A telescope transport into an identity at a lawful atom, along a path that
+/// is no reflexivity: the unit when the atom's relation returns the code of
+/// the unit type outright.
+///
+/// # Specification
+/// - requires: nothing; an ill-typed term sticks without panicking.
+/// - ensures: the unit when the path is no `here`, the motive's returned type
+///   is `Path(A, l, r)` at an atom `A` the unfoldings identify by a relation
+///   `R`, and [`relation_code`] reads `R` as returning the unit type's code, so
+///   the fibre is the unit type at every pair of endpoints; `Stuck` otherwise.
+/// - provides: the replay's telescope transport row at a lawful atom, which
+///   [`telescope_beta`] leaves stuck.
+/// - fails: `ArenaFault` on an unreadable motive layer or path.
+/// - panics: none.
+///
+/// # Errors
+/// As `fails`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — evidence into the fibre of an atom whose relation returns
+///   the unit type returns the unit; the same transport over unfoldings
+///   identifying no atom, or along `here`, sticks.
+/// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |reduction| match *reduction {
+    Reduction::Reduced(reduct) => arena.computation(reduct).is_some(),
+    Reduction::Stuck => true,
+}))]
+pub(crate) fn atom_fibre_beta(
+    arena: &mut TermArena,
+    unfoldings: &crate::replay::Unfoldings,
+    term: TelescopeStep,
+) -> Result<Reduction, KernelError>
+{
+    if let Value::Here { .. } = *arena.value(term.path).ok_or(KernelError::ArenaFault)? {
+        return Ok(Reduction::Stuck);
+    }
+    let body = match telescope(arena, term.motive)? {
+        Maybe::Present(Telescope { body, .. }) => body,
+        Maybe::Absent(telescope_motive::Absent::Shape) => return Ok(Reduction::Stuck),
+    };
+    let Some(&ValueType::Path { domain, .. }) = arena.value_type(body)
+    else {
+        return Ok(Reduction::Stuck);
+    };
+    let Some(&ValueType::Abstract(atom)) = arena.value_type(domain)
+    else {
+        return Ok(Reduction::Stuck);
+    };
+    if let Some(relation) = unfoldings.identity(atom)
+        && let Some(code) = relation_code(arena, unfoldings, relation)
+        && let Some(&ValueType::Product(ref parts)) = arena.value_type(code)
+        && parts.is_empty()
+    {
+        let centre = arena.value_unit();
+        return Ok(Reduction::Reduced(arena.computation_return(centre)));
+    }
+    Ok(Reduction::Stuck)
+}
+
+/// The type whose code the relation `relation` returns outright: read through
+/// the definitions it names, its thunk and its two λs, a body `return ⌜T⌝`
+/// gives `T`.
+///
+/// # Specification
+/// - requires: nothing — any value is admissible input.
+/// - ensures: `Some(t)` exactly when `relation`, each constant it is replaced
+///   by that constant's body while the positions descend, is a thunk of two λs
+///   whose body returns the quote of `t`; `None` otherwise, a relation that
+///   computes its code included.
+/// - provides: the lawful atom row's reading of the relation, which reduces
+///   nothing and so reads no term the replay would reduce.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`atom_fibre_beta`].
+/// - witness: `element_identity::bridge_tests::j_along_a_lawful_atom_s_evidence_into_a_unit_fibre_returns_the_unit_1937`
+#[spec(ensures: |ret| ret.is_none_or(|quoted| arena.value_type(quoted).is_some()))]
+fn relation_code(
+    arena: &TermArena,
+    unfoldings: &crate::replay::Unfoldings,
+    relation: ValueId,
+) -> Option<ValueTypeId>
+{
+    let mut held = relation;
+    let mut ceiling = None;
+    let thunked = loop {
+        if let Some(&Value::Constant(constant)) = arena.value(held) {
+            if ceiling.is_some_and(|above| constant >= above) {
+                return None;
+            }
+            ceiling = Some(constant);
+            let crate::replay::Unfoldable::Body(body) = unfoldings.unfolding(constant)
+            else {
+                return None;
+            };
+            held = body;
+            continue;
+        }
+        if let Some(&Value::Thunk(body)) = arena.value(held) {
+            break body;
+        }
+        return None;
+    };
+    let Some(&Computation::Lambda(first)) = arena.computation(thunked)
+    else {
+        return None;
+    };
+    let Some(&Computation::Lambda(second)) = arena.computation(first)
+    else {
+        return None;
+    };
+    let Some(&Computation::Return(code)) = arena.computation(second)
+    else {
+        return None;
+    };
+    match arena.value(code) {
+        Some(&Value::Quote(quoted)) if arena.value_type(quoted).is_some() => Some(quoted),
+        _ => None,
     }
 }
 
