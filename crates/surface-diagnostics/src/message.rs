@@ -374,6 +374,13 @@ fn lowered(
                 FormFault::MisplacedTile => {
                     write!(f, "a keyword or symbol of this {form} is out of place")
                 },
+                FormFault::ExtraClose(close) => {
+                    write!(f, "one `{}` too many closes this {form} early", match close {
+                        ClosingClass::Paren => ")",
+                        ClosingClass::Bracket => "]",
+                        ClosingClass::Brace => "}",
+                    })
+                },
             }
         },
         LoweringRefusal::UnknownAttribute {

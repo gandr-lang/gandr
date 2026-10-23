@@ -328,6 +328,8 @@ use crate::unit::SourceIndex;
 use crate::unit::Unit;
 use crate::unit::UnitKey;
 
+mod closer;
+
 mod data;
 
 mod derive;
@@ -3453,14 +3455,17 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a declaration form is collected into its slot, a module into
     ///   its structures and member slots, a type member written at the top
     ///   level into the source's [`Collected::top_types`], and an import into
-    ///   the import list; every other form refuses as a form of the wrong sort,
-    ///   and a repair the parser inserted as that repair.
+    ///   the import list; a closer the layout shows was written once too often
+    ///   before the child refuses there ([`Self::closed_early`]); every other
+    ///   form refuses as a form of the wrong sort, and a repair the parser
+    ///   inserted as that repair.
     /// - provides: the module-shape half of [`collect_source`].
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
     ///   a declaration, a module, a type member nor an import;
-    ///   [`LoweringRefusal::MalformedForm`] for a repair; and every
-    ///   module-level fault [`Self::declaration`], [`Self::module`],
-    ///   [`Self::type_member`] and [`Self::import`] raise.
+    ///   [`LoweringRefusal::MalformedForm`] for a repair and for a child that a
+    ///   doubled closer left closing nothing; and every module-level fault
+    ///   [`Self::declaration`], [`Self::module`], [`Self::type_member`] and
+    ///   [`Self::import`] raise.
     /// - panics: none.
     ///
     /// # Errors
@@ -3474,6 +3479,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `module::tests::a_stray_module_child_refuses_the_module`
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
+    /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
     /// - witness: `tests::modules::a_top_level_type_member_names_its_type_for_the_source_1834`
     #[spec(
         captures: before = (
@@ -3521,12 +3527,16 @@ impl<'source> Collector<'_, 'source>
                 name,
                 ..
             } => self.import(child, name),
-            Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
-                span: child.span,
-                form: name,
-                sort: FragmentSort::Declaration,
-                boundary: FragmentBoundary::WrongSort,
-            }),
+            Shape::Form { name, .. } => {
+                Err(self
+                    .closed_early(child)
+                    .unwrap_or(LoweringRefusal::OutOfFragment {
+                        span: child.span,
+                        form: name,
+                        sort: FragmentSort::Declaration,
+                        boundary: FragmentBoundary::WrongSort,
+                    }))
+            },
             Shape::Repair(_) => match repair_at(self.pbg, self.tree, child) {
                 Maybe::Present(found) => Err(found.refusal(FormName::ROOT)),
                 Maybe::Absent(_) => Ok(()),
@@ -10276,6 +10286,7 @@ mod tests
     use gandr_kernel_term::ConstantIndex;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
+    use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::NodeIndex;
     use gandr_surface_syntax::NodeLabel;
     use gandr_surface_syntax::SourceText;
@@ -10841,6 +10852,76 @@ mod tests
             "both declarations are kept, and each stray refused on its own"
         );
         assert_eq!(collected.by_name.len(), 2, "a stray enters no name table");
+    }
+
+    /// A closer written twice closes the form around it early, and the closer
+    /// that ends the form stands alone at the root: the stray is refused at the
+    /// doubled closer, as the form whose opener it closed, inside a module as
+    /// at the root, where the module's closer then stands where the
+    /// definition's belonged. A stray the layout does not explain — a
+    /// definition closed at the end of a line, then a declaration at the
+    /// definition's indentation — keeps its own refusal (#2047).
+    #[test]
+    fn a_doubled_closer_is_refused_where_it_was_written_2047()
+    {
+        let pbg = grammar();
+        let refusals = |text: &'static str| {
+            let tree = repaired(&pbg, SourceText::from(text));
+            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+            collected
+                .slots
+                .iter()
+                .filter_map(|slot| match slot.refusal {
+                    Maybe::Present((_at, refusal)) => Some(refusal),
+                    Maybe::Absent(_) => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let at = |text: &str, written: &str, offset: usize| {
+            let start = text.find(written).unwrap().saturating_add(offset);
+            span(
+                ByteOffset::from(start),
+                ByteOffset::from(start.saturating_add(1)),
+            )
+        };
+
+        let doubled =
+            "def give_up() -> -F Unit {\n  hold c = 0;\n  access c as v { abort(v) }}\n}\n";
+        assert_eq!(
+            refusals(doubled),
+            [LoweringRefusal::MalformedForm {
+                span: at(doubled, "}}", 1),
+                form: FormName::DECLARATION,
+                fault: FormFault::ExtraClose(ClosingClass::Brace),
+            }],
+            "the stray is refused at the second `}}` of the access line"
+        );
+
+        let nested = "module M {\n  def give_up() -> -F Unit {\n    hold c = 0;\n    access c as v { abort(v) }}\n  }\n}\n";
+        assert_eq!(
+            refusals(nested),
+            [LoweringRefusal::MalformedForm {
+                span: at(nested, "}}", 1),
+                form: FormName::MODULE,
+                fault: FormFault::ExtraClose(ClosingClass::Brace),
+            }],
+            "the module's closer stands where the definition's belonged"
+        );
+
+        let settled = "def done() -> -F Unit {\n  hold c = 0;\n  access c as v { abort(v) } }\ndef next = 1 ;\n}\n";
+        let refused = refusals(settled);
+        assert!(
+            matches!(
+                refused.as_slice(),
+                [LoweringRefusal::OutOfFragment {
+                    span,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::WrongSort,
+                    ..
+                }] if *span == at(settled, "\n}", 1)
+            ),
+            "a declaration at the definition's indentation settles where it closed: {refused:?}"
+        );
     }
 
     /// A source of one item the lowering does not reach refuses that item, not

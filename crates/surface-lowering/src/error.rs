@@ -106,6 +106,7 @@ use core::fmt;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::MoldId;
 use gandr_theory_levitation::WfKind;
@@ -392,8 +393,9 @@ impl fmt::Display for FragmentBoundary
 ///
 /// # Specification
 /// - requires: a producer reports the fault observed in the form's children.
-/// - ensures: parser repair, missing operand, extra operand and misplaced tile
-///   reports retain distinct meanings; a repair retains its shape.
+/// - ensures: parser repair, missing operand, extra operand, misplaced tile and
+///   extra closer reports retain distinct meanings; a repair retains its shape,
+///   and an extra closer its family.
 /// - provides: the structural reason a form could not be read.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -401,13 +403,14 @@ impl fmt::Display for FragmentBoundary
 ///   children needed to establish that the reported fault occurred.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — repaired, juxtaposed and misplaced-tile fixtures carry
-///   different exact faults and spans. The raw missing-operand variant is
-///   included in the span projection fixture; the source examples are not a
-///   complete enumeration of malformed child sequences.
+/// - hypothesis: L3 — repaired, juxtaposed, misplaced-tile and doubled-closer
+///   fixtures carry different exact faults and spans. The raw missing-operand
+///   variant is included in the span projection fixture; the source examples
+///   are not a complete enumeration of malformed child sequences.
 /// - witness: `lower::tests::a_repaired_declaration_is_refused`
 /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
 /// - witness: `lower::tests::a_tile_out_of_place_is_refused`
+/// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
 /// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FormFault
@@ -421,6 +424,9 @@ pub enum FormFault
     ExtraOperand,
     /// One of the form's own tiles stands where the rule does not place it.
     MisplacedTile,
+    /// A closer of this family written once more than its openers: it closes
+    /// the form early, and a closer after it closes nothing.
+    ExtraClose(ClosingClass),
 }
 
 impl fmt::Display for FormFault
@@ -440,6 +446,13 @@ impl fmt::Display for FormFault
             Self::MissingOperand => f.write_str("leaves an operand unwritten"),
             Self::ExtraOperand => f.write_str("has an operand where it takes none"),
             Self::MisplacedTile => f.write_str("has a tile out of place"),
+            Self::ExtraClose(close) => {
+                write!(f, "is closed early by one `{}` too many", match close {
+                    ClosingClass::Paren => ")",
+                    ClosingClass::Bracket => "]",
+                    ClosingClass::Brace => "}",
+                })
+            },
         }
     }
 }
@@ -2525,6 +2538,9 @@ mod tests
             &FormFault::MissingOperand,
             &FormFault::ExtraOperand,
             &FormFault::MisplacedTile,
+            &FormFault::ExtraClose(ClosingClass::Paren),
+            &FormFault::ExtraClose(ClosingClass::Bracket),
+            &FormFault::ExtraClose(ClosingClass::Brace),
         ]));
         assert_apart(&render(&[
             &FragmentBoundary::Reserved(Unbuilt::Dup),
