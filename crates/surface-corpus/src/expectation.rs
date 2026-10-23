@@ -771,8 +771,9 @@ where
 ///   reports its unknown name; `runs` preserves the text payload; `normalizes`
 ///   preserves a text payload that writes `~>` and reports one that does not;
 ///   `decomposes` preserves a spelling that is a `series`, `parallel`, `prime`
-///   or `event` node and reports one that is not. Malformed counts, names,
-///   lines and webs retain the attribute span.
+///   or `event` node, or a prime count `primes = n`, and reports one that is
+///   neither. Malformed counts, names, lines and webs retain the attribute
+///   span.
 /// - fails: `UnreadablePayload` at the attribute span for an absent or
 ///   wrong-kind payload required by the schema, or a `decomposes` with no
 ///   spelling.
@@ -803,7 +804,8 @@ where
     } else if schema == ExpectationSchema::Decomposes {
         match spelled {
             None => ret == Err(unreadable),
-            Some(web) if WEB_NODES.iter().any(|node| web.as_ref().starts_with(node)) && web.as_ref().ends_with(')') => {
+            Some(web) if (WEB_NODES.iter().any(|node| web.as_ref().starts_with(node)) && web.as_ref().ends_with(')'))
+                || web.as_ref().strip_prefix(PRIMES).is_some_and(|count| !count.is_empty() && count.bytes().all(|digit| digit.is_ascii_digit())) => {
                 matches!(ret, Ok(Stated::Verdict(Outcome::Decomposes(ref stated))) if stated == web)
             }
             Some(_) => ret == Ok(Stated::Malformed(ExpectationFault::UnwrittenWeb { span: entry.span() })),
@@ -905,7 +907,10 @@ fn stated_by(
             let web = spelled.ok_or(unreadable)?;
             let written = WEB_NODES.iter().any(|node| web.as_ref().starts_with(node))
                 && web.as_ref().ends_with(')');
-            Ok(if written {
+            let counted = web.as_ref().strip_prefix(PRIMES).is_some_and(|count| {
+                !count.is_empty() && count.bytes().all(|digit| digit.is_ascii_digit())
+            });
+            Ok(if written || counted {
                 Stated::Verdict(Outcome::Decomposes(web.clone()))
             }
             else {
@@ -918,6 +923,50 @@ fn stated_by(
 /// The node openings a `decomposes` payload begins with: the modular
 /// decomposition's series, parallel and prime nodes, and a leaf event.
 const WEB_NODES: [&str; 4] = ["series(", "parallel(", "prime(", "event("];
+
+/// The opening of a `decomposes` payload that states only the web's prime
+/// count, `primes = 2`.
+const PRIMES: &str = "primes = ";
+
+/// `web` as the `decomposes` payload `stated` reads it: the count of its
+/// prime nodes, `primes = k`, when the payload states a count, and its whole
+/// spelling otherwise.
+///
+/// # Specification
+/// - requires: `web` is a spelling the runner printed for a web.
+/// - ensures: `primes = k` for a `stated` opening `primes = `, `k` the number
+///   of `prime(` nodes in `web` that no longer name ends in; `web` itself
+///   otherwise.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a counted payload against a web with and without a prime
+///   node, and a written web, each read back.
+/// - witness: `expectation::tests::a_counted_web_reads_its_prime_nodes_2077`
+#[spec(ensures: |ret| if stated.as_ref().starts_with(PRIMES) { ret.as_ref().starts_with(PRIMES) } else { ret == *web })]
+#[must_use]
+pub fn web_as_stated(
+    stated: &RunSpelling,
+    web: &RunSpelling,
+) -> RunSpelling
+{
+    if !stated.as_ref().starts_with(PRIMES) {
+        return web.clone();
+    }
+    let spelled = web.as_ref();
+    let primes = spelled
+        .match_indices("prime(")
+        .filter(|&(at, _)| {
+            spelled
+                .get(.. at)
+                .and_then(|before| before.chars().next_back())
+                .is_none_or(|before| !before.is_alphanumeric() && before != '_')
+        })
+        .count();
+
+    RunSpelling::from(alloc::format!("{PRIMES}{primes}"))
+}
 
 /// The refusal a `refuses` entry names, read out of `arena`.
 ///
@@ -1627,5 +1676,25 @@ mod tests
                 Err(fmt::Error)
             );
         }
+    }
+
+    /// #2077: `decomposes(primes = n)` holds a web to its prime count, a
+    /// prime node counted wherever it stands and a name ending in `prime`
+    /// not counted; a written web is held to its whole spelling.
+    #[test]
+    fn a_counted_web_reads_its_prime_nodes_2077()
+    {
+        let spelling = |text: &str| RunSpelling::from(String::from(text));
+        let counted = spelling("primes = 1");
+        let web = spelling(
+            "series(event(left, 0), prime(event(left, 1), event(right, 0), subprime(x), series(event(right, 1), prime(event(left, 2)))))",
+        );
+        let series = spelling("series(event(left, 0), parallel(event(left, 1), event(right, 0)))");
+        assert_eq!(super::web_as_stated(&counted, &web), spelling("primes = 2"));
+        assert_eq!(
+            super::web_as_stated(&counted, &series),
+            spelling("primes = 0")
+        );
+        assert_eq!(super::web_as_stated(&series, &web), web);
     }
 }

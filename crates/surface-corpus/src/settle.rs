@@ -93,6 +93,7 @@ use crate::expectation::Expectations;
 use crate::expectation::Membership;
 use crate::expectation::Outcome;
 use crate::expectation::Stated;
+use crate::expectation::web_as_stated;
 use crate::refusal::CorpusRefusal;
 use crate::refusal::Refusal;
 use crate::report::SettleReport;
@@ -552,7 +553,8 @@ impl<'source> DeclarationReport<'source>
     /// - ensures: the produced refusal's name when one was produced, beside the
     ///   run's spelling when a run beside the refusal is stated and was run;
     ///   else the outcome its run or its normal form produced, in the stated
-    ///   schema, when it states one and was accepted; else checks owing the
+    ///   schema, when it states one and was accepted, a web read as its prime
+    ///   count when the stated one is a count; else checks owing the
     ///   declaration's own obligations.
     /// - provides: the side the settle comparison holds the stated verdict
     ///   against.
@@ -587,8 +589,8 @@ impl<'source> DeclarationReport<'source>
                 Stated::Verdict(Outcome::Normalizes(_)) => {
                     matches!(ret, Outcome::Normalizes(ref actual) if actual == spelled)
                 }
-                Stated::Verdict(Outcome::Decomposes(_)) => {
-                    matches!(ret, Outcome::Decomposes(ref actual) if actual == spelled)
+                Stated::Verdict(Outcome::Decomposes(ref stated)) => {
+                    matches!(ret, Outcome::Decomposes(ref actual) if *actual == web_as_stated(stated, spelled))
                 }
                 Stated::Verdict(_) | Stated::Malformed(_) => matches!(ret, Outcome::Runs(ref actual) if actual == spelled),
             },
@@ -611,7 +613,9 @@ impl<'source> DeclarationReport<'source>
             (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Present(ref spelled)) => {
                 match self.stated {
                     Stated::Verdict(Outcome::Normalizes(_)) => Outcome::Normalizes(spelled.clone()),
-                    Stated::Verdict(Outcome::Decomposes(_)) => Outcome::Decomposes(spelled.clone()),
+                    Stated::Verdict(Outcome::Decomposes(ref stated)) => {
+                        Outcome::Decomposes(web_as_stated(stated, spelled))
+                    },
                     Stated::Verdict(
                         Outcome::Checks(_)
                         | Outcome::Refuses(_)
@@ -642,7 +646,8 @@ impl<'source> DeclarationReport<'source>
     ///   direction, matching and mismatching run spellings, and malformed
     ///   expectations. Exact settlement distinguishes variant-only comparison,
     ///   ignored payloads and accepting a malformed expectation; the predicate
-    ///   compares borrowed text without another allocation.
+    ///   compares borrowed text without another allocation, but for a web read
+    ///   as the prime count a stated count names.
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
     /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
     /// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
@@ -663,10 +668,16 @@ impl<'source> DeclarationReport<'source>
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Absent(_)) && count == self.owed
             }
-            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected) | Outcome::Decomposes(ref expected)) => {
+            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(
                         self.ran, Maybe::Present(ref actual) if actual == expected
+                    )
+            }
+            Stated::Verdict(Outcome::Decomposes(ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(
+                        self.ran, Maybe::Present(ref actual) if web_as_stated(expected, actual) == *expected
                     )
             }
             Stated::Verdict(Outcome::RefusesRunning(name, ref expected)) => {
@@ -691,13 +702,13 @@ impl<'source> DeclarationReport<'source>
                     && matches!(self.ran, Maybe::Absent(_))
                     && count == self.owed
             },
-            Stated::Verdict(
-                Outcome::Runs(ref expected)
-                | Outcome::Normalizes(ref expected)
-                | Outcome::Decomposes(ref expected),
-            ) => {
+            Stated::Verdict(Outcome::Runs(ref expected) | Outcome::Normalizes(ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Absent(_))
                     && matches!(self.ran, Maybe::Present(ref actual) if actual == expected)
+            },
+            Stated::Verdict(Outcome::Decomposes(ref expected)) => {
+                matches!(self.produced.refusal(), Maybe::Absent(_))
+                    && matches!(self.ran, Maybe::Present(ref actual) if web_as_stated(expected, actual) == *expected)
             },
             Stated::Verdict(Outcome::RefusesRunning(name, ref expected)) => {
                 matches!(self.produced.refusal(), Maybe::Present(refusal) if refusal.name() == name)

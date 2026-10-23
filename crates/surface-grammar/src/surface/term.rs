@@ -2189,9 +2189,14 @@ fn attr_block_inline() -> Regex
 
 /// Build an inline attribute.
 ///
+/// A payload may be named, `decomposes(primes = 2)`: the expression before
+/// the `=` is the name, read by the lowering, which admits it only where the
+/// attribute's schema reads one.
+///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a name followed by an optional parenthesized expression payload.
+/// - ensures: a name followed by an optional parenthesized expression payload,
+///   itself optionally followed by `=` and a second expression.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2209,6 +2214,7 @@ fn attr_inline() -> Regex
         opt(seq([
             t(TileLabel("(")),
             h(Sort::Expression),
+            opt(seq([t(TileLabel("=")), h(Sort::Expression)])),
             t(TileLabel(")")),
         ])),
     ])
