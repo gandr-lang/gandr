@@ -79,9 +79,9 @@ pub fn symmetry(
         ..path
     };
     let source = relation.fiber(arena, context, path.left, path.left)?;
-    let source = source.native(arena)?;
+    let source = source.native(arena, crate::identity_recursion::Interfaces::NONE)?;
     let target = relation.fiber(arena, context, path.right, path.left)?;
-    let target = target.native(arena)?;
+    let target = target.native(arena, crate::identity_recursion::Interfaces::NONE)?;
     if convertible_value_types(arena, source, target) != Convertibility::Convertible {
         return Err(HigherError::Boundary);
     }

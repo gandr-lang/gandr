@@ -1,6 +1,7 @@
 // A bisimilarity paid with a univalence between two nominal types: the
 // univalence's record is the evidence, checked at the native identity the
-// payload pair owes, where `equiv` refuses nominal data (#1316).
+// payload pair owes. `equiv` decides such a path by its round trips
+// (`model/identity/equiv-data.gandr`).
 
 // The bits and the answers, their univalence `codes`, and the protocols
 // `Ask.Coded` and `Ask.Decoded` that hear them.

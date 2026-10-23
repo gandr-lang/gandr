@@ -111,7 +111,9 @@ fn assert_fiber(
     let fiber = relation
         .fiber(arena, &[], left, right)
         .expect("typed indices");
-    let actual = fiber.native(arena).expect("canonical fibre computes");
+    let actual = fiber
+        .native(arena, crate::identity_recursion::Interfaces::NONE)
+        .expect("canonical fibre computes");
     assert_eq!(
         convertible_value_types(arena, expected, actual),
         Convertibility::Convertible
@@ -178,7 +180,7 @@ fn neutral_fibres_do_not_decide_equality()
             .expect("open relation");
         assert!(matches!(fiber.get(fiber.root()), Ok(Fiber::Discrete(..))));
         assert!(matches!(
-            fiber.native(&mut arena),
+            fiber.native(&mut arena, crate::identity_recursion::Interfaces::NONE),
             Err(RelationError::NeutralFiber)
         ));
         let same = base
@@ -321,7 +323,9 @@ fn product_transport_composes_componentwise()
         .expect("independent fibre");
     let expected = arena.value_type_unit();
     let expected = arena.value_type_product(&[expected, expected]);
-    let native = fiber.native(&mut arena).expect("computed product fibre");
+    let native = fiber
+        .native(&mut arena, crate::identity_recursion::Interfaces::NONE)
+        .expect("computed product fibre");
     assert_eq!(
         convertible_value_types(&arena, expected, native),
         Convertibility::Convertible

@@ -622,7 +622,7 @@ fn function_clause_retains_related_inputs_and_neutrals()
         );
         // The function fibre is the persisted identity in identity mode and
         // the persisted bridge in bridge mode, at the thunk type either way.
-        let lowered = fiber.native(&mut arena);
+        let lowered = fiber.native(&mut arena, crate::identity_recursion::Interfaces::NONE);
         let parts = match lowered.ok().and_then(|ty| arena.value_type(ty)) {
             Some(&ValueType::Path {
                 domain,

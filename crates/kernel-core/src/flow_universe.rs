@@ -222,6 +222,7 @@ mod rules;
 mod tests;
 
 use coverage::Arrow;
+pub(crate) use coverage::data_signature;
 pub(crate) use coverage::forward;
 pub use motive::check_motive;
 pub use rules::CertificateType;

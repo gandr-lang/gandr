@@ -143,7 +143,7 @@ pub fn form_certificate(
     }
     match expected {
         Family::Path => {
-            let classifier = crate::path_universe::endpoints(arena, classifier, budget)
+            let classifier = crate::path_universe::endpoints(arena, &[], classifier, budget)
                 .map_err(KernelError::Path)?;
             Ok(CertificateType::Path(classifier))
         },

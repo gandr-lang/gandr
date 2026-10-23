@@ -1151,7 +1151,7 @@ pub(crate) fn bridge_fibre(
         ));
     }
     fibers
-        .native(arena)
+        .native(arena, interfaces)
         .map_err(|error| read_refusal(arena, Mode::Bridge, error))
 }
 
@@ -1459,7 +1459,7 @@ fn fold_fibre(
         .and_then(|relation| relation.evaluate(arena, left, right))
         .map_err(|error| relation_refusal(arena, error))?;
     let fibre = fibers
-        .native(arena)
+        .native(arena, interfaces)
         .map_err(|error| relation_refusal(arena, error))?;
     Ok((fibre, fibers))
 }

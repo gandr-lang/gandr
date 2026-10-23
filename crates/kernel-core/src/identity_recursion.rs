@@ -441,12 +441,14 @@ enum Clause
     },
 }
 
-/// The admission log a fold reads sealed atoms' interfaces from.
+/// The admission log a fold reads sealed atoms' interfaces from, and a
+/// universe fibre the data types its codes name.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: answers the interface an admitted abstract type states, and
-///   nothing for any other position.
+///   nothing for any other position; lends the log itself to a reading of a
+///   declaration's content.
 /// - panics: none.
 /// - executable: none — data declaration, not a callable boundary.
 ///
@@ -472,6 +474,17 @@ impl<'entries> Interfaces<'entries>
     pub const fn of(entries: &'entries [AdmittedDeclaration]) -> Self
     {
         Self(entries)
+    }
+
+    /// The admission log itself.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn entries(self) -> &'entries [AdmittedDeclaration]
+    {
+        self.0
     }
 
     /// The interface the atom at `atom` states, with the atom's kind.
@@ -983,7 +996,7 @@ impl Interpretation
         }
         let classifier = crate::check::synth_closed_value(arena, path)
             .map_err(|error| RelationError::Typing(Box::new(error)))?;
-        path_universe::endpoints(arena, classifier, budget)
+        path_universe::endpoints(arena, &[], classifier, budget)
             .map_err(|error| RelationError::Path(Box::new(error)))
     }
 

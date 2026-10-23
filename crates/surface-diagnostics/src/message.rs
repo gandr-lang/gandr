@@ -731,7 +731,7 @@ fn checked(
         ),
         CheckRefusal::EquivUnsupported { .. } => f.write_str(
             "`equiv` needs two closed pure translators between types built from units, \
-             integers, strings, tuples, sums and lists",
+             integers, strings, tuples, sums, lists and data types that do not hold themselves",
         ),
         CheckRefusal::UncertifiedStratum { .. } => f.write_str(
             "`equiv` needs each list cell's round trip to return the cell, its tail unread",

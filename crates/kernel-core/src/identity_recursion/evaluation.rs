@@ -13,6 +13,7 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
 use super::Clause;
+use super::Interfaces;
 use super::Mode;
 use super::Relation;
 use super::RelationError;
@@ -568,15 +569,15 @@ impl Fibers
     ///
     /// # Specification
     /// - ensures: Unit, Empty, Product and universe fibres become native types.
-    ///   Universe endpoints pass the existing path decoder; residuals are not
-    ///   interpreted as either truth or falsity. A function fibre between two
-    ///   value indices is the persisted `Path` at its thunk type, or in bridge
-    ///   mode the persisted `Bridge` there: a function has no first-order
-    ///   reduct, its inhabitants are the forms the persisted node admits — a
-    ///   higher or quantified evaluation and a neutral, and `here` at an
-    ///   identity alone. A relation fibre between two codes of `U` is the thunk
-    ///   type `U(El A → El B → F U)`, and a delayed list tail is the persisted
-    ///   `Bridge` at its list type.
+    ///   Universe endpoints pass the existing path decoder over the data types
+    ///   `interfaces` admits; residuals are not interpreted as either truth or
+    ///   falsity. A function fibre between two value indices is the persisted
+    ///   `Path` at its thunk type, or in bridge mode the persisted `Bridge`
+    ///   there: a function has no first-order reduct, its inhabitants are the
+    ///   forms the persisted node admits — a higher or quantified evaluation
+    ///   and a neutral, and `here` at an identity alone. A relation fibre
+    ///   between two codes of `U` is the thunk type `U(El A → El B → F U)`, and
+    ///   a delayed list tail is the persisted `Bridge` at its list type.
     /// - fails: `NeutralFiber` on a residual or a function fibre at a neutral
     ///   projection; `HigherFieldRequired` on a certificate identity, `Path`
     ///   outside native endpoint formation, or `Arena` on invalid edges.
@@ -589,10 +590,13 @@ impl Fibers
     /// - hypothesis: L3 — cross injections lower to native Empty, while neutral
     ///   base equality never does; a function fibre lowers to its path type in
     ///   identity mode and to its bridge type in bridge mode; a universe bridge
-    ///   lowers to its relation type.
+    ///   lowers to its relation type; a universe identity between two data
+    ///   codes lowers to their path over a log that admits both, and is refused
+    ///   over one that does not.
     /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
     /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
     /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
+    /// - witness: `path_universe::tests::universe_fold_tests::a_universe_fibre_reads_its_data_codes_through_the_admission_log`
     /// - witness: `identity_recursion::function::tests::function_clause_retains_related_inputs_and_neutrals`
     /// - witness: `element_identity::bridge_tests::a_bridge_at_the_universe_is_a_relation`
     #[cfg_attr(
@@ -620,6 +624,7 @@ impl Fibers
     pub fn native(
         &self,
         arena: &mut TermArena,
+        interfaces: Interfaces<'_>,
     ) -> Result<ValueTypeId, RelationError>
     {
         if self
@@ -639,6 +644,7 @@ impl Fibers
                     let ty = arena.value_type_path_universe(left, right);
                     crate::path_universe::endpoints(
                         arena,
+                        interfaces.entries(),
                         ty,
                         crate::replay::ReplayBudget::DEFAULT,
                     )

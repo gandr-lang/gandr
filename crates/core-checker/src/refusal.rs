@@ -786,7 +786,8 @@ pub enum CheckRefusal
     /// A universe equivalence the rule does not decide: its translators are
     /// open, its forward classifier is no thunk of a pure non-dependent arrow,
     /// or a code is outside the unit type, the base atoms, sums of at least
-    /// one summand, products and lists.
+    /// one summand, products, lists and the free, unindexed data types that do
+    /// not recur inside their own fields.
     EquivUnsupported
     {
         /// The `equiv`.

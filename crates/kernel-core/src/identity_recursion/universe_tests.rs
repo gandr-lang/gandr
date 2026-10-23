@@ -1,10 +1,14 @@
 //! The universe clause reaches native paths without erasing certificate action.
 
 use alloc::vec;
+use alloc::vec::Vec;
 
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
+use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 
@@ -24,6 +28,7 @@ use crate::higher_field::PointwiseEvidence;
 use crate::higher_field::Reduction;
 use crate::identity_recursion::Domain;
 use crate::identity_recursion::Fiber;
+use crate::identity_recursion::Interfaces;
 use crate::identity_recursion::Interpretation;
 use crate::identity_recursion::Mode;
 use crate::identity_recursion::RelationError;
@@ -34,6 +39,64 @@ use crate::path_universe;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
+
+/// A universe fibre between two data codes is the native path between them
+/// over the admission log that holds the two data types, and is refused over
+/// a log that does not.
+#[test]
+fn a_universe_fibre_reads_its_data_codes_through_the_admission_log()
+{
+    let mut environment = crate::env::Environment::new();
+    for _ in 0_u8 .. 2_u8 {
+        let mut staging = environment.stage();
+        let kind = staging
+            .arena()
+            .value_type_universe(GroundSort::Value, Level::zero());
+        let integer = staging.arena().value_type_base(BaseType::Integer);
+        let staged = staging.data(
+            LevelSignature::monomorphic(),
+            Vec::new(),
+            vec![vec![integer]],
+            kind,
+        );
+        let _admitted = environment
+            .add_decl(staged)
+            .expect("a data type of one integer admits");
+    }
+    let entries = environment.entries();
+    let mut arena = environment.arena().clone();
+    let old = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let other = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
+    let old = arena.value_quote(old);
+    let other = arena.value_quote(other);
+    let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+    let universe_code = arena.value_quote(universe);
+    let Interpretation::Elements(relation) = interpret(
+        &arena,
+        Interfaces::of(entries),
+        Mode::Identity,
+        Domain::Elements(universe_code),
+    )
+    .expect("universe fold")
+    else {
+        panic!("a code of codes contributes an element clause");
+    };
+    let fiber = relation
+        .evaluate(&arena, old, other)
+        .expect("code identity");
+    let folded = fiber
+        .native(&mut arena, Interfaces::of(entries))
+        .expect("a path between two admitted data types");
+    let native = arena.value_type_path_universe(old, other);
+    assert_eq!(
+        convertible_value_types(&arena, folded, native),
+        Convertibility::Convertible
+    );
+    assert!(
+        matches!(fiber.native(&mut arena, Interfaces::NONE), Err(RelationError::Path(ref error)) if matches!(**error, path_universe::PathError::UnsupportedType(_))),
+        "a log without the data types reads neither code"
+    );
+}
 
 #[test]
 fn universe_clause_is_native()
@@ -57,7 +120,9 @@ fn universe_clause_is_native()
         .fiber(&mut arena, &[], boolean.code, boolean.code)
         .expect("code identity");
     assert!(matches!(fiber.get(fiber.root()), Ok(Fiber::Universe(..))));
-    let folded = fiber.native(&mut arena).expect("native universe fibre");
+    let folded = fiber
+        .native(&mut arena, crate::identity_recursion::Interfaces::NONE)
+        .expect("native universe fibre");
     let native = arena.value_type_path_universe(boolean.code, boolean.code);
     assert_eq!(
         convertible_value_types(&arena, folded, native),
@@ -134,7 +199,7 @@ fn universe_clause_is_native()
     let nested_fiber = nested_relation
         .fiber(&mut arena, &[], pair, pair)
         .expect("nested fibre")
-        .native(&mut arena)
+        .native(&mut arena, crate::identity_recursion::Interfaces::NONE)
         .expect("nested native fibre");
     let expected_nested = arena.value_type_product(&[native, unit_type]);
     assert_eq!(
@@ -145,7 +210,7 @@ fn universe_clause_is_native()
         .fiber(&mut arena, &[nested], variable, variable)
         .expect("open product fibre");
     assert!(matches!(
-        projected.native(&mut arena),
+        projected.native(&mut arena, crate::identity_recursion::Interfaces::NONE),
         Err(RelationError::NeutralFiber)
     ));
     let sum = arena.value_type_sum(&[universe, unit_type]);
@@ -205,7 +270,7 @@ fn universe_clause_is_native()
         .fiber(&mut arena, &[], negation, negation)
         .expect("higher obligations");
     assert!(matches!(
-        higher.native(&mut arena),
+        higher.native(&mut arena, crate::identity_recursion::Interfaces::NONE),
         Err(RelationError::HigherFieldRequired)
     ));
     let fields = higher

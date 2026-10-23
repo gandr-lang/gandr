@@ -137,6 +137,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use crate::check::check_closed_value;
+use crate::env::AdmittedDeclaration;
 use crate::error::KernelError;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -361,8 +362,9 @@ impl Allowance
 /// Inspect a quoted native path code and its finite session graph, if present.
 ///
 /// # Specification
-/// - ensures: accepts quoted Unit, Base, Sum, Product, List and guarded Session
-///   shapes. Session payload typing belongs to ordinary native formation; this
+/// - ensures: accepts quoted Unit, Base, Sum, Product, List, the data types
+///   `entries` admits that a coverage reads, and guarded Session shapes.
+///   Session payload typing belongs to ordinary native formation; this
 ///   inspection is not a certificate or admission capability.
 /// - provides: the callable code walk for consumers of native universe paths.
 /// - fails: unsupported codes, unreadable roots or exhausted budget.
@@ -372,9 +374,11 @@ impl Allowance
 /// `UnsupportedCode`, `UnsupportedType`, `Arena`, or `Budget`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — Bool, products and lists admit; thunk codes refuse.
+/// - hypothesis: L3 — Bool, products, lists and data types admit; thunk codes
+///   refuse.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
 /// - witness: `path_universe::tests::a_list_code_covers_one_cell_over_a_rigid_tail`
+/// - witness: `path_universe::coverage::tests::a_data_code_covers_as_its_constructors`
 #[spec(ensures: |ret| match ret {
     Ok(root) => matches!(arena.value(code), Some(&Value::Quote(quoted)) if root == quoted),
     Err(PathError::UnsupportedCode(named)) => named == code && !matches!(arena.value(code), Some(&Value::Quote(_))),
@@ -385,11 +389,12 @@ impl Allowance
 #[inline]
 pub fn code(
     arena: &TermArena,
+    entries: &[AdmittedDeclaration],
     code: ValueId,
     budget: ReplayBudget,
 ) -> Result<ValueTypeId, PathError>
 {
-    coverage::code(arena, code, &mut Allowance(u64::from(budget)))
+    coverage::code(arena, code, entries, &mut Allowance(u64::from(budget)))
 }
 
 /// Inspect and decode both endpoints of a native path classifier.
@@ -417,6 +422,7 @@ pub fn code(
 #[inline]
 pub fn endpoints(
     arena: &TermArena,
+    entries: &[AdmittedDeclaration],
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<PathType, PathError>
@@ -426,8 +432,8 @@ pub fn endpoints(
         return Err(PathError::ExpectedPath(classifier));
     };
     let mut allowance = Allowance(u64::from(budget));
-    let source = coverage::code(arena, source, &mut allowance)?;
-    let target = coverage::code(arena, target, &mut allowance)?;
+    let source = coverage::code(arena, source, entries, &mut allowance)?;
+    let target = coverage::code(arena, target, entries, &mut allowance)?;
     Ok(PathType { source, target })
 }
 /// Compute one native transport beta step, without claiming formation.
@@ -901,7 +907,7 @@ fn replay_checked(
         .charge()
         .map_err(KernelError::Path)?;
     let classifier = crate::check::synth_closed_value(arena, term.path)?;
-    let endpoints = endpoints(arena, classifier, budget).map_err(KernelError::Path)?;
+    let endpoints = endpoints(arena, &[], classifier, budget).map_err(KernelError::Path)?;
     let returner = arena.comp_type_returner(endpoints.target);
     let thunk_type = arena.value_type_thunk(returner);
     let transport = arena.computation_transport(term.path, term.value);
