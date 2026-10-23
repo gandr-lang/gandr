@@ -909,6 +909,98 @@ fn member_refusals_keep_their_spans_and_other_declarations()
     assert_eq!(later.name().as_ref(), "later");
 }
 
+/// #1462: a member held apart reads the attribute block written before it,
+/// a member held apart without one reads none — the family's own attributes
+/// state the family alone — and a block before a member that is not held
+/// apart refuses the family at the block.
+#[test]
+fn a_held_member_states_its_own_expectation_1462()
+{
+    use crate::DeclarationOutcome;
+    use crate::LoweringBudget;
+    use crate::lower_module;
+    use crate::namespace::Recognition;
+    let grammar = grammar();
+    let source = "@[ checks ] data Sub : Type { Zero : Sub; oper minus(m : Sub, n : Sub) -> Sub; \
+                  @[ refuses(\"RulesNonLinear\") ] rule minus(x, x) ==> Zero; oper same(m : Sub, \
+                  n : Sub) -> Sub; rule same(y, y) ==> Zero; }";
+    let tree = parsed(&grammar, source.into());
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .unwrap();
+    let stated = |declaration: &crate::LoweredDeclaration<'_>| -> Vec<alloc::string::String> {
+        module
+            .attributes()
+            .entries(declaration.introduced())
+            .iter()
+            .map(|entry| alloc::string::String::from(entry.name().as_ref()))
+            .collect()
+    };
+    let [ref family, ref attributed, ref bare] = *module.declarations()
+    else {
+        panic!(
+            "the family and its two held rules: {:?}",
+            module.declarations()
+        )
+    };
+    assert!(matches!(family.outcome(), DeclarationOutcome::Data(_)));
+    assert_eq!(
+        stated(family),
+        ["checks"],
+        "the family's attribute states the family"
+    );
+    assert!(
+        matches!(
+            attributed.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::RulesNonLinear { .. })
+        ),
+        "the first rule is held apart"
+    );
+    assert_eq!(
+        stated(attributed),
+        ["refuses"],
+        "and reads the block written before it"
+    );
+    assert!(
+        matches!(
+            bare.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::RulesNonLinear { .. })
+        ),
+        "the second rule is held apart"
+    );
+    assert!(
+        stated(bare).is_empty(),
+        "and, written without a block, reads none of the family's"
+    );
+
+    let stray = "data Bit : Type { @[ checks ] Low : Bit; High : Bit; }";
+    let tree = parsed(&grammar, stray.into());
+    let module = lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .unwrap();
+    let start = stray.find("@[").unwrap_or_default();
+    assert!(
+        module.declarations().iter().any(|declaration| matches!(
+            declaration.outcome(),
+            DeclarationOutcome::Refused(LoweringRefusal::MalformedForm { span, .. })
+                if usize::from(span.start()) == start
+        )),
+        "a block before a member that is not held apart refuses the family at the block: {:?}",
+        module.declarations()
+    );
+}
+
 #[test]
 fn an_unended_family_is_refused_once_at_its_close()
 {

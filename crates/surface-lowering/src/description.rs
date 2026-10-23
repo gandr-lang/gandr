@@ -1052,6 +1052,36 @@ impl Reader<'_, '_>
         Ok(read.pieces)
     }
 
+    /// `member` past the attribute blocks written before it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unattributed<'member>(
+        &self,
+        member: &'member [Piece],
+    ) -> &'member [Piece]
+    {
+        let unattributed = member
+            .iter()
+            .position(|piece| {
+                let &Piece::Operand(operand) = piece
+                else {
+                    return true;
+                };
+                !self.tree.node(operand.node).is_some_and(|node| {
+                    matches!(
+                        shape_of(self.grammar, node),
+                        Ok(Shape::Form {
+                            former: crate::form::Former::AttributeBlock,
+                            ..
+                        })
+                    )
+                })
+            })
+            .unwrap_or(member.len());
+        member.get(unattributed ..).unwrap_or_default()
+    }
+
     /// Read a family head and every member independently.
     ///
     /// # Specification
@@ -1127,6 +1157,9 @@ impl Reader<'_, '_>
         // reading owns whole.
         let mut generators = Vec::new();
         for member in split_members(run.remaining(), MemberEnd::SemicolonOrComma) {
+            // An attribute block before a member states the expectation of the
+            // declaration the member is held apart as; the collection reads it.
+            let member = self.unattributed(member);
             let Some(first) = member.first()
             else {
                 continue;

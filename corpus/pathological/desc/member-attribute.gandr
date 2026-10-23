@@ -1,0 +1,16 @@
+// A data family's member that the cell gate refuses is held apart: the
+// family and its other members keep checking, and the refused member is a
+// declaration of its own under the family's name. The attribute block written
+// before the member states that declaration's expectation, and the family's
+// own attribute states the family alone (#1462).
+
+/// Naturals with a subtraction whose rule copies its argument.
+@[ checks ]
+data NatSub : Type {
+  Zero : NatSub;
+  Succ : (n : NatSub) --> NatSub;
+  oper minus(m : NatSub, n : NatSub) -> NatSub;
+  /// The rule matches one variable twice, so it is held apart.
+  @[ refuses("RulesNonLinear") ]
+  rule minus(x, x) ==> Zero;
+}

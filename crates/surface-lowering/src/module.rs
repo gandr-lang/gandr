@@ -344,6 +344,7 @@ mod world;
 
 pub use self::data::Constructor;
 pub use self::data::DataForm;
+pub use self::data::DataMember;
 pub use self::data::Generators;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
@@ -1375,6 +1376,10 @@ pub struct Collected<'source>
     /// verdict of the declaration the member yields when it refuses, and the
     /// member is refused so when it yields none.
     pub unread_expectations: BTreeMap<SlotIndex, LoweringRefusal<'source>>,
+    /// Each data declaration being collected, by its form's node, with every
+    /// member of its body in order: taken by the held refusals once the
+    /// description route has run.
+    pub data_members: BTreeMap<NodeIndex, Vec<DataMember>>,
     /// Every top-level module an attribute block decorates, in source order.
     pub decorated: Vec<DecoratedModule<'source>>,
     /// Every module form's documentation, each piece documenting its module
@@ -2566,6 +2571,7 @@ pub fn begin_collection<'source>(
         derived: BTreeMap::new(),
         abstracts: BTreeMap::new(),
         unread_expectations: BTreeMap::new(),
+        data_members: BTreeMap::new(),
         decorated: Vec::new(),
         module_docs: Vec::new(),
         families: Vec::new(),
@@ -3870,14 +3876,19 @@ impl<'source> Collector<'_, 'source>
     ///   slot, a diagnostic at the very span the family's own slot is already
     ///   refused at is dropped, and every other diagnostic whose span lies
     ///   inside `child`'s takes one held slot under the family's name, in
-    ///   report order; nothing for a child the description route did not
-    ///   describe.
+    ///   report order, introduced by the attribute block written before the
+    ///   member the diagnostic lies in when one is, the first such slot of a
+    ///   member holding that block's attributes; nothing for a child the
+    ///   description route did not describe. An attribute block before a member
+    ///   no held slot reads refuses the family's own slot as a misplaced tile
+    ///   at the block.
     /// - provides: member-local refusal beside native admission: a declined
     ///   member leaves its family and its siblings standing, a family whose
     ///   rules part is refused whole, a fault both readings see — a generator
     ///   whose result reads its family at an index — is reported once, by the
     ///   native reading under the family's own name and attributes (#1798), and
-    ///   a malformed form is reported once, at its repair.
+    ///   a malformed form is reported once, at its repair; a member held apart
+    ///   states its own expectation.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3885,10 +3896,13 @@ impl<'source> Collector<'_, 'source>
     ///   the arrow while the family keeps both generators and the declaration
     ///   after it lowers; an unended data or codata family is refused once, at
     ///   its missing close, whatever its members would refuse; a family two of
-    ///   whose rules rewrite one term apart is refused under its own name.
+    ///   whose rules rewrite one term apart is refused under its own name; a
+    ///   held rule reads the attribute block before it, and a block before a
+    ///   member that is not held apart refuses the family.
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::tests::an_unended_family_is_refused_once_at_its_close`
     /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
+    /// - witness: `description::tests::a_held_member_states_its_own_expectation_1462`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() >= before,
@@ -3896,6 +3910,50 @@ impl<'source> Collector<'_, 'source>
     fn hold_described_refusals(
         &mut self,
         child: Placed,
+    )
+    {
+        let mut members = self
+            .collected
+            .data_members
+            .remove(&child.node)
+            .unwrap_or_default();
+        self.hold_members(child, &mut members);
+        let unread = members
+            .iter()
+            .find_map(|member| member.blocks.first().copied());
+        if let Some(block) = unread
+            && let Maybe::Present(owner) = self.collected.owner_of(child.node)
+            && let Some(slot) = self.collected.slots.get_mut(usize::from(owner))
+        {
+            slot.refuse(block.node, misplaced_in(FormName::DATA, block.span));
+        }
+    }
+
+    /// The held slots of [`Self::hold_described_refusals`], taking out of
+    /// `members` the attribute blocks each held slot reads.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::hold_described_refusals`].
+    /// - ensures: as [`Self::hold_described_refusals`], but for the refusal of
+    ///   an unread block; a member of `members` keeps its blocks exactly when
+    ///   no held slot reads them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a held rule reads the attribute block before it, a
+    ///   held rule written without one reads none of the family's, and a block
+    ///   before a member that is not held apart is left for the family to
+    ///   refuse.
+    /// - witness: `description::tests::a_held_member_states_its_own_expectation_1462`
+    /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: self.collected.slots.len() >= before,
+    )]
+    fn hold_members(
+        &mut self,
+        child: Placed,
+        members: &mut [DataMember],
     )
     {
         let Some(entry) = self.collected.descriptions.get(&child.node)
@@ -3933,6 +3991,7 @@ impl<'source> Collector<'_, 'source>
             },
             Maybe::Absent(_) => None,
         };
+        let mut attributes = Vec::new();
         for (span, refusal) in refusals {
             if refused_at == Some(span) {
                 continue;
@@ -3950,12 +4009,41 @@ impl<'source> Collector<'_, 'source>
                 slot.refuse(child.node, refusal);
                 continue;
             }
+            // The member the diagnostic lies in and what introduces its held
+            // slot: the first attribute block written before it, else its
+            // first tile, so the family's own attributes state the family
+            // alone.
+            let member = members
+                .iter()
+                .rposition(|member| member.first.span.start() <= span.start());
             let introduced = Placed {
-                node: child.node,
+                node: member
+                    .and_then(|index| members.get(index))
+                    .map_or(child.node, |member| member.introducer.node),
                 span,
             };
             let top = self.collected.top(child.span.start());
-            let _held = self.refuse_held(top, name, introduced, named, refusal);
+            let held = self.refuse_held(top, name, introduced, named, refusal);
+            let Some(index) = member
+            else {
+                continue;
+            };
+            let Some(member) = members.get_mut(index)
+            else {
+                continue;
+            };
+            let mut attributed = Ok(());
+            for block in core::mem::take(&mut member.blocks) {
+                if attributed.is_ok() {
+                    attributed = self.decoration(block, introduced.node, &mut attributes);
+                }
+            }
+            if let Some(slot) = self.collected.slots.get_mut(held.0) {
+                slot.attributes.append(&mut attributes);
+                if let Err(unread) = attributed {
+                    slot.refuse(introduced.node, unread);
+                }
+            }
         }
     }
 

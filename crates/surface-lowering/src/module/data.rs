@@ -327,6 +327,34 @@ struct Formed<'source>
     /// The first cell member's fault, offered to the declaration's slot once
     /// the form is filed.
     cells: Result<(), LoweringRefusal<'source>>,
+    /// Every member, in order, each with the attribute blocks written before
+    /// it.
+    members: Vec<DataMember>,
+}
+
+/// One member of a data declaration's body: its first tile and the attribute
+/// blocks written before it, which state the expectation of the declaration
+/// the member is held apart as.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: nothing; the member's extent runs to the next member's first
+///   tile.
+/// - executable: none — the record holds no body to check the tile against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a held rule reads the block before it.
+/// - witness: `description::tests::a_held_member_states_its_own_expectation_1462`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DataMember
+{
+    /// The member's first tile: its keyword, or its name.
+    pub first: Placed,
+    /// What introduces the member's held slot: the first attribute block
+    /// written before it, or its first tile when none is.
+    pub introducer: Placed,
+    /// The attribute blocks written before it, in order.
+    pub blocks: Vec<Placed>,
 }
 
 /// Where the generators of a constructor's family are read from.
@@ -518,6 +546,7 @@ impl<'source> Collector<'_, 'source>
             }
         }
         let mut cells = Ok(());
+        let mut members = Vec::new();
         let tail = if let Maybe::Present(repaired) = pieces.repair {
             Tail::Refused(repaired.refusal(FormName::DATA))
         }
@@ -557,6 +586,7 @@ impl<'source> Collector<'_, 'source>
                     },
                     Some(Maybe::Absent(_)) | None => {
                         cells = formed.cells;
+                        members = formed.members;
                         self.enter(formed.form)
                     },
                 },
@@ -586,6 +616,21 @@ impl<'source> Collector<'_, 'source>
                 }
             },
             _ => {},
+        }
+        // The blocks before the body's members state what the declarations
+        // the members are held apart as are expected to do; the held
+        // refusals read them, and take the member's extent, once the
+        // description route has run.
+        if !members.is_empty() {
+            for member in &members {
+                for block in &member.blocks {
+                    self.collected.own(block.node, slot);
+                }
+            }
+            let _fresh = self
+                .collected
+                .data_members
+                .insert(declaration.node, members);
         }
 
         Ok(())
@@ -823,10 +868,12 @@ impl<'source> Collector<'_, 'source>
     ///   its result states, and every loop, the cursor exhausted; the first
     ///   cell member's fault, as [`cell`] and [`Self::loops`] state them, kept
     ///   beside a form with no cell, the member passed over; a cell on an
-    ///   indexed family kept as its fault the same way.
-    /// - fails: a tile out of place or an operand missing or extra; a generator
-    ///   whose result is not the family over its parameters and as many indices
-    ///   as the kind states.
+    ///   indexed family kept as its fault the same way; every member's first
+    ///   tile, with the attribute blocks written before it.
+    /// - fails: a tile out of place or an operand missing or extra, an
+    ///   attribute block before the body's close among them; a generator whose
+    ///   result is not the family over its parameters and as many indices as
+    ///   the kind states.
     /// - panics: none.
     ///
     /// # Errors
@@ -898,9 +945,30 @@ impl<'source> Collector<'_, 'source>
         let mut operations = Vec::new();
         let mut written = Vec::new();
         let mut faulted = Ok(());
+        let mut members = Vec::new();
+        let mut blocks = Vec::new();
         loop {
-            match cursor.read() {
+            let piece = cursor.read();
+            if let Maybe::Present(Piece::Operand(operand)) = piece
+                && self.root_former(operand) == Ok(Maybe::Present(Former::AttributeBlock))
+            {
+                blocks.push(operand);
+                continue;
+            }
+            if let Maybe::Present(Piece::Tile { label, at }) = piece
+                && label != TileName::BRACE_CLOSE
+            {
+                members.push(DataMember {
+                    first: at,
+                    introducer: blocks.first().copied().unwrap_or(at),
+                    blocks: core::mem::take(&mut blocks),
+                });
+            }
+            match piece {
                 Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
+                    if let Some(block) = blocks.first() {
+                        return Err(misplaced_in(FormName::DATA, block.span));
+                    }
                     break;
                 },
                 Maybe::Present(Piece::Tile { label, at }) if label == TileName::CONSTRUCTOR => {
@@ -976,6 +1044,7 @@ impl<'source> Collector<'_, 'source>
                 cells,
             },
             cells: faulted,
+            members,
         })
     }
 
