@@ -81,11 +81,15 @@
 //! through to its representation for exactly the declarations the judgement
 //! did, and the export records the extent the kernel drew. An atom whose
 //! abstract type did not cross has no kernel position and is refused by name,
-//! never minted at a guessed one. The alternatives were an axiom per atom,
-//! which puts an assumption in the audit for every sealed component, and a
-//! sealed outcome of its own, which every consumer of the outcome would have
-//! to learn while carrying the same receipt and audit; the choice reverses if
-//! an atom ever needs a receipt a data declaration does not have.
+//! never minted at a guessed one: withheld, as any nominal head that did not
+//! cross, when its abstract type was itself withheld — refused by the
+//! judgement, or naming a declaration that did not cross, such as a refused
+//! law — and refused as a former the kernel lacks otherwise. The alternatives
+//! were an axiom per atom, which puts an assumption in the audit for every
+//! sealed component, and a sealed outcome of its own, which every consumer of
+//! the outcome would have to learn while carrying the same receipt and audit;
+//! the choice reverses if an atom ever needs a receipt a data declaration does
+//! not have.
 //!
 //! # A lift the judgement recorded is written where it stands
 //!
@@ -615,8 +619,8 @@ fn fault(refusal: CheckRefusal) -> Refusal
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Refusal
 {
-    /// A nominal head — a data or codata type — names a declaration that did
-    /// not cross.
+    /// A nominal head — a data or codata type, or a sealed atom whose abstract
+    /// type was withheld — names a declaration that did not cross.
     WithheldData
     {
         /// The source nominal type.
@@ -1547,6 +1551,7 @@ impl Crossed
                 unfoldings: positions.unfoldings.clone(),
                 exports: positions.exports.clone(),
                 open: Vec::new(),
+                withheld: BTreeSet::new(),
                 presentations: positions.presentations.clone(),
             },
             readmitted: readmitted.to_vec(),
@@ -2129,6 +2134,15 @@ where
                 (Outcome::Refused(Refusal::MachineInvariant), Vec::new())
             },
         };
+        if report.abstract_types().contains_key(&constant)
+            && matches!(
+                outcome,
+                Outcome::Marked(_)
+                    | Outcome::Refused(Refusal::Withheld { .. } | Refusal::WithheldData { .. })
+            )
+        {
+            let _fresh = positions.withheld.insert(constant);
+        }
         if let (&Outcome::Data { admitted, .. }, Some(declared)) =
             (&outcome, report.abstract_types().get(&constant))
         {
@@ -3078,6 +3092,10 @@ struct Positions
     exports: Vec<KernelDeclaration>,
     /// The atoms admitted whose seals have not ended, in minting order.
     open: Vec<OpenSeal>,
+    /// The atoms whose abstract types were withheld: refused by the
+    /// judgement, or naming a declaration that did not cross. A reader of
+    /// one is withheld as a reader of any nominal head that did not cross.
+    withheld: BTreeSet<ConstantIndex>,
     /// The presented types the kernel admitted, whose terms its replay reads
     /// by their normal forms.
     presentations: Presentations,
@@ -6089,11 +6107,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   two codes, and a flow at any other carrier, a universe above level
     ///   zero included, those of the kernel's flow at that carrier.
     /// - fails: [`Refusal::Cyclic`] for an open value type;
-    ///   [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Abstract`] for a
-    ///   sealed atom whose abstract type did not cross, so nothing is minted at
-    ///   a guessed position, and naming [`UnadmittedFormer::Stage`] for a
-    ///   staged type, whose stage the kernel never reads from a term; whatever
-    ///   the view or the decode refuses, converted.
+    ///   [`Refusal::WithheldData`] naming a sealed atom whose abstract type was
+    ///   withheld, refused by the judgement or naming a declaration that did
+    ///   not cross; [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::Abstract`] for a sealed atom whose abstract type
+    ///   did not cross otherwise, so nothing is minted at a guessed position,
+    ///   and naming [`UnadmittedFormer::Stage`] for a staged type, whose stage
+    ///   the kernel never reads from a term; whatever the view or the decode
+    ///   refuses, converted.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -6108,6 +6129,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
     /// - witness: `bridge::tests::a_bound_sealed_atom_lowers_to_the_kernel_atom`
     /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
+    /// - witness: `bridge::tests::a_reader_of_an_atom_withheld_with_its_law_is_withheld_1959`
     /// - witness: `bridge::tests::each_type_outside_the_kernel_is_refused_by_name_where_it_stands`
     /// - witness: `flow::tests::a_flow_above_level_zero_crosses_as_the_kernels_flow_at_its_universe_1628`
     #[spec(ensures: |ret| match ret {
@@ -6231,9 +6253,17 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
             ValueTypeView::Abstract(atom) => {
                 let Some(&position) = self.positions.admitted.get(&atom)
                 else {
-                    return Err(Refusal::OutOfFragment {
-                        at: CoreNode::Type(TypeNode::Value(at)),
-                        former: UnadmittedFormer::Abstract,
+                    return Err(if self.positions.withheld.contains(&atom) {
+                        Refusal::WithheldData {
+                            at: TypeNode::Value(at),
+                            constant: atom,
+                        }
+                    }
+                    else {
+                        Refusal::OutOfFragment {
+                            at: CoreNode::Type(TypeNode::Value(at)),
+                            former: UnadmittedFormer::Abstract,
+                        }
                     });
                 };
                 return Ok(self.erased_value_type(at, target.value_type_abstract(position)));
