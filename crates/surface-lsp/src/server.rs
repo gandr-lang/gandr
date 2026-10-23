@@ -8971,10 +8971,12 @@ mod tests
         );
         assert_eq!(
             changed("sums-and-case.gandr"),
-            ["8:4 `Inl` enumMember→unresolvedReference"],
+            [
+                "8:4 `Inl` enumMember→unresolvedReference",
+                "16:0 `pick` variable→function"
+            ],
             "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
-             the lowering stops at a declaration's first refusal, so its other names keep \
-             their guess"
+             the run target the lowering refuses still names `pick`, a function (#1265)"
         );
     }
 
