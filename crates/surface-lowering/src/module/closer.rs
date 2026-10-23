@@ -43,9 +43,11 @@ use super::Collector;
 use crate::error::FormFault;
 use crate::error::LoweringRefusal;
 use crate::form::FormName;
+use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::form::tile_label;
 
@@ -506,5 +508,133 @@ impl<'source> Collector<'_, 'source>
             }
         }
         tearings
+    }
+
+    /// Fold a declaration the parser tore into tiles at the root into one
+    /// stray, refused where it broke.
+    ///
+    /// A declaration whose body the parser cannot finish leaves its tiles at
+    /// the root one by one, beside the operands it did read; each refuses as a
+    /// form of the wrong sort, and the first is its head, which was written
+    /// right. Where it broke is the first repair the parser made after the
+    /// last of those tiles, when that repair is on a line holding one: a
+    /// repair on a line of its own belongs to a member, broken on its own.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are the root pieces of one source, in order, and
+    ///   `tearings` holds the runs [`Self::torn_lines`] found.
+    /// - ensures: a run is the pieces from one beginning a line, not an
+    ///   attribute block, whose next piece is another tile of its form, up to
+    ///   the next piece beginning a line; a run no piece of which is in
+    ///   `tearings` is entered, led by its first piece and followed by the
+    ///   rest, when a piece from its form's last tile on holds a repair on a
+    ///   line holding a tile of its form, refused as the first such repair in
+    ///   that form.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the pieces.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a theory whose rule's `==>` is written `=>=` refuses
+    ///   at the arrow, not at `theory`.
+    /// - witness: `module::tests::a_torn_declaration_is_refused_where_it_broke_2110`
+    pub(super) fn torn_forms(
+        &self,
+        pieces: &[Placed],
+        tearings: &mut BTreeMap<NodeIndex, Tearing<'source>>,
+    )
+    {
+        let text = <&str>::from(self.tree.source());
+        let begins_line = |placed: &Placed| {
+            let start = usize::from(placed.span.start());
+            start == 0
+                || text
+                    .get(.. start)
+                    .is_some_and(|before| before.ends_with('\n'))
+        };
+        let tile_form = |placed: &Placed| {
+            let node = self.tree.node(placed.node)?;
+            let NodeLabel::Tile(mold) = node.label()
+            else {
+                return None;
+            };
+            match shape_of(self.pbg, node) {
+                Ok(Shape::Form { name, .. }) => Some((mold, name)),
+                Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_) => None,
+            }
+        };
+        let mut index = 0_usize;
+        while let Some(lead) = pieces.get(index) {
+            let head = tile_form(lead).filter(|_| {
+                begins_line(lead)
+                    && !text
+                        .get(usize::from(lead.span.start()) ..)
+                        .is_some_and(|rest| rest.starts_with("@["))
+            });
+            let next = pieces.get(index.saturating_add(1)).and_then(tile_form);
+            let form = match (head, next) {
+                (Some((own, form)), Some((other, next))) if own != other && form == next => {
+                    Some(form)
+                },
+                _ => None,
+            };
+            let end = pieces
+                .get(index.saturating_add(1) ..)
+                .and_then(|after| after.iter().position(begins_line))
+                .map_or(pieces.len(), |later| {
+                    index.saturating_add(1).saturating_add(later)
+                });
+            let start = index;
+            let (Some(form), Some(run)) = (form, pieces.get(start .. end))
+            else {
+                index = start.saturating_add(1);
+                continue;
+            };
+            index = end;
+            if run.iter().any(|placed| tearings.contains_key(&placed.node)) {
+                continue;
+            }
+            let last_tile = run
+                .iter()
+                .rposition(|placed| tile_form(placed).is_some_and(|(_, name)| name == form))
+                .unwrap_or(0);
+            let repaired = run.get(last_tile ..).and_then(|after| {
+                after.iter().find_map(|placed| {
+                    let mut read = Pieces::new();
+                    read_pieces(self.pbg, self.tree, placed.node, &mut read).ok()?;
+                    match read.repair {
+                        Maybe::Present(repaired) => Some(repaired),
+                        Maybe::Absent(_) => None,
+                    }
+                })
+            });
+            // The repair belongs to the torn form only on a line holding one
+            // of its tiles; a container's members break on lines of their own.
+            let line_of = |at: ByteOffset| {
+                let at = usize::from(at);
+                text.get(.. at)
+                    .and_then(|before| before.rfind('\n'))
+                    .map_or(0, |newline| newline.saturating_add(1))
+            };
+            let (Some(repaired), Some(rest)) = (repaired, run.get(1 ..))
+            else {
+                continue;
+            };
+            let on_its_line = run.iter().any(|placed| {
+                tile_form(placed).is_some_and(|(_, name)| name == form)
+                    && line_of(placed.span.start()) == line_of(repaired.span.start())
+            });
+            if !on_its_line {
+                continue;
+            }
+            let _led = tearings.insert(lead.node, Tearing::Leads {
+                refusal: repaired.refusal(form),
+                torn: rest.to_vec(),
+            });
+            for (at, placed) in rest.iter().enumerate() {
+                let _followed = tearings.insert(placed.node, Tearing::Follows {
+                    last: at.saturating_add(1) == rest.len(),
+                });
+            }
+        }
     }
 }
