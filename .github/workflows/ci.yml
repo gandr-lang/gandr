@@ -1253,8 +1253,9 @@ jobs:
   # The mutants of a pull request's own lines (`mutants:changed`, #1456): each
   # mutant on a line the change adds runs under the witnesses of its function,
   # and one comment, updated in place, names the survivors. The lane is a
-  # report, never a gate. No check of it is required and nothing needs it; it
-  # fails while a mutant survives, as a hotpath check fails on a regression.
+  # report, never a gate. No check of it is required and nothing needs it; a
+  # surviving mutant is a warning and a line in the comment, never a red
+  # check, and main's push files the landings' survivors (`mutants-landed`).
   # The merge queue, main and a stack member's pull request (#2045) do not
   # run it. The daily run maps each crate whole (`mutants-nightly`).
   # Dispatches run it against the parent commit, so `ci:act` exercises it. As
@@ -1297,9 +1298,11 @@ jobs:
       # of the restored target directory: a lane's worktree sits elsewhere, so
       # the workspace's own crates rebuild there, but every dependency is
       # main's. The run stops at 300 s, and the report names every mutant it
-      # did not reach.
+      # did not reach. A run that fails is a warning too: the lane never marks
+      # a pull request red.
       - name: run the mutants of the change's added lines
         id: changed
+        continue-on-error: true
         shell: bash
         run: |
           mise run mutants:changed -- --base HEAD^ --lanes "$(nproc)" --until 300 --seed-target target
@@ -1313,14 +1316,19 @@ jobs:
           name: mutants-comment
           path: mutants.out/changed/comment.md
           if-no-files-found: error
-      - name: fail while a mutant survives
-        if: ${{ !cancelled() && steps.changed.outcome == 'success' }}
+      - name: note the surviving mutants
+        if: ${{ !cancelled() }}
         shell: bash
+        env:
+          CHANGED_OUTCOME: ${{ steps.changed.outcome }}
         run: |
+          if [[ $CHANGED_OUTCOME != success ]]; then
+            printf '::warning::the mutants run failed; its step log says why, and no comment is posted\n'
+            exit 0
+          fi
           survivors=$(wc -l < mutants.out/changed/survivors.txt)
           if (( survivors > 0 )); then
-            printf '::error::%s mutant(s) on the change'"'"'s lines survive; the mutants comment names each with its verdict\n' "$survivors"
-            exit 1
+            printf '::warning::%s mutant(s) on the change'"'"'s lines survive; the mutants comment names each with its verdict\n' "$survivors"
           fi
       - *lane-timing
 
