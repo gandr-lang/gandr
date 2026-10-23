@@ -39,7 +39,8 @@
 //!   `return` and `{` answer the computation they open. A node spanning a whole
 //!   declaration — the body's term the lowering writes over its declaration —
 //!   answers as that declaration's name does, about its head when the cursor is
-//!   there.
+//!   there; a node spanning a source's run target answers as the run target:
+//!   its outline name, then ` : ` and the thunk type the checker gave it.
 //! - **The head of the innermost declaration holding the cursor** — from its
 //!   declaring form's start to the brace opening its own body, or all of it
 //!   when it has none — about the head, as for its name: the keyword that
@@ -67,10 +68,14 @@
 //!   declaration. A rule a `data` declaration writes answers as written. A
 //!   `rec` group's own tile answers the declarations the group writes, one to a
 //!   line.
-//! - **Any other tile** answers a stub, about the tile: the tile as written,
-//!   then the gap named and its tracking issue's line, by the families
-//!   [`crate::tracking`] lists. The corpus sweep refuses a tile that hovers
-//!   nothing and a stub that names no issue.
+//! - **A root form that declares nothing** — the run target, or a stray — is a
+//!   declaration of the outline's, keyed by its form as the engine keys its
+//!   slot. A run target's tiles answer by their own entries; a stray's tiles,
+//!   and the attributes before either form and the `;` after it, answer its
+//!   outline name with its type or its refusal.
+//! - **Any other tile** is one the engine typed nothing at: it answers what the
+//!   lowering kept, then says so. The corpus sweep refuses a tile that hovers
+//!   nothing or this.
 //!
 //! Layout and comments hover nothing, and so does a document whose grammar
 //! did not build. Every type is spelled through the shared printer at 80
@@ -548,11 +553,12 @@ impl Style
 ///   where the lowering typed nothing — when the table holds one; else the
 ///   declaration as written, a theory and a module always so; then, after a
 ///   blank line, what a `deprecated` attribute marking the form states, and the
-///   documentation the session filed for the form after another. On a member's
-///   name with no entry inside the member, the member as written, about the
-///   name. Else, on a use of a declaration the text writes with no entry inside
-///   the use — the theory an `include` or a `Model(…)` names — as on that
-///   declaration's name, about the use; in a run a theory or a `data`
+///   documentation the session filed for the form after another. A root form
+///   that declares nothing — a run target, a stray — has no name to hover here.
+///   On a member's name with no entry inside the member, the member as written,
+///   about the name. Else, on a use of a declaration the text writes with no
+///   entry inside the use — the theory an `include` or a `Model(…)` names — as
+///   on that declaration's name, about the use; in a run a theory or a `data`
 ///   declaration writes that declares nothing — an `include`, a rule — with no
 ///   entry inside it and no orientation noted at the position, the same for the
 ///   first such use in the run, about the run, and else the run as written,
@@ -560,18 +566,19 @@ impl Style
 ///   member whose entries are none of them there, the member as written, about
 ///   the member; when the node spans a whole declaration — its body's term
 ///   written over the declaration, or a module's instantiation written over the
-///   module (#405) — as on that declaration's name, about its head when the
-///   position is there and the node's range otherwise; else a block of its type
-///   — a binder's name, a written type's text or a term written as one name
-///   before ` : ` — and, for a term checked against a type spelled otherwise,
-///   that type in a second block; for a parameter's binder or a use of it, the
-///   `///` run written before the parameter after a blank line; about the
-///   node's range. Else, in the head of a declaration — from its form's start
-///   to the brace opening its own body, a member's keyword to its name — as on
-///   its name, about the head, and in the attributes before the head, about
-///   them. Else, on a tile, [`stubbed`]'s answer, about what it is about.
-///   Absent in layout and comments. Every type is spelled in `style`'s form,
-///   and every block is written as [`Code`] writes it in `style`'s markup.
+///   module (#405) — or a root form that declares nothing, as on that
+///   declaration's name, about its head when the position is there and the
+///   node's range otherwise; else a block of its type — a binder's name, a
+///   written type's text or a term written as one name before ` : ` — and, for
+///   a term checked against a type spelled otherwise, that type in a second
+///   block; for a parameter's binder or a use of it, the `///` run written
+///   before the parameter after a blank line; about the node's range. Else, in
+///   the head of a declaration — from its form's start to the brace opening its
+///   own body, a member's keyword to its name — as on its name, about the head,
+///   and in the attributes before the head, about them. Else, on a tile,
+///   [`stubbed`]'s answer, about what it is about. Absent in layout and
+///   comments. Every type is spelled in `style`'s form, and every block is
+///   written as [`Code`] writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -590,7 +597,9 @@ impl Style
 ///   and a circuit rule as written; an `include`'s keyword and name and a
 ///   `Model(…)`'s theory as the theory they name; a declaration and a written
 ///   type in HTML, coloured by their roles; a documented parameter at its
-///   binder and at a use, and an undocumented one.
+///   binder and at a use, and an undocumented one; a run target's call, its
+///   `;`, a name and an argument inside it, a stray and its `;`, and the
+///   attribute of a run target the lowering refused.
 /// - witness: `hover::tests::a_declaration_hovers_its_type_and_documentation`
 /// - witness: `hover::tests::each_marked_position_hovers_its_answer`
 /// - witness: `hover::tests::each_member_hovers_its_own_type`
@@ -607,6 +616,7 @@ impl Style
 /// - witness: `hover::tests::an_import_hovers_the_file_it_reads_1203`
 /// - witness: `hover::tests::a_source_s_own_documentation_hovers_at_its_head_1365`
 /// - witness: `hover::tests::a_documented_parameter_hovers_its_documentation_1116`
+/// - witness: `hover::tests::a_run_target_and_a_stray_hover_as_declarations_2073`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref hover) => hover.contents.value.starts_with(style.markup.opener().0)
         && hover.range.start <= position && position <= hover.range.end,
@@ -661,8 +671,11 @@ pub fn hover<Store, Blocks>(
         entered.is_some_and(|(from, to)| start <= from && to <= end)
     };
     let forms = || found.iter().filter(|found| found.written == Written::Form);
+    // A root form that declares nothing has no name of its own: its tiles
+    // answer by their entries, below.
     if let Some(named) = found.iter().find(|found| {
-        found.symbol.selection_range.start <= position
+        found.written != Written::Root
+            && found.symbol.selection_range.start <= position
             && position <= found.symbol.selection_range.end
     }) {
         match named.written {
@@ -679,7 +692,7 @@ pub fn hover<Store, Blocks>(
             Written::Member if !typed_inside(named) => {
                 return Maybe::Present(member(named, named.symbol.selection_range, &quoted, style));
             },
-            Written::Member => {},
+            Written::Member | Written::Root => {},
         }
     }
     // A run a theory or a `data` declaration writes that declares nothing — an
@@ -772,13 +785,22 @@ pub fn hover<Store, Blocks>(
         // as the declaration it stands for. A module with a body has no entry
         // over it whole, so its members answer for themselves; an
         // instantiation's entry is one of the members it instantiates, so a
-        // module answers itself, never a member's type (#405).
-        if let Some(whole) = forms().rfind(|found| {
-            range.start <= found.symbol.selection_range.start
-                && found.symbol.range.end <= range.end
-                && found.symbol.range.start <= position
-                && position <= found.symbol.range.end
-        }) {
+        // module answers itself, never a member's type (#405). A run target's
+        // entry over its whole form answers as the run target.
+        if let Some(whole) = found
+            .iter()
+            .filter(|found| found.written != Written::Member)
+            .rfind(|found| {
+                let spanned = match found.written {
+                    Written::Root => found.symbol.selection_range,
+                    Written::Form | Written::Member => found.symbol.range,
+                };
+                range.start <= found.symbol.selection_range.start
+                    && spanned.end <= range.end
+                    && spanned.start <= position
+                    && position <= spanned.end
+            })
+        {
             let about = if whole.head.start <= position && position < whole.head.end {
                 whole.head
             }
@@ -848,10 +870,14 @@ pub fn hover<Store, Blocks>(
     }
     // The head answers its declaration — a module's ascription and a member's
     // keyword included — and so do the attributes before it, about their own
-    // stretch.
-    let enclosing = found
-        .iter()
-        .rfind(|found| found.symbol.range.start <= position && position < found.head.end);
+    // stretch. A root form that declares nothing is the lowering's slot, so in
+    // a source the lowering refused whole it answers the stub's refusal.
+    let unlowered = matches!(table.refused_whole(), Maybe::Present(_));
+    let enclosing = found.iter().rfind(|found| {
+        found.symbol.range.start <= position
+            && position < found.head.end
+            && !(unlowered && found.written == Written::Root)
+    });
     if let Some(enclosing) = enclosing {
         let about = if enclosing.head.start <= position {
             enclosing.head
@@ -863,7 +889,9 @@ pub fn hover<Store, Blocks>(
             }
         };
         return Maybe::Present(match enclosing.written {
-            Written::Form => declared(session, table, enclosing, about, &quoted, style),
+            Written::Form | Written::Root => {
+                declared(session, table, enclosing, about, &quoted, style)
+            },
             Written::Member => member(enclosing, about, &quoted, style),
         });
     }
@@ -1012,9 +1040,8 @@ fn own_documentation(
 
 /// How a tile the table types nothing at stands: inside a refused
 /// declaration, in a source the lowering refused as a whole, in a source the
-/// table holds nothing for, one of a declaration's own tiles, inside a
-/// declaration the engine typed nothing at, or in a gap a tracking issue
-/// names.
+/// table holds nothing for, one of a declaration's own tiles, or at a form the
+/// engine typed nothing at.
 #[derive(Clone, Copy, Debug)]
 enum Standing<'found>
 {
@@ -1030,11 +1057,9 @@ enum Standing<'found>
     /// One of a form's own tiles that is no declaration's but holds these,
     /// the declarations the form writes: a `rec` group's.
     Group(&'found [Declaration]),
-    /// Inside an accepted declaration, at a form the engine typed nothing at:
-    /// an engine gap, which the corpus sweep refuses.
+    /// At a form the engine typed nothing at, inside an accepted declaration
+    /// or none: an engine gap, which the corpus sweep refuses.
     Untyped,
-    /// In this gap.
-    Gap(Gap),
 }
 
 /// Where a hover has nothing typed to show: the tile holding a position and
@@ -1049,19 +1074,18 @@ struct Stub<'found>
 }
 
 /// The stub at `offset`, by the first standing that holds it: inside a
-/// refused declaration, in a source refused as a whole, in a source the table
-/// holds nothing for, a tile the innermost declaration or member holding it
-/// writes itself, a tile of a form that writes declarations and is none
-/// itself, in a root form that declares nothing, else inside a declaration
-/// where the engine typed nothing, an engine gap. An import answers before
-/// any stub, by [`imported`].
+/// refused declaration — a root form's that declares nothing among them — in
+/// a source refused as a whole, in a source the table holds nothing for, a
+/// tile the innermost declaration or member holding it writes itself, a tile
+/// of a form that writes declarations and is none itself, else at a form the
+/// engine typed nothing at, an engine gap. An import answers before any
+/// stub, by [`imported`].
 ///
 /// # Specification
 /// - requires: `found` and `quoted` are of the text `reading` read, and `table`
 ///   was typed over it.
 /// - ensures: none when no tile holds `offset` — in layout or a comment;
-///   otherwise the tile holding it with the first standing that holds it, the
-///   gaps in [`crate::tracking`]'s order.
+///   otherwise the tile holding it with the first standing that holds it.
 /// - provides: what [`hover`] answers where the engine typed nothing.
 /// - fails: never.
 /// - panics: none.
@@ -1100,7 +1124,7 @@ fn stub<'found>(
     };
     let refused = found
         .iter()
-        .filter(|declaration| declaration.written == Written::Form && holds(declaration))
+        .filter(|declaration| declaration.written != Written::Member && holds(declaration))
         .rfind(|declaration| {
             declaration
                 .key
@@ -1138,11 +1162,8 @@ fn stub<'found>(
                         .unwrap_or_default(),
                 )
             }
-            else if found.iter().any(|declaration| holds(&declaration)) {
-                Standing::Untyped
-            }
             else {
-                Standing::Gap(Gap::Undeclared)
+                Standing::Untyped
             }
         },
         Standing::Refused,
@@ -1162,10 +1183,8 @@ fn stub<'found>(
 ///   declaration's own tile, about the tile, the declaration's hover as
 ///   [`declared`] writes it, or a member's as [`member`] does. On a tile of a
 ///   form that writes declarations, about the tile, each declaration as
-///   written, one to a line, then the form's rule named. Inside a declaration
-///   where the engine typed nothing, [`kept`]'s answer, then [`UNTYPED`]. In a
-///   gap, about the tile, the tile as written in a block, then the gap named
-///   and its tracking issue's line as [`Gap::closing`] writes them.
+///   written, one to a line, then the form's rule named. At a form the engine
+///   typed nothing at, [`kept`]'s answer, then [`UNTYPED`].
 /// - provides: the half of [`hover`] where the engine typed nothing.
 /// - fails: never.
 /// - panics: none.
@@ -1202,7 +1221,9 @@ fn stubbed<Store, Blocks>(
             )
             .ok()?;
             let shown = match holder.written {
-                Written::Form => declared(session, table, holder, range, quoted, style),
+                Written::Form | Written::Root => {
+                    declared(session, table, holder, range, quoted, style)
+                },
                 Written::Member => member(holder, range, quoted, style),
             };
             (tile.span, shown.contents.value)
@@ -1227,15 +1248,6 @@ fn stubbed<Store, Blocks>(
                     tile.rule
                 ),
             )
-        },
-        Standing::Gap(gap) => {
-            let mut code = Code::new(style.markup);
-            let start = RenderOffset::from(usize::from(tile.span.start()));
-            let text = <&str>::from(quoted.text)
-                .get(usize::from(start) .. usize::from(tile.span.end()))
-                .unwrap_or_default();
-            quoted.quote(&mut code, SourceText::from(text), start);
-            (tile.span, format!("{}\n\n{}", code.block(), gap.closing()))
         },
         Standing::Refused(_) | Standing::Whole | Standing::Empty | Standing::Untyped => {
             kept(hovering, quoted, tile, offset, style)
@@ -1269,7 +1281,7 @@ fn stubbed<Store, Blocks>(
             value.push_str("\n\n");
             value.push_str(UNTYPED);
         },
-        Standing::Own(_) | Standing::Group(_) | Standing::Gap(_) => {},
+        Standing::Own(_) | Standing::Group(_) => {},
     }
     Some(Hover {
         contents: MarkupContent {
@@ -1442,15 +1454,16 @@ impl Quoted<'_>
 /// - ensures: a block of the declaration. For one that is neither a module nor
 ///   a theory and that `table` types by its form's key: the name — in the
 ///   colours the document gives it — then ` : ` and its type in `style`'s form.
-///   For one `table` holds the lowering's refusal of instead: the name, then
-///   that refusal after a blank line. Otherwise, a theory and a module always
-///   among them, the declaration as [`written`] writes it, a theory with its
-///   members. Where `table` holds the checker's refusal of a declaration it
-///   does not hold the lowering's refusal of, that refusal after a blank line.
-///   Where a `deprecated` attribute marks the form, `deprecated`, with the
-///   version after `since` and the note after a colon when the attribute states
-///   them, after a blank line. Then the documentation `session` filed under the
-///   form's key after a blank line.
+///   A root form that declares nothing is named by what it writes, as the
+///   outline names it. For one `table` holds the lowering's refusal of instead:
+///   the name, then that refusal after a blank line. Otherwise, a theory and a
+///   module always among them, the declaration as [`written`] writes it, a
+///   theory with its members. Where `table` holds the checker's refusal of a
+///   declaration it does not hold the lowering's refusal of, that refusal after
+///   a blank line. Where a `deprecated` attribute marks the form, `deprecated`,
+///   with the version after `since` and the note after a colon when the
+///   attribute states them, after a blank line. Then the documentation
+///   `session` filed under the form's key after a blank line.
 /// - provides: the declaration half of [`hover`].
 /// - fails: never.
 /// - panics: none.
@@ -1464,6 +1477,7 @@ impl Quoted<'_>
 /// - witness: `hover::tests::a_theory_and_a_module_hover_as_written_1122_1124`
 /// - witness: `hover::tests::a_checker_refused_declaration_hovers_its_refusal_1204`
 /// - witness: `hover::tests::a_deprecated_declaration_hovers_its_note`
+/// - witness: `hover::tests::a_run_target_and_a_stray_hover_as_declarations_2073`
 #[spec(ensures: |ref ret| ret.range == range
     && ret.contents.value.starts_with(style.markup.opener().0))]
 fn declared<Store, Blocks>(
@@ -2899,6 +2913,70 @@ mod tests
         );
     }
 
+    /// A source's run target answers as a declaration the outline holds: a
+    /// node over its whole form with the target and the thunk type the
+    /// checker gave it, each tile inside it by its own entry, its `;` as the
+    /// target. A stray answers its refusal at every tile, and so does a run
+    /// target the lowering refused, at its attributes (#2073).
+    #[test]
+    fn a_run_target_and_a_stray_hover_as_declarations_2073()
+    {
+        let rows: [(&str, &str, String); 7] = [
+            (
+                "the run target's call",
+                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame$0(Integer, answer) ;\n",
+                fenced(SourceText::from("same(Integer, answer) : +U (-F Integer)")),
+            ),
+            (
+                "the run target's `;`",
+                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame(Integer, answer) $0;\n",
+                fenced(SourceText::from("same(Integer, answer) : +U (-F Integer)")),
+            ),
+            (
+                "a name inside the run target",
+                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\n$0same(Integer, answer) ;\n",
+                fenced(SourceText::from("same : +U ((a : Type) -> a -> -F a)")),
+            ),
+            (
+                "an argument inside the run target",
+                "def answer = 42 ;\ndef same(a : Type, x : a) -> -F a { return x }\nsame(Integer, $0answer) ;\n",
+                fenced(SourceText::from("answer : Integer")),
+            ),
+            (
+                "a stray",
+                "$01 ;\ndef answer = 42 ;\n",
+                format!(
+                    "{}\n\nrefused: `number`, read as a declaration, is not a former of this sort",
+                    fenced(SourceText::from("1"))
+                ),
+            ),
+            (
+                "a stray's `;`",
+                "1 $0;\ndef answer = 42 ;\n",
+                format!(
+                    "{}\n\nrefused: `number`, read as a declaration, is not a former of this sort",
+                    fenced(SourceText::from("1"))
+                ),
+            ),
+            (
+                "the attribute of a refused run target",
+                "@[ $0runs ]\nsame(Integer, 1)\n",
+                format!(
+                    "{}\n\nrefused: `runs` takes a text payload and was given none",
+                    fenced(SourceText::from("same(Integer, 1)"))
+                ),
+            ),
+        ];
+        for (what, fixture, expected) in rows {
+            let (text, position) = marker(SourceText::from(fixture));
+            assert_eq!(
+                shown_at(SourceText::from(text.as_str()), position),
+                Ok(expected),
+                "{what}"
+            );
+        }
+    }
+
     /// The sweep over every tile of the corpus. A hover finds its entry by a
     /// scan of the table, which the enforcing build scans again for each
     /// specification, so a run visits the sources [`Sweep::visit`] names:
@@ -2918,12 +2996,9 @@ mod tests
         use gandr_workflow_sweep::corpus;
         use quenchant_shape::shape::Maybe;
 
-        use super::super::Quoted;
-        use super::super::Standing;
         use super::super::UNTYPED;
         use super::super::hover;
         use super::super::hovering;
-        use super::super::stub;
         use super::PLAIN;
         use super::checked;
         use crate::position::Position;
@@ -2942,9 +3017,8 @@ mod tests
         /// nightly runner.
         const NIGHTS: Nights = Nights(2);
 
-        /// No tile of the corpus hovers nothing: each answers what the engine
-        /// holds or a stub ending with its gap's tracking issue, and none of
-        /// an accepted declaration is one the engine typed nothing at.
+        /// No tile of the corpus hovers nothing, and none outside a refusal is
+        /// one the engine typed nothing at.
         #[test]
         fn every_corpus_tile_hovers_or_names_its_issue_1206()
         {
@@ -2961,7 +3035,6 @@ mod tests
                 sources.len()
             );
             let mut silent = Vec::new();
-            let mut misnamed = Vec::new();
             let mut untyped = Vec::new();
             for source in sources {
                 let path = &source.path;
@@ -2972,16 +3045,10 @@ mod tests
                 let hovering =
                     hovering(text, path, &session, &gandr_surface_dispatcher::Unshadowed);
                 let index = LineIndex::new(written.as_str().into());
-                let quoted = Quoted {
-                    text,
-                    index: &index,
-                    spans: reading.spans(),
-                };
-                let Maybe::Present(found) = reading.declarations()
-                else {
+                if matches!(reading.declarations(), Maybe::Absent(_)) {
                     silent.push(format!("{}: unread", source.name));
                     continue;
-                };
+                }
                 for tile in reading.tiles() {
                     let start = usize::from(tile.span.start());
                     let position = Position::of_byte(&index, RenderOffset::from(start))
@@ -3000,38 +3067,6 @@ mod tests
                         Maybe::Present(shown) if shown.contents.value.ends_with(UNTYPED) => {
                             untyped.push(at);
                         },
-                        Maybe::Present(shown)
-                            if reading.import_at(tile.span.start()).is_none()
-                                && shown
-                                    .contents
-                                    .value
-                                    .contains("The tracking issue for this is:") =>
-                        {
-                            let named = stub(
-                                &hovering.table,
-                                &reading,
-                                found,
-                                &quoted,
-                                tile.span.start(),
-                                PLAIN,
-                            )
-                            .is_some_and(|stubbed| {
-                                match stubbed.standing {
-                                    Standing::Gap(gap) => {
-                                        shown.contents.value.ends_with(&gap.closing())
-                                    },
-                                    Standing::Refused(_)
-                                    | Standing::Whole
-                                    | Standing::Empty
-                                    | Standing::Own(_)
-                                    | Standing::Group(_)
-                                    | Standing::Untyped => true,
-                                }
-                            });
-                            if !named {
-                                misnamed.push(at);
-                            }
-                        },
                         Maybe::Present(_) => {},
                     }
                 }
@@ -3043,14 +3078,8 @@ mod tests
                 silent.join("\n")
             );
             assert!(
-                misnamed.is_empty(),
-                "{} stubs do not end with their gap's issue:\n{}",
-                misnamed.len(),
-                misnamed.join("\n")
-            );
-            assert!(
                 untyped.is_empty(),
-                "{} tiles of accepted declarations are typed nothing at:\n{}",
+                "{} tiles are typed nothing at outside a refusal:\n{}",
                 untyped.len(),
                 untyped.join("\n")
             );
