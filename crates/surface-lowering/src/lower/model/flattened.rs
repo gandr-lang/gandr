@@ -16,29 +16,6 @@
 //! `A`, as it reads off a binder held at that type. A nested component's model
 //! stays the record of its theory, one parameter.
 //!
-//! The alternatives this departs from:
-//!
-//! - Vivien, Rémy and Scherer's module-dependent functions (JFLA 2026)
-//!   elaborate `fun (module X : Q) → a` to `Λᾱ. λ(X : C). e`: `Q`'s abstract
-//!   types become type parameters, as the sorts do here, but the module's
-//!   values stay one record argument. Flattening the values too leaves the core
-//!   no record of a model, so each component is one hole an omitted slot
-//!   nominates, and a reduct passes without the coercion their `E-AppD-Temp`
-//!   needs.
-//! - Modular implicits (White, Bour and Yallop, 2014) pass the module packed as
-//!   a first-class value and project it; that is the record this replaces.
-//!
-//! Their constraints this keeps: the slot's signature is always written at
-//! the binder, never inferred (their `FunD`), and a supply is a path, never a
-//! value (their `AppD`, `Γ ⊢ M ⇝ P`). It departs in one more place: a gandr
-//! type may read a value component, so each component's type is minted under
-//! every earlier component's binder and every arrow is a dependent Π, where
-//! their phase separation keeps types reading paths and types alone.
-//!
-//! Reversal: a core record of models (a dictionary value the core could store
-//! and pass on its own) would make the packed shape cheaper than one
-//! parameter per component, and a slot could then take a value.
-//!
 //! # A supply names a module or a model
 //!
 //! `f[s = M]` passes the module `M`'s members, one per component, as `pack M
