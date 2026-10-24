@@ -541,15 +541,28 @@ jobs:
         with:
           enabled: ${{ env.GANDR_CI_IMAGE != '' }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      # The queue merges a group once its required checks pass, while the
+      # group's run still has its join and its reports to finish: a landing's
+      # push looks the run up 16 to 60 s before it completes. Read then, every
+      # landing was `unbuilt` and ran every lane a second time, a group's
+      # worth of jobs against the account's concurrency cap while the next
+      # group waited for runners, up to 156 s in #2365 (#2148). The lookup
+      # waits for the run with this head to complete, five minutes at most;
+      # a head no queue run built answers at once.
       - id: run
         name: find the completed queue run for this landing
         if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name == 'push' }}
         continue-on-error: true
-        run: >-
-          gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs"
-          -f event=merge_group -f status=completed -f head_sha="$CI_SHA"
-          --jq '"run-id=" + ((.workflow_runs[0].id // "") | tostring)'
-          >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          for _ in $(seq 30); do
+            read -r id status < <(gh api --method GET "repos/$GH_REPO/actions/workflows/ci.yml/runs" \
+              -f event=merge_group -f head_sha="$CI_SHA" \
+              --jq '.workflow_runs[0] // {} | "\(.id // "") \(.status // "")"')
+            [[ -z $id || $status == completed ]] && break
+            sleep 10
+          done
+          echo "run-id=$([[ -n $id && $status == completed ]] && echo "$id")" >> "$GITHUB_OUTPUT"
       - id: previous
         name: find the latest successful queue run
         if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name != 'push' }}
