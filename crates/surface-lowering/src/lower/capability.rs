@@ -1679,8 +1679,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   clause read as a computation body under the scope's own frame; `k` is
     ///   recorded as a continuation and `c` as a capability answering the
     ///   interface's name ([`Self::answered`]), beside the theory it handles
-    ///   for a theory's scope; the scope is planned over the interface,
-    ///   [`Self::handled`], the subject and the clauses in written order.
+    ///   for a theory's scope, whose written name is resolved to the theory's
+    ///   declaration ([`crate::LoweredModule::resolutions`]); the scope is
+    ///   planned over the interface, [`Self::handled`], the subject and the
+    ///   clauses in written order.
     /// - fails: the wrong-sort refusal where no computation is read; the
     ///   refusals of [`Self::handled`];
     ///   [`LoweringRefusal::DuplicateDefinition`] for a second return clause; a
@@ -1758,6 +1760,9 @@ impl<'source> Lowerer<'_, 'source>
             Interface::Theory(ref theory) => {
                 let _first = self.answered.insert(held, theory.name.clone());
                 let _first = self.theory_capabilities.insert(held, Arc::clone(theory));
+                // The written name refers to the theory, as `Model(T)`'s does.
+                self.resolutions
+                    .push((written.span, crate::Resolution::Declaration(theory.theory)));
             },
         }
         let subject = self.block(site, &mut cursor, Frame::Inner(held))?;
@@ -1960,9 +1965,21 @@ impl<'source> Lowerer<'_, 'source>
             }
             return Ok(Interface::Host(interface.name().clone()));
         }
-        let (_, presentation) =
+        let (presented, presentation) =
             self.collected
                 .presented_theory(written.span.start(), written.span, handled)?;
+        let Some(theory) = self
+            .collected
+            .slots
+            .get(usize::from(presented))
+            .map(|slot| slot.constant)
+        else {
+            return Err(LoweringRefusal::UnresolvedTypeHead {
+                span: written.span,
+                name: handled,
+                arity: crate::resolve::HeadArity::Nullary,
+            });
+        };
         // A handler is a model of the theory: a value presenting no theory
         // has none, as `Model(T)` refuses it.
         let Ok(members) = presentation.members()
@@ -2019,6 +2036,7 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Interface::Theory(Arc::new(TheoryInterface {
             scope: site.at.node,
             name: EffectName::from(handled.as_ref()),
+            theory,
             operations,
             laws,
             owner,

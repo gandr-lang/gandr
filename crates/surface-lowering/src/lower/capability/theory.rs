@@ -69,6 +69,8 @@ pub(in crate::lower) struct TheoryInterface
     pub scope: NodeIndex,
     /// The interface's name: the theory's.
     pub name: EffectName,
+    /// The theory's declaration, which the scope's written name refers to.
+    pub theory: ConstantIndex,
     /// Each operation, in the theory's order.
     pub operations: Vec<TheoryOperation>,
     /// Each law, in the theory's order, read for the scope's clauses.
