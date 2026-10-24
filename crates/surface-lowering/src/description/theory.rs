@@ -169,6 +169,7 @@
 //! `description::theory::tests::a_refused_top_level_operation_states_its_refusal`,
 //! `description::theory::tests::a_top_level_operation_declines_its_filler_by_name`.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
@@ -185,6 +186,7 @@ use gandr_theory_levitation::CircuitFrame;
 use gandr_theory_levitation::CircuitNode;
 use gandr_theory_levitation::CircuitRule;
 use gandr_theory_levitation::DeclPolarity;
+use gandr_theory_levitation::DiagnosticMessage;
 use gandr_theory_levitation::FrameHead;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Freshness;
@@ -211,6 +213,8 @@ use gandr_theory_levitation::TheoryRule;
 use gandr_theory_levitation::TheoryShape;
 use gandr_theory_levitation::TheorySort;
 use gandr_theory_levitation::TheoryValue;
+use gandr_theory_levitation::WfDiagnostic;
+use gandr_theory_levitation::WfKind;
 use gandr_theory_levitation::derive_boundaries;
 use gandr_theory_levitation::derive_cell_var_meta;
 use quenchant_shape::shape::Maybe;
@@ -246,6 +250,7 @@ use super::written::WrittenTerm;
 use super::written::WrittenWire;
 use super::written::head;
 use super::written::port_name;
+use crate::SurfaceName;
 use crate::circuit::ArrowRow;
 use crate::circuit::OutputCount;
 use crate::circuit::SignatureFault;
@@ -262,6 +267,7 @@ use crate::model::PresentedCircuit;
 use crate::model::SortTerm;
 use crate::model::StatedLaw;
 use crate::model::presentation;
+use crate::resolve::type_atom;
 use crate::unit::SourceIndex;
 
 quenchant_shape::reason_enum! {
@@ -424,7 +430,10 @@ impl Reader<'_, '_>
     ///   `include` that names no visible block, names two, or whose members
     ///   clash with the presentation's, an `ext` member the block cannot
     ///   generate, and a `law` member [`Self::signature_law`] refuses or named
-    ///   as another member is, is that member's own diagnostic.
+    ///   as another member is, is that member's own diagnostic; so is each
+    ///   operation's port at a sort nothing declares ([`undeclared_ports`]),
+    ///   unless an `include` was not read, whose refusal stands for the sorts
+    ///   it would bring.
     /// - panics: none.
     /// - executable: none — a member's independence is a relation between the
     ///   source's members and the report, which the call does not retain.
@@ -444,6 +453,7 @@ impl Reader<'_, '_>
     /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
     /// - witness: `description::theory::tests::an_extension_generates_its_signature`
+    /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
     pub(super) fn signature(
         &self,
         at: Placed,
@@ -472,6 +482,9 @@ impl Reader<'_, '_>
         let mut laws: Vec<StatedLaw> = Vec::new();
         // Each stated law's name, at its place among `laws`.
         let mut stated: BTreeMap<Name, usize> = BTreeMap::new();
+        // An include not read leaves the sorts it would bring unknown: its own
+        // refusal stands for them, and no port is refused at one (#2410).
+        let mut unread_include = false;
         for member in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -483,6 +496,7 @@ impl Reader<'_, '_>
                     Ok(found) => found,
                     Err(diagnostic) => {
                         diagnostics.push(diagnostic);
+                        unread_include = true;
                         continue;
                     },
                 };
@@ -495,6 +509,7 @@ impl Reader<'_, '_>
                 Ok(inclusion) => inclusion,
                 Err(clash) => {
                     diagnostics.push(reading.signature_fault(SignatureFault::IncludeClash(clash)));
+                    unread_include = true;
                     continue;
                 },
             };
@@ -661,6 +676,9 @@ impl Reader<'_, '_>
                 };
                 self.signature_operation(&mut reading, &parts.sorts, kind)
                     .map(|(operation, tile, ports)| {
+                        if !unread_include {
+                            diagnostics.extend(undeclared_ports(&operation, &ports, &parts.sorts));
+                        }
                         parts.operations.push(operation);
                         placement.operations.push(tile);
                         operation_spans.push(span);
@@ -2545,6 +2563,68 @@ fn surface_span(span: ByteSpan) -> SurfaceSpan
         usize::from(span.start()).into(),
         usize::from(span.end()).into(),
     )
+}
+
+/// The refusal of each port of `operation`, written at `written`, that sits
+/// at a sort none of `sorts` names and that no builtin type spells (#2410).
+///
+/// A port's sort names a sort of the signature, one an `include` or an `ext`
+/// member brought in among them, or, written bare, a builtin type such as
+/// `Void`: a model interprets every other sort, and a name no sort declares
+/// has nothing to interpret it by. A nested model's one port is at the theory
+/// it nests, not at a sort, and is not read here.
+///
+/// # Specification
+/// - requires: `written` is where `operation`'s ports are written, in order.
+/// - ensures: one [`WfKind::UnknownPortSort`] refusal per input then output
+///   port, in order, whose sort is neither the name of one of `sorts` nor a
+///   builtin type written with no index, located at the port's sort and naming
+///   the operation then the sort; none for a nested model.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a result naming nothing is refused at its bytes, while a
+///   declared sort, an included one and a builtin type are read.
+/// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
+#[spec(ensures: |ref refused| refused.iter().all(|refusal| matches!(refusal.fault,
+    DescriptionFault::IllFormed(ref diagnostic) if diagnostic.kind == WfKind::UnknownPortSort))
+    && (operation.kind != OperationKind::Nested || refused.is_empty()))]
+fn undeclared_ports(
+    operation: &TheoryOperation,
+    written: &WrittenOperation,
+    sorts: &[TheorySort],
+) -> Vec<DescriptionDiagnostic>
+{
+    if operation.kind == OperationKind::Nested {
+        return Vec::new();
+    }
+    let declared: BTreeSet<&Name> = sorts.iter().map(|sort| &sort.name).collect();
+    operation
+        .inputs
+        .iter()
+        .chain(&operation.outputs)
+        .zip(written.inputs.iter().chain(&written.outputs))
+        .filter(|&(port, _)| {
+            !declared.contains(&port.sort)
+                && (!port.indices.is_empty()
+                    || matches!(
+                        type_atom(SurfaceName::from(port.sort.as_ref())),
+                        Maybe::Absent(_)
+                    ))
+        })
+        .map(|(port, at)| DescriptionDiagnostic {
+            span: at.sort.span,
+            fault: DescriptionFault::IllFormed(WfDiagnostic::new(
+                WfKind::UnknownPortSort,
+                Box::from([operation.name.clone(), port.sort.clone()]),
+                DiagnosticMessage::from(format!(
+                    "the operation `{}` has a port at `{}`, which no sort declares",
+                    operation.name, port.sort
+                )),
+                Maybe::Present(surface_span(at.sort.span)),
+            )),
+        })
+        .collect()
 }
 
 /// The prefix of the private name the reader mints for an anonymous port,

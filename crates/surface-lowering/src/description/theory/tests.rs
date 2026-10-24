@@ -1773,6 +1773,50 @@ fn the_corpus_signatures_evaluate_and_read_back_their_closed_terms()
 }
 
 #[test]
+fn a_port_at_a_sort_nothing_declares_is_refused_2410()
+{
+    let source =
+        "theory FailNonsense { sort Reason : Type; oper raise : (r : Reason) --> Nonsense; }";
+    let report = described(source);
+    let [ref diagnostic] = *report.diagnostics.as_slice()
+    else {
+        panic!("one refusal: {:?}", report.diagnostics)
+    };
+    let start = source.rfind("Nonsense").expect("the result is written");
+    assert!(
+        matches!(
+            diagnostic.fault,
+            DescriptionFault::IllFormed(ref reason)
+                if reason.kind == gandr_theory_levitation::WfKind::UnknownPortSort
+                    && *reason.subjects == [Name::from("raise"), Name::from("Nonsense")]
+        ) && usize::from(diagnostic.span.start()) == start
+            && usize::from(diagnostic.span.end()) == start.saturating_add("Nonsense".len()),
+        "a result no sort declares is refused at its name: {diagnostic:?}"
+    );
+    let report = described(
+        "theory Fail { sort Reason : Type; oper raise : (r : Reason) --> Void; oper test : (r : Reason) --> Bool; }",
+    );
+    assert_eq!(
+        report.diagnostics,
+        [],
+        "a builtin type is a port's sort as a declared one is"
+    );
+    let report = described("theory Fail { oper raise : (r : Reason) --> Void; }");
+    assert!(
+        matches!(
+            *report.diagnostics.as_slice(),
+            [DescriptionDiagnostic {
+                fault: DescriptionFault::IllFormed(ref reason),
+                ..
+            }] if reason.kind == gandr_theory_levitation::WfKind::UnknownPortSort
+                && *reason.subjects == [Name::from("raise"), Name::from("Reason")]
+        ),
+        "an input no sort declares is refused as a result is: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
 fn a_binder_over_an_ordinary_sort_is_refused_by_name()
 {
     let report =

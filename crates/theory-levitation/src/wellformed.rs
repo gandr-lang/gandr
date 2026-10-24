@@ -107,6 +107,10 @@ pub enum WfKind
     UnknownResultSort,
     /// A recursive occurrence names no declared sort of this signature.
     UnknownVarSort,
+    /// An operation's port sits at a sort its signature does not declare
+    /// and the surface holds no builtin type of, so no model of the
+    /// signature can interpret it.
+    UnknownPortSort,
     /// A declared sort's polarity disagrees with the declaration's polarity,
     /// outside the polarity-homogeneous fragment this table admits.
     SortPolarityDisagreement,
@@ -319,7 +323,7 @@ fn located(
 #[inline]
 #[must_use]
 #[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
-    WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
+    WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch | WfKind::UnknownPortSort
     | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget
     | WfKind::MisplacedResults | WfKind::SplitCircuitOutputs | WfKind::UnsortedBinding
     | WfKind::MisplacedAbstraction | WfKind::UnknownFreshness

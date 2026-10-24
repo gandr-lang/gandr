@@ -13,3 +13,13 @@ theory StoreDigestPut {
   oper put : (v : Value, k : pi+ (d : Digest) . C) --> C;
   rule again : put(v, bind d . put(d, k)) <=> put(v, k);
 }
+
+/// A failure's result names a type nothing declares: `Fail` answers `Void`,
+/// the builtin empty type, and `Nonsense` is neither a sort of the theory nor
+/// a builtin, so the description check refuses the port by name
+/// (`UnknownPortSort`, #2410).
+@[ refuses("IllFormedDescription") ]
+theory FailNonsense {
+  sort Reason : Type;
+  oper raise : (r : Reason) --> Nonsense;
+}

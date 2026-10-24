@@ -1727,6 +1727,11 @@ fn ill_formed(
             f,
             "the constructor {one} recurses at {other}, which is not a declared sort"
         ),
+        WfKind::UnknownPortSort => write!(
+            f,
+            "the operation {one} has a port at {other}, which is neither a sort the signature \
+             declares nor a builtin type"
+        ),
         WfKind::SortPolarityDisagreement => write!(
             f,
             "the sort {one} declares a polarity its declaration does not"
@@ -2904,6 +2909,7 @@ mod tests
             WfKind::DuplicateSortName,
             WfKind::UnknownResultSort,
             WfKind::UnknownVarSort,
+            WfKind::UnknownPortSort,
             WfKind::SortPolarityDisagreement,
             WfKind::MisplacedResults,
             WfKind::NonRepresentableBinder,
@@ -3012,6 +3018,7 @@ mod tests
                 crate::WfKind::DuplicateSortName,
                 crate::WfKind::UnknownResultSort,
                 crate::WfKind::UnknownVarSort,
+                crate::WfKind::UnknownPortSort,
                 crate::WfKind::SortPolarityDisagreement,
                 crate::WfKind::MisplacedResults,
                 crate::WfKind::NonRepresentableBinder,
