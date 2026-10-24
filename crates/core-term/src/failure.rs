@@ -106,9 +106,9 @@ impl TrackingIssue
     pub const INDEX: Self = Self(1536);
     /// A model signature's operation abstracting an atom over a port.
     pub const MODEL_ABSTRACTION: Self = Self(1561);
-    /// A freshness condition, stated or implied by a variable moved across an
-    /// abstraction, whose rule overlaps another or splits a variable across
-    /// an abstraction, in a signature where a term can name an atom.
+    /// A freshness condition whose rule matches one variable both under an
+    /// abstraction and beside it, in a signature where a term can name an
+    /// atom.
     pub const UNDECIDED_CONDITION: Self = Self(1934);
     /// A recursive call's claim naming a measure, a stage or a cost.
     pub const RECURSIVE_CLAIM: Self = Self(1497);

@@ -1,6 +1,7 @@
 // The twin of `model/desc/atom-occurrence.gandr`: an atom named where no port
-// of its sort stands, and freshness conditions where a term can name the atom
-// they are stated on that no step decides yet.
+// of its sort stands, a conditioned overlap whose rewrites part under the
+// freshness it composes, and a variable split across an abstraction that no
+// step decides yet.
 
 // The law over the channel its restriction abstracts.
 import "../../model/desc/atom-occurrence.gandr" ;
@@ -18,19 +19,21 @@ theory Misplaced {
   rule stray : nu(bind a . par(a, nil())) ==> nil();
 }
 
-/// Scope extrusion beside garbage collection where `out` takes a channel: each
-/// rule fires only where its instance names no atom it may not, collection
-/// overlaps extrusion below its root, and no critical pair decides a condition
-/// yet, so the rules are refused together (#1934).
+/// Scope extrusion beside the law that a restriction of the inert process is
+/// inert, where `out` takes a channel: the law rewrites the restriction
+/// extrusion matches, and under `a # q` the peak `par(nu(bind a . nil), q)`
+/// reaches `nu(bind a . par(nil, q))` one way and `par(nil, q)` the other, two
+/// normal forms, so the rules are refused (#2448).
 @[ refuses("RulesOverlapCondition") ]
-theory Collecting {
+theory Vacant {
   sort Name : Atom;
   sort Proc : Type;
+  oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name) . Proc) --> Proc;
   rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
-  rule gc : nu(bind a . p) <=> p where a # p;
+  rule vacant : nu(bind a . nil()) <=> nil();
 }
 
 /// A variable matched under a restriction and beside it where `out` takes a

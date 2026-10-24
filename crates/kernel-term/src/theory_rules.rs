@@ -28,10 +28,9 @@
 //! 3. each derived rule is, up to its variables' names, the two normal forms
 //!    under the rules before it of the critical pair it names, so it is an
 //!    equation the rules before it prove;
-//! 4. no conditioned rule overlaps or is overlapped by a rule, and every
-//!    critical pair of the others joins: a pair one of whose rules instantiates
-//!    a variable in the second-order reading of [`higher`], every other first
-//!    order.
+//! 4. every critical pair joins: a pair one of whose rules instantiates a
+//!    variable or is conditioned in the second-order reading of [`higher`],
+//!    every other first order.
 //!
 //! By the critical pair lemma and Newman's lemma the rules are then confluent
 //! and terminating, and by step 3 they decide exactly the equations the
@@ -57,13 +56,16 @@
 //! states a freshness condition, or whose variable stands under other
 //! abstractions at one occurrence than at another, is conditioned: it fires
 //! only where its instance names no atom it may not, renumbering the atoms a
-//! moved instance names, which is a question about a ground instance. For a
-//! rule that instantiates a variable only atom abstractions count: its
-//! second-order reading substitutes a variable's instance across a binding
-//! field without capture. So a
-//! conditioned rule takes part in no critical pair, its overlaps refused by
-//! name, and fires in no normal form the decision computes; the critical
-//! pairs of the other rules join without it, and so join in the whole system.
+//! moved instance names, which is a question about the instance the
+//! first-order reading does not ask. For a rule that instantiates a variable
+//! only atom abstractions count: its second-order reading substitutes a
+//! variable's instance across a binding field without capture. So a
+//! conditioned rule fires in no first-order normal form, and its critical
+//! pairs are decided in the second-order reading, where each variable
+//! occurrence is applied to the atoms it may name ([`TheoryRule::scoped`]):
+//! the condition is stated over the hole the variable stands for, pattern
+//! unification composes two rules' conditions at their overlap, and an
+//! overlap no instance satisfies owes no join.
 //! A variable standing under other abstractions at two occurrences on a left
 //! side is refused there. Where no port takes an atom no term names one, and
 //! a condition holds of every instance. A left side may repeat a variable,
@@ -482,14 +484,98 @@ pub struct TheoryRule
     instantiates: bool,
     /// Whether the rule states a freshness condition or moves a variable
     /// across an abstraction where a term can name an atom: it fires only
-    /// where its instance names no atom it may not, so it too rewrites no term
-    /// the decision normalizes and overlaps no rule.
+    /// where its instance names no atom it may not, a question about the
+    /// instance the first-order reading does not ask, so the rule rewrites
+    /// no first-order term and its critical pairs are decided in the
+    /// second-order reading.
     conditioned: bool,
     /// The variables every occurrence of which on the left side is an
     /// argument of an operation at an input port of a sort no operation of
     /// the presentation returns: values, which only constructors and
     /// variables build, so instantiating at one calls no operation.
     values: Box<[RuleVariable]>,
+    /// The atom abstractions each variable occurrence's instance may name,
+    /// as [`Self::scoped`] reads them: what the second-order reading applies
+    /// the variable to.
+    holes: Holes,
+}
+
+/// A binder above an occurrence of a rule's variable, as
+/// [`TheoryRule::scoped`] reads it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Above<N>
+{
+    /// An atom's abstraction, by the name of the atom it abstracts.
+    Atom(N),
+    /// A binding field.
+    Field,
+}
+
+/// The atom abstractions each variable occurrence of a rule may name, end
+/// to end: occurrence `k`'s are `distances[ends[k - 1] .. ends[k]]`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+struct Holes
+{
+    /// Every occurrence's abstractions, each by its distance from the
+    /// occurrence, in the order the variable is applied to them.
+    distances: Box<[BinderDistance]>,
+    /// One past each occurrence's last distance, by the occurrence's place:
+    /// the left side's in pre-order, then the right side's. Empty where the
+    /// rule was read without them, each occurrence then naming none.
+    ends: Box<[usize]>,
+}
+
+/// A variable occurrence of a rule, by its place among them: the left side's
+/// in pre-order, then the right side's.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Occurrence(usize);
+
+/// How a rule's critical pairs are decided.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Reading
+{
+    /// The rule rewrites first-order terms; its pairs with another such rule
+    /// are decided first-order.
+    FirstOrder,
+    /// The rule instantiates a variable or is conditioned: it rewrites no
+    /// first-order term, and its pairs are decided in the second-order
+    /// reading.
+    SecondOrder,
+}
+
+impl Holes
+{
+    /// The abstractions occurrence `at` may name; none past the last.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at(
+        &self,
+        Occurrence(at): Occurrence,
+    ) -> &[BinderDistance]
+    {
+        let start = at
+            .checked_sub(1)
+            .and_then(|before| self.ends.get(before).copied())
+            .unwrap_or(0);
+        self.ends
+            .get(at)
+            .and_then(|&end| self.distances.get(start .. end))
+            .unwrap_or_default()
+    }
 }
 
 impl TheoryRule
@@ -515,6 +601,7 @@ impl TheoryRule
             instantiates,
             conditioned: false,
             values: Box::default(),
+            holes: Holes::default(),
         }
     }
 
@@ -545,6 +632,164 @@ impl TheoryRule
     ) -> Self
     {
         Self { values, ..self }
+    }
+
+    /// The rule, each variable occurrence's instance reading the atoms it may
+    /// name: for a variable, the atom abstractions above its first occurrence
+    /// on the left side, outermost first, but those `fresh` states its atom
+    /// fresh for and those some occurrence on the right side stands under no
+    /// abstraction of; at each occurrence, each found by its atom and its rank
+    /// among the abstractions of that atom, innermost first. `above` lists, by
+    /// occurrence of a variable, plain or instantiated, the left side's in
+    /// pre-order then the right side's, the binders above it, outermost
+    /// first.
+    ///
+    /// The second-order reading applies each occurrence to its atoms before
+    /// any argument the rule writes: a freshness condition, written or
+    /// implied by a right occurrence standing outside an abstraction, is the
+    /// variable not applied to that atom, so it is stated over the hole the
+    /// variable stands for. A critical pair then composes two rules'
+    /// conditions by pruning in pattern unification, and an instance carries
+    /// a moved variable's atoms to their places by substitution.
+    ///
+    /// # Specification
+    /// - ensures: when `above` holds one list per variable occurrence, the rule
+    ///   with each occurrence's atoms read as stated; otherwise the rule
+    ///   unchanged, each occurrence naming none. Sides, variables, values and
+    ///   condition unchanged.
+    /// - panics: none.
+    /// - executable: none — the holes are private to the rule and read only by
+    ///   the second-order reading, whose verdicts the witness observes.
+    /// - intension: one pass over the occurrences per variable read, the
+    ///   distances kept end to end.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — scope extrusion applies the process it keeps under
+    ///   its restriction to the restriction's atom on both sides and the one it
+    ///   moves in to none; garbage collection, its atom stated fresh, applies
+    ///   its process to none; a law under one abstraction on both sides applies
+    ///   its variable to it on both, and one swapping two abstractions of one
+    ///   atom swaps the distances.
+    /// - witness: `theory_rules::tests::a_variables_atoms_are_read_off_its_abstractions_2448`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            linear_search_in_loop,
+            reason = "bounded: `fresh` holds the conditions one rule states, and `occurrences` its variable occurrences"
+        )
+    )]
+    #[inline]
+    #[must_use]
+    pub fn scoped<N>(
+        self,
+        above: &[&[Above<N>]],
+        fresh: &[(N, RuleVariable)],
+    ) -> Self
+    where
+        N: Copy + PartialEq,
+    {
+        let variable = |node: &TheoryNode| match *node {
+            TheoryNode::Variable(variable) | TheoryNode::Instance(variable, _) => Some(variable),
+            TheoryNode::Symbol(_) => None,
+        };
+        let occurrences: Vec<RuleVariable> = self
+            .left
+            .iter()
+            .chain(self.right.iter())
+            .filter_map(variable)
+            .collect();
+        if occurrences.len() != above.len() {
+            return self;
+        }
+        let lefts = self.left.iter().filter_map(variable).count();
+        // The binder at `index` of `from`, found among `at` by its atom and
+        // its rank among the abstractions of that atom, innermost first.
+        let place = |at: &[Above<N>], from: &[Above<N>], index: usize| {
+            let atom = *from.get(index)?;
+            let Above::Atom(_) = atom
+            else {
+                return None;
+            };
+            let rank = from
+                .get(index.saturating_add(1) ..)
+                .unwrap_or_default()
+                .iter()
+                .filter(|&&binder| binder == atom)
+                .count();
+            at.iter()
+                .enumerate()
+                .rev()
+                .filter(|&(_, &binder)| binder == atom)
+                .nth(rank)
+                .map(|(place, _)| place)
+        };
+        let mut distances = Vec::new();
+        let mut ends = Vec::with_capacity(occurrences.len());
+        for (at, &occurring) in occurrences.iter().enumerate() {
+            let first = occurrences
+                .get(.. lefts)
+                .unwrap_or_default()
+                .iter()
+                .position(|&other| other == occurring);
+            if let (Some(from), Some(&here)) =
+                (first.and_then(|first| above.get(first)), above.get(at))
+            {
+                for (index, &binder) in from.iter().enumerate() {
+                    let Above::Atom(atom) = binder
+                    else {
+                        continue;
+                    };
+                    let named = !fresh.contains(&(atom, occurring))
+                        && occurrences
+                            .iter()
+                            .zip(above)
+                            .skip(lefts)
+                            .filter(|&(&other, _)| other == occurring)
+                            .all(|(_, right)| place(right, from, index).is_some());
+                    if let (true, Some(place)) = (named, place(here, from, index)) {
+                        distances.push(BinderDistance(
+                            here.len().saturating_sub(place).saturating_sub(1),
+                        ));
+                    }
+                }
+            }
+            ends.push(distances.len());
+        }
+        Self {
+            holes: Holes {
+                distances: distances.into(),
+                ends: ends.into(),
+            },
+            ..self
+        }
+    }
+
+    /// The atom abstractions occurrence `at` of a variable may name, by
+    /// distance.
+    ///
+    /// # Specification
+    /// trivial.
+    fn holes(
+        &self,
+        at: Occurrence,
+    ) -> &[BinderDistance]
+    {
+        self.holes.at(at)
+    }
+
+    /// How the rule's critical pairs are decided: second-order when it
+    /// instantiates a variable or is conditioned.
+    ///
+    /// # Specification
+    /// trivial.
+    fn reading(&self) -> Reading
+    {
+        if self.instantiates || self.conditioned {
+            Reading::SecondOrder
+        }
+        else {
+            Reading::FirstOrder
+        }
     }
 
     /// The left side.
@@ -658,11 +903,6 @@ pub enum TheoryRuleFault
     /// operation's input port takes an atom: a match then compares its
     /// instances only up to the atoms they name, which no step decides yet.
     UndecidedCondition,
-    /// The rule, overlapped by the one named, is one of two overlapping rules
-    /// at least one of which states a freshness condition or moves a variable
-    /// across an abstraction where some operation's input port takes an atom:
-    /// such a rule takes part in no critical pair yet.
-    Conditioned(RuleIndex),
 }
 
 /// The first rule a presentation's rules are refused at, and why. Rules are
@@ -843,13 +1083,11 @@ impl TheoryRules
     ///   of one rule overlapping itself, whose critical pair's two normal forms
     ///   under the rules before it are the rule's two sides, up to renaming its
     ///   variables; every critical pair one of whose rules instantiates a
-    ///   variable, neither conditioned, joins in the second-order reading
-    ///   ([`Self::second_order`]); no conditioned rule overlaps or is
-    ///   overlapped by a rule; and every other critical pair normalizes to one
-    ///   term under the rules that instantiate nothing and are not conditioned.
-    ///   Otherwise the first failing rule in that order and its fault; a
-    ///   divergent, undecided or conditioned overlap is named at its outer
-    ///   rule.
+    ///   variable or is conditioned joins in the second-order reading
+    ///   ([`Self::second_order`]); and every other critical pair normalizes to
+    ///   one term under the rules that instantiate nothing and are not
+    ///   conditioned. Otherwise the first failing rule in that order and its
+    ///   fault; a divergent or undecided overlap is named at its outer rule.
     /// - provides: the kernel's own decision that a presentation's rules are a
     ///   convergent rewriting system deciding the equations its written rules
     ///   generate, re-derived at every admission and replay.
@@ -874,7 +1112,9 @@ impl TheoryRules
     ///   parts from it; get-get joins its own instance through its pattern; a
     ///   relative monad's associativity joins itself and both unit laws; scope
     ///   extrusion and garbage collection where a port takes the channel each
-    ///   converge alone and are refused together at their overlap.
+    ///   converge alone and join together, the overlap composing their
+    ///   freshness conditions, while a restriction of nothing beside scope
+    ///   extrusion parts at their overlap.
     /// - witness: `theory_rules::tests::a_unit_law_converges_and_a_second_unit_parts_from_it`
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
     /// - witness: `theory_rules::tests::a_rule_the_ranks_do_not_decrease_is_unoriented`
@@ -882,7 +1122,7 @@ impl TheoryRules
     /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
     /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
     /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
-    /// - witness: `theory_rules::tests::a_conditioned_rule_converges_alone_and_overlaps_nothing`
+    /// - witness: `theory_rules::tests::conditioned_rules_join_under_the_condition_their_overlap_composes_2448`
     #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules.len()))]
     #[inline]
     pub fn decide(
@@ -934,21 +1174,9 @@ impl TheoryRules
                         inner: RuleIndex::from(inner),
                     };
                     let other = self.rules.get(inner);
-                    if rule.conditioned || other.is_some_and(|other| other.conditioned) {
-                        match self.overlap(&self.rules, peak, &mut work, fuel) {
-                            Ok(Verdict::Fails) => continue,
-                            Ok(Verdict::Holds) => {
-                                return Err(refuse(
-                                    outer,
-                                    TheoryRuleFault::Conditioned(RuleIndex::from(inner)),
-                                ));
-                            },
-                            Err(Exhausted) => {
-                                return Err(refuse(outer, TheoryRuleFault::Exhausted));
-                            },
-                        }
-                    }
-                    if rule.instantiates || other.is_some_and(|other| other.instantiates) {
+                    if rule.reading() == Reading::SecondOrder
+                        || other.is_some_and(|other| other.reading() == Reading::SecondOrder)
+                    {
                         continue;
                     }
                     let joined = self
@@ -987,10 +1215,10 @@ impl TheoryRules
         Ok(())
     }
 
-    /// Decide the critical pairs one of whose rules instantiates a variable,
-    /// neither of them conditioned, in the second-order reading: each found by
-    /// pattern unification and joined by normalizing both reducts under every
-    /// rule not conditioned.
+    /// Decide the critical pairs one of whose rules instantiates a variable
+    /// or is conditioned in the second-order reading: each found by pattern
+    /// unification, the conditions the two rules state composed by pruning,
+    /// and joined by normalizing both reducts under every rule.
     ///
     /// # Specification
     /// - requires: the rules well formed, as [`Self::decide`] checks first.
@@ -1021,7 +1249,11 @@ impl TheoryRules
         fuel: &mut RewriteFuel,
     ) -> Result<(), TheoryRuleRefusal>
     {
-        if !self.rules.iter().any(|rule| rule.instantiates) {
+        if !self
+            .rules
+            .iter()
+            .any(|rule| rule.reading() == Reading::SecondOrder)
+        {
             return Ok(());
         }
         let higher = Higher::new(self);
@@ -1032,9 +1264,8 @@ impl TheoryRules
                 }
                 for (inner, other) in self.rules.iter().enumerate() {
                     let apart = (position == 0 && inner == outer)
-                        || rule.conditioned
-                        || other.conditioned
-                        || (!rule.instantiates && !other.instantiates);
+                        || (rule.reading() == Reading::FirstOrder
+                            && other.reading() == Reading::FirstOrder);
                     if apart {
                         continue;
                     }
@@ -1562,10 +1793,8 @@ impl TheoryRules
         else {
             return Ok(Verdict::Fails);
         };
-        if outer.instantiates
-            || inner.instantiates
-            || outer.conditioned
-            || inner.conditioned
+        if outer.reading() == Reading::SecondOrder
+            || inner.reading() == Reading::SecondOrder
             || self.overlap(rules, peak, work, fuel)? == Verdict::Fails
         {
             return Ok(Verdict::Fails);
@@ -1627,9 +1856,8 @@ impl TheoryRules
     ///   a binder the first-order term does not mark. A conditioned rule fires
     ///   nowhere either: whether its instance names an atom it may not is a
     ///   question about the instance this reading does not ask.
-    ///   [`Self::decide`] refuses every overlap a conditioned rule takes part
-    ///   in and decides every pair a second-order rule takes part in by the
-    ///   second-order reading, so a first-order pair is decided without either.
+    ///   [`Self::decide`] decides every pair either takes part in by the
+    ///   second-order reading, so a first-order pair is decided without them.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — a normal form is what this computes; checking one
@@ -1660,7 +1888,7 @@ impl TheoryRules
                 }
                 for rule in rules
                     .iter()
-                    .filter(|rule| !rule.instantiates && !rule.conditioned)
+                    .filter(|rule| rule.reading() == Reading::FirstOrder)
                 {
                     let Some(end) = matched(term, Position(start), rule.left(), bindings, fuel)?
                     else {
@@ -2730,6 +2958,17 @@ struct ReadBuffers<'arena>
     valued: BTreeSet<RuleVariable>,
     /// The variables with an occurrence on the left side anywhere else.
     served: BTreeSet<RuleVariable>,
+    /// The binders above each variable occurrence of the rule read last,
+    /// outermost first, end to end, its left side's occurrences in pre-order
+    /// first.
+    held: Vec<Above<&'arena StringLiteral>>,
+    /// One past each of those occurrences' last binder in `held`.
+    held_ends: Vec<usize>,
+    /// The freshness conditions stated for the rule read last, each an atom's
+    /// name and the variable it is fresh for.
+    fresh: Vec<(&'arena StringLiteral, RuleVariable)>,
+    /// Whether the rule read last still waits for its atoms to be read off.
+    pending: bool,
 }
 
 /// How far a rule moves a variable: whether some occurrence stands under
@@ -2857,7 +3096,14 @@ impl<'arena> Reader<'arena>
                     {
                         stated.conditioned = true;
                     }
-                    self.text(atom).and_then(|_| self.text(term)).map(|_| rest)
+                    let (atom, term) = (self.text(atom), self.text(term));
+                    if let (Some(atom), Some(&Ordinal(place))) =
+                        (atom, term.and_then(|term| buffers.variables.get(term)))
+                        && let Ok(place) = u32::try_from(place)
+                    {
+                        buffers.fresh.push((atom, RuleVariable::from(place)));
+                    }
+                    atom.and(term).map(|_| rest)
                 },
                 Some((tag::DERIVED, &[outer, position, inner, left, right, rest]))
                     if stage <= Stage::Derived =>
@@ -2900,6 +3146,7 @@ impl<'arena> Reader<'arena>
             };
             at = read.ok_or_else(|| self.unreadable())?;
         }
+        self.held(&mut buffers);
         if let Some(rule) = self.split {
             return Err(TheoryRuleRefusal {
                 rule,
@@ -3196,6 +3443,7 @@ impl<'arena> Reader<'arena>
         buffers: &mut ReadBuffers<'arena>,
     ) -> Option<()>
     {
+        self.held(buffers);
         buffers.variables.clear();
         buffers.scopes.clear();
         buffers.above.clear();
@@ -3227,7 +3475,42 @@ impl<'arena> Reader<'arena>
             }
         }
         self.rules.push(rule);
+        buffers.pending = true;
         Some(())
+    }
+
+    /// Read off the atoms each variable occurrence of the rule read last may
+    /// name, as [`TheoryRule::scoped`] reads them, where a term can name an
+    /// atom and that rule still waits for them; then clear what its reading
+    /// kept for it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn held(
+        &mut self,
+        buffers: &mut ReadBuffers<'arena>,
+    )
+    {
+        if buffers.pending
+            && self.naming == Naming::Named
+            && let Some(rule) = self.rules.pop()
+        {
+            let mut start = 0;
+            let above: Vec<&[Above<&StringLiteral>]> = buffers
+                .held_ends
+                .iter()
+                .map(|&end| {
+                    let binders = buffers.held.get(start .. end).unwrap_or_default();
+                    start = end;
+                    binders
+                })
+                .collect();
+            self.rules.push(rule.scoped(&above, &buffers.fresh));
+        }
+        buffers.pending = false;
+        buffers.held.clear();
+        buffers.held_ends.clear();
+        buffers.fresh.clear();
     }
 
     /// Read the term `root` in pre-order into `out`.
@@ -3276,6 +3559,7 @@ impl<'arena> Reader<'arena>
                     let name = self.text(name)?;
                     let variable = variable(name, buffers)?;
                     scoped(name, buffers);
+                    hold(buffers);
                     if buffers.left {
                         let _new = match stands {
                             Stands::AtValue => buffers.valued.insert(variable),
@@ -3333,6 +3617,7 @@ impl<'arena> Reader<'arena>
                     let name = self.text(name)?;
                     let variable = variable(name, buffers)?;
                     scoped(name, buffers);
+                    hold(buffers);
                     if buffers.left {
                         let _new = buffers.served.insert(variable);
                     }
@@ -3420,6 +3705,26 @@ fn variable<'arena>(
     let count = Ordinal(buffers.variables.len());
     let Ordinal(place) = *buffers.variables.entry(name).or_insert(count);
     u32::try_from(place).ok().map(RuleVariable::from)
+}
+
+/// Keep the binders above the variable occurrence being read, outermost
+/// first, as the next occurrence's in `buffers.held`.
+///
+/// # Specification
+/// trivial.
+fn hold(buffers: &mut ReadBuffers<'_>)
+{
+    let ReadBuffers {
+        ref atoms,
+        ref mut held,
+        ref mut held_ends,
+        ..
+    } = *buffers;
+    held.extend(atoms.iter().map(|&(name, binds)| match binds {
+        Binds::Atom => Above::Atom(name),
+        Binds::Variable => Above::Field,
+    }));
+    held_ends.push(held.len());
 }
 
 /// Keep the atoms in scope at `name`'s first occurrence, or compare them with

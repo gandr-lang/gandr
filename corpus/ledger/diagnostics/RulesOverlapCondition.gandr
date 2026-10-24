@@ -1,11 +1,12 @@
-/// `RulesOverlapCondition`: two rules of a block whose left sides overlap, one of which states a freshness condition where a term can name the atom it is stated on.
+/// `RulesOverlapCondition`: two rules of a block whose left sides overlap, one of which states a freshness condition where a term can name the atom it is stated on, rewriting the overlap to two normal forms under the condition it composes.
 @[ refuses("RulesOverlapCondition") ]
-theory CollectingOverlap {
+theory VacantOverlap {
   sort Name : Atom;
   sort Proc : Type;
+  oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
   oper nu : (p : bind (a : Name) . Proc) --> Proc;
   rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
-  rule gc : nu(bind a . p) <=> p where a # p;
+  rule vacant : nu(bind a . nil()) <=> nil();
 }

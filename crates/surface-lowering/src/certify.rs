@@ -15,6 +15,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::Above;
 use gandr_kernel_term::BinderDistance;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::OperationRank;
@@ -31,9 +32,11 @@ use gandr_kernel_term::TheorySymbol;
 use gandr_theory_levitation::DerivedFace;
 use gandr_theory_levitation::DerivedPeak;
 use gandr_theory_levitation::FreeTerm;
+use gandr_theory_levitation::Freshness;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::Precedence;
 use gandr_theory_levitation::RuleCertificate;
+use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::RuleIndex;
 use gandr_theory_levitation::RuleTurn;
 use gandr_theory_levitation::SidePlace;
@@ -114,23 +117,15 @@ where
         .map(|(name, rank)| (name.clone(), rank))
         .collect();
     let mut symbols = Symbols::new(&ranks);
-    let nameable = naming_port(description).is_some();
+    let nameable = Nameable::from(naming_port(description).is_some());
     let written: Vec<TheoryRule> = cells
         .oriented
         .iter()
-        .map(|face| {
-            let rule = symbols.rule(&face.lhs, &face.rhs);
-            if nameable && bool::from(face.conditioned()) {
-                rule.conditioned()
-            }
-            else {
-                rule
-            }
-        })
+        .map(|face| symbols.face(face, nameable))
         .collect();
     let derived_rules: Vec<TheoryRule> = derived
         .iter()
-        .map(|&((ref left, ref right), _)| symbols.rule(left, right))
+        .map(|&((ref left, ref right), _)| symbols.rule(left, right, &[], nameable))
         .collect();
     let mut kernel = TheoryRules::new(symbols.table(), written);
     let mentioned = symbols.operations();
@@ -165,9 +160,9 @@ where
 }
 
 /// The first critical pair of `description`'s rules and `derived`, one of
-/// them instantiating a variable, that the kernel's second-order reading
-/// does not join: its two rules' places, the later first, the written rules
-/// numbered before the derived ones.
+/// them instantiating a variable or conditioned, that the kernel's
+/// second-order reading does not join: its two rules' places, the later
+/// first, the written rules numbered before the derived ones.
 ///
 /// # Specification
 /// - requires: `description`'s rules are oriented.
@@ -190,33 +185,23 @@ pub fn second_order_parts<G>(
 ) -> Option<(RuleIndex, RuleIndex)>
 {
     let mut symbols = Symbols::new(&[]);
-    let nameable = naming_port(description).is_some();
+    let nameable = Nameable::from(naming_port(description).is_some());
     let mut rules: Vec<TheoryRule> = description
         .rules
         .iter()
-        .map(|face| {
-            let rule = symbols.rule(&face.lhs, &face.rhs);
-            if nameable && bool::from(face.conditioned()) {
-                rule.conditioned()
-            }
-            else {
-                rule
-            }
-        })
+        .map(|face| symbols.face(face, nameable))
         .collect();
     rules.extend(
         derived
             .iter()
-            .map(|&&(ref left, ref right)| symbols.rule(left, right)),
+            .map(|&&(ref left, ref right)| symbols.rule(left, right, &[], nameable)),
     );
     let refusal = TheoryRules::new(symbols.table(), rules)
         .second_order(&mut RewriteFuel::from(PRESENTATION_FUEL))
         .err()?;
     let outer = usize::from(refusal.rule);
     let inner = match refusal.fault {
-        TheoryRuleFault::Diverges(inner)
-        | TheoryRuleFault::Overlaps(inner)
-        | TheoryRuleFault::Conditioned(inner) => usize::from(inner),
+        TheoryRuleFault::Diverges(inner) | TheoryRuleFault::Overlaps(inner) => usize::from(inner),
         TheoryRuleFault::Unreadable
         | TheoryRuleFault::Malformed
         | TheoryRuleFault::Unbound
@@ -233,6 +218,41 @@ pub fn second_order_parts<G>(
 
 /// A symbol's interning key: its class, its name, and its argument count.
 type SymbolKey<'term> = (Class, Option<&'term Name>, usize);
+
+/// Whether a term of a block can name an atom or a variable one of its
+/// binders binds, as [`naming_port`] finds a port taking one.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Nameable(bool);
+
+/// The binder a name above a node is bound by.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Binder
+{
+    /// An atom's abstraction, `bind a . t`.
+    Abstraction,
+    /// A binding field, its variable bound for the field's body.
+    Field,
+}
+
+impl From<bool> for Nameable
+{
+    /// Nameable exactly when `nameable`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(nameable: bool) -> Self
+    {
+        Self(nameable)
+    }
+}
 
 /// The kernel's symbol table as the certificate's rules build it.
 ///
@@ -341,8 +361,32 @@ impl<'term> Symbols<'term>
             .collect()
     }
 
+    /// The kernel's reading of the written rule `face`: as [`Self::rule`]
+    /// reads its sides under the freshness conditions it states, and
+    /// conditioned exactly where a term can name an atom and the face is.
+    ///
+    /// # Specification
+    /// trivial.
+    fn face(
+        &mut self,
+        face: &'term RuleFace,
+        nameable: Nameable,
+    ) -> TheoryRule
+    {
+        let rule = self.rule(&face.lhs, &face.rhs, &face.fresh, nameable);
+        if nameable == Nameable(true) && bool::from(face.conditioned()) {
+            rule.conditioned()
+        }
+        else {
+            rule
+        }
+    }
+
     /// The kernel's reading of the rule `left` to `right`: its variables
-    /// numbered by first occurrence on the left, then on the right.
+    /// numbered by first occurrence on the left, then on the right; where a
+    /// term can name an atom, each variable occurrence reading the atoms it
+    /// may name under `fresh`, as [`TheoryRule::scoped`] reads them and the
+    /// kernel reads them off the value.
     ///
     /// # Specification
     /// trivial.
@@ -350,18 +394,44 @@ impl<'term> Symbols<'term>
         &mut self,
         left: &'term FreeTerm,
         right: &'term FreeTerm,
+        fresh: &'term [Freshness],
+        nameable: Nameable,
     ) -> TheoryRule
     {
         let mut variables = BTreeMap::new();
-        let left = self.side(left, &mut variables);
-        let right = self.side(right, &mut variables);
-        TheoryRule::new(left.into(), right.into())
+        let mut held = Held::default();
+        let left = self.side(left, &mut variables, &mut held);
+        let right = self.side(right, &mut variables, &mut held);
+        let rule = TheoryRule::new(left.into(), right.into());
+        if nameable == Nameable(false) {
+            return rule;
+        }
+        let fresh: Vec<(&Name, RuleVariable)> = fresh
+            .iter()
+            .filter_map(|condition| {
+                variables
+                    .get(&condition.term)
+                    .map(|&variable| (&condition.atom, variable))
+            })
+            .collect();
+        let mut start = 0;
+        let above: Vec<&[Above<&Name>]> = held
+            .ends
+            .iter()
+            .map(|&end| {
+                let binders = held.binders.get(start .. end).unwrap_or_default();
+                start = end;
+                binders
+            })
+            .collect();
+        rule.scoped(&above, &fresh)
     }
 
     /// `term` in pre-order, interning its symbols and numbering its
     /// variables among `variables`, an instantiated one as an instantiated
     /// variable is, and an occurrence by the number of binders between it and
-    /// the innermost of its kind binding its name.
+    /// the innermost of its kind binding its name; the binders above each
+    /// variable occurrence kept in `held`.
     ///
     /// # Specification
     /// trivial.
@@ -369,24 +439,27 @@ impl<'term> Symbols<'term>
         &mut self,
         term: &'term FreeTerm,
         variables: &mut BTreeMap<&'term Name, RuleVariable>,
+        held: &mut Held<'term>,
     ) -> Vec<TheoryNode>
     {
         let mut nodes = Vec::new();
         // Each node still to read, with the number of binders above it.
         let mut pending: Vec<(TermNode<'term>, usize)> = Vec::from([(term.to_node(), 0)]);
         let mut arguments: Vec<TermNode<'term>> = Vec::new();
-        // The names the binders above the node read bind, each with whether
-        // its binder is a binding field.
-        let mut atoms: Vec<(&'term Name, bool)> = Vec::new();
+        // The names the binders above the node read bind, each with its
+        // binder.
+        let mut atoms: Vec<(&'term Name, Binder)> = Vec::new();
         while let Some((node, depth)) = pending.pop() {
             arguments.clear();
             atoms.truncate(depth);
             let (class, name) = match node.view() {
                 TermView::Var(name) => {
+                    held.hold(&atoms);
                     nodes.push(TheoryNode::Variable(Self::variable(variables, name)));
                     continue;
                 },
                 TermView::Inst { name, args } => {
+                    held.hold(&atoms);
                     arguments.extend(args);
                     nodes.push(TheoryNode::Instance(
                         Self::variable(variables, name),
@@ -409,26 +482,29 @@ impl<'term> Symbols<'term>
                 },
                 TermView::Abs { atom, args } => {
                     arguments.extend(args);
-                    atoms.push((atom, false));
+                    atoms.push((atom, Binder::Abstraction));
                     (Class::Abstraction, None)
                 },
                 TermView::Lam { var, args } => {
                     arguments.extend(args);
-                    atoms.push((var, true));
+                    atoms.push((var, Binder::Field));
                     (Class::Field, None)
                 },
                 TermView::Atom(name) | TermView::Bound(name) => {
-                    let field = matches!(node.view(), TermView::Bound(_));
+                    let binder = if matches!(node.view(), TermView::Bound(_)) {
+                        Binder::Field
+                    }
+                    else {
+                        Binder::Abstraction
+                    };
                     let between = atoms
                         .iter()
                         .rev()
-                        .position(|&binder| binder == (name, field))
+                        .position(|&above| above == (name, binder))
                         .unwrap_or(atoms.len());
-                    if field {
-                        (Class::BoundVariable(between), None)
-                    }
-                    else {
-                        (Class::Occurrence(between), None)
+                    match binder {
+                        Binder::Field => (Class::BoundVariable(between), None),
+                        Binder::Abstraction => (Class::Occurrence(between), None),
                     }
                 },
             };
@@ -462,6 +538,41 @@ impl<'term> Symbols<'term>
     {
         let fresh = RuleVariable::from(u32::try_from(variables.len()).unwrap_or(u32::MAX));
         *variables.entry(name).or_insert(fresh)
+    }
+}
+
+/// The binders above each variable occurrence of a rule, outermost first,
+/// end to end, as [`Symbols::side`] reads its sides.
+///
+/// # Specification
+/// trivial.
+#[derive(Default)]
+struct Held<'term>
+{
+    /// Every occurrence's binders, end to end.
+    binders: Vec<Above<&'term Name>>,
+    /// One past each occurrence's last binder.
+    ends: Vec<usize>,
+}
+
+impl<'term> Held<'term>
+{
+    /// Keep `atoms`, the binders above the next occurrence, outermost first,
+    /// each with the name it binds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hold(
+        &mut self,
+        atoms: &[(&'term Name, Binder)],
+    )
+    {
+        self.binders
+            .extend(atoms.iter().map(|&(name, binder)| match binder {
+                Binder::Field => Above::Field,
+                Binder::Abstraction => Above::Atom(name),
+            }));
+        self.ends.push(self.binders.len());
     }
 }
 
