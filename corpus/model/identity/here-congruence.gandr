@@ -51,3 +51,21 @@ def peak_is_here(x : Int) -> Path(Path(Int, S(P(S(x))), S(x)), refl_peak(x), ref
 def apart(q: Path(Integer, 2, 2)) -> Path(Path(Integer, 2, 2), q, here(2)) {
   here(q)
 }
+
+/// An integer, returned as it came.
+@[ checks ]
+def as_given(n : Integer) -> Integer { n }
+
+/// Points one unfolding apart over a native sum of parameters: the sum is
+/// held as its call, never run, and meets itself (#2378).
+@[ checks ]
+def held_sum(x : Integer, y : Integer) -> Path(Integer, as_given(x + y), x + y) {
+  here(x + y)
+}
+
+/// The sum with its operands exchanged is another call: conversion knows no
+/// arithmetic law.
+@[ refuses("EndpointMismatch") ]
+def exchanged_sum(x : Integer, y : Integer) -> Path(Integer, as_given(x + y), y + x) {
+  here(x + y)
+}

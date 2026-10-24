@@ -771,11 +771,17 @@ impl<'run> Walk<'run>
                 Context::Flexible(Deferral::Indeterminate)
             },
             (
-                NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_),
+                NeutralHead::Variable { .. }
+                | NeutralHead::Constant(_)
+                | NeutralHead::Module(_)
+                | NeutralHead::Primitive(_),
                 Unfolding::Rigid,
             ) => Context::Rigid,
             (
-                NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_),
+                NeutralHead::Variable { .. }
+                | NeutralHead::Constant(_)
+                | NeutralHead::Module(_)
+                | NeutralHead::Primitive(_),
                 Unfolding::Unforced(_) | Unfolding::Forced(_),
             ) => Context::Flexible(Deferral::Unfolding),
         })

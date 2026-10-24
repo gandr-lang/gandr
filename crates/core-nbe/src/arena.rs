@@ -809,6 +809,9 @@ impl DomainArena
             (NeutralHead::Module(module), Unfolding::Rigid) => {
                 Guard::compose(GuardTag::Module, &module, &[])
             },
+            (NeutralHead::Primitive(primitive), Unfolding::Rigid) => {
+                Guard::compose(GuardTag::Primitive, primitive.name().as_ref(), &[])
+            },
         };
         for &elimination in spine {
             word = match elimination {
@@ -1010,6 +1013,7 @@ impl DomainArena
             NeutralHead::Constant(_) => true,
             NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
+            | NeutralHead::Primitive(_)
             | NeutralHead::Hole { .. }
             | NeutralHead::Mark { .. }
             | NeutralHead::Returned(_) => false,

@@ -179,6 +179,8 @@ pub enum GuardTag
     Constant,
     /// A module-form head.
     Module,
+    /// A native operation's head.
+    Primitive,
     /// An application stacked on a spine.
     Apply,
     /// A force stacked on a spine.

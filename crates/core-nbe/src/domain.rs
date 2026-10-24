@@ -242,6 +242,10 @@ pub enum NeutralHead
     /// A module form. It enters as a neutral and costs nothing: no eliminator
     /// is written for it, and no arm replaces it by a representation.
     Module(ConstantIndex),
+    /// A native operation, read as the opaque constant the kernel reads it
+    /// as: forced and applied to its arguments, it is never run, so a call
+    /// over arguments the normaliser holds stands on it.
+    Primitive(gandr_core_term::primitive::Primitive),
     /// A typed hole, suspended in the environment it was met in.
     Hole
     {

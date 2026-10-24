@@ -6383,3 +6383,94 @@ fn a_run_target_crosses_at_the_thunk_type_it_synthesised_1105()
         "the kernel admits both: {outcomes:?}"
     );
 }
+
+/// `here(⟨force F true⟩)` against `Path(Bool, ⟨force F true⟩, ⟨int.eq(x2,
+/// x2)⟩)`, where the case `F` reduces at `true` to the native call the right
+/// endpoint writes, checks and crosses: the call over open arguments stands as
+/// a neutral both endpoints reach, run by neither (#2378). The twin whose
+/// arguments differ, `⟨int.eq(x1, x2)⟩` against `⟨int.eq(x2, x1)⟩`, is
+/// refused.
+#[test]
+fn a_native_call_on_open_arguments_converts_as_a_neutral_2378()
+{
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    let mut arena = CoreArena::new();
+    let int_eq = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "int.eq")
+        .expect("native int.eq");
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let call = |arena: &mut CoreArena, arguments: [ValueId; 2]| {
+        let call = arena.computation_primitive(int_eq, Arguments::Binary(arguments));
+        arena.value_returned(call)
+    };
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let boolean = arena.value_type_sum(&[unit_type, unit_type]);
+    let returns_boolean = arena.comp_type_returner(boolean);
+    let unit = arena.value_unit();
+    let truth = arena.value_injection(Side::Left.into(), unit);
+    let falsity = arena.value_injection(Side::Right.into(), unit);
+    // Under `λx1 x2`, `x2` is index zero and `x1` one; under `F`'s `λr` and a
+    // branch's binder, `x2` is index two.
+    let [x2, x1, in_branch] = [0, 1, 2].map(|index| variable(&mut arena, index));
+    let on_true = arena.computation_primitive(int_eq, Arguments::Binary([in_branch, in_branch]));
+    let on_false = arena.computation_return(falsity);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_case(scrutinee, &[on_true, on_false]);
+    let lambda = arena.computation_lambda(case);
+    let thunk = arena.value_thunk(lambda);
+    let arrow = arena.comp_type_arrow(boolean, returns_boolean);
+    let arrow = arena.value_type_thunk(arrow);
+    let pick = arena.value_ascribe(thunk, arrow);
+    let forced = arena.computation_force(pick);
+    let applied = arena.computation_application(forced, truth);
+    let reaching = arena.value_returned(applied);
+    let reached = call(&mut arena, [x2, x2]);
+    let in_order = call(&mut arena, [x1, x2]);
+    let swapped = call(&mut arena, [x2, x1]);
+    let [(converting, converting_type), (apart, apart_type)] =
+        [(reaching, reached), (in_order, swapped)].map(|(point, other)| {
+            let path = arena.value_type_path(boolean, point, other);
+            let returns = arena.comp_type_returner(path);
+            let inner = arena.comp_type_pi(integer, returns);
+            let outer = arena.comp_type_pi(integer, inner);
+            let here = arena.value_here(point);
+            let returned = arena.computation_return(here);
+            let body = arena.computation_lambda(returned);
+            let body = arena.computation_lambda(body);
+            (arena.value_thunk(body), arena.value_type_thunk(outer))
+        });
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(
+            At(0),
+            Maybe::Present(converting_type),
+            Maybe::Present(converting),
+        ),
+        declaration(At(1), Maybe::Present(apart_type), Maybe::Present(apart)),
+    ]);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.first(), Some(Verdict::Checked { .. })),
+        "a case reducing to the call converts with the call: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            readmission.readmitted().first().map(Readmitted::outcome),
+            Some(&Outcome::Defined { .. })
+        ),
+        "the kernel replays the conversion: {:?}",
+        readmission.readmitted()
+    );
+    assert!(
+        matches!(
+            verdicts.get(1),
+            Some(Verdict::Refused(CheckRefusal::EndpointMismatch { .. }))
+        ),
+        "calls over swapped arguments are apart: {verdicts:?}"
+    );
+}

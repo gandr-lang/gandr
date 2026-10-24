@@ -720,10 +720,10 @@ pub const fn other(side: ConversionSide) -> ConversionSide
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Head::Indeterminate`] for a hole or a mark; [`Head::Rigid`] for
-///   a variable, a module form, or a constant with a rigid unfolding face;
-///   [`Head::Frozen`] when the goal froze the constant on `side` and
-///   [`Head::Defined`] when it did not; for a returned endpoint, the reading
-///   [`endpoint_head`] gives its computation.
+///   a variable, a module form, a native operation, or a constant with a rigid
+///   unfolding face; [`Head::Frozen`] when the goal froze the constant on
+///   `side` and [`Head::Defined`] when it did not; for a returned endpoint, the
+///   reading [`endpoint_head`] gives its computation.
 /// - provides: the one reading of "may this goal unfold this head".
 /// - fails: [`ConversionFault::Domain`] when the neutral does not resolve.
 /// - panics: none.
@@ -770,7 +770,9 @@ pub fn head(
             }
         },
         (NeutralHead::Constant(_), Unfolding::Rigid)
-        | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Rigid,
+        | (NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Primitive(_), _) => {
+            Head::Rigid
+        },
         (NeutralHead::Hole { .. } | NeutralHead::Mark { .. }, _) => Head::Indeterminate,
         (NeutralHead::Returned(computation), _) => {
             return endpoint_head(domain, frozen, side, computation);
@@ -786,8 +788,9 @@ pub fn head(
 /// - ensures: [`Head::Endpoint`] when the neutral [`held_call`] reaches from
 ///   `computation` is headed by a constant whose body is at hand — unforced, or
 ///   forced to a value — and the goal has not frozen it on `side`;
-///   [`Head::Held`] when that neutral is headed by a variable, a module form,
-///   or a constant with no body; [`Head::Indeterminate`] otherwise.
+///   [`Head::Held`] when that neutral is headed by a variable, a module form, a
+///   native operation or a constant with no body; [`Head::Indeterminate`]
+///   otherwise.
 /// - provides: the held endpoint's reading: only a [`crate::Endpoints::Hold`]
 ///   run leaves a computation stuck on a definition it could unfold, and the
 ///   goal's one rule there is that unfolding. An endpoint stuck where no
@@ -819,7 +822,7 @@ pub fn head(
         | Some(node) => match (node.head(), node.unfolding()) {
             (NeutralHead::Constant(constant), Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)))
                 if frozen.holds(side, constant) == Membership::Absent => ret == Ok(Head::Endpoint(constant)),
-            (NeutralHead::Constant(_), Unfolding::Rigid) | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) =>
+            (NeutralHead::Constant(_), Unfolding::Rigid) | (NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Primitive(_), _) =>
                 ret == Ok(Head::Held),
             _ => ret == Ok(Head::Indeterminate),
         },
@@ -845,7 +848,9 @@ fn endpoint_head(
             Unfolding::Unforced(_) | Unfolding::Forced(Glued::Value(_)),
         ) if frozen.holds(side, constant) == Membership::Absent => Head::Endpoint(constant),
         (NeutralHead::Constant(_), Unfolding::Rigid)
-        | (NeutralHead::Variable { .. } | NeutralHead::Module(_), _) => Head::Held,
+        | (NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Primitive(_), _) => {
+            Head::Held
+        },
         _ => Head::Indeterminate,
     })
 }
@@ -916,6 +921,7 @@ pub fn held_call(
             NeutralHead::Constant(_)
             | NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
+            | NeutralHead::Primitive(_)
             | NeutralHead::Hole { .. }
             | NeutralHead::Mark { .. } => return Ok(Some(neutral)),
         }
@@ -2237,6 +2243,7 @@ pub fn returned(
         | NeutralHead::Constant(_)
         | NeutralHead::Variable { .. }
         | NeutralHead::Module(_)
+        | NeutralHead::Primitive(_)
         | NeutralHead::Hole { .. }
         | NeutralHead::Mark { .. } => None,
     })

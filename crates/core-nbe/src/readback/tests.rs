@@ -1277,6 +1277,91 @@ fn a_module_head_and_a_declaration_head_read_back_alike()
     }
 }
 
+/// A native call stands on its operation, closed literals included, and reads
+/// back as the operation's thunk forced and applied to its arguments in order:
+/// the normaliser runs no native operation (#2378).
+#[test]
+fn a_primitive_head_reads_back_as_its_thunk_2378()
+{
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    let mut core = CoreArena::new();
+    let int_eq = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "int.eq")
+        .expect("the prelude holds int.eq");
+    let [zero, one] = ["0", "1"].map(|digits| {
+        let magnitude = Magnitude::from_decimal_text(alloc::string::String::from(digits))
+            .expect("decimal digits");
+        core.value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            magnitude,
+        )))
+    });
+    let call = core.computation_primitive(int_eq, Arguments::Binary([zero, one]));
+
+    let (chain, environment) = nothing_unfolds();
+    let scope = environment.root();
+    let definitions = Definitions::new(&chain, &environment, scope);
+    let mut domain = DomainArena::new();
+    let evaluated = eval_computation(&core, &mut domain, definitions, ample(), call)
+        .expect("a native call stands rather than faulting");
+    let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(evaluated)
+    else {
+        panic!("a native call is stuck");
+    };
+    let held = domain.neutral(neutral).expect("its neutral resolves");
+    assert_eq!(
+        NeutralHead::Primitive(int_eq),
+        held.head(),
+        "the call is stuck on its operation"
+    );
+    assert!(
+        matches!(*held.spine(), [
+            Elimination::Force,
+            Elimination::Apply(_),
+            Elimination::Apply(_)
+        ]),
+        "the operation is forced, then applied once per argument: {:?}",
+        held.spine()
+    );
+
+    let read = readback_computation(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::ZeroUnfold,
+        ample(),
+        evaluated,
+    )
+    .expect("a stuck native call reads back");
+    let Some(&Computation::Application(applied, second)) = core.computation(read)
+    else {
+        panic!("the second argument is applied last");
+    };
+    let Some(&Computation::Application(forced, first)) = core.computation(applied)
+    else {
+        panic!("the first argument is applied to the forced operation");
+    };
+    let Some(&Computation::Force(operation)) = core.computation(forced)
+    else {
+        panic!("the operation is forced");
+    };
+    assert!(
+        matches!(
+            core.value(operation),
+            Some(&Value::Primitive { primitive, .. }) if primitive == int_eq
+        ),
+        "the head reads back as the operation's thunk"
+    );
+    assert_eq!(
+        [core.value(zero), core.value(one)],
+        [core.value(first), core.value(second)],
+        "the arguments come back in source order"
+    );
+}
+
 #[test]
 fn a_stuck_spine_reads_back_as_its_eliminations()
 {

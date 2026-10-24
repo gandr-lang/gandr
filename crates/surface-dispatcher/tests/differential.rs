@@ -13,7 +13,8 @@
 //! What the normaliser cannot take is counted by reason and printed: a former
 //! its evaluation refuses, and an answer it holds where a run goes on — a
 //! fixpoint at no gate, which a run unfolds when forced and the normaliser
-//! only when applied to a canonical argument, and a certificate (a path, a
+//! only when applied to a canonical argument, a native call, which a run
+//! computes and the normaliser holds as the call, and a certificate (a path, a
 //! flow, a session statement or a recorded run), which the normaliser holds
 //! as written and a run realises: a path as its maps, a recorded run with
 //! its payloads evaluated.
@@ -33,6 +34,7 @@ use gandr_core_nbe::Definitions;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::DomainComp;
 use gandr_core_nbe::Fuel;
+use gandr_core_nbe::NeutralHead;
 use gandr_core_nbe::ReadbackMode;
 use gandr_core_nbe::eval_computation;
 use gandr_core_nbe::readback_computation;
@@ -84,6 +86,9 @@ enum Decline
     /// A fixpoint at no gate: a run unfolds it when forced, the normaliser
     /// when it is applied to a canonical argument.
     Fixpoint,
+    /// A native call, stuck on its operation: a run computes it, and the
+    /// normaliser runs no native operation.
+    Native,
     /// A path, a flow, a session statement or a recorded run: a certificate
     /// the normaliser holds as written and a run realises.
     Certificate,
@@ -129,7 +134,7 @@ enum Compared
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the corpus's declines are counted under names such as
-///   `NativePrimitive(Primitive(Definition))` and `RuntimeControl(Reset)`.
+///   `MemoryForm` and `RuntimeControl(Reset)`.
 /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn variant(fault: &dyn core::fmt::Debug) -> String
 {
@@ -306,15 +311,18 @@ enum Apart
 /// # Specification
 /// - requires: `normal` is a normal form of `core` read under `definitions`.
 /// - ensures: [`Decline::Fixpoint`] when `normal` evaluates to a fixpoint at no
-///   gate, [`Decline::Certificate`] when it returns a path, flow, session or
-///   recorded-run former, and [`Apart::Unexplained`] for every other term.
+///   gate, [`Decline::Native`] when it evaluates to a computation stuck on a
+///   native operation, [`Decline::Certificate`] when it returns a path, flow,
+///   session or recorded-run former, and [`Apart::Unexplained`] for every other
+///   term.
 /// - panics: none.
 /// - executable: none — the classes are the corpus's; the witness counts them.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — a loop the normaliser holds, a reflexive path a run
-///   realises as its maps and a recorded run whose payloads a run evaluates are
-///   each counted, and no other disagreement passes.
+/// - hypothesis: L2 — a loop the normaliser holds, a native call it holds where
+///   a run computes it, a reflexive path a run realises as its maps and a
+///   recorded run whose payloads a run evaluates are each counted, and no other
+///   disagreement passes.
 /// - witness: `tests::differential::the_corpus_runs_items_agree_with_normalisation_by_evaluation`
 fn apart(
     core: &CoreArena,
@@ -323,10 +331,17 @@ fn apart(
 ) -> Apart
 {
     let mut domain = DomainArena::new();
-    if let Ok(head) = eval_computation(core, &mut domain, definitions, Fuel::from(FUEL), normal)
-        && matches!(domain.computation(head), Some(&DomainComp::Fixpoint { .. }))
-    {
-        return Apart::Held(Decline::Fixpoint);
+    let head = eval_computation(core, &mut domain, definitions, Fuel::from(FUEL), normal);
+    match head.ok().and_then(|head| domain.computation(head)) {
+        Some(&DomainComp::Fixpoint { .. }) => return Apart::Held(Decline::Fixpoint),
+        Some(&DomainComp::Neutral { neutral, .. })
+            if domain
+                .neutral(neutral)
+                .is_some_and(|held| matches!(held.head(), NeutralHead::Primitive(_))) =>
+        {
+            return Apart::Held(Decline::Native);
+        },
+        Some(_) | None => {},
     }
     let Some(&Computation::Return(answer)) = core.computation(normal)
     else {

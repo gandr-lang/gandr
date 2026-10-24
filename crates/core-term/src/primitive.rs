@@ -55,8 +55,10 @@
 //! conversion, and text operands their contents until an append writes one
 //! result.
 //!
-//! Native execution belongs to the sequent runtime. The pure normalizer reports
-//! `EvalFault::NativePrimitive` rather than inventing a native reduction rule.
+//! Native execution belongs to the sequent runtime. The pure normalizer runs
+//! no native operation: it holds a call as a neutral standing on the operation,
+//! forced and applied to its arguments, the shape erasure gives the kernel, so
+//! two calls convert exactly when their operations and their arguments do.
 //! Persistence records the table name and ordered operands, never a function
 //! pointer or process-local address.
 //!
