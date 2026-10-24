@@ -13,7 +13,7 @@
 # it again) or closes (`Closes`, `Fixes` or `Resolves #n`: GitHub closes the
 # issue and leaves its labels). Without one, the sweep: a closed issue keeps
 # no claim, a `kind:tracking` or `kind:epic` issue is never claimed, and a
-# claim untouched for 24 hours that no open pull request names (one of those
+# claim untouched for 12 hours that no open pull request names (one of those
 # keywords in its body, or the number in its branch) has no seat on it.
 
 include "targets";
@@ -21,7 +21,7 @@ include "targets";
 def names($n):
   (.body | test("(?i)\\b\(working)\\s+#\($n)\\b"))
   or (.head | test("(^|[^0-9])\($n)([^0-9]|$)"));
-def silent($now): ($now - (.updated_at | fromdateiso8601)) >= 86400;
+def silent($now): ($now - (.updated_at | fromdateiso8601)) >= 43200;
 
 .now as $now
 | .open_prs as $prs

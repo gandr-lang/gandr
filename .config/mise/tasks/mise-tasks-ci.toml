@@ -1399,6 +1399,12 @@ wt step copy-ignored
 # syntax tree or a corpus source) is swept whole before it opens, and a stale
 # record refuses it, naming `corpus:goldens` (#2101).
 #
+# The body must work the branch's issue: a branch `<lane>-<n>-<slug>` is
+# refused unless the body says `Advances #n` or closes #n, and a branch with
+# no number unless the body works some issue, so the merge takes the claim
+# off what it worked (`claims.yml`; the rule is `.config/claims/opening.jq`,
+# its cases held by `check:claims`, #2462).
+#
 # Before anything else the task sweeps the clone's landed worktrees and
 # refuses under the disk floor (`wt:sweep --guard`).
 ["pr:open"]
@@ -1421,6 +1427,9 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
   echo "$own already has PR #$existing open; land it with \`pr:land\`" >&2
   exit 2
 fi
+refusal=$(jq -rn --arg branch "$own" --rawfile body "$body" '{branch: $branch, body: $body}' \
+  | jq -r -L "$(git rev-parse --show-toplevel)/.config/claims" -f "$(git rev-parse --show-toplevel)/.config/claims/opening.jq")
+[[ -z "$refusal" ]] || { echo "$refusal" >&2; exit 2; }
 # Landed worktrees go before anything else, and under the disk floor the
 # task refuses (`wt:sweep --guard`).
 mise run wt:sweep --guard
