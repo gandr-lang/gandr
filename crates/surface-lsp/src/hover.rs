@@ -2581,6 +2581,21 @@ mod tests
         );
     }
 
+    /// #2407: a model implicit's name hovers the model type it is written
+    /// with, not the type of the component a use of it read first.
+    #[test]
+    fn a_model_implicit_hovers_its_model_type_2407()
+    {
+        let text = SourceText::from(
+            "theory Tally {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n}\ndef stepped @[s : \
+             Model(Tally)] (c : s.C) -> s.C { s.incr(c) }\n",
+        );
+        assert_eq!(
+            shown(text, (4.into(), 14.into())),
+            Ok(String::from("```gandr\ns : Model(Tally)\n```"))
+        );
+    }
+
     #[test]
     fn a_documented_module_hovers_its_documentation_1135()
     {

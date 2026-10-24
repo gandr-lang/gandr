@@ -292,7 +292,7 @@ impl<'source> Lowerer<'_, 'source>
             if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
                 frame = self.flatten_implicit(entry, declared, &slot, frame)?;
                 if let Maybe::Present(owner) = owner {
-                    let spelled = self.written_slot(entry, &slot);
+                    let spelled = self.written_slot(entry, declared, &slot);
                     let held = self.written_slots.entry(owner).or_default();
                     if !held.iter().any(|&(at, _)| at == written) {
                         held.push((written, spelled));

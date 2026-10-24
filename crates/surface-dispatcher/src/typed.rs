@@ -1165,17 +1165,19 @@ impl TypeTable
     ///   static Π ending in one — that no check against another type moved,
     ///   save a term of a model's derived type, which the source writes
     ///   nowhere; each binder the origin table records for a typed use is one
-    ///   entry at the binder's span, at that use's type; each written value or
-    ///   computation type whose level the checker reads is an entry at its
-    ///   universe; each declaration is keyed by each form key it carries, an
-    ///   admitted law, which writes no half, by the member admitting it, at its
-    ///   declared type, its body's synthesised type, its data universe, or a
-    ///   sealed abstract type's kind, or holding the lowering's refusal of it
-    ///   as text, a `data` family's operations leaving the family's key its
-    ///   own; each node a `theory` block or a `data` family's constructors,
-    ///   operations and rules write is an entry at the type its member states
-    ///   ([`LoweredModule::described_types`]), read under the names of the
-    ///   members before it. A source the lowering refuses whole types nothing.
+    ///   entry at the binder's span, at that use's type, but a model implicit's
+    ///   name, whose components are the binders, at the model type it is
+    ///   written with; each written value or computation type whose level the
+    ///   checker reads is an entry at its universe; each declaration is keyed
+    ///   by each form key it carries, an admitted law, which writes no half, by
+    ///   the member admitting it, at its declared type, its body's synthesised
+    ///   type, its data universe, or a sealed abstract type's kind, or holding
+    ///   the lowering's refusal of it as text, a `data` family's operations
+    ///   leaving the family's key its own; each node a `theory` block or a
+    ///   `data` family's constructors, operations and rules write is an entry
+    ///   at the type its member states ([`LoweredModule::described_types`]),
+    ///   read under the names of the members before it. A source the lowering
+    ///   refuses whole types nothing.
     /// - provides: what a face answers a reader pointing into the source with.
     /// - fails: [`ComposeFault::Parse`] when the parser cannot commit its tree;
     ///   [`ComposeFault::Lowering`] for a lowering engine fault.
@@ -2365,6 +2367,28 @@ impl TypeTable
                 if let Some(span) = own(span, base) {
                     orientations.push((span, note));
                 }
+            }
+        }
+        // A model implicit's name binds no variable of its own: its components
+        // are the binders, and the name's entry would answer at the type of
+        // whichever component a use read first. It answers at the model type
+        // it is written with, `Model(S)`.
+        let slot_types: BTreeMap<ByteSpan, ValueTypeId> = module
+            .declarations()
+            .iter()
+            .flat_map(|declaration| module.model_slots(declaration.constant()))
+            .filter_map(|slot| match slot.model {
+                Maybe::Present(model) => Some((slot.named, model)),
+                Maybe::Absent(_) => None,
+            })
+            .collect();
+        for entry in &mut entries {
+            if entry.subject == Subject::Binder
+                && let Some(&model) = slot_types.get(&entry.span)
+            {
+                entry.ty = TypeNode::Value(model);
+                entry.last = entry.ty;
+                entry.standing = Standing::Closed;
             }
         }
         let entries: Vec<Entry> = entries
