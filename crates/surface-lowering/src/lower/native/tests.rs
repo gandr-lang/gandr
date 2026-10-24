@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ModuleReport;
@@ -1202,6 +1203,54 @@ fn a_mutual_blocks_recursive_functions_share_one_fixpoint()
         "the field is injected at the forest's summand"
     );
     assert_accepted(&judged(&module, &mut arena));
+}
+
+/// A member of a mutual block whose sibling the lowering refused calls the
+/// sibling's declaration, so the checker meets a constant it has no type for
+/// rather than an injection into a joint that never formed (#2340): refused
+/// at its head or in its body, the sibling's refusal is the one reported, and
+/// the member's is its consequence.
+#[test]
+fn a_member_beside_a_refused_sibling_calls_its_declaration_2340()
+{
+    let even = "  def rec even(n : Nat) -> -F Integer {\n    case n { Zero => return 1, Succ(p) => odd[<](p) }\n  }\n";
+    for odd in [
+        "  def rec odd(n : Nat) -F Integer {\n    case n { Zero => return 0, Succ(p) => even[<](p) }\n  }\n",
+        "  def rec odd(n : Nat) -> -F Integer {\n    case n { Zero => return zzz, Succ(p) => even[<](p) }\n  }\n",
+    ] {
+        let mut arena = CoreArena::new();
+        let source = alloc::format!("{NAT}rec {{\n{even}{odd}}}\n");
+        let module = lowered(SourceText::from(source.as_str()), &mut arena);
+        assert!(
+            matches!(
+                refusal_of(&module, SurfaceName::from("odd")),
+                LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnresolvedName { .. }
+            ),
+            "the sibling is refused where it was written: {odd}"
+        );
+        let constant = |name: &str| {
+            module
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.name() == SurfaceName::from(name))
+                .map(crate::module::LoweredDeclaration::constant)
+        };
+        let refused = constant("odd");
+        let report = judged(&module, &mut arena);
+        let verdict = report
+            .judged()
+            .iter()
+            .find(|judged| Some(judged.constant()) == constant("even"))
+            .map(gandr_core_checker::Judged::verdict);
+        assert!(
+            matches!(
+                verdict,
+                Some(Verdict::Refused(CheckRefusal::UnknownConstant { constant, .. }))
+                    if Some(constant) == refused
+            ),
+            "the member names its refused sibling's declaration: {verdict:?}"
+        );
+    }
 }
 
 #[test]

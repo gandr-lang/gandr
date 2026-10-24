@@ -195,6 +195,10 @@
 //! choice. A member of the joint takes one parameter: a call through it
 //! refuses a leading one as non-uniform and a later one as unadmitted, and a
 //! member's claim standing alone, the joint's thunk at the sum, is unadmitted.
+//! A block holding a member the lowering refused forms no joint: each other
+//! member is its own fixpoint, and a call through a sibling names the
+//! sibling's declaration, so its refusal is reported as that one's
+//! consequence (`Lowerer::unjoin_refused`).
 //!
 //! # Native data and the match
 //!
@@ -11544,6 +11548,82 @@ impl<'source> Lowerer<'_, 'source>
             }
             if joined.len() == count {
                 self.join(&joined, sink);
+            }
+        }
+    }
+
+    /// Read each recursive call through the joint of a mutual block holding a
+    /// member the lowering refused as the call it is without the joint, which
+    /// [`Self::mint_joints`] leaves unformed for that block.
+    ///
+    /// **Choice.** Without the joint, a member is its own fixpoint over its own
+    /// domain: a call on itself passes its argument uninjected, and a call
+    /// through a sibling names the sibling's declaration, as a call of a
+    /// declaration outside the block does. The checker then meets the
+    /// refused sibling as a constant it has no type for, and the report reads
+    /// that refusal as the sibling's consequence, a note naming it, rather
+    /// than refusing the injection into a sum the joint never formed (#2340).
+    /// **Alternative.** Refusing every other member at the lowering, which
+    /// needs a refusal of its own for what the cascade cut already reports.
+    ///
+    /// # Specification
+    /// - requires: the source is classified and not yet minted.
+    /// - ensures: every call through a joint ([`Self::instantiation`]) whose
+    ///   block holds a member refused before the mint is no longer injected,
+    ///   and one through a sibling member is planned as that member's constant;
+    ///   every other call through a joint unchanged.
+    /// - provides: a lowered member of such a block typed at its own domain.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause compares the injections and plans before
+    ///   and after, a walk no clause makes; the witness reads the report back.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member calling a sibling refused at its head and at
+    ///   its body is not refused by a shape of its own.
+    /// - witness: `lower::native::tests::a_member_beside_a_refused_sibling_calls_its_declaration_2340`
+    pub(super) fn unjoin_refused(&mut self)
+    {
+        let mut unjoined = Vec::new();
+        for (&head, &summand) in &self.injected {
+            let Maybe::Present(owner) = self.collected.owner_of(head)
+            else {
+                continue;
+            };
+            let joint = self.joint(owner);
+            let refused = joint.members.iter().any(|&member| {
+                self.faults.contains_key(&member)
+                    || self
+                        .collected
+                        .slots
+                        .get(usize::from(member))
+                        .is_some_and(|slot| matches!(slot.refusal, Maybe::Present(_)))
+            });
+            let Maybe::Present((_, own)) = joint.own
+            else {
+                continue;
+            };
+            if !refused {
+                continue;
+            }
+            let called = if summand == own {
+                None
+            }
+            else {
+                joint
+                    .members
+                    .get(usize::from(summand))
+                    .and_then(|&member| self.collected.slots.get(usize::from(member)))
+                    .map(|slot| slot.constant)
+            };
+            unjoined.push((head, called));
+        }
+        for (head, called) in unjoined {
+            let _injected = self.injected.remove(&head);
+            if let Some(constant) = called
+                && let Some(plan) = self.plans.get_mut(head)
+            {
+                *plan = Plan::Constant(constant);
             }
         }
     }
