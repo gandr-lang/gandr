@@ -293,6 +293,32 @@ def asked(n : Nat) -> Nat {
     );
 }
 
+/// #2325: a result at a world or a region keeps its returner, `-> -F (A at
+/// r)`, as the printer writes it: the lowering inserts no returner over a
+/// value at a region, so leaving it out would lower to other core and the
+/// whole declaration would keep its spelling. The parameter's thunk type
+/// still takes its alias.
+#[test]
+fn a_result_at_a_region_keeps_its_returner_2325()
+{
+    let grammar = grammar();
+    let source = "\
+def pass @[r : Region] (k : (+U (-F Integer)) at r) -> -F ((+U (-F Integer)) at r) {
+  pure k
+}
+";
+    let sugared = "\
+def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) {
+  pure k
+}
+";
+    assert_eq!(
+        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        sugared,
+        "sugared"
+    );
+}
+
 /// #2255: the sugared form writes a result row of several interfaces before
 /// its type, `[Div, Proc] B`, a row open through a tail as written, `[Div |
 /// r] B` and `[r] B`, and a type looser than an application parenthesised
