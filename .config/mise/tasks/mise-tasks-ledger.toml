@@ -24,21 +24,38 @@ description = "Dump ledger/features.db to the tracked ledger/features.sql, rows 
 run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
 
 # The crate map (#2290): `ledger/crates.dot` and the category graph between
-# `crates/README.md`'s markers, generated from `cargo metadata` by
-# `.config/crate-map/map.jq`. `check:crate-map` in `mise-tasks-check.toml`
-# holds their currency and the layering.
+# `crates/README.md`'s markers, generated from `cargo metadata` and the sites
+# of `ledger/concerns.sql` by `.config/crate-map/map.jq`. `check:crate-map`
+# in `mise-tasks-check.toml` holds their currency, the layering and the
+# concerns' sites.
 ["ledger:crate-map"]
-description = "Generate ledger/crates.dot and crates/README.md's category map from cargo metadata"
+description = "Generate ledger/crates.dot and crates/README.md's category map from cargo metadata and the concerns"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 metadata=$(cargo metadata --locked --no-deps --format-version 1)
-map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md -f .config/crate-map/map.jq <<< "$metadata"; }
+sites=$(sqlite3 -json :memory: '.read ledger/concerns.sql' 'SELECT DISTINCT concern, crate FROM site ORDER BY concern, crate;')
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq <<< "$metadata"; }
 map -r dot > ledger/crates.dot.new
 map -j readme > crates/README.md.new
 mv ledger/crates.dot.new ledger/crates.dot
 mv crates/README.md.new crates/README.md
+'''
+
+# The concerns ledger, `ledger/concerns.sql`, is edited by hand: an `INSERT`
+# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
+# key order, refusing a row that breaks a constraint and leaving the file as
+# it was. `check:crate-map` holds the round trip.
+["ledger:concerns"]
+description = "Normalize ledger/concerns.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/concerns.db" < ledger/concerns.sql
+sqlite3 "$fresh/concerns.db" .dump > ledger/concerns.sql
 '''
 
 # The recovery sweep over the syntax exemplars (`gandr-surface-dispatcher`'s
