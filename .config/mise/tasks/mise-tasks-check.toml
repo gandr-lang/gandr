@@ -785,6 +785,47 @@ fi
 echo 'workflow hashing check OK: no hashFiles over a tarball'
 """
 
+# The crate map (#2290, `.config/crate-map/map.jq`): `ledger/crates.dot` and
+# the category graph in `crates/README.md` are what `cargo metadata` gives
+# now, no crate lies outside the layering's categories, and no edge points to
+# a category listed after its own. Each case in `.config/crate-map/cases.json`
+# holds the program's arguments, an input and the raw output it must give.
+["check:crate-map"]
+description = "The crate map is the manifests' and keeps the layering"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+failed=0
+while IFS= read -r case; do
+  mapfile -t args < <(jq -r '.args | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
+  got=$(jq .input <<< "$case" | jq -r "${args[@]}" -f .config/crate-map/map.jq)
+  if [[ "$got" != "$(jq -r .output <<< "$case")" ]]; then
+    printf 'crate map case FAILED: %s\n  gave: %s\n' "$(jq -r .name <<< "$case")" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/crate-map/cases.json)
+cargo metadata --locked --no-deps --format-version 1 > "$fresh/metadata.json"
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md -f .config/crate-map/map.jq "$fresh/metadata.json"; }
+findings=$(map -r findings)
+if [[ -n "$findings" ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+map -r dot > "$fresh/crates.dot"
+map -j readme > "$fresh/README.md"
+diff -u ledger/crates.dot "$fresh/crates.dot" >&2 || failed=2
+diff -u crates/README.md "$fresh/README.md" >&2 || failed=2
+if (( failed == 2 )); then echo 'the crate map is stale; run `mise run ledger:crate-map`' >&2; fi
+if (( failed )); then
+  echo 'crate map check FAILED' >&2
+  exit 1
+fi
+echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, the map current"
+'''
+
 # The stacking rule's readings (#1264): `chain.jq` reads a pull request's
 # stack from the open pull requests, `top.jq` the top a new one stacks on,
 # `prefix.jq` what a landing queues (#1988), and `sweep.jq` which worktrees

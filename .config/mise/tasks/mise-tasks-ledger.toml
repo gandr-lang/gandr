@@ -23,6 +23,24 @@ mv ledger/features.db.new ledger/features.db
 description = "Dump ledger/features.db to the tracked ledger/features.sql, rows in id order"
 run = "sqlite3 ledger/features.db .dump > ledger/features.sql"
 
+# The crate map (#2290): `ledger/crates.dot` and the category graph between
+# `crates/README.md`'s markers, generated from `cargo metadata` by
+# `.config/crate-map/map.jq`. `check:crate-map` in `mise-tasks-check.toml`
+# holds their currency and the layering.
+["ledger:crate-map"]
+description = "Generate ledger/crates.dot and crates/README.md's category map from cargo metadata"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+metadata=$(cargo metadata --locked --no-deps --format-version 1)
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md -f .config/crate-map/map.jq <<< "$metadata"; }
+map -r dot > ledger/crates.dot.new
+map -j readme > crates/README.md.new
+mv ledger/crates.dot.new ledger/crates.dot
+mv crates/README.md.new crates/README.md
+'''
+
 # The recovery sweep over the syntax exemplars (`gandr-surface-dispatcher`'s
 # `ledger::recovery` module): every literal tile written as its near miss and
 # deleted, each mutant's first error read against the mutation. The whole

@@ -18,6 +18,37 @@ surface   syntax, grammar, parsing, lowering, the pipeline a driver invocation e
 workflow  repository tooling and gates
 ```
 
+## Map
+
+An arrow is one category's dependencies on another. Its label counts the `[dependencies]` edges between their crates. Dev and build dependencies are not counted. The per-crate map is [`ledger/crates.dot`](../ledger/crates.dot), one node per crate, clustered by category. `mise run ledger:crate-map` generates both from `cargo metadata`. `mise run check:crate-map` fails while either is stale, while a crate lies outside the layering's categories, or while an edge points to a category listed after its own. A change that adds a crate or an edge between two crates regenerates the map in the same commit, so its diff shows the new edge.
+
+<!-- crate-map:begin -->
+```mermaid
+flowchart BT
+  theory
+  kernel
+  core
+  storage
+  runtime
+  surface
+  workflow
+  kernel -->|1| theory
+  core -->|10| theory
+  core -->|20| kernel
+  storage -->|6| theory
+  storage -->|1| kernel
+  runtime -->|1| theory
+  runtime -->|1| kernel
+  runtime -->|3| core
+  surface -->|9| theory
+  surface -->|10| kernel
+  surface -->|21| core
+  surface -->|4| storage
+  surface -->|1| runtime
+  workflow -->|4| surface
+```
+<!-- crate-map:end -->
+
 ## Members
 
 One row per directory: the directory and what it is. The package name follows from the directory by the rule above.
