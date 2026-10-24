@@ -1,12 +1,13 @@
 // A method that answers a place. A method whose receiver's mode is a variable
 // of its implicit block, `self : m T` under `@[m : Mode]`, answers a place of
-// its receiver at that mode, `-F View[m](a)`: its body is the place,
-// `self[i]`, and a call is the access to it. A call with a block,
-// `xs.first() as w { … }`, lends the place at the mode the block asks — a
-// resume or an abort through `w` asks an exclusive lend, a read alone a shared
-// one — and a call without one reads the place. One body serves every mode,
-// as an explicit object parameter deduces its receiver's qualifiers (Ažman,
-// Brand, Deane and Revzin, "Deducing this", C++ proposal P0847R7, 2021).
+// its receiver at that mode, `View[m](a)`, its returner the one the lowering
+// inserts at a result (#2255): its body is the place, `self[i]`, and a call is
+// the access to it. A call with a block, `xs.first() as w { … }`, lends the
+// place at the mode the block asks — a resume or an abort through `w` asks an
+// exclusive lend, a read alone a shared one — and a call without one reads the
+// place. One body serves every mode, as an explicit object parameter deduces
+// its receiver's qualifiers (Ažman, Brand, Deane and Revzin, "Deducing this",
+// C++ proposal P0847R7, 2021).
 
 // The list each call below holds.
 import "./accessor-place.gandr" ;
@@ -15,13 +16,13 @@ import "./accessor-place.gandr" ;
 module Places {
   /// The first element.
   @[ checks ]
-  def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
+  def first @[m : Mode] (self : m List(Integer)) -> View[m](Integer) { self[0] }
   /// The element at an index.
   @[ checks ]
-  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> -F View[m](Integer) { self[i] }
+  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i] }
   /// The element after an index: the index is any value, here a sum.
   @[ checks ]
-  def after @[m : Mode] (self : m List(Integer), i : Integer) -> -F View[m](Integer) { self[i + 1] }
+  def after @[m : Mode] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i + 1] }
 }
 
 /// The first element, read by a call without a block.
