@@ -744,9 +744,10 @@ fn a_composite_of_types_sugars_back_803()
 }
 
 /// The value-function alias is written where the printer writes it: a thunk
-/// type standing as a call's argument, a transport's family, keeps its
-/// thunk sugared with no rewrite tried and none withdrawn, and one that is a
-/// static abstraction's body, a type, takes the alias, nullary among them.
+/// type standing as a call's argument, a transport's family, takes the alias
+/// over its domain list, the binder a later domain reads named and the one
+/// nothing reads left out (#2255), and one that is a static abstraction's
+/// body, a type, takes the alias, nullary among them.
 #[test]
 fn the_value_function_alias_is_written_where_the_printer_writes_it()
 {
@@ -774,7 +775,23 @@ def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
     };
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), &[]);
-    assert_eq!(formatted.into_text(), argument);
+    expect![[r#"
+        data Nat : Type {
+          Zero : Nat;
+          Succ : (n : Nat) --> Nat;
+        }
+
+        def kept(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
+          become transport(
+            (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a),
+            q,
+            here(a),
+            here(q),
+            here(a)
+          )
+        }
+    "#]]
+    .assert_eq(formatted.text().as_ref());
     let explicit = "\
 def motive : Type -> Type ;
 def motive = \\X. +U (X -> -F X) ;
@@ -822,8 +839,8 @@ fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
 }
 
 /// #838: a thunk type a body returns takes the value-function alias over
-/// one bare domain, as the printer writes it, while one standing as a call's
-/// argument, a transport's family, keeps its thunk.
+/// one bare domain, as the printer writes it, and so does one standing as a
+/// call's argument, a transport's family (#2255).
 #[test]
 fn a_thunk_type_a_body_returns_takes_the_alias_838()
 {
@@ -853,7 +870,7 @@ def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
         }
 
         def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> Nat {
-          become transport(+U (Nat -> -F Nat), q, v, v, v)
+          become transport(Nat => Nat, q, v, v, v)
         }
     "#]]
     .assert_eq(&spelled(

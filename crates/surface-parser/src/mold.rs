@@ -250,6 +250,7 @@ use gandr_surface_grammar::CandidateCount;
 use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Observation;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
 use gandr_surface_grammar::TileLabel;
@@ -1055,6 +1056,84 @@ const UPPER_KEYWORDS: &[&str] = &[
 /// tile cannot mold: [`Molder::gather_reserved_fallback`] re-admits them, and
 /// [`next_labels`] counts them among the word's labels.
 const RESERVED_FALLBACK_LABELS: [&str; 2] = ["constructor", "type_identifier"];
+
+/// The rule whose `(` opens a parenthesized type, the domain list of a
+/// value-function type among its readings.
+const PARENTHESIZED_TYPE: RuleName = RuleName("parenthesized_type");
+
+/// The rule whose `(` opens the unit, a parenthesized expression, a tuple or
+/// an ascription.
+const PARENTHESIZED_EXPRESSION: RuleName = RuleName("parenthesized_expression");
+
+/// How the group a `(` opens closes on the stream.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GroupClose
+{
+    /// The group is empty: its `)` is the next significant token.
+    Empty,
+    /// The group closes, and `=>` is the next significant token past it.
+    Arrow,
+    /// The group closes before any other token, or before the stream's end.
+    Other,
+    /// The stream ends inside the group.
+    Open,
+}
+
+/// Return how the group the `(` at `index` opens closes: a punctuation token
+/// ending in `(` opens a nested group, as `type(` does, and `)` closes the
+/// innermost.
+///
+/// # Specification
+/// - requires: `tokens` is the labeler output for `source`; `index` names a
+///   token whose text ends in `(`.
+/// - ensures: [`GroupClose::Empty`] when the next significant token is `)`;
+///   otherwise, past the `)` that balances the opener, [`GroupClose::Arrow`]
+///   when the next significant token is `=>` and [`GroupClose::Other`]
+///   otherwise; [`GroupClose::Open`] when no `)` balances it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an empty group, a nested call and quote inside the group,
+///   a group closed before `=>`, before another token and at the stream's end,
+///   and an unbalanced group expose each answer. Counting a string fragment's
+///   `(`, or stopping at a nested `)`, reads the wrong token past the group.
+/// - witness: `mold::tests::a_group_closes_past_its_nested_groups_2255`
+#[spec(ensures: |ret| ret != GroupClose::Empty || next_significant(tokens, index).is_some_and(|(_, token)| AsRef::<str>::as_ref(&token.text(source)) == ")"))]
+fn group_close(
+    tokens: &[Token],
+    index: TokenIndex,
+    source: &SourceFragment<'_>,
+) -> GroupClose
+{
+    let punct = |token: Token, text: &str| {
+        token.lexeme == Lexeme::Punct && AsRef::<str>::as_ref(&token.text(source)) == text
+    };
+    if next_significant(tokens, index).is_some_and(|(_, token)| punct(token, ")")) {
+        return GroupClose::Empty;
+    }
+    let mut depth = 0_usize;
+    let mut cursor = index;
+    while let Some(&token) = tokens.get(usize::from(cursor)) {
+        if token.lexeme == Lexeme::Punct {
+            let text = token.text(source);
+            let text = AsRef::<str>::as_ref(&text);
+            if text.ends_with('(') {
+                depth = depth.saturating_add(1);
+            }
+            else if text == ")" {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return match next_significant(tokens, cursor) {
+                        Some((_, next)) if punct(next, "=>") => GroupClose::Arrow,
+                        Some(_) | None => GroupClose::Other,
+                    };
+                }
+            }
+        }
+        cursor = TokenIndex::from(usize::from(cursor).saturating_add(1));
+    }
+    GroupClose::Open
+}
 
 /// Return the next non-space token after `index`.
 ///
@@ -3056,9 +3135,12 @@ impl<'pbg> Molder<'pbg>
     /// Admit the gathered menu into `self.eligible` through `procedure`: each
     /// candidate [`MeldState::admits_at`] admits, or the tables' [`Admission`]
     /// does, which answers alike; on the stream, only the direct rule binder
-    /// the tokens after it bear out. The tables compose an admission context
-    /// only for a menu wider than [`ADMISSION_MENU`]: a narrower one is
-    /// admitted candidate by candidate, which costs less than composing it.
+    /// the tokens after it bear out, and of a `(` read both as an expression
+    /// and as a type only the reading the token past its group bears out
+    /// ([`settle_telescope_arrow`](Self::settle_telescope_arrow)). The tables
+    /// compose an admission context only for a menu wider than
+    /// [`ADMISSION_MENU`]: a narrower one is admitted candidate by candidate,
+    /// which costs less than composing it.
     ///
     /// # Specification
     /// - requires: `frontier` is `state`'s admissibility frontier; `binder`
@@ -3066,7 +3148,7 @@ impl<'pbg> Molder<'pbg>
     ///   stream.
     /// - ensures: `self.eligible` holds, in menu order, exactly the candidates
     ///   `admits_at` admits at `frontier` and, with `binder`, whose
-    ///   direct-binder reading the stream bears out.
+    ///   direct-binder and parenthesized readings the stream bears out.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -3112,6 +3194,101 @@ impl<'pbg> Molder<'pbg>
                 self.eligible.push(mold);
             }
         }
+        if let Some((tokens, index, source)) = binder {
+            self.settle_telescope_arrow(state, frontier, tokens, index, source);
+        }
+    }
+
+    /// Read a `(` a fresh expression slot admits as a parenthesized
+    /// expression as a parenthesized type instead when `=>` is the next
+    /// significant token past the group's `)`: the group is then the domain
+    /// list of a value-function type, `(y : A, P) => B`, which stands where a
+    /// value is read as `A => B` does. An ascription `(e : T)` never goes on
+    /// with `=>`, and a handler's clause arrow reads only inside its `with`
+    /// braces, so the token past the group decides. An empty group stays the
+    /// unit: a domain list holds at least one type.
+    ///
+    /// # Specification
+    /// - requires: `frontier` is `state`'s admissibility frontier; `tokens` is
+    ///   the labeler output for `source`; `index` names the current token.
+    /// - ensures: when the slot is a fresh expression slot, a parenthesized
+    ///   expression's `(` is eligible and the group closes before `=>`, the
+    ///   eligible parenthesized expression's molds give way to the
+    ///   parenthesized type's molds a type slot there admits, in menu order;
+    ///   otherwise, and when no such type mold is admitted, `self.eligible` is
+    ///   unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a telescope, a bare domain list, a tuple, an
+    ///   ascription, the unit and a group left open on the stream expose the
+    ///   decision. Keeping the expression before `=>` reads the domain list as
+    ///   a tuple and refuses it as a type, and taking the type elsewhere reads
+    ///   an ascription as a binder.
+    /// - witness: `tests::grammar::every_type_operator_spelling_reads_cleanly`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body walks the menu to classify its two parenthesized readings"
+        )
+    )]
+    #[spec(ensures: |()| self.eligible.iter().all(|mold| self.candidates.contains(mold)))]
+    fn settle_telescope_arrow(
+        &mut self,
+        state: &MeldState<'_>,
+        frontier: &Frontier,
+        tokens: &[Token],
+        index: TokenIndex,
+        source: &SourceFragment<'_>,
+    )
+    {
+        if frontier.expected != Sort::Expression || bool::from(frontier.head_operand) {
+            return;
+        }
+        let pbg = &self.pbg;
+        let reading = |mold: MoldId| {
+            let opens = pbg.mold(mold).is_ok_and(|def| def.label == "(");
+            let rule = pbg
+                .rule_of(mold)
+                .ok()
+                .map(gandr_surface_grammar::Rule::name);
+            match rule {
+                Some(name) if opens && name == PARENTHESIZED_TYPE => Some(Sort::Type),
+                Some(name) if opens && name == PARENTHESIZED_EXPRESSION => Some(Sort::Expression),
+                Some(_) | None => None,
+            }
+        };
+        if !self
+            .eligible
+            .iter()
+            .any(|&mold| reading(mold) == Some(Sort::Expression))
+            || group_close(tokens, index, source) != GroupClose::Arrow
+        {
+            return;
+        }
+        let typed = Frontier {
+            expected: Sort::Type,
+            ..*frontier
+        };
+        let admitted = |mold: MoldId| {
+            reading(mold) == Some(Sort::Type) && bool::from(state.admits_at(mold, &typed))
+        };
+        if !self.candidates.iter().any(|&mold| admitted(mold)) {
+            return;
+        }
+        let mut kept = core::mem::take(&mut self.eligible);
+        kept.retain(|&mold| reading(mold) != Some(Sort::Expression));
+        kept.extend(
+            self.candidates
+                .iter()
+                .copied()
+                .filter(|&mold| admitted(mold)),
+        );
+        kept.sort_unstable();
+        kept.dedup();
+        self.eligible = kept;
     }
 
     /// Return whether a direct circuit-rule binder opener has a binder-shaped
@@ -4167,6 +4344,33 @@ mod tests
             super::next_significant(&[], super::TokenIndex::from(0_usize)),
             None
         );
+    }
+
+    /// #2255: a group closes at the `)` that balances its opener, past a
+    /// nested call, a nested group and a quote, and the token past it
+    /// decides; a `(` inside a string opens nothing.
+    #[test]
+    fn a_group_closes_past_its_nested_groups_2255()
+    {
+        use super::GroupClose;
+        for (text, expected) in [
+            ("(y : A, z : P(y)) => B", GroupClose::Arrow),
+            ("((A)) => B", GroupClose::Arrow),
+            ("(type(T), \"(\") => B", GroupClose::Arrow),
+            ("(x : A) , y", GroupClose::Other),
+            ("(x, f(y)) => B", GroupClose::Arrow),
+            ("(a, b)", GroupClose::Other),
+            ("( ) => B", GroupClose::Empty),
+            ("(a, f(b)", GroupClose::Open),
+        ] {
+            let source = SourceFragment::from(text);
+            let tokens = label(source);
+            assert_eq!(
+                super::group_close(&tokens, super::TokenIndex::from(0_usize), &source),
+                expected,
+                "`{text}`"
+            );
+        }
     }
 
     #[test]

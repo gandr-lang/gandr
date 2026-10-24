@@ -114,8 +114,9 @@ fn every_universe_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 
 /// A type operator is a static abstraction `\A. T`, applied as `T(A)`, and the
 /// value function space is `A => B` or `(A, B) => C`; each molds clean as a
-/// declared type, as a definition's value and as an operator's argument, and
-/// a case arm's `=>` still molds beside them.
+/// declared type, as a definition's value and as an operator's argument, the
+/// n-ary alias with its binders as a call's argument too, and a case arm's
+/// `=>` still molds beside them.
 #[test]
 fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 {
@@ -141,9 +142,58 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
             "case arm beside the alias",
             "def f : A => B; def g(c : C) -> -F Integer { case c { Red => pure 0, _ => pure 1 } }",
         ),
+        (
+            "telescope as a call's argument",
+            "def f = g((y : A, z : P(y)) => B(y, z), x);",
+        ),
+        (
+            "domain list as a call's argument",
+            "def f = g((y : A, P(y)) => B, (x : A));",
+        ),
     ];
     for (case, source) in cases {
         assert_parses_clean(CaseName(case), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
+/// #2255: where a value is read, a `(` whose group closes before `=>` molds
+/// as the value-function alias's domain list, and one whose group closes
+/// before anything else as the parenthesized expression it was: an
+/// ascription, a tuple and the unit keep their reading.
+#[test]
+fn a_group_before_the_value_function_arrow_molds_as_its_domains_2255() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        ("def f = g((y : A, z : P(y)) => B);", "parenthesized_type"),
+        ("def f = g((A, B) => C);", "parenthesized_type"),
+        ("def f = g(((A)) => C);", "parenthesized_type"),
+        ("def f = g((x : A), y);", "parenthesized_expression"),
+        ("def f = g((x, y), z);", "parenthesized_expression"),
+        ("def f = g((), z);", "parenthesized_expression"),
+    ];
+    let grammar = built();
+    for (source, expected) in cases {
+        let tree = parse(grammar, SourceText::from(source))?.into_tree();
+        let first = tree
+            .positions()
+            .filter_map(|position| tree.node(position))
+            .filter_map(|node| match node.label() {
+                gandr_surface_syntax::NodeLabel::Tile(mold) => grammar.rule_of(mold).ok(),
+                gandr_surface_syntax::NodeLabel::Wald
+                | gandr_surface_syntax::NodeLabel::Meld(_)
+                | gandr_surface_syntax::NodeLabel::Grout { .. }
+                | gandr_surface_syntax::NodeLabel::GhostClose { .. }
+                | gandr_surface_syntax::NodeLabel::Space
+                | gandr_surface_syntax::NodeLabel::Doc => None,
+            })
+            .find(|rule| rule.name().0.starts_with("parenthesized_"))
+            .map(|rule| rule.name().0);
+        assert_eq!(
+            first,
+            Some(expected),
+            "`{source}`: the first group's reading"
+        );
     }
     Ok(())
 }

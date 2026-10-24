@@ -51,11 +51,11 @@ def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> Path(
   x
 ) {
   become transport(
-    +U ((y : Type) -> (z : Path(Type, a, y)) -> -F Path(
+    (y : Type, z : Path(Type, a, y)) => Path(
       a,
       bwdAlong(a, y, z, fwdAlong(a, y, z, x)),
       x
-    )),
+    ),
     p,
     here(a),
     here(p),
@@ -71,11 +71,11 @@ def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
   w
 ) {
   become transport(
-    +U ((y : Type) -> (z : Path(Type, a, y)) -> -F ((w : y) => Path(
+    (y : Type, z : Path(Type, a, y)) => (w : y) => Path(
       y,
       fwdAlong(a, y, z, bwdAlong(a, y, z, w)),
       w
-    ))),
+    ),
     p,
     here(a),
     here(p),

@@ -1261,8 +1261,9 @@ fn the_sugared_form_breaks_its_infix_and_lists_at_the_narrow_page()
 }
 
 /// A quoted type stands where an expression is read: the sugared form
-/// takes the alias there only over one bare domain, and writes any other
-/// as the thunk it stands for, which reads back (#815).
+/// takes the alias there over a domain list, which the parser reads as the
+/// alias's domains before `=>` (#2255), and writes the one over no domain,
+/// `() => C`, which reads as an expression, as its thunk (#815).
 #[test]
 fn a_quoted_alias_is_written_as_an_expression_reads_it_815()
 {
@@ -1275,7 +1276,7 @@ fn a_quoted_alias_is_written_as_an_expression_reads_it_815()
     for (body, expected) in [
         (returns_integer, "+U (-F Integer)"),
         (one, "Integer => Integer"),
-        (two, "+U (String -> Integer -> -F Integer)"),
+        (two, "(String, Integer) => Integer"),
     ] {
         let thunked = core.value_type_thunk(body);
         let quoted = core.value_quote(thunked);

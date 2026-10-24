@@ -39,11 +39,11 @@ def diagSource(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> Path(
 ) {
   case w {
     #{.x = u, .y = v, .p = q} => transport(
-      +U ((y : b) -> (z : Path(b, u, y)) -> -F Path(
+      (y : b, z : Path(b, u, y)) => Path(
         #{ x : b, y : b, p : Path(b, x, y) },
         diag(b, u),
         (u, (y, z))
-      )),
+      ),
       q,
       here(u),
       here(q),
@@ -73,11 +73,11 @@ def roundTrip(b : Type, x : Type, y : Type, p : Path(Type, x, y)) -> (u : y => b
   u
 ) {
   become transport(
-    +U ((w : Type) -> (z : Path(Type, x, w)) -> -F ((v : w => b) => Path(
+    (w : Type, z : Path(Type, x, w)) => (v : w => b) => Path(
       w => b,
       transport(\Z. Z => b, z, transport(\Z. Z => b, back(z), v)),
       v
-    ))),
+    ),
     p,
     here(x),
     here(p),
@@ -98,11 +98,11 @@ def carryPath(
   e : Path(x => b, u, v)
 ) -> Path(y => b, transport(\Z. Z => b, p, u), transport(\Z. Z => b, p, v)) {
   become transport(
-    +U ((w : x => b) -> (z : Path(x => b, u, w)) -> -F Path(
+    (w : x => b, Path(x => b, u, w)) => Path(
       y => b,
       transport(\Z. Z => b, p, u),
       transport(\Z. Z => b, p, w)
-    )),
+    ),
     e,
     here(u),
     here(e),
@@ -201,11 +201,11 @@ def whisker(
   e : Path(#{ x : b, y : b, p : Path(b, x, y) } => b, s, t)
 ) -> Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { t(k(x)) } }) {
   become transport(
-    +U ((w : #{ x : b, y : b, p : Path(b, x, y) } => b) -> (z : Path(
+    (w : #{ x : b, y : b, p : Path(b, x, y) } => b, Path(
       #{ x : b, y : b, p : Path(b, x, y) } => b,
       s,
       w
-    )) -> -F Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { w(k(x)) } })),
+    )) => Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { w(k(x)) } }),
     e,
     here(s),
     here(e),

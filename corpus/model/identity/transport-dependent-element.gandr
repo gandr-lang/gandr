@@ -11,7 +11,7 @@ import "./circle-base.gandr" ;
 @[ checks ]
 def looped(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Path(Nat, a, b), q, q) {
   transport(
-    +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Path(Nat, a, y), z, z)),
+    (y : Nat, z : Path(Nat, a, y)) => Path(Path(Nat, a, y), z, z),
     q,
     here(a),
     here(q),

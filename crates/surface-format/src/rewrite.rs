@@ -907,11 +907,9 @@ enum Context
     /// list there opens the judgment's own port group, so only the
     /// value-function alias over one bare domain reads as a type (#1329).
     Judgment,
-    /// A call's argument: a thunk type there is written as its thunk, as
-    /// the printer writes it.
-    Argument,
     /// Anywhere else: a value or a computation, where `() => A` reads as an
-    /// expression and `A => B` as the value-function alias.
+    /// expression, and `A => B` and `(x : A, B) => C` as the value-function
+    /// alias.
     Value,
 }
 
@@ -1163,7 +1161,6 @@ impl<'source> Respelling<'_, 'source>
             (Some(rule), _) if rule.ends_with("_type") || rule == "static_abstraction" => {
                 Context::Type
             },
-            (Some("call_expression"), _) => Context::Argument,
             _ => Context::Value,
         }
     }
@@ -2320,13 +2317,12 @@ impl<'source> Respelling<'_, 'source>
     /// when its body is not a chain of arrows ending in a pure returner or
     /// its grade is another. A domain that binds a name keeps it, `(x : A, …)
     /// => C`, where a later domain or the result reads it, and is written
-    /// bare otherwise, as the printer writes the dependent alias. Outside a
-    /// type only the alias over one bare domain, `A => B`, is written, as
-    /// the printer writes it there, and none as a call's argument: the
-    /// printer writes a thunk type standing there, a transport's family, as
-    /// its thunk, and `() => A` reads as an expression outside a type. A
-    /// theory's judgment writes `A => B` too and no other alias, its `(`
-    /// opening the judgment's port group.
+    /// bare otherwise, as the printer writes the dependent alias. Where a
+    /// value is read, a transport's family among them, every spelling but
+    /// the empty domain list is written, since the parser reads a group
+    /// followed by `=>` as the alias's domains and `() => A` as an
+    /// expression. A theory's judgment and a rule's outputs write `A => B`
+    /// and no other alias, a `(` there opening a port group.
     ///
     /// # Specification
     /// trivial.
@@ -2387,8 +2383,8 @@ impl<'source> Respelling<'_, 'source>
 
     /// Write the value-function alias over `domains` and `result`, as
     /// [`Self::alias`] says: a domain's binder kept where a later domain or
-    /// the result reads it, one bare domain unparenthesised, and outside a
-    /// type only that one-domain alias, never as a call's argument.
+    /// the result reads it, one bare domain unparenthesised, the empty list
+    /// only in a type and a list never in a judgment or a rule's outputs.
     ///
     /// # Specification
     /// trivial.
@@ -2430,14 +2426,15 @@ impl<'source> Respelling<'_, 'source>
             }
         }
         match domains.as_slice() {
-            &[Domain { name: None, ty }] if context != Context::Argument => {
+            &[Domain { name: None, ty }] => {
                 out.place(&self.operand(ty), Band::Lazy);
             },
-            _ if context != Context::Type => return None,
-            &[] => {
+            &[] if context == Context::Type => {
                 out.token(OPEN_PAREN);
                 out.token(CLOSE_PAREN);
             },
+            &[] => return None,
+            _ if matches!(context, Context::Judgment | Context::Outputs) => return None,
             many => {
                 out.token(OPEN_PAREN);
                 for (index, domain) in many.iter().enumerate() {
