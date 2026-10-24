@@ -248,6 +248,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::collections::btree_map::Entry;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -4691,15 +4692,17 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: on the first call, a declared slot `Theory` introduced at
     ///   `named`, whose definition half is the code, recorded as the module's
     ///   `Theory`. On the first call from each source, each constructor of
-    ///   [`theory_desc`] entered by name in that source with its tag and field
-    ///   count, as the minting block declares it, and the source recorded among
+    ///   [`theory_desc`] the source does not declare itself entered by name in
+    ///   that source with its tag and field count, as the minting block
+    ///   declares it, and the source recorded among
     ///   [`Collected::theory_sources`]: a later block's source names the one
     ///   code, and so do its importers ([`Collected::theory_in`]), whatever the
     ///   unit lays before it. On a later call from a recorded source, nothing.
-    ///   When `Theory` or one of its constructors names something the source
+    ///   A constructor the source declares keeps its name, and the code's of
+    ///   that name has none there. When `Theory` names something the source
     ///   declared before, nothing is admitted.
     /// - fails: [`LoweringRefusal::DuplicateDefinition`] naming the first
-    ///   declaration of a name `Theory` would take.
+    ///   declaration of `Theory`.
     /// - panics: none.
     ///
     /// # Errors
@@ -4735,13 +4738,6 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         let code = SurfaceName::from(THEORY_CODE);
-        let taken = |name: SurfaceName<'source>, first: ByteSpan| {
-            Err(LoweringRefusal::DuplicateDefinition {
-                span: named.span,
-                name,
-                first,
-            })
-        };
         let top = self.collected.top(named.span.start());
         if let Some(slot) = self
             .collected
@@ -4749,13 +4745,11 @@ impl<'source> Collector<'_, 'source>
             .get(&(top, code))
             .and_then(|&position| self.collected.slots.get(position.0))
         {
-            return taken(code, slot.introduced_by.span);
-        }
-        for constructor in THEORY_CONSTRUCTORS {
-            let name = SurfaceName::from(constructor);
-            if let Some(entry) = self.collected.constructors.get(&(source, name)) {
-                return taken(name, entry.named.span);
-            }
+            return Err(LoweringRefusal::DuplicateDefinition {
+                span: named.span,
+                name: code,
+                first: slot.introduced_by.span,
+            });
         }
         let theory = if let Maybe::Present(ref theory) = self.collected.theory {
             theory.clone()
@@ -4783,16 +4777,19 @@ impl<'source> Collector<'_, 'source>
             theory
         };
         for (tag, (&arity, name)) in theory.arities.iter().zip(THEORY_CONSTRUCTORS).enumerate() {
-            let _fresh = self.collected.constructors.insert(
-                (source, SurfaceName::from(name)),
-                Constructor {
+            if let Entry::Vacant(free) = self
+                .collected
+                .constructors
+                .entry((source, SurfaceName::from(name)))
+            {
+                let _entered = free.insert(Constructor {
                     family: theory.slot,
                     form: Generators::Presentation,
                     tag,
                     arity,
                     named: theory.named,
-                },
-            );
+                });
+            }
         }
         let _first = self.collected.theory_sources.insert(source);
 
