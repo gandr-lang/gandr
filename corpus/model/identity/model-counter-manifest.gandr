@@ -20,8 +20,11 @@ import "./model-counter.gandr" ;
 /// Counting up modulo three, its carrier manifest: the carrier is no field,
 /// so the record is the zero, the step and the reading.
 @[ checks ]
-def upManifest : Model(Counter) with sort C = Unit + (Unit + Unit) ;
-def upManifest = #{.zero = Up.zero, .incr = Up.incr, .read = Up.read} ;
+def upManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
+  .zero = Up.zero,
+  .incr = Up.incr,
+  .read = Up.read
+} ;
 
 /// The manifest counter where a counter is asked: the checker applies the
 /// forgetting map at the counts.
@@ -35,8 +38,11 @@ def observedAscribed() -> -F Integer { become observe((upManifest : Model(Counte
 
 /// The manifest counter carried along negation.
 @[ checks ]
-def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) ;
-def negatedManifest = transport(\x. Model(Counter) with sort C = x, countsNegated, upManifest) ;
+def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = transport(
+  \x. Model(Counter) with sort C = x,
+  countsNegated,
+  upManifest
+) ;
 
 /// The carried counter where a counter is asked: forgetting at the far end
 /// reads it as counting up reads.
@@ -72,8 +78,10 @@ def asIs(r : Integer) -> -F Integer { r }
 /// counts a field: the record is the counts' type, the zero, the step, the
 /// reading and the showing.
 @[ checks ]
-def upReadings : Model(ReadCounter) with sort R = Integer ;
-def upReadings = (type(Unit + (Unit + Unit)), (Up.zero, (Up.incr, (Up.read, asIs)))) ;
+def upReadings : Model(ReadCounter) with sort R = Integer = (
+  type(Unit + (Unit + Unit)),
+  (Up.zero, (Up.incr, (Up.read, asIs)))
+) ;
 
 /// The counter with its readings manifest where any such counter is asked:
 /// the checker applies the map putting back the readings alone.
@@ -82,8 +90,12 @@ def observedReadings() -> -F Integer { become observeShown(upReadings) }
 
 /// Counting up modulo three, both its sorts manifest: neither is a field.
 @[ checks ]
-def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer ;
-def upBoth = #{.zero = Up.zero, .incr = Up.incr, .read = Up.read, .shown = asIs} ;
+def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = #{
+  .zero = Up.zero,
+  .incr = Up.incr,
+  .read = Up.read,
+  .shown = asIs
+} ;
 
 /// The counter with both sorts manifest where any such counter is asked: the
 /// map putting back both is another than the one putting back the readings.
@@ -93,8 +105,7 @@ def observedBoth() -> -F Integer { become observeShown(upBoth) }
 /// The counter with both sorts manifest carried along negation of its
 /// counts, its readings fixed as they are.
 @[ checks ]
-def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer ;
-def negatedBoth = transport(
+def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = transport(
   \x. Model(ReadCounter) with sort C = x with sort R = Integer,
   countsNegated,
   upBoth
@@ -155,13 +166,14 @@ theory Pairing {
 /// the second is a field, so the record is its type, the left and the
 /// right.
 @[ checks ]
-def firstManifest : Model(Pairing) with sort A = Integer ;
-def firstManifest = (type(Unit), (1, unit)) ;
+def firstManifest : Model(Pairing) with sort A = Integer = (type(Unit), (1, unit)) ;
 
 /// One and the unit, paired, both carriers manifest: neither is a field.
 @[ checks ]
-def bothManifest : Model(Pairing) with sort A = Integer with sort B = Unit ;
-def bothManifest = #{.left = 1, .right = unit} ;
+def bothManifest : Model(Pairing) with sort A = Integer with sort B = Unit = #{
+  .left = 1,
+  .right = unit
+} ;
 
 /// A pairing's left beside a value of its second carrier, read off it where
 /// its type fixes the first.

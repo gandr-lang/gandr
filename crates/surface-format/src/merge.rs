@@ -1,22 +1,31 @@
-//! A signature and the definition after it written as one function form:
-//! `def f : () => B ; def f = thunk { c } ;` and `def f() -> -F B { c }`,
-//! which lower to the same thunk at the same type, and `def f : A => B ; def
-//! f = thunk { fn (x) { c } } ;` and `def f(x : A) -> -F B { c }`, the
-//! lambda's binders the function form's parameters.
+//! A signature and the definition after it written as one form.
 //!
-//! The merge reads two top-level forms, so it is not a respelling of one form
+//! The function form: `def f : () => B ; def f = thunk { c } ;` and `def
+//! f() -> -F B { c }`, which lower to the same thunk at the same type, and
+//! `def f : A => B ; def f = thunk { fn (x) { c } } ;` or `def f = fn (x) {
+//! c } ;` and `def f(x : A) -> -F B { c }`, the lambda's binders the
+//! function form's parameters.
+//!
+//! The joined form, for every other pair: `def x : T ; def x = e ;` and `def
+//! x : T = e ;`, the definition directly after the signature with nothing
+//! but whitespace between them.
+//!
+//! Either reads two top-level forms, so it is not a respelling of one form
 //! as the other rewrites are: [`crate::format_beside`] offers each signature
-//! and the definition laid out after it, both respelled, to [`merged`], and
-//! lays out the one form it returns in their place. The meaning check pairs
-//! declarations by name, which the merge keeps; a declaration whose merged
-//! form lowers or elaborates otherwise is laid out apart again, unreported
-//! ([`Apart`]).
+//! and the definition laid out after it, both respelled, to [`merged`] and
+//! then [`joined`], and lays out the one form returned in their place. The
+//! meaning check pairs declarations by name, which both keep; a declaration
+//! whose one form lowers or elaborates otherwise is laid out apart again,
+//! unreported ([`Apart`]).
 
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
+use gandr_surface_syntax::SyntaxTree;
 
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
@@ -38,25 +47,58 @@ pub enum Pairing
     Apart,
 }
 
+/// The one form a signature and the definition after it are written as.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OneForm
+{
+    /// The function form, `def f(x : A) -> -F B { c }`.
+    Function,
+    /// The joined form, `def x : T = e ;`.
+    Joined,
+}
+
+/// What a formatting does with a signature beside its definition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Joining
+{
+    /// Joins a pair directly adjacent into one form.
+    Join,
+    /// Splits a joined definition into its signature and definition.
+    Split,
+    /// Leaves each as the source writes it.
+    Keep,
+}
+
 /// The top-level forms the merge leaves apart: the signature and definition
-/// of each declaration whose merged form lowered or elaborated otherwise.
-#[repr(transparent)]
+/// of each declaration whose one form lowered or elaborated otherwise, by
+/// the one form. A pair held from the function form may still join.
 #[derive(Clone, Debug, Default)]
-pub struct Apart(Vec<ByteSpan>);
+pub struct Apart
+{
+    /// The forms held from the function form, ascending.
+    function: Vec<ByteSpan>,
+    /// The forms held from the joined form, ascending.
+    joined: Vec<ByteSpan>,
+}
 
 impl Apart
 {
-    /// How the form at `span` is laid out: [`Pairing::Apart`] when it is
-    /// left apart.
+    /// How the form at `span` is laid out as `one`: [`Pairing::Apart`] when
+    /// it is held from it.
     ///
     /// # Specification
     /// trivial.
     pub fn pairing(
         &self,
         span: ByteSpan,
+        one: OneForm,
     ) -> Pairing
     {
-        if self.0.binary_search(&span).is_ok() {
+        let held = match one {
+            OneForm::Function => &self.function,
+            OneForm::Joined => &self.joined,
+        };
+        if held.binary_search(&span).is_ok() {
             Pairing::Apart
         }
         else {
@@ -64,24 +106,30 @@ impl Apart
         }
     }
 
-    /// Leave the forms at `forms` apart.
+    /// Hold the forms at `forms` from `one`.
     ///
     /// # Specification
     /// trivial.
     pub fn keep(
         &mut self,
         forms: &[ByteSpan],
+        one: OneForm,
     )
     {
-        self.0.extend_from_slice(forms);
-        self.0.sort_unstable();
-        self.0.dedup();
+        let held = match one {
+            OneForm::Function => &mut self.function,
+            OneForm::Joined => &mut self.joined,
+        };
+        held.extend_from_slice(forms);
+        held.sort_unstable();
+        held.dedup();
     }
 }
 
 /// Whether the top-level form whose leaves are `written` opens as a
-/// definition the merge reads, `def f = thunk {`: the check before its
-/// signature and it are respelled together. [`Pairing::Merged`] when it does.
+/// definition the function form reads, `def f = thunk {` or `def f = fn`: the
+/// check before its signature and it are respelled together.
+/// [`Pairing::Merged`] when it does.
 ///
 /// # Specification
 /// trivial.
@@ -91,21 +139,199 @@ pub fn candidate(written: &[Leaf<'_>]) -> Pairing
         .iter()
         .filter(|leaf| leaf.material != Material::Whitespace)
         .map(|leaf| <&str>::from(leaf.text));
-    if matches!(
-        (
-            texts.next(),
-            texts.next(),
-            texts.next(),
-            texts.next(),
-            texts.next()
-        ),
-        (Some("def"), Some(_), Some("="), Some("thunk"), Some("{"))
+    match (
+        texts.next(),
+        texts.next(),
+        texts.next(),
+        texts.next(),
+        texts.next(),
     ) {
-        Pairing::Merged
+        (Some("def"), Some(_), Some("="), Some("thunk"), Some("{"))
+        | (Some("def"), Some(_), Some("="), Some("fn"), _) => Pairing::Merged,
+        _ => Pairing::Apart,
     }
+}
+
+/// The span of the `=` the top-level form `form` of `tree` writes among its
+/// own tiles, a definition's or a joined definition's; none for a signature
+/// alone.
+///
+/// # Specification
+/// trivial.
+pub fn defines(
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Option<ByteSpan>
+{
+    tree.children(form).find_map(|child| {
+        let node = tree.node(child)?;
+        (matches!(node.label(), NodeLabel::Tile(_))
+            && tree
+                .fragment(child)
+                .is_some_and(|text| <&str>::from(text) == "="))
+        .then(|| node.span())
+    })
+}
+
+/// The joined definition whose respelled leaves are `joined`, its own `=`
+/// standing at `equals`, written apart: the signature, then the definition.
+///
+/// # Specification
+/// - requires: `joined` is one top-level form's leaves, in offset order.
+/// - ensures: `None` unless the form is `def x : T = e ;` behind any attributes
+///   and documentation, its `=` at `equals` and no comment before it; otherwise
+///   the leaves to the last of `T` and ` ;`, beside `def x = ` and the leaves
+///   after the `=`, its `;` included.
+/// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one pass over the form's leaves.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a joined definition, documented or not, splits into the
+///   pair it joins.
+/// - witness: `tests::rewrite::an_adjacent_pair_joins_into_one_definition_2228`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref signed, ref defined)| !signed.is_empty() && !defined.is_empty()))]
+#[must_use]
+pub fn separated<'source>(
+    joined: &[Leaf<'source>],
+    equals: ByteSpan,
+) -> Option<(Vec<Leaf<'source>>, Vec<Leaf<'source>>)>
+{
+    let head = joined
+        .iter()
+        .position(|leaf| leaf.material == Material::Token && <&str>::from(leaf.text) == "def")?;
+    let at = joined.iter().position(|leaf| {
+        leaf.material == Material::Token && leaf.span == equals && <&str>::from(leaf.text) == "="
+    })?;
+    let declared = joined.get(head .. at)?;
+    if commented(declared) == Commentary::Commented {
+        return None;
+    }
+    let &[
+        Token(_, "def"),
+        Token(LeafIndex(named), _),
+        Token(_, ":"),
+        ..,
+        Token(LeafIndex(last), _),
+    ] = tokens(declared).as_slice()
     else {
-        Pairing::Apart
+        return None;
+    };
+    let first = joined.first()?;
+    let name = *declared.get(named)?;
+    let made = |text: &'static str, material: Material| Leaf {
+        span: ByteSpan::new(name.span.start(), name.span.start()).unwrap_or(name.span),
+        text: SourceFragment::from(text),
+        material,
+        owner: first.owner,
+        documentation: Documentation::Outside,
+    };
+    let mut signed: Vec<Leaf<'source>> =
+        Vec::with_capacity(head.saturating_add(last).saturating_add(3));
+    signed.extend_from_slice(joined.get(..= head.saturating_add(last))?);
+    signed.extend([made(" ", Material::Whitespace), made(";", Material::Token)]);
+    let mut defined: Vec<Leaf<'source>> =
+        Vec::with_capacity(joined.len().saturating_sub(at).saturating_add(5));
+    defined.extend([
+        made("def", Material::Token),
+        made(" ", Material::Whitespace),
+        name,
+    ]);
+    defined.extend([made(" ", Material::Whitespace), made("=", Material::Token)]);
+    defined.extend_from_slice(joined.get(at.saturating_add(1) ..)?);
+    Some((signed, defined))
+}
+
+/// The signature whose respelled leaves are `signature` and the definition
+/// directly after it, whose leaves are `written` as the source writes them
+/// and `definition` respelled, joined into one form: the signature's leaves
+/// to its type, then `=`, then the definition's from its value on.
+///
+/// # Specification
+/// - requires: each slice is one top-level form's leaves, in offset order, and
+///   the signature holds no definition already.
+/// - ensures: `None` unless the signature is `def x : T ;` behind any
+///   attributes and documentation, holding no comment, and the definition is
+///   `def x = e ;` under the same name with nothing written before its `def`
+///   and no comment before its value or after its `;`; otherwise the
+///   signature's leaves to the last of `T`, then ` = `, then the definition's
+///   leaves after its `=`, its `;` included.
+/// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one pass over each form's leaves.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an adjacent pair joins, a comment inside the value kept;
+///   a pair a comment parts, a definition under an attribute or its own
+///   documentation, a commented signature and a pair under two names stay
+///   apart.
+/// - witness: `tests::rewrite::an_adjacent_pair_joins_into_one_definition_2228`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|leaves| !leaves.is_empty()))]
+#[must_use]
+pub fn joined<'leaves, 'source>(
+    signature: &'leaves [Leaf<'source>],
+    (written, definition): (&'leaves [Leaf<'source>], &'leaves [Leaf<'source>]),
+) -> Option<Vec<Leaf<'source>>>
+{
+    let head = signature
+        .iter()
+        .position(|leaf| leaf.material == Material::Token && <&str>::from(leaf.text) == "def")?;
+    let declared = signature.get(head ..)?;
+    if commented(declared) == Commentary::Commented
+        || written
+            .iter()
+            .find(|leaf| leaf.material != Material::Whitespace)
+            .is_none_or(|leaf| leaf.material != Material::Token || <&str>::from(leaf.text) != "def")
+    {
+        return None;
     }
+    let signed = tokens(declared);
+    let &[
+        Token(_, "def"),
+        Token(_, name),
+        Token(_, ":"),
+        ..,
+        Token(LeafIndex(last), _),
+        Token(_, ";"),
+    ] = signed.as_slice()
+    else {
+        return None;
+    };
+    let defined = tokens(definition);
+    let &[
+        Token(_, "def"),
+        Token(_, own),
+        Token(LeafIndex(equals), "="),
+        _,
+        ..,
+        Token(_, ";"),
+    ] = defined.as_slice()
+    else {
+        return None;
+    };
+    if own != name || commented(definition.get(.. equals)?) == Commentary::Commented {
+        return None;
+    }
+    let first = signature.first()?;
+    let position = ByteSpan::new(first.span.start(), first.span.start()).unwrap_or(first.span);
+    let made = |text: &'static str, material: Material| Leaf {
+        span: position,
+        text: SourceFragment::from(text),
+        material,
+        owner: first.owner,
+        documentation: Documentation::Outside,
+    };
+    let mut out: Vec<Leaf<'source>> =
+        Vec::with_capacity(signature.len().saturating_add(definition.len()));
+    out.extend_from_slice(signature.get(..= head.saturating_add(last))?);
+    out.extend([made(" ", Material::Whitespace), made("=", Material::Token)]);
+    out.extend_from_slice(definition.get(equals.saturating_add(1) ..)?);
+    for leaf in &mut out {
+        leaf.owner = first.owner;
+    }
+    Some(out)
 }
 
 /// The signature whose respelled leaves are `signature` and the definition
@@ -122,13 +348,14 @@ pub fn candidate(written: &[Leaf<'_>]) -> Pairing
 ///   attributes and documentation, `T` one of `() => B`, `+U (-F B)`, `D => B`
 ///   with `D` one domain or a parenthesised list of them, or `+U (D1 -> … -> Dn
 ///   -> -F B)`, the definition is written `def f = thunk { … } ;` under the
-///   same name, its thunk ungraded, holding one `fn (x) { … }` per domain each
-///   directly in the last, every binder bare and the name a dependent domain
-///   `(x : A)` gives it, and neither form holds a comment after its
-///   documentation; otherwise the signature's leaves to the name, then each
-///   binder `x : A` in parentheses, `A` its domain, then `-> -F B` with `B`
-///   parenthesised unless it is one token, one bracketed group or a name
-///   applied to one, then the innermost body in braces.
+///   same name, its thunk ungraded, or `def f = fn …` when `T` has a domain,
+///   holding one `fn (x) { … }` per domain each directly in the last, every
+///   binder bare and the name a dependent domain `(x : A)` gives it, and
+///   neither form holds a comment after its documentation; otherwise the
+///   signature's leaves to the name, then each binder `x : A` in parentheses,
+///   `A` its domain, then `-> -F B` with `B` parenthesised unless it is one
+///   token, one bracketed group or a name applied to one, then the innermost
+///   body in braces.
 /// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
 /// - fails: never.
 /// - panics: none.
@@ -137,11 +364,13 @@ pub fn candidate(written: &[Leaf<'_>]) -> Pairing
 /// # Adequacy
 /// - hypothesis: L3 — a `become` thunk and a statement block merge in both
 ///   forms, a thunk the respelling left out merges as its computation, a one-
-///   and a two-binder lambda merge, and a graded thunk, a commented definition,
-///   a value definition, a lambda short of the arrows, an annotated binder and
-///   a binder a dependent domain names otherwise stay apart.
+///   and a two-binder lambda merge, thunked or not, and a graded thunk, a
+///   commented definition, a value definition, a lambda short of the arrows, an
+///   annotated binder and a binder a dependent domain names otherwise stay
+///   apart.
 /// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
 /// - witness: `tests::rewrite::a_signed_lambda_merges_into_its_function_form_1899`
+/// - witness: `tests::rewrite::a_lambda_the_checker_thunks_merges_into_its_function_form_2228`
 #[spec(ensures: |ret| ret.as_ref().is_none_or(|leaves| !leaves.is_empty()))]
 #[must_use]
 pub fn merged<'leaves, 'source>(
@@ -172,20 +401,28 @@ pub fn merged<'leaves, 'source>(
     };
     let (domains, codomain) = abstracted(declared, ty)?;
     let source = tokens(written);
-    let &[
-        Token(_, "def"),
-        Token(_, own),
-        Token(_, "="),
-        Token(_, "thunk"),
-        Token(open, "{"),
-        ..,
-        Token(close, "}"),
-        Token(_, ";"),
-    ] = source.as_slice()
-    else {
-        return None;
+    let own = match *source.as_slice() {
+        [
+            Token(_, "def"),
+            Token(_, own),
+            Token(_, "="),
+            Token(_, "thunk"),
+            Token(open, "{"),
+            ..,
+            Token(close, "}"),
+            Token(_, ";"),
+        ] if closing(&source, open) == Some(close) => own,
+        [
+            Token(_, "def"),
+            Token(_, own),
+            Token(_, "="),
+            Token(_, "fn"),
+            ..,
+            Token(_, ";"),
+        ] if !domains.is_empty() => own,
+        _ => return None,
     };
-    if own != name || closing(&source, open) != Some(close) {
+    if own != name {
         return None;
     }
     let defined = tokens(definition);

@@ -9,13 +9,11 @@ import "./data-maybe.gandr" ;
 
 /// An optional computation's type, named once.
 @[ checks ]
-def opt : Type -> Type[-] ;
-def opt = \A. -F Maybe(A) ;
+def opt : Type -> Type[-] = \A. -F Maybe(A) ;
 
 /// The same type through a second name.
 @[ checks ]
-def optAgain : Type -> Type[-] ;
-def optAgain = \A. opt(A) ;
+def optAgain : Type -> Type[-] = \A. opt(A) ;
 
 /// A present value against the named type at `Integer` (#2112).
 @[ checks ]

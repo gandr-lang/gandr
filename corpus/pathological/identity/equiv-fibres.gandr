@@ -40,5 +40,4 @@ def single(u : One) -> -F Path(One, collapse(pick(u)), u) {
 /// trip: `pick(collapse(x))` is `Yes` at every `x`, so reflexivity at `x`
 /// does not reach it (#514).
 @[ refuses("EndpointMismatch") ]
-def collapsed : Two ≃ One ;
-def collapsed = (collapse, ((pick, thunk { fn (x) { here(x) } }), (pick, single))) ;
+def collapsed : Two ≃ One = (collapse, ((pick, thunk { fn (x) { here(x) } }), (pick, single))) ;

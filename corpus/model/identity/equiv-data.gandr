@@ -20,8 +20,7 @@ def toShape(figure : Figure) -> -F Shape {
 /// The shapes and the figures are one type, by the two round trips at each
 /// constructor.
 @[ checks ]
-def redrawing : Path(Type, Shape, Figure) ;
-def redrawing = equiv(Shapes.toFigure, toShape) ;
+def redrawing : Path(Type, Shape, Figure) = equiv(Shapes.toFigure, toShape) ;
 
 /// A rectangle transported along the path is its figure, the sides swapped.
 @[ runs("Box(3, 2)") ]

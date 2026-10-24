@@ -28,8 +28,7 @@ def toRight(c : (Unit + Unit) + Unit) -> -F (Unit + (Unit + Unit)) {
 
 /// The two nestings are one type, the two maps inverse by computation.
 @[ checks ]
-def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) ;
-def nestings = equiv(toLeft, toRight) ;
+def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(toLeft, toRight) ;
 
 /// A judge that hears a verdict and acknowledges it, written over either
 /// nesting, and a judge that hears two verdicts.
@@ -43,11 +42,13 @@ module Judge {
 /// The two judges are one protocol along the path between the nestings: the
 /// acknowledgements' payloads convert, so only the verdict's pair is owed.
 @[ checks ]
-def renested : Path(Type, Judge.Right, Judge.Left) ;
-def renested = bisim(Judge.Right, Judge.Left, nestings) ;
+def renested : Path(Type, Judge.Right, Judge.Left) = bisim(Judge.Right, Judge.Left, nestings) ;
 
 /// Each verdict a judge hears is its own payload pair, so hearing two owes
 /// two paths, in the order the protocol hears them.
 @[ checks ]
-def renestedTwice : Path(Type, Judge.RightTwice, Judge.LeftTwice) ;
-def renestedTwice = bisim(Judge.RightTwice, Judge.LeftTwice, (nestings, nestings)) ;
+def renestedTwice : Path(Type, Judge.RightTwice, Judge.LeftTwice) = bisim(
+  Judge.RightTwice,
+  Judge.LeftTwice,
+  (nestings, nestings)
+) ;

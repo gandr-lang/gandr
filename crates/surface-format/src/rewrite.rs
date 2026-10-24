@@ -38,6 +38,7 @@ use crate::leaf::Material;
 use crate::leaf::Owner;
 use crate::leaf::copied;
 use crate::linear::Runs;
+use crate::merge::Joining;
 use crate::merge::Pairing;
 use crate::reduct::Applied;
 use crate::reduct::Reduct;
@@ -115,6 +116,10 @@ pub enum RewriteName
     /// A signature and its definition, merged: `def f : () => B ; def f =
     /// thunk { c } ;` and `def f() -> -F B { c }`; both forms move it.
     FunctionForm,
+    /// A signature and the definition directly after it, joined: `def x : T
+    /// ; def x = e ;` and `def x : T = e ;`; the sugared form joins them and
+    /// the explicit form writes them apart.
+    JoinedDefinition,
 }
 
 impl fmt::Display for RewriteName
@@ -146,6 +151,7 @@ impl fmt::Display for RewriteName
             Self::InsertedReduct => "inserted-reduct",
             Self::InsertedForget => "inserted-forget",
             Self::FunctionForm => "function-form",
+            Self::JoinedDefinition => "joined-definition",
         })
     }
 }
@@ -190,7 +196,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 28] = [
+pub const REWRITES: [Rewrite; 30] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -415,6 +421,22 @@ pub const REWRITES: [Rewrite; 28] = [
         to: Spelling("def f() -> -F B { c }"),
         enabled: Enabled::On,
     },
+    Rewrite {
+        name: RewriteName::JoinedDefinition,
+        direction: Direction::Sugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def x : T ; def x = e ;"),
+        to: Spelling("def x : T = e ;"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::JoinedDefinition,
+        direction: Direction::Desugar,
+        mold: MoldName("def_value"),
+        from: Spelling("def x : T = e ;"),
+        to: Spelling("def x : T ; def x = e ;"),
+        enabled: Enabled::On,
+    },
 ];
 
 /// Which rewrites a form runs.
@@ -493,9 +515,37 @@ impl Chosen
     /// trivial.
     pub fn pairing(self) -> Pairing
     {
+        self.pairs(RewriteName::FunctionForm)
+    }
+
+    /// What the chosen rewrites do with a signature and the definition
+    /// directly after it, when they are no function form, and with a joined
+    /// definition: [`Joining::Join`] the pair under the sugared form,
+    /// [`Joining::Split`] the joined definition under the explicit one.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn joining(self) -> Joining
+    {
+        match (self.pairs(RewriteName::JoinedDefinition), self.direction) {
+            (Pairing::Apart, Direction::Sugar | Direction::Desugar) => Joining::Keep,
+            (Pairing::Merged, Direction::Sugar) => Joining::Join,
+            (Pairing::Merged, Direction::Desugar) => Joining::Split,
+        }
+    }
+
+    /// [`Pairing::Merged`] when the rewrite `name` runs on a definition.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pairs(
+        self,
+        name: RewriteName,
+    ) -> Pairing
+    {
         if self
             .rewrites(MoldName("def_value"))
-            .any(|name| name == RewriteName::FunctionForm)
+            .any(|chosen| chosen == name)
         {
             Pairing::Merged
         }
@@ -1993,7 +2043,7 @@ impl<'source> Respelling<'_, 'source>
                 Direction::Desugar,
             )
             | (
-                RewriteName::LinearRun | RewriteName::FunctionForm,
+                RewriteName::LinearRun | RewriteName::FunctionForm | RewriteName::JoinedDefinition,
                 Direction::Sugar | Direction::Desugar,
             ) => return None,
         };

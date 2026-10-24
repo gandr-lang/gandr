@@ -14,8 +14,7 @@ def misreturned() -> -F Integer {
 
 /// A lambda whose parameter states a type the arrow it answers does not take.
 @[ refuses("TypeMismatch") ]
-def mistyped : Integer => Integer;
-def mistyped = thunk { fn (x : String) { 1 } };
+def mistyped : Integer => Integer = thunk { fn (x : String) { 1 } };
 
 /// An annotation inside a pair that misstates its component (#1543).
 @[ refuses("TypeMismatch") ]
@@ -23,8 +22,7 @@ def inner = (("three" : Integer), 1);
 
 /// An annotation its definition's signature disagrees with (#1543).
 @[ refuses("TypeMismatch") ]
-def disagreeing : String;
-def disagreeing = (3 : Integer);
+def disagreeing : String = (3 : Integer);
 
 /// A pair a bind runs, its pattern annotated with a product the pair does not
 /// have (#1543).

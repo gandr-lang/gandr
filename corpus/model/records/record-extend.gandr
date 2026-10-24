@@ -6,8 +6,7 @@ def single = #{ a = 1 };
 
 /// `single` extended at `b`, the record type it gains stated.
 @[ checks ]
-def pair : #{a : Integer, b : Integer} ;
-def pair = #{ single | b = 2 } ;
+def pair : #{a : Integer, b : Integer} = #{ single | b = 2 } ;
 
 /// The run target adds `b`: the record gains the field.
 @[ runs("#{.a = 1, .b = 2}") ]

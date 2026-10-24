@@ -8,13 +8,15 @@ import "./seat-base.gandr" ;
 
 /// The stationary flow at a protocol that opens with a receive.
 @[ checks ]
-def quoted_receive : Flow(Type, ?(Seat.Dispatch). end, ?(Seat.Dispatch). end) ;
-def quoted_receive = stay(type(?(Seat.Dispatch). end)) ;
+def quoted_receive : Flow(
+  Type,
+  ?(Seat.Dispatch). end,
+  ?(Seat.Dispatch). end
+) = stay(type(?(Seat.Dispatch). end)) ;
 
 /// The stationary flow at a labelled sum of one summand.
 @[ checks ]
-def quoted_sum : Flow(Type, +{Unit}, +{Unit}) ;
-def quoted_sum = stay(type(+{Unit})) ;
+def quoted_sum : Flow(Type, +{Unit}, +{Unit}) = stay(type(+{Unit})) ;
 
 /// The seat's protocol, written out in full where an expression stands,
 /// simulates the protocol its name stands for.
@@ -22,8 +24,7 @@ def quoted_sum = stay(type(+{Unit})) ;
 def protocol : Flow(Type, Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
   report : !(Seat.Report). &{ next : turn, retire : end },
   handoff : !(Seat.Handoff). end
-}) ;
-def protocol = sim(Seat.SeatEnd, type(?(Seat.Dispatch). mu turn. +{
+}) = sim(Seat.SeatEnd, type(?(Seat.Dispatch). mu turn. +{
   report : !(Seat.Report). &{ next : turn, retire : end },
   handoff : !(Seat.Handoff). end
 })) ;

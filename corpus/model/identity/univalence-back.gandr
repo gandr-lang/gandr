@@ -36,5 +36,4 @@ def loopsBack(
 
 /// Two carried back along the loops' path is the word of two loops, by a run.
 @[ runs("loop ∷ loop ∷ here(Base)") ]
-def backRun : () => Path(Circle, Base, Base) ;
-def backRun = loopsBack(loopsAreIntegers, S(S(Z))) ;
+def backRun : () => Path(Circle, Base, Base) = loopsBack(loopsAreIntegers, S(S(Z))) ;

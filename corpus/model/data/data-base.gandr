@@ -28,13 +28,11 @@ def rec plus(n : Nat, m : Nat) -> -F Nat {
 
 /// Two.
 @[ runs("Succ(Succ(Zero))") ]
-def two : Nat ;
-def two = Succ(Succ(Zero)) ;
+def two : Nat = Succ(Succ(Zero)) ;
 
 /// Three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def three : Nat ;
-def three = Succ(two) ;
+def three : Nat = Succ(two) ;
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel, each rule invertible.

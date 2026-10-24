@@ -2,20 +2,16 @@
 def single = (1,);
 
 @[ refuses("ShapeMismatch") ]
-def single_is_not_its_member : Integer;
-def single_is_not_its_member = (1,);
+def single_is_not_its_member : Integer = (1,);
 
 @[ checks ]
-def triple : Integer * Unit * String;
-def triple = (1, unit, "a");
+def triple : Integer * Unit * String = (1, unit, "a");
 
 @[ refuses("ShapeMismatch") ]
-def nesting_is_written : (Integer * Unit) * String;
-def nesting_is_written = (1, unit, "a");
+def nesting_is_written : (Integer * Unit) * String = (1, unit, "a");
 
 @[ checks ]
-def nested : (Integer * Unit) * String;
-def nested = ((1, unit), "a");
+def nested : (Integer * Unit) * String = ((1, unit), "a");
 
 @[ checks ]
 def absurd(x : Void) -> -F Integer {

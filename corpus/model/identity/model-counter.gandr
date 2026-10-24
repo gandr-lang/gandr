@@ -68,13 +68,11 @@ module Down : Model(Counter) {
 
 /// Counting up, as a model.
 @[ checks ]
-def upModel : Model(Counter) ;
-def upModel = pack Up at Model(Counter) ;
+def upModel : Model(Counter) = pack Up at Model(Counter) ;
 
 /// Counting down, as a model.
 @[ checks ]
-def downModel : Model(Counter) ;
-def downModel = pack Down at Model(Counter) ;
+def downModel : Model(Counter) = pack Down at Model(Counter) ;
 
 /// The count negated: zero stays, one and two swap.
 @[ checks ]
@@ -88,8 +86,10 @@ def negateCount(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
 
 /// The counts to themselves by negation, its own inverse.
 @[ checks ]
-def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) ;
-def countsNegated = equiv(negateCount, negateCount) ;
+def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
+  negateCount,
+  negateCount
+) ;
 
 /// Counting up carried along negation is counting down.
 @[ checks ]
@@ -97,8 +97,7 @@ def stepNegated : Path(
   Unit + (Unit + Unit) => Unit + (Unit + Unit),
   transport(\t. t => t, countsNegated, Up.incr),
   Down.incr
-) ;
-def stepNegated = funext(transport(\t. t => t, countsNegated, Up.incr), Down.incr) ;
+) = funext(transport(\t. t => t, countsNegated, Up.incr), Down.incr) ;
 
 /// The reading carried along negation reads negated.
 @[ checks ]
@@ -106,13 +105,14 @@ def readNegated : Path(
   Unit + (Unit + Unit) => Integer,
   transport(\t. t => Integer, countsNegated, Up.read),
   Down.read
-) ;
-def readNegated = funext(transport(\t. t => Integer, countsNegated, Up.read), Down.read) ;
+) = funext(transport(\t. t => Integer, countsNegated, Up.read), Down.read) ;
 
 /// The two packed modules are one model along negation.
 @[ checks ]
-def oneCounter : Path(Model(Counter), upModel, downModel) ;
-def oneCounter = (countsNegated, (here(+{.0 = unit}), (stepNegated, readNegated))) ;
+def oneCounter : Path(Model(Counter), upModel, downModel) = (
+  countsNegated,
+  (here(+{.0 = unit}), (stepNegated, readNegated))
+) ;
 
 /// A consumer of any counter: the reading after one step from zero.
 @[ checks ]

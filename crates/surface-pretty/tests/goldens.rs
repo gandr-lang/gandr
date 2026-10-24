@@ -4515,6 +4515,40 @@ fn a_suspended_returner_spells_whole_1449()
     );
 }
 
+/// A lambda read as a value at a function, the thunk the checker inserts
+/// left out, spells whole as the function form the thunk holding it does;
+/// at a suspended returner, abstracting nothing, it is written in halves
+/// (#2228).
+#[test]
+fn a_lambda_the_checker_thunks_spells_whole_2228()
+{
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let function = core.comp_type_arrow(nat, returns_nat);
+    let ty = core.value_type_thunk(function);
+    let suspended_ty = core.value_type_thunk(returns_nat);
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(bound);
+    let lambda = core.computation_lambda(returned);
+    let read = core.value_nested(lambda);
+    let source = CoreSource::new(&core, &names);
+    assert_eq!(
+        declared_whole(&source, (ty, read), PageWidth::from(100_u32)),
+        Maybe::Present((
+            String::from("def down(a : Nat) -> -F Nat {\n  a\n}"),
+            Fidelity::Faithful
+        )),
+        "a lambda read as a value at an arrow is written whole"
+    );
+    assert_eq!(
+        declared_whole(&source, (suspended_ty, read), PageWidth::from(100_u32)),
+        Maybe::Absent(whole::Absent::NotAbstracted),
+        "a lambda read at a suspended returner abstracts nothing it is written whole for"
+    );
+}
+
 /// A thunk the checker inserts is left out: a call's argument over a call
 /// and a definition's value over a function are written as what they hold,
 /// while a thunk over a returned value or over statements keeps its braces

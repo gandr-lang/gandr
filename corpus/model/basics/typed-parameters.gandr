@@ -4,8 +4,7 @@
 
 /// Doubles its argument, the parameter typed where the lambda binds it.
 @[ checks ]
-def double : Integer => Integer;
-def double = fn (x : Integer) { return (x + x) };
+def double : Integer => Integer = fn (x : Integer) { return (x + x) };
 
 /// A function of a lazy record, handed its argument.
 @[ checks ]

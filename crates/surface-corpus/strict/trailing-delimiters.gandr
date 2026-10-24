@@ -34,8 +34,7 @@ def cool(c : Color) -> -F Integer {
 }
 
 @[ runs("fn (a) { fn (b) { a } }") ]
-def first : (Integer, Integer) => Integer ;
-def first = fn (x) { fn (y) { x } } ;
+def first(x : Integer, y : Integer) -> -F Integer { x }
 
 @[ runs("42") ]
 def chosen() -> -F Integer { become (force first)(42,)(7,) }

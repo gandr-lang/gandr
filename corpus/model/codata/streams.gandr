@@ -68,8 +68,7 @@ def add(x : Integer, y : Integer) -> -F Integer {
 
 /// The integers from three, observed at the head.
 @[ runs("3") ]
-def three : () => Integer ;
-def three = first(upward(3)) ;
+def three : () => Integer = first(upward(3)) ;
 
 /// The integers from three, observed one further.
 @[ runs("4") ]
@@ -94,8 +93,7 @@ def onward(s : +U Stream(Integer)) -> -F Integer {
 
 /// The integers from three, observed one further by position.
 @[ runs("4") ]
-def fourth : () => Integer ;
-def fourth = onward(upward(3)) ;
+def fourth : () => Integer = onward(upward(3)) ;
 
 /// The integers from three, observed at the head off the call itself: the
 /// call runs to the stream, and the stream is observed.

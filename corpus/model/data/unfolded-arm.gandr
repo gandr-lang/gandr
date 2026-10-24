@@ -26,8 +26,7 @@ def rec double(n : Nat) -> -F Nat {
 
 /// Two doubled.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def doubledTwo : () => Nat ;
-def doubledTwo = double(two) ;
+def doubledTwo : () => Nat = double(two) ;
 
 /// One step of `double` is `plusTwo` of the call, as the arm writes it
 /// (#761).

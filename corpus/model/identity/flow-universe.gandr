@@ -11,14 +11,12 @@ import "./flow-migration.gandr" ;
 /// The old schema shifted to the new by its translator, the flow written as
 /// the relation between the two types.
 @[ checks ]
-def shift : Schema.Old ⇝ Schema.New ;
-def shift = forward(Schema.toNew) ;
+def shift : Schema.Old ⇝ Schema.New = forward(Schema.toNew) ;
 
 /// The relation is the flow it abbreviates: `shift` stands where the flow is
 /// written out.
 @[ checks ]
-def shifted : Flow(Type, Schema.Old, Schema.New) ;
-def shifted = shift ;
+def shifted : Flow(Type, Schema.Old, Schema.New) = shift ;
 
 /// Riding the relation translates a record of the old schema.
 @[ runs("(30, \"ada\", +{.0 = unit})") ]

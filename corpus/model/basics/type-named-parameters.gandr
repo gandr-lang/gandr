@@ -21,5 +21,4 @@ def firstAtFive() -> -F Integer { become firstAt(Integer, Unit, 5, unit) }
 /// `idAt`'s type as a telescope, its binder named as a type: the spelling a
 /// hover gives `idAt`, which reads back as its type (#2179).
 @[ checks ]
-def idTelescope : (A : Type, A) => A ;
-def idTelescope = idAt ;
+def idTelescope : (A : Type, A) => A = idAt ;

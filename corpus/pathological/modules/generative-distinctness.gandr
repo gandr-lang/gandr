@@ -20,8 +20,7 @@ module A = MkCounter(Seed) ;
 module B = MkCounter(Seed) ;
 
 @[ refuses("TypeMismatch") ]
-def mixed : A.T ;
-def mixed = B.seed ;
+def mixed : A.T = B.seed ;
 
 @[ refuses("ProjectionFromApplication") ]
 def projected : Integer ;

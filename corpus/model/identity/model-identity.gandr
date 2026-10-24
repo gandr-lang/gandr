@@ -22,22 +22,24 @@ theory Toggle {
 
 /// The toggle that starts false and reads its state as it is, as a model.
 @[ checks ]
-def plainModel : Model(Toggle) ;
-def plainModel = plainToggle ;
+def plainModel : Model(Toggle) = plainToggle ;
 
 /// The toggle that starts true and reads its state negated, as a model.
 @[ checks ]
-def flippedModel : Model(Toggle) ;
-def flippedModel = flippedToggle ;
+def flippedModel : Model(Toggle) = flippedToggle ;
 
 /// The two models are one along negation: the carriers by negation, the start
 /// carried to `true`, and each operation carried to the other's.
 @[ checks ]
-def oneModel : Path(Model(Toggle), plainModel, flippedModel) ;
-def oneModel = (negation, (here(+{.1 = unit}), (stepped, reread))) ;
+def oneModel : Path(Model(Toggle), plainModel, flippedModel) = (
+  negation,
+  (here(+{.1 = unit}), (stepped, reread))
+) ;
 
 /// The start left unmoved does not relate the models: negation carries `false`
 /// to `true`, so `here(false)` is no path from the carried start to `true`.
 @[ refuses("EndpointMismatch") ]
-def startUnmoved : Path(Model(Toggle), plainModel, flippedModel) ;
-def startUnmoved = (negation, (here(+{.0 = unit}), (stepped, reread))) ;
+def startUnmoved : Path(Model(Toggle), plainModel, flippedModel) = (
+  negation,
+  (here(+{.0 = unit}), (stepped, reread))
+) ;

@@ -54,8 +54,7 @@ def lcSyntax : #{
     subTm(g, d, app(g, t, u), s),
     app(d, subTm(g, d, t, s), subTm(g, d, u, s))
   )
-} ;
-def lcSyntax = (
+} = (
   N,
   (
     thunk { fn (d) { fn (g) { return Env } } },
@@ -103,8 +102,7 @@ def lcSyntax = (
 /// derivation states, the families over contexts read applied and a term in an
 /// extended context read after its extension runs.
 @[ checks ]
-def lcModel : Model(LC) ;
-def lcModel = lcSyntax ;
+def lcModel : Model(LC) = lcSyntax ;
 
 /// `(λx. x)(λx. x)` contracts, by the model's single substitution of the
 /// argument into the body, to `λx. x`.

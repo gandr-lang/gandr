@@ -30,19 +30,24 @@ def once() -> -F Path(Circle, Base, Base) { loop }
 
 /// The inverse of the loop is the letter `back(loop)`, by conversion.
 @[ checks ]
-def unwound : Path(Path(Circle, Base, Base), back(loop), back(loop) ∷ here(Base)) ;
-def unwound = here(back(loop) ∷ here(Base)) ;
+def unwound : Path(
+  Path(Circle, Base, Base),
+  back(loop),
+  back(loop) ∷ here(Base)
+) = here(back(loop) ∷ here(Base)) ;
 
 /// The loop then its inverse is the empty word: the minted cancellation, read
 /// by conversion.
 @[ checks ]
-def cancelled : Path(Path(Circle, Base, Base), loop then back(loop), here(Base)) ;
-def cancelled = here(here(Base)) ;
+def cancelled : Path(
+  Path(Circle, Base, Base),
+  loop then back(loop),
+  here(Base)
+) = here(here(Base)) ;
 
 /// No rule identifies the loop with the empty word.
 @[ refuses("EndpointMismatch") ]
-def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) ;
-def around_once = here(here(Base)) ;
+def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base)) ;
 
 /// A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷
 /// here(Base)` is the empty word, which it would read as 1.
@@ -58,32 +63,35 @@ def tell(p : Path(Circle, Base, Base)) -> -F Integer {
 /// Winding twice around and spinning the count back gives the word the
 /// composite is, by conversion.
 @[ checks ]
-def round : Path(Path(Circle, Base, Base), spin(wind(loop then loop)), loop ∷ loop ∷ here(Base)) ;
-def round = here(loop ∷ loop ∷ here(Base)) ;
+def round : Path(
+  Path(Circle, Base, Base),
+  spin(wind(loop then loop)),
+  loop ∷ loop ∷ here(Base)
+) = here(loop ∷ loop ∷ here(Base)) ;
 
 /// The composite the round trip gives: the loop twice, by conversion.
 @[ checks ]
-def twice : Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base)) ;
-def twice = here(loop ∷ loop ∷ here(Base)) ;
+def twice : Path(
+  Path(Circle, Base, Base),
+  loop then loop,
+  loop ∷ loop ∷ here(Base)
+) = here(loop ∷ loop ∷ here(Base)) ;
 
 /// Spinning two successors and winding the word counts two.
 @[ runs("S(S(Z))") ]
-def counted : () => Int ;
-def counted = wind(spin(S(S(Z)))) ;
+def counted : () => Int = wind(spin(S(S(Z)))) ;
 
 /// The loops at the point and the presented integers are a quasi-inverse, by
 /// `wind` and `spin` with the two round trips at a variable, nothing owed.
 @[ checks ]
-def windingIso : Path(Circle, Base, Base) ≅ Int ;
-def windingIso = (wind, (spin, (sect, retr))) ;
+def windingIso : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (sect, retr))) ;
 
 /// The loops at the point and the presented integers are equivalent: the
 /// book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made
 /// bi-invertible, `spin` serving as both inverses. A value is a record, never
 /// a call, so the equivalence is written as the record `isoToEquiv` builds.
 @[ checks ]
-def winding : Path(Circle, Base, Base) ≃ Int ;
-def winding = (wind, ((spin, sect), (spin, retr))) ;
+def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr))) ;
 
 /// The equivalence is `isoToEquiv` at the quasi-inverse, by conversion.
 @[ checks ]
@@ -91,5 +99,4 @@ def windingByIso : Path(
   Path(Circle, Base, Base) ≃ Int,
   winding,
   isoToEquiv(Path(Circle, Base, Base), Int, windingIso)
-) ;
-def windingByIso = here(winding) ;
+) = here(winding) ;

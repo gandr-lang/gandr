@@ -4,8 +4,7 @@ def lazy() -> &{get : -F Integer, put : -F String} {
 }
 
 @[ checks ]
-def binary : +U (-F Integer & -F String) ;
-def binary = &{.0 => 1, .1 => "s"} ;
+def binary : +U (-F Integer & -F String) = &{.0 => 1, .1 => "s"} ;
 
 @[ checks ]
 def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
@@ -20,8 +19,7 @@ def offered(n : Integer) -> &{get : -F Integer, put : -F String} {
 /// The empty lazy record is the empty lazy product, answered by the empty
 /// block.
 @[ checks ]
-def terminal : +U &{} ;
-def terminal = &{} ;
+def terminal : +U &{} = &{} ;
 
 /// A lazy record of one entry is the lazy product of one, not its entry: its
 /// block answers the one entry.
@@ -39,8 +37,7 @@ def triple() -> &{a : -F Integer, b : -F String, c : -F Integer} {
 
 /// The chain `C & D & E` is the lazy product the lazy record of three is.
 @[ checks ]
-def chained : +U (-F Integer & -F String & -F Integer) ;
-def chained = triple ;
+def chained : +U (-F Integer & -F String & -F Integer) = triple ;
 
 /// Each entry of a lazy product of three is one projection of it.
 @[ checks ]

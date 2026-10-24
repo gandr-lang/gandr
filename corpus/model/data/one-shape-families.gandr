@@ -45,8 +45,10 @@ def fahrenheitRoundTrip(f : Fahrenheit) -> -F Path(Fahrenheit, toFahrenheit(toCe
 
 /// The relabelling is an equivalence, its inverse on either side.
 @[ checks ]
-def relabel : Celsius ≃ Fahrenheit ;
-def relabel = (toFahrenheit, ((toCelsius, celsiusRoundTrip), (toCelsius, fahrenheitRoundTrip))) ;
+def relabel : Celsius ≃ Fahrenheit = (
+  toFahrenheit,
+  ((toCelsius, celsiusRoundTrip), (toCelsius, fahrenheitRoundTrip))
+) ;
 
 /// A Celsius value carried along the path the relabelling makes is the
 /// Fahrenheit value of its integer, by a run: the book's Lemma 2.10.5.

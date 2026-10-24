@@ -3607,7 +3607,8 @@ fn implicit_param() -> Regex
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one shared name, optional implicit telescope and
-///   signature/value/function tail alternatives.
+///   signature/value/function tail alternatives, the signature tail optionally
+///   joined with its value.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3624,8 +3625,13 @@ fn regular_def_tail() -> Regex
         t(TileLabel("identifier")),
         opt(implicit_telescope()),
         alt([
-            // signature tail: `: T ;`
-            seq([t(TileLabel(":")), h(Sort::Type), t(TileLabel(";"))]),
+            // signature tail: `: T ;`, or joined with its value: `: T = E ;`
+            seq([
+                t(TileLabel(":")),
+                h(Sort::Type),
+                opt(seq([t(TileLabel("=")), h(Sort::Expression)])),
+                t(TileLabel(";")),
+            ]),
             // value tail: `= E ;`
             seq([t(TileLabel("=")), h(Sort::Expression), t(TileLabel(";"))]),
             // function tail: `(params) -> T? { … }`

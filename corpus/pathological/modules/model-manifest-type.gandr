@@ -21,8 +21,7 @@ def unitStep(u : Unit) -> -F Unit {
 
 /// A counter over the unit where the carrier is fixed as the integers.
 @[ refuses("TypeMismatch") ]
-def unitCounter : Model(Counter) with sort C = Integer ;
-def unitCounter = #{.start = unitStart, .step = unitStep} ;
+def unitCounter : Model(Counter) with sort C = Integer = #{.start = unitStart, .step = unitStep} ;
 
 /// A sort the counter does not have.
 @[ refuses("UnknownMember") ]

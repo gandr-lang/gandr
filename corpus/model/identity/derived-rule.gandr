@@ -81,8 +81,7 @@ module Parity : Model(Group) {
 
 /// The parity group, as a model.
 @[ checks ]
-def parityGroup : Model(Group) ;
-def parityGroup = pack Parity at Model(Group) ;
+def parityGroup : Model(Group) = pack Parity at Model(Group) ;
 
 /// The derived rule read at the parity group, at one and zero: both sides are
 /// one.

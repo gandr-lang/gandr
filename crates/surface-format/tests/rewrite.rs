@@ -461,11 +461,9 @@ fn a_composite_read_as_a_value_moves_both_ways_985()
 {
     let grammar = grammar();
     let sugared = format!(
-        "{CIRCLE}def two : Path(Circle, Base, Base) ;
-def two = loop then loop ;
+        "{CIRCLE}def two : Path(Circle, Base, Base) = loop then loop ;
 
-def undone : Path(Circle, Base, Base) ;
-def undone = back(loop then loop) ;
+def undone : Path(Circle, Base, Base) = back(loop then loop) ;
 "
     );
     let explicit = format!(
@@ -613,7 +611,7 @@ fn a_transport_along_no_path_motive_keeps_its_spelling()
         "transport(\\a. Path(Circle, a, Base), loop, loop)",
         "transport(\\a. Path(Circle, Base, a), loop)",
     ] {
-        let source = format!("{CIRCLE}def moved : Integer ;\ndef moved = {value} ;\n");
+        let source = format!("{CIRCLE}def moved : Integer = {value} ;\n");
         assert_eq!(
             spelled(&grammar, source.as_str(), Form::Sugared, Selection::Every),
             source
@@ -784,10 +782,8 @@ def suspended : Type -> Type ;
 def suspended = \\X. +U (-F X) ;
 ";
     let sugared = "\
-def motive : Type -> Type ;
-def motive = \\X. X => X ;
-def suspended : Type -> Type ;
-def suspended = \\X. () => X ;
+def motive : Type -> Type = \\X. X => X ;
+def suspended : Type -> Type = \\X. () => X ;
 ";
     for (source, form, expected) in [
         (explicit, Form::Sugared, sugared),
@@ -1376,6 +1372,7 @@ fn every_refusal_withdrawal_and_rewrite_renders_apart()
             "inserted-reduct",
             "inserted-forget",
             "function-form",
+            "joined-definition",
         ],
         "each rewrite is named as a caller selects it, in the table's order"
     );
@@ -1509,8 +1506,9 @@ fn an_inserted_thunk_follows_the_checker_s_elaborations()
 /// A signature at a suspended returner and the thunk defining it after it
 /// are written as the function form that declares them, in either form: a
 /// `become`, a statement block and a computation alike. A thunk holding a
-/// comment, a graded one and a definition of a value keep their halves
-/// (#1449).
+/// comment, a graded one and a definition of a value keep their function
+/// halves; the graded one, which the checker refuses, keeps both halves, its
+/// join withdrawn (#1449).
 #[test]
 fn a_signed_thunk_merges_into_its_function_form_1449()
 {
@@ -1543,10 +1541,18 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
             ..FormatOptions::default()
         };
         let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        let withdrawn: Vec<&str> = formatted
+            .withdrawn()
+            .iter()
+            .map(|withdrawal| withdrawal.declaration.as_str())
+            .collect();
+        let expected: &[&str] = match form {
+            Form::Sugared => &["graded"],
+            Form::Explicit | Form::Source => &[],
+        };
         assert_eq!(
-            formatted.withdrawn(),
-            &[],
-            "nothing is withdrawn in {form:?}"
+            withdrawn, expected,
+            "only the refused join is withdrawn in {form:?}"
         );
         formatted.into_text()
     };
@@ -1561,8 +1567,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
 
         def pair() -> -F (Integer * Integer) { (1, 2) }
 
-        def commented : () => Integer ;
-        def commented = thunk {
+        def commented : () => Integer = thunk {
           // kept
           become twice(2)
         } ;
@@ -1570,8 +1575,7 @@ fn a_signed_thunk_merges_into_its_function_form_1449()
         def graded : +U[1] (-F Integer) ;
         def graded = thunk[1] { become twice(3) } ;
 
-        def value : Integer ;
-        def value = 3 ;
+        def value : Integer = 3 ;
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
@@ -1652,16 +1656,13 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
 
         def named(x : Integer) -> -F Integer { x }
 
-        def stated : Integer => Integer ;
-        def stated = thunk { fn (x : Integer) { x } } ;
+        def stated : Integer => Integer = thunk { fn (x : Integer) { x } } ;
 
-        def short : (Integer, Integer) => Integer ;
-        def short = thunk { fn (a) { become add(a) } } ;
+        def short : (Integer, Integer) => Integer = thunk { fn (a) { become add(a) } } ;
 
         def renamed(y : Integer) -> -F Integer { y }
 
-        def mistyped : Integer => Integer ;
-        def mistyped = thunk { fn (x : String) { 1 } } ;
+        def mistyped : Integer => Integer = thunk { fn (x : String) { 1 } } ;
     "#]]
     .assert_eq(&laid(Form::Sugared));
     expect![[r#"
@@ -1684,6 +1685,174 @@ fn a_signed_lambda_merges_into_its_function_form_1899()
         def mistyped = thunk { fn (x : String) { return 1 } } ;
     "#]]
     .assert_eq(&laid(Form::Explicit));
+}
+
+/// The sugared form joins a signature and the definition directly after it
+/// into one form, a comment inside the value kept; a comment, the
+/// definition's own documentation or another declaration between them, a
+/// commented signature and a definition before its signature keep the two
+/// forms; the explicit form writes every joined definition apart (#2228).
+#[test]
+fn an_adjacent_pair_joins_into_one_definition_2228()
+{
+    let grammar = grammar();
+    let source = "def three : Integer ;\n\
+                  def three = 3 ;\n\
+                  \n\
+                  def four : Integer = 4 ;\n\
+                  \n\
+                  def five : Integer ;\n\
+                  // parts them\n\
+                  def five = 5 ;\n\
+                  \n\
+                  def six : Integer ;\n\
+                  /// Documents the definition.\n\
+                  def six = 6 ;\n\
+                  \n\
+                  def seven : Integer ;\n\
+                  def between : Integer = 0 ;\n\
+                  def seven = 7 ;\n\
+                  \n\
+                  def eight : Integer ; // on the signature\n\
+                  def eight = 8 ;\n\
+                  \n\
+                  def nine : Integer ;\n\
+                  def nine = (\n  // inside the value\n  9\n) ;\n\
+                  \n\
+                  def ten = 10 ;\n\
+                  def ten : Integer ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid = |form: Form| {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "nothing is withdrawn in {form:?}"
+        );
+        formatted.into_text()
+    };
+    expect![[r#"
+        def three : Integer = 3 ;
+
+        def four : Integer = 4 ;
+
+        def five : Integer ;
+        // parts them
+        def five = 5 ;
+
+        def six : Integer ;
+        /// Documents the definition.
+        def six = 6 ;
+
+        def seven : Integer ;
+        def between : Integer = 0 ;
+        def seven = 7 ;
+
+        def eight : Integer ; // on the signature
+        def eight = 8 ;
+
+        def nine : Integer = (
+          // inside the value
+          9
+        ) ;
+
+        def ten = 10 ;
+        def ten : Integer ;
+    "#]]
+    .assert_eq(&laid(Form::Sugared));
+    expect![[r#"
+        def three : Integer ;
+        def three = 3 ;
+
+        def four : Integer ;
+        def four = 4 ;
+
+        def five : Integer ;
+        // parts them
+        def five = 5 ;
+
+        def six : Integer ;
+        /// Documents the definition.
+        def six = 6 ;
+
+        def seven : Integer ;
+        def between : Integer ;
+        def between = 0 ;
+        def seven = 7 ;
+
+        def eight : Integer ; // on the signature
+        def eight = 8 ;
+
+        def nine : Integer ;
+        def nine = (
+          // inside the value
+          9
+        ) ;
+
+        def ten = 10 ;
+        def ten : Integer ;
+    "#]]
+    .assert_eq(&laid(Form::Explicit));
+}
+
+/// A lambda the checker thunks, written bare after its signature, merges
+/// into the function form as the thunk holding it does, beside a checker
+/// that elaborates both alike; without one the two lower apart and the pair
+/// is kept (#2228).
+#[test]
+fn a_lambda_the_checker_thunks_merges_into_its_function_form_2228()
+{
+    let grammar = grammar();
+    let source = "def identity : Integer => Integer ;\n\
+                  def identity = fn (x) { x } ;\n\
+                  \n\
+                  def add : (Integer, Integer) => Integer ;\n\
+                  def add = fn (a) { fn (b) { a + b } } ;\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid = |form: Form, answer: Option<Answer>| {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let oracle = answer.map(|answer| Oracle {
+            answer,
+            asked: Cell::new(0),
+        });
+        let checker: Option<&dyn Elaborate> = oracle.as_ref().map(|oracle| {
+            let checker: &dyn Elaborate = oracle;
+            checker
+        });
+        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, checker))
+            .expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "nothing is withdrawn in {form:?}"
+        );
+        formatted.into_text()
+    };
+    expect![[r#"
+        def identity(x : Integer) -> -F Integer { x }
+
+        def add(a : Integer, b : Integer) -> -F Integer { a + b }
+    "#]]
+    .assert_eq(&laid(Form::Sugared, Some(Answer::Alike)));
+    expect![[r#"
+        def identity(x : Integer) -> -F Integer { x }
+
+        def add(a : Integer, b : Integer) -> -F Integer { a + b }
+    "#]]
+    .assert_eq(&laid(Form::Explicit, Some(Answer::Alike)));
+    expect![[r#"
+        def identity : Integer => Integer = fn (x) { x } ;
+
+        def add : (Integer, Integer) => Integer = fn (a) { fn (b) { a + b } } ;
+    "#]]
+    .assert_eq(&laid(Form::Sugared, None));
 }
 
 /// The rewrites' sweep: every corpus source formats into either form, the

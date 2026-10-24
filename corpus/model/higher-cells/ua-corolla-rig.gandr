@@ -52,8 +52,7 @@ def swaps : Path(
   Unit * (Unit + Unit + Unit + Unit),
   transport(\X. X, dual, (unit, +{.1 = unit})),
   (unit, +{.3 = unit})
-) ;
-def swaps = here((unit, +{.3 = unit})) ;
+) = here((unit, +{.3 = unit})) ;
 
 /// A relabelling that does not commute with the corolla's symmetry.
 @[ refuses("NotNatural") ]

@@ -9457,18 +9457,18 @@ mod tests
         assert_eq!(
             read("sigma-pair.gandr", 17 ..= 28),
             [
-                "19:4 `tag_of` function declaration",
-                "19:11 `p` parameter declaration+value",
-                "19:17 `n` typeParameter declaration+value",
-                "19:30 `w` typeParameter declaration+value",
-                "19:37 `n` typeParameter value",
-                "20:7 `p` parameter value",
-                "21:6 `m` variable declaration+value",
-                "21:9 `w` variable declaration+value",
-                "21:15 `m` variable value",
-                "27:4 `tag` function declaration",
-                "27:33 `tag_of` function computation",
-                "27:40 `tagged` function value",
+                "18:4 `tag_of` function declaration",
+                "18:11 `p` parameter declaration+value",
+                "18:17 `n` typeParameter declaration+value",
+                "18:30 `w` typeParameter declaration+value",
+                "18:37 `n` typeParameter value",
+                "19:7 `p` parameter value",
+                "20:6 `m` variable declaration+value",
+                "20:9 `w` variable declaration+value",
+                "20:15 `m` variable value",
+                "26:4 `tag` function declaration",
+                "26:33 `tag_of` function computation",
+                "26:40 `tagged` function value",
             ],
             "a dependent pair's labels bind; the called `tag_of` is run as a computation and \
              the `tagged` passed to it is a value; `tag`, one function form, declares once"
@@ -10416,14 +10416,14 @@ mod tests
         let difference = item(
             "following.gandr",
             "difference",
-            lines(58, 58, 43),
-            span(58, 4, 14),
+            lines(57, 57, 55),
+            span(57, 4, 14),
         );
         let three = item(
             "data-base.gandr",
             "three",
-            lines(36, 36, 23),
-            span(36, 4, 9),
+            lines(34, 34, 29),
+            span(34, 4, 9),
         );
         let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
         assert_eq!(
@@ -10440,7 +10440,7 @@ mod tests
                 prepare("following.gandr", 57, 6)
             ),
             serde_json::json!([difference]),
-            "a value's signature prepares the value at its definition"
+            "a value joined with its signature prepares at its one item"
         );
         assert_eq!(
             ask(
@@ -10469,7 +10469,7 @@ mod tests
                     ),
                     &[span(41, 26, 31)]
                 ),
-                call("from", &difference, &[span(58, 17, 22)]),
+                call("from", &difference, &[span(57, 29, 34)]),
             ]),
             "`minus` is called by its own recursion and by three definitions, each at its call"
         );
@@ -10487,8 +10487,8 @@ mod tests
                 serde_json::json!({"item": difference})
             ),
             serde_json::json!([
-                call("to", &three, &[span(58, 23, 28)]),
-                call("to", &minus, &[span(58, 17, 22)]),
+                call("to", &three, &[span(57, 35, 40)]),
+                call("to", &minus, &[span(57, 29, 34)]),
             ]),
             "`difference` calls the base's `three` and `minus`, the base's source first"
         );
@@ -10498,36 +10498,36 @@ mod tests
                 serde_json::json!({"item": three})
             ),
             serde_json::json!([
-                call("from", &difference, &[span(58, 23, 28)]),
+                call("from", &difference, &[span(57, 35, 40)]),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "quotient",
-                        lines(63, 63, 49),
-                        span(63, 4, 12)
+                        lines(61, 61, 61),
+                        span(61, 4, 12)
                     ),
-                    &[span(63, 28, 33)]
+                    &[span(61, 40, 45)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedThree",
-                        lines(68, 68, 35),
-                        span(68, 4, 15)
+                        lines(65, 65, 47),
+                        span(65, 4, 15)
                     ),
-                    &[span(68, 27, 32)]
+                    &[span(65, 39, 44)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "digitsOfFour",
-                        lines(73, 73, 40),
-                        span(73, 4, 16)
+                        lines(69, 69, 52),
+                        span(69, 4, 16)
                     ),
-                    &[span(73, 31, 36)]
+                    &[span(69, 43, 48)]
                 ),
             ]),
             "the base's `three`, asked about where no editor holds the base, is called by the \
@@ -10540,8 +10540,8 @@ mod tests
             ),
             serde_json::json!([call(
                 "to",
-                &item("data-base.gandr", "two", lines(31, 31, 28), span(31, 4, 7)),
-                &[span(36, 17, 20)]
+                &item("data-base.gandr", "two", lines(30, 30, 34), span(30, 4, 7)),
+                &[span(34, 23, 26)]
             )]),
             "`three`, read from disk, calls `two`"
         );
@@ -13232,7 +13232,7 @@ mod tests
                      }\n  }\n}";
         assert_eq!(
             copied(&mut server, &following, &[(
-                "def difference = ",
+                "def difference : () => Nat = ",
                 "minus(three, Succ(Zero))"
             )]),
             answered(&[&base, &following]),
@@ -13247,7 +13247,7 @@ mod tests
         assert_eq!(
             copied(&mut server, &following, &[
                 ("", minus),
-                ("def difference = ", "minus(three, Succ(Zero))")
+                ("def difference : () => Nat = ", "minus(three, Succ(Zero))")
             ]),
             answered(&[&base]),
             "a call of a declaration the copy holds answers nothing for it"

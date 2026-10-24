@@ -20,8 +20,7 @@ module Opaque :> Model(Scaled) {
 /// The sealed scale read as an integer: the seal hides that the ratio is
 /// one.
 @[ refuses("TypeMismatch") ]
-def leaked : Integer ;
-def leaked = Opaque.scale ;
+def leaked : Integer = Opaque.scale ;
 
 /// A model whose manifest names `Rate`, a sort `Scaled` does not present:
 /// refused at its header, by the name it misspells.

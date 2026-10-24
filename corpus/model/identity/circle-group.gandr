@@ -85,11 +85,9 @@ def comm(
 
 /// Three loops spun and wound count three (cubical's `test-winding-pos`).
 @[ runs("S(S(S(Z)))") ]
-def windThree : () => Int ;
-def windThree = wind(spin(S(S(S(Z))))) ;
+def windThree : () => Int = wind(spin(S(S(S(Z))))) ;
 
 /// Two inverse loops spun and wound count minus two (cubical's
 /// `test-winding-neg`).
 @[ runs("P(P(Z))") ]
-def windMinusTwo : () => Int ;
-def windMinusTwo = wind(spin(P(P(Z)))) ;
+def windMinusTwo : () => Int = wind(spin(P(P(Z)))) ;

@@ -2,16 +2,13 @@
 def none() -> -F Integer { 1 }
 
 @[ runs("fn (a) { a }") ]
-def one : Integer => Integer ;
-def one = fn (x) { x } ;
+def one(x : Integer) -> -F Integer { x }
 
 @[ runs("fn (a) { fn (b) { a } }") ]
-def two : (Integer, String) => Integer ;
-def two = fn (x) { fn (y) { x } } ;
+def two(x : Integer, y : String) -> -F Integer { x }
 
 @[ runs("fn (a) { fn (b) { b } }") ]
-def dependent : (a : Type, a) => a ;
-def dependent = fn (a) { fn (x) { x } } ;
+def dependent(a : Type, x : a) -> -F a { x }
 
 @[ refuses("DuplicateDefinition") ]
 def twice : (x : Integer, x : String) => Integer ;

@@ -1205,10 +1205,10 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
         ("def x = 1 ~ 2;", Oblig::UnmoldedTok),
         // An unterminated string force-closes.
         ("def x = \"open", Oblig::MissingTile),
-        // A tile standing where its form's earlier tiles are absent: a
-        // signature has no value tail, so its `=` begins a partial value form
-        // whose head is missing, never a clean one.
-        ("def s : Integer = s;", Oblig::MissingTile),
+        // A tile standing where its form's earlier tiles are absent: an `=`
+        // after a closed signature begins a partial value form whose head is
+        // missing, never a clean one.
+        ("def s : Integer ; = s;", Oblig::MissingTile),
     ];
     for &(src, expected_class) in cases {
         let result = parse(pbg, SourceText::from(src))?;

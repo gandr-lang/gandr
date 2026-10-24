@@ -18,8 +18,7 @@ import "./circle-apart.gandr" ;
 /// it, so the path from it to itself is the circle's words, and reflexivity
 /// at the point inhabits it.
 @[ checks ]
-def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) ;
-def unitSquared = here(Base) ;
+def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = here(Base) ;
 
 /// Rotating by `b` and back is the identity (cubical's `rotInv-1`, `b · a ·
 /// invLooper b ≡ a`, `_·_` associating to the left). The obligation over `a`

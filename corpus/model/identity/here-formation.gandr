@@ -14,8 +14,7 @@ def cast(p: Path(Integer, 4, 4)) -> -F(Path(Integer, 4, 4)) {
 
 /// Reflexivity at four, checked against its written type.
 @[ checks ]
-def checked : Path(Integer, 4, 4);
-def checked = here(4);
+def checked : Path(Integer, 4, 4) = here(4);
 
 /// Reflexivity at four handed through `cast` by a run.
 @[ checks ]

@@ -26,8 +26,7 @@ module Lawless :> #{ type T, origin : T, other : T } {
 /// The relation's evidence between two sealed points, refused: the interface
 /// names no transport law (#1784).
 @[ refuses("AtomTransport") ]
-def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) ;
-def lawlessOriginOther = unit ;
+def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) = unit ;
 
 /// The transport law at the paths of the unit type written as no pair,
 /// refused: an identity in the singleton's total space is a path in the

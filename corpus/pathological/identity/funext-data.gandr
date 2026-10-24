@@ -21,12 +21,13 @@ def height(shape : Shape) -> -F Integer {
 /// A width and a height agree at a circle but not at a rectangle, refused at
 /// that pattern.
 @[ refuses("PointwiseDistinct") ]
-def sides : Path(Shape => Integer, width, height) ;
-def sides = funext(width, height) ;
+def sides : Path(Shape => Integer, width, height) = funext(width, height) ;
 
 /// #1315: a type holding itself would be covered as a list is, its own field
 /// read as a tail; the coverage does not read one yet, so no function
 /// extensionality decides it.
 @[ refuses("FunextUnsupported") ]
-def restepped : Path(Nat => Nat, Renumber.step, Renumber.step) ;
-def restepped = funext(Renumber.step, Renumber.step) ;
+def restepped : Path(Nat => Nat, Renumber.step, Renumber.step) = funext(
+  Renumber.step,
+  Renumber.step
+) ;
