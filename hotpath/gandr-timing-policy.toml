@@ -26,29 +26,29 @@ metrics = ["avg"]
 min_calls = 20
 
 # The prelude's instance machinery (#2395), checked on every report without a
-# baseline. A closure is lowered and judged once per walk or session: six in
+# baseline. A closure is lowered and judged once per walk or session: seven in
 # the series, one for each workload that checks or opens a source, so a pass
 # over the prelude in every component shows as many calls as components. Each
 # function the `prelude resolve` workload measures must run, so a renamed
 # function or a lost attribute breaks its budget rather than passing silently.
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::lower_closure"
-calls = { min = 1, max = 6 }
+calls = { min = 1, max = 7 }
 message = "the prelude is lowered once per walk, never per component (#2331)"
 
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::judge_closure"
-calls = { min = 1, max = 6 }
+calls = { min = 1, max = 7 }
 message = "the prelude is judged once per walk, never per component (#2331)"
 
 # A readmission resumes the prelude's crossing from the record of the walk's
 # or session's first one, whatever native operations a component reads, so
 # each declaration crosses into the kernel once per readmission that cannot
-# resume it: 623 in the series. Re-crossing the prelude in each component
-# whose native operations differ from the first one's makes 1028.
+# resume it: 769 in the series, and a component that crossed the prelude again
+# would add a crossing per prelude declaration.
 [[functions.budgets]]
 match = "gandr_core_checker::bridge::cross"
-calls = { min = 1, max = 650 }
+calls = { min = 1, max = 790 }
 message = "a component resumes the prelude's crossing, never crosses it again (#2395)"
 
 [[functions.budgets]]
@@ -66,6 +66,10 @@ message = "an include's reduct maps are minted in the prelude resolve workload"
 [[functions.budgets]]
 match = "gandr_core_checker::elaboration::constraints::Deferrals::resolve"
 message = "each model slot's candidates are tried in the prelude resolve workload"
+
+[[functions.budgets]]
+match = "gandr_core_checker::elaboration::constraints::tried"
+message = "each candidate's trial runs in the many candidates workload, against the store rather than a copy of it"
 
 [[functions.budgets]]
 match = "gandr_surface_lowering::lower::generic::Lowerer::mint_generics"
