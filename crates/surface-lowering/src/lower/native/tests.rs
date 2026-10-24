@@ -4503,6 +4503,42 @@ fn only_back_inverts_a_letter()
 }
 
 #[test]
+fn a_letter_naming_nothing_is_unresolved_1997()
+{
+    // `lop` names no loop and nothing else: the letter is unresolved at its
+    // name, plain or inside `back`, and `turn`, a declaration other than a
+    // loop, is still no letter.
+    let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef turn : Integer ;\ndef turn = 1 ;\ndef plain : Path(Circle, Base, Base) ;\ndef plain = lop ∷ here(Base) ;\ndef inverse : Path(Circle, Base, Base) ;\ndef inverse = back(lop) ∷ here(Base) ;\ndef other : Path(Circle, Base, Base) ;\ndef other = turn ∷ here(Base) ;\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    for (declaration, written) in [("plain", "lop ∷"), ("inverse", "lop) ∷")] {
+        let start = source.find(written).expect("the letter is written");
+        assert!(
+            matches!(
+                outcome_of(&module, declaration.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { span, name })
+                    if name == SurfaceName::from("lop")
+                        && usize::from(span.start()) == start
+                        && usize::from(span.end()) == start.saturating_add("lop".len())
+            ),
+            "`{declaration}`'s letter names nothing: {:?}",
+            outcome_of(&module, declaration.into())
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "other".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::InfixForm),
+                ..
+            })
+        ),
+        "a declaration that is no loop is no letter: {:?}",
+        outcome_of(&module, "other".into())
+    );
+}
+
+#[test]
 fn a_word_conses_its_letters_and_matches_them()
 {
     let source = "data Circle : Type { Base : Circle; loop : Base <-> Base; }\ndef empty : Path(Circle, Base, Base) ;\ndef empty = here(Base) ;\ndef word : Path(Circle, Base, Base) ;\ndef word = back(loop) ∷ loop ;\ndef rec size(p : Path(Circle, Base, Base)) -> -F Integer {\n  case p {\n    here => return 0,\n    loop ∷ q => become size[<](q),\n    back(loop) ∷ q => become size[<](q)\n  }\n}\n";

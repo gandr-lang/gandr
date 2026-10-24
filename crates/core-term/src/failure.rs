@@ -151,7 +151,7 @@ impl TrackingIssue
     /// A staged type in a term, which the kernel does not replay.
     pub const KERNEL_STAGE: Self = Self(1631);
     /// An infix form the lowering does not read: list concatenation, or a
-    /// path cons whose letter names no loop.
+    /// path cons whose left operand is neither a loop nor `back` of one.
     pub const INFIX_FORM: Self = Self(1997);
     /// A match of no arms over a type no data switch reads, written with its
     /// answer type.

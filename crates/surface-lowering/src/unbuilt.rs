@@ -215,7 +215,8 @@ pub enum Unbuilt
     /// declaration or type.
     UnknownConstructor,
     /// An infix form the lowering does not read: an operator outside the
-    /// prelude's vocabulary, or a word `g ∷ w` whose letter names no loop.
+    /// prelude's vocabulary, or a word `g ∷ w` whose `g` is neither a loop
+    /// nor `back` of one; a `g` that names nothing is unresolved.
     InfixForm,
     /// A prefix operator outside the prelude's vocabulary.
     PrefixOperator,

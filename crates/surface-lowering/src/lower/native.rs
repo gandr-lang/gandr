@@ -3068,8 +3068,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   [`Self::construct`] plans it; the letter, and the name inside an
     ///   inverse letter, recorded with its words so each answers at the path
     ///   type at their point.
-    /// - fails: the unadmitted refusal at the cons for a left operand that is
-    ///   no loop and no loop's inverse; [`Self::construct`]'s refusals.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] at a letter, or the name
+    ///   inside an inverse letter, that nothing answers; the unadmitted refusal
+    ///   at the cons for a left operand that is no loop and no loop's inverse;
+    ///   [`Self::construct`]'s refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -3077,9 +3079,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a letter and an inverse cons onto a word, each letter
-    ///   and the name inside the inverse labelled at the path type, and a left
-    ///   operand that is no loop is refused.
+    ///   and the name inside the inverse labelled at the path type, a letter
+    ///   naming nothing is unresolved, and a left operand that is no loop is
+    ///   refused.
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::native::tests::a_letter_naming_nothing_is_unresolved_1997`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&Plan::Constructor(_))))]
     pub(super) fn cons(
         &mut self,
@@ -3188,8 +3192,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: when the name resolves to a loop's binding, the constructor
     ///   of the loop's words whose tag is the loop's letter, or its inverse,
     ///   with one field, the rest of the word; the unnamed absence for a name
-    ///   that resolves to anything else or to nothing.
-    /// - fails: the name's resolution refusals.
+    ///   that resolves to anything else.
+    /// - fails: [`LoweringRefusal::UnresolvedName`] at the name when nothing
+    ///   answers it, since only a declared loop is a letter; the name's
+    ///   resolution refusals.
     /// - panics: none.
     ///
     /// # Errors
@@ -3198,6 +3204,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::cons`].
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
+    /// - witness: `lower::native::tests::a_letter_naming_nothing_is_unresolved_1997`
     /// - witness: `tests::modules::a_forward_member_reference_is_refused_by_position`
     #[spec(ensures: |ret| match ret {
         Ok(Maybe::Present(constructor)) => constructor.arity == 1 && constructor.named == cell,
@@ -3218,10 +3225,16 @@ impl<'source> Lowerer<'_, 'source>
             ..site
         };
         let name = self.name_at(cell);
-        let Maybe::Present(super::Resolved::Declaration { constant, .. }) =
-            self.resolve_name(named, site.reading.frame(), name)?
+        let resolved = self.resolve_name(named, site.reading.frame(), name)?;
+        let Maybe::Present(super::Resolved::Declaration { constant, .. }) = resolved
         else {
-            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
+            return match resolved {
+                Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
+                    span: cell.span,
+                    name,
+                }),
+                Maybe::Present(_) => Ok(Maybe::Absent(constructed::Absent::Unnamed)),
+            };
         };
         let Some(Maybe::Present(Half {
             operand: Operand::Loop { words, generator },
