@@ -6,6 +6,7 @@
 //! | `closure check` | `gandr check` of the largest model source and its imports | the checker's per-declaration judgement and the kernel bridge's readmission |
 //! | `stage readmission` | `gandr stage pow:0..8 double:0..8` | the kernel's readmission of each staged certificate |
 //! | `rule completion` | `gandr check` of the corpus's completion sources: the group laws, a completed block, and a block whose completion never ends | each rule block's decision, and the completion's overlap queries and normalization |
+//! | `component walk` | `gandr check` of a directory of twenty sources in sixteen components, each laid after the prelude | the prelude's lowering and judgement, once per walk, and each component's own |
 //! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
 //! | `lsp burst` | the same session, erasing the end of that line one character per change, every change read in one frame | the server's recheck, once per burst |
 //! | `lsp comment edit` | a language-server session that opens the group laws and adds a comment line before their first, outside the rule block | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
@@ -71,6 +72,10 @@ const COMPLETION: [&str; 3] = [
     "../../corpus/pathological/desc/rules-never-complete.gandr",
 ];
 
+/// The directory the component walk checks: twenty sources, three of which
+/// import siblings, in sixteen components, each laid after the prelude.
+const COMPONENTS: &str = "../../corpus/model/control";
+
 /// The path of a corpus source from the driver's manifest directory.
 ///
 /// # Specification
@@ -130,6 +135,15 @@ fn closure_check()
 fn rule_completion()
 {
     check(COMPLETION.iter().map(|relative| corpus(relative)).collect());
+}
+
+/// Check every source under [`COMPONENTS`], component by component.
+///
+/// # Specification
+/// trivial.
+fn component_walk()
+{
+    check(vec![corpus(COMPONENTS)]);
 }
 
 /// Stage [`PROGRAMS`] and readmit every certificate they produce.
@@ -289,6 +303,7 @@ fn main()
     hotpath::measure_block!("closure check", closure_check());
     hotpath::measure_block!("stage readmission", stage_readmission());
     hotpath::measure_block!("rule completion", rule_completion());
+    hotpath::measure_block!("component walk", component_walk());
     hotpath::measure_block!("lsp keystroke", lsp_keystroke());
     hotpath::measure_block!("lsp burst", lsp_burst());
     hotpath::measure_block!("lsp comment edit", lsp_comment_edit());

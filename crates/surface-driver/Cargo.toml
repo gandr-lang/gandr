@@ -30,9 +30,9 @@ path = "tests/lib.rs"
 
 # The benchmark report: the closure check of the largest model source, the
 # kernel's readmission of a fixed staged certificate set, the corpus's rule
-# completion and one language-server keystroke, profiled by hotpath and
-# uploaded to hotpath Cloud from CI as the `gandr` series. Built only with the
-# `hotpath` feature.
+# completion, a walk of sixteen components and one language-server keystroke,
+# profiled by hotpath and uploaded to hotpath Cloud from CI as the `gandr`
+# series. Built only with the `hotpath` feature.
 [[bench]]
 harness = false
 name = "hotpath"
