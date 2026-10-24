@@ -79,9 +79,6 @@ const LOWERING: Issue = Issue(1788);
 /// ascription: the form a type family member's telescope is checked against.
 const ASCRIPTION: Issue = Issue(1321);
 
-/// The issue writing the exemplars of the checker's unshown names.
-const CHECKER: Issue = Issue(1789);
-
 /// Why no source reaches an effectful former's refusal: only the kernel's
 /// readmission refuses it, and there the declaration stays on the checker's
 /// side instead of being refused.
@@ -227,7 +224,14 @@ const OWED: [(&str, Owed); 61_usize] = [
              checker's own invariant, which no source can write",
         )),
     ),
-    ("DataArgumentArity", Owed::Unwritten(CHECKER)),
+    (
+        "DataArgumentArity",
+        Owed::Unreachable(Reason(
+            "the lowering refuses a data type written at any count of arguments but its \
+             parameters' as `OutOfFragment.Arity`, bare and through an import or a static \
+             lambda alike, and a bare data type is no operator's argument",
+        )),
+    ),
     (
         "UnknownConstructor",
         Owed::Unreachable(Reason(
