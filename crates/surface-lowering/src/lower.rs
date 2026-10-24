@@ -10162,11 +10162,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   value is, as [`Self::field`] reads it. A chain of selections whose
     ///   head is a capitalised name is a path: inside a functor whose parameter
     ///   the head names, a one-link path is that parameter's value component,
-    ///   as [`Self::parameter_value`] reads it; otherwise it is resolved
-    ///   through the outermost scope at the depth that binds it: a path ending
-    ///   at an exported value component stands as that member's constant when
-    ///   the member is declared strictly before the declaration the path is
-    ///   written in, its last segment kept as a written name resolved to that
+    ///   as [`Self::parameter_value`] reads it; a path whose head, capitalised
+    ///   or not, names a module an enclosing module declares reaches the member
+    ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
+    ///   as that member's constant as below; otherwise it is resolved through
+    ///   the outermost scope at the depth that binds it: a path ending at an
+    ///   exported value component stands as that member's constant when the
+    ///   member is declared strictly before the declaration the path is written
+    ///   in, its last segment kept as a written name resolved to that
     ///   declaration, and a path ending at a type component stands as its
     ///   stated type, as [`Self::module_type`] reads it. The chain is walked by
     ///   an explicit loop, and its links are left unread.
@@ -10193,8 +10196,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   depth nine, to a hidden member, to an absent member at each depth, to
     ///   a module, to a member declared later, and a selection off a free name,
     ///   each asserted as the exact constant or refusal; a path past a
-    ///   parameter's value, refused at that link.
+    ///   parameter's value, refused at that link; a nested module's member
+    ///   named from inside its enclosing module and from inside a sibling, a
+    ///   member its signature hides, and a module declared after the use.
     /// - witness: `tests::modules::a_user_module_selection_is_governed_and_a_free_target_still_projects`
+    /// - witness: `tests::modules::a_nested_module_is_named_from_inside_its_enclosing_module_1106`
     /// - witness: `tests::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
     /// - witness: `tests::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
     /// - witness: `tests::modules::a_module_namespace_is_not_a_projectable_record`
@@ -10311,6 +10317,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
             && self.parameter_value(site, head, first, functor::Deeper(links.len() > 1_usize))?
                 == functor::Read::Planned
         {
+            return Ok(());
+        }
+        if let Maybe::Present(member) = self.enclosed_member(site, head, &links)? {
+            self.select(site, member)?;
+            if let Some(&(_, last)) = links.first()
+                && let Some(entry) = self.collected.slots.get(usize::from(member))
+            {
+                self.resolved(last.span, Resolved::Declaration {
+                    constant: entry.constant,
+                    declared: Maybe::Absent(binder_type::Absent::Untyped),
+                });
+            }
             return Ok(());
         }
         let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
@@ -10766,6 +10784,136 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         self.type_member_named(site, name)
+    }
+
+    /// The member a path of names reaches from inside the modules enclosing
+    /// the declaration that owns `site`: its head a module one of them
+    /// declares, each link after it a module or a member the module before it
+    /// exports.
+    ///
+    /// # Specification
+    /// - requires: `links` are the path's selections, each its operand and its
+    ///   member, the last link first, as [`Self::projection`] collects them.
+    /// - ensures: the nearest module outward from the container of the
+    ///   declaration owning `site` — its module, then each module enclosing it
+    ///   — that declares a nested module named as `head` reads the path from
+    ///   that nested module: each link but the last names a module the one
+    ///   before it exports, and the last a member it exports, answered as the
+    ///   slot the exporting module reads it at, its witness past a seal. A
+    ///   nested module is a source-ordered member, so a use of one declared
+    ///   after it answers its member and [`Self::select`] refuses it. A site at
+    ///   a top level or owned by no declaration, a head no enclosing module
+    ///   declares, and a link off a member that is not a module answer nothing.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance; [`LoweringRefusal::UnknownMember`] at the first link the
+    ///   module before it does not export, naming that module and the member;
+    ///   the wrong-sort refusal for a path ending at a module, which is not a
+    ///   value.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// The walk outward visits each enclosing container once and spends one
+    /// step of the allowance on each; the walk down visits each link once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::projection`]'s nested module cases.
+    /// - witness: `tests::modules::a_nested_module_is_named_from_inside_its_enclosing_module_1106`
+    #[spec(
+        ensures: |ret| match ret {
+            | Ok(Maybe::Present(member)) => self.collected.slots.get(usize::from(member)).is_some(),
+            | Ok(Maybe::Absent(_)) | Err(_) => true,
+        },
+    )]
+    fn enclosed_member(
+        &mut self,
+        site: Site,
+        head: Placed,
+        links: &[(Placed, Placed)],
+    ) -> Result<Maybe<SlotIndex, named::Absent>, LoweringRefusal<'source>>
+    {
+        let unresolved = Maybe::Absent(named::Absent::Unresolved);
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(unresolved);
+        };
+        let Some(slot) = self.collected.slots.get(usize::from(own))
+        else {
+            return Ok(unresolved);
+        };
+        let mut container = slot.container;
+        let name = self.name_at(head);
+        let nested = loop {
+            self.fuel.spend()?;
+            let Container::Module(module) = container
+            else {
+                return Ok(unresolved);
+            };
+            let Some(structure) = self.collected.structures.get(usize::from(module))
+            else {
+                return Ok(unresolved);
+            };
+            let declared = structure.members.iter().find_map(|member| match *member {
+                Member::Module(nested) => self
+                    .collected
+                    .structures
+                    .get(usize::from(nested))
+                    .is_some_and(|held| held.name == name)
+                    .then_some(nested),
+                Member::Slot(_) => None,
+            });
+            if let Some(nested) = declared {
+                break nested;
+            }
+            container = structure.container;
+        };
+        let (mut module, mut spelled) = (nested, name);
+        for (place, &(_, selected)) in links.iter().rev().enumerate() {
+            self.fuel.spend()?;
+            let member = self.name_at(selected);
+            let Some(structure) = self.collected.structures.get(usize::from(module))
+            else {
+                return Ok(unresolved);
+            };
+            let exported = structure
+                .exports
+                .iter()
+                .copied()
+                .find(|export| match *export {
+                    Member::Slot(slot) => self
+                        .collected
+                        .slots
+                        .get(usize::from(slot))
+                        .is_some_and(|held| held.name == member),
+                    Member::Module(inner) => self
+                        .collected
+                        .structures
+                        .get(usize::from(inner))
+                        .is_some_and(|held| held.name == member),
+                });
+            let last = place.saturating_add(1_usize) == links.len();
+            match exported {
+                Some(Member::Module(inner)) if !last => (module, spelled) = (inner, member),
+                Some(Member::Slot(slot)) if last => {
+                    return Ok(Maybe::Present(
+                        structure.exported_as.get(&slot).copied().unwrap_or(slot),
+                    ));
+                },
+                Some(Member::Module(_)) => return Err(site.out(FragmentBoundary::WrongSort)),
+                Some(Member::Slot(_)) => return Ok(unresolved),
+                None => {
+                    return Err(LoweringRefusal::UnknownMember {
+                        span: selected.span,
+                        module: spelled,
+                        member,
+                    });
+                },
+            }
+        }
+
+        Ok(unresolved)
     }
 
     /// The type member `name` names at `site`: one written before it in the
