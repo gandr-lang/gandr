@@ -2629,7 +2629,7 @@ enum Agreement
                 ContentNode::Project(left, _) => matches!(*new, ContentNode::Project(right, _) if left == right),
                 ContentNode::Perform { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Perform { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Handle { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Handle { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
-                ContentNode::Returner { effects: ref left, .. } => matches!(*new, ContentNode::Returner { effects: ref right, .. } if left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
+                ContentNode::Returner { effects: ref left, .. } | ContentNode::RowValue(ref left) => matches!(*new, ContentNode::Returner { effects: ref right, .. } | ContentNode::RowValue(ref right) if left.tail().is_some() == right.tail().is_some() && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
                 ContentNode::Exercise { signature: ref left, operation: ref first, .. } => matches!(*new, ContentNode::Exercise { signature: ref right, operation: ref second, .. } if first == second && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Scope { signature: ref left, clauses: ref first, .. } => matches!(*new, ContentNode::Scope { signature: ref right, clauses: ref second, .. } if first.iter().map(|clause| &clause.operation).eq(second.iter().map(|clause| &clause.operation)) && left.name() == right.name() && left.operations().map(|op| &op.name).eq(right.operations().map(|op| &op.name))),
                 ContentNode::Capability { authority: ref left, grade, region } => matches!(*new, ContentNode::Capability { authority: ref right, grade: other_grade, region: other_region } if grade == other_grade && region == other_region && left.signatures().len() == right.signatures().len() && left.signatures().zip(right.signatures()).all(|(left, right)| left.name() == right.name() && left.operations().len() == right.operations().len() && left.operations().zip(right.operations()).all(|(left, right)| left.name == right.name))),
@@ -2671,7 +2671,7 @@ enum Agreement
                 _ if children(old).next().is_none() => old == new,
                 ContentNode::Dialogue(ref left) => matches!(*new, ContentNode::Dialogue(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.endpoint == right.endpoint && left.movement.carrying(()) == right.movement.carrying(()))),
                 ContentNode::Recorded(ref left) => matches!(*new, ContentNode::Recorded(ref right) if left.len() == right.len() && left.iter().zip(right.iter()).all(|(left, right)| left.carrying(()) == right.carrying(()))),
-                ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::DialogueType(_) | ContentNode::WebType |
+                ContentNode::Univalence(..) | ContentNode::ListCase { .. } | ContentNode::Abandon(_) | ContentNode::RecordUpdate(..) | ContentNode::Web(_) | ContentNode::Decompose(_) | ContentNode::DialogueType(_) | ContentNode::WebType | ContentNode::RowKind | ContentNode::RowTail(_) |
                 ContentNode::Stack { .. } | ContentNode::WithType(..) | ContentNode::Resume(..) | ContentNode::Split(..) | ContentNode::DependentSplit { .. } | ContentNode::Reset(_) | ContentNode::Shift(_) | ContentNode::With(..) | ContentNode::Ascribe { .. } | ContentNode::ValueAscribe { .. } | ContentNode::PrimitiveValue(_) | ContentNode::Primitive(..) | ContentNode::PathUniverse(..) | ContentNode::PathRefl(_) | ContentNode::PathProduct(..) | ContentNode::Funext(..) | ContentNode::Equiv(..) | ContentNode::Ua { .. } | ContentNode::Transport(..) | ContentNode::PathType { .. } | ContentNode::Here(_) | ContentNode::Returned(_) | ContentNode::Nested(_) | ContentNode::Run(_) | ContentNode::ElementTransport { .. } | ContentNode::TelescopeTransport { .. } | ContentNode::SessionRelated { .. } | ContentNode::Stay(_) | ContentNode::Then(..) | ContentNode::Forward(_) | ContentNode::FunctionFlow(..) | ContentNode::FlowProduct(..) | ContentNode::Ride { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::Variable { .. } | ContentNode::Constant(_) | ContentNode::Literal(_) | ContentNode::Tuple(_) | ContentNode::ListNil | ContentNode::ListCons(..) | ContentNode::Thunk(_) | ContentNode::Quote(_) | ContentNode::QuoteComputation(_) | ContentNode::StaticLambda(_) | ContentNode::StaticApplication(..) | ContentNode::Hole(_) | ContentNode::ValueMark { .. } | ContentNode::Lambda(_) | ContentNode::Application(..) | ContentNode::Return(_) | ContentNode::Bind(..) | ContentNode::Force(_) | ContentNode::Case { .. } | ContentNode::ComputationHole(_) | ContentNode::ComputationMark { .. } | ContentNode::Fixpoint { .. } | ContentNode::ListFold { .. } | ContentNode::Session(_) | ContentNode::Base(_) | ContentNode::Product(_) | ContentNode::Sum(_) | ContentNode::List(_) | ContentNode::ThunkType(_) | ContentNode::Universe { .. } | ContentNode::StaticPi { .. } | ContentNode::Sigma { .. } | ContentNode::SessionType(_) | ContentNode::Abstract(_) | ContentNode::UnknownType | ContentNode::BufferType | ContentNode::Arrow { .. } | ContentNode::Pi { .. } | ContentNode::UnknownComputationType | ContentNode::Unresolved(_) => true,
             })
 },
@@ -2745,6 +2745,8 @@ fn agreement(
                     .map(|op| &op.name)
                     .eq(right.operations().map(|op| &op.name))
         },
+        // A row's shape is its openness and its interfaces' and operations'
+        // names; its types are children.
         (
             &ContentNode::Returner {
                 effects: ref left, ..
@@ -2752,8 +2754,10 @@ fn agreement(
             &ContentNode::Returner {
                 effects: ref right, ..
             },
-        ) => {
-            left.signatures().len() == right.signatures().len()
+        )
+        | (&ContentNode::RowValue(ref left), &ContentNode::RowValue(ref right)) => {
+            left.tail().is_some() == right.tail().is_some()
+                && left.signatures().len() == right.signatures().len()
                 && left
                     .signatures()
                     .zip(right.signatures())
@@ -3208,6 +3212,7 @@ fn read(
                 Value::QuoteComputation(..) => {
                     matches!(ret, ContentNode::QuoteComputation(..))
                 }
+                Value::Row(ref row) => matches!(ret, ContentNode::RowValue(ref found) if found.tail().is_some() == row.tail().is_some() && found.signatures().len() == row.signatures().len()),
                 Value::StaticLambda(..) => matches!(ret, ContentNode::StaticLambda(..)),
                 Value::StaticApplication(..) => {
                     matches!(ret, ContentNode::StaticApplication(..))
@@ -3405,6 +3410,10 @@ where
         Some(&Value::QuoteComputation(quoted)) => {
             ContentNode::QuoteComputation(child(Root::CompType(quoted)))
         },
+        Some(&Value::Row(ref row)) => ContentNode::RowValue(
+            row.try_relocate(|ty| Ok::<_, core::convert::Infallible>(child(Root::ValueType(ty))))
+                .unwrap_or_else(|never| match never {}),
+        ),
         Some(&Value::StaticLambda(body)) => ContentNode::StaticLambda(child(Root::Value(body))),
         Some(&Value::StaticApplication(head, argument)) => {
             let head = child(Root::Value(head));
@@ -3877,6 +3886,8 @@ where
                         && found.payloads().len() == session.payloads().len()),
                 ValueType::Unknown => ret == ContentNode::UnknownType,
                 ValueType::Buffer => ret == ContentNode::BufferType,
+                ValueType::Row => ret == ContentNode::RowKind,
+                ValueType::RowTail(_) => matches!(ret, ContentNode::RowTail(_)),
                 ValueType::Staged { .. } | ValueType::World(_) => ret == ContentNode::Unresolved(Sort::ValueType),
             },
         )
@@ -4009,6 +4020,8 @@ where
         ),
         Some(&ValueType::Unknown) => ContentNode::UnknownType,
         Some(&ValueType::Buffer) => ContentNode::BufferType,
+        Some(&ValueType::Row) => ContentNode::RowKind,
+        Some(&ValueType::RowTail(code)) => ContentNode::RowTail(child(Root::Value(code))),
         Some(&(ValueType::Staged { .. } | ValueType::World(_))) | None => {
             ContentNode::Unresolved(Sort::ValueType)
         },

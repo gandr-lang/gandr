@@ -860,6 +860,8 @@ pub fn constructor_owes(
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Kept { .. }

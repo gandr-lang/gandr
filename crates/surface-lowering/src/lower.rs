@@ -2568,8 +2568,8 @@ enum Plan
         gandr_core_term::effect::capability::Region,
     ),
     /// The returner of the value type at the node, its row holding these
-    /// interfaces whole.
-    Effectful(BTreeSet<gandr_core_term::effect::EffectName>, NodeIndex),
+    /// interfaces whole, open through its tail when one is written.
+    Effectful(capability::WrittenRow, NodeIndex),
     /// An operation exercised through a capability.
     Exercise(capability::Exercised),
     /// A method called off its receiver.
@@ -19220,6 +19220,7 @@ impl Sink<'_>
                 TypeAtom::Void => self.arena.value_type(id).is_some_and(|held| matches!(*held, ValueType::Sum(ref parts) if parts.is_empty())),
                 TypeAtom::Buffer => self.arena.value_type(id) == Some(&ValueType::Buffer),
                 TypeAtom::Web => self.arena.value_type(id) == Some(&ValueType::Web),
+                TypeAtom::Row => self.arena.value_type(id) == Some(&ValueType::Row),
             },
             | _ => false,
         },
@@ -19244,7 +19245,8 @@ impl Sink<'_>
             | TypeAtom::Fixed(_)
             | TypeAtom::Void
             | TypeAtom::Buffer
-            | TypeAtom::Web => atom_type(self.arena, atom),
+            | TypeAtom::Web
+            | TypeAtom::Row => atom_type(self.arena, atom),
         };
         self.origins.record_value_type(id, origin);
 
@@ -19258,8 +19260,9 @@ impl Sink<'_>
 /// - requires: nothing.
 /// - ensures: the two-summand sum of units for `Boolean`, the unit, the
 ///   integers, the strings, the characters, the binary64 floats, a width's
-///   integers, the empty sum and the buffer for `Unit`, `Integer`, `Text`,
-///   `Character`, `Float64`, `Fixed`, `Void` and `Buffer`.
+///   integers, the empty sum, the buffer, the webs and the row kind for `Unit`,
+///   `Integer`, `Text`, `Character`, `Float64`, `Fixed`, `Void`, `Buffer`,
+///   `Web` and `Row`.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -19288,6 +19291,7 @@ pub fn atom_type(
         TypeAtom::Void => arena.value_type_sum(&[]),
         TypeAtom::Buffer => arena.value_type_buffer(),
         TypeAtom::Web => arena.value_type_web(),
+        TypeAtom::Row => arena.value_type_row(),
     }
 }
 

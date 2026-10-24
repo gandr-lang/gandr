@@ -1393,3 +1393,194 @@ fn a_metavariable_under_any_introduction_form_is_refuted()
         );
     }
 }
+
+/// The row of the interfaces `names`, each with no operation.
+///
+/// # Specification
+/// trivial.
+fn interfaces<Name>(names: &[Name]) -> EffectRow
+where
+    Name: Copy + Into<EffectName>,
+{
+    names.iter().fold(EffectRow::EMPTY, |row, &name| {
+        let signature = EffectSig::new(name.into(), Vec::<EffectOp>::new())
+            .expect("an interface without operations has no duplicate");
+        row.union(&EffectRow::singleton(signature), &CoreArena::new())
+            .expect("the witnesses name each interface once")
+    })
+}
+
+/// The returner of the unit at the interfaces `names`, open through the hole
+/// `tail` when one is given.
+///
+/// # Specification
+/// trivial.
+fn returner<Name>(
+    arena: &mut CoreArena,
+    names: &[Name],
+    tail: Option<HoleId>,
+) -> CompTypeId
+where
+    Name: Copy + Into<EffectName>,
+{
+    let unit = arena.value_type_unit();
+    let tail = tail.map(|hole| {
+        let code = arena.value_hole(hole);
+        arena.value_type_row_tail(code)
+    });
+    arena.comp_type_returner_with_effects(unit, interfaces(names).with_tail(tail))
+}
+
+/// The row a solution is, refused unless it is one.
+///
+/// # Specification
+/// trivial.
+fn row_of(
+    arena: &CoreArena,
+    value: ValueId,
+) -> EffectRow
+{
+    let Some(&Value::Row(ref row)) = arena.value(value)
+    else {
+        panic!("a row's solution is a row: {:?}", arena.value(value));
+    };
+    row.clone()
+}
+
+/// The names of the interfaces `row` writes, in its order.
+///
+/// # Specification
+/// trivial.
+fn named(row: &EffectRow) -> Vec<String>
+{
+    row.signatures()
+        .map(|signature| String::from(signature.name().as_ref()))
+        .collect()
+}
+
+#[test]
+fn an_open_row_takes_what_the_other_row_adds_2270()
+{
+    // `F^[Console | ?r] Unit` against `F^[Console, Div] Unit` solves `?r` as
+    // `[Div]`; against `F^[Console] Unit` as the empty row; against
+    // `F^[Div] Unit`, which lacks `Console`, the rows clash.
+    for (written, solved) in [
+        (&["Console", "Div"][..], &["Div"][..]),
+        (&["Console"][..], &[][..]),
+    ] {
+        let mut arena = CoreArena::new();
+        let mut metas = Metas::new();
+        let hole = HoleId::from(0_u32);
+        let r = meta(&mut metas, hole, Binders::NONE);
+        let open = returner(&mut arena, &["Console"], Some(hole));
+        let closed = returner(&mut arena, written, None);
+        let equation = Equation::new(Binders::NONE, Side::CompType(open), Side::CompType(closed));
+        assert_eq!(
+            Verdict::Solved,
+            solve(&mut arena, &mut metas, &[equation]),
+            "{written:?}"
+        );
+        let row = row_of(&arena, solution(&metas, r));
+        assert_eq!(
+            named(&row),
+            solved,
+            "{written:?}: the tail is what the row adds"
+        );
+        assert_eq!(None, row.tail(), "{written:?}: closed");
+    }
+    let mut arena = CoreArena::new();
+    let mut metas = Metas::new();
+    let hole = HoleId::from(0_u32);
+    let _r = meta(&mut metas, hole, Binders::NONE);
+    let open = returner(&mut arena, &["Console"], Some(hole));
+    let lacking = returner(&mut arena, &["Div"], None);
+    assert!(
+        matches!(
+            solve(&mut arena, &mut metas, &[Equation::new(
+                Binders::NONE,
+                Side::CompType(open),
+                Side::CompType(lacking)
+            )]),
+            Verdict::Refuted(Refutation::Clash { .. })
+        ),
+        "a closed row lacking an interface the open one writes"
+    );
+}
+
+#[test]
+fn an_open_row_takes_the_other_row_s_tail_2270()
+{
+    // `F^[Console | ?a] Unit` against `F^[Console, Div | ?b] Unit`: `?a` is
+    // `[Div | ?b]`, the interface the other adds over the other's tail.
+    let mut arena = CoreArena::new();
+    let mut metas = Metas::new();
+    let (first, second) = (HoleId::from(0_u32), HoleId::from(1_u32));
+    let a = meta(&mut metas, first, Binders::NONE);
+    let _b = meta(&mut metas, second, Binders::NONE);
+    let narrow = returner(&mut arena, &["Console"], Some(first));
+    let wide = returner(&mut arena, &["Console", "Div"], Some(second));
+    assert_eq!(
+        Verdict::Solved,
+        solve(&mut arena, &mut metas, &[Equation::new(
+            Binders::NONE,
+            Side::CompType(narrow),
+            Side::CompType(wide)
+        )])
+    );
+    let row = row_of(&arena, solution(&metas, a));
+    assert_eq!(named(&row), ["Div"], "the interface the other adds");
+    let tail = row.tail().expect("open");
+    assert!(
+        matches!(arena.value_type(tail), Some(&ValueType::RowTail(code)) if arena.value(code) == Some(&Value::Hole(second))),
+        "the solution stays open through `?b`"
+    );
+}
+
+#[test]
+fn a_row_in_its_own_tail_is_refuted_2270()
+{
+    // `?a = [Div | ?a]`: no row is `Div` beside itself.
+    let mut arena = CoreArena::new();
+    let mut metas = Metas::new();
+    let hole = HoleId::from(0_u32);
+    let a = meta(&mut metas, hole, Binders::NONE);
+    let unknown = arena.value_hole(hole);
+    let tail = arena.value_type_row_tail(unknown);
+    let within = arena.value_row(interfaces(&["Div"]).with_tail(Some(tail)));
+    assert_eq!(
+        Verdict::Refuted(Refutation::Occurs { meta: a, within }),
+        solve(&mut arena, &mut metas, &[Equation::new(
+            Binders::NONE,
+            Side::Value(unknown),
+            Side::Value(within)
+        )])
+    );
+}
+
+#[test]
+fn two_open_rows_each_lacking_an_interface_wait_2270()
+{
+    // `F^[Console | ?a] Unit` against `F^[Div | ?b] Unit`: each tail holds
+    // what the other row writes, and the store mints no shared tail, so the
+    // equation waits on both.
+    let mut arena = CoreArena::new();
+    let mut metas = Metas::new();
+    let (first, second) = (HoleId::from(0_u32), HoleId::from(1_u32));
+    let a = meta(&mut metas, first, Binders::NONE);
+    let b = meta(&mut metas, second, Binders::NONE);
+    let console = returner(&mut arena, &["Console"], Some(first));
+    let div = returner(&mut arena, &["Div"], Some(second));
+    assert_eq!(
+        Verdict::Postponed,
+        solve(&mut arena, &mut metas, &[Equation::new(
+            Binders::NONE,
+            Side::CompType(console),
+            Side::CompType(div)
+        )])
+    );
+    assert_eq!(vec![Reason::Rows], reasons(&metas));
+    assert_eq!(
+        Some(&[a, b][..]),
+        metas.postponed().first().map(Postponed::blockers)
+    );
+}

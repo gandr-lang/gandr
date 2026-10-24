@@ -1050,6 +1050,10 @@ where
                         pending.push((AnyNode::Value(code), reach.term()));
                     }
                 },
+                // A row's tail is a term the row denotes, as a decode's code is.
+                Some(&ValueType::RowTail(code)) => {
+                    pending.push((AnyNode::Value(code), reach.term()));
+                },
                 Some(&ValueType::PathUniverse(source, target)) => {
                     pending.push((AnyNode::Value(source), reach.term()));
                     pending.push((AnyNode::Value(target), reach.term()));
@@ -1129,6 +1133,7 @@ where
                     | ValueType::Universe { .. }
                     | ValueType::Unknown
                     | ValueType::Buffer
+                    | ValueType::Row
                     | ValueType::Web),
                 )
                 | None => {},
@@ -1323,6 +1328,13 @@ where
                     Some(&Value::QuoteComputation(quoted)) => {
                         let reading = pending.reading().quote();
                         pending.read(AnyNode::CompType(quoted), reach, reading);
+                    },
+                    // A row's types are read as a quoted type is.
+                    Some(&Value::Row(ref row)) => {
+                        let reading = pending.reading().quote();
+                        for ty in row.types() {
+                            pending.read(AnyNode::ValueType(ty), reach, reading);
+                        }
                     },
                     // A parameter of the walked declaration used anywhere a
                     // strictly positive use was not read is not strictly

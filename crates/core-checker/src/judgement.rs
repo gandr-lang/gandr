@@ -3378,7 +3378,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             effects.clone()
         }
         else {
-            effects.without(signature.name())
+            effects.without(&gandr_core_term::row::Label::from(signature.name()))
         };
         let on_return = *on_return;
         let natural = self
@@ -4432,8 +4432,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   computation's type, which must be a pure returner `F A`, and has `A`;
     ///   a written run awaits its computation's type, which must be a returner
     ///   `F^e A`, records the run and has `A`; an ascription `(v : A)` awaits
-    ///   `A`'s formation, checks `v` against it and has `A`. A leaf ascends
-    ///   with the frames as found; every other rule descends above a new frame.
+    ///   `A`'s formation, checks `v` against it and has `A`; a row literal
+    ///   awaits each of its types' formation and has the row kind. A leaf
+    ///   ascends with the frames as found; every other rule descends above a
+    ///   new frame.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk, a static lambda
     ///   and a computation written where a value is read, which the expected
     ///   type decides; [`CheckRefusal::UnboundIndex`] for a variable past its
@@ -4791,6 +4793,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
             Value::Web(_) => {
                 let web = self.context.arena_mut().value_type_web();
                 Ok(Step::Ascend(Produced::ValueType(Relocated::from(web))))
+            },
+            // Each type a row carries is formed, its tail at the row kind,
+            // and the row has the row kind. The row is shared, not copied, so
+            // its types are read while the arena mints the kind.
+            Value::Row(ref row) => {
+                let row = row.clone();
+                let kind = self.context.arena_mut().value_type_row();
+                let produced = Produced::ValueType(Relocated::from(kind));
+                let mut types = row.types();
+                let Some(first) = types.next()
+                else {
+                    return Ok(Step::Ascend(produced));
+                };
+                self.wait(Frame::NativeYield(produced));
+                for ty in types.rev() {
+                    self.wait(Frame::NativeNext(Goal::Form(TypeNode::Value(ty))));
+                }
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
             },
             Value::Hole(hole) => {
                 if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) {
@@ -5221,6 +5241,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::FlowProduct(..)
             | Value::Forward(_)
             | Value::Web(_)
+            | Value::Row(_)
             | Value::Ascribe { .. } => {
                 self.wait(Frame::ValueBridge {
                     at: term,
@@ -5503,7 +5524,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::FunctionFlow(..)
             | Value::Recorded(_)
             | Value::Dialogue(_)
-            | Value::Web(_) => false,
+            | Value::Web(_)
+            | Value::Row(_) => false,
         };
         if normalizes_away {
             Err(CheckRefusal::StaticLambdaArgument { at: argument })
@@ -6767,7 +6789,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: an atom and the unit type are formed; a sealed atom is formed
+    /// - ensures: an atom, the unit type and the row kind are formed; a row's
+    ///   tail checks its term against the row kind; a sealed atom is formed
     ///   when its abstract type was admitted; a thunk type forms its body; a
     ///   universe is formed below the greatest level; a lift forms its type,
     ///   then awaits the raise; a decode awaits its code's synthesised type; an
@@ -6877,6 +6900,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let _target = crate::formation::path_code(self.context.arena(), target)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
+            // A row's tail is a term of the row kind.
+            ValueTypeView::RowTail(tail) => {
+                let kind = self.context.arena_mut().value_type_row();
+                Ok(Step::Descend(Goal::Value {
+                    term: tail,
+                    direction: Direction::Check(kind),
+                }))
+            },
             ValueTypeView::Integer
             | ValueTypeView::String
             | ValueTypeView::Character
@@ -6884,6 +6915,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Fixed(_)
             | ValueTypeView::Unit
             | ValueTypeView::Buffer
+            | ValueTypeView::Row
             | ValueTypeView::Web
             | ValueTypeView::Unknown => Ok(Step::Ascend(Produced::Checked)),
             ValueTypeView::Abstract(atom) => {
@@ -7227,7 +7259,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: `at` is a static Pi whose classifiers are formed.
     /// - ensures: success exactly when its domain and its codomain are each, at
-    ///   the weak head, a universe or a static Pi.
+    ///   the weak head, a universe, the row kind or a static Pi.
     /// - fails: [`CheckRefusal::StaticClassifierExpected`] naming `at` and the
     ///   first classifier that is neither; [`CheckRefusal::MachineInvariant`]
     ///   when `at` is no static Pi; the unfolding's refusal.
@@ -7264,6 +7296,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             match value_type_view(self.context.arena(), head)? {
                 ValueTypeView::Universe { .. }
                 | ValueTypeView::StaticPi { .. }
+                | ValueTypeView::Row
                 | ValueTypeView::Unknown => {},
                 ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
@@ -7279,6 +7312,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::RowTail(_)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Character
@@ -7356,6 +7390,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::Row
+                | ValueTypeView::RowTail(_)
                 | ValueTypeView::Integer
                 | ValueTypeView::String
                 | ValueTypeView::Character
@@ -8998,6 +9034,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | ValueTypeView::Kept { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Buffer
+                    | ValueTypeView::Row
+                    | ValueTypeView::RowTail(_)
                     | ValueTypeView::Session(_)
                     | ValueTypeView::World(_) => Err(CheckRefusal::ShapeMismatch {
                         at: TermNode::Value(dialogue),
@@ -9718,6 +9756,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Row
+            | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_) => Err(CheckRefusal::ShapeMismatch {
                 at,

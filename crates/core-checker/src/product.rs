@@ -215,6 +215,8 @@ pub fn component(
                 | ValueTypeView::Kept { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::Row
+                | ValueTypeView::RowTail(_)
                 | ValueTypeView::Session(_)
                 | ValueTypeView::World(_)
                 | ValueTypeView::Unknown => return Err(refused),
@@ -248,6 +250,8 @@ pub fn component(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => return Err(refused),
@@ -377,6 +381,8 @@ pub fn flow_component(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => return Err(refused),

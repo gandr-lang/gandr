@@ -654,6 +654,8 @@ pub fn coverage(
                     | ValueTypeView::Kept { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Buffer
+                    | ValueTypeView::Row
+                    | ValueTypeView::RowTail(_)
                     | ValueTypeView::Session(_)
                     | ValueTypeView::World(_)
                     | ValueTypeView::Unknown => {

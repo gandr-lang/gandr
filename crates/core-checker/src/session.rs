@@ -378,6 +378,8 @@ pub(crate) fn session_at(
         | ValueTypeView::StaticPi { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Abstract(_)
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
@@ -446,6 +448,8 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => declared,
@@ -486,6 +490,8 @@ pub(crate) fn unrestricted(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::World(_)
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Unknown => Ok(()),
     }
 }

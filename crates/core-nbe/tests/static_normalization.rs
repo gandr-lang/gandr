@@ -131,7 +131,7 @@ enum Position
             Position::ValueType(id) => core.value_type(id).map_or_else(|| ret.is_empty(), |held| match *held {
                 ValueType::Product(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Position::ValueType)),
                 ValueType::Element { code, .. } => ret.as_slice() == [Position::Value(code)],
-                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Web | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => ret.is_empty(),
+                ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Web | ValueType::Base(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) => ret.is_empty(),
             }),
         }
     )]
@@ -380,7 +380,8 @@ fn rebuild(
                     | Value::Record(_)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::Reify(_)) => panic!("no value child below {other:?}"),
+                    | Value::Reify(_)
+                    | Value::Row(_)) => panic!("no value child below {other:?}"),
                 }
             },
             (Position::Value(id), Position::ValueType(child)) => {
@@ -425,7 +426,8 @@ fn rebuild(
                     | Value::Record(_)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::Reify(_)) => panic!("no type child below {other:?}"),
+                    | Value::Reify(_)
+                    | Value::Row(_)) => panic!("no type child below {other:?}"),
                 }
             },
             (Position::ValueType(id), Position::ValueType(child)) => {
@@ -468,7 +470,9 @@ fn rebuild(
                     | ValueType::Capability { .. }
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
-                    | ValueType::World(_)) => panic!("no type child below {other:?}"),
+                    | ValueType::World(_)
+                    | ValueType::Row
+                    | ValueType::RowTail(_)) => panic!("no type child below {other:?}"),
                 }
             },
             (Position::ValueType(id), Position::Value(child)) => {
@@ -505,7 +509,9 @@ fn rebuild(
                     | ValueType::Capability { .. }
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
-                    | ValueType::World(_)) => panic!("no code child below {other:?}"),
+                    | ValueType::World(_)
+                    | ValueType::Row
+                    | ValueType::RowTail(_)) => panic!("no code child below {other:?}"),
                 }
             },
         };

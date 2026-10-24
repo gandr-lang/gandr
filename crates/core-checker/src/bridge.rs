@@ -5429,6 +5429,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return self.prepare_native(target, node);
             },
             Value::Reify(_) => return Err(unadmitted(UnadmittedFormer::Reify)),
+            Value::Row(_) => return Err(unadmitted(UnadmittedFormer::EffectRow)),
             Value::ListNil => return Ok(self.erased_value(at, target.value_list_nil())),
             Value::ListCons(head, tail) => (
                 Frame::ListHead { at, tail },
@@ -6056,7 +6057,8 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                         | Value::StaticLambda(_)
                         | Value::StaticApplication(..)
                         | Value::Record(_)
-                        | Value::Reify(_) => return Err(Refusal::MachineInvariant),
+                        | Value::Reify(_)
+                        | Value::Row(_) => return Err(Refusal::MachineInvariant),
                     };
                     let unit = target.value_unit();
                     built.push((image, unit));
@@ -6474,6 +6476,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     former: UnadmittedFormer::Buffer,
                 });
             },
+            ValueTypeView::Row | ValueTypeView::RowTail(_) => {
+                return Err(Refusal::OutOfFragment {
+                    at: CoreNode::Type(TypeNode::Value(at)),
+                    former: UnadmittedFormer::EffectRow,
+                });
+            },
             ValueTypeView::List(element) => (
                 Frame::ListType { at },
                 CoreNode::Type(TypeNode::Value(element)),
@@ -6746,6 +6754,12 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                     return Err(Refusal::OutOfFragment {
                         at: CoreNode::Term(TermNode::Value(code)),
                         former: UnadmittedFormer::Reify,
+                    });
+                },
+                (Value::Row(_), _) => {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                        former: UnadmittedFormer::EffectRow,
                     });
                 },
                 (Value::Quote(quoted), GroundSort::Value) => {

@@ -741,7 +741,7 @@ enum Lifting
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().copied().map(CoreTerm::Value)),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(CoreTerm::Value)),
           Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) |
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Row(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
           Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
@@ -797,7 +797,8 @@ fn core_children(
             | Value::Nested(_)
             | Value::Run(_)
             | Value::RecordUpdate { .. }
-            | Value::Reify(_) => {
+            | Value::Reify(_)
+            | Value::Row(_) => {
                 panic!("the pure fixture language has no reified stacks")
             },
             Value::Primitive { .. }
@@ -1012,7 +1013,8 @@ fn canonical(
                             | Value::Nested(_)
                             | Value::Run(_)
                             | Value::RecordUpdate { .. }
-                            | Value::Reify(_) => {
+                            | Value::Reify(_)
+                            | Value::Row(_) => {
                                 panic!("the pure fixture language has no reified stacks")
                             },
                             value @ Value::Primitive { .. } => value,
@@ -1218,7 +1220,7 @@ fn canonical(
           Value::Constructor {ref fields,..} => ret.iter().copied().eq(fields.iter().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Record(ref fields) => ret.iter().copied().eq(fields.values().map(|field| canon[&CoreTerm::Value(*field)])),
           Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) |
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Row(_) => false,
           Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
           Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
           Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
@@ -1479,7 +1481,8 @@ fn lifted_under(
                             | Value::Nested(_)
                             | Value::Run(_)
                             | Value::RecordUpdate { .. }
-                            | Value::Reify(_) => {
+                            | Value::Reify(_)
+                            | Value::Row(_) => {
                                 panic!("the pure fixture language has no reified stacks")
                             },
                             Value::Primitive { .. } => {
@@ -1843,7 +1846,7 @@ impl Kernel
               Value::Constructor {datatype,ref fields,..} => ret.iter().copied().eq(core::iter::once(Node::ValueType(datatype)).chain(fields.iter().copied().map(Node::Value))),
               Value::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::Value)),
           Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) |
-          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::RecordUpdate { .. } => false,
+          Value::Reify(_) | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::RecordUpdate { .. } | Value::Row(_) => false,
               Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
               Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
               Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
@@ -1878,7 +1881,7 @@ impl Kernel
               ValueType::Data {ref arguments,..} => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               ValueType::Record(ref fields) => ret.iter().copied().eq(fields.values().copied().map(Node::ValueType)),
               ValueType::Dialogue(_) | ValueType::Web |
-              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Buffer | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false,
+              ValueType::Stack { .. } | ValueType::Capability { .. } | ValueType::Buffer | ValueType::Session(_) | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) => false,
               ValueType::Path { carrier, left, right } => ret.as_slice() == [Node::ValueType(carrier), Node::Value(left), Node::Value(right)],
               ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
               ValueType::Product(ref parts) | ValueType::Sum(ref parts) => ret.iter().copied().eq(parts.iter().copied().map(Node::ValueType)),
@@ -1931,7 +1934,8 @@ impl Kernel
                 | Value::Web(_)
                 | Value::Ua { .. }
                 | Value::RecordUpdate { .. }
-                | Value::Reify(_) => {
+                | Value::Reify(_)
+                | Value::Row(_) => {
                     panic!("the pure fixture language has no reified stacks")
                 },
                 Value::PathRefl(code) => Vec::from([Node::Value(code)]),
@@ -2097,6 +2101,9 @@ impl Kernel
                         panic!("the pure fixture language has no directed identity")
                     },
                     ValueType::Staged { .. } => panic!("a fixture term names no stage"),
+                    ValueType::Row | ValueType::RowTail(_) => {
+                        panic!("the pure fixture language has no row")
+                    },
                     ValueType::Kept { .. } => panic!("the kernel has no kept type"),
                     ValueType::Path {
                         carrier,
@@ -2325,6 +2332,7 @@ impl Kernel
                     Value::Ascribe { .. } => {
                         panic!("an ascription crosses the bridge, never a replay fixture")
                     },
+                    Value::Row(_) => panic!("the kernel admits no row: a replay fixture has none"),
                 };
                 self.values.insert(id, copy);
             },
@@ -2582,6 +2590,9 @@ impl Kernel
                     ValueType::Unknown => {
                         panic!("the kernel has no unknown type: a replay fixture has none")
                     },
+                    ValueType::Row | ValueType::RowTail(_) => {
+                        panic!("the kernel has no row kind: a replay fixture has none")
+                    },
                 };
                 self.value_types.insert(id, copy);
             },
@@ -2804,7 +2815,7 @@ fn innermost(core: &mut CoreArena) -> ValueId
          Computation::Lambda(body) => core.computation(body).is_some_and(|comp| match *comp {
          Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
          }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
-         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) => false,
+         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) | Value::Row(_) => false,
         })
     )]
 fn identity(core: &mut CoreArena) -> ValueId
@@ -4302,10 +4313,10 @@ fn the_sink_off_run_keeps_no_derivation()
          Computation::Bind(bound,body) => matches!(core.computation(bound),Some(&Computation::Return(value)) if core.value(value) == Some(&Value::Constant(below)))
           && core.computation(body).is_some_and(|comp| match *comp {
            Computation::Return(value) => core.value(value).is_some_and(|value| match *value {
-            Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) => false,
+            Value::Tuple(ref components) => matches!(**components, [left, right] if left == right) && matches!(components.first().and_then(|&left| core.value(left)),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) | Value::Row(_) => false,
            }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Bind(..) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
           }), Computation::Primitive { .. } | Computation::Transport(..) | Computation::PathTransport { .. } | Computation::Ride { .. } | Computation::TelescopeTransport { .. } | Computation::Lambda(_) | Computation::Fixpoint { .. } | Computation::Application(..) | Computation::Return(_) | Computation::Ascribe { .. } | Computation::Force(_) | Computation::Case { .. } | Computation::Split { .. } | Computation::DataCase { .. } | Computation::RecordProjection(..) | Computation::TupleProjection(..) | Computation::Hole(_) | Computation::Mark { .. } | Computation::ListFold { .. } | Computation::ListCase { .. } | Computation::Perform { .. } | Computation::Handle { .. } | Computation::Exercise { .. } | Computation::Scope { .. } | Computation::Resume(..) | Computation::Abandon(_) | Computation::Reset(_) | Computation::Shift(_) | Computation::With(..) | Computation::Project(..) | Computation::Session(_) | Computation::Memory(_) | Computation::World(_) | Computation::Decompose(_) => false,
-         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) => false,
+         }), Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Univalence(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Dialogue(_) | Value::Web(_) | Value::Row(_) => false,
         })
     )]
 fn doubled(

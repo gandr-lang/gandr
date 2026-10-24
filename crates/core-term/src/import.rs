@@ -144,7 +144,11 @@ impl Image
             Self::CompType(CompType::Codata { .. } | CompType::With(_))
             | Self::Computation(Computation::With(_))
             | Self::Value(
-                Value::Record(_) | Value::Tuple(_) | Value::Recorded(_) | Value::Dialogue(_),
+                Value::Record(_)
+                | Value::Row(_)
+                | Value::Tuple(_)
+                | Value::Recorded(_)
+                | Value::Dialogue(_),
             )
             | Self::ValueType(ValueType::Data { .. } | ValueType::Record(_)) => {
                 [None, None, None, None, None]
@@ -175,7 +179,8 @@ impl Image
                 | ValueType::Buffer
                 | ValueType::Session(_)
                 | ValueType::World(_)
-                | ValueType::Web,
+                | ValueType::Web
+                | ValueType::Row,
             )
             | Self::CompType(CompType::Unknown) => [None, None, None, None, None],
             Self::ValueType(ValueType::Stack {
@@ -262,6 +267,7 @@ impl Image
                 ValueType::Element {
                     code: ref mut body, ..
                 }
+                | ValueType::RowTail(ref mut body)
                 | ValueType::Run(ref mut body)
                 | ValueType::Prefix(ref mut body)
                 | ValueType::Dialogue(ref mut body),
@@ -693,6 +699,9 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                         .rev()
                                         .map(|&value| Task::Open(Node::Value(value))),
                                 ),
+                                Value::Row(ref row) => self.pending.extend(
+                                    row.types().rev().map(|ty| Task::Open(Node::ValueType(ty))),
+                                ),
                                 Value::Tuple(ref components) => self.pending.extend(
                                     components
                                         .iter()
@@ -940,6 +949,8 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                                 | ValueType::Universe { .. }
                                 | ValueType::Lift { .. }
                                 | ValueType::Element { .. }
+                                | ValueType::Row
+                                | ValueType::RowTail(_)
                                 | ValueType::Abstract(_)
                                 | ValueType::Staged { .. }
                                 | ValueType::Kept { .. }
@@ -1211,10 +1222,12 @@ impl<'source, 'target> TypeImporter<'source, 'target>
                             *ty = ty.try_map(map_type)?;
                         },
                         Image::ValueType(ValueType::Capability {
-                            ref mut authority, ..
-                        }) => {
-                            *authority = authority
-                                .try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
+                            authority: ref mut row,
+                            ..
+                        })
+                        | Image::Value(Value::Row(ref mut row)) => {
+                            *row =
+                                row.try_map_types(crate::effect::TypeOrder::Forward, map_type)?;
                         },
                         Image::Value(_)
                         | Image::Computation(_)

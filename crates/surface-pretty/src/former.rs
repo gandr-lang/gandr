@@ -412,6 +412,9 @@ pub enum Former<'source, Node>
     BaseType(BaseType),
     /// The opaque buffer type `Buf` a receive places live.
     BufferType,
+    /// The row kind `Row`: the classifier of a row a definition abstracts
+    /// over.
+    RowType,
     /// The product of a value type's components, which the source answers by
     /// [`Source::component`]: `Unit` at arity zero, `#{A, …}` from one.
     Product(Arity),
@@ -479,13 +482,16 @@ pub enum Former<'source, Node>
     /// The returner `-F A` of a value type.
     Returner(Node),
     /// The returner `-F [I, …] A` of a value type whose computation may
-    /// request the interfaces of its row.
+    /// request the interfaces of its row, `-F [I, … | t] A` when the row is
+    /// open through the row `t`.
     EffectfulReturner
     {
         /// The value returned.
         result: Node,
         /// The row of interfaces.
         effects: &'source dyn Authority,
+        /// The row it is open through: a value type that reads as its row.
+        tail: Option<Node>,
     },
     /// The arrow `A -> C`, whose codomain binds nothing.
     Arrow
@@ -541,6 +547,15 @@ pub enum Former<'source, Node>
     Quote(Node),
     /// The code of a computation type.
     QuoteComputation(Node),
+    /// A row as a term, `[I, …]`, or `[I, … | t]` when it is open through the
+    /// row `t`.
+    Row
+    {
+        /// The interfaces it holds.
+        effects: &'source dyn Authority,
+        /// The row it is open through: a value type that reads as its row.
+        tail: Option<Node>,
+    },
     /// A static abstraction `\a. v`, its body under one binder.
     StaticLambda(Node),
     /// A static application of an operator to one argument; the printer
@@ -1165,6 +1180,9 @@ pub enum Notation
     PathEquiv,
     /// The hold's end at a consuming read, written `consume(s)`.
     Consume,
+    /// A row as a term, written `[I, … | t]`: the surface reads a bracket of
+    /// names where a term stands as a list.
+    Row,
 }
 
 /// A part of a node the presentation leaves out: the text stands for the

@@ -123,6 +123,7 @@ pub struct Unfolded(pub u64);
                 match *node {
                     Value::Constructor { ref fields, .. } => 2_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
                     Value::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
+                    Value::Row(ref row) => 1_u64.checked_add(u64::try_from(row.types().count()).expect("walkable row arity")).expect("walkable row arity"),
                     Value::Reify(ref frames) => 1_u64.checked_add(u64::try_from(frames.iter().filter(|frame| !matches!(frame, gandr_core_term::control::StackFrame::Project(_))).count()).expect("walkable frame arity")).expect("walkable frame arity"),
                     Value::Web(_) | Value::ListNil | Value::Primitive { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Hole(_) => 1,
                     Value::Tuple(ref components) => 1_u64.saturating_add(u64::try_from(components.len()).unwrap_or(u64::MAX)),
@@ -158,13 +159,13 @@ pub struct Unfolded(pub u64);
                     ValueType::Data { ref arguments, .. } => 1_u64.saturating_add(u64::try_from(arguments.len()).unwrap_or(u64::MAX)),
                     ValueType::Record(ref fields) => 1_u64.saturating_add(u64::try_from(fields.len()).unwrap_or(u64::MAX)),
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => 1_u64.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX)),
-                    ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web => 1,
+                    ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 1,
                     ValueType::Session(ref session) => 1_u64.saturating_add(u64::try_from(session.payloads().len()).unwrap_or(u64::MAX)),
                     ValueType::Capability { ref authority, .. } => 1_u64.checked_add(u64::try_from(authority.types().count()).expect("walkable authority arity")).expect("walkable authority arity"),
                     ValueType::World(ref ty) => 1_u64.saturating_add(u64::try_from(ty.types().count()).unwrap_or(u64::MAX)),
                     ValueType::Stack { .. } | ValueType::PathUniverse(..) | ValueType::StaticPi { .. } | ValueType::Sigma { .. } => 3,
                     ValueType::Path { .. } | ValueType::Flow { .. } => 4,
-                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 2,
+                    ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::RowTail(_) | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 2,
                 }
             },
             CoreNode::CompType(id) => {
@@ -226,6 +227,7 @@ pub fn unfolded(
                         gandr_core_term::control::StackFrame::Project(_) => None,
                     }));
                 },
+                Value::Row(ref row) => pending.extend(row.types().map(CoreNode::ValueType)),
                 Value::PathEquiv {
                     path_type,
                     forward,
@@ -546,7 +548,8 @@ pub fn unfolded(
                     ]),
                     ValueType::Run(session)
                     | ValueType::Prefix(session)
-                    | ValueType::Dialogue(session) => {
+                    | ValueType::Dialogue(session)
+                    | ValueType::RowTail(session) => {
                         pending.push(CoreNode::Value(session));
                     },
                     ValueType::Product(ref parts) | ValueType::Sum(ref parts) => {
@@ -557,7 +560,8 @@ pub fn unfolded(
                     | ValueType::Abstract(_)
                     | ValueType::Unknown
                     | ValueType::Buffer
-                    | ValueType::Web => {},
+                    | ValueType::Web
+                    | ValueType::Row => {},
                     ValueType::Capability { ref authority, .. } => {
                         pending.extend(authority.types().map(CoreNode::ValueType));
                     },

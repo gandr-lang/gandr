@@ -612,7 +612,7 @@ fn value_spelling(
             Some(&ValueType::Stack { .. } | &ValueType::List(_) | &ValueType::Data { .. } | &ValueType::Record(_) |
 &ValueType::Sum(..) | &ValueType::PathUniverse(..) | &ValueType::Path { .. } | &ValueType::Universe { ..
 } | &ValueType::Lift { .. } | &ValueType::Abstract(_) | &ValueType::StaticPi { .. } | &ValueType::Sigma {
-.. } | &ValueType::Capability { .. } | &ValueType::World(_) | &ValueType::Unknown | &ValueType::Buffer | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_) | &ValueType::Prefix(_) | &ValueType::Dialogue(_) | &ValueType::Web | &ValueType::Staged { .. } | &ValueType::Kept { .. }) | None => Token::Other,
+.. } | &ValueType::Capability { .. } | &ValueType::World(_) | &ValueType::Unknown | &ValueType::Buffer | &ValueType::Session(_) | &ValueType::Flow { .. } | &ValueType::Run(_) | &ValueType::Prefix(_) | &ValueType::Dialogue(_) | &ValueType::Web | &ValueType::Staged { .. } | &ValueType::Kept { .. } | &ValueType::Row | &ValueType::RowTail(_)) | None => Token::Other,
             },
         | Visit::Value(id) => match arena.value(id) {
             | Some(&Value::Variable { index, .. }) => Token::Variable(u32::from(index)),
@@ -626,7 +626,7 @@ fn value_spelling(
 | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_) | &Value::Ascribe { .. }
 | &Value::Lift { .. } | &Value::PathRefl(_) | &Value::Here(_) | &Value::Univalence(..) | &Value::Funext(..) | &Value::Equiv(..) | &Value::Ua { .. } | &Value::Returned(_) | &Value::Nested(_) | &Value::Run(_) | &Value::RecordUpdate { .. } | &Value::PathProduct(..) |
 &Value::SessionRelated { .. } | &Value::Stay(_) | &Value::Then(..) | &Value::FlowProduct(..) | &Value::Forward(_) | &Value::FunctionFlow(..) | &Value::Recorded(_) | &Value::Dialogue(_) | &Value::Web(_) |
-&Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. }) | None => Token::Other,
+&Value::PathEquiv { .. } | &Value::Hole(_) | &Value::Mark { .. } | &Value::Row(_)) | None => Token::Other,
             },
     }))]
 fn spelling_of(
@@ -2432,6 +2432,7 @@ fn binding_sites_distinguish_free_bound_and_linear_indices()
                     | Value::StaticApplication(..)
                     | Value::Constructor { .. }
                     | Value::Record(_)
+                    | Value::Row(_)
                     | Value::Hole(_)
                     | Value::Mark { .. }
                     | Value::Reify(_) => panic!("the golden uses variables and pairs"),

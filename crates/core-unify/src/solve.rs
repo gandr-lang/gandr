@@ -15,8 +15,13 @@
 //!   flexible occurrence ([`Reason::Occurs`]) wait there; so do the fragment's
 //!   edges, a definition ([`Reason::Unfolding`]), a gradual side
 //!   ([`Reason::Gradual`]), an applied metavariable ([`Reason::Spine`]), a
-//!   former the fragment does not decompose ([`Reason::Outside`]) and a
-//!   metavariable of a wider context in a solution ([`Reason::Pruning`]).
+//!   former the fragment does not decompose ([`Reason::Outside`]), a
+//!   metavariable of a wider context in a solution ([`Reason::Pruning`]) and
+//!   two open rows each holding an instance the other lacks ([`Reason::Rows`]).
+//! - Two rows are decided by the row equation: the instances both write agree
+//!   signature by signature, what one writes and the other lacks is read off
+//!   the other's tail, and a tail standing over a solved row is read through
+//!   it. Order is no part of a row, and an instance is never written twice.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -31,6 +36,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::effect::EffectRow;
 use gandr_core_term::fill_hole;
 use gandr_core_term::hole::TermId;
 use gandr_core_term::shift_value;
@@ -212,6 +218,9 @@ pub enum Reason
     Dangling,
     /// The run spent its steps before reaching the equation.
     Budget,
+    /// Two open rows each holding an instance the other lacks: only a fresh
+    /// tail both share solves them, and the store mints none.
+    Rows,
 }
 
 /// An equation the solver could not answer most generally when it met it.
@@ -552,7 +561,8 @@ fn head(
         | Value::QuoteComputation(_)
         | Value::StaticLambda(_)
         | Value::Constructor { .. }
-        | Value::Record(_) => Head::Rigid,
+        | Value::Record(_)
+        | Value::Row(_) => Head::Rigid,
         Value::Primitive { .. }
         | Value::PathRefl(_)
         | Value::PathProduct(..)
@@ -600,8 +610,9 @@ fn obstruction(head: Head) -> Option<Stop>
 /// Decide two values.
 ///
 /// One side an unsolved metavariable and the other neither gradual nor an
-/// applied metavariable is a binding; two rigid values sharing a head push
-/// their children; differing introduction forms clash; anything else waits.
+/// applied metavariable is a binding; two rows are decided by [`rows`]; two
+/// rigid values sharing a head push their children; differing introduction
+/// forms clash; anything else waits.
 ///
 /// # Specification
 /// trivial.
@@ -645,6 +656,18 @@ fn values(
     if let Some(stop) = obstruction(first_head).or_else(|| obstruction(second_head)) {
         return Err(stop);
     }
+    if let (&Value::Row(ref first_row), &Value::Row(ref second_row)) = (first, second) {
+        let (first_row, second_row) = (first_row.clone(), second_row.clone());
+        rows(
+            arena,
+            metas,
+            scope,
+            (&first_row, &second_row),
+            (Side::Value(one), Side::Value(other)),
+            work,
+        )?;
+        return Ok(Action::Done);
+    }
     rigid_values(
         scope,
         (first, second),
@@ -679,6 +702,162 @@ fn flex_flex(
     else {
         Action::Bind(other, one_hole)
     }
+}
+
+/// A row read through the solved metavariables its tail stands over: the
+/// instances of every row a solution reaches joined in, and the code of the
+/// tail that remains open, if one does.
+///
+/// A tail that is no row tail waits as [`Reason::Outside`]; an instance a
+/// solution writes apart from the one the row writes is refuted as `clash`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Termination
+/// - reason: a `for` loop bounded by one more than the metavariable count; the
+///   arena merges a tail over a row literal at mint, so each further pass reads
+///   through a solution, and a chain of solutions is acyclic since the occurs
+///   check reads through every solution.
+fn settled_row(
+    arena: &mut CoreArena,
+    metas: &Metas,
+    scope: Binders,
+    row: &EffectRow,
+    clash: &Stop,
+) -> Result<(EffectRow, Option<ValueId>), Stop>
+{
+    let mut instances = row.with_tail(None);
+    let mut tail = row.tail();
+    for _ in 0 ..= usize::from(metas.count()) {
+        let Some(tail_type) = tail
+        else {
+            return Ok((instances, None));
+        };
+        let Some(&ValueType::RowTail(code)) = arena.value_type(tail_type)
+        else {
+            return Err(Stop::wait(Reason::Outside));
+        };
+        let code = resolve(arena, metas, scope, code)?;
+        let Some(&Value::Row(ref solved)) = arena.value(code)
+        else {
+            return Ok((instances, Some(code)));
+        };
+        let solved = solved.clone();
+        instances = instances
+            .union(&solved.with_tail(None), arena)
+            .map_err(|_apart| clash.clone())?;
+        tail = solved.tail();
+    }
+    Err(Stop::wait(Reason::Budget))
+}
+
+/// Decide two rows by the row equation.
+///
+/// The instances both rows write agree operation by operation, their payloads
+/// and replies pushed; a closed row lacking an instance the other writes, or
+/// two rows over one tail writing different instances, clash. What one row
+/// writes and the other lacks is read off the other's tail: that tail's code
+/// is pushed against the row of those instances over the first row's tail, so
+/// the value unifier binds, waits or refutes it. Two open rows each holding an
+/// instance the other lacks wait as [`Reason::Rows`] on their flexible tails.
+///
+/// # Specification
+/// trivial.
+fn rows(
+    arena: &mut CoreArena,
+    metas: &Metas,
+    scope: Binders,
+    (one, other): (&EffectRow, &EffectRow),
+    (left, right): (Side, Side),
+    work: &mut Vec<Equation>,
+) -> Result<(), Stop>
+{
+    let clash = Stop::Refuted(Refutation::Clash { left, right });
+    let (one, one_tail) = settled_row(arena, metas, scope, one, &clash)?;
+    let (other, other_tail) = settled_row(arena, metas, scope, other, &clash)?;
+    let mut agreements = Vec::new();
+    for (label, mine) in one.instances() {
+        let Some(theirs) = other.get(label)
+        else {
+            continue;
+        };
+        if mine.name() != theirs.name() || mine.operations().len() != theirs.operations().len() {
+            return Err(clash);
+        }
+        for (held, written) in mine.operations().zip(theirs.operations()) {
+            if held.name != written.name {
+                return Err(clash);
+            }
+            agreements.push((held.payload, written.payload));
+            agreements.push((held.reply, written.reply));
+        }
+    }
+    let only_one = one.difference(&other);
+    let only_other = other.difference(&one);
+    let open = |arena: &mut CoreArena, instances: &EffectRow, code: ValueId| {
+        let tail = arena.value_type_row_tail(code);
+        arena.value_row(instances.with_tail(Some(tail)))
+    };
+    let (one_lacks, other_lacks) = (
+        only_other.signatures().next().is_some(),
+        only_one.signatures().next().is_some(),
+    );
+    let tails = match (one_tail, other_tail) {
+        (None, None) => {
+            if one_lacks || other_lacks {
+                return Err(clash);
+            }
+            None
+        },
+        (Some(code), None) => {
+            if other_lacks {
+                return Err(clash);
+            }
+            Some((code, arena.value_row(only_other)))
+        },
+        (None, Some(code)) => {
+            if one_lacks {
+                return Err(clash);
+            }
+            Some((arena.value_row(only_one), code))
+        },
+        (Some(one_code), Some(other_code)) => match (one_lacks, other_lacks) {
+            (false, false) => Some((one_code, other_code)),
+            (true, false) => Some((one_code, open(arena, &only_other, other_code))),
+            (false, true) => Some((open(arena, &only_one, one_code), other_code)),
+            (true, true) => {
+                if one_code == other_code {
+                    return Err(clash);
+                }
+                let blockers: Vec<MetaId> = [one_code, other_code]
+                    .into_iter()
+                    .filter_map(|code| flexible(arena, metas, code))
+                    .collect();
+                return Err(if blockers.is_empty() {
+                    Stop::wait(Reason::Neutral)
+                }
+                else {
+                    Stop::Postpone(Reason::Rows, blockers)
+                });
+            },
+        },
+    };
+    if let Some((one_code, other_code)) = tails {
+        work.push(Equation::new(
+            scope,
+            Side::Value(one_code),
+            Side::Value(other_code),
+        ));
+    }
+    for (held, written) in agreements.into_iter().rev() {
+        work.push(Equation::new(
+            scope,
+            Side::ValueType(held),
+            Side::ValueType(written),
+        ));
+    }
+    Ok(())
 }
 
 /// Decompose two rigid values sharing a head, refute two introduction forms
@@ -881,7 +1060,9 @@ const fn value_type_head(value_type: &ValueType) -> TypeHead<'_>
         | ValueType::Universe { .. }
         | ValueType::Lift { .. }
         | ValueType::Abstract(_)
-        | ValueType::StaticPi { .. } => TypeHead::Rigid,
+        | ValueType::StaticPi { .. }
+        | ValueType::Row
+        | ValueType::RowTail(_) => TypeHead::Rigid,
         ValueType::PathUniverse(..)
         | ValueType::Path { .. }
         | ValueType::Flow { .. }
@@ -1181,15 +1362,20 @@ fn rigid_value_types(
                 Side::ValueType(other_domain),
             ));
         },
+        (&ValueType::Row, &ValueType::Row) => {},
+        (&ValueType::RowTail(one), &ValueType::RowTail(other)) => {
+            work.push(Equation::new(scope, Side::Value(one), Side::Value(other)));
+        },
         _ => return Err(clash),
     }
     Ok(())
 }
 
-/// Decide two computation types, as [`value_types`] decides value types: a
-/// dependent function's codomain under one more binder, a function against a
-/// dependent function waiting, since conversion may relate a dependent one
-/// whose codomain ignores its binder to a plain one.
+/// Decide two computation types, as [`value_types`] decides value types: two
+/// returners by their results and by [`rows`] over their rows, a dependent
+/// function's codomain under one more binder, a function against a dependent
+/// function waiting, since conversion may relate a dependent one whose
+/// codomain ignores its binder to a plain one.
 ///
 /// # Specification
 /// trivial.
@@ -1228,13 +1414,41 @@ fn comp_types(
             decoded_against(arena, metas, code).map(|meta| Action::QuoteComputation(meta, one))
         },
         (TypeHead::Rigid, TypeHead::Rigid) => {
+            if let (
+                &CompType::Returner {
+                    result: one_result,
+                    effects: ref one_effects,
+                },
+                &CompType::Returner {
+                    result: other_result,
+                    effects: ref other_effects,
+                },
+            ) = (first, second)
+            {
+                let (one_effects, other_effects) = (one_effects.clone(), other_effects.clone());
+                work.push(Equation::new(
+                    scope,
+                    Side::ValueType(one_result),
+                    Side::ValueType(other_result),
+                ));
+                rows(
+                    arena,
+                    metas,
+                    scope,
+                    (&one_effects, &other_effects),
+                    (left, right),
+                    work,
+                )?;
+                return Ok(Action::Done);
+            }
             rigid_comp_types(scope, (first, second), (left, right), work)?;
             Ok(Action::Done)
         },
     }
 }
 
-/// Decompose two rigid computation types sharing a former, or refute them.
+/// Decompose two rigid computation types sharing a former other than the
+/// returner, which [`comp_types`] decides, or refute them.
 ///
 /// The children are pushed, a dependent function's codomain under one more
 /// binder; a function against a dependent function waits as
@@ -1251,25 +1465,6 @@ fn rigid_comp_types(
 {
     let clash = Stop::Refuted(Refutation::Clash { left, right });
     match (first, second) {
-        (
-            &CompType::Returner {
-                result: one,
-                effects: ref one_effects,
-            },
-            &CompType::Returner {
-                result: other,
-                effects: ref other_effects,
-            },
-        ) => {
-            if one_effects != other_effects {
-                return Err(clash);
-            }
-            work.push(Equation::new(
-                scope,
-                Side::ValueType(one),
-                Side::ValueType(other),
-            ));
-        },
         (
             &CompType::Arrow {
                 domain: one_domain,
@@ -1437,6 +1632,14 @@ fn strongly(
             Some(&Value::Record(ref fields)) => pending.extend(fields.values().copied()),
             Some(&Value::Injection(_, inner) | &Value::StaticLambda(inner)) => pending.push(inner),
             Some(&Value::ListCons(first, rest)) => pending.extend([first, rest]),
+            Some(&Value::Row(ref row)) => {
+                if row.signatures().next().is_some()
+                    && let Some(tail) = row.tail()
+                    && let Some(&ValueType::RowTail(code)) = arena.value_type(tail)
+                {
+                    pending.push(code);
+                }
+            },
             Some(_) | None => {},
         }
     }

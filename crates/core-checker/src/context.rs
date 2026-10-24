@@ -2661,6 +2661,37 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         Ok(self.deferrals.unify_values(self.arena, scope, left, right))
     }
 
+    /// Pose the row `left` against `right` to the solver when a side is open
+    /// through a metavariable, under the intuitionistic binders open now.
+    ///
+    /// # Specification
+    /// - requires: as [`crate::elaboration::Deferrals::unify_rows`].
+    /// - ensures: its answer, posed at the current depth.
+    /// - fails: [`CheckRefusal::MachineInvariant`] for a depth past any binder
+    ///   count.
+    /// - panics: none.
+    /// - executable: none — the answer is
+    ///   [`crate::elaboration::Deferrals::unify_rows`]'s, checked by its own
+    ///   specification; this call only reads the depth it is posed at.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`crate::elaboration::Deferrals::unify_rows`].
+    /// - witness: `elaboration::tests::a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270`
+    pub(crate) fn unify_rows(
+        &mut self,
+        rows: (
+            &gandr_core_term::effect::EffectRow,
+            &gandr_core_term::effect::EffectRow,
+        ),
+    ) -> Result<crate::elaboration::Unified, CheckRefusal>
+    {
+        let scope = self.intuitionistic_scope()?;
+        Ok(self.deferrals.unify_rows(self.arena, scope, rows))
+    }
+
     /// Declare the nominated hole `hole` at `at` a metavariable whose context
     /// is the intuitionistic binders open now.
     ///
@@ -3600,6 +3631,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                 | ValueTypeView::Stack { .. }
                 | ValueTypeView::Capability { .. }
                 | ValueTypeView::Buffer
+                | ValueTypeView::Row
+                | ValueTypeView::RowTail(_)
                 | ValueTypeView::PathUniverse(..)
                 | ValueTypeView::Path { .. }
                 | ValueTypeView::Flow { .. }
@@ -3927,6 +3960,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
                     | ValueTypeView::Stack { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Buffer
+                    | ValueTypeView::Row
+                    | ValueTypeView::RowTail(_)
                     | ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Character
@@ -3985,7 +4020,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
             | Value::StaticLambda(_)
             | Value::StaticApplication(..)
             | Value::Hole(_)
-            | Value::Mark { .. } => Ok(otherwise.clone()),
+            | Value::Mark { .. }
+            | Value::Row(_) => Ok(otherwise.clone()),
         }
     }
 

@@ -454,6 +454,8 @@ pub fn session_code(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => elsewhere,
@@ -1041,6 +1043,8 @@ pub fn endpoints(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_)
         | ValueTypeView::Unknown => Err(CheckRefusal::ShapeMismatch {
@@ -1200,12 +1204,14 @@ pub fn covariant(
                 | Value::Record(_)
                 | Value::Hole(_)
                 | Value::Mark { .. }
-                | Value::Reify(_) => return Err(refused),
+                | Value::Reify(_)
+                | Value::Row(_) => return Err(refused),
             },
             Position::ValueType(id) => match *arena.value_type(id).ok_or_else(|| dangling(node))? {
                 ValueType::Run(code)
                 | ValueType::Prefix(code)
-                | ValueType::Element { code, .. } => {
+                | ValueType::Element { code, .. }
+                | ValueType::RowTail(code) => {
                     work.push((Position::Value(code), polarity, depth));
                 },
                 ValueType::Flow {
@@ -1250,6 +1256,7 @@ pub fn covariant(
                 | ValueType::Session(_)
                 | ValueType::Capability { .. }
                 | ValueType::Buffer
+                | ValueType::Row
                 | ValueType::Dialogue(_)
                 | ValueType::Web
                 | ValueType::World(_) => return Err(refused),
@@ -1546,6 +1553,8 @@ fn computed(
             | ValueType::Session(_)
             | ValueType::Capability { .. }
             | ValueType::Buffer
+            | ValueType::Row
+            | ValueType::RowTail(_)
             | ValueType::Staged { .. }
             | ValueType::Kept { .. }
             | ValueType::World(_) => return Err(unsupported),
@@ -1709,6 +1718,8 @@ pub fn run_premises(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Dialogue(_)
         | ValueTypeView::Web
         | ValueTypeView::Session(_)
@@ -1828,6 +1839,8 @@ pub fn dialogue_premises(
         | ValueTypeView::Kept { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::World(_) => {
             return Err(CheckRefusal::ShapeMismatch {

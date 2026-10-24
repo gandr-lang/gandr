@@ -3890,6 +3890,7 @@ proptest! {
                 | Value::Injection(..)
                 | Value::Lift { .. }
                 | Value::Quote(_)
+                | Value::Row(_)
                 | Value::QuoteComputation(_)
                 | Value::StaticLambda(_)
                 | Value::StaticApplication(..)

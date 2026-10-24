@@ -806,7 +806,8 @@ impl Machine<'_, '_>
                     | Value::Constructor { .. }
                     | Value::Record(_)
                     | Value::Hole(_)
-                    | Value::Mark { .. } => return Ok(()),
+                    | Value::Mark { .. }
+                    | Value::Row(_) => return Ok(()),
                 };
                 (
                     CoreTerm::Value(term),

@@ -706,7 +706,9 @@ impl Walker<'_, '_, '_>
                 | ValueType::StaticPi { .. }
                 | ValueType::Staged { .. }
                 | ValueType::Kept { .. }
-                | ValueType::World(_)),
+                | ValueType::World(_)
+                | ValueType::Row
+                | ValueType::RowTail(_)),
             ) => Ok(Kind::Opaque),
         }
     }

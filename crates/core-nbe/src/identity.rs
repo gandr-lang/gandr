@@ -276,7 +276,9 @@ pub fn clause(
             | ValueType::Web
             | ValueType::Staged { .. }
             | ValueType::Kept { .. }
-            | ValueType::World(_) => Clause::Unclassified,
+            | ValueType::World(_)
+            | ValueType::Row
+            | ValueType::RowTail(_) => Clause::Unclassified,
         },
     )
 }

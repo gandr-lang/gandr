@@ -122,7 +122,8 @@ impl Erasure<'_, '_>
                     | Value::StaticApplication(..)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::Reify(_) => return Err(Refusal::MachineInvariant),
+                    | Value::Reify(_)
+                    | Value::Row(_) => return Err(Refusal::MachineInvariant),
                 }
             },
             CoreNode::Term(TermNode::Computation(at)) => {
@@ -229,7 +230,9 @@ impl Erasure<'_, '_>
                     | ValueType::Buffer
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
-                    | ValueType::World(_) => return Err(Refusal::MachineInvariant),
+                    | ValueType::World(_)
+                    | ValueType::Row
+                    | ValueType::RowTail(_) => return Err(Refusal::MachineInvariant),
                 }
             },
             CoreNode::Type(TypeNode::Computation(at)) => {
@@ -380,7 +383,8 @@ impl Erasure<'_, '_>
                     | Value::StaticApplication(..)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::Reify(_) => return Err(Refusal::MachineInvariant),
+                    | Value::Reify(_)
+                    | Value::Row(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value(at, image))
             },
@@ -545,7 +549,9 @@ impl Erasure<'_, '_>
                     | ValueType::Buffer
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
-                    | ValueType::World(_) => return Err(Refusal::MachineInvariant),
+                    | ValueType::World(_)
+                    | ValueType::Row
+                    | ValueType::RowTail(_) => return Err(Refusal::MachineInvariant),
                 };
                 Ok(self.erased_value_type(at, image))
             },

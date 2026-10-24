@@ -1,25 +1,36 @@
-//! Closed rows: finite maps from labels to entries, each label once.
+//! Rows: finite maps from labels to entries, each label once, closed or open
+//! through one tail.
 //!
 //! A row `⟨l₁ : E₁, …, lₙ : Eₙ⟩` holds each label once — label apartness is
 //! its well-formedness — in canonical label order, so two rows that list the
-//! same entries in different orders are one row. The empty row allocates
-//! nothing, and cloning a nonempty row shares its immutable map.
+//! same entries in different orders are one row. A row `⟨l₁ : E₁, … | ρ⟩` is
+//! open: its tail `ρ` stands for the further entries a row variable is
+//! instantiated with, and lacks every label written beside it. A row has at
+//! most one tail. The empty row allocates nothing, and cloning a nonempty row
+//! shares its immutable map. A [`Label`] names a record field, a variant
+//! constructor or an effect instance alike: one named thing of a type.
 //! [`EffectRow`](crate::effect::EffectRow) is the effects reading: the
-//! interfaces a returner may perform, each under its name.
+//! interfaces a returner may perform, each under its label.
 //!
 //! # Items
 //!
-//! The three operations are the set operations of rows that agree at the
-//! labels they share: [`Row::union`] joins two rows and refuses a label they
-//! define apart, [`Row::without`] removes a label, and [`Row::is_subset`]
-//! decides inclusion. [`Row::from_entries`] refuses a label written twice,
-//! [`LabelTwice`].
+//! The operations are the set operations of rows that agree at the labels
+//! they share. [`Row::union`] joins two rows, keeping their one tail and
+//! refusing a label they define apart or two different tails.
+//! [`Row::without`] removes a label and keeps the tail. [`Row::is_subset`]
+//! decides inclusion, an open row included only in a row open through the
+//! same tail. [`Row::difference`] keeps the entries another row does not
+//! write, which is what a tail is solved to when a row equation forces it.
+//! [`Row::from_entries`] refuses a label written twice, [`LabelTwice`].
 //!
 //! # References
 //!
 //! - Daniel Hillerström and Sam Lindley. _Liberating Effects with Rows and
 //!   Handlers_. Type-Driven Development 2016: one row kind for records,
-//!   variants and effects.
+//!   variants and effects; the row variable lacks the labels written beside it.
+//! - J. Garrett Morris and James `McKinna`. _Abstracting Extensible Data Types:
+//!   Or, Rows by Any Other Name_. POPL 2019: rows as a partial monoid under
+//!   combination, and containment.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map;
@@ -27,35 +38,110 @@ use alloc::sync::Arc;
 
 use anodized::spec;
 
-/// A closed row: each label once, in canonical label order.
+/// The name of a row's entry: a record field, a variant constructor or an
+/// effect instance.
 #[repr(transparent)]
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Row<L, E>(Option<Arc<BTreeMap<L, E>>>);
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Label(Arc<str>);
 
-/// A label a row would hold twice: written twice, or defined apart by two
-/// rows joined.
+impl From<&str> for Label
+{
+    /// Copy a label into shared storage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: &str) -> Self
+    {
+        Self(Arc::from(name))
+    }
+}
+
+impl From<Arc<str>> for Label
+{
+    /// A label sharing `name`'s storage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: Arc<str>) -> Self
+    {
+        Self(name)
+    }
+}
+
+impl AsRef<str> for Label
+{
+    /// Borrow the label's spelling.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        &self.0
+    }
+}
+
+/// A row: each label once, in canonical label order, closed or open through
+/// one tail.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Row<L, E, T>
+{
+    /// The written entries, none for the allocation-free empty map.
+    entries: Option<Arc<BTreeMap<L, E>>>,
+    /// The tail the row is open through, none for a closed row.
+    tail: Option<T>,
+}
+
+/// A label a row would hold twice.
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LabelTwice<L>(pub L);
+
+/// Two rows a union cannot join.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RowsApart<L, T>
+{
+    /// A label both rows hold with entries that do not agree.
+    Label(L),
+    /// The two different tails the rows are open through: a row has one.
+    Tails(T, T),
+}
 
 /// Inclusion between rows that agree at the labels they share.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RowInclusion
 {
-    /// Every label is in the receiving row, with an agreeing entry.
+    /// Every label is in the receiving row, with an agreeing entry, and the
+    /// tail, when there is one, is the receiving row's.
     Included,
     /// A label is absent from the receiving row or holds a disagreeing entry
-    /// there.
+    /// there, or the tail is not the receiving row's.
     Excluded,
 }
 
-impl<L, E> Row<L, E>
+impl<L, E, T> Row<L, E, T>
 {
     /// The empty row.
-    pub const EMPTY: Self = Self(None);
+    pub const EMPTY: Self = Self {
+        entries: None,
+        tail: None,
+    };
+
+    /// The tail the row is open through, none for a closed row.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn tail(&self) -> Option<&T>
+    {
+        self.tail.as_ref()
+    }
 }
 
-impl<L, E> Default for Row<L, E>
+impl<L, E, T> Default for Row<L, E, T>
 {
     /// The allocation-free empty row.
     ///
@@ -68,7 +154,7 @@ impl<L, E> Default for Row<L, E>
     }
 }
 
-impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
+impl<L: Ord + Clone + 'static, E: Clone + 'static, T: Clone + Eq> Row<L, E, T>
 {
     /// A shared empty map for this label and entry family.
     const EMPTY_ENTRIES: &'static BTreeMap<L, E> = &BTreeMap::new();
@@ -80,14 +166,15 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
     #[inline]
     pub(crate) fn entries(&self) -> &BTreeMap<L, E>
     {
-        self.0.as_deref().unwrap_or(Self::EMPTY_ENTRIES)
+        self.entries.as_deref().unwrap_or(Self::EMPTY_ENTRIES)
     }
 
-    /// The row of `map`'s entries, which a map's keys make apart.
+    /// The row of `map`'s entries, which a map's keys make apart, open
+    /// through `tail`.
     ///
     /// # Specification
-    /// - ensures: the row holds exactly `map`'s entries; an empty map is the
-    ///   allocation-free empty row.
+    /// - ensures: the row holds exactly `map`'s entries and `tail`; an empty
+    ///   map allocates nothing.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — rewriting no entry and every entry of a row
@@ -95,18 +182,19 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
     /// - witness: `effect::tests::operation_types_survive_substitution_and_import`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.0.as_ref().is_none_or(|map| !map.is_empty()))]
-    pub(crate) fn from_map(map: BTreeMap<L, E>) -> Self
+    #[spec(ensures: |ret| ret.entries.as_ref().is_none_or(|map| !map.is_empty()))]
+    pub(crate) fn from_map(
+        map: BTreeMap<L, E>,
+        tail: Option<T>,
+    ) -> Self
     {
-        if map.is_empty() {
-            Self::EMPTY
-        }
-        else {
-            Self(Some(Arc::new(map)))
+        Self {
+            entries: (!map.is_empty()).then(|| Arc::new(map)),
+            tail,
         }
     }
 
-    /// The row holding `entry` at `label` alone.
+    /// The closed row holding `entry` at `label` alone.
     ///
     /// # Specification
     /// trivial.
@@ -117,10 +205,13 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
         entry: E,
     ) -> Self
     {
-        Self(Some(Arc::new(BTreeMap::from([(label, entry)]))))
+        Self {
+            entries: Some(Arc::new(BTreeMap::from([(label, entry)]))),
+            tail: None,
+        }
     }
 
-    /// The row of `entries`, each label once.
+    /// The closed row of `entries`, each label once.
     ///
     /// # Specification
     /// - ensures: the row holds every entry under its label whatever order they
@@ -136,7 +227,7 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
     ///   from a list, and the empty row from an empty allocation.
     /// - witness: `row::tests::a_label_twice_is_refused_and_order_is_no_part_of_a_row`
     #[inline]
-    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|row| row.0.as_ref().is_none_or(|map| !map.is_empty())))]
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|row| row.tail.is_none() && row.entries.as_ref().is_none_or(|map| !map.is_empty())))]
     pub fn from_entries<Entries>(entries: Entries) -> Result<Self, LabelTwice<L>>
     where
         Entries: IntoIterator<Item = (L, E)>,
@@ -152,7 +243,30 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
                 },
             }
         }
-        Ok(Self::from_map(map))
+        Ok(Self::from_map(map, None))
+    }
+
+    /// This row's entries, open through `tail` instead of this row's tail.
+    ///
+    /// # Specification
+    /// - ensures: the entries are this row's, shared, and the tail is `tail`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — opening a closed row, closing an open one and
+    ///   replacing a tail distinguish the tail's replacement from a join.
+    /// - witness: `row::tests::a_row_has_one_tail_and_inclusion_keeps_it`
+    #[inline]
+    #[must_use]
+    #[spec(captures: expected = tail.clone(), ensures: |ret| ret.entries.as_ref().map(Arc::as_ptr) == self.entries.as_ref().map(Arc::as_ptr) && ret.tail == expected)]
+    pub fn with_tail(
+        &self,
+        tail: Option<T>,
+    ) -> Self
+    {
+        Self {
+            entries: self.entries.clone(),
+            tail,
+        }
     }
 
     /// The entry at `label`.
@@ -169,24 +283,27 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
         self.entries().get(label)
     }
 
-    /// Join two rows: every label of either, an agreeing shared label once.
+    /// Join two rows: every label of either, an agreeing shared label once,
+    /// and the one tail either is open through.
     ///
     /// # Specification
     /// - requires: `agree` is an equivalence on entries.
     /// - ensures: each input is included in a successful union; a union that
-    ///   adds no label shares this row's map.
-    /// - fails: a label both rows hold with entries `agree` excludes is
-    ///   refused.
+    ///   adds no label and no tail shares this row's map.
+    /// - fails: a label both rows hold with entries `agree` excludes, or two
+    ///   different tails, is refused.
     ///
     /// # Errors
-    /// [`LabelTwice`] for the first label, in canonical order, the two rows
-    /// define apart.
+    /// [`RowsApart::Label`] for the first label, in canonical order, the two
+    /// rows define apart; [`RowsApart::Tails`] for two different tails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every pair of rows over three labels, and a
-    ///   disagreeing entry at a shared label, distinguish the union from
-    ///   intersection, replacement and duplicate accumulation.
+    /// - hypothesis: L3 — every pair of rows over three labels, a disagreeing
+    ///   entry at a shared label, and each pairing of no tail, one tail and two
+    ///   distinguish the union from intersection, replacement, duplicate
+    ///   accumulation and a dropped or invented tail.
     /// - witness: `effect::tests::the_row_operations_are_the_set_arithmetic_of_their_names`
+    /// - witness: `row::tests::a_row_has_one_tail_and_inclusion_keeps_it`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -200,19 +317,26 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
         &self,
         other: &Self,
         agree: &Agree,
-    ) -> Result<Self, LabelTwice<L>>
+    ) -> Result<Self, RowsApart<L, T>>
     where
         Agree: Fn(&E, &E) -> RowInclusion,
     {
-        if self.0.is_none() {
-            return Ok(other.clone());
+        let tail = match (&self.tail, &other.tail) {
+            (&Some(ref ours), &Some(ref theirs)) if ours != theirs => {
+                return Err(RowsApart::Tails(ours.clone(), theirs.clone()));
+            },
+            (&Some(ref tail), _) | (&None, &Some(ref tail)) => Some(tail.clone()),
+            (&None, &None) => None,
+        };
+        if self.entries.is_none() {
+            return Ok(other.with_tail(tail));
         }
         let mut expanded = None;
         for (label, entry) in other.entries() {
             match self.entries().get(label) {
                 Some(existing) => {
                     if agree(existing, entry) == RowInclusion::Excluded {
-                        return Err(LabelTwice(label.clone()));
+                        return Err(RowsApart::Label(label.clone()));
                     }
                 },
                 None => {
@@ -222,24 +346,28 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
                 },
             }
         }
-        Ok(expanded.map_or_else(|| self.clone(), |entries| Self(Some(Arc::new(entries)))))
+        Ok(expanded.map_or_else(
+            || self.with_tail(tail.clone()),
+            |entries| Self::from_map(entries, tail.clone()),
+        ))
     }
 
-    /// Remove `label`.
+    /// Remove `label`, keeping the tail.
     ///
     /// # Specification
-    /// - ensures: `label` is absent and every other entry is kept; removing an
-    ///   absent label shares this row's map, and removing the last label makes
-    ///   the allocation-free empty row.
+    /// - ensures: `label` is absent, every other entry and the tail are kept;
+    ///   removing an absent label shares this row's map, and removing the last
+    ///   label leaves no allocation.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — removing a present and an absent label from every row
-    ///   over three labels distinguishes selective removal from clearing and
-    ///   identity.
+    ///   over three labels, open and closed, distinguishes selective removal
+    ///   from clearing, identity and dropping the tail.
     /// - witness: `effect::tests::the_row_operations_are_the_set_arithmetic_of_their_names`
+    /// - witness: `row::tests::a_row_has_one_tail_and_inclusion_keeps_it`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.get(label).is_none() && ret.entries().len() == self.entries().len().saturating_sub(usize::from(self.entries().contains_key(label))))]
+    #[spec(ensures: |ret| ret.get(label).is_none() && ret.tail == self.tail && ret.entries().len() == self.entries().len().saturating_sub(usize::from(self.entries().contains_key(label))))]
     pub fn without(
         &self,
         label: &L,
@@ -250,22 +378,69 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
         }
         let mut entries = self.entries().clone();
         let _removed = entries.remove(label);
-        Self::from_map(entries)
+        Self::from_map(entries, self.tail.clone())
+    }
+
+    /// Keep the entries whose labels `other` does not write, open through
+    /// this row's tail.
+    ///
+    /// # Specification
+    /// - ensures: a label is in the difference exactly when this row writes it
+    ///   and `other` does not, with this row's entry; the tail is this row's; a
+    ///   difference that removes nothing shares this row's map.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every pair of rows over three labels, open and
+    ///   closed, distinguishes the difference from removal of shared entries
+    ///   alone, from intersection, and from taking the other row's tail.
+    /// - witness: `row::tests::a_row_has_one_tail_and_inclusion_keeps_it`
+    #[inline]
+    #[must_use]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body filters this row's labels once; the check compares each label of this row with the difference once"
+        )
+    )]
+    #[spec(ensures: |ret| ret.tail == self.tail && self.entries().keys().all(|label| ret.entries().contains_key(label) != other.entries().contains_key(label)) && ret.entries().keys().all(|label| self.entries().contains_key(label)))]
+    pub fn difference(
+        &self,
+        other: &Self,
+    ) -> Self
+    {
+        if !self
+            .entries()
+            .keys()
+            .any(|label| other.entries().contains_key(label))
+        {
+            return self.clone();
+        }
+        let entries = self
+            .entries()
+            .iter()
+            .filter(|&(label, _entry)| !other.entries().contains_key(label))
+            .map(|(label, entry)| (label.clone(), entry.clone()))
+            .collect();
+        Self::from_map(entries, self.tail.clone())
     }
 
     /// Decide whether every label of this row is in `other` with an agreeing
-    /// entry.
+    /// entry, and this row's tail, when there is one, is `other`'s.
     ///
     /// # Specification
     /// - requires: `agree` is an equivalence on entries.
     /// - ensures: inclusion holds exactly when every label of this row is in
-    ///   `other` and `agree` includes the two entries.
+    ///   `other` with an entry `agree` includes, and this row is closed or open
+    ///   through `other`'s tail.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every pair of rows over three labels, and a
-    ///   disagreeing entry at a shared label, distinguish inclusion from label
-    ///   equality and from label inclusion alone.
+    /// - hypothesis: L3 — every pair of rows over three labels, a disagreeing
+    ///   entry at a shared label, and each pairing of no tail, one tail and two
+    ///   distinguish inclusion from label equality, from label inclusion alone,
+    ///   and from ignoring the tail.
     /// - witness: `effect::tests::the_row_operations_are_the_set_arithmetic_of_their_names`
+    /// - witness: `row::tests::a_row_has_one_tail_and_inclusion_keeps_it`
     #[inline]
     #[must_use]
     #[cfg_attr(
@@ -275,7 +450,7 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
             reason = "parity: the body compares every label of this row once; the check compares each once more"
         )
     )]
-    #[spec(ensures: |ret| (ret == RowInclusion::Included) == self.entries().iter().all(|(label, entry)| other.entries().get(label).is_some_and(|theirs| agree(entry, theirs) == RowInclusion::Included)))]
+    #[spec(ensures: |ret| (ret == RowInclusion::Included) == (self.tail.as_ref().is_none_or(|tail| other.tail.as_ref() == Some(tail)) && self.entries().iter().all(|(label, entry)| other.entries().get(label).is_some_and(|theirs| agree(entry, theirs) == RowInclusion::Included))))]
     pub fn is_subset<Agree>(
         &self,
         other: &Self,
@@ -284,12 +459,18 @@ impl<L: Ord + Clone + 'static, E: Clone + 'static> Row<L, E>
     where
         Agree: Fn(&E, &E) -> RowInclusion,
     {
-        if self.entries().iter().all(|(label, entry)| {
-            other
-                .entries()
-                .get(label)
-                .is_some_and(|theirs| agree(entry, theirs) == RowInclusion::Included)
-        }) {
+        let tail_kept = self
+            .tail
+            .as_ref()
+            .is_none_or(|tail| other.tail.as_ref() == Some(tail));
+        if tail_kept
+            && self.entries().iter().all(|(label, entry)| {
+                other
+                    .entries()
+                    .get(label)
+                    .is_some_and(|theirs| agree(entry, theirs) == RowInclusion::Included)
+            })
+        {
             RowInclusion::Included
         }
         else {

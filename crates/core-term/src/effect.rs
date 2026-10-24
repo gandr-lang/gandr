@@ -2,6 +2,10 @@
 //!
 //! A signature names an interface whose payload and reply types belong to the
 //! same core arena as its uses. Signatures are shared, not recursively owned.
+//! A row holds each signature under a [`Label`], the instance's name, which
+//! is the interface's name until an instance is named apart; its tail is a
+//! type handle like its operations' types, so every traversal of the row's
+//! types carries it.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -10,9 +14,11 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::ValueTypeId;
+use crate::row::Label;
 use crate::row::LabelTwice;
 use crate::row::Row;
 use crate::row::RowInclusion;
+use crate::row::RowsApart;
 
 pub mod capability;
 
@@ -46,6 +52,20 @@ impl AsRef<str> for EffectName
     fn as_ref(&self) -> &str
     {
         &self.0
+    }
+}
+
+impl From<&EffectName> for Label
+{
+    /// The default label of an interface's instance: its name, sharing the
+    /// name's storage.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(name: &EffectName) -> Self
+    {
+        Self::from(Arc::clone(&name.0))
     }
 }
 
@@ -107,14 +127,16 @@ struct Signature<Id>
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct EffectSig<Id = ValueTypeId>(Arc<Signature<Id>>);
 
-/// Why a signature or row cannot denote a single interface per name.
+/// Why a signature or row cannot denote a single interface per label.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EffectConflict
 {
     /// Two operations in one interface have the same name.
     DuplicateOperation(OperationName),
-    /// Two distinct definitions claim one interface name.
-    Signature(EffectName),
+    /// Two distinct definitions claim one label.
+    Signature(Label),
+    /// Two rows open through different tails: a row has one.
+    Tails,
 }
 
 impl core::fmt::Display for EffectConflict
@@ -133,7 +155,8 @@ impl core::fmt::Display for EffectConflict
             Self::DuplicateOperation(ref name) => {
                 write!(f, "duplicate operation {}", name.as_ref())
             },
-            Self::Signature(ref name) => write!(f, "conflicting effect {}", name.as_ref()),
+            Self::Signature(ref label) => write!(f, "conflicting effect {}", label.as_ref()),
+            Self::Tails => f.write_str("two row variables in one row"),
         }
     }
 }
@@ -413,19 +436,22 @@ impl EffectSig
     }
 }
 
-/// The effects reading of a [`Row`]: the closed set of interfaces a returner
-/// may perform, each under its name, in canonical name order.
+/// The effects reading of a [`Row`]: the interfaces a returner may perform,
+/// each under its label in canonical label order, closed or open through a
+/// tail.
 ///
-/// Empty rows allocate nothing; cloning a nonempty row shares its immutable
-/// map.
+/// The tail is a type handle: in an arena, a
+/// [`ValueType::RowTail`](crate::ValueType::RowTail) naming the row value a
+/// row variable stands for. Empty rows allocate nothing; cloning a nonempty
+/// row shares its immutable map.
 #[repr(transparent)]
 #[derive(Clone, Eq, Hash, PartialEq)]
-pub struct EffectRow<Id = ValueTypeId>(Row<EffectName, EffectSig<Id>>);
+pub struct EffectRow<Id = ValueTypeId>(Row<Label, EffectSig<Id>, Id>);
 
 impl<Id: Copy + Eq + 'static> core::fmt::Debug for EffectRow<Id>
 {
-    /// Render the canonical interface names without arena-local type
-    /// identities.
+    /// Render the canonical labels, and a tail as `| …`, without arena-local
+    /// type identities.
     ///
     /// # Specification
     /// trivial.
@@ -436,11 +462,19 @@ impl<Id: Copy + Eq + 'static> core::fmt::Debug for EffectRow<Id>
     ) -> core::fmt::Result
     {
         f.write_str("⟨")?;
-        for (index, signature) in self.signatures().enumerate() {
+        for (index, label) in self.entries().keys().enumerate() {
             if index != 0 {
                 f.write_str(", ")?;
             }
-            f.write_str(signature.name().as_ref())?;
+            f.write_str(label.as_ref())?;
+        }
+        if self.tail().is_some() {
+            f.write_str(if self.entries().is_empty() {
+                "…"
+            }
+            else {
+                " | …"
+            })?;
         }
         f.write_str("⟩")
     }
@@ -473,9 +507,9 @@ pub enum EffectPresence
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Purity
 {
-    /// No effect interface occurs.
+    /// No effect interface occurs and no tail stands for more.
     Pure,
-    /// At least one interface occurs.
+    /// An interface occurs, or a tail may stand for one.
     Effectful,
 }
 
@@ -489,12 +523,13 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     /// # Specification
     /// trivial.
     #[inline]
-    fn entries(&self) -> &BTreeMap<EffectName, EffectSig<Id>>
+    fn entries(&self) -> &BTreeMap<Label, EffectSig<Id>>
     {
         self.0.entries()
     }
 
-    /// The row permitting exactly one interface.
+    /// The closed row permitting exactly one interface, under its default
+    /// label.
     ///
     /// # Specification
     /// trivial.
@@ -502,10 +537,108 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn singleton(signature: EffectSig<Id>) -> Self
     {
-        Self(Row::singleton(signature.name().clone(), signature))
+        Self(Row::singleton(Label::from(signature.name()), signature))
     }
 
-    /// Classify the empty row as pure.
+    /// The tail the row is open through, none for a closed row.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn tail(&self) -> Option<Id>
+    {
+        self.0.tail().copied()
+    }
+
+    /// This row's interfaces, open through `tail` instead of this row's tail.
+    ///
+    /// # Specification
+    /// - ensures: the labels and signatures are this row's and the tail is
+    ///   `tail`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — opening a closed row and closing an open one
+    ///   distinguish the tail's replacement from a join.
+    /// - witness: `effect::tests::a_tail_rides_every_traversal_of_a_row`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.tail() == tail && ret.entries().len() == self.entries().len())]
+    pub fn with_tail(
+        &self,
+        tail: Option<Id>,
+    ) -> Self
+    {
+        Self(self.0.with_tail(tail))
+    }
+
+    /// Keep the interfaces whose labels `other` does not write, open through
+    /// this row's tail: what a tail is solved to when a row equation forces
+    /// it.
+    ///
+    /// # Specification
+    /// - ensures: a label is kept exactly when `other` does not write it; the
+    ///   tail is this row's.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — rows sharing some labels and none distinguish the
+    ///   difference from intersection and from removal of everything.
+    /// - witness: `row::tests::a_row_has_one_tail_and_inclusion_keeps_it`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.tail() == self.tail() && ret.entries().keys().all(|label| !other.entries().contains_key(label)))]
+    pub fn difference(
+        &self,
+        other: &Self,
+    ) -> Self
+    {
+        Self(self.0.difference(&other.0))
+    }
+
+    /// Join two rows as [`EffectRow::union`] does, a label both write agreeing
+    /// only when its two signatures are one signature, type for type by id:
+    /// the union read without the arena. A row and the row its tail stands
+    /// for write no label in common, so a merge at mint needs no more.
+    ///
+    /// # Specification
+    /// - ensures: a successful join holds the interfaces of both rows and the
+    ///   tail of whichever is open.
+    /// - fails: a label whose two signatures differ in any id, or two different
+    ///   tails, are refused.
+    ///
+    /// # Errors
+    /// Returns `Signature` for the first label whose signatures differ and
+    /// `Tails` for two different tails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — apart rows, a label shared at the same ids, one
+    ///   shared at equal types minted twice and rows open through two tails
+    ///   distinguish identity from structural agreement and from the union.
+    /// - witness: `effect::tests::a_join_by_identity_refuses_equal_types_minted_twice`
+    #[inline]
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|row| row.entries().len() >= self.entries().len().max(other.entries().len()) && row.tail() == self.tail().or_else(|| other.tail())))]
+    pub fn union_by_identity(
+        &self,
+        other: &Self,
+    ) -> Result<Self, EffectConflict>
+    {
+        self.0
+            .union(&other.0, &|ours: &EffectSig<Id>, theirs: &EffectSig<Id>| {
+                if ours == theirs {
+                    RowInclusion::Included
+                }
+                else {
+                    RowInclusion::Excluded
+                }
+            })
+            .map(Self)
+            .map_err(|apart| match apart {
+                RowsApart::Label(label) => EffectConflict::Signature(label),
+                RowsApart::Tails(..) => EffectConflict::Tails,
+            })
+    }
+
+    /// Classify a row with no interface and no tail as pure.
     ///
     /// # Specification
     /// trivial.
@@ -513,7 +646,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn purity(&self) -> Purity
     {
-        if self.entries().is_empty() {
+        if self.entries().is_empty() && self.tail().is_none() {
             Purity::Pure
         }
         else {
@@ -524,20 +657,24 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
 
 impl EffectRow
 {
-    /// Join the demands of two computations.
+    /// Join the demands of two computations: every label of either, and the
+    /// one tail either is open through.
     ///
     /// # Specification
     /// - ensures: each input is included in a successful union.
-    /// - fails: distinct definitions of one name are refused.
+    /// - fails: distinct definitions of one label, or two different tails, are
+    ///   refused.
     ///
     /// # Errors
-    /// Returns `Signature` for the first conflicting shared name.
+    /// Returns `Signature` for the first conflicting shared label and `Tails`
+    /// for two different tails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — disjoint, identical and conflicting inputs
-    ///   distinguish union from intersection, replacement and duplicate
-    ///   accumulation.
+    /// - hypothesis: L3 — disjoint, identical and conflicting inputs, open and
+    ///   closed, distinguish union from intersection, replacement, duplicate
+    ///   accumulation and a dropped tail.
     /// - witness: `effect::tests::union_is_a_canonical_set_and_without_subtracts`
+    /// - witness: `effect::tests::a_tail_rides_every_traversal_of_a_row`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -558,33 +695,38 @@ impl EffectRow
                 ours.inclusion(theirs, arena)
             })
             .map(Self)
-            .map_err(|LabelTwice(name)| EffectConflict::Signature(name))
+            .map_err(|apart| match apart {
+                RowsApart::Label(label) => EffectConflict::Signature(label),
+                RowsApart::Tails(..) => EffectConflict::Tails,
+            })
     }
 }
 
 impl<Id: Copy + Eq + 'static> EffectRow<Id>
 {
-    /// Remove the interface discharged by a handler.
+    /// Remove the instance discharged by a handler, keeping the tail.
     ///
     /// # Specification
-    /// - ensures: the named interface is absent; all others are preserved.
+    /// - ensures: the labelled instance is absent; all others and the tail are
+    ///   preserved.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — subtracting present and absent names distinguishes
+    /// - hypothesis: L3 — subtracting present and absent labels distinguishes
     ///   selective removal from clearing and identity.
     /// - witness: `effect::tests::union_is_a_canonical_set_and_without_subtracts`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.contains(name) == EffectPresence::Absent && ret.entries().len() == self.entries().len().saturating_sub(usize::from(self.entries().contains_key(name))))]
+    #[spec(ensures: |ret| ret.contains(label) == EffectPresence::Absent && ret.tail() == self.tail() && ret.entries().len() == self.entries().len().saturating_sub(usize::from(self.entries().contains_key(label))))]
     pub fn without(
         &self,
-        name: &EffectName,
+        label: &Label,
     ) -> Self
     {
-        Self(self.0.without(name))
+        Self(self.0.without(label))
     }
 
-    /// Decide name membership.
+    /// Decide whether the row writes `label`; a tail's further instances are
+    /// unknown and never counted.
     ///
     /// # Specification
     /// trivial.
@@ -592,15 +734,40 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn contains(
         &self,
-        name: &EffectName,
+        label: &Label,
     ) -> EffectPresence
     {
-        if self.entries().contains_key(name) {
+        if self.entries().contains_key(label) {
             EffectPresence::Present
         }
         else {
             EffectPresence::Absent
         }
+    }
+
+    /// The signature written under `label`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn get(
+        &self,
+        label: &Label,
+    ) -> Option<&EffectSig<Id>>
+    {
+        self.0.get(label)
+    }
+
+    /// Enumerate the written labels with their signatures, in label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn instances(&self) -> impl ExactSizeIterator<Item = (&Label, &EffectSig<Id>)>
+    {
+        self.entries().iter()
     }
 }
 
@@ -609,12 +776,15 @@ impl EffectRow
     /// Decide whether every demand is allowed by `other`.
     ///
     /// # Specification
-    /// - ensures: inclusion requires equal definitions at every demanded name.
+    /// - ensures: inclusion requires equal definitions at every demanded label,
+    ///   and an open row's tail to be `other`'s.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — proper subsets and conflicting definitions
-    ///   distinguish permission inclusion from name equality alone.
+    /// - hypothesis: L3 — proper subsets, conflicting definitions and rows on
+    ///   other tails distinguish permission inclusion from label equality
+    ///   alone.
     /// - witness: `effect::tests::subset_is_a_preorder_with_union_as_join`
+    /// - witness: `row::tests::a_row_has_one_tail_and_inclusion_keeps_it`
     #[inline]
     #[must_use]
     #[cfg_attr(
@@ -624,7 +794,7 @@ impl EffectRow
             reason = "parity: the body compares every demanded interface once; the check compares each once more"
         )
     )]
-    #[spec(ensures: |ret| (ret == RowInclusion::Included) == self.entries().iter().all(|(name, sig)| other.entries().get(name).is_some_and(|other| sig.inclusion(other, arena) == RowInclusion::Included)))]
+    #[spec(ensures: |ret| (ret == RowInclusion::Included) == (self.tail().is_none_or(|tail| other.tail() == Some(tail)) && self.entries().iter().all(|(label, sig)| other.entries().get(label).is_some_and(|other| sig.inclusion(other, arena) == RowInclusion::Included))))]
     pub fn is_subset(
         &self,
         other: &Self,
@@ -653,7 +823,7 @@ pub enum TypeOrder
 
 impl<Id: Copy + Eq + 'static> EffectRow<Id>
 {
-    /// Enumerate the permitted interfaces in name order.
+    /// Enumerate the permitted interfaces in label order.
     ///
     /// # Specification
     /// trivial.
@@ -664,8 +834,8 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
         self.entries().values()
     }
 
-    /// Operation payload and reply types, in canonical interface and operation
-    /// order.
+    /// Operation payload and reply types, in canonical label and operation
+    /// order, then the tail.
     ///
     /// # Specification
     /// trivial.
@@ -673,21 +843,25 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn types(&self) -> impl DoubleEndedIterator<Item = Id> + Clone + '_
     {
-        self.entries().values().flat_map(|signature| {
-            signature
-                .0
-                .operations
-                .values()
-                .flat_map(|operation| [operation.payload, operation.reply])
-        })
+        self.entries()
+            .values()
+            .flat_map(|signature| {
+                signature
+                    .0
+                    .operations
+                    .values()
+                    .flat_map(|operation| [operation.payload, operation.reply])
+            })
+            .chain(self.tail())
     }
 
-    /// Remap type edges in the requested canonical order, sharing unchanged
-    /// maps.
+    /// Remap type edges, the tail's included, in the requested canonical
+    /// order, sharing unchanged maps.
     ///
     /// # Specification
-    /// - ensures: preserves names and operation coverage, sharing unchanged
-    ///   maps.
+    /// - ensures: preserves labels, names and operation coverage, sharing
+    ///   unchanged maps; the tail is mapped last going forward and first in
+    ///   reverse, mirroring [`Self::types`].
     /// - fails: propagates a mapper error without changing this row.
     ///
     /// # Errors
@@ -695,9 +869,11 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — opposite operation directions distinguish reversed
-    ///   payload and reply edges during substitution and cross-arena import.
+    ///   payload and reply edges during substitution and cross-arena import; an
+    ///   open row distinguishes the tail's position.
     /// - witness: `effect::tests::operation_types_survive_substitution_and_import`
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|row| row.entries().len() == self.entries().len()))]
+    /// - witness: `effect::tests::a_tail_rides_every_traversal_of_a_row`
+    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|row| row.entries().len() == self.entries().len() && row.tail().is_some() == self.tail().is_some()))]
     #[inline]
     pub fn try_map_types<E, Map>(
         &self,
@@ -707,32 +883,45 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     where
         Map: FnMut(Id) -> Result<Id, E>,
     {
+        let mut tail = self.tail();
+        if let (TypeOrder::Reverse, Some(written)) = (order, tail) {
+            tail = Some(map(written)?);
+        }
         let mut rewritten = None;
-        let mut signatures = self.entries().iter();
-        while let Some((name, signature)) = match order {
-            TypeOrder::Forward => signatures.next(),
-            TypeOrder::Reverse => signatures.next_back(),
+        let mut instances = self.entries().iter();
+        while let Some((label, signature)) = match order {
+            TypeOrder::Forward => instances.next(),
+            TypeOrder::Reverse => instances.next_back(),
         } {
             if let Some(operations) = signature.remap_operations(order, &mut map)? {
                 rewritten
                     .get_or_insert_with(|| self.entries().clone())
                     .insert(
-                        name.clone(),
+                        label.clone(),
                         EffectSig(Arc::new(Signature {
-                            name: name.clone(),
+                            name: signature.name().clone(),
                             operations,
                         })),
                     );
             }
         }
-        Ok(rewritten.map_or_else(|| self.clone(), |entries| Self(Row::from_map(entries))))
+        if let (TypeOrder::Forward, Some(written)) = (order, tail) {
+            tail = Some(map(written)?);
+        }
+        Ok(match rewritten {
+            Some(entries) => Self(Row::from_map(entries, tail)),
+            None if tail == self.tail() => self.clone(),
+            None => self.with_tail(tail),
+        })
     }
 
-    /// Relocate type edges to another handle family in canonical forward order.
+    /// Relocate type edges, the tail's included, to another handle family in
+    /// canonical forward order.
     ///
     /// # Specification
-    /// - ensures: every operation retains its name and the images of its
-    ///   payload and reply; an empty row remains allocation-free.
+    /// - ensures: every instance retains its label, its interface's name and
+    ///   the images of its payloads and replies, and the tail its image; an
+    ///   empty row remains allocation-free.
     /// - fails: propagates the first mapper error.
     ///
     /// # Errors
@@ -740,10 +929,12 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — relocating a row keeps its interfaces and their
-    ///   images, and an empty row stays the allocation-free empty row.
+    ///   images, an open row keeps a tail, and an empty row stays the
+    ///   allocation-free empty row.
     /// - witness: `effect::tests::relocation_keeps_names_and_refuses_duplicate_interfaces`
+    /// - witness: `effect::tests::a_tail_rides_every_traversal_of_a_row`
     #[inline]
-    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|row| row.entries().len() == self.entries().len()) || ret.is_err())]
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|row| row.entries().len() == self.entries().len() && row.tail().is_some() == self.tail().is_some()) || ret.is_err())]
     pub fn try_relocate<To, E, Map>(
         &self,
         mut map: Map,
@@ -753,19 +944,21 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
         Map: FnMut(Id) -> Result<To, E>,
     {
         let mut entries = BTreeMap::new();
-        for signature in self.signatures() {
-            entries.insert(signature.name().clone(), signature.try_relocate(&mut map)?);
+        for (label, signature) in self.entries() {
+            entries.insert(label.clone(), signature.try_relocate(&mut map)?);
         }
-        Ok(EffectRow(Row::from_map(entries)))
+        let tail = self.tail().map(map).transpose()?;
+        Ok(EffectRow(Row::from_map(entries, tail)))
     }
 
-    /// Construct a canonical row while refusing duplicate interface names.
+    /// Construct a closed canonical row, each interface under its default
+    /// label, while refusing a label twice.
     ///
     /// # Specification
-    /// - fails: a repeated interface name is refused, never overwritten.
+    /// - fails: a repeated label is refused, never overwritten.
     ///
     /// # Errors
-    /// Returns `Signature` for the first duplicate name.
+    /// Returns `Signature` for the first duplicate label.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two interfaces of one name are refused by that name,
@@ -781,10 +974,10 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
         Row::from_entries(
             signatures
                 .into_iter()
-                .map(|signature| (signature.name().clone(), signature)),
+                .map(|signature| (Label::from(signature.name()), signature)),
         )
         .map(Self)
-        .map_err(|LabelTwice(name)| EffectConflict::Signature(name))
+        .map_err(|LabelTwice(label)| EffectConflict::Signature(label))
     }
 }
 

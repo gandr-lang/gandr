@@ -2231,7 +2231,7 @@ impl Runner for Program<'_>
     Some(&Value::Primitive { .. } |
 &(Value::ListNil | Value::Variable { .. } | Value::Literal(_) | Value::Quote(_) |
 Value::QuoteComputation(_) | Value::StaticLambda(_) |
-Value::StaticApplication(..) | Value::Hole(_) | Value::Web(_))) | None => ret.is_empty(),
+Value::StaticApplication(..) | Value::Hole(_) | Value::Web(_) | Value::Row(_))) | None => ret.is_empty(),
     Some(&(Value::Constructor { .. } | Value::Record(_)) |
 &Value::Reify(_) |
 &Value::Univalence(..) |
@@ -2360,7 +2360,8 @@ fn references(
                         | Value::StaticLambda(_)
                         | Value::StaticApplication(..)
                         | Value::Hole(_)
-                        | Value::Web(_)),
+                        | Value::Web(_)
+                        | Value::Row(_)),
                     )
                     | None => {},
                 }

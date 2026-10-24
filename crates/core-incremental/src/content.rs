@@ -760,6 +760,9 @@ pub enum ContentNode
     Quote(NodeIndex),
     /// The code of a computation type.
     QuoteComputation(NodeIndex),
+    /// A row literal: its instances, its operations' type edges and its
+    /// tail's, in this content table's indices.
+    RowValue(gandr_core_term::effect::EffectRow<NodeIndex>),
     /// A static lambda over its body, under one binder.
     StaticLambda(NodeIndex),
     /// A static application of an operator to an argument.
@@ -908,6 +911,10 @@ pub enum ContentNode
     UnknownType,
     /// The opaque buffer type a receive places live.
     BufferType,
+    /// The row kind: the type of a row.
+    RowKind,
+    /// A row's tail: the value type the row term `tail` stands for.
+    RowTail(NodeIndex),
     /// A returner type.
     Returner
     {
@@ -1291,7 +1298,8 @@ impl ContentNode
         | Self::StaticApplication(..)
         | Self::Hole(_)
         | Self::ValueAscribe { .. }
-        | Self::ValueMark { .. } => matches!(ret, Sort::Value),
+        | Self::ValueMark { .. }
+        | Self::RowValue(_) => matches!(ret, Sort::Value),
         | Self::DataCase { .. }
         | Self::RecordProjection(..)
         | Self::TupleProjection(..)
@@ -1352,7 +1360,9 @@ impl ContentNode
         | Self::StaticPi { .. }
         | Self::Sigma { .. }
         | Self::UnknownType
-        | Self::BufferType => matches!(ret, Sort::ValueType),
+        | Self::BufferType
+        | Self::RowKind
+        | Self::RowTail(_) => matches!(ret, Sort::ValueType),
         | Self::WithType(..)
         | Self::Returner { .. }
         | Self::Arrow { .. }
@@ -1410,7 +1420,8 @@ impl ContentNode
             | Self::StaticApplication(..)
             | Self::Hole(_)
             | Self::ValueAscribe { .. }
-            | Self::ValueMark { .. } => Sort::Value,
+            | Self::ValueMark { .. }
+            | Self::RowValue(_) => Sort::Value,
             Self::DataCase { .. }
             | Self::RecordProjection(..)
             | Self::TupleProjection(..)
@@ -1471,7 +1482,9 @@ impl ContentNode
             | Self::StaticPi { .. }
             | Self::Sigma { .. }
             | Self::UnknownType
-            | Self::BufferType => Sort::ValueType,
+            | Self::BufferType
+            | Self::RowKind
+            | Self::RowTail(_) => Sort::ValueType,
             Self::WithType(..)
             | Self::Returner { .. }
             | Self::Arrow { .. }
@@ -1503,7 +1516,7 @@ impl ContentNode
         use Sort::Value as V;
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
-        (matches!(*self, Self::Returner { .. } | Self::Capability { .. }) || ret.effects.is_none()) && match *self {
+        (matches!(*self, Self::Returner { .. } | Self::Capability { .. } | Self::RowValue(_)) || ret.effects.is_none()) && match *self {
             Self::Data { ref arguments,.. } => ret.iter().eq(arguments.iter().map(|&argument| (argument,V))),
             Self::RecordType(ref fields) => ret.iter().eq(fields.values().map(|&field| (field,A))),
             Self::Constructor { datatype,ref fields,.. } => ret.iter().eq(core::iter::once((datatype,A)).chain(fields.iter().map(|&field| (field,V)))),
@@ -1544,6 +1557,7 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::BufferType
+            | Self::RowKind
             | Self::Web(_)
             | Self::WebType
             | Self::UnknownComputationType => ret.count == 0,
@@ -1577,6 +1591,7 @@ impl ContentNode
             | Self::Force(a)
             | Self::Decompose(a)
             | Self::Element { code: a, .. }
+            | Self::RowTail(a)
             | Self::ComputationElement { code: a, .. }
             | Self::ValueMark { body: a, .. } => actual == Some(&[(a, V)][..]),
             | Self::ComputationMark { body: a, .. } | Self::Thunk(a) | Self::Lambda(a) | Self::Fixpoint { body: a, .. } => {
@@ -1599,6 +1614,7 @@ impl ContentNode
             } => actual == Some(&[(a, A), (b, A)][..]),
             | Self::ThunkType(a) | Self::QuoteComputation(a) => actual == Some(&[(a, C)][..]),
             | Self::Returner { result, ref effects } => ret.iter().eq(core::iter::once((result, A)).chain(effects.types().map(|ty| (ty, A)))),
+            | Self::RowValue(ref row) => ret.iter().eq(row.types().map(|ty| (ty, A))),
             | Self::List(a)
             | Self::KeptType { value: a, .. }
             | Self::TypeLift { inner: a, .. }
@@ -1828,6 +1844,7 @@ impl ContentNode
             | Self::ComputationHole(_)
             | Self::UnknownType
             | Self::BufferType
+            | Self::RowKind
             | Self::Web(_)
             | Self::WebType
             | Self::UnknownComputationType => Children::default(),
@@ -1931,8 +1948,12 @@ impl ContentNode
                 children
             },
             Self::TypeLift { inner, .. } => Children::of(&[(inner, A)]),
-            Self::Element { code, .. } | Self::ComputationElement { code, .. } => {
-                Children::of(&[(code, V)])
+            Self::Element { code, .. }
+            | Self::ComputationElement { code, .. }
+            | Self::RowTail(code) => Children::of(&[(code, V)]),
+            Self::RowValue(ref row) => Children {
+                effects: Some(row),
+                ..Children::default()
             },
             Self::Quote(quoted) => Children::of(&[(quoted, A)]),
             Self::QuoteComputation(quoted) => Children::of(&[(quoted, C)]),
@@ -1959,7 +1980,7 @@ impl ContentNode
     /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
     #[spec(ensures: |ret| match *self {
         Self::Constant(_) | Self::Abstract(_) | Self::Data { .. } => matches!(ret, Maybe::Present(_)),
-        Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) |
+        Self::Univalence(..) | Self::Abandon(_) | Self::RecordUpdate(..) | Self::RowValue(_) | Self::RowKind | Self::RowTail(_) |
         Self::RecordType(_) | Self::Constructor { .. } | Self::Record(_) | Self::DataCase { .. } | Self::RecordProjection(..) | Self::TupleProjection(..) | Self::Reify(_) | Self::Stack { .. } | Self::WithType(..) | Self::Perform { .. } | Self::Handle { .. } | Self::Exercise { .. } | Self::Scope { .. } | Self::Capability { .. } | Self::Resume(..) | Self::Split(..) | Self::DependentSplit { .. } | Self::Reset(_) | Self::Shift(_) | Self::With(..) | Self::Ascribe { .. } | Self::ValueAscribe { .. } | Self::Project(..) | Self::PrimitiveValue(_) | Self::Primitive(..) | Self::PathUniverse(..) | Self::PathRefl(_) | Self::PathProduct(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::PathEquiv { .. } | Self::Transport(..) | Self::PathType { .. } | Self::Here(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::ElementTransport { .. } | Self::TelescopeTransport { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::FlowProduct(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Decompose(_) | Self::Ride { .. } | Self::FlowType { .. } | Self::RunType(_) | Self::PrefixType(_) | Self::DialogueType(_) | Self::WebType | Self::Variable { .. } | Self::Literal(_) | Self::Tuple(_) | Self::ListNil | Self::ListCons(..) | Self::Injection(..) | Self::Thunk(_) | Self::ValueLift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Hole(_) | Self::ValueMark { .. } | Self::Lambda(_) | Self::Application(..) | Self::Return(_) | Self::Bind(..) | Self::Force(_) | Self::Case { .. } | Self::ComputationHole(_) | Self::ComputationMark { .. } | Self::Fixpoint { .. } | Self::ListFold { .. } | Self::ListCase { .. } | Self::Session(_) | Self::Memory(_) | Self::Base(_) | Self::Product(_) | Self::Sum(_) | Self::List(_) | Self::KeptType { .. } | Self::ThunkType(_) | Self::Universe { .. } | Self::TypeLift { .. } | Self::Element { .. } | Self::StaticPi { .. } | Self::Sigma { .. } | Self::SessionType(_) | Self::UnknownType | Self::BufferType | Self::Returner { .. } | Self::Arrow { .. } | Self::Pi { .. } | Self::ComputationElement { .. } | Self::UnknownComputationType | Self::Unresolved(_) => matches!(ret, Maybe::Absent(referencing::Absent::NotAReference)),
     })]
     pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
@@ -2076,6 +2097,9 @@ impl ContentNode
             | Self::Fixpoint { .. }
             | Self::UnknownType
             | Self::BufferType
+            | Self::RowKind
+            | Self::RowTail(_)
+            | Self::RowValue(_)
             | Self::UnknownComputationType => Maybe::Absent(referencing::Absent::NotAReference),
         }
     }
@@ -4090,6 +4114,12 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 let domain = self.discover(ArenaNode::Value(domain));
                 ContentNode::FunctionFlow(domain, self.discover(ArenaNode::Value(codomain)))
             },
+            Value::Row(ref row) => ContentNode::RowValue(
+                row.try_relocate(|ty| {
+                    Ok::<_, core::convert::Infallible>(self.discover(ArenaNode::ValueType(ty)))
+                })
+                .unwrap_or_else(|never| match never {}),
+            ),
             Value::Recorded(ref moves) => ContentNode::Recorded(
                 moves
                     .iter()
@@ -4698,6 +4728,8 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             },
             ValueType::Unknown => ContentNode::UnknownType,
             ValueType::Buffer => ContentNode::BufferType,
+            ValueType::Row => ContentNode::RowKind,
+            ValueType::RowTail(code) => ContentNode::RowTail(self.discover(ArenaNode::Value(code))),
             // A stage is minted by one judgement and names nothing past it,
             // and a handle or a capability names a world, whose crossing
             // decisions read what no footprint records: content naming
@@ -5282,6 +5314,14 @@ where
             code: image(code),
             target: target.clone(),
         },
+        ContentNode::RowTail(code) => ContentNode::RowTail(image(code)),
+        ContentNode::RowKind => ContentNode::RowKind,
+        ContentNode::RowValue(ref row) => ContentNode::RowValue(
+            row.try_map_types(gandr_core_term::effect::TypeOrder::Forward, |ty| {
+                Ok::<_, core::convert::Infallible>(image(ty))
+            })
+            .unwrap_or_else(|never| match never {}),
+        ),
         ContentNode::Returner {
             result,
             ref effects,
@@ -5628,7 +5668,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_))
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::RowTail(_) | ContentNode::PathUniverse(..) | ContentNode::PathType { .. } | ContentNode::FlowType { .. } | ContentNode::RunType(_) | ContentNode::PrefixType(_) | ContentNode::DialogueType(_))
             || matches!(node,ContentNode::Data { arguments,.. } if !arguments.is_empty()) {
             reason == seating::Absent::Unseatable
         } else {
@@ -5830,6 +5870,7 @@ fn mint_node(
         },
         ContentNode::UnknownType => Maybe::Present(Minted::ValueType(arena.value_type_unknown())),
         ContentNode::BufferType => Maybe::Present(Minted::ValueType(arena.value_type_buffer())),
+        ContentNode::RowKind => Maybe::Present(Minted::ValueType(arena.value_type_row())),
         ContentNode::WebType => Maybe::Present(Minted::ValueType(arena.value_type_web())),
         ContentNode::UnknownComputationType => {
             Maybe::Present(Minted::CompType(arena.comp_type_unknown()))
@@ -5892,6 +5933,8 @@ fn mint_node(
         | ContentNode::PathEquiv { .. }
         | ContentNode::Transport(..)
         | ContentNode::Element { .. }
+        | ContentNode::RowTail(_)
+        | ContentNode::RowValue(_)
         | ContentNode::ComputationElement { .. }
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)

@@ -58,13 +58,13 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use super::EffectConflict;
-use super::EffectName;
 use super::EffectOp;
 use super::EffectRow;
 use super::EffectSig;
 use super::OperationName;
 use super::Signature;
 use super::UnknownOperation;
+use crate::row::Label;
 use crate::row::RowInclusion;
 
 /// How many capability scopes enclose a region, counting the one that
@@ -309,7 +309,7 @@ impl EffectRow
             reason = "parity: the body looks every operation this row restricts up in the authority and compares its two types once; the check makes the same lookups and comparisons once more"
         )
     )]
-    #[spec(ensures: |ret| (ret == RowInclusion::Included) == self.signatures().all(|restricted| restricted.operations().all(|operation| matches!(authority.granted(restricted.name(), &operation.name), Maybe::Present(held) if crate::syntax::equal_type_syntax(arena, held.payload, operation.payload) == crate::CertificateEquality::Equal && crate::syntax::equal_type_syntax(arena, held.reply, operation.reply) == crate::CertificateEquality::Equal))))]
+    #[spec(ensures: |ret| (ret == RowInclusion::Included) == self.instances().all(|(label, restricted)| restricted.operations().all(|operation| matches!(authority.granted(label, &operation.name), Maybe::Present(held) if crate::syntax::equal_type_syntax(arena, held.payload, operation.payload) == crate::CertificateEquality::Equal && crate::syntax::equal_type_syntax(arena, held.reply, operation.reply) == crate::CertificateEquality::Equal))))]
     #[inline]
     #[must_use]
     pub fn grants_within(
@@ -318,9 +318,9 @@ impl EffectRow
         arena: &crate::CoreArena,
     ) -> RowInclusion
     {
-        for restricted in self.signatures() {
+        for (label, restricted) in self.instances() {
             for operation in restricted.operations() {
-                let Maybe::Present(held) = authority.granted(restricted.name(), &operation.name)
+                let Maybe::Present(held) = authority.granted(label, &operation.name)
                 else {
                     return RowInclusion::Excluded;
                 };
@@ -336,8 +336,8 @@ impl EffectRow
         RowInclusion::Included
     }
 
-    /// The operation `operation` of interface `interface`, when this authority
-    /// grants it.
+    /// The operation `operation` of the instance labelled `interface`, when
+    /// this authority grants it.
     ///
     /// # Specification
     /// - provides: [`grant::Absent::Interface`] when the authority restricts no
@@ -358,7 +358,7 @@ impl EffectRow
     #[inline]
     pub fn granted(
         &self,
-        interface: &EffectName,
+        interface: &Label,
         operation: &OperationName,
     ) -> Maybe<&EffectOp, grant::Absent>
     {

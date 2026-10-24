@@ -4600,10 +4600,11 @@ fn step_value(
             machine.tasks.push(Task::Value { term: body, env });
             Ok(())
         },
-        // A quote is suspended whole over the environment its type reads: a
-        // type has no weak head, so the codes inside it are evaluated where a
-        // readback or a comparison reaches them.
-        Value::Quote(_) | Value::QuoteComputation(_) => {
+        // A quote, and a row, is suspended whole over the environment its types
+        // read: a type has no weak head, so the codes inside it, a row's tail
+        // among them, are evaluated where a readback or a comparison reaches
+        // them.
+        Value::Quote(_) | Value::QuoteComputation(_) | Value::Row(_) => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
             let closure = domain.value_closure_node(crate::ValueBody::Source(term), captured);

@@ -13,6 +13,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
+use gandr_core_term::effect::EffectRow;
 use gandr_core_term::hole::HoleId;
 use gandr_core_term::model::CandidatePlace;
 use gandr_core_term::model::ModelSlot;
@@ -431,7 +432,7 @@ impl Deferrals
         let hole = match side {
             Side::Value(at) => at,
             Side::ValueType(at) => match arena.value_type(at) {
-                Some(&ValueType::Element { code, .. }) => code,
+                Some(&ValueType::Element { code, .. } | &ValueType::RowTail(code)) => code,
                 _ => return None,
             },
             Side::CompType(at) => match arena.comp_type(at) {
@@ -474,7 +475,8 @@ impl Deferrals
             | Reason::Levels
             | Reason::Linear
             | Reason::Dangling
-            | Reason::Budget => None,
+            | Reason::Budget
+            | Reason::Rows => None,
         };
         self.metas
             .postponed()
@@ -580,6 +582,48 @@ impl Deferrals
             return Unified::Rigid;
         }
         self.pose(arena, scope, left, right)
+    }
+
+    /// Pose the row `left` against `right`, under `scope` intuitionistic
+    /// binders, to the solver when a side is open through a metavariable: the
+    /// two rows as row values, so the solver decides them by the row equation.
+    ///
+    /// # Specification
+    /// - requires: both rows are read in the context of `scope` binders.
+    /// - ensures: [`Unified::Rigid`], with nothing changed, unless a row's tail
+    ///   stands over a metavariable; otherwise the solver's run over the one
+    ///   equation: [`Unified::Refuted`] when it refutes it, and
+    ///   [`Unified::Agreed`] when it solves it or puts it in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row open through a metavariable against a closed
+    ///   row binds the metavariable to what the closed row writes beyond it,
+    ///   one writing an instance the closed row lacks is refuted, and two rows
+    ///   over no metavariable are left to conversion.
+    /// - witness: `elaboration::tests::a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270`
+    #[spec(
+        captures: before = usize::from(self.metas.count()),
+        ensures: |ret| usize::from(self.metas.count()) == before
+            && (ret == Unified::Rigid || before > 0),
+    )]
+    pub fn unify_rows(
+        &mut self,
+        arena: &mut CoreArena,
+        scope: Binders,
+        (left, right): (&EffectRow, &EffectRow),
+    ) -> Unified
+    {
+        let open = |row: &EffectRow| {
+            row.tail()
+                .is_some_and(|tail| self.decoded(arena, Side::ValueType(tail)).is_some())
+        };
+        if self.nominated.is_empty() || (!open(left) && !open(right)) {
+            return Unified::Rigid;
+        }
+        let left = arena.value_row(left.clone());
+        let right = arena.value_row(right.clone());
+        self.pose(arena, scope, Side::Value(left), Side::Value(right))
     }
 
     /// The solver's run over the one equation `left` against `right`.

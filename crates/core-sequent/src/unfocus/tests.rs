@@ -301,7 +301,8 @@ fn closing_substitution_distinguishes_binders_and_zones()
             | Value::Record(_)
             | Value::Hole(_)
             | Value::Mark { .. }
-            | Value::Reify(_) => {},
+            | Value::Reify(_)
+            | Value::Row(_) => {},
         }
     }
 }

@@ -1152,7 +1152,7 @@ impl<'run> Focusing<'run>
             | &Task::Reify(source) => self.core.value(source).is_none_or(|node| match *node {
                 Value::Reify(ref frames) => self.producers.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Apply(_))).count()
                     && self.commands.len() >= frames.iter().filter(|frame| matches!(frame, gandr_core_term::control::StackFrame::Bind(_))).count(),
-                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } => true,
+                Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Row(_) => true,
             }),
             | &Task::Control { source, .. } => self.core.computation(source).is_none_or(|node| match *node {
                 Computation::Perform { .. } | Computation::Abandon(_) => !self.producers.is_empty(),
@@ -1894,7 +1894,7 @@ impl<'run> Focusing<'run>
         captures: [work = self.tasks.len(), results = self.producers.len()],
         ensures: |ret| match self.core.value(id) {
             | None => ret == Err(FocusRefusal::DanglingValue(id)),
-            | Some(&Value::Quote(_) | &Value::QuoteComputation(_)) => ret.is_err() || self.producers.len() == results.saturating_add(1),
+            | Some(&Value::Quote(_) | &Value::QuoteComputation(_) | &Value::Row(_)) => ret.is_err() || self.producers.len() == results.saturating_add(1),
             | Some(&Value::StaticLambda(_) | &Value::StaticApplication(..)) => ret == Err(FocusRefusal::Code(id)),
             | Some(&Value::Hole(_) | &Value::Mark { .. }) => ret == Err(FocusRefusal::IncompleteValue(id)),
             | Some(&Value::Nested(_) | &Value::Run(_) | &Value::RecordUpdate { .. }) => ret == Err(FocusRefusal::Unelaborated(id)),
@@ -2040,8 +2040,9 @@ impl<'run> Focusing<'run>
             },
             // A code passes as itself, imported beside the command's other
             // annotations, so a type argument reaches the function that takes
-            // it and a returned type reads back as the type it quotes.
-            Value::Quote(_) | Value::QuoteComputation(_) => ProducerNode::Code(
+            // it and a returned type reads back as the type it quotes; a row
+            // passes the same way.
+            Value::Quote(_) | Value::QuoteComputation(_) | Value::Row(_) => ProducerNode::Code(
                 gandr_core_term::TypeImporter::new(self.core, self.arena.annotations_mut())
                     .value(id)
                     .map_err(|gandr_core_term::ImportFault| FocusRefusal::DanglingValue(id))?,
@@ -2142,7 +2143,8 @@ impl<'run> Focusing<'run>
                     | Value::Record(_)
                     | Value::Hole(_)
                     | Value::Mark { .. }
-                    | Value::Reify(_) => Combinator::Wrap,
+                    | Value::Reify(_)
+                    | Value::Row(_) => Combinator::Wrap,
                 };
                 return self.suspend(combinator, &[first, second]);
             },

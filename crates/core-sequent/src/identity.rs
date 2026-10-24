@@ -342,6 +342,8 @@ pub enum MotiveHead
     Kept,
     /// A world type.
     World,
+    /// The row kind, or a row tail standing for the row a code denotes.
+    Row,
     /// A telescope: the motive of a telescope transport.
     Telescope,
 }
@@ -394,6 +396,7 @@ impl fmt::Display for MotiveHead
             Self::Buffer => "the buffer type",
             Self::Kept => "a type kept in a region",
             Self::World => "a world type",
+            Self::Row => "a row",
             Self::Telescope => "a telescope",
         })
     }
@@ -565,6 +568,7 @@ fn head(node: &ValueType) -> MotiveHead
         ValueType::Buffer => MotiveHead::Buffer,
         ValueType::Kept { .. } => MotiveHead::Kept,
         ValueType::World(_) => MotiveHead::World,
+        ValueType::Row | ValueType::RowTail(_) => MotiveHead::Row,
     }
 }
 
@@ -708,7 +712,9 @@ fn row(
         | ValueType::Capability { .. }
         | ValueType::Buffer
         | ValueType::Kept { .. }
-        | ValueType::World(_) => match family {
+        | ValueType::World(_)
+        | ValueType::Row
+        | ValueType::RowTail(_) => match family {
             Family::Flow => Row::Unchanged,
             Family::Path => return Err(Unread::Head(head(read))),
         },
@@ -1254,7 +1260,8 @@ fn rebuilt(
         | Value::StaticApplication(..)
         | Value::Hole(_)
         | Value::Mark { .. }
-        | Value::Reify(_) => Err(invariant),
+        | Value::Reify(_)
+        | Value::Row(_) => Err(invariant),
     }
 }
 
@@ -1349,7 +1356,8 @@ pub fn each_field<Each>(
         | Value::StaticApplication(..)
         | Value::Hole(_)
         | Value::Mark { .. }
-        | Value::Reify(_) => {},
+        | Value::Reify(_)
+        | Value::Row(_) => {},
     }
 }
 

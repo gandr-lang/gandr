@@ -1,5 +1,6 @@
-/// `f_type.row`: a computation type with the capabilities it uses.
+/// `f_type.row`: a computation type with the capabilities it uses, open
+/// through a row variable after the bar.
 @[ checks ]
-def idle() -> -F [Div] Unit {
+def idle @[r : Row] () -> -F [Div | r] Unit {
   pure unit
 }

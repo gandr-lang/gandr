@@ -13,6 +13,7 @@ use crate::effect::EffectRow;
 use crate::effect::EffectSig;
 use crate::effect::OperationName;
 use crate::effect::host::HostSignatures;
+use crate::row::Label;
 use crate::row::RowInclusion;
 
 #[test]
@@ -119,21 +120,21 @@ fn attenuation_is_inclusion_on_grant_atoms()
         "an atom whose reply type differs is another atom"
     );
     assert!(
-        matches!(both.granted(host.fs.name(), &write), Maybe::Present(operation) if operation.name == write)
+        matches!(both.granted(&Label::from(host.fs.name()), &write), Maybe::Present(operation) if operation.name == write)
     );
     assert_eq!(
-        reads.granted(host.fs.name(), &write),
+        reads.granted(&Label::from(host.fs.name()), &write),
         Maybe::Absent(grant::Absent::Operation)
     );
     assert_eq!(
-        reads.granted(host.proc.name(), &OperationName::from("exit")),
+        reads.granted(&Label::from(host.proc.name()), &OperationName::from("exit")),
         Maybe::Absent(grant::Absent::Interface)
     );
     assert_eq!(
         EffectRow::authority(&[host.fs.clone(), host.fs.clone()]),
-        Err(crate::effect::EffectConflict::Signature(
-            host.fs.name().clone()
-        ))
+        Err(crate::effect::EffectConflict::Signature(Label::from(
+            host.fs.name()
+        )))
     );
     let joined = EffectRow::authority(&[host.proc.clone(), host.fs]).expect("two");
     assert_eq!(joined.signatures().len(), 2);

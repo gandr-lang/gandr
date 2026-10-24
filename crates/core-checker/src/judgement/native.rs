@@ -116,7 +116,8 @@ impl Machine<'_, '_>
             | &Value::Record(_)
             | &Value::Hole(_)
             | &Value::Mark { .. }
-            | &Value::Reify(_) => return Err(CheckRefusal::MachineInvariant),
+            | &Value::Reify(_)
+            | &Value::Row(_) => return Err(CheckRefusal::MachineInvariant),
         };
         if !matches!(
             self.context.arena().value_type(datatype),
@@ -189,7 +190,8 @@ impl Machine<'_, '_>
                 | &Value::Record(_)
                 | &Value::Hole(_)
                 | &Value::Mark { .. }
-                | &Value::Reify(_) => return Err(CheckRefusal::MachineInvariant),
+                | &Value::Reify(_)
+                | &Value::Row(_) => return Err(CheckRefusal::MachineInvariant),
             };
             self.wait(Frame::NativeNext(Goal::Value {
                 term: field,
@@ -1458,6 +1460,8 @@ impl Machine<'_, '_>
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Row
+            | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_) => return Err(CheckRefusal::MachineInvariant),
         };
