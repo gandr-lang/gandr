@@ -89,13 +89,14 @@ theory Trace {
   oper emit : (e : Event) --> Unit;
 }
 
-/// A refused dispatch or a dead seat: a raise answers nothing, so nothing
-/// after it runs, and under linearity whatever unwinds releases its holds.
-/// A raise commutes with nothing. One instance per protocol.
+/// A refused dispatch or a dead seat: a raise answers nothing, its result the
+/// empty type `Void`, so nothing after it runs, and under linearity whatever
+/// unwinds releases its holds. A raise commutes with nothing. One instance
+/// per protocol.
 @[ checks ]
 theory Fail {
   sort Reason : Type;
-  oper raise : (r : Reason) --> Empty;
+  oper raise : (r : Reason) --> Void;
 }
 
 /// An asynchronous interruption of the work a token names: the response is

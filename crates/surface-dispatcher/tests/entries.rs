@@ -433,9 +433,10 @@ enum Placed
     Packed,
     /// A binding operation applied in a theory's rule, `let` in `rule zeta :
     /// let(u, t) <=> t(u)`, or a variable a binding port binds, `t` there
-    /// and in `t(u)`: no core type states a `pi+` port, so the operation's
-    /// and the port's own names answer nowhere, and the application around
-    /// answers at its sort.
+    /// and in `t(u)`, or one a rule writes bare at a binding port under
+    /// another name, `l` in `ext(m, l)` (#2360): no core type states a `pi+`
+    /// port, so the operation's and the port's own names answer nowhere, and
+    /// the application around answers at its sort.
     Unstated,
     /// The head and the type of a derived equality, `Eq.generic` and `T` in
     /// `def eq = Eq.generic(T)` (#2302): the declaration is derived whole from
@@ -528,6 +529,101 @@ fn gated(
         .filter_map(|(at, _)| {
             let end = source.get(at ..)?.find(';')?;
             Some((at, at.saturating_add(end)))
+        })
+        .collect();
+    // The parts of the parenthesised list opening at `open`, each its bytes,
+    // split at the commas no nested parenthesis holds.
+    let parts = |open: usize| {
+        let mut parts = Vec::new();
+        let mut depth = 0_usize;
+        let mut from = open.saturating_add(1);
+        for (offset, letter) in source.get(open ..).unwrap_or("").char_indices() {
+            let at = open.saturating_add(offset);
+            match letter {
+                '(' => depth = depth.saturating_add(1),
+                ')' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        parts.push((from, at));
+                        break;
+                    }
+                },
+                ',' if depth == 1 => {
+                    parts.push((from, at));
+                    from = at.saturating_add(1);
+                },
+                _ => {},
+            }
+        }
+        parts
+    };
+    // Each variable a rule writes bare at a binding port, `l` in `ext(m, l)`
+    // for `oper ext : (m : C, k : pi+ (x : V) . C)`, by where it starts: the
+    // variable the port binds, whatever the rule names it. An application's
+    // operation is the one the last declaration of its name before the rule
+    // declares.
+    let bare: BTreeSet<usize> = rules
+        .iter()
+        .flat_map(|&(start, end)| {
+            source
+                .get(start .. end)
+                .unwrap_or("")
+                .match_indices('(')
+                .map(move |(offset, _)| start.saturating_add(offset))
+        })
+        .flat_map(|open| {
+            let rule = rules
+                .iter()
+                .find(|&&(start, end)| start <= open && open < end)
+                .map_or(0_usize, |&(start, _)| start);
+            let declared = named(source.get(.. open).unwrap_or(""))
+                .filter(|name| name.starts_with(char::is_alphabetic))
+                .and_then(|name| {
+                    let before = source.get(.. rule)?;
+                    before
+                        .rmatch_indices("oper ")
+                        .map(|(at, _)| at)
+                        .find(|&at| {
+                            before
+                                .get(at.saturating_add(5) ..)
+                                .and_then(|after| after.strip_prefix(name.as_str()))
+                                .is_some_and(|after| after.starts_with(" :"))
+                        })
+                })
+                .and_then(|oper| {
+                    source
+                        .get(oper ..)?
+                        .find('(')
+                        .map(|offset| oper.saturating_add(offset))
+                });
+            let binds: Vec<bool> = declared.map_or_else(Vec::new, |ports| {
+                parts(ports)
+                    .into_iter()
+                    .map(|(from, to)| {
+                        source
+                            .get(from .. to)
+                            .is_some_and(|port| port.contains(": pi+") || port.contains(": bind"))
+                    })
+                    .collect()
+            });
+            parts(open)
+                .into_iter()
+                .zip(binds)
+                .filter_map(|((from, to), binds)| {
+                    let written = source.get(from .. to)?;
+                    let variable = written.trim();
+                    (binds
+                        && !variable.is_empty()
+                        && variable
+                            .chars()
+                            .all(|letter| letter.is_alphanumeric() || letter == '_'))
+                    .then(|| {
+                        from.saturating_add(
+                            written.len().saturating_sub(written.trim_start().len()),
+                        )
+                    })
+                })
+                .collect::<Vec<usize>>()
         })
         .collect();
     let mut gated = Vec::new();
@@ -804,10 +900,11 @@ fn gated(
             });
         let unstated = !melded
             && def.label == "identifier"
-            && binding.contains(text.trim())
-            && rules.iter().any(|&(start, end)| {
-                start <= usize::from(span.start()) && usize::from(span.end()) <= end
-            });
+            && (bare.contains(&usize::from(span.start()))
+                || (binding.contains(text.trim())
+                    && rules.iter().any(|&(start, end)| {
+                        start <= usize::from(span.start()) && usize::from(span.end()) <= end
+                    })));
         let placed = placed
             .or_else(|| head.then_some(Placed::Head))
             .or_else(|| counted.then_some(Placed::Stratum))

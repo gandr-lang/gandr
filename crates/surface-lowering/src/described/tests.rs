@@ -806,6 +806,78 @@ fn an_occurrence_answers_at_its_port()
     );
 }
 
+/// #2360: a law over fields answers each node inside them. An instantiation
+/// whose variable no side writes bare answers at the sort of the port it
+/// stands at; each field's variable, where `bind` names it and where an
+/// instantiation takes it, at the representable sort its port binds; and a
+/// variable written under a field without taking it, `q` in `new(bind x .
+/// q)`, at the port's sort, as a first-order variable.
+#[test]
+fn a_field_s_variable_and_an_instantiation_under_it_answer_2360()
+{
+    let source = SourceText::from(
+        "theory Commute {\n  sort Value : Type;\n  sort Name : Type;\n  sort Digest : Type+;\n  \
+         sort Claim : Type+;\n  sort C : Type;\n  oper put : (v : Value, k : pi+ (d : Digest) . \
+         C) --> C;\n  oper lookup : (n : Name, k : pi+ (c : Claim) . C) --> C;\n  oper new : \
+         (body : pi+ (x : Digest) . C) --> C;\n  rule commute : put(v, bind d . lookup(n, bind \
+         c . k(d, c))) <=> lookup(n, bind c . put(v, bind d . k(d, c)));\n  rule gc : new(bind \
+         x . q) <=> q;\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let code = |entry: DescribedType| match arena.value_type(entry.ty) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    let carrier = code(entry(
+        &types,
+        span(
+            "commute : put",
+            "put(v, bind d . lookup(n, bind c . k(d, c)))",
+        ),
+        DescribedRole::Term,
+    ));
+    assert!(carrier.is_some(), "the application answers at `C`");
+    for around in ["c . k(d, c))) <=>", "d . k(d, c)));"] {
+        assert_eq!(
+            code(entry(&types, span(around, "k(d, c)"), DescribedRole::Term)),
+            carrier,
+            "`k(d, c)` in `{around}` at the port's `C`"
+        );
+    }
+    let [digest, claim] = ["d", "c"].map(|bound| {
+        code(entry(
+            &types,
+            span("k(d, c))) <=>", bound),
+            DescribedRole::Name,
+        ))
+    });
+    assert!(digest.is_some(), "a field's variable answers");
+    assert_ne!(digest, claim, "each at its own port's sort");
+    assert_ne!(digest, carrier, "at the sort it binds, not the body's");
+    for (around, bound, sort) in [
+        (" d . lookup", "d", &digest),
+        (" c . k(d, c))) <=>", "c", &claim),
+        ("k(d, c)));", "d", &digest),
+        ("k(d, c)));", "c", &claim),
+    ] {
+        assert_eq!(
+            &code(entry(&types, span(around, bound), DescribedRole::Name)),
+            sort,
+            "`{bound}` in `{around}` at the sort its port binds"
+        );
+    }
+    for around in ["x . q)", "<=> q;"] {
+        assert_eq!(
+            code(entry(&types, span(around, "q"), DescribedRole::Term)),
+            carrier,
+            "`q` in `{around}` at the field's `C`"
+        );
+    }
+}
+
 /// Substitution rebuilds every node kind a rule term holds and replaces
 /// only the variables the map names, keeping the rest and every atom.
 #[test]
