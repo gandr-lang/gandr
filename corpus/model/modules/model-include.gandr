@@ -1,0 +1,40 @@
+// A model built on another (#2333): `include EqInteger` in a model of a theory
+// that includes `Eq` takes `EqInteger`'s members as the model's own, so the
+// model's reduct at `Eq` is `EqInteger` itself. `==` at the integers then has
+// two modules answering its `Eq` slot, and they are one elaboration: their
+// components convert, so the slot resolves (#739's uniqueness, up to
+// conversion).
+
+/// A grade orders verdicts: equality of grades, and one grade below another.
+@[ checks ]
+theory Graded {
+  include Eq;
+  oper below : (a : Carrier, b : Carrier) --> Bool;
+}
+
+/// Integer grades: the prelude's integer equality, and the integers' order.
+module GradeInteger : Model(Graded) with sort Carrier = Integer {
+  include EqInteger;
+  /// One grade below another.
+  @[ checks ]
+  def below(a : Integer, b : Integer) -> Bool { a < b }
+}
+
+/// Whether a grade is at most another, through the grading the operands force.
+@[ checks ]
+def atMost @[g : Model(Graded)] (a : g.Carrier, b : g.Carrier) -> Bool {
+  if g.below(a, b) { true } else { g.eq(a, b) }
+}
+
+/// A grade is at most itself, by the equality `GradeInteger` includes.
+@[ runs("+{.0 = unit}") ]
+def reflexive() -> Bool { atMost(3, 3) }
+
+/// A higher grade is not at most a lower one.
+@[ runs("+{.1 = unit}") ]
+def descending() -> Bool { atMost(4, 3) }
+
+/// Equality at the integers: `EqInteger` and `GradeInteger` both answer, as
+/// one elaboration.
+@[ runs("+{.0 = unit}") ]
+def gradesEqual() -> Bool { 3 == 3 }

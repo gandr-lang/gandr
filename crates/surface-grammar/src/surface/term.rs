@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 104 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=9 => Sort::Item, 10..=13 => Sort::ModuleMember, 14..=25 | 94..=95 => Sort::Pattern, 26..=31 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 105 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=9 => Sort::Item, 10..=14 => Sort::ModuleMember, 15..=26 | 95..=96 => Sort::Pattern, 27..=32 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -3396,22 +3396,25 @@ fn member_sep() -> Regex
 ///
 /// Repeating a bare sort hole is safe here because **every member carries its
 /// own terminator**: a definition ends at `;` or at its body's closing brace,
-/// a type member at its `;`, and a nested module ends at its closing brace.
-/// After a member the only admissible tiles are the next member's lead (`@[`,
-/// `def`, `type`, `module`) or the body's `}`, none of which competes with the
-/// hole's own content — the discrimination the member-list separator rule
-/// exists to protect.
+/// a type member and a model include at their `;`, and a nested module ends at
+/// its closing brace. After a member the only admissible tiles are the next
+/// member's lead (`@[`, `def`, `type`, `module`, `include`) or the body's `}`,
+/// none of which competes with the hole's own content — the discrimination the
+/// member-list separator rule exists to protect.
 ///
 /// A type member `type T = τ ;` names a type inside the body: the
 /// representation a signature's abstract component `type T` seals. It leads
 /// with `type`, as a signature's type component does, and closes on `;`, so
 /// its type runs to the terminator however far it reaches.
 ///
+/// A model include `include M ;` takes the model module `M`'s members as this
+/// module's own, the dual of a theory's `include`.
+///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends plain definitions, attributed definitions and type
-///   members, a plain type member and a nested module, all at the module-member
-///   sort with module provenance.
+///   members, a plain type member, a nested module and a model include, all at
+///   the module-member sort with module provenance.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3422,7 +3425,7 @@ fn member_sep() -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 4 && added.iter().zip(["module_definition_member", "attributed_module_member", "module_type_member", "nested_module_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 5 && added.iter().zip(["module_definition_member", "attributed_module_member", "module_type_member", "nested_module_member", "module_include_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
 fn module_members(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -3464,6 +3467,21 @@ fn module_members(
         s,
         p,
         nested_module_member(),
+    ));
+    // `include M ;` takes the model module `M`'s members as this module's
+    // own: the dual of a theory's `include`, so a model built on another
+    // shares its components rather than restating them. It leads with
+    // `include` and closes on `;`, like a type member.
+    out.push(r(
+        RuleName("module_include_member"),
+        Provenance("module_declaration"),
+        s,
+        p,
+        seq([
+            t(TileLabel("include")),
+            t(TileLabel("type_identifier")),
+            t(TileLabel(";")),
+        ]),
     ));
 }
 

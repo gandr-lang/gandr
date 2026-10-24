@@ -373,6 +373,66 @@ impl<'source> Collected<'source>
             arity: HeadArity::Nullary,
         })
     }
+
+    /// The module `name` names where a model include starting at `at` stands:
+    /// one its source declares at its top level wholly before `at`, or one a
+    /// source it imports unqualified declares there, the prelude included.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the module's place in the collection, named `name`.
+    /// - provides: the lookup a model include `include M ;` reads `M` with.
+    /// - fails: a shadowed import for a name two imports bind, at `span`; an
+    ///   unresolved name, at `span`, for a name no such module answers.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ImportShadows`] and
+    /// [`LoweringRefusal::UnresolvedName`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a prelude model and a model the source declares are
+    ///   found; a name no module answers is refused.
+    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `tests::modules::models::an_include_naming_no_module_is_refused_2333`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&module| self.structures.get(module.0).is_some_and(|entry| entry.name == name)))]
+    pub(crate) fn included_module(
+        &self,
+        at: ByteOffset,
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+    ) -> Result<StructureIndex, LoweringRefusal<'source>>
+    {
+        let local = self
+            .modules
+            .get(&(self.top(at), name))
+            .copied()
+            .filter(|module| {
+                self.structures
+                    .get(module.0)
+                    .is_some_and(|entry| entry.declared_by.span.end() <= at)
+            });
+        let module = match local {
+            Some(module) => Some(module),
+            None => match self.through_imports(self.unit.source_at(at), |target| {
+                self.modules
+                    .get(&(Container::TopLevel(target), name))
+                    .copied()
+            }) {
+                Ok(Maybe::Present((module, _import))) => Some(module),
+                Ok(Maybe::Absent(_)) => None,
+                Err(ambiguity) => {
+                    return Err(LoweringRefusal::ImportShadows {
+                        span,
+                        name,
+                        import: ambiguity.import,
+                        other: ambiguity.other,
+                    });
+                },
+            },
+        };
+        module.ok_or(LoweringRefusal::UnresolvedName { span, name })
+    }
 }
 
 impl<'source> Collector<'_, 'source>

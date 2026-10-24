@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x12d264a3512d9266`
-- Rules: 161 — 160 committed, 1 internal
-- Molds: 3145
+- Grammar fingerprint: `0x915782badd51b07b`
+- Rules: 162 — 161 committed, 1 internal
+- Molds: 3148
 - Attributes: 14
 
 ## Reading a form
@@ -206,7 +206,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`instantiation.explicit`](../corpus/ledger/syntax/instantiation.explicit.gandr) | `‹identifier› = EXPRESSION` | `expression.pure` | `instantiation_expression` | reserved | VariableParam, Other |
 | [`instantiation.tail`](../corpus/ledger/syntax/instantiation.tail.gandr) | `tail` | `expression.atom` | `instantiation_expression` | reserved | Keyword |
 
-## `module_member` — 4 rules
+## `module_member` — 5 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -214,6 +214,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`attributed_module_member`](../corpus/ledger/syntax/attributed_module_member.gandr) | `⟨attribute_block⟩ ⦅ ⟨attribute_block⟩ ⦆* ⦅ ⟨module_definition_member⟩ ‖ ⟨module_type_member⟩ ⦆` | `item.singleton` | `module_declaration` | admitted | Other, Keyword, FunctionDef, VariableParam, TypeVariable, Type, Operator, VariableDef, Number |
 | [`module_type_member`](../corpus/ledger/syntax/module_type_member.gandr) | `type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? = TYPE ;` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other, TypeVariable |
 | [`nested_module_member`](../corpus/ledger/syntax/nested_module_member.gandr) | `module ⦅ ‹identifier› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ‖ :> ⦅ #{ ⦅ ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦅ , ⦅ ‹identifier› : TYPE ‖ type ‹type_identifier› ⦅ ( ‹type_variable› ⦅ : TYPE ⦆? ⦅ , ‹type_variable› ⦅ : TYPE ⦆? ⦆* ⦅ , ⦆? ) ⦆? ⦅ = TYPE ‖ : TYPE ⦆? ‖ mobile type ‹type_identifier› ⦆ ⦆* ⦅ , ⦆? ⦆? } ‖ ‹type_identifier› ( ‹type_identifier› ) ⦅ with sort ‹type_identifier› = TYPE ⦆* ⦆ ⦆? { ⦅ MODULE_MEMBER ⦆* }` | `item.singleton` | `module_declaration` | admitted | Keyword, VariableDef, Type, Other, Member, TypeVariable, Operator |
+| [`module_include_member`](../corpus/ledger/syntax/module_include_member.gandr) | `include ‹type_identifier› ;` | `item.singleton` | `module_declaration` | admitted | Keyword, Type, Other |
 
 ## Internal — 1 rule
 
