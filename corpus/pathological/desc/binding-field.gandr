@@ -1,0 +1,16 @@
+// The twin of `model/desc/binding-field.gandr`: a freshness condition names
+// an atom, and the variable a binding field binds is none.
+
+/// Garbage collection over a field, `new(bind x . q) <=> q where x # q`: `x`
+/// is the variable the `pi+` binder binds, which substitution instantiates,
+/// not an atom swapping renames, so no abstraction of the rule abstracts it.
+/// The description check refuses the condition as naming an unknown atom, an
+/// ill-formed description. The law without it is
+/// `model/desc/binding-field.gandr`'s `Vacuous`.
+@[ refuses("IllFormedDescription") ]
+theory Unknown {
+  sort Val : Type+;
+  sort Proc : Type;
+  oper new : (body : pi+ (x : Val) . Proc) --> Proc;
+  rule gc : new(bind x . q) <=> q where x # q;
+}

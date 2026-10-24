@@ -482,7 +482,9 @@ fn term_diagram(term: &FreeTerm) -> Option<Wiring>
                     TermView::Results { .. }
                     | TermView::Inst { .. }
                     | TermView::Abs { .. }
-                    | TermView::Atom(_) => {
+                    | TermView::Atom(_)
+                    | TermView::Lam { .. }
+                    | TermView::Bound(_) => {
                         return None;
                     },
                 };

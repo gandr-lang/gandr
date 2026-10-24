@@ -280,7 +280,9 @@ impl Flat
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
                 | TermView::Abs { .. }
-                | TermView::Atom(_) => return None,
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => return None,
             }
         }
         Some(Self(nodes))

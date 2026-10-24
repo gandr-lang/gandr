@@ -11833,7 +11833,9 @@ fn rule_side(
             | gandr_theory_levitation::TermView::Results { .. }
             | gandr_theory_levitation::TermView::Inst { .. }
             | gandr_theory_levitation::TermView::Abs { .. }
-            | gandr_theory_levitation::TermView::Atom(_) => {
+            | gandr_theory_levitation::TermView::Atom(_)
+            | gandr_theory_levitation::TermView::Lam { .. }
+            | gandr_theory_levitation::TermView::Bound(_) => {
                 return Maybe::Absent(rule_side::Absent::Foreign);
             },
         }

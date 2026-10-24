@@ -1177,7 +1177,7 @@ fn a_theory_block_defines_its_presentation()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
         [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2, 3, 1
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2, 3, 1, 2, 1
         ],
         "each constructor's names, then its recursions"
     );
@@ -2354,7 +2354,8 @@ fn an_applied_left_variable_reads_as_its_instantiation()
 
 /// #2115: a name applied, on a left side, to the names abstracted above it
 /// reads as a metavariable's pattern, which the right side instantiates; an
-/// operation applied there stays a call.
+/// operation applied there stays a call. At `get`'s `pi+` port each
+/// abstraction is the port's binding field and each name its variable.
 #[test]
 fn an_applied_bound_name_reads_as_a_pattern_2115()
 {
@@ -2368,9 +2369,9 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
             .map(|face| (face.lhs.clone(), face.rhs.clone()))
             .collect::<Vec<_>>()
     };
-    let (atom, bind) = (FreeTerm::atom, FreeTerm::abs);
+    let (bound, bind) = (FreeTerm::bound, FreeTerm::lam);
     let get = |k: FreeTerm| FreeTerm::op("get", [k]);
-    let pattern = |names: [&str; 2]| FreeTerm::inst("k", names.map(FreeTerm::atom));
+    let pattern = |names: [&str; 2]| FreeTerm::inst("k", names.map(FreeTerm::bound));
     let state = "sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C;";
     assert_eq!(
         faces(&format!(
@@ -2388,7 +2389,7 @@ fn an_applied_bound_name_reads_as_a_pattern_2115()
             "theory Call {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get(bind s . f(s)) <=> g(); }}"
         )),
         [(
-            get(bind("s", FreeTerm::op("f", [atom("s")]))),
+            get(bind("s", FreeTerm::op("f", [bound("s")]))),
             FreeTerm::op("g", Vec::<FreeTerm>::new()),
         )],
         "an operation applied to an abstracted name still calls it"

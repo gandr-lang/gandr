@@ -822,6 +822,8 @@ pub fn derive_boundary_within(
         FinishInst(&'body Name, usize),
         /// Rebuild an atom's abstraction over the last result.
         FinishAbs(&'body Name),
+        /// Rebuild a binding field over the last result.
+        FinishLam(&'body Name),
         /// The port's subtree is built: take it off the active path.
         Leave(&'body Name),
     }
@@ -901,11 +903,16 @@ pub fn derive_boundary_within(
                         results.push(FreeTerm::atom(name.clone()));
                         continue;
                     },
+                    TermView::Bound(name) => {
+                        results.push(FreeTerm::bound(name.clone()));
+                        continue;
+                    },
                     TermView::Ctor { name, args } => (Step::FinishCtor(name, args.len()), args),
                     TermView::Op { name, args } => (Step::FinishOp(name, args.len()), args),
                     TermView::Results { args } => (Step::FinishResults(args.len()), args),
                     TermView::Inst { name, args } => (Step::FinishInst(name, args.len()), args),
                     TermView::Abs { atom, args } => (Step::FinishAbs(atom), args),
+                    TermView::Lam { var, args } => (Step::FinishLam(var), args),
                 };
                 stack.push(finish);
                 pending.clear();
@@ -935,6 +942,10 @@ pub fn derive_boundary_within(
             Step::FinishAbs(atom) => {
                 let body = results.pop().unwrap_or_else(|| FreeTerm::var(atom.clone()));
                 results.push(FreeTerm::abs(atom.clone(), body));
+            },
+            Step::FinishLam(var) => {
+                let body = results.pop().unwrap_or_else(|| FreeTerm::var(var.clone()));
+                results.push(FreeTerm::lam(var.clone(), body));
             },
             Step::Leave(port) => {
                 path.remove(port);
