@@ -1211,6 +1211,146 @@ fn a_manifest_sort_reads_past_the_links_before_it()
     );
 }
 
+/// #2246: a model type is recorded as the source writes it, the theory's name
+/// and each sort it fixes beside the type it fixes it to, in the order
+/// written, so a printer spells `Model(T) with sort C = A` rather than the
+/// record it lowers to.
+#[test]
+fn a_written_model_type_is_recorded_as_written_2246()
+{
+    let source = "theory Pair {\n  sort A : Type;\n  sort B : Type;\n  oper a : A;\n  oper b : \
+                  B;\n}\ndef plain : Model(Pair) ;\ndef fixed : Model(Pair) with sort B = Integer \
+                  with sort A = Unit ;\ndef integer : Integer ;\ndef empty : Unit ;\n";
+    let lowered = lower(source);
+    let written = |declaration: &str| {
+        let declared = declared_type_of(&lowered, declaration, Role::Declared);
+        lowered
+            .module
+            .origins()
+            .models()
+            .iter()
+            .find(|&&(ty, _)| ty == declared)
+            .map(|&(_, ref model)| model.clone())
+    };
+    let plain = written("plain").expect("`plain`'s type is recorded as written");
+    assert_eq!(
+        (plain.theory.as_ref(), plain.sorts.as_slice()),
+        ("Pair", [].as_slice()),
+        "a model type fixing nothing records its theory alone"
+    );
+    let fixed = written("fixed").expect("`fixed`'s type is recorded as written");
+    let sorts: Vec<(&str, CertificateEquality)> = fixed
+        .sorts
+        .iter()
+        .zip(["integer", "empty"])
+        .map(|(&(ref sort, carrier), stated)| {
+            let stated = declared_type_of(&lowered, stated, Role::Declared);
+            (
+                sort.as_ref(),
+                equal_type_syntax(&lowered.arena, carrier, stated),
+            )
+        })
+        .collect();
+    assert_eq!(
+        (fixed.theory.as_ref(), sorts.as_slice()),
+        (
+            "Pair",
+            [
+                ("B", CertificateEquality::Equal),
+                ("A", CertificateEquality::Equal)
+            ]
+            .as_slice()
+        ),
+        "a manifest model type records each sort it fixes at its type, in the order written"
+    );
+}
+
+/// An operation is selected off a model binder (#2246): `m.incr` for `m :
+/// Model(Counter)` is the operation `m`'s record holds, at its type with the
+/// carrier read as `m`'s, whether the type leaves the carrier a field, so the
+/// record nests, or fixes it, so the record is keyed by the operations. A
+/// count of `m` steps through `m`'s operations and another counter's count
+/// does not; a sort the type fixes is no member a computation reads, and a
+/// name the theory lacks is refused naming it.
+#[test]
+fn an_operation_is_selected_off_a_model_binder_2246()
+{
+    // The refusal a case expects, built from the source it lowers.
+    type Expected<'case> = &'case dyn Fn(&str) -> LoweringRefusal<'static>;
+
+    let counter = "theory Counter {\n  sort C : Type;\n  oper zero : C;\n  oper incr : (c : C) \
+                   --> C;\n  oper read : (c : C) --> Integer;\n}\n";
+    let stepped = |model: &str, counted: &str| {
+        let source = format!(
+            "{counter}def step(m : {model}, n : {model}) -> -F Integer {{\n  run z <- \
+             {counted}.zero ; run i <- m.incr ; run r <- m.read ; r(i(z))\n}}\n"
+        );
+        let mut lowered = lower(source.as_str());
+        let step = super::declaration(&lowered, "step", Role::Declared).constant();
+        verdicts(&mut lowered)
+            .into_iter()
+            .find(|&(constant, _)| constant == step)
+            .map(|(_, judgement)| judgement)
+    };
+    for (model, why) in [
+        ("Model(Counter)", "its carrier a field"),
+        ("Model(Counter) with sort C = Integer", "its carrier fixed"),
+    ] {
+        assert_eq!(
+            stepped(model, "m"),
+            Some(Judgement::Checked),
+            "a count of `m` steps through `m`'s operations, {why}"
+        );
+    }
+    assert_eq!(
+        stepped("Model(Counter)", "n"),
+        Some(Judgement::Mismatched),
+        "another counter's count is no count of `m`"
+    );
+
+    let cases: [(&str, &str, Expected<'_>, &str); 2] = [
+        (
+            "Model(Counter) with sort C = Integer",
+            "C",
+            &|source| LoweringRefusal::OutOfFragment {
+                span: span_of(source, "m.C", 0_usize),
+                form: FormName::from(NamedKind("projection_expression")),
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "a sort the type fixes is no member a computation reads",
+        ),
+        (
+            "Model(Counter)",
+            "nothing",
+            &|source| LoweringRefusal::UnknownMember {
+                span: span_of(source, "nothing", 0_usize),
+                module: name("m"),
+                member: name("nothing"),
+            },
+            "a name the theory lacks is refused naming it",
+        ),
+    ];
+    for (model, member, refusal, why) in cases {
+        let source = format!(
+            "{counter}def selected(m : {model}) -> -F Integer {{ run c <- m.{member} ; 0 }}\n"
+        );
+        let found: Vec<_> = rows(&lower(source.as_str()))
+            .into_iter()
+            .filter(|found| found.0 == "selected")
+            .collect();
+        assert_eq!(
+            found,
+            [row(
+                "selected",
+                Role::Declared,
+                Amounts::Refused(refusal(&source))
+            )],
+            "{why}"
+        );
+    }
+}
+
 /// A manifest sort names an unindexed sort of the theory, once: another name
 /// is no member of it, an indexed sort is no type to fix, a sort fixed twice
 /// is defined twice, and an operand that is no `sort x = A` fixes nothing.

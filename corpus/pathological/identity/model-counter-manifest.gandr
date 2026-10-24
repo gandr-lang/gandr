@@ -3,10 +3,13 @@
 // model fixing one sort is no model fixing another (#2132). Two counters
 // whose carriers are not shared do not mix, and a counter has no sort but
 // its carrier (#2131). A pairing whose second carrier is its own does not
-// share another's (#2158).
+// share another's (#2158). A counter's operation read off its binder steps
+// only that counter's counts, and a counter has no operation but its own and
+// no field at a carrier its type fixes (#2246).
 // `../../model/identity/model-counter-manifest.gandr` forgets a counter's
 // manifest carrier, a counter's manifest readings alone, and a carrier two
-// counters share, or two pairings fixing their first.
+// counters share, or two pairings fixing their first, and reads a counter's
+// operations off its binder.
 
 // The counter, and `observe`, which reads any counter.
 import "../../model/identity/model-counter.gandr" ;
@@ -58,6 +61,30 @@ def integersShared(m : Model(Counter) with sort C = Integer) -> -F Integer {
 /// A count of a sort the counter does not have.
 @[ refuses("UnknownMember") ]
 def countOfNothing(a : Model(Counter), c : a.Nope) -> -F Integer { return 0 }
+
+/// A count of one counter stepped by a second counter's own step, read off
+/// the second's binder: the second's counts are not the first's (#2246).
+@[ refuses("TypeMismatch") ]
+def stepApart(a : Model(Counter), b : Model(Counter), c : a.C) -> -F Integer {
+  run i <- b.incr ;
+  run r <- b.read ;
+  r(i(c))
+}
+
+/// An operation the counter does not have, read off its binder (#2246).
+@[ refuses("UnknownMember") ]
+def stepOfNothing(a : Model(Counter)) -> -F Integer {
+  run i <- a.nothing ;
+  0
+}
+
+/// A carrier the counter's type fixes, read where a computation stands: the
+/// type names it, and the record holds no field at it (#2246).
+@[ refuses("OutOfFragment.WrongSort") ]
+def stepOfCarrier(a : Model(Counter) with sort C = Integer) -> -F Integer {
+  run c <- a.C ;
+  0
+}
 
 /// A pairing's right handed where another pairing's second carrier is
 /// asked, its own second carrier a field of its own (#2158).

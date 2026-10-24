@@ -3972,17 +3972,18 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the subject is already minted or absent; `labelled`, when
-    ///   present, is the type over labels the subject is stated with and the
-    ///   label selected.
+    ///   present, is the type over labels or the model type the subject is
+    ///   stated with and the label selected.
     /// - ensures: with no label, the subject projected at the selected
     ///   component, since a product mints as one tuple of all its components;
-    ///   when the stated type mints as a record, as [`Self::binds_any`] reads
-    ///   it, the record projection at the label; otherwise the subject
-    ///   projected at component one once per entry before the selected one,
-    ///   each projection but the last read as the value it returns, then at
-    ///   component zero unless the entry is the last; component zero of a type
-    ///   of one entry; every node with the written origin; nothing when the
-    ///   subject did not lower.
+    ///   when the stated type mints as a record, as [`Self::binds_any`] reads a
+    ///   type over labels and as a model type's bundle reads no dependence, the
+    ///   record projection at the label; otherwise the subject projected at
+    ///   component one once per entry before the selected one, each projection
+    ///   but the last read as the value it returns, then at component zero
+    ///   unless the entry is the last; component zero of a type of one entry;
+    ///   every node with the written origin; nothing when the subject did not
+    ///   lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -3992,6 +3993,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::arity::tests::a_selection_projects_a_dependent_record_along_its_nesting`
     /// - witness: `lower::arity::tests::a_selection_off_a_record_projects_its_label_855`
     /// - witness: `lower::arity::tests::a_selection_by_position_reads_the_written_type_1106`
+    /// - witness: `tests::modules::models::an_operation_is_selected_off_a_model_binder_2246`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_select(
         &self,
@@ -4019,6 +4021,9 @@ impl<'source> Lowerer<'_, 'source>
             Some(&Plan::RecordType(_, binders, last, _))
                 if !bool::from(self.binds_any(binders, last)) =>
             {
+                Some(label)
+            },
+            Some(&Plan::Bundle(ref bundled)) if bundled.dependent() == Dependent(false) => {
                 Some(label)
             },
             _ => None,

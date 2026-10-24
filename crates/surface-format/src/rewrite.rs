@@ -601,7 +601,7 @@ impl Band
             | ("send_session_type" | "receive_session_type", Position::First) => Self::Atom,
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
-            ("lazy_product_type", _) => Self::Sum,
+            ("lazy_product_type" | "manifest_sort", _) => Self::Sum,
             ("function_type" | "value_function_type", Position::First) => Self::Lazy,
             _ => Self::Loose,
         }
@@ -1377,11 +1377,12 @@ impl<'source> Respelling<'_, 'source>
     /// A form no rewrite reads, its parts as written but for an operand a
     /// rewrite respelled: that one placed at the band its position admits,
     /// and a parenthesis around one alone dropped once the operand binds
-    /// tightest. Where the form is `open` to rewrites and opens a block, each
-    /// `run` statement the lowering lists as linear is written away
-    /// ([`Self::linear`]); where it is open and the explicit form writes
-    /// reducts, each operand the checker applies a reduct to is written as
-    /// the reduct's call.
+    /// tightest or, where its own position admits a band tighter than an
+    /// arrow, fits that band. Where the form is `open` to rewrites and opens a
+    /// block, each `run` statement the lowering lists as linear is written
+    /// away ([`Self::linear`]); where it is open and the explicit form writes
+    /// reducts, each operand the checker applies a reduct to is written as the
+    /// reduct's call.
     ///
     /// # Specification
     /// trivial.
@@ -1502,7 +1503,19 @@ impl<'source> Respelling<'_, 'source>
                     out.place(&operand, fits);
                 },
                 Role::Own(_) | Role::Operand(_) | Role::Comment => {
-                    out.leaves.extend(part.leaves.iter().copied());
+                    let refitted = match part.role {
+                        Role::Operand(child) if crossed.is_none() => {
+                            self.refitted(child, Band::admitted(rule, index))
+                        },
+                        Role::Operand(_) | Role::Own(_) | Role::Comment => None,
+                    };
+                    if let Some(entry) = refitted {
+                        out.leaves.extend(entry);
+                        self.changed = Changed::Yes;
+                    }
+                    else {
+                        out.leaves.extend(part.leaves.iter().copied());
+                    }
                 },
             }
             match crossed {
@@ -1783,6 +1796,29 @@ impl<'source> Respelling<'_, 'source>
             },
             _ => None,
         }
+    }
+
+    /// The leaves of the entry of the parenthesised operand `child`, when a
+    /// rewrite respelled the entry, `fits` is tighter than an arrow and the
+    /// entry binds at `fits` or tighter: the parenthesis the rewrite left
+    /// needless where the operand stands. Where an arrow fits, the position
+    /// may read an expression, whose type the printer quotes parenthesised.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refitted(
+        &self,
+        child: Child<'source>,
+        fits: Band,
+    ) -> Option<Vec<Leaf<'source>>>
+    {
+        let Child::Node(entry) = self.unwrapped(child)?
+        else {
+            return None;
+        };
+        let spelled = self.spelled.get(&entry)?;
+        (spelled.rewritten == Changed::Yes && fits < Band::Loose && spelled.band <= fits)
+            .then(|| spelled.leaves.clone())
     }
 
     /// `child` with every parenthesis that holds one entry around it

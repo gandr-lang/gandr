@@ -91,6 +91,7 @@ use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Presentation;
 use gandr_surface_pretty::Spelling;
@@ -565,11 +566,29 @@ fn spell<'failure>(
     let seconds: Vec<(ValueTypeId, Name<'_>)> = written_names(origins.seconds(), text);
     let mut relations = origins.relations().to_vec();
     relations.sort_by_key(|&(related, _)| related);
+    let mut models: Vec<(ValueTypeId, Modelled<'_>)> = origins
+        .models()
+        .iter()
+        .map(|&(modelled, ref model)| {
+            (modelled, Modelled {
+                theory: Name::from(model.theory.as_ref()),
+                sorts: model
+                    .sorts
+                    .iter()
+                    .map(|&(ref sort, carrier)| {
+                        (Name::from(sort.as_ref()), CoreNode::ValueType(carrier))
+                    })
+                    .collect(),
+            })
+        })
+        .collect();
+    models.sort_by_key(|&(modelled, _)| modelled);
     let source = CoreSource::new(arena, &names)
         .naming(&constructors)
         .naming_arrows(&arrows)
         .naming_pairs(&pairs, &seconds)
-        .relating(&relations);
+        .relating(&relations)
+        .modeling(&models);
     for (
         node,
         Scoped {

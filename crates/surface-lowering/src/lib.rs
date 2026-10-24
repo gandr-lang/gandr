@@ -488,6 +488,7 @@ pub use crate::origin::PatternReading;
 pub use crate::origin::PatternSpan;
 pub use crate::origin::Provenance;
 pub use crate::origin::SplitComponent;
+pub use crate::origin::WrittenModel;
 pub use crate::origin::scrutinised;
 pub use crate::resolve::Bound;
 pub use crate::resolve::CandidateCount;

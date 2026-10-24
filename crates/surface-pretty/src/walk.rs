@@ -426,7 +426,7 @@ enum Kind
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
-        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
+        | Former::Path { .. } | Former::Flow { .. } | Former::Relation { .. } | Former::Model { .. } | Former::Data { .. } | Former::RunType(_) | Former::PrefixType(_) | Former::DialogueType(_) | Former::Located { .. } | Former::Kept { .. }),
     | Kind::CompType => matches!(*former, Former::Returner(_) | Former::EffectfulReturner { .. } | Former::Arrow { .. }
         | Former::With(..) | Former::Pi { .. } | Former::ComputationElement(_) | Former::Codata { .. }),
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
@@ -470,6 +470,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Path { .. }
         | Former::Flow { .. }
         | Former::Relation { .. }
+        | Former::Model { .. }
         | Former::Data { .. }
         | Former::RunType(_)
         | Former::PrefixType(_)
@@ -1260,6 +1261,10 @@ where
             left,
             right,
         } => Vec::from([value_type(left), value_type(right)]),
+        Former::Model { sorts, .. } => sorts
+            .iter()
+            .map(|&(_, carrier)| value_type(carrier))
+            .collect(),
         Former::ThunkType(child) | Former::QuoteComputation(child) => Vec::from([comp_type(child)]),
         Former::List(child)
         | Former::Returner(child)
@@ -5944,6 +5949,7 @@ impl Walk<'_, '_>
                 | Former::Constructor { .. }
                 | Former::Flow { .. }
                 | Former::Relation { .. }
+                | Former::Model { .. }
                 | Former::Recorded { .. }
                 | Former::Returned(_)
                 | Former::Primitive { .. }
@@ -6164,8 +6170,9 @@ impl Walk<'_, '_>
     /// offer `&{…}`; a sum or a lazy product, written between braces or, in
     /// the sugared form, as a chain an expression reads as arithmetic; a
     /// labelled record type `#{a : A}` or a telescope type `#{a : A, b : B}`,
-    /// whose entries an expression does not read; or a product written as such
-    /// a chain, `A * B`.
+    /// whose entries an expression does not read; a model type, `Model(T)` or
+    /// `Model(T) with sort C = A`, which no expression reads; or a product
+    /// written as such a chain, `A * B`.
     ///
     /// # Specification
     /// - requires: nothing; `source` may be malformed.
@@ -6173,7 +6180,8 @@ impl Walk<'_, '_>
     ///   state's own node is a receive, a selection or an offer; as a sum of
     ///   one or more components that is not `Bool`; as a lazy product or a
     ///   labelled record type of one or more components; as a telescope type;
-    ///   or, in the sugared form, as a product of two or more components.
+    ///   as a model type; or, in the sugared form, as a product of two or more
+    ///   components.
     /// - provides: the heads [`Self::unread_as_expression`] looks for.
     /// - fails: never.
     /// - panics: none.
@@ -6188,6 +6196,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_quoted_chain_is_quoted_1127`
     /// - witness: `tests::goldens::a_quoted_record_type_is_quoted_1459`
     /// - witness: `tests::goldens::a_quoted_telescope_type_is_quoted_1514`
+    /// - witness: `tests::goldens::a_model_type_spells_as_written_2246`
     #[spec(ensures: |ret| (ret == Bare::Unread) == match source.read(node) {
         | Former::Session { protocol, state, .. } => matches!(
             protocol.node(state),
@@ -6195,7 +6204,7 @@ impl Walk<'_, '_>
         ),
         | Former::Sum(arity) => usize::from(arity) >= 1_usize && named_sum(source, node).is_none(),
         | Former::With(arity) | Former::RecordType(arity) => usize::from(arity) >= 1_usize,
-        | Former::Sigma { .. } => true,
+        | Former::Sigma { .. } | Former::Model { .. } => true,
         | Former::Product(arity) => self.form == Form::Sugared && usize::from(arity) >= 2_usize,
         | _ => false,
     })]
@@ -6230,6 +6239,11 @@ impl Walk<'_, '_>
         // A telescope type is written between a record type's braces, which an
         // expression reads as a pack.
         else if let Former::Sigma { .. } = former {
+            true
+        }
+        // A model type is written as no expression reads it, its theory's
+        // name applied and its sorts after `with`.
+        else if let Former::Model { .. } = former {
             true
         }
         // `#{A, B}` reads as the product's code, `A * B` as the product of two
@@ -6970,6 +6984,7 @@ impl Walk<'_, '_>
             Former::Path { .. }
             | Former::Flow { .. }
             | Former::Relation { .. }
+            | Former::Model { .. }
             | Former::Data { .. }
             | Former::Codata { .. }
             | Former::Constructor { .. }
@@ -8821,6 +8836,24 @@ impl Walk<'_, '_>
                     },
                 }
             },
+            Former::Model { theory, sorts } => {
+                let _ = parts.text(format!("Model({})", theory.as_ref()));
+                for &(sort, _) in sorts {
+                    let _ = writes(
+                        Production("manifest_sort"),
+                        parts
+                            .part(Part::Space)
+                            .text(format!("with sort {} = ", sort.as_ref()))
+                            .piece(Binding::Sum),
+                    );
+                }
+                if sorts.is_empty() {
+                    writes(Production("type_application"), Binding::Atom)
+                }
+                else {
+                    writes(Production("manifest_type"), Binding::Relation)
+                }
+            },
             Former::Recorded { moves, .. } | Former::Dialogue { moves, .. } => {
                 let head = if matches!(*former, Former::Dialogue { .. }) {
                     "dialogue("
@@ -10310,8 +10343,9 @@ where
                 walk.remaining = left;
                 // The explicit form writes the forgetting map or the reduct the
                 // checker applies to a value as its form or call around the
-                // value, and the sugared form a written map's call the checker
-                // would apply as its model.
+                // value, and a written map's call as the map's form; the
+                // sugared form writes a written map's call the checker would
+                // apply as its model.
                 let crossed = core::mem::take(&mut walk.crossed);
                 let node = match walk.form {
                     Form::Explicit => {
@@ -10331,6 +10365,19 @@ where
                             tasks.push(Task::Join(Join::Apply(Arity(1_usize))));
                             tasks.push(Task::Visit {
                                 node,
+                                admits,
+                                depth,
+                            });
+                            continue;
+                        }
+                        if let Some(call) = source.forget_call(node) {
+                            let forgotten = Forgotten {
+                                theory: call.theory,
+                                sorts: &call.sorts,
+                            };
+                            walk.forget(forgotten, depth, &mut tasks);
+                            tasks.push(Task::Visit {
+                                node: call.model,
                                 admits,
                                 depth,
                             });
