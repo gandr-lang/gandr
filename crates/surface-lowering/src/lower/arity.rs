@@ -158,6 +158,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Summand;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::Name;
@@ -369,6 +370,30 @@ enum TypeZone
     Session,
     /// Any other type form.
     Ordinary,
+}
+
+/// What the operand of an observation is observed at: a type written for it,
+/// or the codata family the observation it is returns.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: one variant per way the operand's type is known.
+/// - executable: none — the classification reads the type it names.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a name's thunk, a call's result, and a link of a chain of
+///   observations.
+/// - witness: `lower::arity::tests::an_observation_projects_its_entry`
+/// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Subject
+{
+    /// The type at the node: a thunk the operand holds when thunked, the
+    /// computation the operand runs otherwise, its names resolved under the
+    /// frame.
+    Written(NodeIndex, Thunked, Frame),
+    /// The family declared at the constant, the computation the operand runs.
+    Family(ConstantIndex),
 }
 
 /// The entry an observation selects of a lazy record, or a selection of a
@@ -1933,13 +1958,13 @@ impl<'source> Lowerer<'_, 'source>
         found
     }
 
-    /// The observation labels of the codata family the type at `node`
-    /// applies, read through parentheses and, when `thunked`, one `+U`.
+    /// The codata family the type at `node` applies, read through parentheses
+    /// and, when `thunked`, one `+U`.
     ///
     /// # Specification
     /// - requires: `node` is a type's syntax node, read under `frame`.
-    /// - ensures: the labels of the family's observations in declaration order
-    ///   when the type, so read, is a codata family bare or applied; nothing
+    /// - ensures: the declaration the type's head names when the type, so read,
+    ///   is a family bare or applied whose head a declaration answers; nothing
     ///   for any other type.
     /// - fails: [`LoweringRefusal::BudgetExceeded`]; the type's own
     ///   malformation; the head's resolution refusals.
@@ -1953,16 +1978,17 @@ impl<'source> Lowerer<'_, 'source>
     /// of the allowance.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a copattern block under a stream answer and an
-    ///   observation of a thunked stream each read their labels here.
+    /// - hypothesis: L3 — as [`Self::stated_observations`], and the result an
+    ///   observation of a stream writes, read for the next link of a chain.
     /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |labels| !matches!(*labels, Maybe::Present(ref labels) if labels.is_empty())))]
-    pub(super) fn stated_observations(
+    /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| !matches!(*found, Maybe::Present(constant) if self.collected.slots.get(usize::from(constant)).is_none())))]
+    fn stated_family(
         &mut self,
         site: Site,
         (node, frame): (NodeIndex, Frame),
         thunked: Thunked,
-    ) -> Result<Maybe<Vec<Name>, stated_labels::Absent>, LoweringRefusal<'source>>
+    ) -> Result<Maybe<ConstantIndex, stated_labels::Absent>, LoweringRefusal<'source>>
     {
         let mut at = node;
         let mut through = thunked;
@@ -2026,7 +2052,76 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
         };
-        Ok(self.codata_observations(constant))
+        if self.collected.slots.get(usize::from(constant)).is_none() {
+            return Ok(Maybe::Absent(stated_labels::Absent::Otherwise));
+        }
+        Ok(Maybe::Present(constant))
+    }
+
+    /// The observation labels of the codata family the type at `node`
+    /// applies, read through parentheses and, when `thunked`, one `+U`.
+    ///
+    /// # Specification
+    /// - requires: `node` is a type's syntax node, read under `frame`.
+    /// - ensures: the labels of the family's observations in declaration order
+    ///   when the type, so read, is a codata family bare or applied, as
+    ///   [`Self::stated_family`] reads it; nothing for any other type.
+    /// - fails: as [`Self::stated_family`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a copattern block under a stream answer and an
+    ///   observation of a thunked stream each read their labels here.
+    /// - witness: `description::tests::a_codata_declaration_lowers_to_its_signature`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |labels| !matches!(*labels, Maybe::Present(ref labels) if labels.is_empty())))]
+    pub(super) fn stated_observations(
+        &mut self,
+        site: Site,
+        written: (NodeIndex, Frame),
+        thunked: Thunked,
+    ) -> Result<Maybe<Vec<Name>, stated_labels::Absent>, LoweringRefusal<'source>>
+    {
+        Ok(match self.stated_family(site, written, thunked)? {
+            Maybe::Present(constant) => self.codata_observations(constant),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        })
+    }
+
+    /// The codata family the observation at `index` of the family declared at
+    /// `constant` returns, when its written result is that family itself
+    /// applied.
+    ///
+    /// # Specification
+    /// - ensures: `constant` when the family heads the result the observation
+    ///   at `index` was written with, as its description records; nothing for
+    ///   another result, an index past the observations, and a declaration with
+    ///   no description.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a stream's tail, whose result is the stream, read for
+    ///   the next link of a chain, and its head, whose result is not.
+    /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
+    #[spec(ensures: |ret| ret.is_none_or(|family| family == constant))]
+    fn observed_family(
+        &self,
+        constant: ConstantIndex,
+        Place(index): Place,
+    ) -> Option<ConstantIndex>
+    {
+        let slot = self.collected.slots.get(usize::from(constant))?;
+        let entry = self.collected.descriptions.get(&slot.introduced_by.node)?;
+        // The family's own name inside its declaration names it, unresolved
+        // there by the rule against an unmarked self-reference.
+        let Maybe::Present(_) = entry.written.observations.get(index)?.itself
+        else {
+            return None;
+        };
+        Some(constant)
     }
 
     /// The observation labels of the codata family declared at `constant`,
@@ -2422,8 +2517,9 @@ impl<'source> Lowerer<'_, 'source>
 
     /// Classify a selection `m.l` or `m.i` as an observation when `m` is a name
     /// whose written type is a thunked lazy record, a thunked lazy product
-    /// chain or a thunked codata family, or a call whose callee writes one of
-    /// those types, unthunked, as its result.
+    /// chain or a thunked codata family, a call whose callee writes one of
+    /// those types, unthunked, as its result, or an observation whose result
+    /// is its own codata family.
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
@@ -2435,9 +2531,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   places, counted from zero as a copattern block's and an injection's
     ///   positions are, of the thunk the name holds, read as a value under the
     ///   form's frame; planned the same way off a call whose callee's written
-    ///   result, as [`Self::called_result`] reads it, is `&{…}`, `C & D & …` or
-    ///   `F(…)`, the call read as the computation it runs under the form's
-    ///   frame and its result's head resolved under the outermost frame;
+    ///   result is `&{…}`, `C & D & …` or `F(…)`, and off an observation whose
+    ///   written result is its own family `F(…)`, as [`Self::observed_subject`]
+    ///   reads each, the operand read as the computation it runs under the
+    ///   form's frame and the type's head resolved under the outermost frame;
     ///   nothing is planned otherwise.
     /// - fails: the unresolved-name refusal for a label the lazy record or the
     ///   family lacks, a label of a lazy product chain, and a position past the
@@ -2452,11 +2549,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   lacks, and each observation of a stream, by label and by position;
     ///   each entry of a lazy product chain by position, and a position past
     ///   its last; a call's stream observed by label, by position and in an
-    ///   operand, and a label its family lacks.
+    ///   operand, and a label its family lacks; a chain of observations off a
+    ///   name and off a call, and one through an observation whose result is
+    ///   not its family.
     /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
     /// - witness: `lower::arity::tests::a_copattern_block_orders_its_clauses_by_its_codata_answer`
     /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
     /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
+    /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Observe(..))))]
     pub(super) fn observation(
         &mut self,
@@ -2470,101 +2570,254 @@ impl<'source> Lowerer<'_, 'source>
         ) {
             return Ok(Planned(false));
         }
-        let (target, selected, numbered) =
-            if let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span) {
-                (target, selected, false)
-            }
-            else {
-                let mut cursor = Cursor::new(&pieces.pieces, site.at.span);
-                let Maybe::Present(Piece::Operand(target)) = cursor.read()
-                else {
-                    return Ok(Planned(false));
-                };
-                let (Maybe::Present(_dot), Maybe::Present(selected)) =
-                    (cursor.tile(TileName::DOT), cursor.tile(TileName::NUMBER))
-                else {
-                    return Ok(Planned(false));
-                };
-                (target, selected, true)
-            };
+        let Some((target, selected)) = Self::selection_link(site, &pieces.pieces, site.at.span)
+        else {
+            return Ok(Planned(false));
+        };
+        let numbered = self.text_at(selected).as_ref().parse::<usize>().is_ok();
         let frame = site.reading.frame();
-        let (declared, thunked, resolved) =
-            if matches!(self.form_at(target)?, Some((_, Former::Name))) {
-                let named = Site {
-                    at: target,
-                    name: FormName::IDENTIFIER,
-                    reading: Reading::Value(frame),
-                };
-                let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-                    Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-                    Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
-                    Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
-                };
-                let Maybe::Present(declared) = declared
-                else {
-                    return Ok(Planned(false));
-                };
-                (declared, Thunked(true), frame)
-            }
-            else {
-                // A call's callee writes its result in its own declaration, at
-                // the outermost frame of the source both stand in.
-                let Some(result) = self.called_result(site, frame, target)?
-                else {
-                    return Ok(Planned(false));
-                };
-                (result.node, Thunked(false), Frame::Outermost)
-            };
+        let Some(subject) = self.observed_subject(site, frame, target)?
+        else {
+            return Ok(Planned(false));
+        };
         let label = self.name_at(selected);
-        let (index, count) =
-            match self.stated_entries(site, declared, Former::LazyRecordType, thunked)? {
-                Maybe::Present(stated) => {
-                    let Place(index) = if numbered {
-                        Self::positioned(label, selected, &stated)?
-                    }
-                    else {
-                        Self::labelled_in(&stated, label, selected)?.0
-                    };
-                    (index, stated.len())
-                },
-                Maybe::Absent(_) => {
-                    let Maybe::Present(observed) =
+        let (entries, thunked) = match subject {
+            Subject::Written(declared, thunked, _) => (
+                self.stated_entries(site, declared, Former::LazyRecordType, thunked)?,
+                thunked,
+            ),
+            Subject::Family(_) => (
+                Maybe::Absent(stated_labels::Absent::Otherwise),
+                Thunked(false),
+            ),
+        };
+        let (index, count) = match entries {
+            Maybe::Present(stated) => {
+                let Place(index) = if numbered {
+                    Self::positioned(label, selected, &stated)?
+                }
+                else {
+                    Self::labelled_in(&stated, label, selected)?.0
+                };
+                (index, stated.len())
+            },
+            Maybe::Absent(_) => {
+                let observed = match subject {
+                    Subject::Written(declared, thunked, resolved) => {
                         self.stated_observations(site, (declared, resolved), thunked)?
+                    },
+                    Subject::Family(family) => self.codata_observations(family),
+                };
+                let Maybe::Present(observed) = observed
+                else {
+                    return Ok(Planned(false));
+                };
+                let index = if numbered {
+                    Self::positioned(label, selected, &observed)?.0
+                }
+                else {
+                    let Some(index) = observed
+                        .iter()
+                        .position(|held| held.as_ref() == label.as_ref())
                     else {
-                        return Ok(Planned(false));
+                        return Err(LoweringRefusal::UnresolvedName {
+                            span: selected.span,
+                            name: label,
+                        });
                     };
-                    let index = if numbered {
-                        Self::positioned(label, selected, &observed)?.0
-                    }
-                    else {
-                        let Some(index) = observed
-                            .iter()
-                            .position(|held| held.as_ref() == label.as_ref())
-                        else {
-                            return Err(LoweringRefusal::UnresolvedName {
-                                span: selected.span,
-                                name: label,
-                            });
-                        };
-                        index
-                    };
-                    (index, observed.len())
-                },
-            };
+                    index
+                };
+                (index, observed.len())
+            },
+        };
         let frame = self.require(site, Produced::Computation)?;
-        let subject = if thunked.0 {
+        let operand = if thunked.0 {
             Reading::Value(frame)
         }
         else {
             Reading::Computation(frame)
         };
-        self.read(target.node, subject);
+        self.read(target.node, operand);
         self.plan(
             site,
             Plan::Observe(target.node, Observed { index, count }, thunked),
         );
 
         Ok(Planned(true))
+    }
+
+    /// The operand and the member of a selection by label, `e.l`, or by
+    /// position, `e.0`.
+    ///
+    /// # Specification
+    /// - requires: `pieces` are a projection's pieces, spanning `span`.
+    /// - ensures: the operand and the member's tile when the pieces are an
+    ///   operand, a dot and a name or a number; nothing otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::observation`].
+    /// - witness: `lower::arity::tests::an_observation_by_position_projects_its_entry_941`
+    /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
+    #[spec(ensures: |ret| ret.is_none_or(|(target, _)| pieces.first() == Some(&Piece::Operand(target))))]
+    fn selection_link(
+        site: Site,
+        pieces: &[Piece],
+        span: ByteSpan,
+    ) -> Option<(Placed, Placed)>
+    {
+        if let Ok(found) = Self::link(site, pieces, span) {
+            return Some(found);
+        }
+        let mut cursor = Cursor::new(pieces, span);
+        let Maybe::Present(Piece::Operand(target)) = cursor.read()
+        else {
+            return None;
+        };
+        let (Maybe::Present(_dot), Maybe::Present(selected)) =
+            (cursor.tile(TileName::DOT), cursor.tile(TileName::NUMBER))
+        else {
+            return None;
+        };
+        Some((target, selected))
+    }
+
+    /// What the operand `target` of an observation is observed at.
+    ///
+    /// # Specification
+    /// - requires: `target` is the operand of a selection at `site`, read under
+    ///   `frame`.
+    /// - ensures: for a name, the type its binder or declaration was written
+    ///   with, a thunk, under `frame`, a binder's type owned by the declaration
+    ///   the selection belongs to; for a call, the callee's written result, as
+    ///   [`Self::called_result`] reads it, a computation under the outermost
+    ///   frame; for a chain of selections rooted at either, the family the last
+    ///   link's observation returns when its written result is its own family,
+    ///   as [`Self::observed_family`] reads it, each link observed off what the
+    ///   link before it is. Nothing otherwise, and nothing for a link its
+    ///   family does not have, which that link's own reading refuses.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`]; the root name's and the
+    ///   callee's resolution refusals; a written type's own malformation.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// Each round of the walk down the chain descends to a child of the
+    /// finite tree and spends one step of the allowance; the walk back up
+    /// visits each link it collected once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::observation`].
+    /// - witness: `lower::arity::tests::an_observation_projects_its_entry`
+    /// - witness: `lower::arity::tests::an_observation_off_a_call_projects_the_run_result_1106`
+    /// - witness: `lower::arity::tests::a_chain_of_observations_projects_each_link_1106`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.is_none_or(|subject| match subject { Subject::Written(node, ..) => self.tree.node(node).is_some(), Subject::Family(family) => self.collected.slots.get(usize::from(family)).is_some() })))]
+    fn observed_subject(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        target: Placed,
+    ) -> Result<Option<Subject>, LoweringRefusal<'source>>
+    {
+        let mut links = Vec::new();
+        let mut root = target;
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let walked = loop {
+            if let Err(refusal) = self.fuel.spend() {
+                break Err(refusal);
+            }
+            match self.form_at(root) {
+                Ok(Some((_, Former::Projection))) => {},
+                Ok(_) => break Ok(()),
+                Err(refusal) => break Err(refusal),
+            }
+            if let Err(refusal) = read_pieces(self.pbg, self.tree, root.node, &mut scratch) {
+                break Err(refusal);
+            }
+            let Some((inner, selected)) = Self::selection_link(site, &scratch.pieces, root.span)
+            else {
+                break Ok(());
+            };
+            links.push(selected);
+            root = inner;
+        };
+        self.scratch = scratch;
+        walked?;
+        let mut subject = if matches!(self.form_at(root)?, Some((_, Former::Name))) {
+            let named = Site {
+                at: root,
+                name: FormName::IDENTIFIER,
+                reading: Reading::Value(frame),
+            };
+            let declared = match self.resolve_name(named, frame, self.name_at(root)) {
+                Ok(Maybe::Present(Resolved::Binder(bound))) => {
+                    // A binder's type is written in the declaration the
+                    // selection belongs to, and may lie where the walk has
+                    // not yet given it that owner its names resolve by.
+                    if let Maybe::Present(written) = bound.declared {
+                        self.own_written(written, site.at.node);
+                    }
+                    bound.declared
+                },
+                Ok(Maybe::Present(Resolved::Declaration { declared, .. })) => declared,
+                Ok(Maybe::Absent(_)) => Maybe::Absent(binder_type::Absent::Untyped),
+                // A chain's root is read again by the link it heads, which
+                // refuses it in its own reading.
+                Err(LoweringRefusal::UnresolvedName { .. }) if !links.is_empty() => {
+                    return Ok(None);
+                },
+                Err(refusal) => return Err(refusal),
+            };
+            let Maybe::Present(declared) = declared
+            else {
+                return Ok(None);
+            };
+            Subject::Written(declared, Thunked(true), frame)
+        }
+        else {
+            // A call's callee writes its result in its own declaration, at the
+            // outermost frame of the source both stand in.
+            let Some(result) = self.called_result(site, frame, root)?
+            else {
+                return Ok(None);
+            };
+            Subject::Written(result.node, Thunked(false), Frame::Outermost)
+        };
+        for selected in links.into_iter().rev() {
+            let family = match subject {
+                Subject::Written(declared, thunked, resolved) => {
+                    self.stated_family(site, (declared, resolved), thunked)?
+                },
+                Subject::Family(family) => Maybe::Present(family),
+            };
+            let Maybe::Present(family) = family
+            else {
+                return Ok(None);
+            };
+            let Maybe::Present(labels) = self.codata_observations(family)
+            else {
+                return Ok(None);
+            };
+            let name = self.name_at(selected);
+            let index = name.as_ref().parse::<usize>().map_or_else(
+                |_unnumbered| {
+                    labels
+                        .iter()
+                        .position(|held| held.as_ref() == name.as_ref())
+                },
+                |place| (place < labels.len()).then_some(place),
+            );
+            let Some(returned) = index.and_then(|index| self.observed_family(family, Place(index)))
+            else {
+                return Ok(None);
+            };
+            subject = Subject::Family(returned);
+        }
+
+        Ok(Some(subject))
     }
 
     /// The entry the position `name`, written at `written`, places among

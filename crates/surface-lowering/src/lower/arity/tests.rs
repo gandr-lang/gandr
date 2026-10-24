@@ -1483,6 +1483,61 @@ fn an_observation_off_a_call_projects_the_run_result_1106()
     );
 }
 
+/// #1106: a chain of observations reads each link off the one before it: an
+/// observation whose written result is its own family, a stream's tail, is
+/// observed again under that family's labels, off a thunk a name holds and
+/// off a call. A link off an observation whose result is not its family is
+/// no observation.
+#[test]
+fn a_chain_of_observations_projects_each_link_1106()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        "codata Stream(a : Type) : Type[-] { head : a; tail : Stream(a); }\ndef rec upward(n : \
+         Integer) -> Stream(Integer) { &{ .head => n, .tail => upward[>](n + 1) } }\ndef \
+         second(s : +U Stream(Integer)) -> -F Integer { s.tail.head }\ndef third() -> -F Integer \
+         { upward(1).tail.tail.head }\ndef counted() -> -F Integer { upward(1).1.tail.0 }\ndef \
+         deeper(s : +U Stream(Integer)) -> -F Integer { s.head.tail }\n",
+        &mut arena,
+    );
+    // The projections, forces and applications of a body, in its walk's
+    // order, an application named without its ids.
+    let observed = |name: &str| -> Vec<String> {
+        body(&arena, &module, name)
+            .into_iter()
+            .filter_map(|token| {
+                if token.starts_with("Some(Application(") {
+                    Some(String::from("application"))
+                }
+                else {
+                    (token.starts_with("project") || token == "force").then_some(token)
+                }
+            })
+            .collect()
+    };
+
+    assert_eq!(
+        observed("second"),
+        ["project0", "project1", "force"],
+        "the thunk is forced once, its tail observed, then the tail's head"
+    );
+    assert_eq!(
+        observed("third"),
+        ["project0", "project1", "project1", "application"],
+        "the call runs once and each link projects what the one before it returns"
+    );
+    assert_eq!(
+        observed("counted"),
+        observed("third"),
+        "a chain by position is the chain its labels name"
+    );
+    assert_eq!(
+        observed("deeper"),
+        ["project0", "force"],
+        "a head is no stream, so only the head is observed"
+    );
+}
+
 #[test]
 fn a_telescope_binds_each_entry_in_the_ones_after_it()
 {
