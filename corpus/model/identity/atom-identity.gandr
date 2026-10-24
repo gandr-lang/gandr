@@ -6,16 +6,16 @@
 
 /// Any two points of the unit type are related, by the unit type.
 @[ checks ]
-def related(a : Unit, b : Unit) -> -F Type { return Unit }
+def related(a : Unit, b : Unit) -> Type { return Unit }
 
 /// Every point is related to itself.
 @[ checks ]
-def reflexivity(a : Unit) -> -F related(a, a) { unit }
+def reflexivity(a : Unit) -> related(a, a) { unit }
 
 /// The transport law: each point `b` that `a` relates to, with its evidence,
 /// is the centre `a` with its reflexivity (Theorem 5.8.2, (iv)).
 @[ checks ]
-def contraction(a : Unit, b : Unit, r : related(a, b)) -> -F Path(
+def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path(
   #{ y : Unit, s : related(a, y) },
   (b, r),
   (a, reflexivity(a))
@@ -64,7 +64,7 @@ def carriedAlong : Path(
 def backToOrigin(
   b : Point.T,
   q : Path(Point.T, Point.origin, b)
-) -> -F Path(Point.T, b, Point.origin) {
+) -> Path(Point.T, b, Point.origin) {
   become transport(
     +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Path(Point.T, y, Point.origin)),
     q,
@@ -114,16 +114,16 @@ def overAlong : Path(
 /// fibre of this relation is an identity of the unit type, not the unit type
 /// itself (#1959).
 @[ checks ]
-def pathRelated(a : Unit, b : Unit) -> -F Type { return Path(Unit, a, b) }
+def pathRelated(a : Unit, b : Unit) -> Type { return Path(Unit, a, b) }
 
 /// Every point related to itself by its reflexivity.
 @[ checks ]
-def pathReflexivity(a : Unit) -> -F pathRelated(a, a) { here(a) }
+def pathReflexivity(a : Unit) -> pathRelated(a, a) { here(a) }
 
 /// The transport law at the paths of the unit type: an identity of the
 /// unit type, and one over it, is the unit (#1960).
 @[ checks ]
-def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> -F Path(
+def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
   #{ y : Unit, s : pathRelated(a, y) },
   (b, r),
   (a, pathReflexivity(a))

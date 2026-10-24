@@ -39,7 +39,7 @@ def shrub : Bush = Sprout((Cons(
 
 /// A list of numbers, summed.
 @[ checks ]
-def rec sum(xs : List(Nat)) -> -F Nat {
+def rec sum(xs : List(Nat)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => plus(x, sum[<](rest))
@@ -50,7 +50,7 @@ def rec sum(xs : List(Nat)) -> -F Nat {
 /// instantiates `map`'s element at the children's stage, below the node's,
 /// so `nodes[<]` takes each child (#393).
 @[ checks ]
-def rec nodes(t : Bush) -> -F Nat {
+def rec nodes(t : Bush) -> Nat {
   case t {
     Sprout(kids) => Succ(sum(map(Bush, Nat, nodes[<], kids)))
   }
@@ -59,7 +59,7 @@ def rec nodes(t : Bush) -> -F Nat {
 /// A map over the tree: every node gains a childless node beside its
 /// children, each child grown through `map` at its stage.
 @[ checks ]
-def rec grow(t : Bush) -> -F Bush {
+def rec grow(t : Bush) -> Bush {
   case t {
     Sprout(kids) => Sprout((Cons(sprig, map(Bush, Bush, grow[<], kids)) : List(Bush)))
   }
@@ -93,7 +93,7 @@ rec {
 
   /// The nodes of a tree: its own and its children's.
   @[ checks ]
-  def rec treeSize(t : Rose) -> -F Nat {
+  def rec treeSize(t : Rose) -> Nat {
     case t {
       Node(kids) => { run s <- forestSize[<](kids); Succ(s) }
     }
@@ -101,7 +101,7 @@ rec {
 
   /// The nodes of a forest: each tree's, summed.
   @[ checks ]
-  def rec forestSize(ts : Forest) -> -F Nat {
+  def rec forestSize(ts : Forest) -> Nat {
     case ts {
       Empty => Zero,
       More(t, rest) => { run a <- treeSize[<](t); run b <- forestSize[<](rest); plus(a, b) }

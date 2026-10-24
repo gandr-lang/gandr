@@ -15,15 +15,15 @@ theory Counter {
 module Sealed :> Model(Counter) {
   type C = Integer;
 
-  def start() -> -F Integer { 0 }
+  def start() -> Integer { 0 }
 
-  def step(n : Integer) -> -F Integer { n + 1 }
+  def step(n : Integer) -> Integer { n + 1 }
 }
 
 /// An integer where the sealed carrier is asked.
 @[ refuses("TypeMismatch") ]
-def stepOne() -> -F (Sealed.C) { Sealed.step(1) }
+def stepOne() -> Sealed.C { Sealed.step(1) }
 
 /// The sealed start read as an integer.
 @[ refuses("TypeMismatch") ]
-def leaked() -> -F Integer { Sealed.start() }
+def leaked() -> Integer { Sealed.start() }

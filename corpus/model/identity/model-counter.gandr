@@ -22,7 +22,7 @@ module Up : Model(Counter) {
   def zero = +{.0 = unit};
   /// One count more.
   @[ checks ]
-  def incr(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+  def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
     case c {
       +{.0 = u} => +{.1 = +{.0 = u}},
       +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
@@ -31,7 +31,7 @@ module Up : Model(Counter) {
   }
   /// The count as an integer.
   @[ checks ]
-  def read(c : Unit + (Unit + Unit)) -> -F Integer {
+  def read(c : Unit + (Unit + Unit)) -> Integer {
     case c {
       +{.0 = u} => 0,
       +{.1 = +{.0 = u}} => 1,
@@ -48,7 +48,7 @@ module Down : Model(Counter) {
   def zero = +{.0 = unit};
   /// One count less.
   @[ checks ]
-  def incr(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+  def incr(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
     case c {
       +{.0 = u} => +{.1 = +{.1 = u}},
       +{.1 = +{.0 = u}} => +{.0 = u},
@@ -57,7 +57,7 @@ module Down : Model(Counter) {
   }
   /// The count negated, as an integer.
   @[ checks ]
-  def read(c : Unit + (Unit + Unit)) -> -F Integer {
+  def read(c : Unit + (Unit + Unit)) -> Integer {
     case c {
       +{.0 = u} => 0,
       +{.1 = +{.0 = u}} => 2,
@@ -76,7 +76,7 @@ def downModel : Model(Counter) = pack Down at Model(Counter) ;
 
 /// The count negated: zero stays, one and two swap.
 @[ checks ]
-def negateCount(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
   case c {
     +{.0 = u} => +{.0 = u},
     +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
@@ -116,7 +116,7 @@ def oneCounter : Path(Model(Counter), upModel, downModel) = (
 
 /// A consumer of any counter: the reading after one step from zero.
 @[ checks ]
-def observe(m : Model(Counter)) -> -F Integer {
+def observe(m : Model(Counter)) -> Integer {
   case m {
     #{.zero = z, .incr = i, .read = r} => r(i(z))
   }
@@ -124,15 +124,15 @@ def observe(m : Model(Counter)) -> -F Integer {
 
 /// The consumer reads counting up.
 @[ runs("1") ]
-def observedUp() -> -F Integer { observe(upModel) }
+def observedUp() -> Integer { observe(upModel) }
 
 /// The consumer reads counting down alike.
 @[ runs("1") ]
-def observedDown() -> -F Integer { observe(downModel) }
+def observedDown() -> Integer { observe(downModel) }
 
 /// The consumer reads both alike by construction, along the path between the
 /// models.
 @[ checks ]
-def observedAlike() -> -F Path(Integer, observe(upModel), observe(downModel)) {
+def observedAlike() -> Path(Integer, observe(upModel), observe(downModel)) {
   cong(observe, oneCounter)
 }

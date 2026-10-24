@@ -11,7 +11,7 @@ def setBand : Band = #{low = 200000, high = 800000} ;
 
 /// The width of a band, its fields read through the synonym.
 @[ checks ]
-def width(band : Band) -> -F Integer {
+def width(band : Band) -> Integer {
   case band {
     #{.low = low, .high = high} => high - low
   }
@@ -19,7 +19,7 @@ def width(band : Band) -> -F Integer {
 
 /// The set's band is six tenths wide.
 @[ runs("600000") ]
-def setWidth() -> -F Integer { become width(setBand) }
+def setWidth() -> Integer { become width(setBand) }
 
 /// A pair of one type, a synonym with a parameter.
 type Twice(a : Type) = a * a ;

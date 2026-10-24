@@ -20,7 +20,7 @@ data U : Type {
 
 /// The decoder: each arm returns the type its code names.
 @[ checks ]
-def rec el(u : U) -> -F Type {
+def rec el(u : U) -> Type {
   case u {
     NatC => return Nat,
     Arrow(a, b) => { run x <- el[<](a); run y <- el[<](b); return (x => y) }
@@ -34,7 +34,7 @@ def one : el(Arrow(NatC, NatC)) = Succ(Zero) ;
 /// At every code `c`, a value at `el(c)` is no function from `el(c)` to
 /// `el(c)`: the decode of the arrow code reads to that function type.
 @[ refuses("TypeMismatch") ]
-def idAt(c : U, v : el(c)) -> -F el(Arrow(c, c)) { v }
+def idAt(c : U, v : el(c)) -> el(Arrow(c, c)) { v }
 
 /// A value packed with its code: the second field's type is the decode of the
 /// first.

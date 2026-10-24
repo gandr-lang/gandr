@@ -17,7 +17,7 @@ def twice : Type -> Type = \Y. Y * Y ;
 /// binders are used: an unused one has no type entry under a static
 /// application (#1080).
 @[ checks ]
-def sum(p : apply(twice, Integer)) -> -F Integer {
+def sum(p : apply(twice, Integer)) -> Integer {
   case p {
     #{a, b} => become a + b
   }
@@ -25,14 +25,14 @@ def sum(p : apply(twice, Integer)) -> -F Integer {
 
 /// `sum` at a pair of integers runs as at `Integer * Integer`.
 @[ runs("3") ]
-def sumRun() -> -F Integer { become sum((1, 2)) }
+def sumRun() -> Integer { become sum((1, 2)) }
 
 /// A pair returned at an operator's type.
 @[ checks ]
-def doubled(n : Integer) -> -F twice(Integer) {
+def doubled(n : Integer) -> twice(Integer) {
   (n, n)
 }
 
 /// `doubled` runs to the pair the operator's reduct types.
 @[ runs("(4, 4)") ]
-def doubledRun() -> -F twice(Integer) { become doubled(4) }
+def doubledRun() -> twice(Integer) { become doubled(4) }

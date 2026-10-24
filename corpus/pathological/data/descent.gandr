@@ -14,7 +14,7 @@ data Nat : Type {
 /// A call at the matched parameter itself rather than a field of it: not
 /// below the stage the match took it apart at (#518).
 @[ refuses("StageNotBelow") ]
-def rec again(n : Nat) -> -F Nat {
+def rec again(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => again[<](n)

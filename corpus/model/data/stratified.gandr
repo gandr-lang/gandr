@@ -20,7 +20,7 @@ data Chain : Type {
 
 /// A test answering `R` of a link and `L` of the start.
 @[ checks ]
-def linked(c : Chain) -> -F Two { case c -> -F Two { Start => L, Link(p, t) => R } }
+def linked(c : Chain) -> Two { case c -> -F Two { Start => L, Link(p, t) => R } }
 
 /// Two links over the start, each holding `linked`.
 @[ checks ]
@@ -29,7 +29,7 @@ def twice : Chain = Link(Link(Start, linked), linked) ;
 /// The test a link holds, applied to the chain before it: the chain stands
 /// at the stage the test takes.
 @[ checks ]
-def judge(c : Chain) -> -F Two {
+def judge(c : Chain) -> Two {
   case c {
     Start => L,
     Link(prev, test) => test(prev)
@@ -38,7 +38,7 @@ def judge(c : Chain) -> -F Two {
 
 /// The links of a chain, by recursion one stage below each link.
 @[ checks ]
-def rec chainLength(c : Chain) -> -F Nat {
+def rec chainLength(c : Chain) -> Nat {
   case c {
     Start => Zero,
     Link(prev, test) => Succ(chainLength[<](prev))

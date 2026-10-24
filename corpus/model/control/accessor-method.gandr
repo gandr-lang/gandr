@@ -26,7 +26,7 @@ module Places {
 
 /// The first element, read by a call without a block.
 @[ runs("1") ]
-def head() -> -F Integer {
+def head() -> Integer {
   hold xs = pair;
   run h <- xs.first();
   pure h
@@ -34,7 +34,7 @@ def head() -> -F Integer {
 
 /// The element after the first, read through a sum as its index.
 @[ runs("2") ]
-def later() -> -F Integer {
+def later() -> Integer {
   hold xs = pair;
   run y <- xs.after(0);
   pure y
@@ -44,7 +44,7 @@ def later() -> -F Integer {
 /// index is the view of its place used without a block, lent shared for the
 /// read.
 @[ runs("2") ]
-def bare() -> -F Integer {
+def bare() -> Integer {
   hold xs = pair;
   run y <- xs[1];
   pure y
@@ -52,7 +52,7 @@ def bare() -> -F Integer {
 
 /// The same read at an index a parameter carries.
 @[ checks ]
-def bareAt(i : Integer) -> -F Integer {
+def bareAt(i : Integer) -> Integer {
   hold xs = pair;
   run y <- xs[i];
   pure y
@@ -60,14 +60,14 @@ def bareAt(i : Integer) -> -F Integer {
 
 /// The read a call of it makes, at the first index.
 @[ runs("1") ]
-def bareFirst() -> -F Integer {
+def bareFirst() -> Integer {
   bareAt(0)
 }
 
 /// The first element read through a view the block lends shared: the block
 /// only reads it.
 @[ runs("2") ]
-def readTwice() -> -F Integer {
+def readTwice() -> Integer {
   hold xs = pair;
   xs.first() as w { pure w + w }
 }
@@ -75,7 +75,7 @@ def readTwice() -> -F Integer {
 /// The element at an index written back through a view the block lends
 /// exclusively: the resume asks it, and only that element moved.
 @[ runs("cons(1, cons(5, nil))") ]
-def raised() -> -F List(Integer) {
+def raised() -> List(Integer) {
   hold xs = pair;
   xs.nth(1) as w { resume(w, w + 3) };
   pure xs
@@ -83,7 +83,7 @@ def raised() -> -F List(Integer) {
 
 /// An abort asks an exclusive lend as well and writes nothing back.
 @[ runs("cons(1, cons(2, nil))") ]
-def abandonedView() -> -F List(Integer) {
+def abandonedView() -> List(Integer) {
   hold xs = pair;
   xs.first() as w { abort(w) };
   pure xs

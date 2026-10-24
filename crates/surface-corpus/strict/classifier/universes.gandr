@@ -12,17 +12,17 @@ def widened : Type[+, 1] = String ;
 def five : small = 5 ;
 
 @[ runs("fn (a) { fn (b) { b } }") ]
-def id(a : Type, x : a) -> -F a { x }
+def id(a : Type, x : a) -> a { x }
 
-def at_integer() -> -F Integer { become id(Integer, five) }
+def at_integer() -> Integer { become id(Integer, five) }
 
-def at_string() -> -F String { become id(String, "text") }
+def at_string() -> String { become id(String, "text") }
 
-def at_small() -> -F small { become id(small, five) }
+def at_small() -> small { become id(small, five) }
 
 @[ runs("fn (a) { fn (b) { force b } }") ]
 def perform(c : Type[-], t : +U c) -> c { become force t }
 
-def performed() -> -F Integer { become perform(effect, thunk { 42 }) }
+def performed() -> Integer { become perform(effect, thunk { 42 }) }
 
-def quoted() -> -F Integer { become perform(-F Integer, thunk { 7 }) }
+def quoted() -> Integer { become perform(-F Integer, thunk { 7 }) }

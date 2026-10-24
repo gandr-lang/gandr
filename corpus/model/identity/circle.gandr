@@ -26,7 +26,7 @@ import "./equivalence.gandr" ;
 
 /// The loop's word: one letter before the empty word.
 @[ runs("loop ∷ here(Base)") ]
-def once() -> -F Path(Circle, Base, Base) { loop }
+def once() -> Path(Circle, Base, Base) { loop }
 
 /// The inverse of the loop is the letter `back(loop)`, by conversion.
 @[ checks ]
@@ -52,7 +52,7 @@ def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(B
 /// A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷
 /// here(Base)` is the empty word, which it would read as 1.
 @[ refuses("RuleNotRespected") ]
-def tell(p : Path(Circle, Base, Base)) -> -F Integer {
+def tell(p : Path(Circle, Base, Base)) -> Integer {
   case p {
     here => 0,
     loop ∷ q => 1,

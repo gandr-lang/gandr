@@ -40,6 +40,7 @@ use crate::leaf::copied;
 use crate::linear::Runs;
 use crate::merge::Joining;
 use crate::merge::Pairing;
+use crate::merge::Returning;
 use crate::reduct::Applied;
 use crate::reduct::Reduct;
 use crate::reduct::Reducts;
@@ -91,6 +92,10 @@ pub enum RewriteName
     /// value, and `v`; only the sugared form moves it, leaving out the
     /// keyword the lowering infers.
     TailReturn,
+    /// A definition's result: `-> -F B` and `-> B`, `B` a value type, which
+    /// the lowering reads with the returner inserted; only the sugared form
+    /// moves it, and never a returner with an effect row.
+    InsertedReturner,
     /// The value-function alias at its shortest: `(A) => B` and `A => B`, a
     /// binder nothing later reads left out; only the sugared form moves it.
     ShortAlias,
@@ -145,6 +150,7 @@ impl fmt::Display for RewriteName
             Self::PathInverse => "path-inverse",
             Self::PathAction => "path-action",
             Self::TailReturn => "tail-return",
+            Self::InsertedReturner => "inserted-returner",
             Self::ShortAlias => "short-alias",
             Self::LinearRun => "linear-run",
             Self::InsertedThunk => "inserted-thunk",
@@ -196,7 +202,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 30] = [
+pub const REWRITES: [Rewrite; 31] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -347,6 +353,14 @@ pub const REWRITES: [Rewrite; 30] = [
         mold: MoldName("return_expression"),
         from: Spelling("return v"),
         to: Spelling("v"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReturner,
+        direction: Direction::Sugar,
+        mold: MoldName("f_type"),
+        from: Spelling("-> -F B"),
+        to: Spelling("-> B"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -531,6 +545,25 @@ impl Chosen
             (Pairing::Apart, Direction::Sugar | Direction::Desugar) => Joining::Keep,
             (Pairing::Merged, Direction::Sugar) => Joining::Join,
             (Pairing::Merged, Direction::Desugar) => Joining::Split,
+        }
+    }
+
+    /// How a function form the merge writes spells its result:
+    /// [`Returning::Bare`] where the sugared form leaves the returner the
+    /// lowering inserts unwritten.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn returning(self) -> Returning
+    {
+        if self
+            .rewrites(MoldName("f_type"))
+            .any(|chosen| chosen == RewriteName::InsertedReturner)
+        {
+            Returning::Bare
+        }
+        else {
+            Returning::Returner
         }
     }
 
@@ -861,9 +894,9 @@ enum Changed
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Context
 {
-    /// A type: after a `:`, an operand of a type former, or a static
-    /// abstraction's body. Every spelling of the value-function alias reads
-    /// here.
+    /// A type: after a `:`, an operand of a type former, a definition's
+    /// result or a static abstraction's body. Every spelling of the
+    /// value-function alias reads here.
     Type,
     /// After a rule's `<=>`: a parenthesised list there is the rule's
     /// outputs, never a tuple.
@@ -878,6 +911,17 @@ enum Context
     /// Anywhere else: a value or a computation, where `() => A` reads as an
     /// expression and `A => B` as the value-function alias.
     Value,
+}
+
+/// Whether a type stands as a definition's result, after its `->`: the place
+/// the lowering reads a value type with its returner inserted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Place
+{
+    /// A definition's result.
+    Result,
+    /// Anywhere else.
+    Other,
 }
 
 /// Where an operand stands among its form's operands.
@@ -1107,12 +1151,66 @@ impl<'source> Respelling<'_, 'source>
         match (rule, preceding.map(<&str>::from)) {
             (_, Some("<=>")) => Context::Outputs,
             (Some("theory_declaration"), Some(":")) => Context::Judgment,
-            (_, Some(":")) => Context::Type,
+            // After a `:`, or at a definition's result, its returner left
+            // unwritten.
+            (_, Some(":"))
+            | (
+                Some("def_value" | "module_definition_member" | "attributed_module_member"),
+                Some("->"),
+            ) => Context::Type,
             (Some(rule), _) if rule.ends_with("_type") || rule == "static_abstraction" => {
                 Context::Type
             },
             (Some("call_expression"), _) => Context::Argument,
             _ => Context::Value,
+        }
+    }
+
+    /// Whether the form `at` stands as a definition's result: the operand
+    /// after a `->` of a definition, a module member's among them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        at: NodeIndex,
+    ) -> Place
+    {
+        let Some(&parent) = self.parents.get(&at)
+        else {
+            return Place::Other;
+        };
+        let name = |node: NodeIndex| {
+            let (NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = self.tree.node(node)?.label()
+            else {
+                return None;
+            };
+            self.grammar.rule_of(mold).ok().map(|rule| rule.name().0)
+        };
+        let rule = name(parent);
+        if !matches!(
+            rule,
+            Some("def_value" | "module_definition_member" | "attributed_module_member")
+        ) {
+            return Place::Other;
+        }
+        let mut preceding = None;
+        for child in self.tree.children(parent) {
+            if child == at {
+                break;
+            }
+            if let Some(node) = self.tree.node(child)
+                && matches!(node.label(), NodeLabel::Tile(_))
+                && name(child) == rule
+            {
+                preceding = self.leaf(node.span()).map(|leaf| leaf.text);
+            }
+        }
+        if preceding.map(<&str>::from) == Some("->") {
+            Place::Result
+        }
+        else {
+            Place::Other
         }
     }
 
@@ -2051,6 +2149,12 @@ impl<'source> Respelling<'_, 'source>
                 }
                 self.unreturned(&mut out, parts)?
             },
+            (RewriteName::InsertedReturner, Direction::Sugar) => {
+                if self.place(at) != Place::Result {
+                    return None;
+                }
+                self.unreturning(&mut out, parts)?
+            },
             (RewriteName::InsertedThunk, Direction::Sugar) => {
                 if self.thunks.thunk(extent) != Thunk::Inserted {
                     return None;
@@ -2072,6 +2176,7 @@ impl<'source> Respelling<'_, 'source>
             // around an operand there, whatever its parent's rule.
             (
                 RewriteName::TailReturn
+                | RewriteName::InsertedReturner
                 | RewriteName::ShortAlias
                 | RewriteName::InsertedThunk
                 | RewriteName::InsertedReduct
@@ -2477,6 +2582,34 @@ impl<'source> Respelling<'_, 'source>
             return None;
         };
         if <&str>::from(keyword) != "return" {
+            return None;
+        }
+        let operand = self.operand(value);
+        out.place(&operand, Band::Loose);
+        Some(operand.band)
+    }
+
+    /// Write the returner whose parts are `parts`, `-F B`, as `B`, answering
+    /// `B`'s band, or nothing when an effect row, a grade or a comment stands
+    /// among its parts.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unreturning(
+        &self,
+        out: &mut Builder<'source>,
+        parts: &[Part<'source>],
+    ) -> Option<Band>
+    {
+        if parts.iter().any(|part| matches!(part.role, Role::Comment)) {
+            return None;
+        }
+        let (owns, operands) = split(parts);
+        let (&[keyword], &[value]) = (owns.as_slice(), operands.as_slice())
+        else {
+            return None;
+        };
+        if <&str>::from(keyword) != "-F" {
             return None;
         }
         let operand = self.operand(value);

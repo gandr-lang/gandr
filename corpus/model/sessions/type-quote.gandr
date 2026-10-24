@@ -33,6 +33,6 @@ def protocol : Flow(Type, Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
 /// quote may not: a run stays on the checker's side, so its payloads are no
 /// codes the kernel forms, and the run moves along a path (#1728).
 @[ checks ]
-def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> -F Run(?(Seat.Dispatch). end) {
+def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> Run(?(Seat.Dispatch). end) {
   transport(\X. Run(?X. end), here(Seat.Dispatch), served)
 }

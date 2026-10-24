@@ -8,7 +8,7 @@ import "../../model/moves/file-base.gandr" ;
 /// A handle opened and neither closed nor moved: the program ends with its end
 /// still open.
 @[ refuses("LinearResidue") ]
-def leaked() -> -F Unit {
+def leaked() -> Unit {
   fork (owner : File.Handle) { close(owner) } as file;
   pure unit
 }

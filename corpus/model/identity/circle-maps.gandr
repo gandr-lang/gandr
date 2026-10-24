@@ -12,7 +12,7 @@ import "./circle-base.gandr" ;
 
 /// The identity on the circle, its loop arm the loop's name.
 @[ checks ]
-def circleId(a : Circle) -> -F Circle {
+def circleId(a : Circle) -> Circle {
   case a {
     Base => Base,
     loop => loop
@@ -21,7 +21,7 @@ def circleId(a : Circle) -> -F Circle {
 
 /// The identity on its first argument, the second along for the ride.
 @[ checks ]
-def first(a : Circle, b : Circle) -> -F Circle {
+def first(a : Circle, b : Circle) -> Circle {
   case a {
     Base => Base,
     loop => loop
@@ -30,7 +30,7 @@ def first(a : Circle, b : Circle) -> -F Circle {
 
 /// The identity on its second argument, the first along for the ride.
 @[ checks ]
-def second(b : Circle, a : Circle) -> -F Circle {
+def second(b : Circle, a : Circle) -> Circle {
   case a {
     Base => Base,
     loop => loop
@@ -40,7 +40,7 @@ def second(b : Circle, a : Circle) -> -F Circle {
 /// A map whose loop arm answers the loop's name: carried along the loop,
 /// reflexivity at `Base` is the loop's inverse, then the loop.
 @[ checks ]
-def throughName(b : Circle) -> -F Path(Circle, circleId(b), b) {
+def throughName(b : Circle) -> Path(Circle, circleId(b), b) {
   case b {
     Base => here(Base)
   }
@@ -48,7 +48,7 @@ def throughName(b : Circle) -> -F Path(Circle, circleId(b), b) {
 
 /// A map of two arguments, the point through the first.
 @[ checks ]
-def throughFirst(b : Circle) -> -F Path(Circle, first(b, Base), b) {
+def throughFirst(b : Circle) -> Path(Circle, first(b, Base), b) {
   case b {
     Base => here(Base)
   }
@@ -56,7 +56,7 @@ def throughFirst(b : Circle) -> -F Path(Circle, first(b, Base), b) {
 
 /// A map of two arguments, the point through the second.
 @[ checks ]
-def throughSecond(b : Circle) -> -F Path(Circle, second(Base, b), b) {
+def throughSecond(b : Circle) -> Path(Circle, second(Base, b), b) {
   case b {
     Base => here(Base)
   }
@@ -64,7 +64,7 @@ def throughSecond(b : Circle) -> -F Path(Circle, second(Base, b), b) {
 
 /// Two maps of two arguments, one inside the other.
 @[ checks ]
-def throughBoth(b : Circle) -> -F Path(Circle, second(Base, first(b, Base)), b) {
+def throughBoth(b : Circle) -> Path(Circle, second(Base, first(b, Base)), b) {
   case b {
     Base => here(Base)
   }
@@ -73,7 +73,7 @@ def throughBoth(b : Circle) -> -F Path(Circle, second(Base, first(b, Base)), b) 
 /// Reflexivity carried along the loop through a map is the loop's inverse,
 /// not reflexivity, against a fixed right endpoint.
 @[ refuses("LoopNotRespected") ]
-def twisted(b : Circle) -> -F Path(Circle, first(b, Base), Base) {
+def twisted(b : Circle) -> Path(Circle, first(b, Base), Base) {
   case b {
     Base => here(Base)
   }
@@ -83,7 +83,7 @@ def twisted(b : Circle) -> -F Path(Circle, first(b, Base), Base) {
 /// `selfloop`. The obligation unfolds `mul`'s loop arm through its call of
 /// `selfloop`, and the transport computes (#425).
 @[ checks ]
-def unitRight(b : Circle) -> -F Path(Circle, mul(b, Base), b) {
+def unitRight(b : Circle) -> Path(Circle, mul(b, Base), b) {
   case b {
     Base => here(Base)
   }

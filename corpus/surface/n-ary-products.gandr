@@ -14,6 +14,6 @@ def nesting_is_written : (Integer * Unit) * String = (1, unit, "a");
 def nested : (Integer * Unit) * String = ((1, unit), "a");
 
 @[ checks ]
-def absurd(x : Void) -> -F Integer {
+def absurd(x : Void) -> Integer {
   case x {}
 }

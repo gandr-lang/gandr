@@ -14,7 +14,7 @@ data Nat : Type {
 /// The arm holds its own `c` and writes 2 back to it; the rest's `c` is the
 /// one held before the match.
 @[ checks ]
-def shadowed(rounds : Nat) -> -F Integer {
+def shadowed(rounds : Nat) -> Integer {
   hold c = 100;
   run settled <- case rounds {
     Zero => return 7,
@@ -34,7 +34,7 @@ def shadowedExited : () => Integer = shadowed(Zero) ;
 /// The arm forks, and its parent end closes before the rest: the rest reads
 /// the held count, not the end.
 @[ checks ]
-def forked(rounds : Nat) -> -F Integer {
+def forked(rounds : Nat) -> Integer {
   hold c = 100;
   run settled <- case rounds {
     Zero => return 7,
@@ -45,7 +45,7 @@ def forked(rounds : Nat) -> -F Integer {
 
 /// A fork in an arm whose block ends at the unit the match settles.
 @[ checks ]
-def forkPastAnExit(rounds : Nat) -> -F Unit {
+def forkPastAnExit(rounds : Nat) -> Unit {
   run settled <- case rounds {
     Zero => return unit,
     Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }

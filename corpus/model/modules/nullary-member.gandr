@@ -7,13 +7,13 @@
 /// A module whose one member takes no arguments.
 module Origin {
   /// The starting point.
-  def zero() -> -F Integer { 0 }
+  def zero() -> Integer { 0 }
 }
 
 /// The member called through its module's name.
 @[ runs("0") ]
-def started() -> -F Integer { Origin.zero() }
+def started() -> Integer { Origin.zero() }
 
 /// A top-level suspension called with no arguments by its own name.
 @[ runs("0") ]
-def restarted() -> -F Integer { started() }
+def restarted() -> Integer { started() }

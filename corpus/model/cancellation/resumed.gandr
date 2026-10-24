@@ -6,7 +6,7 @@ import "./cancel-base.gandr" ;
 
 /// A scope resumed at its exit while its task's end is open (#1334).
 @[ checks ]
-def resumed() -> -F Unit {
+def resumed() -> Unit {
   handle c : Proc {
     fork (task : Cancel.Join) {
       send(task, Cancel.notes);

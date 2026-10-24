@@ -42,7 +42,7 @@ theory IdentityReturn {
 /// Structural recursion over a sort chain: one per `Representable` link, none
 /// for an ordinary `Sort`.
 @[ checks ]
-def rec representable(chain : Theory) -> -F Integer {
+def rec representable(chain : Theory) -> Integer {
   case chain {
     Representable(name, indices, rest) => { run r <- representable[<](rest); return r + 1 },
     Sort(name, indices, rest) => representable[<](rest),
@@ -53,7 +53,7 @@ def rec representable(chain : Theory) -> -F Integer {
 /// Structural recursion over a port chain: one per `Bound` port, none for a
 /// plain `Port`.
 @[ checks ]
-def rec bound(chain : Theory) -> -F Integer {
+def rec bound(chain : Theory) -> Integer {
   case chain {
     Bound(name, sort, indices, binders, rest) => { run r <- bound[<](rest); return r + 1 },
     Port(name, sort, indices, rest) => bound[<](rest),
@@ -63,14 +63,14 @@ def rec bound(chain : Theory) -> -F Integer {
 
 /// The identity-return signature declares one representable sort, `VTm`.
 @[ runs("1") ]
-def representableSorts() -> -F Integer { case IdentityReturn {
+def representableSorts() -> Integer { case IdentityReturn {
   Presents(sorts, opers, rules) => representable(sorts),
   _ => 0
 } }
 
 /// The λ-calculus's first operation, `lam`, binds over its one input.
 @[ runs("1") ]
-def boundInputs() -> -F Integer { case Lambda {
+def boundInputs() -> Integer { case Lambda {
   Presents(sorts, opers, rules) => case opers {
     Oper(name, inputs, outputs, rest) => become bound(inputs),
     _ => 0

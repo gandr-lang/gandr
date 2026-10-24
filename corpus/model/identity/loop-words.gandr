@@ -20,13 +20,13 @@ data Words : Type {
 
 /// A function that builds a word: one more loop.
 @[ checks ]
-def around(c : Words) -> -F Words {
+def around(c : Words) -> Words {
   Loop(c)
 }
 
 /// A run returns the word it builds.
 @[ runs("Loop(Loop(Nil))") ]
-def built() -> -F Words { around(Loop(Nil)) }
+def built() -> Words { around(Loop(Nil)) }
 
 /// Conversion reads a word by its normal form: a cancelled loop is a loop.
 @[ checks ]
@@ -47,7 +47,7 @@ def loop_not_nil : Path(Words, Loop(Nil), Nil) = here(Nil) ;
 /// A case that tells a loop from its inverse, refused: `Unloop(Loop(Nil))`
 /// and `Loop(Unloop(Nil))` are one word, which it would read as 2 and 1.
 @[ refuses("RuleNotRespected") ]
-def tell_words(c : Words) -> -F Integer {
+def tell_words(c : Words) -> Integer {
   case c {
     Nil => 0,
     Loop(x) => 1,
@@ -59,7 +59,7 @@ def tell_words(c : Words) -> -F Integer {
 /// `tell_words` refused its applications do not compute, and the endpoints
 /// differ.
 @[ refuses("EndpointMismatch") ]
-def two_is_one() -> -F Path(Integer, 2, 1) {
+def two_is_one() -> Path(Integer, 2, 1) {
   cong(tell_words, both_cancel)
 }
 
@@ -67,7 +67,7 @@ def two_is_one() -> -F Path(Integer, 2, 1) {
 /// `Loop(Unloop(x))` it builds `Unloop(Loop(mirror(x)))`, which the second
 /// rule reads as `mirror(x)`, so it respects both rules and is admitted.
 @[ checks ]
-def rec mirror(c : Words) -> -F Words {
+def rec mirror(c : Words) -> Words {
   case c {
     Nil => Nil,
     Loop(x) => Unloop(mirror[<](x)),
@@ -77,7 +77,7 @@ def rec mirror(c : Words) -> -F Words {
 
 /// The mirror of a loop is its inverse.
 @[ runs("Unloop(Nil)") ]
-def mirrored() -> -F Words { mirror(Loop(Nil)) }
+def mirrored() -> Words { mirror(Loop(Nil)) }
 
 /// Conversion runs an admitted fold at a closed word. Read by its normal
 /// form, `Loop(Unloop(Nil))` is `Nil`, whose mirror is `Nil`; unfolded

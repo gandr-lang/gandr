@@ -3,20 +3,20 @@
 
 /// The identity at a type passed explicitly, the type named as a type.
 @[ checks ]
-def idAt(A : Type, x : A) -> -F A { x }
+def idAt(A : Type, x : A) -> A { x }
 
 /// `idAt` at `Integer`, handed `3`.
 @[ runs("3") ]
-def idAtThree() -> -F Integer { idAt(Integer, 3) }
+def idAtThree() -> Integer { idAt(Integer, 3) }
 
 /// The first of two values, each of its own type, one parameter named as a
 /// type and one as a value.
 @[ checks ]
-def firstAt(A : Type, b : Type, x : A, y : b) -> -F A { x }
+def firstAt(A : Type, b : Type, x : A, y : b) -> A { x }
 
 /// `firstAt` at two types, handed a value of each.
 @[ runs("5") ]
-def firstAtFive() -> -F Integer { firstAt(Integer, Unit, 5, unit) }
+def firstAtFive() -> Integer { firstAt(Integer, Unit, 5, unit) }
 
 /// `idAt`'s type as a telescope, its binder named as a type: the spelling a
 /// hover gives `idAt`, which reads back as its type (#2179).

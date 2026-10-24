@@ -7,7 +7,7 @@ import "./cancel-base.gandr" ;
 /// A scope cancelled at its exit answers nine, not one hundred and one
 /// (#1334).
 @[ runs("9") ]
-def answered() -> -F Integer {
+def answered() -> Integer {
   handle c : Proc {
     c.exit(1);
     pure 1

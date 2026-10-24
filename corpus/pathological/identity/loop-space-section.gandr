@@ -21,7 +21,7 @@ data Int : Type {
 }
 
 /// The winding number: a loop counts one up, an inverse one down.
-def rec wind(c : Circle) -> -F Int {
+def rec wind(c : Circle) -> Int {
   case c {
     Base => Z,
     Loop(x) => S(wind[<](x)),
@@ -30,7 +30,7 @@ def rec wind(c : Circle) -> -F Int {
 }
 
 /// Spinning: a successor is a loop, a predecessor an inverse.
-def rec spin(n : Int) -> -F Circle {
+def rec spin(n : Int) -> Circle {
   case n {
     Z => Base,
     S(x) => Loop(spin[<](x)),
@@ -39,7 +39,7 @@ def rec spin(n : Int) -> -F Circle {
 }
 
 /// One inverse loop more.
-def unaround(c : Circle) -> -F Circle {
+def unaround(c : Circle) -> Circle {
   Unloop(c)
 }
 
@@ -48,7 +48,7 @@ def unaround(c : Circle) -> -F Circle {
 /// a path from `Loop(spin(wind(x)))` to `Loop(x)`. The two path types do not
 /// convert, and the arm is refused.
 @[ refuses("TypeMismatch") ]
-def rec forged(c : Circle) -> -F Path(Circle, spin(wind(c)), c) {
+def rec forged(c : Circle) -> Path(Circle, spin(wind(c)), c) {
   case c {
     Base => here(Base),
     Loop(x) => forged[<](x),

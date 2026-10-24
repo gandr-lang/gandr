@@ -14,7 +14,7 @@ import "../../model/completion/ring-base.gandr" ;
 /// this checks until a kernel can be bounded by the buffer's hold (#1183),
 /// when a reaper that outlives the hold becomes the refusal.
 @[ checks ]
-def bufferOrphaned() -> -F Unit {
+def bufferOrphaned() -> Unit {
   fork (reactor : Ring.Reaping) {
     recv(reactor) as pending;
     recv(pending) as cqe;

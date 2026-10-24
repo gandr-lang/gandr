@@ -11,7 +11,7 @@ import "./flow-data.gandr" ;
 
 /// A shape's height: a circle's radius, a rectangle's second side.
 @[ checks ]
-def height(shape : Shape) -> -F Integer {
+def height(shape : Shape) -> Integer {
   case shape {
     Circle(r) => r,
     Rect(w, h) => h

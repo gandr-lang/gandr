@@ -8,7 +8,7 @@ import "../../model/cancellation/cancel-base.gandr" ;
 /// A scope whose exit clause drops the rest while its task's end is open
 /// (#1334).
 @[ refuses("ContinuationUnspent") ]
-def dropped() -> -F Unit {
+def dropped() -> Unit {
   handle c : Proc {
     fork (task : Cancel.Join) {
       send(task, Cancel.notes);

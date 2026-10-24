@@ -4,11 +4,11 @@
 
 /// Reads the thunk it is lent, whatever region keeps it.
 @[ checks ]
-def read @[r : Region] (k : (() => Integer) at r) -> -F Integer { force k }
+def read @[r : Region] (k : (() => Integer) at r) -> Integer { force k }
 
 /// Lends `read` a view kept in the handler's region, which the call reads it at.
 @[ runs("3") ]
-def lent() -> -F Integer {
+def lent() -> Integer {
   hold s = 3;
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w { pure pure w } ;

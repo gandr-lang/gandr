@@ -9,16 +9,16 @@ def nest = #{ tag = "t", inner = #{ x = 1, y = 2 } };
 
 /// The field `inner` of `nest`, a record.
 @[ runs("#{.x = 1, .y = 2}") ]
-def innerOf() -> -F #{x : Integer, y : Integer} { nest.inner }
+def innerOf() -> #{x : Integer, y : Integer} { nest.inner }
 
 /// A field of a field: the inner projection runs, and the outer one reads
 /// the record it returns.
 @[ runs("2") ]
-def deepField() -> -F Integer { nest.inner.y }
+def deepField() -> Integer { nest.inner.y }
 
 /// A field of the record a run binds, its type written nowhere.
 @[ runs("1") ]
-def boundField() -> -F Integer {
+def boundField() -> Integer {
   run held <- nest.inner;
   held.x
 }
@@ -26,7 +26,7 @@ def boundField() -> -F Integer {
 /// The record rebuilt from its fields is the record: η, a path whose
 /// endpoints read the fields off `nest`.
 @[ checks ]
-def rebuilt() -> -F Path(
+def rebuilt() -> Path(
   #{tag : String, inner : #{x : Integer, y : Integer}},
   #{.tag = nest.tag, .inner = nest.inner},
   nest

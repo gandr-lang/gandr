@@ -31,7 +31,7 @@ def restricted : Path(
 /// Whether a semigroup's multiplication is there to read: every semigroup's
 /// is, so this answers zero.
 @[ checks ]
-def multiplies(s : Model(Semigroup)) -> -F Integer {
+def multiplies(s : Model(Semigroup)) -> Integer {
   case s {
     #{.mul = m} => 0
   }
@@ -39,12 +39,12 @@ def multiplies(s : Model(Semigroup)) -> -F Integer {
 
 /// The monoid where a semigroup is asked: the checker applies the reduct.
 @[ runs("0") ]
-def asSemigroup() -> -F Integer { multiplies(endoMonoid) }
+def asSemigroup() -> Integer { multiplies(endoMonoid) }
 
 /// Both extensions' model where a semigroup is asked: the two ways round the
 /// diamond, through the monoid and through the left zero, are one reduct.
 @[ checks ]
-def throughTheDiamond(m : Model(UnitAndZero)) -> -F Integer {
+def throughTheDiamond(m : Model(UnitAndZero)) -> Integer {
   multiplies(m)
 }
 
@@ -60,12 +60,12 @@ def endoManifest : Model(Monoid) with sort M = (Integer => Integer) = (
 /// The manifest monoid where a semigroup is asked: the checker applies the
 /// map that puts the carrier back and keeps the semigroup's members.
 @[ runs("0") ]
-def manifestAsSemigroup() -> -F Integer { multiplies(endoManifest) }
+def manifestAsSemigroup() -> Integer { multiplies(endoManifest) }
 
 /// Both extensions' model with its carrier written, where a semigroup is
 /// asked: the two ways round the diamond compose to one inclusion, so one map
 /// puts the carrier back and restricts.
 @[ checks ]
-def manifestDiamond(u : Model(UnitAndZero) with sort M = Unit) -> -F Integer {
+def manifestDiamond(u : Model(UnitAndZero) with sort M = Unit) -> Integer {
   multiplies(u)
 }

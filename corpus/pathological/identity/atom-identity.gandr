@@ -32,7 +32,7 @@ def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) = unit ;
 /// refused: an identity in the singleton's total space is a path in the
 /// unit type and one over it (#1959).
 @[ refuses("TypeMismatch") ]
-def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> -F Path(
+def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
   #{ y : Unit, s : pathRelated(a, y) },
   (b, r),
   (a, pathReflexivity(a))

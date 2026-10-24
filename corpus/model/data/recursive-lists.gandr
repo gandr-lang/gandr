@@ -12,7 +12,7 @@ import "./data-base.gandr" ;
 
 /// The length of a list, returned, the run written at its read.
 @[ checks ]
-def rec length(a : Type, xs : List(a)) -> -F Nat {
+def rec length(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length[<](a, rest))
@@ -21,7 +21,7 @@ def rec length(a : Type, xs : List(a)) -> -F Nat {
 
 /// The length of a list, the `return`s elided, the run written at its read.
 @[ checks ]
-def rec length_elided(a : Type, xs : List(a)) -> -F Nat {
+def rec length_elided(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length_elided[<](a, rest))
@@ -30,7 +30,7 @@ def rec length_elided(a : Type, xs : List(a)) -> -F Nat {
 
 /// The length of a list, the recursive call nested in the successor.
 @[ checks ]
-def rec length_nested(a : Type, xs : List(a)) -> -F Nat {
+def rec length_nested(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length_nested[<](a, rest))
@@ -39,7 +39,7 @@ def rec length_nested(a : Type, xs : List(a)) -> -F Nat {
 
 /// Appending two lists, returned, the run written at its read.
 @[ checks ]
-def rec append(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
+def rec append(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append[<](a, ys, rest)) : List(a))
@@ -48,7 +48,7 @@ def rec append(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
 
 /// Appending two lists, the `return`s elided, the run written at its read.
 @[ checks ]
-def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
+def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append_elided[<](a, ys, rest)) : List(a))
@@ -57,7 +57,7 @@ def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
 
 /// Appending two lists, the recursive call nested in the constructor.
 @[ checks ]
-def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
+def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append_nested[<](a, ys, rest)) : List(a))
@@ -66,7 +66,7 @@ def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> -F List(a) {
 
 /// Mapping a function over a list, returned, the runs written at their reads.
 @[ checks ]
-def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
     Cons(x, rest) => (Cons(f(x), map[<](a, b, f, rest)) : List(b))
@@ -76,7 +76,7 @@ def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
 /// Mapping a function over a list, the `return`s elided, the runs written at
 /// their reads.
 @[ checks ]
-def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
     Cons(x, rest) => (Cons(f(x), map_elided[<](a, b, f, rest)) : List(b))
@@ -85,7 +85,7 @@ def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
 
 /// Mapping over a list, both calls nested in the constructor.
 @[ checks ]
-def rec map_nested(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+def rec map_nested(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
     Cons(x, rest) => (Cons(f(x), map_nested[<](a, b, f, rest)) : List(b))

@@ -5,13 +5,13 @@
 
 /// Returns its argument; [echo] does the same.
 @[ checks ]
-def identity(x: Integer) -> -F Integer {
+def identity(x: Integer) -> Integer {
   x
 }
 
 // Documented by the attribute, linking back to `identity`.
 @[ checks, doc("Returns its argument, as [identity] does.") ]
-def echo(x: Integer) -> -F Integer {
+def echo(x: Integer) -> Integer {
   x
 }
 

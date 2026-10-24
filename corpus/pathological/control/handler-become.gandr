@@ -1,5 +1,5 @@
 @[ checks ]
-def one() -> -F Integer {
+def one() -> Integer {
   1
 }
 

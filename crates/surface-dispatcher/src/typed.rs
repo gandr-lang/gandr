@@ -8330,7 +8330,7 @@ mod tests
         let table = table(source);
         assert!(
             matches!(
-                answer(&table, source, SourceText::from("el(c)) -> -F")),
+                answer(&table, source, SourceText::from("el(c)) -> el(")),
                 Maybe::Present(Answer {
                     subject: Subject::Type,
                     ..

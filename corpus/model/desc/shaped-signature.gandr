@@ -24,7 +24,7 @@ theory Cells {
 
 /// Structural recursion over a face chain: one per `Face`.
 @[ checks ]
-def rec faces(chain : Theory) -> -F Integer {
+def rec faces(chain : Theory) -> Integer {
   case chain {
     Face(name, points, rest) => { run r <- faces[<](rest); return r + 1 },
     _ => 0
@@ -33,7 +33,7 @@ def rec faces(chain : Theory) -> -F Integer {
 
 /// The square heads the sort chain of `Cells`, with its six faces.
 @[ runs("6") ]
-def squareFaces() -> -F Integer { case Cells {
+def squareFaces() -> Integer { case Cells {
   Presents(sorts, opers, rules) => case sorts {
     Shape(name, size, chain, rest) => become faces(chain),
     _ => 0

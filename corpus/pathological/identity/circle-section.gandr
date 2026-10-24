@@ -20,7 +20,7 @@ data Int : Type {
 }
 
 /// The winding number: a loop counts one up, its inverse one down.
-def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
+def rec wind(p : Path(Circle, Base, Base)) -> Int {
   case p {
     here => Z,
     loop ∷ q => S(wind[<](q)),
@@ -29,7 +29,7 @@ def rec wind(p : Path(Circle, Base, Base)) -> -F Int {
 }
 
 /// Spinning: a successor is a loop, a predecessor its inverse.
-def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
+def rec spin(n : Int) -> Path(Circle, Base, Base) {
   case n {
     Z => here(Base),
     S(x) => loop ∷ spin[<](x),
@@ -38,12 +38,12 @@ def rec spin(n : Int) -> -F Path(Circle, Base, Base) {
 }
 
 /// One loop more.
-def loopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def loopOn(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
   loop ∷ p
 }
 
 /// One inverse loop more.
-def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
+def unloopOn(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
   back(loop) ∷ p
 }
 
@@ -52,7 +52,7 @@ def unloopOn(p : Path(Circle, Base, Base)) -> -F Path(Circle, Base, Base) {
 /// a path from `loop ∷ spin(wind(q))` to `loop ∷ q`. The two path types do
 /// not convert, and the arm is refused.
 @[ refuses("TypeMismatch") ]
-def rec forged(p : Path(Circle, Base, Base)) -> -F Path(
+def rec forged(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   spin(wind(p)),
   p
@@ -70,7 +70,7 @@ def rec forged(p : Path(Circle, Base, Base)) -> -F Path(
 /// not the path at `q` the cancellation's right side reads. Read as a set,
 /// the loops would identify the two; the words are not read as one.
 @[ refuses("RuleNotRespected") ]
-def rec rewound(p : Path(Circle, Base, Base)) -> -F Path(Path(Circle, Base, Base), p, p) {
+def rec rewound(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base), p, p) {
   case p {
     here => here(here(Base)),
     loop ∷ q => { run ih <- rewound[<](q); become cong(loopOn, ih) },

@@ -20,7 +20,7 @@ import "../../model/data/sized-higher-order.gandr" ;
 /// its own stage, not below it, and `applied_again[<]` takes only what stands
 /// below (#393).
 @[ refuses("StageNotBelow") ]
-def rec applied_again(n : Nat) -> -F Nat {
+def rec applied_again(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => Succ(apply(Nat, Nat, applied_again[<], n))
@@ -31,7 +31,7 @@ def rec applied_again(n : Nat) -> -F Nat {
 /// the parameter's own stage, and `applied_at_again[<]` takes nothing there
 /// (#392).
 @[ refuses("StageNotBelow") ]
-def rec applied_at_again(n : Nat) -> -F Nat {
+def rec applied_at_again(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => Succ(applyAt(applied_at_again[<], n))
@@ -41,7 +41,7 @@ def rec applied_at_again(n : Nat) -> -F Nat {
 /// A stage on an integer: the signature's marks place only data types, so the
 /// checkers refuse the stage where the kernel could not read it (#392).
 @[ refuses("OutOfFragment.Stage") ]
-def integerAt @[i : Size] (n : Integer[i]) -> -F Integer {
+def integerAt @[i : Size] (n : Integer[i]) -> Integer {
   n
 }
 
@@ -54,7 +54,7 @@ def carriedAt @[i : Size] (a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
 
 /// A function applied to a number, its signature naming no type parameter.
 @[ checks ]
-def applyNat(f : Nat => Nat, x : Nat) -> -F Nat {
+def applyNat(f : Nat => Nat, x : Nat) -> Nat {
   f(x)
 }
 
@@ -62,7 +62,7 @@ def applyNat(f : Nat => Nat, x : Nat) -> -F Nat {
 /// so `plainly_helped[<]`, which takes only numbers below the stage, does not
 /// stand for its function; the model's `helped` goes through `applyAt`.
 @[ refuses("StageNotBelow") ]
-def rec plainly_helped(n : Nat) -> -F Nat {
+def rec plainly_helped(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => Succ(applyNat(plainly_helped[<], p))
@@ -71,7 +71,7 @@ def rec plainly_helped(n : Nat) -> -F Nat {
 
 /// The predecessor of a number, zero's its own.
 @[ checks ]
-def pred(n : Nat) -> -F Nat {
+def pred(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => p
@@ -84,7 +84,7 @@ def pred(n : Nat) -> -F Nat {
 /// can follow its argument (`../../model/data/following.gandr`), and a
 /// quantified signature states it (`predAt` and `halvedAt` in the model).
 @[ refuses("StageNotBelow") ]
-def rec halved_through_pred(n : Nat) -> -F Nat {
+def rec halved_through_pred(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => { run q <- pred(p); Succ(halved_through_pred[<](q)) }
@@ -97,7 +97,7 @@ def rec halved_through_pred(n : Nat) -> -F Nat {
 /// `looping_through_bound[<]` to take, recursing on the number forever. The
 /// call is refused where `k` is read (#1241).
 @[ refuses("StageNotBelow") ]
-def rec looping_through_bound(n : Nat) -> -F Nat {
+def rec looping_through_bound(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => { run q <- boundedAt(p, n); looping_through_bound[<](q) }
@@ -110,7 +110,7 @@ def rec looping_through_bound(n : Nat) -> -F Nat {
 /// reaches. The two readings disagree, refused by name at the claim, whose
 /// reading the number's stage leaves unmet (#1227).
 @[ refuses("StagesDisagree") ]
-def rec disagreeing(n : Nat) -> -F Nat {
+def rec disagreeing(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => Succ(sameAt(disagreeing[<], n))
@@ -120,14 +120,14 @@ def rec disagreeing(n : Nat) -> -F Nat {
 /// A stage supplied apart from the one the arguments show: they show `i` at
 /// `j`, and the supply states `k` (#1227).
 @[ refuses("StagesDisagree") ]
-def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {
+def suppliedApart @[j : Size, k : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
   applyAt[i = k](f, x)
 }
 
 /// A stage supplied for a binder no argument shows: `n` stands at no stage,
 /// so nothing holds `i` at the `j` supplied (#1227).
 @[ refuses("OutOfFragment.Stage") ]
-def suppliedUnshown @[j : Size] (n : Nat) -> -F Nat {
+def suppliedUnshown @[j : Size] (n : Nat) -> Nat {
   run m <- predAt[i = j](n);
   m
 }

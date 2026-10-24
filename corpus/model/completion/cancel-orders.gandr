@@ -10,7 +10,7 @@ import "./ring-base.gandr" ;
 
 /// The target's completion reaped before the cancellation's.
 @[ checks ]
-def targetFirst() -> -F Unit {
+def targetFirst() -> Unit {
   fork (target : Ring.Submission) {
     recv(target) as sqe;
     send(target, Ring.done);
@@ -31,7 +31,7 @@ def targetFirst() -> -F Unit {
 
 /// The cancellation's completion reaped before the target's.
 @[ checks ]
-def cancelFirst() -> -F Unit {
+def cancelFirst() -> Unit {
   fork (target : Ring.Submission) {
     recv(target) as sqe;
     send(target, Ring.done);
@@ -53,7 +53,7 @@ def cancelFirst() -> -F Unit {
 /// The target's pending completion moved into the cancellation, which reaps it
 /// and then posts its own: the submitter keeps only the cancellation's.
 @[ checks ]
-def cancelConsumes() -> -F Unit {
+def cancelConsumes() -> Unit {
   fork (target : Ring.Submission) {
     recv(target) as sqe;
     send(target, Ring.done);
@@ -76,7 +76,7 @@ def cancelConsumes() -> -F Unit {
 /// a receive whose payload is itself a receive. It takes the target's pending
 /// completion, reaps it and posts nothing of its own.
 @[ checks ]
-def cancelWrittenOut() -> -F Unit {
+def cancelWrittenOut() -> Unit {
   fork (target : Ring.Submission) {
     recv(target) as sqe;
     send(target, Ring.done);

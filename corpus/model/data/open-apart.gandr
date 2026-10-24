@@ -11,13 +11,13 @@ import "./data-base.gandr" ;
 
 /// Zero is no successor, whatever `n` is: the endpoints differ at their heads.
 @[ checks ]
-def zeroNotSucc(n : Nat, e : Path(Nat, Zero, Succ(n))) -> -F Nat {
+def zeroNotSucc(n : Nat, e : Path(Nat, Zero, Succ(n))) -> Nat {
   case e {}
 }
 
 /// One is no successor of a successor: below the successor both endpoints
 /// share, `Zero` meets `Succ(n)`.
 @[ checks ]
-def oneNotPastTwo(n : Nat, e : Path(Nat, Succ(Zero), Succ(Succ(n)))) -> -F Nat {
+def oneNotPastTwo(n : Nat, e : Path(Nat, Succ(Zero), Succ(Succ(n)))) -> Nat {
   case e {}
 }

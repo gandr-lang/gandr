@@ -21,25 +21,25 @@ data Fahrenheit : Type {
 /// The relabelling forward: a Celsius value to the Fahrenheit value of its
 /// integer.
 @[ checks ]
-def toFahrenheit(c : Celsius) -> -F Fahrenheit {
+def toFahrenheit(c : Celsius) -> Fahrenheit {
   case c { Cel(x) => Fah(x) }
 }
 
 /// The relabelling back.
 @[ checks ]
-def toCelsius(f : Fahrenheit) -> -F Celsius {
+def toCelsius(f : Fahrenheit) -> Celsius {
   case f { Fah(x) => Cel(x) }
 }
 
 /// Back after forward is the identity, constructor by constructor.
 @[ checks ]
-def celsiusRoundTrip(c : Celsius) -> -F Path(Celsius, toCelsius(toFahrenheit(c)), c) {
+def celsiusRoundTrip(c : Celsius) -> Path(Celsius, toCelsius(toFahrenheit(c)), c) {
   case c { Cel(x) => here(Cel(x)) }
 }
 
 /// Forward after back is the identity.
 @[ checks ]
-def fahrenheitRoundTrip(f : Fahrenheit) -> -F Path(Fahrenheit, toFahrenheit(toCelsius(f)), f) {
+def fahrenheitRoundTrip(f : Fahrenheit) -> Path(Fahrenheit, toFahrenheit(toCelsius(f)), f) {
   case f { Fah(x) => here(Fah(x)) }
 }
 
@@ -53,12 +53,12 @@ def relabel : Celsius ≃ Fahrenheit = (
 /// A Celsius value carried along the path the relabelling makes is the
 /// Fahrenheit value of its integer, by a run: the book's Lemma 2.10.5.
 @[ runs("Fah(20)") ]
-def relabelled() -> -F Fahrenheit { transport(\X. X, ua(relabel), Cel(20)) }
+def relabelled() -> Fahrenheit { transport(\X. X, ua(relabel), Cel(20)) }
 
 /// #2140: the transport written as a tuple's component runs first, and the
 /// other component keeps its place.
 @[ runs("(Fah(20), 1)") ]
-def carriedInTuple() -> -F (Fahrenheit * Integer) { (transport(\X. X, ua(relabel), Cel(20)), 1) }
+def carriedInTuple() -> Fahrenheit * Integer { (transport(\X. X, ua(relabel), Cel(20)), 1) }
 
 /// A thermometer reading one Fahrenheit temperature.
 @[ checks ]
@@ -69,11 +69,11 @@ data Thermometer : Type {
 /// #2140: the transport written as a constructor's field runs before the
 /// constructor is built.
 @[ runs("Reads(Fah(20))") ]
-def carriedInField() -> -F Thermometer { Reads(transport(\X. X, ua(relabel), Cel(20))) }
+def carriedInField() -> Thermometer { Reads(transport(\X. X, ua(relabel), Cel(20))) }
 
 /// #2140: a case on the transport runs it, then the arm its answer selects.
 @[ runs("20") ]
-def carriedScrutinised() -> -F Integer {
+def carriedScrutinised() -> Integer {
   case transport(\X. X, ua(relabel), Cel(20)) { Fah(x) => x }
 }
 

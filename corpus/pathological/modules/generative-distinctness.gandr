@@ -3,7 +3,7 @@ module Seed :> #{ type T, zero : T, next : T => T } {
   @[ runs("0") ]
   def zero = 0;
   @[ runs("fn (a) { a + 1 }") ]
-  def next(n : T) -> -F T { n + 1 }
+  def next(n : T) -> T { n + 1 }
 }
 
 module MkCounter(S : #{ type T, zero : T, next : T => T }) :> #{

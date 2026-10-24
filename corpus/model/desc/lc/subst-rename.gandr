@@ -17,7 +17,7 @@ import "./lookup-weaken.gandr" ;
 /// A lookup under one binder, weakened, renamed by a lift: the step that
 /// carries `lookWeakens` under the lifted renaming.
 @[ checks ]
-def renameLookWeakens(u : Env, q : Ren, m : N) -> -F Path(
+def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
   Term,
   rename(wk(look(m, u, Z)), RLift(q)),
   rename(look(m, u, S(Z)), RLift(q))
@@ -35,7 +35,7 @@ def renameLookWeakens(u : Env, q : Ren, m : N) -> -F Path(
 def shiftPastLift(
   q : Ren,
   n : N
-) -> -F Path(N, rlook(rlook(n, q), RShift(S(Z))), rlook(rlook(n, RShift(S(Z))), RLift(q))) {
+) -> Path(N, rlook(rlook(n, q), RShift(S(Z))), rlook(rlook(n, RShift(S(Z))), RLift(q))) {
   case n {
     Z => shiftAdds(rlook(Z, q), S(Z)),
     S(j) => shiftAdds(rlook(S(j), q), S(Z))
@@ -51,7 +51,7 @@ def weakenedSquare(
   q : Ren,
   h : (n : N) => Path(Term, look(rlook(n, r), s, Z), rename(look(n, u, Z), q)),
   m : N
-) -> -F Path(Term, wk(look(rlook(m, r), s, Z)), wk(rename(look(m, u, Z), q))) {
+) -> Path(Term, wk(look(rlook(m, r), s, Z)), wk(rename(look(m, u, Z), q))) {
   cong(wk, h(m))
 }
 
@@ -65,7 +65,7 @@ def substRenameSquareLift(
   q : Ren,
   h : (n : N) => Path(Term, look(rlook(n, r), s, Z), rename(look(n, u, Z), q)),
   n : N
-) -> -F Path(Term, look(rlook(n, RLift(r)), Lift(s), Z), rename(look(n, Lift(u), Z), RLift(q))) {
+) -> Path(Term, look(rlook(n, RLift(r)), Lift(s), Z), rename(look(n, Lift(u), Z), RLift(q))) {
   case n {
     Z => here(Ix(Z)),
     S(m) => lookWeakens(
@@ -93,7 +93,7 @@ def rec substRenameSquare(
   u : Env,
   q : Ren,
   h : (n : N) => Path(Term, look(rlook(n, r), s, Z), rename(look(n, u, Z), q))
-) -> -F Path(Term, subst(rename(t, r), s), rename(subst(t, u), q)) {
+) -> Path(Term, subst(rename(t, r), s), rename(subst(t, u), q)) {
   case t {
     Ix(n) => h(n),
     Lam(b) => cong(
@@ -133,7 +133,7 @@ def rec substRenameSquare(
 def weakenLiftLooks(
   s : Env,
   n : N
-) -> -F Path(Term, look(rlook(n, RShift(S(Z))), Lift(s), Z), rename(look(n, s, Z), RShift(S(Z)))) {
+) -> Path(Term, look(rlook(n, RShift(S(Z))), Lift(s), Z), rename(look(n, s, Z), RShift(S(Z)))) {
   case n {
     Z => lookWeakens(Z, s, Z),
     S(j) => lookWeakens(S(j), s, Z)
@@ -143,7 +143,7 @@ def weakenLiftLooks(
 /// A weakened term under a lifted substitution is the substituted term
 /// weakened.
 @[ checks ]
-def substWeaken(x : Term, s : Env) -> -F Path(Term, subst(wk(x), Lift(s)), wk(subst(x, s))) {
+def substWeaken(x : Term, s : Env) -> Path(Term, subst(wk(x), Lift(s)), wk(subst(x, s))) {
   substRenameSquare(
     x,
     RShift(S(Z)),

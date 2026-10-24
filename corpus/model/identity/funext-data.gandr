@@ -10,7 +10,7 @@ import "./flow-data.gandr" ;
 
 /// A shape's width: a circle's radius, a rectangle's first side.
 @[ checks ]
-def width(shape : Shape) -> -F Integer {
+def width(shape : Shape) -> Integer {
   case shape {
     Circle(r) => r,
     Rect(w, h) => w
@@ -19,7 +19,7 @@ def width(shape : Shape) -> -F Integer {
 
 /// A figure's width: a round's radius, a box's second side.
 @[ checks ]
-def figureWidth(figure : Figure) -> -F Integer {
+def figureWidth(figure : Figure) -> Integer {
   case figure {
     Round(r) => r,
     Box(h, w) => w
@@ -28,7 +28,7 @@ def figureWidth(figure : Figure) -> -F Integer {
 
 /// A shape's width read off its figure, where the sides are swapped.
 @[ checks ]
-def throughFigure(shape : Shape) -> -F Integer {
+def throughFigure(shape : Shape) -> Integer {
   figureWidth(Shapes.toFigure(shape))
 }
 
@@ -40,7 +40,7 @@ def widths : Path(Shape => Integer, width, throughFigure) = funext(width, throug
 /// A shape drawn as its figure, the sides swapped in the other order of
 /// binding.
 @[ checks ]
-def drawn(shape : Shape) -> -F Figure {
+def drawn(shape : Shape) -> Figure {
   case shape {
     Circle(r) => Round(r),
     Rect(a, b) => Box(b, a)
@@ -61,7 +61,7 @@ data Light : Type {
 
 /// A light switched.
 @[ checks ]
-def switch(light : Light) -> -F Light {
+def switch(light : Light) -> Light {
   case light {
     Stop => Go,
     Go => Stop
@@ -70,13 +70,13 @@ def switch(light : Light) -> -F Light {
 
 /// A light switched twice.
 @[ checks ]
-def switchTwice(light : Light) -> -F Light {
+def switchTwice(light : Light) -> Light {
   switch(switch(light))
 }
 
 /// A light left as it is.
 @[ checks ]
-def unswitched(light : Light) -> -F Light {
+def unswitched(light : Light) -> Light {
   light
 }
 

@@ -10,14 +10,14 @@ module Versions {
   type V3 = (Unit + Unit) * Integer * String;
   /// The first translator: the fields swapped.
   @[ checks ]
-  def toV2(record : V1) -> -F V2 {
+  def toV2(record : V1) -> V2 {
     case record {
       #{name, age} => (age, name)
     }
   }
   /// The second translator: a flag added.
   @[ checks ]
-  def toV3(record : V2) -> -F V3 {
+  def toV3(record : V2) -> V3 {
     case record {
       #{age, name} => (+{.1 = unit}, age, name)
     }
@@ -33,18 +33,18 @@ module Versions {
   def kept : Flow(Type, V1, V1) = stay(V1) ;
   /// The stationary flow, then the first.
   @[ checks ]
-  def early() -> -F Flow(Type, V1, V2) {
+  def early() -> Flow(Type, V1, V2) {
     kept then first
   }
   /// Both translations in sequence.
   @[ checks ]
-  def both() -> -F Flow(Type, V1, V3) {
+  def both() -> Flow(Type, V1, V3) {
     run start <- early() ;
     start then second
   }
   /// A record ridden along the composite.
   @[ checks ]
-  def moved(record : V1) -> -F V3 {
+  def moved(record : V1) -> V3 {
     run along <- both() ;
     ride(\X. X, along, record)
   }

@@ -10,7 +10,7 @@ import "../../model/strings/methods.gandr" ;
 
 /// A string read after it was taken: the take ended its hold.
 @[ refuses("HeldConsumed") ]
-def readAfterTaken() -> -F Integer {
+def readAfterTaken() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   run bs <- s.bytes();
   s.len()
@@ -19,7 +19,7 @@ def readAfterTaken() -> -F Integer {
 /// A read of the held string inside a thunk forced later: the thunk captures
 /// the hold, which it may run other than once.
 @[ refuses("HeldCaptured") ]
-def readInThunk() -> -F Integer {
+def readInThunk() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   run k : () => Integer <- pure thunk { s.len() } ;
   force k
@@ -33,7 +33,7 @@ def pushedUnheld(t : Repr) -> -F Unit {
 
 /// A string read while a view of it is live: the access already lends it.
 @[ refuses("HeldLent") ]
-def readWhileLent() -> -F Unit {
+def readWhileLent() -> Unit {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { run n <- s.len() ; resume(v, v) }
 }
@@ -41,7 +41,7 @@ def readWhileLent() -> -F Unit {
 /// A push onto a string a read lends: the push would write the string the
 /// read's view still reads.
 @[ refuses("HeldLent") ]
-def pushedWhileRead() -> -F Integer {
+def pushedWhileRead() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access shared s as w { s.push(33) ; run bs <- bytes(w) ; count(bs) }
 }
@@ -50,7 +50,7 @@ def pushedWhileRead() -> -F Integer {
 /// hold on the path through that arm, so nothing after it reads the string
 /// (#1488).
 @[ refuses("HeldConsumed") ]
-def readAfterTakenInOneArm(t : Repr) -> -F Integer {
+def readAfterTakenInOneArm(t : Repr) -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   run xs <- case t -> -F List(Integer) {
     Inline(bs) => s.bytes(),

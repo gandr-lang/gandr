@@ -11,7 +11,7 @@ import "./circle-base.gandr" ;
 /// at `S(P(x))` it computes `count(P(S(acc)), x)`, which the second rule reads
 /// as `count(acc, x)`.
 @[ checks ]
-def rec count(acc : Int, b : Int) -> -F Int {
+def rec count(acc : Int, b : Int) -> Int {
   case b {
     Z => acc,
     S(x) => count[<](S(acc), x),

@@ -4,7 +4,7 @@
 
 /// Forty-two, read off the one arm a unit takes.
 @[ checks ]
-def answer(u : Unit) -> -F Integer {
+def answer(u : Unit) -> Integer {
   case u {
     unit => 42
   }
@@ -12,4 +12,4 @@ def answer(u : Unit) -> -F Integer {
 
 /// The unit takes its arm.
 @[ runs("42") ]
-def answerOfUnit() -> -F Integer { answer(unit) }
+def answerOfUnit() -> Integer { answer(unit) }

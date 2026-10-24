@@ -9326,8 +9326,8 @@ mod tests
         assert_eq!(
             changed("data-maybe.gandr"),
             [
+                "25:53 `m` variable→parameter",
                 "25:56 `m` variable→parameter",
-                "25:59 `m` variable→parameter",
                 "26:7 `m` variable→parameter",
                 "27:17 `m` variable→parameter",
                 "28:20 `m` variable→parameter",
@@ -9441,8 +9441,8 @@ mod tests
                 "18:15 `x` variable value",
                 "25:4 `kept` function declaration",
                 "25:9 `m` parameter declaration+value",
+                "25:53 `m` parameter value",
                 "25:56 `m` parameter value",
-                "25:59 `m` parameter value",
                 "26:7 `m` parameter value",
                 "27:4 `None` enumMember value",
                 "27:17 `m` parameter value",
@@ -9467,8 +9467,8 @@ mod tests
                 "20:9 `w` variable declaration+value",
                 "20:15 `m` variable value",
                 "26:4 `tag` function declaration",
-                "26:26 `tag_of` function computation",
-                "26:33 `tagged` function value",
+                "26:23 `tag_of` function computation",
+                "26:30 `tagged` function value",
             ],
             "a dependent pair's labels bind; the called `tag_of` is run as a computation and \
              the `tagged` passed to it is a value; `tag`, one function form, declares once"
@@ -10691,8 +10691,8 @@ mod tests
             Some(
                 serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
                 "arguments": [uri("circle-base.gandr"), at(Line::from(138_u32), Character::from(4_u32)), [
-                    location("circle-elim.gandr", 18, 46, 55),
-                    location("circle-elim.gandr", 18, 56, 65),
+                    location("circle-elim.gandr", 18, 43, 52),
+                    location("circle-elim.gandr", 18, 53, 62),
                     location("circle-elim.gandr", 94, 35, 44),
                 ]]})
             ),
@@ -13227,7 +13227,7 @@ mod tests
                 r#"[{{"jsonrpc":"2.0","id":9,"result":[{uris}]}}]"#
             )))
         };
-        let minus = "def rec minus(n : Nat, k : Nat) -> -F Nat {\n  case k {\n    Zero => n,\n    \
+        let minus = "def rec minus(n : Nat, k : Nat) -> Nat {\n  case k {\n    Zero => n,\n    \
                      Succ(j) => case n {\n      Zero => Zero,\n      Succ(p) => minus[<](p, j)\n    \
                      }\n  }\n}";
         assert_eq!(

@@ -7,7 +7,7 @@
 /// An access whose view the scope's clause abandons before its write-back:
 /// the held value stays (#1334).
 @[ runs("1") ]
-def unwritten() -> -F Integer {
+def unwritten() -> Integer {
   hold x = 1;
   run r : Integer <- handle c : Proc {
     access x as v { run _ <- c.exit(1); resume(v, 5) } unwind { pure unit };

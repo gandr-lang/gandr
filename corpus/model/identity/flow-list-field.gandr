@@ -10,7 +10,7 @@ module Roster {
   type New = List(Integer) * String;
   /// The translator: the fields swapped, the scores moved unread.
   @[ checks ]
-  def toNew(old : Old) -> -F New {
+  def toNew(old : Old) -> New {
     case old {
       #{name, scores} => (scores, name)
     }
@@ -20,14 +20,14 @@ module Roster {
   def upgrade : Flow(Type, Old, New) = forward(toNew) ;
   /// A list kept whole: the flow from a list code to itself.
   @[ checks ]
-  def wrap(xs : List(Integer)) -> -F List(Integer) {
+  def wrap(xs : List(Integer)) -> List(Integer) {
     xs
   }
   @[ checks ]
   def lists : Flow(Type, List(Integer), List(Integer)) = forward(wrap) ;
   /// One record ridden along the flow.
   @[ checks ]
-  def moved(old : Old) -> -F New {
+  def moved(old : Old) -> New {
     ride(\X. X, upgrade, old)
   }
   /// A record of two scores migrated by a run.

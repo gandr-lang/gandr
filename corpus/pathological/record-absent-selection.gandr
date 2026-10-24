@@ -2,6 +2,6 @@
 /// naming it is in `record-absent-label.gandr`: the record has no such field,
 /// so the printer's selection reads back to the same refusal (#815).
 @[ refuses("AbsentRecordField") ]
-def absent_selected(r : #{n : Integer, s : String}) -> -F Integer {
+def absent_selected(r : #{n : Integer, s : String}) -> Integer {
   r.z
 }

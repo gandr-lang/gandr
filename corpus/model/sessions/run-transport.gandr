@@ -20,7 +20,7 @@ data Answer : Type {
 
 /// A bit read as an answer.
 @[ checks ]
-def decode(b : Bit) -> -F Answer {
+def decode(b : Bit) -> Answer {
   case b {
     Zero => No,
     One => Yes,
@@ -29,7 +29,7 @@ def decode(b : Bit) -> -F Answer {
 
 /// An answer written as a bit.
 @[ checks ]
-def encode(a : Answer) -> -F Bit {
+def encode(a : Answer) -> Bit {
   case a {
     No => Zero,
     Yes => One,
@@ -38,7 +38,7 @@ def encode(a : Answer) -> -F Bit {
 
 /// Encoding a decoded bit gives the bit back.
 @[ checks ]
-def encoded(b : Bit) -> -F Path(Bit, encode(decode(b)), b) {
+def encoded(b : Bit) -> Path(Bit, encode(decode(b)), b) {
   case b {
     Zero => here(Zero),
     One => here(One),
@@ -47,7 +47,7 @@ def encoded(b : Bit) -> -F Path(Bit, encode(decode(b)), b) {
 
 /// Decoding an encoded answer gives the answer back.
 @[ checks ]
-def decoded(a : Answer) -> -F Path(Answer, decode(encode(a)), a) {
+def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
   case a {
     No => here(No),
     Yes => here(Yes),
@@ -86,10 +86,10 @@ def heardKept : Path(
 
 /// The carried run, computed.
 @[ checks ]
-def heardRun() -> -F Run(Ask.Decoded) {
+def heardRun() -> Run(Ask.Decoded) {
   transport(\X. Run(?X. end), codes, heard)
 }
 
 /// On the machine the carried run hears the yes, as it does by conversion.
 @[ runs("recorded(received(Yes), closed)") ]
-def decodedRun() -> -F Run(Ask.Decoded) { heardRun() }
+def decodedRun() -> Run(Ask.Decoded) { heardRun() }

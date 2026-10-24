@@ -13,7 +13,7 @@ module Unnatural {
   type Tel = Unit * (Unit + Unit + Unit + Unit);
 
   @[ checks ]
-  def cross(e : Unit + Unit + Unit + Unit) -> -F (Unit + Unit + Unit + Unit) {
+  def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
     case e {
       +{.0 = u} => +{.2 = u},
       +{.1 = u} => +{.1 = u},

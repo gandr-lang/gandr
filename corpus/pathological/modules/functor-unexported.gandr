@@ -15,7 +15,7 @@ module Unread :> #{ type T, zero : T, next : T => T } {
   def zero = 0;
   /// One step on.
   @[ checks ]
-  def next(n : T) -> -F T { n + 1 }
+  def next(n : T) -> T { n + 1 }
 }
 
 /// The functor applied to the counter with no reader, refused at its

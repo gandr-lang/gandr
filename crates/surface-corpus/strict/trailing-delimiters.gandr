@@ -12,7 +12,7 @@ data Color : Type {
 }
 
 @[ checks ]
-def from_left() -> -F Integer {
+def from_left() -> Integer {
   case (Left(5,) : Either(Integer, String,)) {
     | Left(x,) => x,
     | Right(y) => 0,
@@ -20,7 +20,7 @@ def from_left() -> -F Integer {
 }
 
 @[ checks ]
-def warm(c : Color) -> -F Integer {
+def warm(c : Color) -> Integer {
   case c {
     | Red
     | Green => 1,
@@ -29,17 +29,17 @@ def warm(c : Color) -> -F Integer {
 }
 
 @[ checks ]
-def cool(c : Color) -> -F Integer {
+def cool(c : Color) -> Integer {
   case c { Red | Green => 0, | Blue => 1, }
 }
 
 @[ runs("fn (a) { fn (b) { a } }") ]
-def first(x : Integer, y : Integer) -> -F Integer { x }
+def first(x : Integer, y : Integer) -> Integer { x }
 
 @[ runs("42") ]
-def chosen() -> -F Integer { become (force first)(42,)(7,) }
+def chosen() -> Integer { become (force first)(42,)(7,) }
 
 @[ checks ]
-def pick(x : Integer, y : Integer,) -> -F Integer {
+def pick(x : Integer, y : Integer,) -> Integer {
   x
 }

@@ -11,7 +11,7 @@ data Wrap : Type {
 
 /// The wrapped integer, bound by a binder named `number`.
 @[ runs("7") ]
-def unwrapped() -> -F Integer {
+def unwrapped() -> Integer {
   case (Wrapped(7) : Wrap) {
     Wrapped(number) => number
   }
@@ -19,7 +19,7 @@ def unwrapped() -> -F Integer {
 
 /// The wrapped integer, bound by a binder named `constructor`.
 @[ runs("8") ]
-def constructed() -> -F Integer {
+def constructed() -> Integer {
   case (Wrapped(8) : Wrap) {
     Wrapped(constructor) => constructor
   }
@@ -27,7 +27,7 @@ def constructed() -> -F Integer {
 
 /// The wrapped integer, bound by a binder named `character`.
 @[ runs("9") ]
-def charactered() -> -F Integer {
+def charactered() -> Integer {
   case (Wrapped(9) : Wrap) {
     Wrapped(character) => character
   }
@@ -36,7 +36,7 @@ def charactered() -> -F Integer {
 /// A literal pattern beside a catch-all binder named `number`: the literal
 /// still reads as a number, the binder as a name.
 @[ runs("1") ]
-def literal() -> -F Integer {
+def literal() -> Integer {
   case 3 {
     3 => 1,
     number => number

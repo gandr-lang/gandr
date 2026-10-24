@@ -8,7 +8,7 @@
 /// A peer cancelled at its next action. It runs to 7 once session actions
 /// run in the machine (#1380).
 @[ runs("unrunnable: `cancelled` did not focus: a session action has no image in the command IL") ]
-def cancelled() -> -F Integer {
+def cancelled() -> Integer {
   handle c : Proc {
     fork (peer : !Integer. !Integer. end) {
       send(peer, 1);

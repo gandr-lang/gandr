@@ -2,6 +2,6 @@
 data Empty : Type {}
 
 @[ checks ]
-def absurd(v: Empty) -> -F Integer {
+def absurd(v: Empty) -> Integer {
   case v {}
 }

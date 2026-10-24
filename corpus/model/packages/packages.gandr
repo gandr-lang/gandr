@@ -30,7 +30,7 @@ def text_counter = pack [ String ] thunk {
 /// Both counters read and summed; `consume`'s type is unknown while it is
 /// refused (#1108).
 @[ refuses("UnknownConstant") ]
-def total() -> -F Integer {
+def total() -> Integer {
   run a <- consume(int_counter);
   run b <- consume(text_counter);
   return (a + b)

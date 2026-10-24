@@ -14,7 +14,7 @@ import "./accessor-counter.gandr" ;
 /// count out, `resume` writes its successor back, and the access answers what
 /// it wrote.
 @[ runs("1") ]
-def counted() -> -F Integer {
+def counted() -> Integer {
   hold[1] c = 0;
   access c as v { run n <- succ(v) ; resume(v, n) ; pure n }
 }
@@ -22,14 +22,14 @@ def counted() -> -F Integer {
 /// A tuple made in place and an abort before any read: nothing was moved out,
 /// so the held tuple stands as it was.
 @[ checks ]
-def untouched() -> -F Unit {
+def untouched() -> Unit {
   hold[1] p = (1, 2);
   access p as v { abort(v) } unwind { pure unit }
 }
 
 /// A hold at the default grade, under which each read copies.
 @[ runs("2") ]
-def copied() -> -F Integer {
+def copied() -> Integer {
   hold c = 1;
   pure c + c
 }

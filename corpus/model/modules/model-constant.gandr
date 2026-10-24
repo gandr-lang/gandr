@@ -39,7 +39,7 @@ module Sevens : Model(Based) {
 
 /// A model's constant, read from outside the model.
 @[ runs("7") ]
-def seven() -> -F Integer { Sevens.base }
+def seven() -> Integer { Sevens.base }
 
 /// A unital carrier: a constant, an operation, and a law over both.
 theory Unital {
@@ -59,7 +59,7 @@ module Additive : Model(Unital) {
   def e = 0;
   /// The sum.
   @[ checks ]
-  def mul(x : Integer, y : Integer) -> -F Integer { x + y }
+  def mul(x : Integer, y : Integer) -> Integer { x + y }
   /// Zero is a left unit.
   @[ owes(1) ]
   def unitL : (x : Integer) => Path(Integer, mul(e, x), x) ;

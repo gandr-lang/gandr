@@ -26,4 +26,4 @@ def apartFive = 5 ;
 
 /// Each value, joined or apart, read where a value is asked.
 @[ runs("18") ]
-def joinedSum() -> -F Integer { joinedThree + apartFour + apartFive + joinedSix }
+def joinedSum() -> Integer { joinedThree + apartFour + apartFive + joinedSix }

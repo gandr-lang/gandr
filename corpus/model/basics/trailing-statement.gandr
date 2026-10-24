@@ -3,14 +3,14 @@
 
 /// A body of one statement: `pure unit` runs and the unit is returned.
 @[ checks ]
-def plain() -> -F Unit {
+def plain() -> Unit {
   pure unit;
 }
 
 /// A statement after a bind: the bind runs, then the statement, then the
 /// unit is returned.
 @[ checks ]
-def after(n : Integer) -> -F Unit {
+def after(n : Integer) -> Unit {
   run m : Integer <- pure (n + 1);
   pure unit;
 }
@@ -18,7 +18,7 @@ def after(n : Integer) -> -F Unit {
 /// A match written as the last statement, each arm falling through to the
 /// unit the block returns.
 @[ checks ]
-def armed(b : Bool) -> -F Unit {
+def armed(b : Bool) -> Unit {
   case b {
     true => pure unit,
     false => pure unit
@@ -28,7 +28,7 @@ def armed(b : Bool) -> -F Unit {
 /// A match written as the last statement whose arms all leave stays the end
 /// of the body.
 @[ checks ]
-def left(b : Bool) -> -F Integer {
+def left(b : Bool) -> Integer {
   case b {
     true => return 1,
     false => return 2
@@ -38,7 +38,7 @@ def left(b : Bool) -> -F Integer {
 /// A match written as the last statement, one arm leaving and the other
 /// falling through to the unit.
 @[ checks ]
-def some(b : Bool) -> -F Unit {
+def some(b : Bool) -> Unit {
   case b {
     true => return unit,
     false => pure unit

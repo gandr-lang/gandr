@@ -3,13 +3,13 @@
 
 /// One more than its argument.
 @[ checks ]
-def inc(x: Integer) -> -F Integer {
+def inc(x: Integer) -> Integer {
   return (x + 1)
 }
 
 /// `inc` twice: the first call runs, the second is the tail call.
 @[ checks ]
-def twice(x: Integer) -> -F Integer {
+def twice(x: Integer) -> Integer {
   become inc(inc(x))
 }
 
@@ -17,7 +17,7 @@ def twice(x: Integer) -> -F Integer {
 /// returned: what follows the nested call lowers once, so the run fits its
 /// region (#1856).
 @[ runs("18") ]
-def chained() -> -F Integer {
+def chained() -> Integer {
   run a <- inc(inc(0));
   run b <- inc(a);
   run c <- inc(b);

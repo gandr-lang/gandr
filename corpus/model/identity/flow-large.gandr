@@ -29,13 +29,13 @@ def packedKept : Flow(Type[+, 1], Packed, Packed) = stay(Packed) ;
 /// The stationary flow, then itself: the unit composes at the level it is
 /// stated at.
 @[ checks ]
-def packedTwice() -> -F Flow(Type[+, 1], Packed, Packed) {
+def packedTwice() -> Flow(Type[+, 1], Packed, Packed) {
   packedKept then packedKept
 }
 
 /// A given flow from one large code to the other, after the stationary one.
 @[ checks ]
-def after(f : Flow(Type[+, 1], Packed, Boxed)) -> -F Flow(Type[+, 1], Packed, Boxed) {
+def after(f : Flow(Type[+, 1], Packed, Boxed)) -> Flow(Type[+, 1], Packed, Boxed) {
   packedKept then f
 }
 
@@ -55,20 +55,20 @@ def packedSame : Path(Type[+, 1], Packed, Packed) = here(Packed) ;
 /// A packed list carried along reflexivity at its large type: the motive's
 /// binder ranges over `Type[+, 1]`, so its body decodes a code there.
 @[ checks ]
-def packedMoved(p : Packed) -> -F Packed {
+def packedMoved(p : Packed) -> Packed {
   transport(\X. X, packedSame, p)
 }
 
 /// A packed list ridden along the stationary flow at its large type.
 @[ checks ]
-def packedRode(p : Packed) -> -F Packed {
+def packedRode(p : Packed) -> Packed {
   ride(\X. X, packedKept, p)
 }
 
 /// A list of packed lists carried along reflexivity: the decode under the
 /// list reads at the carrier's level as well.
 @[ checks ]
-def packedLists(ps : List(Packed)) -> -F List(Packed) {
+def packedLists(ps : List(Packed)) -> List(Packed) {
   transport(\X. List(X), packedSame, ps)
 }
 
@@ -76,13 +76,13 @@ def packedLists(ps : List(Packed)) -> -F List(Packed) {
 /// types: the endpoints differ, so the ride moves by the table's decode row,
 /// read at the flow's level.
 @[ checks ]
-def packedCarried(f : Flow(Type[+, 1], Packed, Boxed), p : Packed) -> -F Boxed {
+def packedCarried(f : Flow(Type[+, 1], Packed, Boxed), p : Packed) -> Boxed {
   ride(\X. X, f, p)
 }
 
 /// A list of packed lists ridden into a list of boxes along the same flow:
 /// the list row carries the decode beneath it.
 @[ checks ]
-def boxedLists(f : Flow(Type[+, 1], Packed, Boxed), ps : List(Packed)) -> -F List(Boxed) {
+def boxedLists(f : Flow(Type[+, 1], Packed, Boxed), ps : List(Packed)) -> List(Boxed) {
   ride(\X. List(X), f, ps)
 }

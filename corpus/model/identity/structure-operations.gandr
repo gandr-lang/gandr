@@ -59,13 +59,13 @@ def unread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), same) 
 
 /// The boolean a tagged boolean carries.
 @[ checks ]
-def untag(p : Bool * Unit) -> -F Bool {
+def untag(p : Bool * Unit) -> Bool {
   case p { (x, u) => x }
 }
 
 /// A boolean tagged with unit.
 @[ checks ]
-def tag(b : Bool) -> -F (Bool * Unit) {
+def tag(b : Bool) -> Bool * Unit {
   (b, unit)
 }
 
@@ -75,7 +75,7 @@ def tagging : Path(Type, Bool * Unit, Bool) = equiv(untag, tag) ;
 
 /// The reading of a tagged boolean, its first component.
 @[ checks ]
-def readTagged(p : Bool * Unit) -> -F Bool {
+def readTagged(p : Bool * Unit) -> Bool {
   case p { (x, u) => x }
 }
 

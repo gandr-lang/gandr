@@ -8,6 +8,6 @@ import "./syntax.gandr" ;
 /// A substitution applied to an abstraction is the abstraction of its body
 /// under the lifted substitution.
 @[ checks ]
-def subLam(t : Term, s : Env) -> -F Path(Term, subst(Lam(t), s), Lam(subst(t, Lift(s)))) {
+def subLam(t : Term, s : Env) -> Path(Term, subst(Lam(t), s), Lam(subst(t, Lift(s)))) {
   here(Lam(subst(t, Lift(s))))
 }

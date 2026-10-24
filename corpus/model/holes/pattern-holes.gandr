@@ -13,7 +13,7 @@ data Shade : Type {
 
 /// A hole between two arms (#391).
 @[ refuses("UndecidedCoverage") ]
-def rank(c : Shade) -> -F Integer {
+def rank(c : Shade) -> Integer {
   case c {
     Crimson => 0,
     ? => 1,
@@ -30,7 +30,7 @@ data Option : Type {
 
 /// A hole inside a payload (#391).
 @[ refuses("UndecidedCoverage") ]
-def weigh(m : Option) -> -F Integer {
+def weigh(m : Option) -> Integer {
   case m {
     Value(?) => 100,
     NoValue => 200

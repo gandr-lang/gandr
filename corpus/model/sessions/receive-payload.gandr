@@ -6,7 +6,7 @@
 
 /// A seat that receives an order, a sum written in place, and closes.
 @[ checks ]
-def receivesAnOrder() -> -F Unit {
+def receivesAnOrder() -> Unit {
   fork (seat : ?(+{go : Integer, stop : Unit}). end) {
     recv(seat) as order;
     close(seat)

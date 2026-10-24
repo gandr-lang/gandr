@@ -13,7 +13,7 @@ import "../../model/completion/ring-base.gandr" ;
 /// kernel the region does not bound: the hold could end with the completion
 /// pending and the kernel still holding the view.
 @[ refuses("KeptEscaped") ]
-def regionEnded() -> -F Unit {
+def regionEnded() -> Unit {
   hold buf = Ring.read;
   run buffer : (() => Ring.Sqe) at buf <- access shared buf as w { pure thunk { pure w } } ;
   fork (kernel : ?((() => Ring.Sqe) at buf). !(Ring.Cqe). end) {

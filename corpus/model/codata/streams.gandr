@@ -34,13 +34,13 @@ def rec ones() -> Stream(Integer) {
 
 /// The head of a stream: observing a thunk of it.
 @[ checks ]
-def first(s : +U Stream(Integer)) -> -F Integer {
+def first(s : +U Stream(Integer)) -> Integer {
   s.head
 }
 
 /// The head of a stream's tail.
 @[ checks ]
-def second(s : +U Stream(Integer)) -> -F Integer {
+def second(s : +U Stream(Integer)) -> Integer {
   first(s.tail)
 }
 
@@ -62,7 +62,7 @@ def rec zipWith(
 
 /// Addition, as the function `zipWith` combines with.
 @[ checks ]
-def add(x : Integer, y : Integer) -> -F Integer {
+def add(x : Integer, y : Integer) -> Integer {
   return x + y
 }
 
@@ -72,22 +72,22 @@ def three : () => Integer = first(upward(3)) ;
 
 /// The integers from three, observed one further.
 @[ runs("4") ]
-def four() -> -F Integer { second(upward(3)) }
+def four() -> Integer { second(upward(3)) }
 
 /// The integers from one added to the sevens, one further: `2 + 7`.
 @[ runs("9") ]
-def nine() -> -F Integer {
+def nine() -> Integer {
   second(zipWith(add, upward(1), always(7)))
 }
 
 /// The ones, observed one further: the constant unfolds once.
 @[ runs("1") ]
-def unfolded() -> -F Integer { second(ones()) }
+def unfolded() -> Integer { second(ones()) }
 
 /// An observation by its position, counted from zero in declaration order:
 /// `s.1` is `s.tail`, so this is `second`.
 @[ checks ]
-def onward(s : +U Stream(Integer)) -> -F Integer {
+def onward(s : +U Stream(Integer)) -> Integer {
   first(s.1)
 }
 
@@ -98,35 +98,35 @@ def fourth : () => Integer = onward(upward(3)) ;
 /// The integers from three, observed at the head off the call itself: the
 /// call runs to the stream, and the stream is observed.
 @[ runs("3") ]
-def headOfCall() -> -F Integer { upward(3).head }
+def headOfCall() -> Integer { upward(3).head }
 
 /// The integers from three, one further: the call's tail observed by
 /// position, then its head.
 @[ runs("4") ]
-def tailOfCall() -> -F Integer { first(upward(3).1) }
+def tailOfCall() -> Integer { first(upward(3).1) }
 
 /// Whether the head off a call is positive, read in an operand.
 @[ runs("+{.0 = unit}") ]
-def headAbove() -> -F Bool { upward(3).head >= 1 }
+def headAbove() -> Bool { upward(3).head >= 1 }
 
 /// The head of a stream's tail, read as one chain: the tail is a stream, so
 /// it is observed in turn.
 @[ checks ]
-def secondInline(s : +U Stream(Integer)) -> -F Integer {
+def secondInline(s : +U Stream(Integer)) -> Integer {
   s.tail.head
 }
 
 /// The integers from three, two further: a chain of observations off a
 /// call, each link observed off what the one before it returns.
 @[ runs("5") ]
-def chained() -> -F Integer { upward(3).tail.tail.head }
+def chained() -> Integer { upward(3).tail.tail.head }
 
 /// The same chain, its links by position.
 @[ runs("5") ]
-def chainedByPosition() -> -F Integer { upward(3).1.tail.0 }
+def chainedByPosition() -> Integer { upward(3).1.tail.0 }
 
 /// The ones added to the sevens, observed one further through the chain.
 @[ runs("8") ]
-def eight() -> -F Integer {
+def eight() -> Integer {
   secondInline(zipWith(add, ones(), always(7)))
 }

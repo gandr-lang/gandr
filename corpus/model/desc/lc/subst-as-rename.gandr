@@ -17,7 +17,7 @@ def weakenedVariable(
   r : Ren,
   h : (n : N) => Path(Term, look(n, s, Z), Ix(rlook(n, r))),
   m : N
-) -> -F Path(Term, wk(look(m, s, Z)), wk(Ix(rlook(m, r)))) {
+) -> Path(Term, wk(look(m, s, Z)), wk(Ix(rlook(m, r)))) {
   cong(wk, h(m))
 }
 
@@ -29,7 +29,7 @@ def substRenamesLift(
   r : Ren,
   h : (n : N) => Path(Term, look(n, s, Z), Ix(rlook(n, r))),
   n : N
-) -> -F Path(Term, look(n, Lift(s), Z), Ix(rlook(n, RLift(r)))) {
+) -> Path(Term, look(n, Lift(s), Z), Ix(rlook(n, RLift(r)))) {
   case n {
     Z => here(Ix(Z)),
     S(m) => lookWeakens(m, s, Z) then (weakenedVariable(s, r, h, m) then ixShiftAdds(
@@ -46,7 +46,7 @@ def rec substRenames(
   s : Env,
   r : Ren,
   h : (n : N) => Path(Term, look(n, s, Z), Ix(rlook(n, r)))
-) -> -F Path(Term, subst(t, s), rename(t, r)) {
+) -> Path(Term, subst(t, s), rename(t, r)) {
   case t {
     Ix(n) => h(n),
     Lam(b) => cong(
@@ -67,7 +67,7 @@ def rec substRenames(
 
 /// The substitution shifting by one renames each index by the shift by one.
 @[ checks ]
-def shiftOneRenames(i : N) -> -F Path(Term, look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
+def shiftOneRenames(i : N) -> Path(Term, look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
   case i {
     Z => here(Ix(S(Z))),
     S(j) => here(Ix(S(S(j))))

@@ -8,7 +8,7 @@ import "../../model/cancellation/cancel-base.gandr" ;
 /// A scope whose exit clause resumes the rest inside a thunk while its task's
 /// end is open (#1334).
 @[ refuses("ContinuationCaptured") ]
-def leaked() -> -F Unit {
+def leaked() -> Unit {
   handle c : Proc {
     fork (task : Cancel.Join) {
       send(task, Cancel.notes);

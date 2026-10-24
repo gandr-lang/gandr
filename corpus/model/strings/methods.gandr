@@ -19,7 +19,7 @@ module Str {
   /// The number of bytes the string holds, its zero included, read from a
   /// string lent for reading.
   @[ checks ]
-  def len(self : shared Repr) -> -F Integer {
+  def len(self : shared Repr) -> Integer {
     case self {
       Inline(bs) => count(bs),
       Shared(n, bs) => count(bs)
@@ -28,12 +28,12 @@ module Str {
   /// A byte written before the zero of a string lent to the write, which
   /// writes it back.
   @[ checks ]
-  def push(self : Repr, b : Integer) -> -F Unit {
+  def push(self : Repr, b : Integer) -> Unit {
     access self as v { run w <- pushInPlace(v, b) ; run t <- written(w) ; resume(v, t) }
   }
   /// The bytes of a string taken: nothing reads the string after.
   @[ checks ]
-  def bytes(self : consumed Repr) -> -F List(Integer) {
+  def bytes(self : consumed Repr) -> List(Integer) {
     case self {
       Inline(bs) => bs,
       Shared(n, bs) => bs
@@ -44,7 +44,7 @@ module Str {
 /// `hi`'s length before and after `!` is pushed onto it: three bytes, then
 /// four.
 @[ runs("7") ]
-def lengths() -> -F Integer {
+def lengths() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   run n <- s.len();
   s.push(33);
@@ -54,7 +54,7 @@ def lengths() -> -F Integer {
 
 /// `hi` with `!` pushed, then taken: the bytes the string ended with.
 @[ runs("Cons(104, Cons(105, Cons(33, Cons(0, Nil))))") ]
-def taken() -> -F List(Integer) {
+def taken() -> List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   s.push(33);
   s.bytes()
@@ -64,7 +64,7 @@ def taken() -> -F List(Integer) {
 /// starts from the hold as the match found it, and the hold ends after the
 /// match (#1488).
 @[ checks ]
-def takenInOneArm(t : Repr) -> -F List(Integer) {
+def takenInOneArm(t : Repr) -> List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   case t {
     Inline(bs) => s.bytes(),
@@ -74,21 +74,21 @@ def takenInOneArm(t : Repr) -> -F List(Integer) {
 
 /// The arm that takes the string runs: `hi`'s bytes.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def takenOnInline() -> -F List(Integer) {
+def takenOnInline() -> List(Integer) {
   takenInOneArm(Inline((Nil : List(Integer))))
 }
 
 /// The arm that keeps the string runs: the matched string's bytes, and the
 /// hold's end drops `hi`.
 @[ runs("Cons(33, Nil)") ]
-def keptOnShared() -> -F List(Integer) {
+def keptOnShared() -> List(Integer) {
   takenInOneArm(Shared(1, (Cons(33, Nil) : List(Integer))))
 }
 
 /// A string taken in one arm and read in the other: the reading arm finds
 /// the string the match found, not the one the other arm took.
 @[ runs("3") ]
-def readWhereNotTaken() -> -F Integer {
+def readWhereNotTaken() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   case Shared(1, (Nil : List(Integer))) {
     Inline(bs) => { count(s.bytes()) },

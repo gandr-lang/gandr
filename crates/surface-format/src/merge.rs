@@ -59,6 +59,16 @@ pub enum OneForm
     Joined,
 }
 
+/// How a function form spells its result `B`, a value type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Returning
+{
+    /// Under its returner, `-> -F B`.
+    Returner,
+    /// Bare, `-> B`: the lowering inserts the returner.
+    Bare,
+}
+
 /// What a formatting does with a signature beside its definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Joining
@@ -434,7 +444,7 @@ pub fn members<'source>(
     tree: &SyntaxTree<'source>,
     form: NodeIndex,
     (written, own): (&[Leaf<'source>], &[Leaf<'source>]),
-    (pairing, joining): (Pairing, Joining),
+    (pairing, joining, returning): (Pairing, Joining, Returning),
 ) -> Option<(Vec<Leaf<'source>>, Vec<OneForm>)>
 {
     if pairing == Pairing::Apart && joining == Joining::Keep {
@@ -508,7 +518,7 @@ pub fn members<'source>(
         let definition = own.get(after.clone())?;
         let pair = (written.get(written_after.clone())?, definition);
         let one = (pairing == Pairing::Merged && candidate(pair.0) == Pairing::Merged)
-            .then(|| merged(leaves, pair))
+            .then(|| merged(leaves, pair, returning))
             .flatten()
             .map(|leaves| (leaves, OneForm::Function))
             .or_else(|| {
@@ -553,9 +563,10 @@ pub fn members<'source>(
 ///   binder bare and the name a dependent domain `(x : A)` gives it, and
 ///   neither form holds a comment after its documentation; otherwise the
 ///   signature's leaves to the name, then each binder `x : A` in parentheses,
-///   `A` its domain, then `-> -F B` with `B` parenthesised unless it is one
-///   token, one bracketed group or a name applied to one, then the innermost
-///   body in braces.
+///   `A` its domain, then `->` and the result: `-F B` with `B` parenthesised
+///   unless it is one token, one bracketed group or a name applied to one, or
+///   `B` alone where `returning` is [`Returning::Bare`] and the signature wrote
+///   `B` as an alias's result; then the innermost body in braces.
 /// - provides: the leaves [`crate::format_beside`] lays out for the two forms.
 /// - fails: never.
 /// - panics: none.
@@ -576,6 +587,7 @@ pub fn members<'source>(
 pub fn merged<'leaves, 'source>(
     signature: &'leaves [Leaf<'source>],
     (written, definition): (&'leaves [Leaf<'source>], &'leaves [Leaf<'source>]),
+    returning: Returning,
 ) -> Option<Vec<Leaf<'source>>>
 {
     let head = signature
@@ -683,12 +695,13 @@ pub fn merged<'leaves, 'source>(
         made("->", Material::Token),
         made(" ", Material::Whitespace),
     ]);
-    match codomain {
-        Codomain::Result(result, Atomic::Yes) => {
+    match (codomain, returning) {
+        (Codomain::Result(result, _), Returning::Bare) => out.extend_from_slice(result),
+        (Codomain::Result(result, Atomic::Yes), Returning::Returner) => {
             out.extend([made("-F", Material::Token), made(" ", Material::Whitespace)]);
             out.extend_from_slice(result);
         },
-        Codomain::Result(result, Atomic::No) => {
+        (Codomain::Result(result, Atomic::No), Returning::Returner) => {
             out.extend([
                 made("-F", Material::Token),
                 made(" ", Material::Whitespace),
@@ -697,7 +710,9 @@ pub fn merged<'leaves, 'source>(
             out.extend_from_slice(result);
             out.push(made(")", Material::Token));
         },
-        Codomain::Returner(returner) => out.extend_from_slice(returner),
+        (Codomain::Returner(returner), Returning::Returner | Returning::Bare) => {
+            out.extend_from_slice(returner);
+        },
     }
     out.extend([
         made(" ", Material::Whitespace),

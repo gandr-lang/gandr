@@ -13,7 +13,7 @@ import "./univalence.gandr" ;
 /// `ua` after `idtoequiv` transports forward as the path does: one function,
 /// at every path.
 @[ checks ]
-def uaEtaForward(a : Type, b : Type, p : Path(Type, a, b)) -> -F Path(
+def uaEtaForward(a : Type, b : Type, p : Path(Type, a, b)) -> Path(
   a => b,
   thunk { fn (x) { fwdAlong(a, b, ua(idtoequiv(a, b, p)), x) } },
   thunk { fn (x) { fwdAlong(a, b, p, x) } }
@@ -24,7 +24,7 @@ def uaEtaForward(a : Type, b : Type, p : Path(Type, a, b)) -> -F Path(
 /// `ua` after `idtoequiv` transports back as the path does: one function, at
 /// every path.
 @[ checks ]
-def uaEtaBackward(a : Type, b : Type, p : Path(Type, a, b)) -> -F Path(
+def uaEtaBackward(a : Type, b : Type, p : Path(Type, a, b)) -> Path(
   b => a,
   thunk { fn (y) { bwdAlong(a, b, ua(idtoequiv(a, b, p)), y) } },
   thunk { fn (y) { bwdAlong(a, b, p, y) } }
@@ -43,7 +43,7 @@ def idtoequivUaForward(
   s : (x : a) => Path(a, g(t(x)), x),
   h : b => a,
   r : (y : b) => Path(b, t(h(y)), y)
-) -> -F Path(
+) -> Path(
   a => b,
   thunk { fn (x) { fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x) } },
   t

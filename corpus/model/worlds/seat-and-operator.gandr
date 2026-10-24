@@ -25,7 +25,7 @@ world seat ;
 /// is marked mobile.
 @[ checks ]
 @[ entry((operator, seat)) ]
-def collect() -> -F Seat.Report {
+def collect() -> Seat.Report {
   migrate [seat] { pure Seat.progress }
 }
 
@@ -42,7 +42,7 @@ def dispatch() -> -F (Seat.Report at seat) {
 /// was written.
 @[ checks ]
 @[ entry(seat) ]
-def opened(report : Seat.Report at seat) -> -F Seat.Report {
+def opened(report : Seat.Report at seat) -> Seat.Report {
   leta written = report;
   pure written
 }
@@ -52,7 +52,7 @@ def opened(report : Seat.Report at seat) -> -F Seat.Report {
 /// report is read through a second migration, spending a second capability.
 @[ checks ]
 @[ entry((operator, seat, seat)) ]
-def review() -> -F Seat.Report {
+def review() -> Seat.Report {
   run held : Seat.Report at seat <- migrate [seat] { (hold Seat.progress) };
   leta report = held;
   migrate [seat] { pure report }

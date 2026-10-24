@@ -51,21 +51,21 @@ module Endo : Model(Monoid) {
     f : Integer => Integer,
     g : Integer => Integer,
     x : Integer
-  ) -> -F Integer {
+  ) -> Integer {
     g(f(x))
   }
 
   /// The identity function.
-  def ident(x : Integer) -> -F Integer { x }
+  def ident(x : Integer) -> Integer { x }
 
   def mul(
     f : Integer => Integer,
     g : Integer => Integer
-  ) -> -F (Integer => Integer) {
+  ) -> Integer => Integer {
     thunk { andThen(f, g) }
   }
 
-  def one() -> -F (Integer => Integer) { ident }
+  def one() -> Integer => Integer { ident }
 
   /// Associativity, the included law.
   @[ checks ]
@@ -73,13 +73,13 @@ module Endo : Model(Monoid) {
     f : Integer => Integer,
     g : Integer => Integer,
     h : Integer => Integer
-  ) -> -F Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
+  ) -> Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
     here(thunk { andThen(f, thunk { andThen(g, h) }) })
   }
 
   /// The left unit law.
   @[ checks ]
-  def unitL(f : Integer => Integer) -> -F Path(
+  def unitL(f : Integer => Integer) -> Path(
     Integer => Integer,
     mul(one(), f),
     f
@@ -89,7 +89,7 @@ module Endo : Model(Monoid) {
 
   /// The right unit law.
   @[ checks ]
-  def unitR(f : Integer => Integer) -> -F Path(
+  def unitR(f : Integer => Integer) -> Path(
     Integer => Integer,
     mul(f, one()),
     f
@@ -100,7 +100,7 @@ module Endo : Model(Monoid) {
 
 /// The included multiplication, run at the model: add one, then double.
 @[ runs("8") ]
-def composed() -> -F Integer {
+def composed() -> Integer {
   run h <- Endo.mul(fn (n) { n + 1 }, fn (n) { n * 2 }) ;
   h(3)
 }

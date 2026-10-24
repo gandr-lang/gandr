@@ -15,28 +15,28 @@ import "./circle-base.gandr" ;
 /// The certificate that rewrites the peak at its root: `S(P(y)) ==> y` with
 /// `y = S(x)`, a reflexivity once the rules convert the peak.
 @[ checks ]
-def atRoot(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
+def atRoot(x : Int) -> Path(Int, S(P(S(x))), S(x)) {
   here(S(x))
 }
 
 /// The certificate that rewrites inside the successor: `P(S(x)) ==> x`
 /// carried along `up`.
 @[ checks ]
-def inside(x : Int) -> -F Path(Int, S(P(S(x))), S(x)) {
+def inside(x : Int) -> Path(Int, S(P(S(x))), S(x)) {
   cong(up, here(x))
 }
 
 /// The two certificates of the peak's boundary are one path: the rules
 /// convert both to the reflexivity at the join.
 @[ checks ]
-def identified(x : Int) -> -F Path(Path(Int, S(P(S(x))), S(x)), atRoot(x), inside(x)) {
+def identified(x : Int) -> Path(Path(Int, S(P(S(x))), S(x)), atRoot(x), inside(x)) {
   here(atRoot(x))
 }
 
 /// The certificate types of the peak's boundary and of the join's own, one
 /// type by `ua` over the identity record.
 @[ checks ]
-def certificates(x : Int) -> -F Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S(x), S(x))) {
+def certificates(x : Int) -> Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S(x), S(x))) {
   ua((
     thunk { fn (c) { c } },
     (
@@ -49,7 +49,7 @@ def certificates(x : Int) -> -F Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int
 /// A consumer of the peak's certificates, carried along `certificates`, is
 /// the same consumer at the join's, by conversion.
 @[ checks ]
-def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> -F Path(
+def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> Path(
   Path(Int, S(x), S(x)) => Int,
   transport(\X. X => Int, certificates(x), f),
   thunk { fn (d) { f(d) } }
@@ -60,7 +60,7 @@ def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> -F Path(
 /// The carried consumer, run on a certificate of the join's boundary: it
 /// transports `S(Z)` along the certificate and keeps it.
 @[ runs("S(Z)") ]
-def carriedRun() -> -F Int {
+def carriedRun() -> Int {
   run g <- transport(\X. X => Int, certificates(Z), fn (c) { transport(\y. Int, c, S(Z)) }) ;
   g(here(S(Z)))
 }

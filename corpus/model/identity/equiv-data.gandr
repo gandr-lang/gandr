@@ -10,7 +10,7 @@ import "./flow-data.gandr" ;
 
 /// The map back: each figure to its shape, the sides swapped back.
 @[ checks ]
-def toShape(figure : Figure) -> -F Shape {
+def toShape(figure : Figure) -> Shape {
   case figure {
     Round(r) => Circle(r),
     Box(h, w) => Rect(w, h)
@@ -24,4 +24,4 @@ def redrawing : Path(Type, Shape, Figure) = equiv(Shapes.toFigure, toShape) ;
 
 /// A rectangle transported along the path is its figure, the sides swapped.
 @[ runs("Box(3, 2)") ]
-def boxed() -> -F Figure { transport(\X. X, redrawing, Rect(2, 3)) }
+def boxed() -> Figure { transport(\X. X, redrawing, Rect(2, 3)) }

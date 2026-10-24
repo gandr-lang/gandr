@@ -1,5 +1,5 @@
 @[ refuses("StageNotBelow") ]
-def rec fact(n: Integer) -> -F Integer {
+def rec fact(n: Integer) -> Integer {
   fact[<](n)
 }
 

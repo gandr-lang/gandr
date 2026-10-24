@@ -18,14 +18,14 @@ data Bad : Type {
 
 /// A function applied to a node, each at its declared type.
 @[ checks ]
-def apply(g : Bad => Empty, b : Bad) -> -F Empty {
+def apply(g : Bad => Empty, b : Bad) -> Empty {
   g(b)
 }
 
 /// Curry's consumer: the function a node holds, applied to that node
 /// (#517).
 @[ refuses("StageNotBelow") ]
-def bad(b : Bad) -> -F Empty {
+def bad(b : Bad) -> Empty {
   case b {
     MkBad(f) => f(b)
   }
@@ -34,7 +34,7 @@ def bad(b : Bad) -> -F Empty {
 /// The same consumer through `apply`: the function a node holds takes
 /// nodes only below the node, not every node `apply` hands it (#517).
 @[ refuses("StageNotBelow") ]
-def smuggled(b : Bad) -> -F Empty {
+def smuggled(b : Bad) -> Empty {
   case b {
     MkBad(f) => apply(f, b)
   }

@@ -8,7 +8,7 @@
 /// stating no type: the block synthesises its last computation's type, and
 /// the clause resumes the rest once (#1374).
 @[ runs("0") ]
-def statement() -> -F Integer {
+def statement() -> Integer {
   handle c : Proc {
     run n <- { c.exit(1); pure 0 };
     pure n

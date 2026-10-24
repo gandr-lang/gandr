@@ -11,12 +11,12 @@ def double : Integer => Integer = fn (x : Integer) { return (x + x) };
 def lend(
   f : +U &{get : -F Integer, put : -F String} => Integer,
   m : +U &{get : -F Integer, put : -F String}
-) -> -F Integer {
+) -> Integer {
   f(m)
 }
 
 /// Lends `lend` a lambda whose parameter states the record it observes.
 @[ checks ]
-def lent(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+def lent(m : +U &{get : -F Integer, put : -F String}) -> Integer {
   lend(fn (n : +U &{get : -F Integer, put : -F String}) { become n.get }, m)
 }

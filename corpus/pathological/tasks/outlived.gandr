@@ -7,7 +7,7 @@ import "../../model/tasks/task-base.gandr" ;
 
 /// A task exiting through its scope's capability after closing its end.
 @[ refuses("CapabilityEscaped") ]
-def outlived() -> -F Unit {
+def outlived() -> Unit {
   handle c : Proc {
     fork (task : Task.Join) {
       send(task, Task.notes);

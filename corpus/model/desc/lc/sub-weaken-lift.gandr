@@ -20,7 +20,7 @@ import "./subst-as-rename.gandr" ;
 def lookShiftedOnce(
   s : Env,
   n : N
-) -> -F Path(Term, look(n, s, S(Z)), subst(look(n, s, Z), Shift(S(Z)))) {
+) -> Path(Term, look(n, s, S(Z)), subst(look(n, s, Z), Shift(S(Z)))) {
   lookWeakens(n, s, Z) then back(substRenames(
     look(n, s, Z),
     Shift(S(Z)),
@@ -34,7 +34,7 @@ def lookShiftedOnce(
 def weakenLiftAgree(
   s : Env,
   n : N
-) -> -F Path(Term, subst(look(n, Shift(S(Z)), Z), Lift(s)), subst(look(n, s, Z), Shift(S(Z)))) {
+) -> Path(Term, subst(look(n, Shift(S(Z)), Z), Lift(s)), subst(look(n, s, Z), Shift(S(Z)))) {
   case n {
     Z => lookShiftedOnce(s, Z),
     S(j) => lookShiftedOnce(s, S(j))
@@ -46,6 +46,6 @@ def weakenLiftAgree(
 def subWeakenLift(
   b : Term,
   s : Env
-) -> -F Path(Term, subst(subst(b, Shift(S(Z))), Lift(s)), subst(subst(b, s), Shift(S(Z)))) {
+) -> Path(Term, subst(subst(b, Shift(S(Z))), Lift(s)), subst(subst(b, s), Shift(S(Z)))) {
   substSquare(b, Shift(S(Z)), Lift(s), s, Shift(S(Z)), fn (n) { weakenLiftAgree(s, n) })
 }

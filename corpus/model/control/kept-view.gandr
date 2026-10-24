@@ -11,7 +11,7 @@
 /// A thunk kept in the scope's region reads the held value through a shared
 /// view after the access that lent the view has ended.
 @[ runs("3") ]
-def keptView() -> -F Integer {
+def keptView() -> Integer {
   hold s = 3;
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
@@ -25,7 +25,7 @@ def keptView() -> -F Integer {
 /// A value kept in the region stays kept when it is bound again at the type
 /// that keeps it, and forces as the thunk it keeps.
 @[ runs("3") ]
-def keptAgain() -> -F Integer {
+def keptAgain() -> Integer {
   hold s = 3;
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
@@ -40,7 +40,7 @@ def keptAgain() -> -F Integer {
 /// Once the scope ends, its region releases the held value, and an exclusive
 /// access writes it back.
 @[ runs("4") ]
-def released() -> -F Integer {
+def released() -> Integer {
   hold s = 3;
   run n : Integer <- handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
@@ -56,7 +56,7 @@ def released() -> -F Integer {
 /// A value read out of a view enters the region as any value does: the read
 /// copies it, so it needs no keep.
 @[ runs("3") ]
-def keptRead() -> -F Integer {
+def keptRead() -> Integer {
   hold s = 3;
   handle c : Proc {
     run n : Integer at c <- access shared s as w { pure w } ;
@@ -71,7 +71,7 @@ def keptRead() -> -F Integer {
 /// A hold opens a region too: a view of its own value kept there lives until
 /// the hold ends.
 @[ runs("3") ]
-def keptInHold() -> -F Integer {
+def keptInHold() -> Integer {
   hold s = 3;
   run k : (() => Integer) at s <- access shared s as w { pure pure w } ;
   force k
@@ -80,7 +80,7 @@ def keptInHold() -> -F Integer {
 /// A view of an outer hold kept in an inner hold's region frees the outer
 /// value when the inner hold ends, so an exclusive access writes it back.
 @[ runs("4") ]
-def keptInInner() -> -F Integer {
+def keptInInner() -> Integer {
   hold s = 3;
   run n : Integer <- {
     hold r = 0;

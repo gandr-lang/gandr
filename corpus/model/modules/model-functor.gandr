@@ -19,12 +19,12 @@ theory Mag {
 module Times : Model(Mag) {
   type M = Integer;
 
-  def mul(a : Integer, b : Integer) -> -F Integer { a * b }
+  def mul(a : Integer, b : Integer) -> Integer { a * b }
 }
 
 /// Squaring in any magma: an element multiplied by itself.
 module Squaring(S : Model(Mag)) {
-  def square(x : S.M) -> -F S.M { S.mul(x, x) }
+  def square(x : S.M) -> S.M { S.mul(x, x) }
 }
 
 /// Squaring the integers under multiplication.
@@ -32,14 +32,14 @@ module TimesSquared = Squaring(Times) ;
 
 /// Three squared.
 @[ runs("9") ]
-def nine() -> -F Integer { TimesSquared.square(3) }
+def nine() -> Integer { TimesSquared.square(3) }
 
 /// The integers under addition, ascribed the record signature the magma
 /// presents rather than its model signature.
 module Plus : #{ type M, mul : (M, M) => M } {
   type M = Integer;
 
-  def mul(a : Integer, b : Integer) -> -F Integer { a + b }
+  def mul(a : Integer, b : Integer) -> Integer { a + b }
 }
 
 /// Doubling, as squaring the integers under addition.
@@ -47,7 +47,7 @@ module PlusSquared = Squaring(Plus) ;
 
 /// Three doubled.
 @[ runs("6") ]
-def six() -> -F Integer { PlusSquared.square(3) }
+def six() -> Integer { PlusSquared.square(3) }
 
 /// A semigroup: a magma whose multiplication is associative.
 @[ checks ]
@@ -62,7 +62,7 @@ theory Semi {
 module Reassociating(S : Model(Semi)) {
   /// Associativity, read right to left.
   @[ checks ]
-  def reassoc(x : S.M, y : S.M, z : S.M) -> -F Path(
+  def reassoc(x : S.M, y : S.M, z : S.M) -> Path(
     S.M,
     S.mul(x, S.mul(y, z)),
     S.mul(S.mul(x, y), z)
@@ -75,11 +75,11 @@ module Reassociating(S : Model(Semi)) {
 module OnePoint : Model(Semi) {
   type M = Unit;
 
-  def mul(a : Unit, b : Unit) -> -F Unit { unit }
+  def mul(a : Unit, b : Unit) -> Unit { unit }
 
   /// Associativity, by computation: both sides are the unit.
   @[ checks ]
-  def assoc(x : Unit, y : Unit, z : Unit) -> -F Path(
+  def assoc(x : Unit, y : Unit, z : Unit) -> Path(
     Unit,
     mul(mul(x, y), z),
     mul(x, mul(y, z))
@@ -93,6 +93,6 @@ module OnePointReassociated = Reassociating(OnePoint) ;
 
 /// The turned law at three units, whose products are all the unit.
 @[ checks ]
-def reassociated() -> -F Path(Unit, unit, unit) {
+def reassociated() -> Path(Unit, unit, unit) {
   OnePointReassociated.reassoc(unit, unit, unit)
 }

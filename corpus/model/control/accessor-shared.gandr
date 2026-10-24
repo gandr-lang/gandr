@@ -7,7 +7,7 @@
 
 /// A shared view beside its held value: both read the one value.
 @[ runs("6") ]
-def read_beside() -> -F Integer {
+def read_beside() -> Integer {
   hold c = 3;
   access shared c as w { pure w + c }
 }
@@ -15,21 +15,21 @@ def read_beside() -> -F Integer {
 /// Two shared views of one held value, nested: each reads the value the other
 /// reads.
 @[ runs("9") ]
-def shared_nested() -> -F Integer {
+def shared_nested() -> Integer {
   hold c = 3;
   access shared c as v { access shared c as w { pure v + w + c } }
 }
 
 /// Twice a value, a call whose type synthesises where a statement binds it.
 @[ checks ]
-def twice(n : Integer) -> -F Integer {
+def twice(n : Integer) -> Integer {
   pure n + n
 }
 
 /// A shared access ends with its body, so an exclusive access follows it and
 /// writes back what the shared view read.
 @[ runs("8") ]
-def in_turn() -> -F Integer {
+def in_turn() -> Integer {
   hold c = 4;
   run n <- access shared c as w { twice(w) };
   access c as v { resume(v, n) };
@@ -38,7 +38,7 @@ def in_turn() -> -F Integer {
 
 /// `exclusive` spells the mode an access takes when it names none.
 @[ runs("2") ]
-def spelled() -> -F Integer {
+def spelled() -> Integer {
   hold c = 1;
   access exclusive c as v { resume(v, v + 1) } unwind { pure unit };
   pure c

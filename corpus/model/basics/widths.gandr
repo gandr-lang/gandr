@@ -8,23 +8,23 @@ def word32 : u32 = 7u32 ;
 
 /// The greatest `u64`.
 @[ runs("18446744073709551615u64") ]
-def greatest_u64() -> -F u64 { 18446744073709551615u64 }
+def greatest_u64() -> u64 { 18446744073709551615u64 }
 
 /// The greatest `i32`.
 @[ runs("2147483647i32") ]
-def greatest_i32() -> -F i32 { 2147483647i32 }
+def greatest_i32() -> i32 { 2147483647i32 }
 
 /// Leading zeros are not part of the value.
 @[ runs("7i64") ]
-def padded_i64() -> -F i64 { 007i64 }
+def padded_i64() -> i64 { 007i64 }
 
 /// The identity at `i64`.
 @[ checks ]
-def same_i64(n : i64) -> -F i64 { n }
+def same_i64(n : i64) -> i64 { n }
 
 /// A width literal passes through a function at its width unchanged.
 @[ runs("42i64") ]
-def same_i64_called() -> -F i64 { same_i64(42i64) }
+def same_i64_called() -> i64 { same_i64(42i64) }
 
 /// A width is not the integers.
 @[ refuses("TypeMismatch") ]

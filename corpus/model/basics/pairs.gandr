@@ -11,11 +11,11 @@ def triple : Integer * String * Integer = (3, "three", 4) ;
 
 /// The middle of the three, selected by its place.
 @[ runs("\"three\"") ]
-def middle() -> -F String { return triple.1 }
+def middle() -> String { return triple.1 }
 
 /// The last of the three, selected by its place.
 @[ runs("4") ]
-def last() -> -F Integer { return triple.2 }
+def last() -> Integer { return triple.2 }
 
 /// The run target returns the pair.
 @[ runs("(1, 2)") ]

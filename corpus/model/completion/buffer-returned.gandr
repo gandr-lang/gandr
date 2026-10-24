@@ -11,7 +11,7 @@
 /// mint to a mock kernel, which fills it and hands it back with the
 /// completion, before the clause resumes with it.
 @[ checks ]
-def bufferReturned() -> -F Unit {
+def bufferReturned() -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     r.free(b)
@@ -35,7 +35,7 @@ def bufferReturned() -> -F Unit {
 /// A buffer freed in each arm of a case: each arm starts from the buffer as
 /// the case found it live, and every arm hands it back.
 @[ checks ]
-def freedInEachArm(flag : Bool) -> -F Unit {
+def freedInEachArm(flag : Bool) -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     case flag {

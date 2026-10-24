@@ -6,7 +6,7 @@
 /// A seat's end closed inside a scope after an operation whose clause drops
 /// its continuation: the close never runs and the end is left open (#1336).
 @[ refuses("CapturedEndpoint") ]
-def closedInScope() -> -F Unit {
+def closedInScope() -> Unit {
   fork (seat : end) { close(seat) } as desk;
   handle c : Proc {
     c.exit(1);

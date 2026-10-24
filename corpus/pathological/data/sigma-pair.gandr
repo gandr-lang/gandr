@@ -13,9 +13,9 @@ def skewed : #{n : Integer, w : Ix(n)} = (2, (MkIx : Ix(3))) ;
 def loose = (2, (MkIx : Ix(2))) ;
 
 @[ checks ]
-def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
+def tag_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
   return p.n
 }
 
 @[ refuses("TypeMismatch") ]
-def unpaired() -> -F Integer { tag_of(loose) }
+def unpaired() -> Integer { tag_of(loose) }

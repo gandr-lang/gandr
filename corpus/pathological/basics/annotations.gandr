@@ -8,7 +8,7 @@ def misstated = ("three" : Integer);
 
 /// A returned value its annotation misstates.
 @[ refuses("TypeMismatch") ]
-def misreturned() -> -F Integer {
+def misreturned() -> Integer {
   ("three" : Integer)
 }
 
@@ -27,7 +27,7 @@ def disagreeing : String = (3 : Integer);
 /// A pair a bind runs, its pattern annotated with a product the pair does not
 /// have (#1543).
 @[ refuses("TypeMismatch") ]
-def splitWrong() -> -F Integer {
+def splitWrong() -> Integer {
   run (y, z) : Integer * String <- pure (1, 2);
   y
 }

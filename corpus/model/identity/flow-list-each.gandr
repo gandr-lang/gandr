@@ -11,7 +11,7 @@ module Cells {
   type New = Integer * String;
   /// The records' translator: the fields swapped.
   @[ checks ]
-  def swap(old : Old) -> -F New {
+  def swap(old : Old) -> New {
     case old {
       #{name, age} => (age, name)
     }
@@ -21,7 +21,7 @@ module Cells {
   def renamed : Flow(Type, Old, New) = forward(swap) ;
   /// The lists' translator: the list ridden along the records' flow.
   @[ checks ]
-  def each(olds : List(Old)) -> -F List(New) {
+  def each(olds : List(Old)) -> List(New) {
     ride(\X. List(X), renamed, olds)
   }
   /// At one cell the image is the swapped head before the translator's own
@@ -30,7 +30,7 @@ module Cells {
   def everyone : Flow(Type, List(Old), List(New)) = forward(each) ;
   /// A list ridden along the lists' flow.
   @[ checks ]
-  def moved(olds : List(Old)) -> -F List(New) {
+  def moved(olds : List(Old)) -> List(New) {
     ride(\X. X, everyone, olds)
   }
   /// Two records migrated by a run.

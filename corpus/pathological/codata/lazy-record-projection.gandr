@@ -1,5 +1,5 @@
 @[ refuses("TypeMismatch") ]
-def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+def wrong_side(m : +U &{get : -F Integer, put : -F String}) -> Integer {
   m.put
 }
 
@@ -28,7 +28,7 @@ def chain_label(m : +U (-F Integer & -F String)) -> -F Integer {
 
 /// An entry by position is typed as the entry it places.
 @[ refuses("TypeMismatch") ]
-def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
+def wrong_place(m : +U &{get : -F Integer, put : -F String}) -> Integer {
   m.1
 }
 

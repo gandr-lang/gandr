@@ -18,21 +18,21 @@ import "./circle.gandr" ;
 
 /// Transport forward along a path between types, the map `idtoequiv` packages.
 @[ checks ]
-def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> -F b {
+def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> b {
   transport(\X. X, p, x)
 }
 
 /// Transport back along a path between types: the map the round trips are
 /// stated over.
 @[ checks ]
-def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F a {
+def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
   transport(\X. X, back(p), y)
 }
 
 /// The transport back written out in a record's field converts, under the
 /// field's binder, with the same transport in the law's type (#650).
 @[ checks ]
-def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> -F #{
+def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
   g : b => a,
   law : (z : b) => Path(a, g(z), transport(\X. X, back(p), z))
 } {
@@ -45,7 +45,7 @@ def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> -F #{
 /// Back after forward is the identity, by `J` on the path: at reflexivity
 /// both transports compute away.
 @[ checks ]
-def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> -F Path(
+def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> Path(
   a,
   bwdAlong(a, b, p, fwdAlong(a, b, p, x)),
   x
@@ -65,11 +65,11 @@ def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> -F Path(
 
 /// Forward after back is the identity at every point, by `J` on the path.
 @[ checks ]
-def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> -F ((w : b) => Path(
+def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
   b,
   fwdAlong(a, b, p, bwdAlong(a, b, p, w)),
   w
-)) {
+) {
   become transport(
     +U ((y : Type) -> (z : Path(Type, a, y)) -> -F ((w : y) => Path(
       y,
@@ -85,7 +85,7 @@ def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> -F ((w : b) => Path(
 
 /// Forward after back is the identity at `y`.
 @[ checks ]
-def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F Path(
+def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
   b,
   fwdAlong(a, b, p, bwdAlong(a, b, p, y)),
   y
@@ -100,7 +100,7 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> -F Path(
 /// its law is stated over (#650), and `univalence`'s laws replay over them
 /// (#695, #698).
 @[ checks ]
-def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> -F (a ≃ b) {
+def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
   (
     thunk { fn (x) { fwdAlong(a, b, p, x) } },
     (
@@ -127,7 +127,7 @@ def uaLiteral(
   s : (x : a) => Path(a, g(t(x)), x),
   h : b => a,
   r : (y : b) => Path(b, t(h(y)), y)
-) -> -F Path(Type, a, b) {
+) -> Path(Type, a, b) {
   ua((t, ((g, s), (h, r))))
 }
 
@@ -159,19 +159,19 @@ def uaBeta(
   h : b => a,
   r : (y : b) => Path(b, t(h(y)), y),
   x : a
-) -> -F Path(b, fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x), t(x)) {
+) -> Path(b, fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x), t(x)) {
   here(t(x))
 }
 
 /// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
 /// the record's map at it. The record's laws are carried, never run.
 @[ runs("S(Z)") ]
-def uaBetaRun() -> -F Int { transport(\X. X, ua(winding), loop) }
+def uaBetaRun() -> Int { transport(\X. X, ua(winding), loop) }
 
 /// A loop carried along the loops' path to the integers is its winding
 /// number, by conversion.
 @[ checks ]
-def windingBeta(x : Path(Circle, Base, Base)) -> -F Path(
+def windingBeta(x : Path(Circle, Base, Base)) -> Path(
   Int,
   transport(\X. X, loopsAreIntegers, x),
   wind(x)
@@ -181,7 +181,7 @@ def windingBeta(x : Path(Circle, Base, Base)) -> -F Path(
 
 /// A loop carried to the integers runs to its winding number.
 @[ runs("S(Z)") ]
-def windingRun() -> -F Int { transport(\X. X, loopsAreIntegers, loop) }
+def windingRun() -> Int { transport(\X. X, loopsAreIntegers, loop) }
 
 /// `ua` after `idtoequiv` is the path, owed: no rule converts `ua` of the
 /// packaged transport with the path, even at reflexivity, where both sides
@@ -203,7 +203,7 @@ def idtoequivUa : (a : Type, b : Type, e : a ≃ b) => Path(a ≃ b, idtoequiv(a
 /// The paths between two types and the bi-invertible maps between them are a
 /// quasi-inverse by `idtoequiv` and `ua`, on the two owed round trips.
 @[ checks ]
-def univalenceIso(a : Type, b : Type) -> -F (Path(Type, a, b) ≅ (a ≃ b)) {
+def univalenceIso(a : Type, b : Type) -> Path(Type, a, b) ≅ (a ≃ b) {
   (
     thunk { fn (p) { idtoequiv(a, b, p) } },
     (
@@ -218,7 +218,7 @@ def univalenceIso(a : Type, b : Type) -> -F (Path(Type, a, b) ≅ (a ≃ b)) {
 /// record is written out: a split of `univalenceIso`'s result reads its type
 /// as unknown (#656).
 @[ checks ]
-def univalence(a : Type, b : Type) -> -F (Path(Type, a, b) ≃ (a ≃ b)) {
+def univalence(a : Type, b : Type) -> Path(Type, a, b) ≃ (a ≃ b) {
   (
     thunk { fn (p) { idtoequiv(a, b, p) } },
     (

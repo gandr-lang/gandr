@@ -46,7 +46,7 @@ def unheld(ys : List(Integer)) -> -F Integer {
 
 /// An exclusive view of a list a shared access already lends.
 @[ refuses("HeldLent") ]
-def raisedWhileRead() -> -F Integer {
+def raisedWhileRead() -> Integer {
   hold xs = pair;
   access shared xs as v { xs.first() as w { resume(w, 3) } ; pure 0 }
 }

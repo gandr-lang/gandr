@@ -11,7 +11,7 @@ module Evolution {
   @[ checks ]
   def sub : Flow(Type, SeatEnd, SeatEnd′) = sim(SeatEnd, SeatEnd′) ;
   @[ refuses("NonCovariantMotive") ]
-  def reversed() -> -F Flow(Type, SeatEnd′, SeatEnd) {
+  def reversed() -> Flow(Type, SeatEnd′, SeatEnd) {
     become ride(\X. Flow(Type, X, SeatEnd), sub, stay(SeatEnd))
   }
 }

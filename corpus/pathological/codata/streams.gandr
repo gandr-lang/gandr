@@ -58,7 +58,7 @@ def stray(n : Integer) -> Spot {
 
 /// The head of a stream.
 @[ checks ]
-def peek(s : +U Stream) -> -F Integer {
+def peek(s : +U Stream) -> Integer {
   become s.head
 }
 

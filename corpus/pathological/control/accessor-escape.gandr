@@ -1,7 +1,7 @@
 /// A view captured by a thunk: the thunk may be forced after the access that
 /// lent the view has ended, so the view would outlive its access.
 @[ refuses("ViewEscaped") ]
-def leak() -> -F Integer {
+def leak() -> Integer {
   hold c = 0;
   access c as v { force thunk { resume(v, 1) } };
   pure c
@@ -12,7 +12,7 @@ def leak() -> -F Integer {
 /// value it read: the refusal is the checker's caution, not a fault the run
 /// meets (#1132).
 @[ runs("0"), refuses("HeldCaptured") ]
-def stash() -> -F Integer {
+def stash() -> Integer {
   hold c = 0;
   force thunk { pure c }
 }

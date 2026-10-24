@@ -11,7 +11,7 @@ module ReaderSchema {
   type New = Integer * String;
   /// The translator: the old record's fields swapped.
   @[ checks ]
-  def toNew(old : Old) -> -F New {
+  def toNew(old : Old) -> New {
     case old {
       #{name, age} => (age, name)
     }
@@ -24,14 +24,14 @@ module ReaderSchema {
   def reader : Flow(Type, New => Integer, Old => Integer) = arrow(upgrade, stay(Integer)) ;
   /// The new schema's reader of ages.
   @[ checks ]
-  def age(record : New) -> -F Integer {
+  def age(record : New) -> Integer {
     case record {
       #{years, name} => years
     }
   }
   /// The reader of ages ridden back to the old schema.
   @[ checks ]
-  def legacy(record : Old) -> -F Integer {
+  def legacy(record : Old) -> Integer {
     run read <- ride(\X. X, reader, age) ;
     read(record)
   }

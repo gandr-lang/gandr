@@ -11,7 +11,7 @@ import "../../model/completion/ring-base.gandr" ;
 /// in a body the operation's clause resumes twice: the clause owes that body
 /// one end, and the second resumption is refused (#1334).
 @[ refuses("ContinuationUsedTwice") ]
-def resumedTwice() -> -F Unit {
+def resumedTwice() -> Unit {
   handle c : Proc {
     fork (kernel : Ring.Submission) {
       recv(kernel) as sqe;

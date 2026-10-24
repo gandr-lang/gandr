@@ -28,7 +28,7 @@ def collapsedPath : Path(Type, Two, One) = ua((
 /// refused at the code `ua` reads off the record: `Type` is a code of
 /// `Type[1]`, not of `Type`.
 @[ refuses("LevelMismatch") ]
-def alongTypeSelf(e : Type ≃ Type, x : Type) -> -F Type {
+def alongTypeSelf(e : Type ≃ Type, x : Type) -> Type {
   transport(\X. X, ua(e), x)
 }
 
@@ -46,7 +46,7 @@ def alongLiteral(
   h : b => a,
   r : (y : b) => Path(b, t(h(y)), y),
   x : a
-) -> -F b {
+) -> b {
   transport(\X. X, ua((t, ((g, s), (h, r)))), x)
 }
 
@@ -54,7 +54,7 @@ def alongLiteral(
 /// reflexivity: no rule relates `ua` of the packaged transport to the path it
 /// packages, so the model source owes it as `uaEta` (#520).
 @[ refuses("EndpointMismatch") ]
-def uaEtaByConversion(a : Type) -> -F Path(
+def uaEtaByConversion(a : Type) -> Path(
   Path(Type, a, a),
   ua(idtoequiv(a, a, here(a))),
   here(a)

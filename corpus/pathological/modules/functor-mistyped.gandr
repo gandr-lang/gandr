@@ -15,10 +15,10 @@ module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer
   def zero = 0;
   /// One step on.
   @[ checks ]
-  def next(n : T) -> -F T { n + 1 }
+  def next(n : T) -> T { n + 1 }
   /// The count read as an integer.
   @[ checks ]
-  def read(n : T) -> -F Integer { n }
+  def read(n : T) -> Integer { n }
 }
 
 /// The functor applied to that counter, refused at the witness for `zero`:

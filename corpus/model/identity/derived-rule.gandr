@@ -24,7 +24,7 @@ data Bit : Type {
 
 /// Exclusive or.
 @[ checks ]
-def xor(a : Bit, b : Bit) -> -F Bit {
+def xor(a : Bit, b : Bit) -> Bit {
   case a {
     Zero => b,
     One => case b {
@@ -42,19 +42,19 @@ module Parity : Model(Group) {
   def e = Zero;
   def a = One;
   def b = Zero;
-  def inv(x : Bit) -> -F Bit { x }
-  def mul(x : Bit, y : Bit) -> -F Bit { xor(x, y) }
+  def inv(x : Bit) -> Bit { x }
+  def mul(x : Bit, y : Bit) -> Bit { xor(x, y) }
   @[ checks ]
-  def unitL(x : Bit) -> -F Path(Bit, mul(e, x), x) { here(x) }
+  def unitL(x : Bit) -> Path(Bit, mul(e, x), x) { here(x) }
   @[ checks ]
-  def unitR(x : Bit) -> -F Path(Bit, mul(x, e), x) {
+  def unitR(x : Bit) -> Path(Bit, mul(x, e), x) {
     case x {
       Zero => here(Zero),
       One => here(One),
     }
   }
   @[ checks ]
-  def assoc(x : Bit, y : Bit, z : Bit) -> -F Path(Bit, mul(mul(x, y), z), mul(x, mul(y, z))) {
+  def assoc(x : Bit, y : Bit, z : Bit) -> Path(Bit, mul(mul(x, y), z), mul(x, mul(y, z))) {
     case x {
       Zero => here(xor(y, z)),
       One => case y {
@@ -67,11 +67,11 @@ module Parity : Model(Group) {
     }
   }
   @[ checks ]
-  def invInv(x : Bit) -> -F Path(Bit, inv(inv(x)), x) { here(x) }
+  def invInv(x : Bit) -> Path(Bit, inv(inv(x)), x) { here(x) }
   @[ checks ]
-  def invE() -> -F Path(Bit, inv(e), e) { here(Zero) }
+  def invE() -> Path(Bit, inv(e), e) { here(Zero) }
   @[ checks ]
-  def invL(x : Bit) -> -F Path(Bit, mul(inv(x), x), e) {
+  def invL(x : Bit) -> Path(Bit, mul(inv(x), x), e) {
     case x {
       Zero => here(Zero),
       One => here(Zero),
@@ -86,7 +86,7 @@ def parityGroup : Model(Group) = pack Parity at Model(Group) ;
 /// The derived rule read at the parity group, at one and zero: both sides are
 /// one.
 @[ checks ]
-def invMulParity() -> -F Path(Bit, One, One) {
+def invMulParity() -> Path(Bit, One, One) {
   run law <- Group.invMul(parityGroup);
   law(One, Zero)
 }

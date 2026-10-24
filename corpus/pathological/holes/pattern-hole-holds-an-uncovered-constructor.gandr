@@ -12,7 +12,7 @@ data Color : Type {
 
 /// `Green` falls to the hole (#391).
 @[ refuses("UndecidedCoverage") ]
-def classify(c : Color) -> -F Integer {
+def classify(c : Color) -> Integer {
   case c {
     Red => 0,
     ? => 1,

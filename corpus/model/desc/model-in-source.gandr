@@ -23,8 +23,8 @@ data N : Type {
 /// each operation its constructor.
 module SyntaxNat : Model(Nat) {
   type Nat = N;
-  def zero() -> -F N { Z }
-  def succ(n : N) -> -F N { S(n) }
+  def zero() -> N { Z }
+  def succ(n : N) -> N { S(n) }
 }
 
 /// The module packed into the record type of `Nat`'s models: its carrier and
@@ -45,4 +45,4 @@ def countingModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
 /// The syntax model's successor at its zero builds the data's one: the
 /// module's operations run.
 @[ runs("S(Z)") ]
-def one() -> -F N { SyntaxNat.succ(SyntaxNat.zero()) }
+def one() -> N { SyntaxNat.succ(SyntaxNat.zero()) }

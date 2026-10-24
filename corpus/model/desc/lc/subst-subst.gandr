@@ -16,7 +16,7 @@ import "./subst-rename.gandr" ;
 /// Two substitutions at an abstraction are the abstraction of the body
 /// under both lifts, by conversion.
 @[ checks ]
-def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> -F Path(
+def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
   Term,
   subst(subst(Lam(b), s1), s2),
   Lam(subst(subst(b, Lift(s1)), Lift(s2)))
@@ -27,7 +27,7 @@ def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> -F Path(
 /// A lookup under one binder, under a lifted substitution, is the
 /// weakened lookup under it.
 @[ checks ]
-def substLookWeakens(s1 : Env, s2 : Env, m : N) -> -F Path(
+def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
   Term,
   subst(look(m, s1, S(Z)), Lift(s2)),
   subst(wk(look(m, s1, Z)), Lift(s2))
@@ -42,7 +42,7 @@ def substLookWeakens(s1 : Env, s2 : Env, m : N) -> -F Path(
 /// A lookup under one binder, under a lifted substitution, is the
 /// substituted lookup weakened.
 @[ checks ]
-def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> -F Path(
+def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path(
   Term,
   subst(look(m, s1, S(Z)), Lift(s2)),
   wk(subst(look(m, s1, Z), s2))
@@ -59,7 +59,7 @@ def weakenedComposites(
   u2 : Env,
   h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
   m : N
-) -> -F Path(Term, wk(subst(look(m, s1, Z), s2)), wk(subst(look(m, u1, Z), u2))) {
+) -> Path(Term, wk(subst(look(m, s1, Z), s2)), wk(subst(look(m, u1, Z), u2))) {
   cong(wk, h(m))
 }
 
@@ -72,7 +72,7 @@ def substSquareLift(
   u2 : Env,
   h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2)),
   n : N
-) -> -F Path(Term, subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
+) -> Path(Term, subst(look(n, Lift(s1), Z), Lift(s2)), subst(look(n, Lift(u1), Z), Lift(u2))) {
   case n {
     Z => here(Ix(Z)),
     S(m) => substLookWeakenLift(
@@ -93,7 +93,7 @@ def rec substSquare(
   u1 : Env,
   u2 : Env,
   h : (n : N) => Path(Term, subst(look(n, s1, Z), s2), subst(look(n, u1, Z), u2))
-) -> -F Path(Term, subst(subst(t, s1), s2), subst(subst(t, u1), u2)) {
+) -> Path(Term, subst(subst(t, s1), s2), subst(subst(t, u1), u2)) {
   case t {
     Ix(n) => h(n),
     Lam(b) => cong(

@@ -11,7 +11,7 @@ data Nat : Type {
 }
 
 @[ checks ]
-def tick(n : Nat) -> -F Unit {
+def tick(n : Nat) -> Unit {
   unit
 }
 
@@ -142,7 +142,7 @@ def held(n : Nat) -> -F Nat {
 /// list's tail, `return` leaves the function from inside it, and what follows
 /// the loop reads the binders around it (#283).
 @[ checks ]
-def find_succ(xs : List(Nat), otherwise : Nat) -> -F Nat {
+def find_succ(xs : List(Nat), otherwise : Nat) -> Nat {
   for x in xs {
     case x {
       Zero => continue,
@@ -154,23 +154,23 @@ def find_succ(xs : List(Nat), otherwise : Nat) -> -F Nat {
 
 /// The search returns from the second cell (#283).
 @[ runs("Succ(Zero)") ]
-def find_one() -> -F Nat { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil)), Zero) }
+def find_one() -> Nat { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil)), Zero) }
 
 /// The search reaches the empty list, which leaves the loop with unit, and
 /// returns what it was given (#283).
 @[ runs("Succ(Zero)") ]
-def find_none() -> -F Nat { become find_succ(cons(Zero, nil), Succ(Zero)) }
+def find_none() -> Nat { become find_succ(cons(Zero, nil), Succ(Zero)) }
 
 /// A `for` ending a body runs it on every cell and returns unit (#283).
 @[ checks ]
-def for_each(xs : List(Nat)) -> -F Unit {
+def for_each(xs : List(Nat)) -> Unit {
   for x in xs { tick(x); }
 }
 
 /// A `for` leaves with unit on the empty list, so a `break` with a value of
 /// another type does not check (#283).
 @[ refuses("TypeMismatch") ]
-def for_value(xs : List(Nat)) -> -F Nat {
+def for_value(xs : List(Nat)) -> Nat {
   run m <- for x in xs { break(x) } ;
   m
 }

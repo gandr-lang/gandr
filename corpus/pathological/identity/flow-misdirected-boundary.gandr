@@ -2,7 +2,7 @@ module Schema {
   type Old = String * Integer;
   type New = Integer * String;
   @[ checks ]
-  def toNew(old : Old) -> -F New {
+  def toNew(old : Old) -> New {
     case old {
       #{name, age} => (age, name)
     }

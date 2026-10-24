@@ -7,7 +7,7 @@
 /// A diverging loop's function, typed as if it returned: the loop's fixpoint
 /// is refused, its type named with `Div` in the row (#1481).
 @[ refuses("TypeMismatch") ]
-def spinPure(x : Bool) -> -F Bool {
+def spinPure(x : Bool) -> Bool {
   run y <- loop {
     run below <- 1 < 0;
     case below {
@@ -34,7 +34,7 @@ def spin(x : Bool) -> -F [Div] Bool {
 /// A caller at the empty row of a function whose row holds `Div`: the call
 /// synthesises the row, which the caller's does not include (#1481).
 @[ refuses("TypeMismatch") ]
-def spinFirst(x : Bool) -> -F Bool {
+def spinFirst(x : Bool) -> Bool {
   spin(x)
 }
 
@@ -42,7 +42,7 @@ def spinFirst(x : Bool) -> -F Bool {
 /// may still run forever: it leaves `Div` in its row, which the empty row
 /// does not include (#1481).
 @[ refuses("TypeMismatch") ]
-def tamed(x : Bool) -> -F Bool {
+def tamed(x : Bool) -> Bool {
   handle c : Div {
     spin(x)
   } with {
@@ -53,7 +53,7 @@ def tamed(x : Bool) -> -F Bool {
 /// An unread call whose row holds `Div` may run forever, so it is not the
 /// computation that follows it: the endpoints stay apart (#1481).
 @[ refuses("EndpointMismatch") ]
-def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Div] b)) -> -F Path(
+def unreadDiv(a : Type, b : Type, f : a => b, g : +U (a -> -F [Div] b)) -> Path(
   +U (a -> -F [Div] b),
   thunk { fn (x) { run v <- g(x); f(x) } },
   thunk { fn (x) { f(x) } }

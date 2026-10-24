@@ -11,7 +11,7 @@ import "../../model/data/vectors.gandr" ;
 /// One integer said to be two long: `VCons` stands one past its tail, which
 /// is empty.
 @[ refuses("TypeMismatch") ]
-def overstated() -> -F Vec(Integer, Succ(Succ(Zero))) {
+def overstated() -> Vec(Integer, Succ(Succ(Zero))) {
   VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
 }
 

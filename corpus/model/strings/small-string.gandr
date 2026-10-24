@@ -20,7 +20,7 @@ data Place : Type {
 /// A string holding `bs`: inline when they fit the inline capacity, else in a
 /// buffer of its own on the heap, held once.
 @[ checks ]
-def store(bs : List(Integer)) -> -F Repr {
+def store(bs : List(Integer)) -> Repr {
   run n <- count(bs);
   run fits <- n <= inlineCapacity;
   case fits {
@@ -31,13 +31,13 @@ def store(bs : List(Integer)) -> -F Repr {
 
 /// The string of the code points `cs`: their bytes and the zero, stored.
 @[ checks ]
-def own(cs : List(Integer)) -> -F Repr {
+def own(cs : List(Integer)) -> Repr {
   store(terminated(cs))
 }
 
 /// Where a string's bytes live.
 @[ checks ]
-def place(s : Repr) -> -F Place {
+def place(s : Repr) -> Place {
   case s {
     Inline(bs) => Inside,
     Shared(n, bs) => OnHeap
@@ -60,7 +60,7 @@ def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> -F [Div] List(
 
 /// `hi`, two bytes and the zero: inline.
 @[ runs("Inside") ]
-def hiPlace() -> -F Place { place(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
+def hiPlace() -> Place { place(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
 
 /// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
 @[ runs("Inside") ]
@@ -78,7 +78,7 @@ def spilledPlace() -> -F [Div] Place {
 
 /// Inline or on the heap, a string reads as its owned bytes.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hiBytes() -> -F List(Integer) { bytes(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
+def hiBytes() -> List(Integer) { bytes(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
 
 /// The spilled string's twenty-four bytes and the zero.
 @[ runs("25") ]

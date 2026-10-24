@@ -1,4 +1,4 @@
 @[ refuses("CapabilityConsumable") ]
-def discard(c : Cap[1] {write}) -> -F Unit {
+def discard(c : Cap[1] {write}) -> Unit {
   unit
 }

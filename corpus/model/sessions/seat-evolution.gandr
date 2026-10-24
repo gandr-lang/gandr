@@ -41,7 +41,7 @@ module Evolution {
   def kept : Flow(Type, SeatEnd, SeatEnd) = stay(SeatEnd) ;
   /// The stationary flow, then the simulation.
   @[ checks ]
-  def widened() -> -F Flow(Type, SeatEnd, SeatEnd′) {
+  def widened() -> Flow(Type, SeatEnd, SeatEnd′) {
     kept then sub
   }
 }
@@ -58,13 +58,13 @@ def served : Run(Seat.SeatEnd) = recorded(
 
 /// A recorded run ridden forward along the simulation.
 @[ checks ]
-def forward(receipt : Run(Seat.SeatEnd)) -> -F Run(Evolution.SeatEnd′) {
+def forward(receipt : Run(Seat.SeatEnd)) -> Run(Evolution.SeatEnd′) {
   ride(\X. Run(X), Evolution.sub, receipt)
 }
 
 /// The old run ridden forward by a run: the record is unchanged.
 @[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"), offered(retire), closed)") ]
-def moved() -> -F Run(Evolution.SeatEnd′) { become forward(served) }
+def moved() -> Run(Evolution.SeatEnd′) { become forward(served) }
 
 /// A run of the new protocol that takes the pause.
 @[ checks ]

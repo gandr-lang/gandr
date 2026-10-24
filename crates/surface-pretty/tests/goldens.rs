@@ -4470,26 +4470,22 @@ fn a_recursive_definition_spells_as_written_941()
     let (wide, narrow) = (PageWidth::from(100_u32), PageWidth::from(30_u32));
     assert_eq!(
         declared_whole(&source, (ty, descending), wide),
-        written(
-            "def rec down(a : Nat) -> -F Nat {\n  case a { Zero => a, Succ(b) => down[<](b) }\n}"
-        ),
+        written("def rec down(a : Nat) -> Nat {\n  case a { Zero => a, Succ(b) => down[<](b) }\n}"),
         "a descending call writes its claim"
     );
     assert_eq!(
         declared_whole(&source, (ty, productive), wide),
-        written(
-            "def rec down(a : Nat) -> -F Nat {\n  case a { Zero => a, Succ(b) => down[>](b) }\n}"
-        ),
+        written("def rec down(a : Nat) -> Nat {\n  case a { Zero => a, Succ(b) => down[>](b) }\n}"),
         "a fixpoint claiming nothing writes its call productive"
     );
     assert_eq!(
         declared_whole(&source, (ty, descending), narrow),
         written(
-            "def rec down(a : Nat) -> -F Nat {\n  case a {\n    Zero => a,\n    Succ(b) => down[<](b)\n  }\n}"
+            "def rec down(a : Nat) -> Nat {\n  case a {\n    Zero => a,\n    Succ(b) => down[<](b)\n  }\n}"
         ),
         "the body breaks at the page two columns in"
     );
-    let both = "def rec down(a : Nat, b : Nat) -> -F Nat {\n  case a { Zero => b, Succ(c) => down[<](c, b) }\n}";
+    let both = "def rec down(a : Nat, b : Nat) -> Nat {\n  case a { Zero => b, Succ(c) => down[<](c, b) }\n}";
     assert_eq!(
         declared_whole(&source, (ty_two, on_first), wide),
         written(both),
@@ -4547,27 +4543,21 @@ fn a_recursive_parameter_skips_the_names_its_body_mentions_941()
     let source = CoreSource::new(&core, &names).naming(&constructors);
     assert_eq!(
         declared_whole(&source, (unnamed, mentioning), wide),
-        written(
-            "def rec down(b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"
-        ),
+        written("def rec down(b : Nat) -> Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"),
         "the parameter passes over a constant the body mentions"
     );
     let arrows = [(pi, Name::from("n"))];
     let named = source.naming_arrows(&arrows);
     assert_eq!(
         declared_whole(&named, (dependent, quiet), wide),
-        written(
-            "def rec down(n : Nat) -> -F Nat {\n  case n { Zero => n, Succ(a) => down[<](a) }\n}"
-        ),
+        written("def rec down(n : Nat) -> Nat {\n  case n { Zero => n, Succ(a) => down[<](a) }\n}"),
         "the parameter takes the name its arrow writes"
     );
     let mentioned_arrows = [(pi, Name::from("a"))];
     let shadowing = source.naming_arrows(&mentioned_arrows);
     assert_eq!(
         declared_whole(&shadowing, (dependent, mentioning), wide),
-        written(
-            "def rec down(b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"
-        ),
+        written("def rec down(b : Nat) -> Nat {\n  case b { Zero => a, Succ(c) => down[<](c) }\n}"),
         "an arrow's name the body mentions is passed over"
     );
 }
@@ -4616,20 +4606,20 @@ fn a_uniform_parameter_is_passed_by_each_call_941()
     assert_eq!(
         declared_whole(&source, (ty_one, one), wide),
         written(
-            "def rec down(a : Nat, b : Nat) -> -F Nat {\n  case b { Zero => a, Succ(c) => down[<](a, c) }\n}"
+            "def rec down(a : Nat, b : Nat) -> Nat {\n  case b { Zero => a, Succ(c) => down[<](a, c) }\n}"
         ),
         "a call passes the uniform parameter before its argument"
     );
     assert_eq!(
         declared_whole(&source, (ty_two, two), wide),
         written(
-            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> -F Nat {\n  case c { Zero => a, Succ(d) => { run e <- down[<](a, b, d) ; b(e) } }\n}"
+            "def rec down(a : Nat, b : +U (Nat -> -F Nat), c : Nat) -> Nat {\n  case c { Zero => a, Succ(d) => { run e <- down[<](a, b, d) ; b(e) } }\n}"
         ),
         "a call passes both uniform parameters in order, a call of one passes nothing more"
     );
     assert_eq!(
         declared_whole(&source, (ty_one, exhausted), wide),
-        written("def down(a : Nat, b : Nat) -> -F Nat {\n  loop { break(unit) }\n}"),
+        written("def down(a : Nat, b : Nat) -> Nat {\n  loop { break(unit) }\n}"),
         "a fixpoint binding no parameter is the body's loop"
     );
 }
@@ -4669,12 +4659,12 @@ fn a_function_definition_spells_whole_941()
     let wide = PageWidth::from(100_u32);
     assert_eq!(
         declared_whole(&source, (ty_one, one), wide),
-        written("def down(a : Nat) -> -F Nat {\n  a\n}"),
+        written("def down(a : Nat) -> Nat {\n  a\n}"),
         "a function of one parameter is written whole, not as a `def rec`"
     );
     assert_eq!(
         declared_whole(&source, (ty_two, two), wide),
-        written("def down(a : Nat, b : Nat) -> -F Nat {\n  a\n}"),
+        written("def down(a : Nat, b : Nat) -> Nat {\n  a\n}"),
         "the body stands under every parameter, the first the outermost"
     );
     assert_eq!(
@@ -4711,7 +4701,7 @@ fn a_definition_writes_its_implicits_in_its_telescope_2267()
     assert_eq!(
         declared_whole(&source, (ty, defined), PageWidth::from(100_u32)),
         Maybe::Present((
-            String::from("def down @[x : Nat] (a : Nat) -> -F Nat {\n  x\n}"),
+            String::from("def down @[x : Nat] (a : Nat) -> Nat {\n  x\n}"),
             Fidelity::Faithful
         ))
     );
@@ -4735,7 +4725,7 @@ fn a_suspended_returner_spells_whole_1449()
     assert_eq!(
         declared_whole(&source, (ty, suspended), PageWidth::from(100_u32)),
         Maybe::Present((
-            String::from("def down() -> -F Nat {\n  unit\n}"),
+            String::from("def down() -> Nat {\n  unit\n}"),
             Fidelity::Faithful
         )),
         "a suspended returner is written with no parameter"
@@ -4764,7 +4754,7 @@ fn a_lambda_the_checker_thunks_spells_whole_2228()
     assert_eq!(
         declared_whole(&source, (ty, read), PageWidth::from(100_u32)),
         Maybe::Present((
-            String::from("def down(a : Nat) -> -F Nat {\n  a\n}"),
+            String::from("def down(a : Nat) -> Nat {\n  a\n}"),
             Fidelity::Faithful
         )),
         "a lambda read as a value at an arrow is written whole"
@@ -4982,7 +4972,7 @@ fn an_observation_of_a_parameter_prints_by_position_941()
     assert_eq!(
         declared_whole(&source, (ty, body), PageWidth::from(100_u32)),
         Maybe::Present((
-            String::from("def down(a : +U &{-F Nat, -F Nat}) -> -F Nat {\n  a.1\n}"),
+            String::from("def down(a : +U &{-F Nat, -F Nat}) -> Nat {\n  a.1\n}"),
             Fidelity::Faithful
         )),
         "the parameter's observation is written by its position"

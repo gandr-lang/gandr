@@ -24,26 +24,26 @@ module Successor : Model(PointedMonoid) {
     f : Integer => Integer,
     g : Integer => Integer,
     x : Integer
-  ) -> -F Integer {
+  ) -> Integer {
     g(f(x))
   }
 
   /// The identity function.
-  def ident(x : Integer) -> -F Integer { x }
+  def ident(x : Integer) -> Integer { x }
 
   /// The successor.
-  def succ(x : Integer) -> -F Integer { return x + 1 }
+  def succ(x : Integer) -> Integer { return x + 1 }
 
   def mul(
     f : Integer => Integer,
     g : Integer => Integer
-  ) -> -F (Integer => Integer) {
+  ) -> Integer => Integer {
     thunk { andThen(f, g) }
   }
 
-  def one() -> -F (Integer => Integer) { ident }
+  def one() -> Integer => Integer { ident }
 
-  def point() -> -F (Integer => Integer) { succ }
+  def point() -> Integer => Integer { succ }
 
   /// Associativity, included through the monoid.
   @[ checks ]
@@ -51,13 +51,13 @@ module Successor : Model(PointedMonoid) {
     f : Integer => Integer,
     g : Integer => Integer,
     h : Integer => Integer
-  ) -> -F Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
+  ) -> Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
     here(thunk { andThen(f, thunk { andThen(g, h) }) })
   }
 
   /// The left unit law, included.
   @[ checks ]
-  def unitL(f : Integer => Integer) -> -F Path(
+  def unitL(f : Integer => Integer) -> Path(
     Integer => Integer,
     mul(one(), f),
     f
@@ -67,7 +67,7 @@ module Successor : Model(PointedMonoid) {
 
   /// The right unit law, included.
   @[ checks ]
-  def unitR(f : Integer => Integer) -> -F Path(
+  def unitR(f : Integer => Integer) -> Path(
     Integer => Integer,
     mul(f, one()),
     f
@@ -78,7 +78,7 @@ module Successor : Model(PointedMonoid) {
 
 /// The chosen element, then doubling, at three.
 @[ runs("8") ]
-def pointed() -> -F Integer {
+def pointed() -> Integer {
   run p <- Successor.point() ;
   run h <- Successor.mul(p, fn (n) { n * 2 }) ;
   h(3)

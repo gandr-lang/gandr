@@ -7,4 +7,4 @@ import "./entry.gandr" ;
 
 /// It counts no arguments, then reaches the hole left for the rest.
 @[ runs("reached a hole") ]
-def draft() -> -F Integer { run n <- count([]) ; ?rest }
+def draft() -> Integer { run n <- count([]) ; ?rest }

@@ -4,6 +4,6 @@
 
 /// Stashes what it is lent in a thunk kept in no region.
 @[ refuses("KeptEscaped") ]
-def stash @[r : Region] (k : (() => Integer) at r) -> -F (() => Integer) {
+def stash @[r : Region] (k : (() => Integer) at r) -> () => Integer {
   pure thunk { force k }
 }

@@ -21,7 +21,7 @@ def thenBeta(
   p : Path(Type, a, b),
   e : b ≃ c,
   x : a
-) -> -F Path(c, fwdAlong(a, c, p then ua(e), x), fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))) {
+) -> Path(c, fwdAlong(a, c, p then ua(e), x), fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x))) {
   here(fwdAlong(b, c, ua(e), fwdAlong(a, b, p, x)))
 }
 
@@ -31,7 +31,7 @@ def thenBeta(
 def loopsRound(
   p : Path(Type, Path(Circle, Base, Base), Int),
   x : Path(Circle, Base, Base)
-) -> -F Path(Circle, Base, Base) {
+) -> Path(Circle, Base, Base) {
   transport(\X. X, p then back(p), x)
 }
 

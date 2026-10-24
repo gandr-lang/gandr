@@ -8,7 +8,7 @@ import "../data/data-base.gandr" ;
 
 /// The node an arena holds at `i`.
 @[ checks ]
-def rec node(nodes : List(Integer), i : Integer) -> -F Integer {
+def rec node(nodes : List(Integer), i : Integer) -> Integer {
   case nodes {
     Nil => pure 0,
     Cons(n, rest) => {

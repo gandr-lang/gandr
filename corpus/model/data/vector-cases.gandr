@@ -13,7 +13,7 @@ import "./vectors.gandr" ;
 
 /// The length a vector holds, read off the index its `VCons` states.
 @[ checks ]
-def vlength(n : Nat, v : Vec(Integer, n)) -> -F Nat {
+def vlength(n : Nat, v : Vec(Integer, n)) -> Nat {
   case v {
     VNil => Zero,
     VCons(m, h, t) => Succ(m)
@@ -23,7 +23,7 @@ def vlength(n : Nat, v : Vec(Integer, n)) -> -F Nat {
 /// The length of a vector one long: the `VNil` arm is written, though `VNil`
 /// stands at no length but zero.
 @[ checks ]
-def oneLength(v : Vec(Integer, Succ(Zero))) -> -F Nat {
+def oneLength(v : Vec(Integer, Succ(Zero))) -> Nat {
   case v {
     VNil => Zero,
     VCons(m, h, t) => Succ(m)
@@ -33,7 +33,7 @@ def oneLength(v : Vec(Integer, Succ(Zero))) -> -F Nat {
 /// The length counted by structural recursion on the tail, which stands at
 /// the length its `VCons` states, one below the vector's.
 @[ checks ]
-def rec vcount(n : Nat, v : Vec(Integer, n)) -> -F Nat {
+def rec vcount(n : Nat, v : Vec(Integer, n)) -> Nat {
   case v {
     VNil => Zero,
     VCons(m, h, t) => Succ(vcount[<](m, t))
@@ -42,8 +42,8 @@ def rec vcount(n : Nat, v : Vec(Integer, n)) -> -F Nat {
 
 /// The length of the vector two long, read off its index.
 @[ runs("Succ(Succ(Zero))") ]
-def pairRead() -> -F Nat { vlength(Succ(Succ(Zero)), pair()) }
+def pairRead() -> Nat { vlength(Succ(Succ(Zero)), pair()) }
 
 /// The length of the vector two long, counted.
 @[ runs("Succ(Succ(Zero))") ]
-def pairCount() -> -F Nat { vcount(Succ(Succ(Zero)), pair()) }
+def pairCount() -> Nat { vcount(Succ(Succ(Zero)), pair()) }
