@@ -1188,6 +1188,18 @@ pub enum LoweringRefusal<'source>
         implicit: SurfaceName<'source>,
     },
 
+    /// A model implicit standing as a value: named alone where a value is
+    /// read, or supplied by what names neither a module nor a model implicit.
+    /// A model implicit is its components, each read as `s.x`, and a slot
+    /// takes a module's name or a model implicit's, `f[s = M]`.
+    ModelImplicitValue
+    {
+        /// The bytes of the name or the supply.
+        span: ByteSpan,
+        /// The model implicit's name.
+        implicit: SurfaceName<'source>,
+    },
+
     /// A definition's region binder, bound `r : Region` in its telescope,
     /// named as a value: a region is erased and never computed, so the body
     /// reads one only in a kept type `A at r`.
@@ -1833,6 +1845,12 @@ impl fmt::Display for LoweringRefusal<'_>
                  supply `{implicit}` by name, `{function}[{implicit} = …](…)`, and pass the \
                  explicit arguments alone"
             ),
+            Self::ModelImplicitValue { implicit, .. } => write!(
+                f,
+                "the model implicit `{implicit}` is its components and stands as no value: read \
+                 each as `{implicit}.x`, and supply the slot by a module's name or a model \
+                 implicit's, `f[{implicit} = M]`"
+            ),
             Self::EntryType { .. } => f.write_str(
                 "`main` is the program's entry: it is a computation returning the exit code or the \
                  unit, `() -> -F Integer` or `() -> -F Unit`, or one taking the arguments, `(args \
@@ -2070,6 +2088,7 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { span, .. }
             | Self::ImplicitUnsupplied { span, .. }
             | Self::ImplicitInParentheses { span, .. }
+            | Self::ModelImplicitValue { span, .. }
             | Self::RegionAsValue { span, .. }
             | Self::EntryType { span }
             | Self::StrayReceiverMode { span, .. }
@@ -2163,7 +2182,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 66_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 67_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2459,6 +2478,10 @@ mod tests
                 field: SurfaceName::from("start"),
                 constructor: SurfaceName::from("Dot"),
             },
+            LoweringRefusal::ModelImplicitValue {
+                span: s(125_usize, 126_usize),
+                implicit: SurfaceName::from("s"),
+            },
         ]
     }
 
@@ -2536,6 +2559,7 @@ mod tests
             s(119_usize, 120_usize),
             s(121_usize, 122_usize),
             s(123_usize, 124_usize),
+            s(125_usize, 126_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

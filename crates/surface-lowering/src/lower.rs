@@ -511,6 +511,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::collections::btree_map::Entry;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -1942,8 +1943,13 @@ struct Parameter
     binder: NodeIndex,
     /// The frame the parameter binds, which says whether a type names it.
     frame: ScopeId,
-    /// The parameter's type, when the source wrote one.
+    /// The parameter's type, when the source wrote one: a flattened model
+    /// implicit's model type.
     declared: Maybe<NodeIndex, stated::Absent>,
+    /// The place of the component the parameter binds among its model
+    /// implicit's, when it is one of a flattened model implicit's parameters
+    /// ([`model::Flattened`]).
+    component: Option<model::ComponentPlace>,
 }
 
 /// A label the source writes against an entry, kept while the lowering plans
@@ -3346,6 +3352,15 @@ struct Lowerer<'run, 'source>
     /// the application mints the variable there, under one lambda per such
     /// operand.
     abstracted: BTreeMap<usize, DeBruijnIndex>,
+    /// Each operand an application passes for a component of a model
+    /// implicit its call supplies, by its place among the operands, with the
+    /// supply and the component's place in the slot: the operand's node is the
+    /// call's own, which no value lowers at, and the application mints the
+    /// component's value there ([`Self::mint_supplied`]).
+    components: BTreeMap<usize, (Arc<model::Supplied>, model::ComponentPlace)>,
+    /// Each model implicit flattened into one parameter per component, by the
+    /// frame its name resolves to.
+    flattened: BTreeMap<ScopeId, model::Flattened>,
     /// Each hole nominated for an omitted implicit or a written wildcard, in
     /// the order nominated, with what it stands for: the hole's name counts
     /// them.
@@ -4837,6 +4852,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             supplied: BTreeSet::new(),
             nominated: BTreeMap::new(),
             abstracted: BTreeMap::new(),
+            components: BTreeMap::new(),
+            flattened: BTreeMap::new(),
             nominations: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
@@ -7323,8 +7340,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the term-name half of resolution.
     /// - fails: yields the wrong-sort refusal for a name in computation
     ///   position, [`LoweringRefusal::RegionAsValue`] for a region binder of
-    ///   the definition the name stands in that nothing nearer binds, and the
-    ///   unresolved-name refusal when no scope answers; propagates
+    ///   the definition the name stands in that nothing nearer binds,
+    ///   [`LoweringRefusal::ModelImplicitValue`] for a model implicit named
+    ///   alone, as [`Self::resolved_term`] refuses it, and the unresolved-name
+    ///   refusal when no scope answers; propagates
     ///   [`LoweringRefusal::BudgetExceeded`] from the binder walk.
     /// - panics: none.
     ///
@@ -7524,7 +7543,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - fails: [`LoweringRefusal::PhaseDependence`] for a declaration the
     ///   member `site` belongs to may not read, as [`Self::phased`] decides;
     ///   [`LoweringRefusal::ImplicitUnsupplied`] for a declaration with
-    ///   implicits named anywhere but a call supplying them.
+    ///   implicits named anywhere but a call supplying them; the wrong-sort
+    ///   refusal for a flattened model implicit, which is its components and no
+    ///   value ([`Self::unflattened`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -7536,11 +7557,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   named in a type member's type, refused.
     /// - witness: `lower::identity::tests::a_computation_endpoint_is_the_value_it_returns`
     /// - witness: `tests::modules::a_type_member_reads_types_and_never_values`
+    /// - witness: `lower::implicit::tests::a_model_implicit_named_alone_is_refused_739`
     #[spec(
         ensures: |ret| match ret {
-            | Err(ref refusal) => {
-                matches!(resolved, Resolved::Declaration { .. })
-                    && matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::ImplicitUnsupplied { .. })
+            | Err(ref refusal) => match resolved {
+                | Resolved::Declaration { .. } => matches!(*refusal, LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::ImplicitUnsupplied { .. }),
+                | Resolved::Binder(bound) => self.flattened.contains_key(&bound.binder),
             },
             | Ok(ref plan) => match (resolved, self.in_type.contains(&site.at.node)) {
                 | (Resolved::Binder(bound), true) => {
@@ -7558,6 +7580,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         resolved: Resolved,
     ) -> Result<Plan, LoweringRefusal<'source>>
     {
+        self.unflattened(site, resolved)?;
         match resolved {
             Resolved::Binder(bound) if self.in_type.contains(&site.at.node) => {
                 let telescope = self.name_in_type(site.at.node, bound.binder);
@@ -9004,6 +9027,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 binder: binder.node,
                 frame: bound,
                 declared,
+                component: None,
             });
             frame = Frame::Inner(bound);
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
@@ -9894,14 +9918,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   `Path` over three arguments, `List(A)`, `Flow`, `Stack`, `Run` — is
     ///   the type it spells, as [`Self::applied_head`] plans it, quoted; any
     ///   other call standing as a computation reads its head at the head
-    ///   position and each argument as a value, all in its own frame, and is
-    ///   planned as the head applied to the arguments left to right; a call
-    ///   whose head is an instantiation, a recursive call, records every
-    ///   argument for the head's claim to check, reads each as a value so a
-    ///   later parameter's type can name a leading one, and applies those from
-    ///   the staged parameter's on, the ones its fixpoint takes; a call of no
-    ///   arguments is its head, whose force [`Self::mint_at`] marks as the call
-    ///   the source wrote.
+    ///   position and each argument as a value, all in its own frame, a model
+    ///   implicit's components standing at the call itself, and is planned as
+    ///   the head applied to the arguments left to right; a call whose head is
+    ///   an instantiation, a recursive call, records every argument for the
+    ///   head's claim to check, reads each as a value so a later parameter's
+    ///   type can name a leading one, and applies those from the staged
+    ///   parameter's on, the ones its fixpoint takes; a call of no arguments is
+    ///   its head, whose force [`Self::mint_at`] marks as the call the source
+    ///   wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -9940,6 +9965,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && self.reading(head) == Reading::Head(site.reading.frame())
                             && (arguments.start .. arguments.end).all(|position| {
                                 self.nominated.contains_key(&position)
+                                    || self.components.contains_key(&position)
                                     || self.operands.get(position).is_some_and(|&argument| {
                                         self.reading(argument) == Reading::Value(site.reading.frame())
                                     })
@@ -10184,14 +10210,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   label names, as [`Self::selection`] reads it; a selection off a name
     ///   whose written type is a data family without indices reads the field
     ///   its label names off every constructor, as [`Self::data_field`] reads
-    ///   it; a selection off a value no written type states, a chain of
-    ///   selections ending at a binder's or a declaration's name not
-    ///   capitalised, projects the field its label names of the record the
-    ///   value is, as [`Self::field`] reads it. A chain of selections whose
-    ///   head is a capitalised name is a path: inside a functor whose parameter
-    ///   the head names, a one-link path is that parameter's value component,
-    ///   as [`Self::parameter_value`] reads it; a path whose head, capitalised
-    ///   or not, names a module an enclosing module declares reaches the member
+    ///   it; a selection off a flattened model implicit is the parameter of the
+    ///   component it names, as [`Self::flattened_member`] reads it; a
+    ///   selection off a value no written type states, a chain of selections
+    ///   ending at a binder's or a declaration's name not capitalised, projects
+    ///   the field its label names of the record the value is, as
+    ///   [`Self::field`] reads it. A chain of selections whose head is a
+    ///   capitalised name is a path: inside a functor whose parameter the head
+    ///   names, a one-link path is that parameter's value component, as
+    ///   [`Self::parameter_value`] reads it; a path whose head, capitalised or
+    ///   not, names a module an enclosing module declares reaches the member
     ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
     ///   as that member's constant as below; otherwise it is resolved through
     ///   the outermost scope at the depth that binds it: a path ending at an
@@ -10240,12 +10268,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_data_field_some_constructor_lacks_is_refused_1106`
     /// - witness: `lower::tests::each_use_of_a_deprecated_declaration_is_listed`
     /// - witness: `tests::modules::functors::a_parameter_is_read_only_inside_its_functor`
+    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     #[spec(
         ensures: |ret| {
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -12163,8 +12192,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   than its parameter count, and for a dynamic function named bare where
     ///   a type is read, which computes a code only once applied (#690); the
     ///   wrong-sort refusal where the position reads neither a value nor the
-    ///   sort of the decode's universe; propagates
-    ///   [`LoweringRefusal::BudgetExceeded`] from the walk of the code's type.
+    ///   sort of the decode's universe, and for a flattened model implicit,
+    ///   which is its components and no value ([`Self::unflattened`]);
+    ///   propagates [`LoweringRefusal::BudgetExceeded`] from the walk of the
+    ///   code's type.
     /// - panics: none.
     ///
     /// # Errors
@@ -12213,6 +12244,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         applied: Stretch,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        self.unflattened(site, resolved)?;
         if let Resolved::Declaration { constant, .. } = resolved
             && let Maybe::Present(arity) = self.data_family(constant)
         {
@@ -16044,13 +16076,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     /// - witness: `lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
+    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     #[spec(
-        captures: (written, opened) = (
+        captures: (written, opened, supplied) = (
             (arguments.start .. arguments.end)
-                .filter(|position| !self.nominated.contains_key(position) && !self.abstracted.contains_key(position))
+                .filter(|position| !self.nominated.contains_key(position) && !self.abstracted.contains_key(position) && !self.components.contains_key(position))
                 .filter_map(|position| self.operands.get(position).copied())
                 .collect::<Vec<_>>(),
             (arguments.start .. arguments.end).any(|position| self.abstracted.contains_key(&position)),
+            (arguments.start .. arguments.end).any(|position| self.components.contains_key(&position)),
         ),
         ensures: |ret| match self.computation_at(head) {
             | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
@@ -16062,6 +16096,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         | Maybe::Absent(reason) => Some(reason),
                     }) {
                     | Some(reason) => ret == Maybe::Absent(reason),
+                    | None if supplied && ret == Maybe::Absent(lowered::Absent::Unminted) => true,
                     | None if arguments.start == arguments.end => {
                         ret == Maybe::Present(Lowered::Computation(called))
                     },
@@ -16090,6 +16125,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         for position in arguments.start .. arguments.end {
             if !self.nominated.contains_key(&position)
                 && !self.abstracted.contains_key(&position)
+                && !self.components.contains_key(&position)
                 && let Some(&argument) = self.operands.get(position)
                 && let Maybe::Absent(reason) = self.value_at(argument)
             {
@@ -16119,6 +16155,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     });
                 }
                 id
+            }
+            else if let Some(&(ref supplied, place)) = self.components.get(&position) {
+                match self.mint_supplied(supplied, place, under, sink, origin) {
+                    Maybe::Present(id) => id,
+                    Maybe::Absent(reason) => return Maybe::Absent(reason),
+                }
             }
             else if let Some(&index) = self.abstracted.get(&position) {
                 let id = sink.arena.value_variable(Zone::Intuitionistic, index);
@@ -16322,8 +16364,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   mentioned.
     /// - ensures: the declared type, as [`Self::mint_function`] states it, with
     ///   each parameter's arrow dependent exactly when a later parameter's type
-    ///   or the result names it, and plain otherwise; nothing is minted when a
-    ///   type is unstated or did not lower.
+    ///   or the result names it, and plain otherwise, each parameter of a
+    ///   flattened model implicit at its component's type
+    ///   ([`Self::flattened_domains`]); nothing is minted when a type is
+    ///   unstated or did not lower.
     /// - provides: the signature half of [`Self::mint_function`].
     /// - fails: never.
     /// - panics: none.
@@ -16333,6 +16377,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   names, each asserted as the exact arrow read back out of the arena.
     /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(
         ensures: |ret| match function.result {
             | Maybe::Absent(_) => ret == Maybe::Absent(lowered::Absent::Unstated),
@@ -16359,6 +16404,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         },
                         | None => {
                             matches!(ret, Maybe::Present(id) if sink.origins.value_type(id) == Maybe::Present(origin))
+                                || (parameters.iter().any(|parameter| parameter.component.is_some())
+                                    && ret == Maybe::Absent(lowered::Absent::Unminted))
                         },
                     }
                 },
@@ -16396,13 +16443,34 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 return Maybe::Absent(reason);
             }
         }
+        // A flattened model implicit's parameters take their types from the
+        // model type they share, minted once for the group.
+        let mut flattened: BTreeMap<NodeIndex, Vec<ValueTypeId>> = BTreeMap::new();
         for parameter in parameters.iter().rev() {
             let (Maybe::Present(written), Maybe::Present(binder)) =
                 (parameter.declared, self.origin_at(parameter.binder))
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let Maybe::Present(domain) = self.value_type_at(written)
+            let domain = match parameter.component {
+                Some(place) => {
+                    let domains = match flattened.entry(written) {
+                        Entry::Occupied(held) => held.into_mut(),
+                        Entry::Vacant(free) => {
+                            match self.flattened_domains(written, sink, origin) {
+                                Maybe::Present(domains) => free.insert(domains),
+                                Maybe::Absent(reason) => return Maybe::Absent(reason),
+                            }
+                        },
+                    };
+                    domains.get(usize::from(place)).copied()
+                },
+                None => match self.value_type_at(written) {
+                    Maybe::Present(domain) => Some(domain),
+                    Maybe::Absent(_) => None,
+                },
+            };
+            let Some(domain) = domain
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };

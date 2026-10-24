@@ -504,6 +504,12 @@ fn lowered(
             "`{function}`'s implicit `{implicit}` is supplied by name, \
              `{function}[{implicit} = …](…)`, not among the parentheses"
         ),
+        LoweringRefusal::ModelImplicitValue { implicit, .. } => write!(
+            f,
+            "the model implicit `{implicit}` is its components, never a value; read them as \
+             `{implicit}.x`, and supply the slot by a module's name or a model implicit's, \
+             `f[{implicit} = M]`"
+        ),
         LoweringRefusal::EntryType { .. } => f.write_str(
             "`main` is the program's entry; declare it `def main() -> -F Integer` or `def main() \
              -> -F Unit`, or `def main(args : List(String)) -> -F Integer` to read the arguments",
@@ -1484,6 +1490,10 @@ mod tests
             LoweringRefusal::ImplicitInParentheses {
                 span,
                 function: name,
+                implicit: name,
+            },
+            LoweringRefusal::ModelImplicitValue {
+                span,
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span, name },

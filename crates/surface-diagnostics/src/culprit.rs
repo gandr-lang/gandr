@@ -221,6 +221,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::TelescopeCycle { .. } => "parameters mentioning each other",
         LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
         LoweringRefusal::ImplicitInParentheses { .. } => "an implicit among the arguments",
+        LoweringRefusal::ModelImplicitValue { .. } => "a model implicit as a value",
         LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
         LoweringRefusal::EntryType { .. } => "an entry of another type",
         LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
@@ -629,6 +630,7 @@ mod tests
             LoweringRefusal::TelescopeCycle { .. } => "parameters mentioning each other",
             LoweringRefusal::ImplicitUnsupplied { .. } => "an implicit left unsupplied",
             LoweringRefusal::ImplicitInParentheses { .. } => "an implicit among the arguments",
+            LoweringRefusal::ModelImplicitValue { .. } => "a model implicit as a value",
             LoweringRefusal::RegionAsValue { .. } => "a region named as a value",
             LoweringRefusal::EntryType { .. } => "an entry of another type",
             LoweringRefusal::StrayReceiverMode { .. } => "a mode off a receiver",
@@ -914,6 +916,10 @@ mod tests
             LoweringRefusal::ImplicitInParentheses {
                 span: at,
                 function: name,
+                implicit: name,
+            },
+            LoweringRefusal::ModelImplicitValue {
+                span: at,
                 implicit: name,
             },
             LoweringRefusal::RegionAsValue { span: at, name },
