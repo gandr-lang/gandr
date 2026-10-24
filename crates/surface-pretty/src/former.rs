@@ -906,8 +906,9 @@ pub enum Former<'source, Node>
         /// The payload.
         payload: Node,
     },
-    /// A capability scope, `handle c : I { c } with { … }`: a handler whose
-    /// subject stands under the capability's binder.
+    /// A capability scope, `handle c : I { c } with { … }`, or over a theory
+    /// with the sorts it fixes, `handle c : T with sort C = A … { c } with {
+    /// … }`: a handler whose subject stands under the capability's binder.
     Scope
     {
         /// The handled interface's name.
@@ -918,6 +919,10 @@ pub enum Former<'source, Node>
         on_return: Node,
         /// How many operation clauses it has.
         clauses: Arity,
+        /// Each sort the scope's manifest fixes beside the type it fixes it
+        /// to, a value type, in the order written; none over a host interface
+        /// or where the source keeps no manifest.
+        sorts: &'source [(Name<'source>, Node)],
     },
     /// A computation fed to a first-class stack, `resume(k, c)`.
     Resume(Node, Node),

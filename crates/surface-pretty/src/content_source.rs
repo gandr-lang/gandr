@@ -390,6 +390,7 @@ impl Source for ContentSource<'_>
                 subject,
                 on_return,
                 clauses: Arity::from(clauses.len()),
+                sorts: &[],
             },
             ContentNode::Resume(stack, resumed) => Former::Resume(stack, resumed),
             ContentNode::Abandon(stack) => Former::Abandon(stack),

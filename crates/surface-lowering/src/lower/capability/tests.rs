@@ -951,6 +951,46 @@ fn a_scope_handles_a_theory_s_operations_2272()
     );
 }
 
+/// A scope over a theory records, at the scope, the theory and each sort its
+/// manifest fixes beside the type it fixes it to, which the scope's signature
+/// holds only substituted; a scope over a host interface records none
+/// (#2382).
+#[test]
+fn a_scope_records_the_theory_and_sorts_it_handles_2382()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}",
+            "def fixed() -> -F Integer {{ handle st : State with sort S = Integer {{ run a <- st.get(); pure a }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n",
+            "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} with {{ pure(x) => pure x, oper exit(code, k) => k(unit) }} }}\n",
+        ),
+        state = STATE,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let fixed = tail_of(&module, &arena, "fixed".into());
+    let hosted = tail_of(&module, &arena, "hosted".into());
+    let &[(scope, ref model)] = module.origins().scope_theories()
+    else {
+        panic!(
+            "the theory scope alone is recorded, not the scope over `Proc` at {hosted:?}: {:?}",
+            module.origins().scope_theories()
+        );
+    };
+    assert_eq!(scope, fixed, "recorded at the scope over `State`");
+    assert_eq!(model.theory.as_ref(), "State");
+    let sorts: Vec<(&str, Option<&ValueType>)> = model
+        .sorts
+        .iter()
+        .map(|&(ref sort, carrier)| (sort.as_ref(), arena.value_type(carrier)))
+        .collect();
+    assert_eq!(
+        sorts,
+        [("S", Some(&ValueType::Base(BaseType::Integer)))],
+        "`S` at `Integer`"
+    );
+}
+
 /// A scope's manifest fixes only the value sorts of the theory it handles,
 /// each once: a sort the theory does not declare, a sort fixed twice and a
 /// manifest on a host interface are refused by name, and a value sort left

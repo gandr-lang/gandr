@@ -497,6 +497,10 @@ pub struct CoreSource<'arena>
     /// The model type each type the source writes as `Model(T)`, or `Model(T)
     /// with sort C = A …`, lowers from, ascending by the type.
     models: &'arena [(ValueTypeId, Modelled<'arena>)],
+    /// The theory each capability scope the source writes as `handle c : T
+    /// with sort C = A … { … }` handles, with the sorts its manifest fixes,
+    /// ascending by the scope.
+    scopes: &'arena [(ComputationId, Modelled<'arena>)],
     /// The reduct the checker applies at each value it crosses at, ascending
     /// by the value.
     crossings: &'arena [(ValueId, ConstantIndex)],
@@ -545,6 +549,7 @@ impl<'arena> CoreSource<'arena>
             seconds: &[],
             relations: &[],
             models: &[],
+            scopes: &[],
             crossings: &[],
             forgettings: &[],
             maps: &[],
@@ -744,6 +749,22 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { models, ..self }
+    }
+
+    /// This source, writing each capability scope `scopes` records over the
+    /// theory it handles with the sorts its manifest fixes, ascending by the
+    /// scope.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn scoping(
+        self,
+        scopes: &'arena [(ComputationId, Modelled<'arena>)],
+    ) -> Self
+    {
+        Self { scopes, ..self }
     }
 
     /// This source, writing the reduct `crossings` records at each value the
@@ -2002,6 +2023,12 @@ impl<'arena> CoreSource<'arena>
                 subject: computation(subject),
                 on_return: computation(on_return),
                 clauses: Arity::from(clauses.len()),
+                sorts: self
+                    .scopes
+                    .binary_search_by_key(&id, |&(held, _)| held)
+                    .ok()
+                    .and_then(|at| self.scopes.get(at))
+                    .map_or(&[], |&(_, ref scope)| scope.sorts.as_slice()),
             },
             Computation::Resume(stack, resumed) => {
                 Former::Resume(value(stack), computation(resumed))

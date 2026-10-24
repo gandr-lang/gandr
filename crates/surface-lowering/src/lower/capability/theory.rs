@@ -64,6 +64,9 @@ pub(in crate::lower) struct TheoryInterface
     pub name: EffectName,
     /// Each operation, in the theory's order.
     pub operations: Vec<TheoryOperation>,
+    /// Each sort the scope's manifest fixes beside the node of the type it
+    /// writes, in the order written.
+    pub manifest: Vec<(Name, NodeIndex)>,
 }
 
 impl TheoryInterface
