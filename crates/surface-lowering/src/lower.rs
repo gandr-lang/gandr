@@ -8478,11 +8478,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `cursor` stands at the `type(` of a type quote.
     /// - ensures: the one type is read at the quote's own reading and adopted,
     ///   so a type where a value is read is quoted at its own sort, as a type
-    ///   written bare there is.
+    ///   written bare there is; a term form quoted, other than a name or a
+    ///   constructor, which may name a type, is refused as the wrong sort for a
+    ///   type, at the outermost grouping around it: the quote.
     /// - provides: the types an expression cannot spell bare — a receive `?(S).
     ///   T` and a labelled sum `+{ … }` — as arguments.
     /// - fails: yields the one-operand refusal and the unclosed-form fault,
-    ///   both naming the quote, and the type's own refusal at its reading.
+    ///   both naming the quote, the wrong-sort refusal of a quoted term, and
+    ///   the type's own refusal at its reading.
     /// - panics: none.
     ///
     /// # Errors
@@ -8491,8 +8494,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a receive, a labelled sum and a computation type
     ///   quoted as arguments lower to the exact core codes a bare type there
-    ///   lowers to.
+    ///   lowers to; a block quoted, `type({Unit})` with its sum's `+` left out,
+    ///   is refused at the quote, which touches where the `+` stood.
     /// - witness: `lower::tests::a_quoted_type_is_the_code_a_bare_type_is`
+    /// - witness: `lower::tests::a_quoted_term_is_refused_at_its_quote_2341`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -8509,6 +8514,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let inner = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
         self.group(site, inner);
+        // A term quoted where a type is spelled: `type({Unit})`, the sum's `+`
+        // left out, reads a block the quote does not take, so the block is
+        // refused at the quote rather than entered and its statement refused
+        // inside it, away from the `+` (#2341).
+        if let Some(node) = self.tree.node(inner.node)
+            && let Ok(Shape::Form { name, former }) = shape_of(self.pbg, node)
+            && family_of(former) == Family::Term
+            && !matches!(former, Former::Name | Former::Constructor)
+        {
+            let quoted = Site {
+                at: inner,
+                name,
+                reading: Reading::ValueType(site.reading.frame()),
+            };
+            return Err(self.standing(quoted).out(FragmentBoundary::WrongSort));
+        }
         self.read(inner.node, site.reading);
 
         self.plan(site, Plan::Transparent(inner.node));
@@ -24013,6 +24034,25 @@ mod tests
                 } if span == at(27_usize, 40_usize)
             ),
             "a type quote stands where the computation is read, so it is what is refused"
+        );
+    }
+
+    #[test]
+    fn a_quoted_term_is_refused_at_its_quote_2341()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let block_as_type = |span| LoweringRefusal::OutOfFragment {
+            span,
+            form: FormName::from(NamedKind("block")),
+            sort: FragmentSort::ValueType,
+            boundary: FragmentBoundary::WrongSort,
+        };
+
+        assert_eq!(
+            refusal(SourceText::from("def code = stay(type({Unit})) ;")),
+            block_as_type(at(16_usize, 28_usize)),
+            "a labelled sum with its `+` left out quotes a block, refused at the quote, which \
+             touches where the `+` stood, not at the statement inside it"
         );
     }
 
