@@ -26,30 +26,38 @@ metrics = ["avg"]
 min_calls = 20
 
 # The prelude's instance machinery (#2395), checked on every report without a
-# baseline. A closure is lowered and judged once per walk or session: seven in
+# baseline. A closure is lowered and judged once per walk or session: eight in
 # the series, one for each workload that checks or opens a source, so a pass
 # over the prelude in every component shows as many calls as components. Each
 # function the `prelude resolve` workload measures must run, so a renamed
 # function or a lost attribute breaks its budget rather than passing silently.
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::lower_closure"
-calls = { min = 1, max = 7 }
+calls = { min = 1, max = 8 }
 message = "the prelude is lowered once per walk, never per component (#2331)"
 
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::judge_closure"
-calls = { min = 1, max = 7 }
+calls = { min = 1, max = 8 }
 message = "the prelude is judged once per walk, never per component (#2331)"
 
 # A readmission resumes the prelude's crossing from the record of the walk's
 # or session's first one, whatever native operations a component reads, so
 # each declaration crosses into the kernel once per readmission that cannot
-# resume it: 769 in the series, and a component that crossed the prelude again
+# resume it: 878 in the series, and a component that crossed the prelude again
 # would add a crossing per prelude declaration.
 [[functions.budgets]]
 match = "gandr_core_checker::bridge::cross"
-calls = { min = 1, max = 790 }
+calls = { min = 1, max = 900 }
 message = "a component resumes the prelude's crossing, never crosses it again (#2395)"
+
+# Each component after a walk's first resumes the prelude's record: 63 in the
+# `component floor` workload, 84 in the series. What a resume costs, in
+# allocation, is pinned in hotpath/gandr-policy.toml.
+[[functions.budgets]]
+match = "gandr_core_checker::bridge::resume"
+calls = { min = 63 }
+message = "each component after a walk's first resumes the prelude's kernel record (#2395)"
 
 [[functions.budgets]]
 match = "gandr_surface_lowering::lower::model::flattened::Lowerer::model_candidates"

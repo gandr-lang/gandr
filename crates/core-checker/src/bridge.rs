@@ -1612,6 +1612,7 @@ impl Crossed
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(self.boundary())
         && resumed.2.iter().zip(report.judged()).all(|(entry, judged)|
             entry.constant == judged.constant() && entry.origin == judged.origin())))]
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     fn resume(
         &self,
         report: &ModuleReport,
