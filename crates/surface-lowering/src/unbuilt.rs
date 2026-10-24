@@ -225,7 +225,8 @@ pub enum Unbuilt
     /// A stated type component whose held declaration the collection does not
     /// carry.
     StatedType,
-    /// A universe level past the largest the lowering counts.
+    /// A universe level at or past the largest the lowering counts: the
+    /// largest has no universe above it.
     UniverseLevel,
     /// A capability form over a host table in conflict.
     CapabilityHost,

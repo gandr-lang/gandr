@@ -1,0 +1,34 @@
+/// `LoopUndecided`: a case over a sort its words loop at whose answer costs more to carry along a loop than the machine's fuel allows.
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+def rec double(n : Nat) -> -F Nat {
+  case n {
+    Zero => Zero,
+    Succ(p) => Succ(Succ(double[<](p)))
+  }
+}
+
+def rec power(n : Nat) -> -F Nat {
+  case n {
+    Zero => Succ(Zero),
+    Succ(p) => double(power[<](p))
+  }
+}
+
+data Circle : Type {
+  Base : Circle;
+  loop : Base <-> Base;
+}
+
+@[ refuses("LoopUndecided") ]
+def costly(x : Circle) -> -F Path(Circle, x, x) {
+  case x {
+    Base => case power(power(Succ(Succ(Succ(Zero))))) {
+      Zero => here(Base),
+      Succ(p) => here(Base)
+    }
+  }
+}

@@ -1,0 +1,29 @@
+/// `Undecided`: a claim the machine cannot decide: a `ua` whose translator branches on a comparison the machine leaves unread.
+theory Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  e
+}
+
+@[ checks ]
+def measured(b : Bool) -> -F Bool {
+  if 1 < 2 {
+    case b {
+      true => +{.1 = unit},
+      false => +{.0 = unit}
+    }
+  } else {
+    b
+  }
+}
+
+@[ refuses("Undecided") ]
+def compared = ua[
+  1,
+  4
+](Magma, Magma, #{.mul = measured, .one = keep}, #{.mul = measured, .one = keep}) ;

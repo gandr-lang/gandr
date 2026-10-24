@@ -10,6 +10,10 @@ def wrong_sort = Integer ;
 def graded : Type ;
 def graded = +U[1] (-F Integer) ;
 
+/// The greatest level has no universe above it, so the lowering refuses it at its numeral.
+@[ refuses("OutOfFragment.universe_type") ]
+def greatest : Type[+, 18446744073709551615] ;
+
 @[ runs("fn (a) { fn (b) { b } }") ]
 def id(a : Type, x : a) -> -F a { return x }
 

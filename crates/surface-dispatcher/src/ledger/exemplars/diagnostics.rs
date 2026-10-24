@@ -124,7 +124,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 63_usize] = [
+const OWED: [(&str, Owed); 61_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -220,8 +220,13 @@ const OWED: [(&str, Owed); 63_usize] = [
             "a circuit rule's redex is placed on the boundary its own wiring derives",
         )),
     ),
-    ("LoopUndecided", Owed::Unwritten(CHECKER)),
-    ("SealSiteRepeated", Owed::Unwritten(CHECKER)),
+    (
+        "SealSiteRepeated",
+        Owed::Unreachable(Reason(
+            "an engine fault, which no settled run states: a sealing site met twice breaks the \
+             checker's own invariant, which no source can write",
+        )),
+    ),
     ("DataArgumentArity", Owed::Unwritten(CHECKER)),
     (
         "UnknownConstructor",
@@ -252,8 +257,13 @@ const OWED: [(&str, Owed); 63_usize] = [
              under none",
         )),
     ),
-    ("BudgetExceeded", Owed::Unwritten(CHECKER)),
-    ("Undecided", Owed::Unwritten(CHECKER)),
+    (
+        "BudgetExceeded",
+        Owed::Unreachable(Reason(
+            "an engine fault, which no settled run states: the allowance is the engine's own \
+             bound, which no source states",
+        )),
+    ),
     (
         "EffectSignatureConflict",
         Owed::Unreachable(Reason(
@@ -326,7 +336,14 @@ const OWED: [(&str, Owed); 63_usize] = [
             "the lowering mints a universe only at a ground sort",
         )),
     ),
-    ("OutOfFragment.TopUniverse", Owed::Unwritten(CHECKER)),
+    (
+        "OutOfFragment.TopUniverse",
+        Owed::Unreachable(Reason(
+            "the lowering refuses a universe at the greatest level at its numeral, as it refuses \
+             a level past the constants, so the checker's refusal is left to an internal \
+             overflow",
+        )),
+    ),
     ("OutOfFragment.StaticLambda", Owed::Unreachable(READMISSION)),
     ("OutOfFragment.EffectRow", Owed::Unreachable(EFFECTFUL)),
     ("OutOfFragment.Reify", Owed::Unreachable(EFFECTFUL)),
