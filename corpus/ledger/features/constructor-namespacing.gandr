@@ -1,0 +1,19 @@
+/// `constructor-namespacing`: a constructor is named by its family, `Family.Constructor`, in a pattern and in a value.
+@[ checks ]
+data Shape : Type {
+  Dot : Shape;
+  Line : (length : Integer) --> Shape;
+}
+
+/// The length of a line, zero for a dot, each matched by its qualified name.
+@[ checks ]
+def length(s : Shape) -> Integer {
+  case s {
+    Shape.Dot => 0,
+    Shape.Line(n) => n
+  }
+}
+
+/// A line built by its qualified name.
+@[ runs("3") ]
+def measured() -> Integer { length(Shape.Line(3)) }

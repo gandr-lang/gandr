@@ -664,6 +664,20 @@ impl From<StructureIndex> for usize
     }
 }
 
+/// How a family's constructor is written back.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ConstructorSpelling
+{
+    /// By its bare name.
+    Bare,
+    /// By its family's path and its name, `Family.Constructor`: a source's
+    /// own constructor takes the bare name.
+    Qualified,
+}
+
 /// Where a name is declared: the source's top level, or a module's body.
 ///
 /// # Specification
@@ -1405,6 +1419,10 @@ pub struct Collected<'source>
     /// Every constructor a data declaration declares, by the source declaring
     /// it and its name.
     pub constructors: BTreeMap<(SourceIndex, SurfaceName<'source>), Constructor>,
+    /// Each constructor of `Theory` a source's own constructor shadows, by
+    /// the family's slot and the name the two share: the bare name is the
+    /// source's, so `Theory`'s is written `Theory.Constructor`.
+    pub shadowed: BTreeSet<(SlotIndex, SurfaceName<'source>)>,
     /// Each callable operation's plan, by its slot.
     pub operations: BTreeMap<SlotIndex, crate::operation::OperationPlan>,
     /// Each derived rule's plan, by its slot: the statement of a `derive`
@@ -2704,6 +2722,7 @@ pub fn begin_collection<'source>(
         data: Vec::new(),
         words: Vec::new(),
         constructors: BTreeMap::new(),
+        shadowed: BTreeSet::new(),
         operations: BTreeMap::new(),
         operation_names: BTreeMap::new(),
         derived: BTreeMap::new(),
@@ -4711,7 +4730,8 @@ impl<'source> Collector<'_, 'source>
     ///   code, and so do its importers ([`Collected::theory_in`]), whatever the
     ///   unit lays before it. On a later call from a recorded source, nothing.
     ///   A constructor the source declares keeps its name, and the code's of
-    ///   that name has none there. When `Theory` names something the source
+    ///   that name has none there and is recorded among
+    ///   [`Collected::shadowed`]. When `Theory` names something the source
     ///   declared before, nothing is admitted.
     /// - fails: [`LoweringRefusal::DuplicateDefinition`] naming the first
     ///   declaration of `Theory`.
@@ -4789,18 +4809,26 @@ impl<'source> Collector<'_, 'source>
             theory
         };
         for (tag, (&arity, name)) in theory.arities.iter().zip(THEORY_CONSTRUCTORS).enumerate() {
-            if let Entry::Vacant(free) = self
+            match self
                 .collected
                 .constructors
                 .entry((source, SurfaceName::from(name)))
             {
-                let _entered = free.insert(Constructor {
-                    family: theory.slot,
-                    form: Generators::Presentation,
-                    tag,
-                    arity,
-                    named: theory.named,
-                });
+                Entry::Vacant(free) => {
+                    let _entered = free.insert(Constructor {
+                        family: theory.slot,
+                        form: Generators::Presentation,
+                        tag,
+                        arity,
+                        named: theory.named,
+                    });
+                },
+                Entry::Occupied(_) => {
+                    let _first = self
+                        .collected
+                        .shadowed
+                        .insert((theory.slot, SurfaceName::from(name)));
+                },
             }
         }
         let _first = self.collected.theory_sources.insert(source);
@@ -9701,6 +9729,9 @@ pub struct LoweredModule<'source>
     /// The names of each data declaration's constructors in tag order, by
     /// [`DataIndex`].
     constructors: Vec<Vec<String>>,
+    /// The names of the constructors a source's own constructor shadows, by
+    /// their family's constant: each is written `Family.Constructor`.
+    shadowed: BTreeMap<ConstantIndex, BTreeSet<String>>,
     /// The codata declarations' signatures, by [`CodataIndex`].
     codata: Vec<Arc<CodataSignature>>,
     /// The modules, in pre-order: a module before every module nested in it.
@@ -9801,6 +9832,7 @@ impl<'source> LoweredModule<'source>
             declarations,
             data,
             constructors: Vec::new(),
+            shadowed: BTreeMap::new(),
             codata: Vec::new(),
             structures,
             attributes,
@@ -10116,6 +10148,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.constructors = constructors;
+        self
+    }
+
+    /// This module, carrying `shadowed`, the names of the constructors a
+    /// source's own constructor shadows, by their family's constant.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_shadowed(
+        mut self,
+        shadowed: BTreeMap<ConstantIndex, BTreeSet<String>>,
+    ) -> Self
+    {
+        self.shadowed = shadowed;
         self
     }
 
@@ -10502,6 +10550,43 @@ impl<'source> LoweredModule<'source>
     ) -> &[String]
     {
         self.constructors.get(index.0).map_or(&[], Vec::as_slice)
+    }
+
+    /// How the constructor `name` of the family `family` is spelled: by its
+    /// family's path when a source's own constructor shadows its bare name,
+    /// bare otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`ConstructorSpelling::Qualified`] exactly when the lowering
+    ///   recorded the family's constructor of that name as shadowed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Theory`'s `App` beside a source's own `App` is
+    ///   qualified, and the source's is bare.
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    #[spec(ensures: |ret| (ret == ConstructorSpelling::Qualified) == self.shadowed.get(&family).is_some_and(|names| names.contains(<&str>::from(SourceFragment::from(name)))))]
+    #[inline]
+    #[must_use]
+    pub fn constructor_spelling(
+        &self,
+        family: ConstantIndex,
+        name: SurfaceName<'_>,
+    ) -> ConstructorSpelling
+    {
+        let name = <&str>::from(SourceFragment::from(name));
+        if self
+            .shadowed
+            .get(&family)
+            .is_some_and(|names| names.contains(name))
+        {
+            ConstructorSpelling::Qualified
+        }
+        else {
+            ConstructorSpelling::Bare
+        }
     }
 
     /// The descriptions consumed by native type and higher-cell interpretation.

@@ -449,6 +449,7 @@ pub use crate::module::Address;
 pub use crate::module::CodataIndex;
 pub use crate::module::Coerced;
 pub use crate::module::ComponentPlace;
+pub use crate::module::ConstructorSpelling;
 pub use crate::module::Container;
 pub use crate::module::DataIndex;
 pub use crate::module::DeclarationCount;

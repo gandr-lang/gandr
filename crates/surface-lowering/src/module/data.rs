@@ -684,9 +684,10 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `form`'s slot is live.
     /// - ensures: the data tail at the form's position when every constructor's
     ///   name is fresh, each entered with its family, tag and arity, in place
-    ///   of a constructor of `Theory`'s of that name; otherwise the refusal of
-    ///   the first constructor this or an earlier declaration already named,
-    ///   and nothing entered.
+    ///   of a constructor of `Theory`'s of that name, which is recorded among
+    ///   [`Collected::shadowed`](crate::module::Collected::shadowed); otherwise
+    ///   the refusal of the first constructor this or an earlier declaration
+    ///   already named, and nothing entered.
     /// - fails: never; a second name is a refused tail.
     /// - panics: none.
     ///
@@ -734,16 +735,20 @@ impl<'source> Collector<'_, 'source>
         let position = self.collected.data.len();
         for (tag, generator) in form.generators.iter().enumerate() {
             let source = self.collected.unit.source_at(generator.named.span.start());
-            let _fresh = self.collected.constructors.insert(
-                (source, self.name_of(generator.named)),
-                Constructor {
+            let name = self.name_of(generator.named);
+            let displaced = self
+                .collected
+                .constructors
+                .insert((source, name), Constructor {
                     family: form.slot,
                     form: Generators::Written(position),
                     tag,
                     arity: generator.fields.len(),
                     named: generator.named,
-                },
-            );
+                });
+            if let Some(theory) = displaced {
+                let _first = self.collected.shadowed.insert((theory.family, name));
+            }
         }
         self.collected.data.push(form);
 

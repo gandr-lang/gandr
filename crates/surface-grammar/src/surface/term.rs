@@ -1376,6 +1376,10 @@ fn attributes_parameters_externs(
 /// pattern, so the form opens on the name and discriminates on the tile after
 /// it, `∷` or `(`, where the bare pattern variable takes neither.
 ///
+/// A constructor pattern names its constructor bare, `Leaf(x)`, or qualified
+/// by its family, `Tree.Leaf(x)`: the form opens on the family's name either
+/// way, and the `.` after it discriminates.
+///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends the ordered pattern forms, assigning the cons, or and as
@@ -1417,6 +1421,7 @@ fn patterns(
         atom,
         seq([
             t(TileLabel("constructor")),
+            opt(seq([t(TileLabel(".")), t(TileLabel("constructor"))])),
             opt(seq([t(TileLabel("(")), comma1(h(s)), t(TileLabel(")"))])),
         ]),
     ));

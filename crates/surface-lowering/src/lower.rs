@@ -4713,6 +4713,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let _first = implicits.insert(constant, names);
         }
+        // Each constructor a source's own shadows, by its family's constant,
+        // so a printer writes it qualified.
+        let mut shadowed: BTreeMap<ConstantIndex, BTreeSet<String>> = BTreeMap::new();
+        for &(family, name) in &collected.shadowed {
+            if let Some(entry) = collected.slots.get(usize::from(family)) {
+                let _first = shadowed
+                    .entry(entry.constant)
+                    .or_default()
+                    .insert(String::from(name.as_ref()));
+            }
+        }
 
         Ok(LoweredModule::new(
             declarations,
@@ -4733,6 +4744,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         )
         .with_documentation(documentation.forms, documentation.sources)
         .with_constructors(constructors)
+        .with_shadowed(shadowed)
         .with_codata(codata)
         .with_inferred_exits(inferred)
         .with_elidable_exits(elidable)
@@ -10557,34 +10569,37 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a projection; `pieces` is its reading.
-    /// - ensures: a selection by position projects the entry at that place of
-    ///   the type written for its operand, or of the pair the operand is when
-    ///   no type is written, as [`Self::positional`] reads it; a selection read
-    ///   as a computation off a name whose written type is a thunked lazy
-    ///   record over labels observes the entry its label names; a selection off
-    ///   a name whose written type is a type over labels projects the entry its
-    ///   label names, as [`Self::selection`] reads it; a selection off a name
-    ///   whose written type is a data family without indices reads the field
-    ///   its label names off every constructor, as [`Self::data_field`] reads
-    ///   it; a selection off a flattened model implicit is the parameter of the
-    ///   component it names, as [`Self::flattened_member`] reads it; a
-    ///   selection off a value no written type states, a chain of selections
-    ///   ending at a binder's or a declaration's name not capitalised, projects
-    ///   the field its label names of the record the value is, as
-    ///   [`Self::field`] reads it. A chain of selections whose head is a
-    ///   capitalised name is a path: inside a functor whose parameter the head
-    ///   names, a one-link path is that parameter's value component, as
-    ///   [`Self::parameter_value`] reads it; a path whose head, capitalised or
-    ///   not, names a module an enclosing module declares reaches the member
-    ///   that module exports, as [`Self::enclosed_member`] reads it, and stands
-    ///   as that member's constant as below; otherwise it is resolved through
-    ///   the outermost scope at the depth that binds it: a path ending at an
-    ///   exported value component stands as that member's constant when the
-    ///   member is declared strictly before the declaration the path is written
-    ///   in, its last segment kept as a written name resolved to that
-    ///   declaration, and a path ending at a type component stands as its
-    ///   stated type, as [`Self::module_type`] reads it. The chain is walked by
-    ///   an explicit loop, and its links are left unread.
+    /// - ensures: a selection `Family.Constructor` naming a constructor of a
+    ///   family is that constructor, applied to no field, as
+    ///   [`Self::construct`] reads it; a selection by position projects the
+    ///   entry at that place of the type written for its operand, or of the
+    ///   pair the operand is when no type is written, as [`Self::positional`]
+    ///   reads it; a selection read as a computation off a name whose written
+    ///   type is a thunked lazy record over labels observes the entry its label
+    ///   names; a selection off a name whose written type is a type over labels
+    ///   projects the entry its label names, as [`Self::selection`] reads it; a
+    ///   selection off a name whose written type is a data family without
+    ///   indices reads the field its label names off every constructor, as
+    ///   [`Self::data_field`] reads it; a selection off a flattened model
+    ///   implicit is the parameter of the component it names, as
+    ///   [`Self::flattened_member`] reads it; a selection off a value no
+    ///   written type states, a chain of selections ending at a binder's or a
+    ///   declaration's name not capitalised, projects the field its label names
+    ///   of the record the value is, as [`Self::field`] reads it. A chain of
+    ///   selections whose head is a capitalised name is a path: inside a
+    ///   functor whose parameter the head names, a one-link path is that
+    ///   parameter's value component, as [`Self::parameter_value`] reads it; a
+    ///   path whose head, capitalised or not, names a module an enclosing
+    ///   module declares reaches the member that module exports, as
+    ///   [`Self::enclosed_member`] reads it, and stands as that member's
+    ///   constant as below; otherwise it is resolved through the outermost
+    ///   scope at the depth that binds it: a path ending at an exported value
+    ///   component stands as that member's constant when the member is declared
+    ///   strictly before the declaration the path is written in, its last
+    ///   segment kept as a written name resolved to that declaration, and a
+    ///   path ending at a type component stands as its stated type, as
+    ///   [`Self::module_type`] reads it. The chain is walked by an explicit
+    ///   loop, and its links are left unread.
     /// - provides: the governed reading of a module path.
     /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
     ///   the path spells it and the member, for a selection a governing module
@@ -10630,7 +10645,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ret.is_err()
                 || matches!(
                     self.plans.get(site.at.node),
-                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
+                    Some(&(Plan::Constant(_) | Plan::Primitive(_) | Plan::Observe(..) | Plan::Select(..) | Plan::Field(..) | Plan::Projected(_) | Plan::Data(..) | Plan::Codata(..) | Plan::Constructor(_) | Plan::Transparent(_) | Plan::Sealed(_) | Plan::Instantiated(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))
                 )
         },
     )]
@@ -10640,6 +10655,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        // `Family.Constructor` names a constructor of the family.
+        if let Maybe::Present(constructor) = self.selected_constructor(site, site.at)? {
+            self.constructed_at(site.at.span, constructor);
+            let none = Stretch {
+                start: self.operands.len(),
+                end: self.operands.len(),
+            };
+            return self.construct(site, constructor, none);
+        }
         // An observation by position of a thunked lazy product or codata
         // family comes before the positional selection of a pair.
         if self.observation(site, pieces)? == arity::Planned(true) {
