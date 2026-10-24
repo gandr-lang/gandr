@@ -723,6 +723,8 @@ pub use exits::Returned;
 
 mod functor;
 
+mod generic;
+
 mod loops;
 
 mod method;
@@ -2507,6 +2509,10 @@ enum Plan
         /// The backward translator record.
         backward: NodeIndex,
     },
+    /// `Eq.generic(T)` as a definition's whole body: nothing here, the
+    /// declaration's type and body derived whole from `T`'s signature
+    /// ([`Lowerer::mint_generics`]).
+    Generic,
     /// The empty native list.
     ListNil,
     /// A native list cell over its head and tail.
@@ -3383,6 +3389,13 @@ struct Lowerer<'run, 'source>
     /// Each derived rule's minted type and proof, by slot: a `derive`
     /// declaration's statement and each lemma its proof rests on.
     derivations: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
+    /// The prelude's `Eq.generic`, once the prelude is declared.
+    generic: Option<SlotIndex>,
+    /// Each definition written `Eq.generic(T)`, by its slot, with the data
+    /// declaration `T` names.
+    requested: BTreeMap<SlotIndex, generic::Requested<'source>>,
+    /// Each derived equality's minted type and body, by slot.
+    generics: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The sorts each minted forgetting map puts back, in signature order, by
     /// its slot.
     forgotten: BTreeMap<SlotIndex, Vec<gandr_theory_levitation::Name>>,
@@ -4207,6 +4220,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.begin_source(source, pieces)?;
         self.refuse_imports();
         self.declare();
+        self.mark_generic();
         self.seed()?;
         self.survey()?;
         self.classify()?;
@@ -4225,6 +4239,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_presentations(sink)?;
         self.mint_operations(sink);
         self.mint_derived_rules(sink);
+        self.mint_generics(sink);
         self.mint_reducts(sink);
         self.mint_forgets(sink);
         self.mint_instances(sink);
@@ -4875,6 +4890,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             nominations: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
+            generic: None,
+            requested: BTreeMap::new(),
+            generics: BTreeMap::new(),
             forgotten: BTreeMap::new(),
             presented: BTreeMap::new(),
             renamings: Vec::new(),
@@ -5095,12 +5113,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   displacing the builtin subtree it lands on; every exported value
     ///   component's full path is recorded with the slot a reference reads —
     ///   the member, or the witness an opaque ascription exports in its place —
-    ///   and every exported type component's with what it reads. A declaration
-    ///   the shadow policy refuses holds [`LoweringRefusal::ShadowedBuiltin`]
-    ///   at its name, offered at its declaration form, and a module so refused
-    ///   files a held slot carrying it; the scope keeps the builtin. Module
-    ///   members and hidden members are declared nowhere in the outermost
-    ///   scope.
+    ///   and every exported type component's with what it reads. An exported
+    ///   slot keeps the role it was declared with, or [`Role::Generic`] once
+    ///   the prelude's `Eq.generic` is marked. A declaration the shadow policy
+    ///   refuses holds [`LoweringRefusal::ShadowedBuiltin`] at its name,
+    ///   offered at its declaration form, and a module so refused files a held
+    ///   slot carrying it; the scope keeps the builtin. Module members and
+    ///   hidden members are declared nowhere in the outermost scope.
     /// - provides: the outermost half of the module's names, and the governance
     ///   of every module path.
     /// - fails: never; a refusal is carried by its declaration.
@@ -5147,7 +5166,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     self.collected
                         .slots
                         .get(usize::from(*slot))
-                        .is_some_and(|entry| matches!(entry.role, Role::Declared | Role::Witness | Role::Derived))
+                        .is_some_and(|entry| matches!(entry.role, Role::Declared | Role::Witness | Role::Derived | Role::Generic))
                 })
         },
     )]
@@ -5512,10 +5531,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   them, and an attribute's payload, a declaration's or a decorated
     ///   module's, as a value when its form can stand as one and its schema is
     ///   not a word schema, whose payload is read as written; a witness's body,
-    ///   a member rather than a form, is read nowhere. Every other node stays
-    ///   unread. Every written payload is marked as one, whatever its form, and
-    ///   every signature type's root with the type components it sees. A
-    ///   definition both of whose halves are written is signed as
+    ///   a member rather than a form, is read nowhere, nor is either half of
+    ///   the prelude's `Eq.generic` ([`Role::Generic`]), which names the
+    ///   derivation and lowers to nothing. Every other node stays unread. Every
+    ///   written payload is marked as one, whatever its form, and every
+    ///   signature type's root with the type components it sees. A definition
+    ///   both of whose halves are written is signed as
     ///   [`Self::sign_definitions`] signs it.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
@@ -5616,6 +5637,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
         }
         for slot in self.collected.slots.iter().skip(from.slots) {
+            if slot.role == Role::Generic {
+                continue;
+            }
             if let Maybe::Present(half) = slot.signature
                 && let Operand::Written(operand) = half.operand
             {
@@ -9993,7 +10017,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         constructed.fields.start == start
                             && constructed.fields.end == self.operands.len()
                     },
-                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
+                    | Some(&(Plan::Here(_) | Plan::Funext(..) | Plan::Equiv(..) | Plan::Univalence(_) | Plan::PathProduct(..) | Plan::Ua { .. } | Plan::Generic | Plan::ListCons(..) | Plan::Transport(..) | Plan::TelescopeTransport(_) | Plan::Derived(_) | Plan::Exercise(_) | Plan::Method(_) | Plan::Resume(..) | Plan::Abandon(_) | Plan::SessionRelated(..) | Plan::Stay(_) | Plan::Forward(_) | Plan::FunctionFlow(..) | Plan::FlowProduct(..) | Plan::Recorded(_) | Plan::Dialogue(_) | Plan::Decompose(_) | Plan::Ride(..))) => true,
                     | Some(&(Plan::Path(..) | Plan::Flow(..) | Plan::Stack(..) | Plan::Former(..))) => {
                         matches!(site.reading, Reading::Value(_))
                     },
@@ -10031,6 +10055,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         {
             let _head = cursor.operands();
             return self.ua_call(site, stratum, cursor);
+        }
+        if let Run::One(head) = cursor.clone().operands()
+            && let Maybe::Present(_generic) = self.generic_head(site, head)?
+        {
+            let _head = cursor.operands();
+            return self.generic_call(site, cursor);
         }
         if let Reading::Value(_) = site.reading
             && let Run::One(head) = cursor.clone().operands()
@@ -10454,6 +10484,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::Projection)));
                 };
+                // The prelude's derivation is no value: it stands only as the
+                // head of a definition's whole body (`lower::generic`).
+                if self.generic == Some(exported) {
+                    return Err(LoweringRefusal::GenericMisplaced { span: site.at.span });
+                }
                 self.select(site, exported)?;
                 if let Some(&(_, member)) = links.first()
                     && let Some(entry) = self.collected.slots.get(usize::from(exported))
@@ -14237,13 +14272,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | GroundSort::Value => Produced::ValueType,
                     | GroundSort::Computation => Produced::CompType,
                 }),
-                | Plan::Unplanned | Plan::Transparent(_) | Plan::Function(_) => None,
+                | Plan::Unplanned | Plan::Generic | Plan::Transparent(_) | Plan::Function(_) => None,
             },
             match *plan {
                 | Plan::Transparent(child) => Some(self.lowered_at(child)),
                 | _ => None,
             },
-            matches!(plan, Plan::Unplanned),
+            matches!(plan, Plan::Unplanned | Plan::Generic),
             matches!(plan, Plan::Function(_)),
         ),
         ensures: |ret| {
@@ -14344,7 +14379,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Interpolated(append, segments) => {
                 self.mint_interpolated(append, segments, sink, origin)
             },
-            Plan::Unplanned => Maybe::Absent(lowered::Absent::Unminted),
+            Plan::Unplanned | Plan::Generic => Maybe::Absent(lowered::Absent::Unminted),
             Plan::Variable(index, binder) => {
                 let id = sink.arena.value_variable(self.scope.zone(binder), index);
                 if let Maybe::Present(site) = self.scope.site(binder) {
@@ -15594,6 +15629,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     lowered
                 }),
             Plan::Unplanned
+            | Plan::Generic
             | Plan::ValueHole(_)
             | Plan::CompHole(_)
             | Plan::Variable(..)
@@ -18145,10 +18181,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   [`Self::own_outcome`] leaves absent is refused by the expectation its
     ///   type member states unread, when it states one, and otherwise, while it
     ///   holds a half that lowers to a core term — any but a top-level
-    ///   `oper`'s, or a witness of a member refused where it was written — is
-    ///   refused [`LoweringRefusal::Unminted`] at the declaration, by its name;
-    ///   and a witness refused as the member it represents is, yields nothing,
-    ///   so the member's refusal is reported once.
+    ///   `oper`'s, the prelude's `Eq.generic`'s ([`Role::Generic`]), which
+    ///   names the derivation, or a witness of a member refused where it was
+    ///   written — is refused [`LoweringRefusal::Unminted`] at the declaration,
+    ///   by its name; and a witness refused as the member it represents is,
+    ///   yields nothing, so the member's refusal is reported once.
     /// - provides: the per-slot row [`Self::assemble`] files, so a declaration
     ///   the lowering collected either lowers or is refused by name, never
     ///   dropped from the module.
@@ -18261,10 +18298,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: the slot's member coordinates are interpreted in this
     ///   lowering run.
-    /// - ensures: [`Owed::Nothing`] for a witness of a member that carries a
-    ///   refusal, whatever its other half — the refusal is reported where the
-    ///   member is written; otherwise [`Owed::Owed`] when either half is
-    ///   present and is not a top-level `oper`'s, which lowers to no core term.
+    /// - ensures: [`Owed::Nothing`] for the prelude's `Eq.generic`, which
+    ///   stands for a derivation and lowers to no core term, and for a witness
+    ///   of a member that carries a refusal, whatever its other half — the
+    ///   refusal is reported where the member is written; otherwise
+    ///   [`Owed::Owed`] when either half is present and is not a top-level
+    ///   `oper`'s, which lowers to no core term.
     /// - provides: the halves whose absence [`Self::outcome`] refuses.
     /// - fails: never.
     /// - panics: none.
@@ -18278,7 +18317,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::models::a_refused_member_of_a_model_is_refused_once_1081`
     #[spec(
         ensures: |ret| (ret == Owed::Owed) == (
-            ![slot.signature, slot.definition].into_iter().any(|half| matches!(half,
+            slot.role != Role::Generic
+            && ![slot.signature, slot.definition].into_iter().any(|half| matches!(half,
                 Maybe::Present(Half { operand: Operand::Member(target), .. })
                     if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_)))))
             && [slot.signature, slot.definition].into_iter().any(|half| matches!(half,
@@ -18299,7 +18339,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .get(usize::from(target))
                     .is_some_and(|member| matches!(member.refusal, Maybe::Present(_))))
         });
-        let owed = !restates_a_refusal
+        let owed = slot.role != Role::Generic
+            && !restates_a_refusal
             && halves.into_iter().any(|half| match half {
                 Maybe::Present(Half {
                     operand: Operand::Signature | Operand::World,
@@ -18333,7 +18374,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: the slot and its member coordinates are interpreted in this
     ///   lowering run.
     /// - ensures: a stored refusal takes precedence, then a refusal a check
-    ///   after minting filed; a world declaration is the world it names; a data
+    ///   after minting filed; a definition written `Eq.generic(T)` is the
+    ///   equality derived for `T`, and the prelude's `Eq.generic` itself is
+    ///   unminted; a world declaration is the world it names; a data
     ///   declaration, or a described family the decoder admitted, `Theory`
     ///   among them, is the index of its minted signature; an operation, a
     ///   derived rule and a `theory` block's definition are each the type and
@@ -18369,6 +18412,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             else if let Some(&refusal) = self.faults.get(&position) {
                 ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
+            }
+            else if let Some(&(declared_type, body)) = self.generics.get(&position) {
+                ret == Maybe::Present(DeclarationOutcome::Completed { declared_type, body })
+            }
+            else if slot.role == Role::Generic {
+                ret == Maybe::Absent(lowered::Absent::Unminted)
             }
             else if let Maybe::Present(Half { operand: Operand::World, .. }) = slot.definition {
                 ret == Maybe::Present(DeclarationOutcome::World)
@@ -18464,6 +18513,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         if let Some(&refusal) = self.faults.get(&position) {
             return Maybe::Present(DeclarationOutcome::Refused(refusal));
+        }
+        if let Some(&(declared_type, body)) = self.generics.get(&position) {
+            return Maybe::Present(DeclarationOutcome::Completed {
+                declared_type,
+                body,
+            });
+        }
+        if slot.role == Role::Generic {
+            return Maybe::Absent(lowered::Absent::Unminted);
         }
         if let Maybe::Present(Half {
             operand: Operand::World,

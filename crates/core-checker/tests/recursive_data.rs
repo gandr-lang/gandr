@@ -2209,3 +2209,124 @@ fn a_definition_of_the_block_is_read_through_602()
         "and nothing of it crosses"
     );
 }
+
+#[test]
+fn derived_equalities_are_admitted_readmitted_and_decide_2302()
+{
+    // Nat, Point(Integer, Integer) and Mark(Bool, Nat), then the equality
+    // `gandr_core_term::generic` derives for each: every one checks and
+    // crosses owing nothing, and Nat's and Mark's — Mark's writing Nat's in
+    // place, its flag compared first, a case bound before the rest — answer
+    // true exactly at equal arguments. The normaliser runs no native
+    // operation, so Point's integer comparisons run in the corpus.
+    let mut arena = CoreArena::new();
+    let kind = kind(&mut arena);
+    let nat = nat(&mut arena);
+    let integer_type = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let boolean = gandr_core_term::primitive::PrimitiveType::Boolean.mint(&mut arena);
+    let mark_at = ConstantIndex::from(2_usize);
+    let signatures = BTreeMap::from([
+        (
+            ConstantIndex::from(at::NAT),
+            DataSignature::new(vec![], vec![vec![], vec![nat]], kind),
+        ),
+        (
+            ConstantIndex::from(1_usize),
+            DataSignature::new(vec![], vec![vec![integer_type, integer_type]], kind),
+        ),
+        (
+            mark_at,
+            DataSignature::new(vec![], vec![vec![boolean, nat]], kind),
+        ),
+    ]);
+    let mut declarations: Vec<Declaration> = signatures
+        .iter()
+        .map(|(&constant, signature)| data(constant, signature.clone()))
+        .collect();
+    for (offset, &family) in signatures.keys().enumerate() {
+        let derived =
+            gandr_core_term::generic::equality(&mut arena, family, &|at| signatures.get(&at))
+                .expect("each declaration derives its equality");
+        declarations.push(definition(
+            ConstantIndex::from(offset + 3),
+            derived.declared(),
+            derived.body(),
+        ));
+    }
+    let (report, crossed) = run(&mut arena, &declarations);
+    for (position, (judged, readmitted)) in
+        report.judged().iter().zip(crossed.readmitted()).enumerate()
+    {
+        if position < 3 {
+            assert_eq!(judged.verdict(), Verdict::Data, "{position}");
+            continue;
+        }
+        assert!(
+            matches!(judged.verdict(), Verdict::Checked { .. }),
+            "{position}: {:?}",
+            judged.verdict()
+        );
+        assert!(
+            matches!(readmitted.outcome(), Outcome::Defined { .. }),
+            "{position}: {:?}",
+            readmitted.outcome()
+        );
+    }
+    // Nothing is owed; the one axiom is the integer primitive's typed
+    // runtime assumption, which every native operation records.
+    assert!(report.ledger().entries().is_empty());
+    assert!(crossed.audit().unchecked_admissions().is_empty());
+    assert_eq!(crossed.audit().axioms().len(), 1_usize);
+
+    let unit = arena.value_unit();
+    let truth = arena.value_injection(gandr_kernel_term::Summand::from(0_usize), unit);
+    let falsity = arena.value_injection(gandr_kernel_term::Summand::from(1_usize), unit);
+    let [true_, false_] = [truth, falsity].map(|verdict| arena.computation_return(verdict));
+    let numerals = numerals(&mut arena);
+    let mark_type = arena.value_type_data(mark_at, vec![]);
+    let mark_of = |arena: &mut CoreArena, at: ValueId, flag: ValueId| {
+        arena.value_constructor(mark_type, ConstructorTag::from(0_usize), vec![flag, at])
+    };
+    let (two_up, three_up, two_down) = (
+        mark_of(&mut arena, numerals[2], truth),
+        mark_of(&mut arena, numerals[3], truth),
+        mark_of(&mut arena, numerals[2], falsity),
+    );
+    let [nat_eq, mark_eq] = [3_usize, 5].map(|at| arena.value_constant(ConstantIndex::from(at)));
+    let cases = [
+        (nat_eq, [numerals[3], numerals[3]], true_, "three is three"),
+        (
+            nat_eq,
+            [numerals[3], numerals[2]],
+            false_,
+            "three is not two",
+        ),
+        (
+            nat_eq,
+            [numerals[0], numerals[2]],
+            false_,
+            "zero is not two",
+        ),
+        (mark_eq, [two_up, two_up], true_, "a mark is itself"),
+        (
+            mark_eq,
+            [two_up, three_up],
+            false_,
+            "a different number differs",
+        ),
+        (
+            mark_eq,
+            [two_up, two_down],
+            false_,
+            "a different flag differs",
+        ),
+    ];
+    for (head, arguments, expected, what) in cases {
+        let asked = call(&mut arena, head, &arguments);
+        assert_eq!(
+            normalises_to(&mut arena, &report, asked, expected),
+            CertificateEquality::Equal,
+            "{what}"
+        );
+    }
+}

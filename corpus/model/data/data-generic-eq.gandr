@@ -1,0 +1,80 @@
+// Equality derived from a data type's constructors (#2302): a definition
+// written `Eq.generic(T)` is structural equality over `T`, the checker
+// judging it as any declaration. Integers and strings compare by their
+// primitives, a sum by its side, a field of `T` itself recursively and a field
+// of another such type by that type's equality, written in place. A model of
+// `Eq` whose member is derived puts the type under `==`.
+
+/// A point in the plane.
+@[ checks ]
+data Point : Type {
+  Point : (x : Integer, y : Integer) --> Point;
+}
+
+/// Unary naturals.
+@[ checks ]
+data Peano : Type {
+  Nought : Peano;
+  Next : (n : Peano) --> Peano;
+}
+
+/// A labelled position: a count, a point, a flag and a name.
+@[ checks ]
+data Mark : Type {
+  Mark : (count : Peano, place : Point, shown : Bool, label : String) --> Mark;
+}
+
+/// Points compared field by field.
+@[ checks ]
+def eqPoint = Eq.generic(Point) ;
+
+/// Naturals compared structurally, at the type the derivation states.
+@[ checks ]
+def eqPeano : (Peano, Peano) => Bool = Eq.generic(Peano) ;
+
+/// Marks under `==`.
+module EqMark : Model(Eq) with sort Carrier = Mark {
+  /// Every field, in order, the count and the point by their own equality.
+  @[ checks ]
+  def eq = Eq.generic(Mark) ;
+}
+
+/// One point is itself.
+@[ runs("+{.0 = unit}") ]
+def samePoint() -> Bool { eqPoint(Point(1, 2), Point(1, 2)) }
+
+/// Two points with their coordinates swapped differ.
+@[ runs("+{.1 = unit}") ]
+def swappedPoint() -> Bool { eqPoint(Point(1, 2), Point(2, 1)) }
+
+/// Two is two.
+@[ runs("+{.0 = unit}") ]
+def samePeano() -> Bool { eqPeano(Next(Next(Nought)), Next(Next(Nought))) }
+
+/// One is not two: the recursion reaches the nought on one side only.
+@[ runs("+{.1 = unit}") ]
+def shorterPeano() -> Bool { eqPeano(Next(Nought), Next(Next(Nought))) }
+
+/// Two marks alike in every field.
+@[ runs("+{.0 = unit}") ]
+def sameMark() -> Bool {
+  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 4), true, "here")
+}
+
+/// Two marks apart in their point alone.
+@[ runs("+{.1 = unit}") ]
+def movedMark() -> Bool {
+  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 5), true, "here")
+}
+
+/// Two marks apart in their flag alone.
+@[ runs("+{.1 = unit}") ]
+def hiddenMark() -> Bool {
+  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 4), false, "here")
+}
+
+/// Two marks apart in their label alone.
+@[ runs("+{.1 = unit}") ]
+def relabelledMark() -> Bool {
+  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 4), true, "there")
+}

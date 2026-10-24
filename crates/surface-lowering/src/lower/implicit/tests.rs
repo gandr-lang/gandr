@@ -19,9 +19,11 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::LoweringRefusal;
+use crate::lower::native::tests::assert_checked;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
 use crate::lower::native::tests::lowered;
+use crate::lower::native::tests::preluded;
 use crate::lower::native::tests::refusal_of;
 use crate::model::Dependent;
 use crate::module::DeclarationOutcome;
@@ -57,31 +59,6 @@ fn declared_type_of(
     };
 
     declared_type
-}
-
-/// Assert that every declaration of `module` checks, a theory forming as
-/// data does.
-///
-/// # Specification
-/// trivial.
-fn assert_checked(
-    module: &LoweredModule<'_>,
-    arena: &mut CoreArena,
-)
-{
-    let report = judged(module, arena);
-    assert_eq!(
-        report.judged().len(),
-        module.declarations().len(),
-        "nothing is refused: {:?}",
-        module.declarations()
-    );
-    for verdict in report.judged() {
-        assert!(
-            matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data),
-            "every declaration checks: {report:?}"
-        );
-    }
 }
 
 #[test]
@@ -787,30 +764,6 @@ fn an_omitted_model_implicit_plans_each_module_of_its_theory_739()
         ),
         "both answer the integers: {verdict:?}"
     );
-}
-
-/// `text`, which `unit` lays out after the prelude, lowered.
-///
-/// # Specification
-/// trivial.
-fn preluded<'source>(
-    text: SourceText<'source>,
-    unit: &crate::unit::Unit,
-    arena: &mut CoreArena,
-) -> LoweredModule<'source>
-{
-    let pbg = crate::fixture::grammar();
-    let tree = crate::fixture::parsed(&pbg, text);
-    crate::lower::lower_unit(
-        &pbg,
-        &tree,
-        unit,
-        arena,
-        crate::lower::LoweringBudget::DEFAULT,
-        crate::namespace::Recognition::default(),
-        &mut crate::coincide::Decisions::none(),
-    )
-    .unwrap()
 }
 
 #[test]

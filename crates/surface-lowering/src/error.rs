@@ -1488,6 +1488,26 @@ pub enum LoweringRefusal<'source>
         fault: crate::derive::DeriveFault,
     },
 
+    /// `Eq.generic` read anywhere but as the whole body of a definition,
+    /// `def m = Eq.generic(T)`, applied to one data type.
+    GenericMisplaced
+    {
+        /// The bytes of the read.
+        span: ByteSpan,
+    },
+
+    /// A definition `def m = Eq.generic(T)` whose data type the derivation
+    /// writes no equality for.
+    GenericUncovered
+    {
+        /// The bytes of the application.
+        span: ByteSpan,
+        /// The data type, as written.
+        data: SurfaceName<'source>,
+        /// What stopped the derivation.
+        fault: gandr_core_term::generic::Uncovered,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -1998,6 +2018,14 @@ impl fmt::Display for LoweringRefusal<'_>
                 fault,
                 ..
             } => write!(f, "the theory `{theory}` does not derive `{rule}`: {fault}"),
+            Self::GenericMisplaced { .. } => f.write_str(
+                "`Eq.generic` stands only as a definition's whole body, applied to one data \
+                 type: `def eq = Eq.generic(T)`",
+            ),
+            Self::GenericUncovered { data, fault, .. } => {
+                write!(f, "`Eq.generic` derives no equality for `{data}`: ")?;
+                uncovered(f, fault)
+            },
             Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -2018,6 +2046,76 @@ impl fmt::Display for LoweringRefusal<'_>
                  in it"
             ),
         }
+    }
+}
+
+/// Write why the derivation of `Eq.generic` stopped, `fault`, to `f`.
+///
+/// # Specification
+/// - ensures: one clause per alternative; a field's names its constructor and
+///   field by their positions, counted from zero.
+/// - fails: what `f` fails with.
+/// - panics: none.
+/// - executable: none — what it writes goes to the formatter's sink, which no
+///   predicate over the return reads.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every refusal renders its own message.
+/// - witness: `error::tests::every_tag_renders_its_own_message`
+fn uncovered(
+    f: &mut fmt::Formatter<'_>,
+    fault: gandr_core_term::generic::Uncovered,
+) -> fmt::Result
+{
+    use gandr_core_term::generic::Uncovered;
+    let at = |site: gandr_kernel_term::OccurrenceSite| match site {
+        gandr_kernel_term::OccurrenceSite::Field { tag, field } => {
+            (usize::from(tag), usize::from(field))
+        },
+        gandr_kernel_term::OccurrenceSite::Parameter(parameter) => (0, usize::from(parameter)),
+    };
+    match fault {
+        Uncovered::Unknown(_) => f.write_str("it is no data declaration"),
+        Uncovered::Applied(_) => f.write_str("it takes parameters or indices"),
+        Uncovered::Presented(_) => f.write_str(
+            "its terms are presented by rules, a quotient structural equality does not respect",
+        ),
+        Uncovered::Field(_, site) => {
+            let (tag, field) = at(site);
+            write!(
+                f,
+                "field {field} of constructor {tag} has no equality the program decides: a \
+                 function, a universe, a path, a list or a float"
+            )
+        },
+        Uncovered::Dependent(_, site) => {
+            let (tag, field) = at(site);
+            write!(
+                f,
+                "field {field} of constructor {tag} reads a field before it"
+            )
+        },
+        Uncovered::Cycle(_, site) => {
+            let (tag, field) = at(site);
+            write!(
+                f,
+                "field {field} of constructor {tag} reaches a declaration whose equality is \
+                 derived through it"
+            )
+        },
+        Uncovered::Nested(_, site) => {
+            let (tag, field) = at(site);
+            write!(
+                f,
+                "field {field} of constructor {tag} holds the type under a product or a sum"
+            )
+        },
+        Uncovered::BinderCeiling => {
+            f.write_str("its constructors open more binders than a term holds")
+        },
     }
 }
 
@@ -2123,6 +2221,8 @@ impl LoweringRefusal<'_>
             | Self::RulesNeverComplete { span, .. }
             | Self::RulesUndecided { span, .. }
             | Self::UnderivedRule { span, .. }
+            | Self::GenericMisplaced { span }
+            | Self::GenericUncovered { span, .. }
             | Self::UnknownMold { span, .. }
             | Self::Unminted { span, .. } => Maybe::Present(span),
             Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
@@ -2190,7 +2290,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 67_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 69_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2490,6 +2590,20 @@ mod tests
                 span: s(125_usize, 126_usize),
                 implicit: SurfaceName::from("s"),
             },
+            LoweringRefusal::GenericMisplaced {
+                span: s(127_usize, 128_usize),
+            },
+            LoweringRefusal::GenericUncovered {
+                span: s(129_usize, 130_usize),
+                data: SurfaceName::from("Shape"),
+                fault: gandr_core_term::generic::Uncovered::Field(
+                    gandr_kernel_term::ConstantIndex::from(0_usize),
+                    gandr_kernel_term::OccurrenceSite::Field {
+                        tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+                        field: gandr_kernel_term::FieldPosition::from(0_usize),
+                    },
+                ),
+            },
         ]
     }
 
@@ -2568,6 +2682,8 @@ mod tests
             s(121_usize, 122_usize),
             s(123_usize, 124_usize),
             s(125_usize, 126_usize),
+            s(127_usize, 128_usize),
+            s(129_usize, 130_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
@@ -2817,6 +2933,31 @@ mod tests
         assert!(
             more.contains('2') && !two.contains('0'),
             "the message counts the further modules only when there are some: {two} / {more}"
+        );
+        let site = gandr_kernel_term::OccurrenceSite::Field {
+            tag: gandr_kernel_term::ConstructorTag::from(1_usize),
+            field: gandr_kernel_term::FieldPosition::from(0_usize),
+        };
+        let at = gandr_kernel_term::ConstantIndex::from(0_usize);
+        assert_apart(
+            &[
+                gandr_core_term::generic::Uncovered::Unknown(at),
+                gandr_core_term::generic::Uncovered::Applied(at),
+                gandr_core_term::generic::Uncovered::Presented(at),
+                gandr_core_term::generic::Uncovered::Field(at, site),
+                gandr_core_term::generic::Uncovered::Dependent(at, site),
+                gandr_core_term::generic::Uncovered::Cycle(at, site),
+                gandr_core_term::generic::Uncovered::Nested(at, site),
+                gandr_core_term::generic::Uncovered::BinderCeiling,
+            ]
+            .map(|fault| {
+                LoweringRefusal::GenericUncovered {
+                    span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
+                    data: SurfaceName::from("Shape"),
+                    fault,
+                }
+                .to_string()
+            }),
         );
     }
 }

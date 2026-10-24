@@ -89,6 +89,55 @@ pub(in crate::lower) fn lowered<'source>(
     .unwrap()
 }
 
+/// `text`, which `unit` lays out after the prelude, lowered.
+///
+/// # Specification
+/// trivial.
+pub(in crate::lower) fn preluded<'source>(
+    text: SourceText<'source>,
+    unit: &crate::unit::Unit,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    let pbg = grammar();
+    let tree = parsed(&pbg, text);
+    crate::lower::lower_unit(
+        &pbg,
+        &tree,
+        unit,
+        arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        &mut crate::coincide::Decisions::none(),
+    )
+    .unwrap()
+}
+
+/// Assert that every declaration of `module` checks, a theory forming as
+/// data does.
+///
+/// # Specification
+/// trivial.
+pub(in crate::lower) fn assert_checked(
+    module: &LoweredModule<'_>,
+    arena: &mut CoreArena,
+)
+{
+    let report = judged(module, arena);
+    assert_eq!(
+        report.judged().len(),
+        module.declarations().len(),
+        "nothing is refused: {:?}",
+        module.declarations()
+    );
+    for verdict in report.judged() {
+        assert!(
+            matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data),
+            "every declaration checks: {report:?}"
+        );
+    }
+}
+
 /// The checker's verdicts over every declaration of `module` the lowering
 /// did not refuse.
 ///
