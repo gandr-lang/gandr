@@ -4285,6 +4285,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         while self.refuse_unrepresented().0 {
             self.propagate_manifests();
         }
+        self.unjoin_refused();
         self.mint(sink)?;
         self.mint_joints(sink);
         self.mint_abstracts(sink);
