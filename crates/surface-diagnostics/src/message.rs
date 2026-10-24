@@ -499,6 +499,10 @@ fn lowered(
         LoweringRefusal::FamilyTelescope { name, fault, .. } => {
             write!(f, "the type family `{name}` {fault}")
         },
+        LoweringRefusal::UninterfacedMember { name, fault, .. } => write!(
+            f,
+            "the theory cannot stand as the interface its handler reads at `{name}`, which {fault}"
+        ),
         LoweringRefusal::LowercaseModuleName { name, .. } => write!(
             f,
             "the module `{name}` must start with an uppercase letter at the top level"
@@ -1342,6 +1346,7 @@ mod tests
     use gandr_surface_lowering::PayloadForm;
     use gandr_surface_lowering::SurfaceName;
     use gandr_surface_lowering::TelescopeFault;
+    use gandr_surface_lowering::model::InterfaceFault;
     use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
@@ -1524,6 +1529,11 @@ mod tests
                 span,
                 name,
                 fault: TelescopeFault::Index(OperandCount::from(1_usize)),
+            },
+            LoweringRefusal::UninterfacedMember {
+                span,
+                name,
+                fault: InterfaceFault::Unfixed,
             },
             LoweringRefusal::LowercaseModuleName { span, name },
             LoweringRefusal::ImplicitTelescope { span },

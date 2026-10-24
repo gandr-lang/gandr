@@ -1152,6 +1152,18 @@ pub enum LoweringRefusal<'source>
         fault: crate::model::ModelFault,
     },
 
+    /// A member of a theory a capability scope handles that cannot stand in
+    /// the effect interface the scope reads the theory as.
+    UninterfacedMember
+    {
+        /// The bytes of the theory, as the scope names it.
+        span: ByteSpan,
+        /// The member's name.
+        name: SurfaceName<'source>,
+        /// Why it cannot stand.
+        fault: crate::model::InterfaceFault,
+    },
+
     /// A member of a description declaration the description route or its
     /// cell layer does not read, kept at its own span under the family's
     /// name.
@@ -1898,6 +1910,10 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "the model signature cannot state `{name}`, which {fault}"
             ),
+            Self::UninterfacedMember { name, fault, .. } => write!(
+                f,
+                "the theory cannot stand as the interface its handler reads at `{name}`, which {fault}"
+            ),
             Self::UndescribedMember { fault, .. } => write!(f, "this member {fault}"),
             Self::FamilyTelescope { name, fault, .. } => {
                 write!(f, "the type family `{name}` {fault}")
@@ -2248,6 +2264,7 @@ impl LoweringRefusal<'_>
             | Self::ProjectionFromApplication { span, .. }
             | Self::UnreadAscription { span, .. }
             | Self::UnstatedComponent { span, .. }
+            | Self::UninterfacedMember { span, .. }
             | Self::UndescribedMember { span, .. }
             | Self::FamilyTelescope { span, .. }
             | Self::LowercaseModuleName { span, .. }

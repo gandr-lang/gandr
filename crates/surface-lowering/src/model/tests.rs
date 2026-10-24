@@ -16,6 +16,7 @@ use gandr_theory_levitation::TheoryValue;
 use quenchant_shape::shape::Maybe;
 
 use super::Binder;
+use super::InterfaceFault;
 use super::ModelFault;
 use super::ModelForm;
 use super::ModelSignature;
@@ -389,6 +390,30 @@ fn each_model_fault_reads_as_its_own_clause()
     .map(ToString::to_string)
     .collect();
     for (first, left) in clauses.iter().enumerate() {
+        for right in clauses.iter().skip(first.saturating_add(1)) {
+            assert_ne!(left, right, "no two faults read alike");
+        }
+    }
+}
+
+#[test]
+fn each_interface_fault_reads_as_its_own_clause()
+{
+    use alloc::string::ToString;
+
+    let clauses: Vec<String> = [
+        InterfaceFault::Carrier,
+        InterfaceFault::Continuation,
+        InterfaceFault::Payload,
+        InterfaceFault::Indexed,
+        InterfaceFault::Unfixed,
+        InterfaceFault::Fixed,
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    for (first, left) in clauses.iter().enumerate() {
+        assert!(!left.is_empty(), "every fault reads as a clause");
         for right in clauses.iter().skip(first.saturating_add(1)) {
             assert_ne!(left, right, "no two faults read alike");
         }

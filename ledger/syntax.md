@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xab54e1d7206ec686`
+- Grammar fingerprint: `0x200480366cf8b4fc`
 - Rules: 163 — 162 committed, 1 internal
-- Molds: 3159
+- Molds: 3163
 - Attributes: 14
 
 ## Reading a form
@@ -104,7 +104,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`lambda_expression`](../corpus/ledger/syntax/lambda_expression.gandr) | `fn ⦅ ( ⦅ ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦅ , ⦅ ‹identifier› ‖ ‹type_variable› ‖ ‹type_identifier› ⦆ ⦅ : ⦅ shared ‖ consumed ⦆? TYPE ⦆? ⦆* ⦅ , ⦆? ⦆? ) ⟨block⟩ ‖ [ ‹type_variable› ⦅ , ‹type_variable› ⦆* ⦅ , ⦆? ] ⟨block⟩ ⦆` | `expression.atom` | `lambda_expression` | admitted | Keyword, Other, VariableParam, TypeVariable, Type, Operator, VariableDef, Number |
 | [`thunk_expression`](../corpus/ledger/syntax/thunk_expression.gandr) | `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? ⟨block⟩` or `thunk ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? ⟨block⟩` | `expression.atom` | `thunk_expression` | admitted | Keyword, Other, Number, Operator, VariableDef, VariableParam |
 | [`case_expression`](../corpus/ledger/syntax/case_expression.gandr) | `case EXPRESSION ⦅ with EXPRESSION ⦆? ⦅ -> TYPE ⦆? ⦅ { } ‖ ⦅ { PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ‖ { \| PATTERN => EXPRESSION ⦅ , PATTERN => EXPRESSION ‖ , \| PATTERN => EXPRESSION ⦆* ⦅ , ⦆? } ⦆ ⦆` | `expression.atom` | `case_expression` | admitted | Keyword, Operator, Other |
-| [`handle_expression`](../corpus/ledger/syntax/handle_expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⟨block⟩ with { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ⦅ , ‹identifier› ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› , ‹identifier› ⦅ , ‹identifier› ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? }` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Operator, Number, VariableParam, FunctionDef |
+| [`handle_expression`](../corpus/ledger/syntax/handle_expression.gandr) | `handle ‹identifier› : ‹type_identifier› ⦅ with sort ‹type_identifier› = TYPE ⦆* ⟨block⟩ with { ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦅ , ⦅ pure ( ‹identifier› ) => EXPRESSION ‖ oper ‹identifier› ( ‹identifier› ⦅ , ‹identifier› ⦅ , ‹identifier› ⦆? ⦆? ) => EXPRESSION ⦆ ⦆* ⦅ , ⦆? }` | `expression.atom` | `handle_expression` * | admitted | Keyword, VariableDef, Other, Type, Operator, Number, VariableParam, FunctionDef |
 | [`if_expression`](../corpus/ledger/syntax/if_expression.gandr) | `if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⦅ ⟨block⟩ ‖ if EXPRESSION ⦅ -> TYPE ⦆? ⟨block⟩ else ⟨block⟩ ⦆` | `expression.atom` | `if_expression` | admitted | Keyword, Operator, Other, VariableDef, Number, VariableParam |
 | [`for_expression`](../corpus/ledger/syntax/for_expression.gandr) | `for ‹identifier› in EXPRESSION ⟨block⟩` | `expression.atom` | `for_expression` * | admitted | Keyword, VariableDef, Other, Operator, Number, VariableParam |
 | [`while_expression`](../corpus/ledger/syntax/while_expression.gandr) | `while EXPRESSION ⟨block⟩` | `expression.atom` | `while_expression` * | admitted | Keyword, Other, Operator, VariableDef, Number, VariableParam |
