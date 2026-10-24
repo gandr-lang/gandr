@@ -385,11 +385,12 @@ enum Placed
     /// outermost link answers.
     Chained,
     /// The value a `run _ <- c` discards, where `c` gives it with `pure`:
-    /// `r` in `run _ <- case p { Succ(r) => pure r, … }`. The lowering
-    /// commutes the bind into each arm of `c` and drops a value nothing
-    /// reads, so no core node holds it for a judgement to type; the
-    /// lowering's result is the term the program means, and the case
-    /// around the value answers.
+    /// `r` in `run _ <- case p { Succ(r) => pure r, … }`, or a `run x <- c`
+    /// whose binder no later statement of the block reads (#2325). The
+    /// lowering commutes the bind into each arm of `c` and drops a value
+    /// nothing reads, so no core node holds it for a judgement to type; the
+    /// lowering's result is the term the program means, and the case around
+    /// the value answers.
     Discarded,
     /// An arrow of the kind a data family writes after its parameters,
     /// `Nat -> Type` in `data Vec(a : Type) : Nat -> Type { … }`, and each
@@ -572,8 +573,10 @@ fn gated(
             .get(usize::from(span.start()) .. usize::from(span.end()))
             .unwrap_or("");
         // A bind's tiles stand among its block's children: the computation
-        // after `run _ <-` is discarded, the one after a named binder's
-        // `<-` kept; every other child stands as its parent does.
+        // after `run _ <-` is discarded, and so is the one after a named
+        // binder no later child of the block reads (#2325); the one after a
+        // binder the rest reads is kept, and every other child stands as its
+        // parent does.
         children.clear();
         children.extend(tree.children(position).filter(|&child| {
             tree.node(child)
@@ -589,7 +592,17 @@ fn gated(
             };
             let discarded = bound.take().unwrap_or(discarding);
             if spelled(Some(child)) == "<-" && previous(2) == "run" {
-                bound = Some(previous(1) == "_");
+                let binder = previous(1);
+                let read = children
+                    .get(at.saturating_add(2) ..)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|&later| {
+                        spelled(Some(later))
+                            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                            .any(|word| word == binder)
+                    });
+                bound = Some(binder == "_" || !read);
             }
             binds.push(discarded);
         }
