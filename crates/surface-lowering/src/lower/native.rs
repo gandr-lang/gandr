@@ -236,8 +236,8 @@
 //! `case e -> T? { p => c, … }` compiles to a decision tree of native
 //! eliminations by the pattern-matrix construction of Maranget's _Compiling
 //! Pattern Matching to Good Decision Trees_ (ML 2008): a data case per
-//! constructor column, a sum case per boolean column, the prelude's integer
-//! equality cased on per integer literal, and the native list case per list
+//! constructor column, a sum case per boolean column, the integer primitive
+//! `int.eq` cased on per integer literal, and the native list case per list
 //! column. Patterns nest: constructors, variables, `_`, integer and boolean
 //! literals, or-patterns binding nothing, list patterns `[p, …]` and
 //! `[p, …, ..r]`, read as cells over the empty list or the rest `r`, an
@@ -311,7 +311,6 @@ use gandr_core_term::pattern::Pattern;
 use gandr_core_term::pattern::PatternId;
 use gandr_core_term::pattern::Patterns;
 use gandr_core_term::primitive::Arguments;
-use gandr_core_term::primitive::Operator;
 use gandr_core_term::primitive::PRELUDE;
 use gandr_core_term::staged::Part;
 use gandr_kernel_strata::Level;
@@ -9619,9 +9618,12 @@ fn mint_test(
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let Some(&equal) = PRELUDE.iter().find(|primitive| {
-                matches!(primitive.operator(), Operator::Infix(spelled) if spelled == "==")
-            })
+            // The integer primitive by its name, `int.eq`: `==` is the
+            // prelude's equality through a model, which a printed test
+            // would read back as.
+            let Some(&equal) = PRELUDE
+                .iter()
+                .find(|primitive| primitive.name().as_ref() == "int.eq")
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
