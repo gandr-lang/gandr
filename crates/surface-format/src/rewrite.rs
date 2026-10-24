@@ -939,6 +939,10 @@ enum Context
     /// list there opens the judgment's own port group, so only the
     /// value-function alias over one bare domain reads as a type (#1329).
     Judgment,
+    /// A law's statement in a theory, after its `:`: the theory reads it only
+    /// as written, the value-function alias over its named telescope, `(x :
+    /// A, p : P) => Path(…)`, so no rewrite respells it (#2384).
+    Law,
     /// Anywhere else: a value or a computation, where `() => A` reads as an
     /// expression, and `A => B` and `(x : A, B) => C` as the value-function
     /// alias.
@@ -1147,7 +1151,7 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Where the form at `at` stands in its parent: after a rule's `<=>`, in
-    /// a theory's judgment, in a type, or anywhere else.
+    /// a theory's judgment or law, in a type, or anywhere else.
     ///
     /// # Specification
     /// trivial.
@@ -1169,6 +1173,7 @@ impl<'source> Respelling<'_, 'source>
         };
         let rule = name(parent);
         let mut preceding = None;
+        let mut law = false;
         for child in self.tree.children(parent) {
             if child == at {
                 break;
@@ -1178,10 +1183,16 @@ impl<'source> Respelling<'_, 'source>
                 && name(child) == rule
             {
                 preceding = self.leaf(node.span()).map(|leaf| leaf.text);
+                match preceding.map(<&str>::from) {
+                    Some("law") => law = true,
+                    Some(";") => law = false,
+                    _ => {},
+                }
             }
         }
         match (rule, preceding.map(<&str>::from)) {
             (_, Some("<=>")) => Context::Outputs,
+            (Some("theory_declaration"), Some(":")) if law => Context::Law,
             (Some("theory_declaration"), Some(":")) => Context::Judgment,
             // After a `:`, or at a definition's result, its returner left
             // unwritten.
@@ -2090,6 +2101,9 @@ impl<'source> Respelling<'_, 'source>
                 Band::Loose
             },
             (RewriteName::ValueFunction, Direction::Desugar) => {
+                if self.context(at) == Context::Law {
+                    return None;
+                }
                 self.thunk(&mut out, parts)?;
                 Band::Bridge
             },
@@ -2199,7 +2213,11 @@ impl<'source> Respelling<'_, 'source>
                 self.unforgotten(&mut out, parts, extent)?
             },
             (RewriteName::ShortAlias, Direction::Sugar) => {
-                self.shortened(&mut out, parts, self.context(at))?;
+                let context = self.context(at);
+                if context == Context::Law {
+                    return None;
+                }
+                self.shortened(&mut out, parts, context)?;
                 Band::Loose
             },
             // The linear run moves a form opening a block in `kept`, whatever
