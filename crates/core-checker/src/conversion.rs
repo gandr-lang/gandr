@@ -1005,9 +1005,11 @@ pub fn equivalent(
 /// - requires: both endpoints stand under the binders the conversion is under.
 /// - ensures: [`Agreement::Convertible`] with the trace recorded for the pair
 ///   on `context` when the machine relates `left` to `right` with returned
-///   endpoints held at the definitions they call; otherwise
-///   [`Agreement::Convertible`] exactly when its untraced conversion relates
-///   them, and [`Agreement::Apart`] when it does not.
+///   endpoints held at the definitions they call; [`Agreement::Convertible`],
+///   recording nothing, when its traced reading waits for a fill
+///   ([`CheckingContext::awaits_fill`]); otherwise [`Agreement::Convertible`]
+///   exactly when its untraced conversion relates them, and
+///   [`Agreement::Apart`] when it does not.
 /// - provides: the dialogue a definition carries for the kernel, whose forced
 ///   reading does not unfold a definition under a binder. The traced reading is
 ///   tried first and only ever adds a derivation: where it does not relate, the
@@ -1025,22 +1027,30 @@ pub fn equivalent(
 /// # Adequacy
 /// - hypothesis: L3 — an ascription relating compound endpoints through a
 ///   definition's body keeps the pair and its derivation, which the kernel
-///   replays; an ascription whose endpoints are the same syntax keeps none.
+///   replays; an ascription whose endpoints are the same syntax keeps none; one
+///   whose endpoints call a definition over an omitted model converts once the
+///   model is resolved.
 /// - witness: `module::tests::an_ascription_keeps_the_endpoints_it_related`
 /// - witness: `bridge::tests::an_ascription_crosses_with_the_endpoints_it_related`
+/// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
 fn endpoints_agree(
     context: &mut CheckingContext<'_>,
     left: ValueId,
     right: ValueId,
 ) -> Result<Agreement, CheckRefusal>
 {
-    if let Ok(Maybe::Present(decisions)) =
-        context
-            .definitions()
-            .relate_terms(context.arena(), left, right, &[])
+    match context
+        .definitions()
+        .relation(context.arena(), left, right, &[])
     {
-        context.record_relation(left, right, decisions);
-        return Ok(Agreement::Convertible);
+        Ok((gandr_core_nbe::MachineVerdict::Convertible, decisions)) => {
+            context.record_relation(left, right, decisions);
+            return Ok(Agreement::Convertible);
+        },
+        Ok((verdict, _)) if context.awaits_fill(verdict) == crate::elaboration::Deferred::Yes => {
+            return Ok(Agreement::Convertible);
+        },
+        Ok(_) | Err(_) => {},
     }
     let verdict = context
         .definitions()

@@ -69,3 +69,38 @@ def held_sum(x : Integer, y : Integer) -> Path(Integer, as_given(x + y), x + y) 
 def exchanged_sum(x : Integer, y : Integer) -> Path(Integer, as_given(x + y), y + x) {
   here(x + y)
 }
+
+/// A comparison's model is resolved from its operands once the body is
+/// judged: the point compares alike, and meets both endpoints when each
+/// comparison reads the integers' equality (#2391).
+@[ checks ]
+def compared_alike(x : Integer, y : Integer) -> Path(Bool, x == y, x == y) {
+  here(x == y)
+}
+
+/// The comparison with its operands exchanged is another call once resolved.
+@[ refuses("EndpointMismatch") ]
+def compared_turned(x : Integer, y : Integer) -> Path(Bool, x == y, y == x) {
+  here(x == y)
+}
+
+/// A path over a comparison, returned at a path type over comparisons of its
+/// own, converts once each comparison's model is resolved (#2391).
+@[ checks ]
+def passed_on(x : Integer, y : Integer, p : Path(Bool, x == y, x == y)) -> Path(
+  Bool,
+  x == y,
+  x == y
+) {
+  p
+}
+
+/// At a path type over the exchanged comparison it is another type.
+@[ refuses("TypeMismatch") ]
+def passed_turned(x : Integer, y : Integer, p : Path(Bool, x == y, x == y)) -> Path(
+  Bool,
+  y == x,
+  y == x
+) {
+  p
+}
