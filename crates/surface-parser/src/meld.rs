@@ -519,6 +519,184 @@ impl SourceSpan
     }
 }
 
+/// A tile the source left out, written into a copy of the source so the copy
+/// molds without a repair, and read back as the close the melder mints.
+///
+/// The copy holds the tile's bytes over `at .. after`; every other byte of the
+/// copy is the source's, those past the tile shifted by its width.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Splice
+{
+    /// Where the tile stands, in the source and in the copy alike.
+    at: SourceOffset,
+    /// One past the tile's last byte in the copy.
+    after: SourceOffset,
+    /// The minted close the tile is read back as.
+    ghost: NodeLabel,
+}
+
+impl Splice
+{
+    /// The splice of `tile` written at `at`, read back as `ghost`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the splice over `at .. at + tile.len()`; `None` when that end
+    ///   lies past the wire's ceiling.
+    /// - panics: none.
+    /// - executable: none — the clause restates the construction.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    #[must_use]
+    pub(crate) fn new(
+        at: ByteOffset,
+        tile: SourceText<'_>,
+        ghost: NodeLabel,
+    ) -> Option<Self>
+    {
+        let start = u32::try_from(usize::from(at)).ok()?;
+        let width = u32::try_from(<&str>::from(tile).len()).ok()?;
+        Some(Self {
+            at: SourceOffset(start),
+            after: SourceOffset(start.checked_add(width)?),
+            ghost,
+        })
+    }
+
+    /// The source offset of the copy's `offset`: past the tile, shifted back
+    /// over it; within it, its start; before it, unchanged.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn offset(
+        self,
+        offset: SourceOffset,
+    ) -> SourceOffset
+    {
+        if offset.0 >= self.after.0 {
+            SourceOffset(
+                offset
+                    .0
+                    .saturating_sub(self.after.0.saturating_sub(self.at.0)),
+            )
+        }
+        else if offset.0 > self.at.0 {
+            self.at
+        }
+        else {
+            offset
+        }
+    }
+
+    /// The source span of the copy's `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn span(
+        self,
+        span: SourceSpan,
+    ) -> SourceSpan
+    {
+        SourceSpan::new(self.offset(span.start), self.offset(span.end))
+    }
+
+    /// The source leaf the copy's leaf `label` over `span` reads as: the tile
+    /// itself is the minted close, empty at `at`; any other leaf is itself,
+    /// shifted.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn leaf(
+        self,
+        label: NodeLabel,
+        span: SourceSpan,
+    ) -> (NodeLabel, SourceSpan)
+    {
+        if span.start.0 == self.at.0
+            && span.end.0 == self.after.0
+            && matches!(label, NodeLabel::Tile(_))
+        {
+            (self.ghost, SourceSpan::point(self.at))
+        }
+        else {
+            (label, self.span(span))
+        }
+    }
+
+    /// The source obligation of the copy's `obligation`: its span read back as
+    /// any other span of the copy is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the obligation of the same class over `obligation`'s span
+    ///   with each end shifted back over the tile; an end past the wire's
+    ///   ceiling keeps the span as it was.
+    /// - panics: none.
+    /// - executable: none — the clause restates the shift.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    pub(crate) fn obligation(
+        self,
+        obligation: ObligationInstance,
+    ) -> ObligationInstance
+    {
+        let shifted = |offset: ByteOffset| {
+            u32::try_from(usize::from(offset))
+                .ok()
+                .map(|offset| self.offset(SourceOffset(offset)).byte_offset())
+        };
+        let span = shifted(obligation.span.start())
+            .zip(shifted(obligation.span.end()))
+            .and_then(|(start, end)| ByteSpan::new(start, end).ok())
+            .unwrap_or(obligation.span);
+        ObligationInstance {
+            class: obligation.class,
+            span,
+        }
+    }
+
+    /// Refuse a `copy` that is not `source` with the tile's bytes at
+    /// `at .. after`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Ok` exactly when `copy` without its bytes `at .. after` is
+    ///   `source`.
+    /// - fails: [`MeldError::SourceMismatch`] otherwise.
+    /// - panics: none.
+    /// - executable: none — the clause restates the comparison.
+    ///
+    /// # Errors
+    /// [`MeldError::SourceMismatch`] when `copy` is not such a copy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`MeldState::commit_spliced`].
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    fn copied(
+        self,
+        source: SourceText<'_>,
+        copy: SourceText<'_>,
+    ) -> Result<(), MeldError>
+    {
+        let (source, copy) = (<&str>::from(source), <&str>::from(copy));
+        let at = usize::try_from(self.at.0).map_err(|_error| MeldError::SourceMismatch)?;
+        let after = usize::try_from(self.after.0).map_err(|_error| MeldError::SourceMismatch)?;
+        let same = source.split_at_checked(at).is_some_and(|(head, tail)| {
+            copy.get(.. at) == Some(head) && copy.get(after ..) == Some(tail)
+        });
+        if same {
+            Ok(())
+        }
+        else {
+            Err(MeldError::SourceMismatch)
+        }
+    }
+}
+
 primitive_copy_wrapper!(
     /// Index into the melder slope stack.
     struct StackIndex(usize);
@@ -5522,7 +5700,45 @@ impl<'pbg> MeldState<'pbg>
         let obligations = self.obligations.clone();
         let root = self.wrap_root();
         self.attach_comments(root);
-        let tree = self.build_tree(source, root)?;
+        let tree = self.build_tree(source, root, None)?;
+        Ok((tree, obligations))
+    }
+
+    /// Commit a state molded over a copy of `source` with one tile written in,
+    /// as `source`'s tree: the written tile read back as the minted close
+    /// `splice` names, every other span shifted back over it.
+    ///
+    /// # Specification
+    /// - requires: none.
+    /// - ensures: the tree over `source` whose leaves are the copy's, the
+    ///   written tile an empty minted close at its place, beside the copy's
+    ///   obligations after closing the input.
+    /// - fails: [`MeldError::SourceMismatch`] when the state's source is not
+    ///   `source` with the tile written in; otherwise as
+    ///   [`commit`](MeldState::commit).
+    /// - panics: none.
+    /// - executable: none — the clause restates the replay.
+    ///
+    /// # Errors
+    /// [`MeldError::SourceMismatch`] for a state over another text; otherwise
+    /// as [`commit`](MeldState::commit).
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter list's `)` left out is minted where the
+    ///   copy wrote it, and the tree reconstructs the source.
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
+    pub(crate) fn commit_spliced(
+        mut self,
+        source: SourceText<'_>,
+        splice: Splice,
+    ) -> Result<(SyntaxTree<'_>, Vec<ObligationInstance>), MeldError>
+    {
+        splice.copied(source, SourceText::from(self.source.as_str()))?;
+        self.collapse(StackFloor::from(StackIndex::from(0)));
+        let obligations = self.obligations.clone();
+        let root = self.wrap_root();
+        self.attach_comments(root);
+        let tree = self.build_tree(source, root, Some(splice))?;
         Ok((tree, obligations))
     }
 
@@ -5931,7 +6147,8 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// Replay the emission log into a checked [`TreeBuilder`] over `source`
-    /// and finish at `root`.
+    /// and finish at `root`, reading each span through `splice` when the log
+    /// was molded over a copy with a tile written in.
     ///
     /// Every leaf is staged before any interior, so an interior may own a leaf
     /// logged after it, as a comment its owner was reduced before is. Every
@@ -5940,10 +6157,12 @@ impl<'pbg> MeldState<'pbg>
     /// interior owns only interiors logged before it.
     ///
     /// # Specification
-    /// - requires: `source` is the assembled text, which
-    ///   [`commit`](Self::commit) checks first.
+    /// - requires: `source` is the assembled text, or with a `splice` the text
+    ///   the splice's copy was made from, which [`commit`](Self::commit) and
+    ///   [`commit_spliced`](Self::commit_spliced) check first.
     /// - ensures: the tree's root is `root`'s node, and every log entry
-    ///   reachable from it is a node of the tree.
+    ///   reachable from it is a node of the tree, its span and the written
+    ///   tile's label read through `splice`.
     /// - fails: the builder refuses a node, or the log names an id outside
     ///   itself or an interior over other interiors not yet logged.
     /// - panics: none.
@@ -5963,20 +6182,22 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
     /// - witness: `meld::tests::each_comment_is_owned_by_the_node_it_describes`
     /// - witness: `meld::tests::documentation_reaches_no_digest`
+    /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == self.pbg.fingerprint() && tree.node(tree.root()).is_some()))]
     fn build_tree<'source>(
         &self,
         source: SourceText<'source>,
         root: EmitId,
+        splice: Option<Splice>,
     ) -> Result<SyntaxTree<'source>, MeldError>
     {
         let mut builder = TreeBuilder::new(source, self.pbg.fingerprint())?;
         let mut mapping: Vec<Option<StagedId>> = alloc::vec![None; self.emit.len()];
         for (op, slot) in self.emit.iter().zip(mapping.iter_mut()) {
             if let EmitOp::Token { label, start, end } = *op {
-                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
-                    .byte_span()?;
-                *slot = Some(builder.node(label, span, &[])?);
+                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end));
+                let (label, span) = splice.map_or((label, span), |splice| splice.leaf(label, span));
+                *slot = Some(builder.node(label, span.byte_span()?, &[])?);
             }
         }
         let mut child_nodes: Vec<StagedId> = Vec::new();
@@ -6010,7 +6231,9 @@ impl<'pbg> MeldState<'pbg>
                         .ok_or(MeldError::Corrupt)?;
                     child_nodes.push(mapped);
                 }
-                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end))
+                let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end));
+                let span = splice
+                    .map_or(span, |splice| splice.span(span))
                     .byte_span()?;
                 let node = builder.node(label, span, &child_nodes)?;
                 if let Some(slot) = mapping.get_mut(position) {
@@ -9397,7 +9620,7 @@ mod tests
             super::SourceOffset::from(0)
         );
         let source = SourceText::from("éx");
-        let tree = state.build_tree(source, root)?;
+        let tree = state.build_tree(source, root, None)?;
         assert_eq!(tile_texts(&tree, tree.root()), vec!["x", "é"]);
         assert_eq!(crate::testing::reconstruct(&tree), "éx");
         state.flag(Oblig::UnmoldedTok, first);
@@ -9412,19 +9635,19 @@ mod tests
         assert_eq!(u32::from(state.delta().inserted(Oblig::InconMeld)), 1);
         assert_eq!(u32::from(state.delta().inserted(Oblig::AmbiguousPrec)), 0);
         assert!(matches!(
-            state.build_tree(source, super::EmitId(u32::MAX)),
+            state.build_tree(source, super::EmitId(u32::MAX), None),
             Err(super::MeldError::Corrupt)
         ));
         let forward =
             state.emit_interior(NodeLabel::Wald, root_span, vec![super::EmitId(u32::MAX)]);
         assert!(matches!(
-            state.build_tree(source, forward),
+            state.build_tree(source, forward, None),
             Err(super::MeldError::Corrupt)
         ));
         let mut state = MeldState::new(&pbg);
         let bad = state.emit_token(NodeLabel::Tile(atom), inverted);
         assert!(matches!(
-            state.build_tree(source, bad),
+            state.build_tree(source, bad, None),
             Err(super::MeldError::Build(
                 gandr_surface_syntax::SyntaxError::InvertedSpan { .. }
             ))
