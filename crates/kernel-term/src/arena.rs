@@ -250,7 +250,7 @@ pub enum AnyNode
     CompType(CompTypeId),
 }
 
-/// The number of nodes allocated in one arena family.
+/// The number of nodes allocated in one arena family, or an offset into it.
 ///
 /// # Specification
 /// - requires: all usize counts are representable.
@@ -270,7 +270,65 @@ pub enum AnyNode
 /// - witness: `arena::tests::scalar_clamps_and_index_ceilings_match_widened_models`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ArenaLength(usize);
+pub struct ArenaLength(usize);
+
+impl From<usize> for ArenaLength
+{
+    /// The length of `length` nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(length: usize) -> Self
+    {
+        Self(length)
+    }
+}
+
+impl From<ArenaLength> for usize
+{
+    /// The node count `length` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(length: ArenaLength) -> Self
+    {
+        length.0
+    }
+}
+
+impl PartialEq<usize> for ArenaLength
+{
+    /// The length names `other` nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &usize,
+    ) -> bool
+    {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<ArenaLength> for usize
+{
+    /// `other` names this many nodes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &ArenaLength,
+    ) -> bool
+    {
+        *self == other.0
+    }
+}
 
 /// The stored index of one node within its arena family.
 ///
@@ -534,16 +592,281 @@ impl ArenaWatermark
 pub struct TermArena
 {
     /// The value nodes, in allocation order, which is child-before-parent.
-    values: Vec<Value>,
+    values: Family<Value>,
     /// The computation nodes.
-    computations: Vec<Computation>,
+    computations: Family<Computation>,
     /// The value-type nodes.
-    value_types: Vec<ValueType>,
+    value_types: Family<ValueType>,
     /// The computation-type nodes.
-    comp_types: Vec<CompType>,
+    comp_types: Family<CompType>,
     /// The empty endpoint dialogues every reflexivity minted without a
     /// dialogue shares, so minting one allocates no evidence.
     unrelated: alloc::sync::Arc<crate::EndpointDialogues>,
+}
+
+/// One family's nodes in allocation order.
+///
+/// Those frozen by [`Family::freeze`] come first, shared with every clone of
+/// the family made after, then the nodes minted since. [`TermArena`] keeps
+/// its four families so, and an arena outside the kernel may keep its own.
+///
+/// # Specification
+/// - executable: none — a data declaration; [`Self::get`], [`Self::truncate`]
+///   and [`Self::freeze`] state what a read, a truncation and a freeze see.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a family read, minted into, truncated and compared across
+///   a freeze answers as one never frozen does.
+/// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+#[derive(Clone, Debug)]
+pub struct Family<Node>
+{
+    /// The nodes frozen before the family's own, shared by reference.
+    frozen: Option<alloc::sync::Arc<[Node]>>,
+    /// The nodes minted after them.
+    own: Vec<Node>,
+}
+
+impl<Node> Default for Family<Node>
+{
+    /// The empty family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self {
+            frozen: None,
+            own: Vec::new(),
+        }
+    }
+}
+
+impl<Node: PartialEq> PartialEq for Family<Node>
+{
+    /// Two families hold the same nodes in the same order, wherever each node
+    /// is kept.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn eq(
+        &self,
+        other: &Self,
+    ) -> bool
+    {
+        // Two families frozen over one shared base hold its nodes alike, so
+        // only the nodes minted since are read.
+        if let (Some(mine), Some(theirs)) = (self.frozen.as_ref(), other.frozen.as_ref())
+            && alloc::sync::Arc::ptr_eq(mine, theirs)
+        {
+            return self.own == other.own;
+        }
+        self.len() == other.len() && self.iter().eq(other.iter())
+    }
+}
+
+impl<Node: Eq> Eq for Family<Node>
+{
+}
+
+impl<Node> Family<Node>
+{
+    /// The nodes frozen before the family's own.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn frozen(&self) -> &[Node]
+    {
+        self.frozen.as_deref().unwrap_or_default()
+    }
+
+    /// The nodes minted since the last freeze: what a clone copies.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn own(&self) -> &[Node]
+    {
+        self.own.as_slice()
+    }
+
+    /// How many nodes the family holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn len(&self) -> ArenaLength
+    {
+        ArenaLength(self.frozen().len().saturating_add(self.own.len()))
+    }
+
+    /// The node at `offset` in allocation order, or `None` past the family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn get(
+        &self,
+        offset: ArenaLength,
+    ) -> Option<&Node>
+    {
+        // The frozen nodes are read first, so a read of one costs what a read
+        // of an unfrozen family does.
+        self.frozen.as_deref().map_or_else(
+            || self.own.get(offset.0),
+            |frozen| {
+                frozen
+                    .get(offset.0)
+                    .or_else(|| self.own.get(offset.0.wrapping_sub(frozen.len())))
+            },
+        )
+    }
+
+    /// The node minted last, or `None` for an empty family.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn last(&self) -> Option<&Node>
+    {
+        self.own.last().or_else(|| self.frozen().last())
+    }
+
+    /// Every node, in allocation order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &Node>
+    {
+        self.frozen().iter().chain(&self.own)
+    }
+
+    /// Mint `node` after every node the family holds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn push(
+        &mut self,
+        node: Node,
+    )
+    {
+        self.own.push(node);
+    }
+}
+
+impl<Node: Clone> Family<Node>
+{
+    /// Keep the first `length` nodes, dropping later ones; a length at or past
+    /// the family's end keeps every node.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family holds its first `length.min(entry)` nodes, each as
+    ///   it was. A truncation into the frozen nodes takes the family's own copy
+    ///   of those it keeps, so no clone made before it changes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — truncations past the frozen nodes and into them, each
+    ///   read back beside a clone taken before.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+    #[spec(
+        captures: entry = self.len(),
+        ensures: self.len() == length.min(entry),
+    )]
+    #[inline]
+    pub fn truncate(
+        &mut self,
+        length: ArenaLength,
+    )
+    {
+        let frozen = self.frozen().len();
+        if let Some(own) = length.0.checked_sub(frozen) {
+            self.own.truncate(own);
+        }
+        else {
+            self.own = self.frozen().get(.. length.0).unwrap_or_default().to_vec();
+            self.frozen = None;
+        }
+    }
+
+    /// Share every node the family holds with every clone made after: the
+    /// nodes minted so far join the frozen ones.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the family holds the same nodes in the same order, all of
+    ///   them frozen.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family frozen twice, with nodes minted between,
+    ///   reads back every node at its offset.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+    #[spec(
+        captures: entry = self.len(),
+        ensures: self.len() == entry && self.own.is_empty(),
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        if self.own.is_empty() {
+            return;
+        }
+        let own = core::mem::take(&mut self.own);
+        self.frozen = Some(match self.frozen.take() {
+            None => alloc::sync::Arc::from(own),
+            Some(frozen) => frozen.iter().cloned().chain(own).collect(),
+        });
+    }
+}
+
+impl TermArena
+{
+    /// Share every node minted so far with every clone of the arena made
+    /// after: such a clone copies, and its drop releases, only the nodes
+    /// minted after the freeze.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the watermark is unchanged and every id resolves to the node
+    ///   it did; minting, truncation and comparison answer as they would have
+    ///   unfrozen.
+    /// - provides: the arena of a readmission's recorded environment, which
+    ///   each readmission resuming it copies and drops at the cost of the nodes
+    ///   it mints.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arena frozen, cloned, minted into on both sides,
+    ///   frozen again and truncated past and into its frozen nodes, each read
+    ///   against an arena built alike and never frozen.
+    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone`
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark() == entry,
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        self.values.freeze();
+        self.computations.freeze();
+        self.value_types.freeze();
+        self.comp_types.freeze();
+    }
 }
 
 impl TermArena
@@ -655,10 +978,10 @@ impl TermArena
     pub fn watermark(&self) -> ArenaWatermark
     {
         ArenaWatermark {
-            values: self.values.len(),
-            computations: self.computations.len(),
-            value_types: self.value_types.len(),
-            comp_types: self.comp_types.len(),
+            values: usize::from(self.values.len()),
+            computations: usize::from(self.computations.len()),
+            value_types: usize::from(self.value_types.len()),
+            comp_types: usize::from(self.comp_types.len()),
         }
     }
 
@@ -706,10 +1029,12 @@ impl TermArena
         watermark: ArenaWatermark,
     )
     {
-        self.values.truncate(watermark.values);
-        self.computations.truncate(watermark.computations);
-        self.value_types.truncate(watermark.value_types);
-        self.comp_types.truncate(watermark.comp_types);
+        self.values.truncate(ArenaLength(watermark.values));
+        self.computations
+            .truncate(ArenaLength(watermark.computations));
+        self.value_types
+            .truncate(ArenaLength(watermark.value_types));
+        self.comp_types.truncate(ArenaLength(watermark.comp_types));
     }
 
     /// Resolve a value id, or `None` when it dangles.
@@ -732,7 +1057,7 @@ impl TermArena
     ///   not exercised; its conversion is checked separately.
     /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
     #[spec(
-        ensures: |ret| match (ret, self.values.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+        ensures: |ret| match (ret, self.values.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
     )]
     #[inline]
     #[must_use]
@@ -741,7 +1066,7 @@ impl TermArena
         id: ValueId,
     ) -> Option<&Value>
     {
-        self.values.get(id_offset(ArenaIndex(id.0)).0)
+        self.values.get(id_offset(ArenaIndex(id.0)))
     }
 
     /// Resolve a computation id, or `None` when it dangles.
@@ -763,7 +1088,7 @@ impl TermArena
     ///   not exercised; its conversion is checked separately.
     /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
     #[spec(
-        ensures: |ret| match (ret, self.computations.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+        ensures: |ret| match (ret, self.computations.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
     )]
     #[inline]
     #[must_use]
@@ -772,7 +1097,7 @@ impl TermArena
         id: ComputationId,
     ) -> Option<&Computation>
     {
-        self.computations.get(id_offset(ArenaIndex(id.0)).0)
+        self.computations.get(id_offset(ArenaIndex(id.0)))
     }
 
     /// Resolve a value-type id, or `None` when it dangles.
@@ -794,7 +1119,7 @@ impl TermArena
     ///   not exercised; its conversion is checked separately.
     /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
     #[spec(
-        ensures: |ret| match (ret, self.value_types.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+        ensures: |ret| match (ret, self.value_types.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
     )]
     #[inline]
     #[must_use]
@@ -803,7 +1128,7 @@ impl TermArena
         id: ValueTypeId,
     ) -> Option<&ValueType>
     {
-        self.value_types.get(id_offset(ArenaIndex(id.0)).0)
+        self.value_types.get(id_offset(ArenaIndex(id.0)))
     }
 
     /// Resolve a computation-type id, or `None` when it dangles.
@@ -825,7 +1150,7 @@ impl TermArena
     ///   not exercised; its conversion is checked separately.
     /// - witness: `arena::tests::truncation_preserves_prefixes_reuses_indices_and_checks_all_families`
     #[spec(
-        ensures: |ret| match (ret, self.comp_types.get(usize::try_from(id.0).unwrap_or(usize::MAX))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
+        ensures: |ret| match (ret, self.comp_types.get(ArenaLength(usize::try_from(id.0).unwrap_or(usize::MAX)))) { (Some(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (None, None) => true, _ => false },
     )]
     #[inline]
     #[must_use]
@@ -834,7 +1159,7 @@ impl TermArena
         id: CompTypeId,
     ) -> Option<&CompType>
     {
-        self.comp_types.get(id_offset(ArenaIndex(id.0)).0)
+        self.comp_types.get(id_offset(ArenaIndex(id.0)))
     }
 
     /// Append a value node and return the id that names it.
@@ -894,7 +1219,7 @@ impl TermArena
         value: Value,
     ) -> ValueId
     {
-        let id = ValueId(id_index(ArenaLength(self.values.len())).0);
+        let id = ValueId(id_index(self.values.len()).0);
         self.values.push(value);
         id
     }
@@ -951,7 +1276,7 @@ impl TermArena
         computation: Computation,
     ) -> ComputationId
     {
-        let id = ComputationId(id_index(ArenaLength(self.computations.len())).0);
+        let id = ComputationId(id_index(self.computations.len()).0);
         self.computations.push(computation);
         id
     }
@@ -1003,7 +1328,7 @@ impl TermArena
         value_type: ValueType,
     ) -> ValueTypeId
     {
-        let id = ValueTypeId(id_index(ArenaLength(self.value_types.len())).0);
+        let id = ValueTypeId(id_index(self.value_types.len()).0);
         self.value_types.push(value_type);
         id
     }
@@ -1044,7 +1369,7 @@ impl TermArena
         comp_type: CompType,
     ) -> CompTypeId
     {
-        let id = CompTypeId(id_index(ArenaLength(self.comp_types.len())).0);
+        let id = CompTypeId(id_index(self.comp_types.len()).0);
         self.comp_types.push(comp_type);
         id
     }
@@ -3883,6 +4208,101 @@ mod tests
                 u128::from(index).min(u128::try_from(usize::MAX).expect("host ceiling fits u128"))
             );
         }
+    }
+
+    /// An arena frozen part way answers every read, mint, truncation and
+    /// comparison as one built alike and never frozen does; a clone of it
+    /// shares the frozen nodes and owns only those minted after, and a
+    /// truncation into the frozen nodes leaves a clone taken before untouched.
+    #[test]
+    fn a_frozen_arena_answers_as_it_did_and_clones_its_own_nodes_alone()
+    {
+        // Each round mints its own content, so a read off by one across the
+        // frozen boundary finds another node.
+        let round = |arena: &mut TermArena, constant: usize, ty: Option<super::BaseType>| {
+            let value = arena.value_constant(super::ConstantIndex::from(constant));
+            let value_type = match ty {
+                Some(ty) => arena.value_type_base(ty),
+                None => arena.value_type_unit(),
+            };
+            let computation = arena.computation_return(value);
+            let comp_type = arena.comp_type_returner(value_type);
+            (value, value_type, computation, comp_type)
+        };
+        let shares = |left: &TermArena, right: &TermArena| {
+            !left.values.frozen().is_empty()
+                && core::ptr::eq(
+                    &raw const *left.values.frozen(),
+                    &raw const *right.values.frozen(),
+                )
+        };
+        let constant = |index: usize| super::Value::Constant(super::ConstantIndex::from(index));
+        let mut plain = TermArena::new();
+        let mut frozen = TermArena::new();
+        let first = round(&mut plain, 0, Some(super::BaseType::Integer));
+        assert_eq!(first, round(&mut frozen, 0, Some(super::BaseType::Integer)));
+        let mark = frozen.watermark();
+        frozen.freeze();
+        assert_eq!(mark, frozen.watermark(), "a freeze keeps the watermark");
+        assert_eq!(plain, frozen, "and every node");
+        assert!(frozen.values.own().is_empty(), "every node is frozen");
+
+        let mut copy = frozen.clone();
+        assert!(shares(&copy, &frozen), "a clone shares the frozen nodes");
+        let second = round(&mut plain, 1, None);
+        assert_eq!(
+            second,
+            round(&mut copy, 1, None),
+            "ids continue past the frozen nodes"
+        );
+        assert_eq!(
+            copy.values.own().len(),
+            1,
+            "the clone owns only what it minted"
+        );
+        assert_eq!(plain, copy);
+        assert_eq!(copy.value(first.0), Some(&constant(0)));
+        assert_eq!(copy.value(second.0), Some(&constant(1)));
+        assert_eq!(copy.computation(second.2), plain.computation(second.2));
+        assert_eq!(copy.value_type(second.1), plain.value_type(second.1));
+        assert_eq!(copy.comp_type(second.3), plain.comp_type(second.3));
+        assert_eq!(
+            frozen.value(second.0),
+            None,
+            "the frozen arena never sees the clone's nodes"
+        );
+
+        copy.freeze();
+        assert_eq!(
+            plain, copy,
+            "a second freeze keeps the nodes on both sides of the first"
+        );
+        let before = copy.clone();
+        assert!(shares(&before, &copy));
+        let third = round(&mut plain, 2, Some(super::BaseType::Integer));
+        assert_eq!(third, round(&mut copy, 2, Some(super::BaseType::Integer)));
+
+        let past = before.watermark();
+        plain.truncate_to(past);
+        copy.truncate_to(past);
+        assert_eq!(plain, copy, "a truncation past the frozen nodes");
+        assert_eq!(copy.value(third.0), None);
+        plain.truncate_to(mark);
+        copy.truncate_to(mark);
+        assert_eq!(plain, copy, "a truncation into them");
+        assert_eq!(copy.value(second.0), None);
+        assert_eq!(
+            before.value(second.0),
+            Some(&constant(1)),
+            "and a clone taken before keeps its nodes"
+        );
+        let again = round(&mut plain, 3, None);
+        assert_eq!(
+            again,
+            round(&mut copy, 3, None),
+            "a truncated index is minted again"
+        );
+        assert_eq!(plain, copy);
     }
 
     #[test]

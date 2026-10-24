@@ -1528,7 +1528,9 @@ impl Crossed
     ///   entry is neither admitted nor static; as
     ///   [`crossed::Absent::Unaligned`] when a seal is open; otherwise the
     ///   environment, the entries, and the positions with no core body and no
-    ///   open seal.
+    ///   open seal. A record made freezes the readmission's environment
+    ///   ([`Environment::freeze`]) before keeping it, so the record and every
+    ///   readmission [`Crossed::resume`] starts from it share its arena.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1542,7 +1544,7 @@ impl Crossed
         Maybe::Absent(_) => true,
     })]
     fn record(
-        built: (&Environment, &Positions, &[Readmitted]),
+        built: (&mut Environment, &Positions, &[Readmitted]),
         from: LeadingCount,
     ) -> Maybe<Self, crossed::Absent>
     {
@@ -1564,6 +1566,7 @@ impl Crossed
         if !positions.open.is_empty() {
             return Maybe::Absent(crossed::Absent::Unaligned);
         }
+        environment.freeze();
         Maybe::Present(Self {
             environment: environment.clone(),
             positions: Positions {
@@ -1970,7 +1973,7 @@ where
     loop {
         if boundary == Some(index) {
             recorded = Crossed::record(
-                (&environment, &positions, readmitted.as_slice()),
+                (&mut environment, &positions, readmitted.as_slice()),
                 LeadingCount(from),
             );
         }
@@ -1982,7 +1985,7 @@ where
             return Polled::Retired(
                 retired,
                 Crossed::record(
-                    (&environment, &positions, readmitted.as_slice()),
+                    (&mut environment, &positions, readmitted.as_slice()),
                     LeadingCount(from),
                 ),
             );

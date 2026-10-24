@@ -1,4 +1,3 @@
-use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -473,14 +472,17 @@ fn index_boundaries_preserve_identity_or_saturate()
 {
     for raw in [0_u32, 1, u32::MAX] {
         let offset = super::id_offset(super::ArenaIndex(raw));
-        assert_eq!(usize::try_from(raw).unwrap_or(usize::MAX), offset.0);
+        assert_eq!(
+            usize::try_from(raw).unwrap_or(usize::MAX),
+            usize::from(offset)
+        );
         assert_eq!(raw, super::id_index(offset).0);
     }
     if let Some(above) = usize::try_from(u32::MAX)
         .ok()
         .and_then(|limit| limit.checked_add(1))
     {
-        assert_eq!(u32::MAX, super::id_index(super::ArenaLength(above)).0);
+        assert_eq!(u32::MAX, super::id_index(super::ArenaLength::from(above)).0);
     }
 }
 
@@ -572,11 +574,11 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
         (value, value_type, computation, comp_type)
     };
     let shares = |left: &CoreArena, right: &CoreArena| {
-        left.values
-            .frozen
-            .as_ref()
-            .zip(right.values.frozen.as_ref())
-            .is_some_and(|(left, right)| Arc::ptr_eq(left, right))
+        !left.values.frozen().is_empty()
+            && core::ptr::eq(
+                &raw const *left.values.frozen(),
+                &raw const *right.values.frozen(),
+            )
     };
     let mut plain = CoreArena::new();
     let mut frozen = CoreArena::new();
@@ -586,7 +588,7 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
     frozen.freeze();
     assert_eq!(mark, frozen.watermark(), "a freeze keeps the watermark");
     assert_eq!(plain, frozen, "and every node");
-    assert!(frozen.values.own.is_empty(), "every row is frozen");
+    assert!(frozen.values.own().is_empty(), "every row is frozen");
 
     let mut copy = frozen.clone();
     assert!(shares(&copy, &frozen), "a clone shares the frozen rows");
@@ -597,7 +599,7 @@ fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
         "ids continue past the frozen rows"
     );
     assert_eq!(
-        copy.values.own.len(),
+        copy.values.own().len(),
         1,
         "the clone owns only what it minted"
     );

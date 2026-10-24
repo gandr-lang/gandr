@@ -167,9 +167,11 @@ mod types;
 mod wire;
 
 pub use crate::arena::AnyNode;
+pub use crate::arena::ArenaLength;
 pub use crate::arena::ArenaWatermark;
 pub use crate::arena::CompTypeId;
 pub use crate::arena::ComputationId;
+pub use crate::arena::Family;
 pub use crate::arena::TermArena;
 pub use crate::arena::ValueId;
 pub use crate::arena::ValueTypeId;
