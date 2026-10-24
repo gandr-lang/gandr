@@ -387,6 +387,10 @@ enum Rewrite
     Solve(HoleId, ValueId, Binders),
     /// Wrap every node the engine's sites name in the mark it names.
     Wrap,
+    /// Read every resumption of a suspended function, `resume(thunk(λx. N),
+    /// M)`, as the bind `x ← M; N` it runs, and every abandonment of one as
+    /// the unit returned; every other node stands.
+    Resumed,
     /// Replace every index outside the depth that counts into the engine's
     /// environment by its entry, and lower every index past the environment by
     /// the environment's length.
@@ -460,6 +464,7 @@ impl Rewrite
             | Self::Fill(..)
             | Self::Solve(..)
             | Self::Wrap
+            | Self::Resumed
             | Self::Environment
             | Self::Elaborate
             | Self::Rename
@@ -1291,6 +1296,11 @@ impl<'arena> Engine<'arena>
                 Nesting::Run => {},
             }
         }
+        if rewrite == Rewrite::Resumed
+            && let Node::Computation(id) = rewritten
+        {
+            return Node::Computation(self.resumed(id));
+        }
         if rewrite != Rewrite::Wrap {
             return rewritten;
         }
@@ -1342,6 +1352,69 @@ impl<'arena> Engine<'arena>
             Node::Value(id) => Node::Value(self.arena.value_mark(mark, id)),
             Node::Computation(id) => Node::Computation(self.arena.computation_mark(mark, id)),
             Node::ValueType(_) | Node::CompType(_) => rewritten,
+        }
+    }
+
+    /// The bind a resumption of a suspended function runs, or the unit an
+    /// abandonment of one returns.
+    ///
+    /// # Specification
+    /// - requires: `id` is a computation of the arena whose children the walk
+    ///   has rewritten.
+    /// - ensures: `x ← M; N` for `resume(thunk(λx. N), M)`, the unit returned
+    ///   for `abandon(thunk(λx. N))`, and `id` for every other computation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`resume_through`].
+    /// - witness: `rewrite::tests::a_clause_resumes_through_its_continuation_2272`
+    #[spec(ensures: |ret| ret == id || self.arena.computation(ret).is_some())]
+    fn resumed(
+        &mut self,
+        id: ComputationId,
+    ) -> ComputationId
+    {
+        if let Some(&Computation::Resume(stack, fed)) = self.arena.computation(id)
+            && let Maybe::Present(body) = self.suspended_function(stack)
+        {
+            return self.arena.computation_bind(fed, body);
+        }
+        if let Some(&Computation::Abandon(stack)) = self.arena.computation(id)
+            && let Maybe::Present(_) = self.suspended_function(stack)
+        {
+            let unit = self.arena.value_unit();
+            return self.arena.computation_return(unit);
+        }
+        id
+    }
+
+    /// The body of the function `stack` suspends, `thunk(λx. N)`.
+    ///
+    /// # Specification
+    /// - ensures: `N` for `thunk(λx. N)`, and nothing for every other value.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`resume_through`].
+    /// - witness: `rewrite::tests::a_clause_resumes_through_its_continuation_2272`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(body) => self.arena.computation(body).is_some(),
+        | Maybe::Absent(()) => true,
+    })]
+    fn suspended_function(
+        &self,
+        stack: ValueId,
+    ) -> Maybe<ComputationId, ()>
+    {
+        if let Some(&Value::Thunk(suspended)) = self.arena.value(stack)
+            && let Some(&Computation::Lambda(body)) = self.arena.computation(suspended)
+        {
+            Maybe::Present(body)
+        }
+        else {
+            Maybe::Absent(())
         }
     }
 
@@ -1400,6 +1473,7 @@ impl<'arena> Engine<'arena>
             | Rewrite::Fill(..)
             | Rewrite::Solve(..)
             | Rewrite::Wrap
+            | Rewrite::Resumed
             | Rewrite::Environment
             | Rewrite::Rename
             | Rewrite::Abstract(..)
@@ -1705,7 +1779,7 @@ impl<'arena> Engine<'arena>
                     Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1)))
             },
-            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel | Rewrite::RaiseLinear(..) => {
+            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Resumed | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel | Rewrite::RaiseLinear(..) => {
                 ret == Occurrence::Answered(id)
             },
             | Rewrite::Environment => u32::from(index) >= depth.0 || ret == Occurrence::Answered(id),
@@ -1797,6 +1871,7 @@ impl<'arena> Engine<'arena>
             Rewrite::Fill(..)
             | Rewrite::Solve(..)
             | Rewrite::Wrap
+            | Rewrite::Resumed
             | Rewrite::Elaborate
             | Rewrite::Rename
             | Rewrite::Abstract(..)
@@ -6892,6 +6967,50 @@ pub fn instantiate_computation_traced(
     );
     report(&engine.memo, carried);
     match instantiated {
+        Node::Computation(id) => id,
+        Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => body,
+    }
+}
+
+/// Read a handler clause's resumptions through the continuation they resume:
+/// the clause's stack binder instantiated at the function `λx. continuation`,
+/// and each `resume(k, M)` of it then run as `x ← M; continuation`, each
+/// `abandon(k)` as the unit returned.
+///
+/// # Specification
+/// - requires: `body` is a computation of `arena` scoped beneath one binder,
+///   the stack a clause binds, in some context `Γ`; `continuation` is a
+///   computation of `arena` in `Γ` extended by the one value the stack is fed.
+/// - ensures: `body` with its binder replaced by `thunk(λx. continuation)` and
+///   every index outside it lowered by one, every resumption of that thunk read
+///   as the bind it runs and every abandonment of it as the unit returned; a
+///   use of the stack as a value stands as the thunk.
+/// - provides: a handler clause read at a term of its theory, the fine-grained
+///   contraction `handle.do` of Sieczkowski, Pyzik and Biernacki (2023) taken
+///   at that term's continuation.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a resumption, an abandonment, a use of the stack as a
+///   value and an index past the binder each read as stated.
+/// - witness: `rewrite::tests::a_clause_resumes_through_its_continuation_2272`
+#[spec(ensures: |ret| arena.computation(ret).is_some())]
+#[must_use]
+pub fn resume_through(
+    arena: &mut CoreArena,
+    body: ComputationId,
+    continuation: ComputationId,
+) -> ComputationId
+{
+    let function = arena.computation_lambda(continuation);
+    let function = arena.value_thunk(function);
+    let instantiated = Engine::new(arena).run(
+        Node::Computation(body),
+        Binders::NONE,
+        Rewrite::Substitute(function),
+    );
+    match Engine::new(arena).run(instantiated, Binders::NONE, Rewrite::Resumed) {
         Node::Computation(id) => id,
         Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => body,
     }

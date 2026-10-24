@@ -1,0 +1,63 @@
+// A handler over a theory with laws is checked as a model of it: each law,
+// read through the handler's clauses, converts on both sides. A handler that
+// passes the state along is a model of every law of global state; a constant
+// one, answering every read alike and forgetting every store, is a model
+// only of the laws that repeat a read or a store.
+
+// The theories `StatePutLaws`, `StateGetGet` and `StatePutPut`.
+import "./state.gandr" ;
+
+/// The state passed along: the answer is a function of the state, a read
+/// applies what runs after it at the state, and a store applies it at the
+/// stored value. Both sides of put-get store and continue at the stored
+/// value, and both sides of put-put continue at the second.
+@[ checks ]
+def counter() -> (Integer => Integer) {
+  handle st : StatePutLaws with sort S = Integer {
+    st.put(1);
+    run a <- st.get();
+    st.put(a + 1);
+    run b <- st.get();
+    pure fn (s : Integer) { pure b }
+  } with {
+    pure(x) => pure x,
+    oper get(k) => pure fn (s : Integer) { run g <- k(s); g(s) },
+    oper put(s, k) => pure fn (t : Integer) { run g <- k(unit); g(s) }
+  }
+}
+
+/// Whatever the state starts at, the second read sees the first's successor.
+@[ runs("2") ]
+def counted() -> Integer {
+  run f <- counter();
+  f(0)
+}
+
+/// Reading twice is reading once: every read answers four, so both sides of
+/// get-get continue at four twice.
+@[ runs("8") ]
+def readTwice() -> Integer {
+  handle st : StateGetGet with sort S = Integer {
+    run a <- st.get();
+    run b <- st.get();
+    pure a + b
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4)
+  }
+}
+
+/// Storing twice keeps the second value: every store is forgotten, so both
+/// sides of put-put continue once.
+@[ runs("3") ]
+def storeTwice() -> Integer {
+  handle st : StatePutPut with sort S = Integer {
+    st.put(1);
+    st.put(2);
+    pure 3
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => k(unit)
+  }
+}

@@ -500,6 +500,15 @@ pub enum Refusal
         /// The handler.
         at: Site,
     },
+    /// A capability scope over a theory is not shown to satisfy a law of the
+    /// theory.
+    HandlerUnlawful
+    {
+        /// The scope.
+        at: Site,
+        /// The law's rule, in the theory's order.
+        rule: gandr_kernel_term::RuleIndex,
+    },
     /// A capture has no enclosing answer delimiter.
     ShiftWithoutReset
     {
@@ -1419,6 +1428,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::EffectSignatureConflict { at, first, second } = matched_left_value && let Refusal::EffectSignatureConflict { at: projected, first: ref actual_first, second: ref actual_second } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && *actual_first == self.type_node(TypeNode::Computation(first)) && *actual_second == self.type_node(TypeNode::Computation(second)) }
  else if let CheckRefusal::UnknownOperation { at } = matched_left_value && let Refusal::UnknownOperation { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::HandlerCoverage { at } = matched_left_value && let Refusal::HandlerCoverage { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
+ else if let CheckRefusal::HandlerUnlawful { at, rule, .. } = matched_left_value && let Refusal::HandlerUnlawful { at: projected, rule: stored } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && stored == rule }
  else if let CheckRefusal::ShiftWithoutReset { at } = matched_left_value && let Refusal::ShiftWithoutReset { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::PathCode(at) = matched_left_value && let Refusal::PathCode(projected) = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::EndpointMismatch { at, left, right } = matched_left_value && let Refusal::EndpointMismatch { at: projected, left: projected_left, right: projected_right } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && projected_left == self.site(ArenaNode::Value(left)) && projected_right == self.site(ArenaNode::Value(right)) }
@@ -1645,6 +1655,10 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             CheckRefusal::HandlerCoverage { at } => Refusal::HandlerCoverage {
                 at: self.site(ArenaNode::Computation(at)),
+            },
+            CheckRefusal::HandlerUnlawful { at, rule, .. } => Refusal::HandlerUnlawful {
+                at: self.site(ArenaNode::Computation(at)),
+                rule,
             },
             CheckRefusal::ShiftWithoutReset { at } => Refusal::ShiftWithoutReset {
                 at: self.site(ArenaNode::Computation(at)),

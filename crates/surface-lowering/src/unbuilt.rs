@@ -240,6 +240,9 @@ pub enum Unbuilt
     CombinedSupply,
     /// A staged supply no declaration owns.
     UnownedSupply,
+    /// A capability scope over a theory no declaration owns, so no
+    /// declaration owes its laws.
+    UnownedScope,
     /// A method call whose declaration the collection does not carry.
     MethodCall,
     /// A manifest model type of a shape the lowering does not read.
@@ -270,7 +273,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 81_usize] = [
+    pub const ALL: [Self; 82_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -340,6 +343,7 @@ impl Unbuilt
         Self::RecordedMove,
         Self::CombinedSupply,
         Self::UnownedSupply,
+        Self::UnownedScope,
         Self::MethodCall,
         Self::ManifestModel,
         Self::ModelType,
@@ -446,6 +450,7 @@ impl Unbuilt
             Self::DialogueMove => "dialogue_move",
             Self::CombinedSupply => "instantiation_expression.combined",
             Self::UnownedSupply => "instantiation_expression.unowned",
+            Self::UnownedScope => "handle_expression.unowned",
             Self::MethodCall => "method_call",
             Self::ManifestModel => "manifest_type",
             Self::ModelType => "model_type",
@@ -549,6 +554,7 @@ impl Unbuilt
             | Self::DialogueMove
             | Self::CombinedSupply
             | Self::UnownedSupply
+            | Self::UnownedScope
             | Self::MethodCall
             | Self::ManifestModel
             | Self::ModelType

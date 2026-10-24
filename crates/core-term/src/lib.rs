@@ -205,6 +205,7 @@ pub mod description;
 pub mod effect;
 mod failure;
 pub mod generic;
+pub mod handler;
 pub mod hole;
 pub mod identity;
 mod import;

@@ -1,0 +1,22 @@
+/// `HandlerUnlawful`: a capability scope over a theory is not shown to satisfy one of the theory's laws, here a read after a store answering other than the stored value.
+@[ checks ]
+theory Stored {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+}
+
+@[ refuses("HandlerUnlawful") ]
+def forgetful() -> -F Integer {
+  handle st : Stored with sort S = Integer {
+    st.put(1);
+    run a <- st.get();
+    pure a
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => k(unit)
+  }
+}

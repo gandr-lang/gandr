@@ -6805,6 +6805,11 @@ where
             writer.tag(Tag(36));
             write_site(writer, at)?;
         },
+        Refusal::HandlerUnlawful { at, rule } => {
+            writer.tag(Tag(91));
+            write_site(writer, at)?;
+            writer.count(Count(usize::from(rule)))?;
+        },
         Refusal::ShiftWithoutReset { at } => {
             writer.tag(Tag(37));
             write_site(writer, at)?;
@@ -7393,6 +7398,7 @@ where
                     | Refusal::EffectSignatureConflict { .. } => 34,
                     | Refusal::UnknownOperation { .. } => 35,
                     | Refusal::HandlerCoverage { .. } => 36,
+                    | Refusal::HandlerUnlawful { .. } => 91,
                     | Refusal::ShiftWithoutReset { .. } => 37,
                     | Refusal::DependentStack { .. } => 38,
                     | Refusal::AbsentTupleComponent(_) => 39,
@@ -7871,6 +7877,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         36 => Refusal::HandlerCoverage {
             at: read_site(reader)?,
+        },
+        91 => Refusal::HandlerUnlawful {
+            at: read_site(reader)?,
+            rule: gandr_kernel_term::RuleIndex::from(reader.count()?.0),
         },
         37 => Refusal::ShiftWithoutReset {
             at: read_site(reader)?,
@@ -8450,6 +8460,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::AbsentTupleComponent(_)
             | Refusal::UnknownOperation { .. }
             | Refusal::HandlerCoverage { .. }
+            | Refusal::HandlerUnlawful { .. }
             | Refusal::ShiftWithoutReset { .. }
             | Refusal::DependentStack { .. }
             | Refusal::PathCode(_)

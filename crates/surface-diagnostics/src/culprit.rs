@@ -309,6 +309,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::MissingRecordField { .. } => "a required field is missing",
         CheckRefusal::UnknownOperation { .. } => "not an operation of the interface",
         CheckRefusal::HandlerCoverage { .. } => "not every operation once",
+        CheckRefusal::HandlerUnlawful { .. } => "not shown to satisfy a law of its theory",
         CheckRefusal::ShiftWithoutReset { .. } => "no enclosing reset",
         CheckRefusal::DependentStack { .. } => "its result type mentions the discharged value",
         CheckRefusal::EffectSignatureConflict { .. } => "effect rows that disagree",

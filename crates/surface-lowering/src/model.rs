@@ -761,6 +761,9 @@ pub enum InterfaceFault
     Unfixed,
     /// The carrier, which the manifest fixes: the handler's answer is.
     Fixed,
+    /// A law no handler's clauses read: one naming a constructor, an atom or
+    /// a variable outside the position its sort takes.
+    Law,
 }
 
 impl core::fmt::Display for InterfaceFault
@@ -789,6 +792,7 @@ impl core::fmt::Display for InterfaceFault
                 "is a sort the operations do not return, which the manifest leaves unfixed"
             },
             Self::Fixed => "is the sort the operations return, which the handler's answer fixes",
+            Self::Law => "is a law no handler's clauses read",
         })
     }
 }

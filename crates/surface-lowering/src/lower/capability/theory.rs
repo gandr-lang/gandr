@@ -10,7 +10,8 @@
 //! the reply, a value of each `R`. No value is the unit, one is its own type,
 //! and several are their tuple, as an exercise's arguments are. This is the
 //! correspondence between an algebraic operation `P × C^R → C` and the
-//! generic effect `P → T R` that performs it.
+//! generic effect `P → T R` that performs it. Each law of `T` is read over
+//! those operations ([`laws`]), for the scope to be checked as a model of it.
 //!
 //! # Examples
 //!
@@ -35,8 +36,14 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::ComponentCount;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
+use gandr_core_term::handler;
+use gandr_core_term::handler::Arity;
+use gandr_core_term::handler::ReadLaw;
+use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::RuleIndex;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperationKind;
@@ -64,9 +71,13 @@ pub(in crate::lower) struct TheoryInterface
     pub name: EffectName,
     /// Each operation, in the theory's order.
     pub operations: Vec<TheoryOperation>,
+    /// Each law, in the theory's order, read for the scope's clauses.
+    pub laws: Vec<TheoryLaw>,
     /// Each sort the scope's manifest fixes beside the node of the type it
     /// writes, in the order written.
     pub manifest: Vec<(Name, NodeIndex)>,
+    /// The declaration whose body holds the scope, which owes the laws.
+    pub owner: ConstantIndex,
 }
 
 impl TheoryInterface
@@ -102,6 +113,19 @@ pub(in crate::lower) struct TheoryOperation
     pub payload: Vec<NodeIndex>,
     /// The type of each value the continuation binds, in order.
     pub reply: Vec<NodeIndex>,
+}
+
+/// A law of a theory read for the clauses of a scope that handles it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::lower) struct TheoryLaw
+{
+    /// The law's place among the theory's rules.
+    pub rule: RuleIndex,
+    /// Its two sides, over its metavariables.
+    pub read: ReadLaw,
 }
 
 /// The operations of the theory `members` presents, read as an effect
@@ -162,6 +186,55 @@ pub(in crate::lower) fn operations(
         .iter()
         .map(|operation| {
             effect_operation(operation, carrier, fixed).map_err(|fault| (operation.named, fault))
+        })
+        .collect()
+}
+
+/// The laws of the theory `members` presents, each read for the clauses of a
+/// scope that answers `operations`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one law per law `members` presents, in order, at its place among
+///   the theory's rules, its sides read by [`handler::read_law`] over the
+///   payload and reply each operation's clause takes.
+/// - fails: the first law no handler's clauses read, beside its name tile and
+///   [`InterfaceFault::Law`].
+/// - panics: none.
+///
+/// # Errors
+/// The law no handler reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — put-get read over State's operations, and a law storing a
+///   constructor refused.
+/// - witness: `lower::capability::theory::tests::a_theory_s_laws_read_for_its_handler_2272`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |laws| laws.len() == members.laws.len()))]
+pub(in crate::lower) fn laws(
+    members: &Members,
+    operations: &[TheoryOperation],
+) -> Result<Vec<TheoryLaw>, (Placed, InterfaceFault)>
+{
+    let arities: BTreeMap<Name, Arity> = operations
+        .iter()
+        .map(|operation| {
+            (Name::from(operation.name.as_ref()), Arity {
+                payload: ComponentCount::from(operation.payload.len()),
+                reply: ComponentCount::from(operation.reply.len()),
+            })
+        })
+        .collect();
+    members
+        .laws
+        .iter()
+        .enumerate()
+        .map(|(place, law)| {
+            handler::read_law((&law.left, &law.right), |name| arities.get(name).copied())
+                .map(|read| TheoryLaw {
+                    rule: RuleIndex::from(place),
+                    read,
+                })
+                .map_err(|_unread| (law.named, InterfaceFault::Law))
         })
         .collect()
 }

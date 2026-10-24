@@ -538,6 +538,7 @@ mod formation;
 mod former;
 mod forward;
 mod funext;
+mod handler;
 mod judgement;
 mod ledger;
 mod loops;

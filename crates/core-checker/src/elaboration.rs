@@ -768,7 +768,8 @@ impl<'arena> Session<'arena>
         .ruled(entry.source.operation_rules().clone())
         .staged(entry.source.stages().to_vec())
         .supplied(entry.source.supplies().to_vec())
-        .resolving(entry.source.models().to_vec());
+        .resolving(entry.source.models().to_vec())
+        .obliged(entry.source.handler_laws().to_vec());
         if let Maybe::Present(stated) = entry.source.entry() {
             filled = filled.entered(stated.clone());
         }

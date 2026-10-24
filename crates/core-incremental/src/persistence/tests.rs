@@ -440,6 +440,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::EffectSignatureConflict { .. }) => "effect-signature-conflict",
         Typing::Refused(Refusal::UnknownOperation { .. }) => "unknown-operation",
         Typing::Refused(Refusal::HandlerCoverage { .. }) => "handler-coverage",
+        Typing::Refused(Refusal::HandlerUnlawful { .. }) => "handler-unlawful",
         Typing::Refused(Refusal::ShiftWithoutReset { .. }) => "shift-without-reset",
         Typing::Refused(Refusal::DependentStack { .. }) => "dependent-stack",
         Typing::Refused(Refusal::TypeMismatch { .. }) => "type-mismatch",

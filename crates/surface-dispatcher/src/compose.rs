@@ -3648,6 +3648,7 @@ impl gandr_surface_format::Elaborate for Elaborating
             && actual.laws() == module.laws(lowered)
             && actual.stages() == module.stages(lowered)
             && actual.supplies() == module.supplies(lowered)
+            && actual.handler_laws() == module.handler_laws(lowered)
             && actual.models() == module.models(lowered)
             && match lowered.outcome() {
                 DeclarationOutcome::Completed { declared_type, body } =>
@@ -3737,7 +3738,8 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
         .ruled(module.operation_rules(lowered))
         .staged(module.stages(lowered).to_vec())
         .supplied(module.supplies(lowered).to_vec())
-        .resolving(module.models(lowered).to_vec());
+        .resolving(module.models(lowered).to_vec())
+        .obliged(module.handler_laws(lowered).to_vec());
         declarations.push(match Entry::declared(module.worlds(lowered)) {
             Maybe::Present(entry) => declaration.entered(entry),
             Maybe::Absent(_) => declaration,

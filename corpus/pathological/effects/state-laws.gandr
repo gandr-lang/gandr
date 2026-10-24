@@ -1,0 +1,37 @@
+// A handler that does not satisfy a law of the theory it handles is refused
+// where it stands: put-get asks a read after a store to see the stored
+// value, and neither handler here lets it.
+
+// The theories `StatePutGet` and `StatePutLaws`.
+import "../../model/effects/state.gandr" ;
+
+/// Every read answers four whatever was stored, so put-get's left side
+/// continues at four and its right side at the stored value.
+@[ refuses("HandlerUnlawful") ]
+def forgetful() -> Integer {
+  handle st : StatePutGet with sort S = Integer {
+    st.put(1);
+    run a <- st.get();
+    pure a
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => k(unit)
+  }
+}
+
+/// A store adds the value to the state rather than replacing it, so a read
+/// after it sees the sum: put-get's left side continues at the sum and its
+/// right side at the stored value.
+@[ refuses("HandlerUnlawful") ]
+def accumulating() -> (Integer => Integer) {
+  handle st : StatePutLaws with sort S = Integer {
+    st.put(1);
+    run a <- st.get();
+    pure thunk { fn (s : Integer) { pure a } }
+  } with {
+    pure(x) => pure x,
+    oper get(k) => pure thunk { fn (s : Integer) { run g <- k(s); g(s) } },
+    oper put(s, k) => pure thunk { fn (t : Integer) { run g <- k(unit); g(s + t) } }
+  }
+}

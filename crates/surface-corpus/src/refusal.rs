@@ -452,6 +452,8 @@ pub enum RefusalName
     UnknownOperation,
     /// Handler clauses do not cover their interface exactly.
     HandlerCoverage,
+    /// A capability scope over a theory not shown to satisfy one of its laws.
+    HandlerUnlawful,
     /// A capture without an answer delimiter.
     ShiftWithoutReset,
     /// A stack frame's result depends on its discharged binder.
@@ -894,7 +896,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 213_usize] = [
+    pub const VOCABULARY: [Self; 214_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1054,6 +1056,7 @@ impl RefusalName
         Self::EffectSignatureConflict,
         Self::UnknownOperation,
         Self::HandlerCoverage,
+        Self::HandlerUnlawful,
         Self::ShiftWithoutReset,
         Self::DependentStack,
         Self::SessionMismatch,
@@ -1274,6 +1277,7 @@ impl RefusalName
         | (Self::StagesDisagree, b"StagesDisagree")
         | (Self::EffectSignatureConflict, b"EffectSignatureConflict")
         | (Self::UnknownOperation, b"UnknownOperation") | (Self::HandlerCoverage, b"HandlerCoverage")
+        | (Self::HandlerUnlawful, b"HandlerUnlawful")
         | (Self::ShiftWithoutReset, b"ShiftWithoutReset") | (Self::DependentStack, b"DependentStack")
         | (Self::EndpointMismatch, b"EndpointMismatch")
         | (Self::CompoundEndpoint, b"CompoundEndpoint")
@@ -1402,6 +1406,7 @@ impl RefusalName
             Self::StagesDisagree => "StagesDisagree",
             Self::UnknownOperation => "UnknownOperation",
             Self::HandlerCoverage => "HandlerCoverage",
+            Self::HandlerUnlawful => "HandlerUnlawful",
             Self::ShiftWithoutReset => "ShiftWithoutReset",
             Self::DependentStack => "DependentStack",
             Self::EffectSignatureConflict => "EffectSignatureConflict",
@@ -2255,6 +2260,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::EffectSignatureConflict { .. }), RefusalName::EffectSignatureConflict)
         | (Self::Checking(CheckRefusal::UnknownOperation { .. }), RefusalName::UnknownOperation)
         | (Self::Checking(CheckRefusal::HandlerCoverage { .. }), RefusalName::HandlerCoverage)
+        | (Self::Checking(CheckRefusal::HandlerUnlawful { .. }), RefusalName::HandlerUnlawful)
         | (Self::Checking(CheckRefusal::ShiftWithoutReset { .. }), RefusalName::ShiftWithoutReset)
         | (Self::Checking(CheckRefusal::DependentStack { .. }), RefusalName::DependentStack)
         | (Self::Checking(CheckRefusal::EndpointMismatch { .. }), RefusalName::EndpointMismatch)
@@ -2608,6 +2614,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::EffectSignatureConflict { .. }, RefusalName::EffectSignatureConflict)
         | (CheckRefusal::UnknownOperation { .. }, RefusalName::UnknownOperation)
         | (CheckRefusal::HandlerCoverage { .. }, RefusalName::HandlerCoverage)
+        | (CheckRefusal::HandlerUnlawful { .. }, RefusalName::HandlerUnlawful)
         | (CheckRefusal::ShiftWithoutReset { .. }, RefusalName::ShiftWithoutReset)
         | (CheckRefusal::DependentStack { .. }, RefusalName::DependentStack)
         | (CheckRefusal::EndpointMismatch { .. }, RefusalName::EndpointMismatch)
@@ -2732,6 +2739,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::MissingRecordField { .. } => RefusalName::MissingRecordField,
         CheckRefusal::UnknownOperation { .. } => RefusalName::UnknownOperation,
         CheckRefusal::HandlerCoverage { .. } => RefusalName::HandlerCoverage,
+        CheckRefusal::HandlerUnlawful { .. } => RefusalName::HandlerUnlawful,
         CheckRefusal::ShiftWithoutReset { .. } => RefusalName::ShiftWithoutReset,
         CheckRefusal::DependentStack { .. } => RefusalName::DependentStack,
         CheckRefusal::EffectSignatureConflict { .. } => RefusalName::EffectSignatureConflict,
