@@ -907,10 +907,12 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # The claim lifecycle (`.config/claims/decide.jq`, #1270) picks the claims
 # that come off. Each case in `.config/claims/cases.json` holds an input and
 # the removals it must give: a merge's `Advances` and closing targets, the
-# closed, tracking and epic sweep, 24 hours of silence, and an open pull
-# request that keeps a claim.
+# closed, tracking and epic sweep, 12 hours of silence, and an open pull
+# request that keeps a claim. Each case in `.config/claims/opening.json`
+# holds a branch and a body and the refusal `pr:open` prints for them, or
+# none (`opening.jq`, #2462): the body must work the branch's issue.
 ["check:claims"]
-description = "The claim lifecycle gives each recorded case its removals"
+description = "The claim lifecycle gives each recorded case its removals, and pr:open each body its refusal"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
@@ -925,8 +927,17 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/claims/cases.json)
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  got=$(jq .input <<< "$case" | jq -r -L .config/claims -f .config/claims/opening.jq)
+  want=$(jq -r .output <<< "$case")
+  if [[ "$got" != "$want" ]]; then
+    printf 'opening case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$name" "$got" "$want" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/claims/opening.json)
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals"
 '''
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each

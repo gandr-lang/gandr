@@ -1,0 +1,37 @@
+[
+  {
+    "name": "a branch's issue the body does not name refuses it, naming the line to add",
+    "input": { "branch": "triage-2341-probe", "body": "Counts the rows.\n\nRelated: #2341." },
+    "output": "the body names no `Advances` or `Closes` line for #2341, the issue `triage-2341-probe` names: add `Advances #2341` for a slice, or `Closes #2341` if it finishes the issue, then run `pr:open` again"
+  },
+  {
+    "name": "a body advancing the branch's issue opens",
+    "input": { "branch": "triage-2341-probe", "body": "Counts the rows.\n\nAdvances #2341" },
+    "output": ""
+  },
+  {
+    "name": "any closing keyword in any case opens",
+    "input": { "branch": "surface-2341-probe", "body": "fixes #2341" },
+    "output": ""
+  },
+  {
+    "name": "a body working another issue but not the branch's is refused",
+    "input": { "branch": "triage-2341-probe", "body": "Closes #2340" },
+    "output": "the body names no `Advances` or `Closes` line for #2341, the issue `triage-2341-probe` names: add `Advances #2341` for a slice, or `Closes #2341` if it finishes the issue, then run `pr:open` again"
+  },
+  {
+    "name": "the branch's number is read whole",
+    "input": { "branch": "triage-23410-probe", "body": "Advances #2341" },
+    "output": "the body names no `Advances` or `Closes` line for #23410, the issue `triage-23410-probe` names: add `Advances #23410` for a slice, or `Closes #23410` if it finishes the issue, then run `pr:open` again"
+  },
+  {
+    "name": "a branch with no issue opens a body working some issue",
+    "input": { "branch": "perf-index-sweep", "body": "Advances #7" },
+    "output": ""
+  },
+  {
+    "name": "a branch with no issue and a body working none is refused",
+    "input": { "branch": "perf-index-sweep", "body": "See #7 for the background." },
+    "output": "the body names no issue it works: add `Advances #n` for the issue the change advances, or `Closes #n` for one it finishes, then run `pr:open` again"
+  }
+]
