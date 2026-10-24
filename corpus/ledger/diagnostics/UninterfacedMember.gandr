@@ -1,0 +1,17 @@
+/// `UninterfacedMember`: a member of the theory a scope handles that it cannot read as an operation, here the value sort no manifest fixes.
+@[ checks ]
+theory Stored {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+}
+
+@[ refuses("UninterfacedMember") ]
+def unfixed() -> -F Integer {
+  handle st : Stored {
+    pure 1
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4)
+  }
+}

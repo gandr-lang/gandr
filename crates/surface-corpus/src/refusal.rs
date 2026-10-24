@@ -609,6 +609,9 @@ pub enum RefusalName
     /// A member of a description declaration the description route or its
     /// cell layer does not read, qualified by the fault.
     UndescribedMember(Tag),
+    /// A member of a theory a capability scope handles that cannot stand in
+    /// the effect interface the scope reads the theory as.
+    UninterfacedMember,
     /// A type family whose parameters disagree with the indices its kind
     /// states.
     FamilyTelescope,
@@ -885,7 +888,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 210_usize] = [
+    pub const VOCABULARY: [Self; 211_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -980,6 +983,7 @@ impl RefusalName
         Self::NotAFunctor,
         Self::ProjectionFromApplication,
         Self::UnreadAscription,
+        Self::UninterfacedMember,
         Self::FamilyTelescope,
         Self::LowercaseModuleName,
         Self::ImplicitTelescope,
@@ -1177,6 +1181,7 @@ impl RefusalName
         | (Self::UnreadAscription,
         b"UnreadAscription") | (Self::UnstatedComponent(_), b"UnstatedComponent") |
         (Self::UndescribedMember(_), b"UndescribedMember") |
+        (Self::UninterfacedMember, b"UninterfacedMember") |
         (Self::FamilyTelescope, b"FamilyTelescope") | (Self::LowercaseModuleName,
         b"LowercaseModuleName") |
         (Self::ImplicitTelescope, b"ImplicitTelescope") |
@@ -1511,6 +1516,7 @@ impl RefusalName
             Self::UnreadAscription => "UnreadAscription",
             Self::UnstatedComponent(_) => "UnstatedComponent",
             Self::UndescribedMember(_) => "UndescribedMember",
+            Self::UninterfacedMember => "UninterfacedMember",
             Self::FamilyTelescope => "FamilyTelescope",
             Self::LowercaseModuleName => "LowercaseModuleName",
             Self::ImplicitTelescope => "ImplicitTelescope",
@@ -2104,6 +2110,8 @@ impl Refusal<'_>
         RefusalName::UndescribedMember(_)) |
         (Self::Lowering(LoweringRefusal::FamilyTelescope { .. }),
         RefusalName::FamilyTelescope) |
+        (Self::Lowering(LoweringRefusal::UninterfacedMember { .. }),
+        RefusalName::UninterfacedMember) |
         (Self::Lowering(LoweringRefusal::LowercaseModuleName { .. }),
         RefusalName::LowercaseModuleName) |
         (Self::Lowering(LoweringRefusal::ImplicitTelescope { .. }),
@@ -2372,7 +2380,8 @@ impl Refusal<'_>
         RefusalName::UnreadAscription) | (LoweringRefusal::UnstatedComponent { .. },
         RefusalName::UnstatedComponent(_)) | (LoweringRefusal::UndescribedMember { .. },
         RefusalName::UndescribedMember(_)) | (LoweringRefusal::FamilyTelescope { .. },
-        RefusalName::FamilyTelescope) | (LoweringRefusal::LowercaseModuleName { .. },
+        RefusalName::FamilyTelescope) | (LoweringRefusal::UninterfacedMember { .. },
+        RefusalName::UninterfacedMember) | (LoweringRefusal::LowercaseModuleName { .. },
         RefusalName::LowercaseModuleName) | (LoweringRefusal::ImplicitTelescope { .. },
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
@@ -2469,6 +2478,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
             RefusalName::UndescribedMember(member_tag(fault))
         },
         LoweringRefusal::FamilyTelescope { .. } => RefusalName::FamilyTelescope,
+        LoweringRefusal::UninterfacedMember { .. } => RefusalName::UninterfacedMember,
         LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         LoweringRefusal::ImplicitTelescope { .. } => RefusalName::ImplicitTelescope,
         LoweringRefusal::TelescopeCycle { .. } => RefusalName::TelescopeCycle,

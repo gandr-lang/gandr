@@ -1,0 +1,43 @@
+// The twin of `model/effects/state-handler.gandr`: where a scope cannot take
+// a theory as its interface.
+
+// The theory `State`.
+import "../../model/effects/state.gandr" ;
+
+/// The stored sort left unfixed: `get` would reply a value of no type the
+/// scope knows, so `S` is the member the scope cannot read.
+@[ refuses("UninterfacedMember") ]
+def unfixed() -> Integer {
+  handle st : State {
+    st.get()
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => k(unit)
+  }
+}
+
+/// The carrier fixed: the carrier is what the scope answers, chosen by its
+/// clauses, so a manifest fixing it is refused at `C`.
+@[ refuses("UninterfacedMember") ]
+def carried() -> Integer {
+  handle st : State with sort S = Integer with sort C = Integer {
+    st.get()
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => k(unit)
+  }
+}
+
+/// A sort `State` does not declare, refused by its name.
+@[ refuses("UnresolvedName") ]
+def undeclared() -> Integer {
+  handle st : State with sort T = Integer {
+    pure 1
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => k(unit)
+  }
+}

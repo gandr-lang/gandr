@@ -1,0 +1,24 @@
+// A handler over a theory: the scope takes `State` as its interface, fixes
+// the stored sort `S` at `Integer` where it names the theory, and answers
+// each operation by a clause. The carrier `C` is what the scope answers;
+// `get` replies an integer to its continuation, and `put` sends one and is
+// replied the unit.
+
+// The theory `State`.
+import "./state.gandr" ;
+
+/// Reading always answers four, and storing is forgotten: the two reads
+/// answer four each, and the subject adds them and one.
+@[ runs("9") ]
+def constant() -> Integer {
+  handle st : State with sort S = Integer {
+    run a <- st.get();
+    st.put(a);
+    run b <- st.get();
+    pure a + b + 1
+  } with {
+    pure(x) => pure x,
+    oper get(k) => k(4),
+    oper put(s, k) => k(unit)
+  }
+}

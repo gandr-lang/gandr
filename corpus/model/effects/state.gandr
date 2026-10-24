@@ -10,6 +10,17 @@
 // Two of the laws in one theory overlap, and get-get overlaps itself through
 // its pattern; each pair joins in the second-order reading.
 
+/// The operations alone: reading the state of sort `S` into what runs after,
+/// and storing a value of it before what runs after. A handler answers each
+/// with the sort fixed (`state-handler.gandr`).
+@[ checks ]
+theory State {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+}
+
 /// Storing a value and then reading the state is storing it and continuing
 /// at it.
 @[ checks ]

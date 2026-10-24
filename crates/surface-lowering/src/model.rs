@@ -729,6 +729,70 @@ impl core::fmt::Display for ModelFault
     }
 }
 
+/// Why a theory's member cannot stand in the effect interface a capability
+/// scope handles the theory as.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each reason is distinct and names no source position; the refusal
+///   carrying it names the member.
+/// - executable: none — a fault is data a refusal carries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a theory refused at each fault, each asserted as the
+///   exact refusal.
+/// - witness: `lower::capability::theory::tests::each_member_out_of_shape_is_refused_by_its_fault_2272`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum InterfaceFault
+{
+    /// A member other than an operation returning the carrier, the one
+    /// unindexed sort every operation returns.
+    Carrier,
+    /// An operation whose last input is no continuation: a port at the
+    /// carrier, abstracting no atom, whose binders read sorts the manifest
+    /// fixes.
+    Continuation,
+    /// An operation one of whose inputs before its continuation is no value
+    /// of a sort the manifest fixes.
+    Payload,
+    /// A sort with an index telescope, which no one type fixes.
+    Indexed,
+    /// A sort other than the carrier that the manifest does not fix.
+    Unfixed,
+    /// The carrier, which the manifest fixes: the handler's answer is.
+    Fixed,
+}
+
+impl core::fmt::Display for InterfaceFault
+{
+    /// The reason, as a clause.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every fault renders a clause no other fault renders,
+    ///   so an empty or fixed text shows.
+    /// - witness: `model::tests::each_interface_fault_reads_as_its_own_clause`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match *self {
+            Self::Carrier => "is no operation returning the sort every operation returns",
+            Self::Continuation => "takes no continuation at that sort as its last input",
+            Self::Payload => "takes an input before its continuation at no sort the manifest fixes",
+            Self::Indexed => "is an indexed sort, which no one type fixes",
+            Self::Unfixed => {
+                "is a sort the operations do not return, which the manifest leaves unfixed"
+            },
+            Self::Fixed => "is the sort the operations return, which the handler's answer fixes",
+        })
+    }
+}
+
 /// One component of a model signature.
 ///
 /// # Specification

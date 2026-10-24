@@ -212,6 +212,7 @@ impl LoweringRefusal<'_>
             | Self::Unminted { .. } => matches!(ret, FailureClass::EngineFault),
             | Self::OutOfFragment { .. }
             | Self::UnstatedComponent { .. }
+            | Self::UninterfacedMember { .. }
             | Self::UndescribedMember { .. }
             | Self::WithoutK { .. }
             | Self::DirectedCell { .. }
@@ -314,6 +315,7 @@ impl LoweringRefusal<'_>
             | Self::NotAFunctor { .. }
             | Self::ProjectionFromApplication { .. }
             | Self::FamilyTelescope { .. }
+            | Self::UninterfacedMember { .. }
             | Self::LowercaseModuleName { .. }
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
@@ -751,7 +753,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 70_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 71_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -879,6 +881,11 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("assoc"),
                 fault: crate::model::ModelFault::Circuit,
+            },
+            LoweringRefusal::UninterfacedMember {
+                span: empty,
+                name: SurfaceName::from("put"),
+                fault: crate::model::InterfaceFault::Continuation,
             },
             LoweringRefusal::FamilyTelescope {
                 span: empty,
@@ -1075,6 +1082,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::MODEL_CIRCUIT),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

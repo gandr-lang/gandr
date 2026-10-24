@@ -218,6 +218,9 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
         LoweringRefusal::UndescribedMember { .. } => "a member the description does not read",
         LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
+        LoweringRefusal::UninterfacedMember { .. } => {
+            "a member the handler cannot read as an operation"
+        },
         LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
         LoweringRefusal::ImplicitTelescope { .. } => "an implicit out of shape",
         LoweringRefusal::TelescopeCycle { .. } => "parameters mentioning each other",
@@ -633,6 +636,9 @@ mod tests
             LoweringRefusal::UnstatedComponent { .. } => "the signature this model derives",
             LoweringRefusal::UndescribedMember { .. } => "a member the description does not read",
             LoweringRefusal::FamilyTelescope { .. } => "parameters its kind does not state",
+            LoweringRefusal::UninterfacedMember { .. } => {
+                "a member the handler cannot read as an operation"
+            },
             LoweringRefusal::LowercaseModuleName { .. } => "a lowercase initial",
             LoweringRefusal::ImplicitTelescope { .. } => "an implicit out of shape",
             LoweringRefusal::TelescopeCycle { .. } => "parameters mentioning each other",

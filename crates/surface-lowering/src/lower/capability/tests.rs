@@ -35,6 +35,7 @@ use crate::fixture::grammar;
 use crate::fixture::parsed;
 use crate::lower::LoweringBudget;
 use crate::lower::lower_module;
+use crate::model::InterfaceFault;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::namespace::Recognition;
@@ -796,6 +797,134 @@ fn a_scope_handles_its_capability_and_resumes()
         "{:?}",
         verdict_of(&module, &report, "quit".into())
     );
+}
+
+/// The theory `State`, its value sort `S` and its carrier `C`, as a handled
+/// scope reads it.
+const STATE: &str = concat!(
+    "theory State {\n",
+    "  sort S : Type+;\n",
+    "  sort C : Type;\n",
+    "  oper get : (k : pi+ (s : S) . C) --> C;\n",
+    "  oper put : (s : S, k : C) --> C;\n",
+    "}\n",
+);
+
+/// A scope handling `State` with `S` fixed at `Integer` lowers to one scope
+/// whose signature has a `get` sending nothing and replying an integer and a
+/// `put` sending an integer and replying nothing, and it checks. The
+/// exercises in its subject stand after the manifest's `Integer` in the tree,
+/// so the type is minted before them.
+#[test]
+fn a_scope_handles_a_theory_s_operations_2272()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        "{STATE}def constant() -> -F Integer {{ handle st : State with sort S = Integer {{ run a <- st.get(); st.put(a); run b <- st.get(); pure a + b + 1 }} with {{ pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let constant = tail_of(&module, &arena, "constant".into());
+    let Some(&Computation::Scope {
+        ref signature,
+        ref clauses,
+        ..
+    }) = arena.computation(constant)
+    else {
+        panic!("`handle` over a theory is a capability scope");
+    };
+    assert_eq!(signature.name().as_ref(), "State");
+    let integer = ValueType::Base(BaseType::Integer);
+    let operations: Vec<(&str, Option<&ValueType>, Option<&ValueType>)> = signature
+        .operations()
+        .map(|operation| {
+            (
+                operation.name.as_ref(),
+                arena.value_type(operation.payload),
+                arena.value_type(operation.reply),
+            )
+        })
+        .collect();
+    assert_eq!(
+        operations,
+        [
+            ("get", Some(&ValueType::unit()), Some(&integer)),
+            ("put", Some(&integer), Some(&ValueType::unit())),
+        ],
+        "`get` replies the fixed sort and `put` sends it"
+    );
+    let handled: Vec<&str> = clauses
+        .iter()
+        .map(|clause| clause.operation.as_ref())
+        .collect();
+    assert_eq!(handled, ["get", "put"], "one clause per operation");
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "constant".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "constant".into())
+    );
+}
+
+/// A scope's manifest fixes only the value sorts of the theory it handles,
+/// each once: a sort the theory does not declare, a sort fixed twice and a
+/// manifest on a host interface are refused by name, and a value sort left
+/// unfixed or a carrier fixed is refused as the member the scope cannot
+/// read as an operation.
+#[test]
+fn a_scope_s_manifest_names_only_its_theory_s_sorts_2272()
+{
+    let mut arena = CoreArena::new();
+    let handlers = "with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }";
+    let source = alloc::format!(
+        concat!(
+            "{state}",
+            "def undeclared() -> -F Integer {{ handle st : State with sort T = Integer {{ pure 1 }} {handlers} }}\n",
+            "def twice() -> -F Integer {{ handle st : State with sort S = Integer with sort S = Integer {{ pure 1 }} {handlers} }}\n",
+            "def hosted() -> -F Unit {{ handle c : Proc with sort S = Integer {{ pure unit }} with {{ pure(x) => pure x, oper exit(code, k) => k(unit) }} }}\n",
+            "def unfixed() -> -F Integer {{ handle st : State {{ pure 1 }} {handlers} }}\n",
+            "def carried() -> -F Integer {{ handle st : State with sort S = Integer with sort C = Integer {{ pure 1 }} {handlers} }}\n",
+        ),
+        state = STATE,
+        handlers = handlers,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for (name, sort) in [("undeclared", "T"), ("hosted", "S")] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name: refused, .. })
+                    if refused == SurfaceName::from(sort)
+            ),
+            "{name}: `{sort}` is no value sort of the interface: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
+    assert!(
+        matches!(
+            outcome_of(&module, "twice".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { name, .. })
+                if name == SurfaceName::from("S")
+        ),
+        "a manifest fixes a sort once: {:?}",
+        outcome_of(&module, "twice".into())
+    );
+    for (name, fault) in [
+        ("unfixed", InterfaceFault::Unfixed),
+        ("carried", InterfaceFault::Fixed),
+    ] {
+        assert!(
+            matches!(
+                outcome_of(&module, name.into()),
+                DeclarationOutcome::Refused(LoweringRefusal::UninterfacedMember { name: member, fault: refused, .. })
+                    if member == SurfaceName::from(if name == "unfixed" { "S" } else { "C" }) && refused == fault
+            ),
+            "{name}: {:?}",
+            outcome_of(&module, name.into())
+        );
+    }
 }
 
 /// A function stating a continuation's type resumes the continuation it is

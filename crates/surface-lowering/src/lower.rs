@@ -533,6 +533,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::effect::EffectSig;
 use gandr_core_term::identity::Relation;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::session::Protocol;
@@ -3408,6 +3409,9 @@ struct Lowerer<'run, 'source>
     presented: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The frame of every capability a capability scope binds.
     capabilities: BTreeSet<ScopeId>,
+    /// The theory each capability scope over one reads as its interface, by
+    /// the frame of the capability it binds.
+    theory_capabilities: BTreeMap<ScopeId, Arc<capability::TheoryInterface>>,
     /// The region each capability type written at a scope, a hold or a
     /// region binder lives in, by the capability type's node.
     regions: BTreeMap<NodeIndex, gandr_core_term::effect::capability::Region>,
@@ -3725,6 +3729,9 @@ struct Sink<'run>
     distributed: BTreeMap<ComputationId, Origin>,
     /// The host's interfaces, once a capability form has minted them.
     host: capability::Host,
+    /// The signature each capability scope over a theory handles, by the
+    /// scope's node, minted at the first form naming it.
+    theories: BTreeMap<NodeIndex, EffectSig>,
     /// Every fixpoint a loop minted, and each copy a match leaf made of one:
     /// the commuting walks into its body.
     loops: BTreeSet<ComputationId>,
@@ -4097,6 +4104,8 @@ struct SinkTables
     distributed: BTreeMap<ComputationId, Origin>,
     /// [`Sink::host`].
     host: capability::Host,
+    /// [`Sink::theories`].
+    theories: BTreeMap<NodeIndex, EffectSig>,
     /// [`Sink::loops`].
     loops: BTreeSet<ComputationId>,
     /// [`Sink::breaks`].
@@ -4120,6 +4129,7 @@ impl SinkTables
             exits: BTreeSet::new(),
             distributed: BTreeMap::new(),
             host: capability::Host::Unminted,
+            theories: BTreeMap::new(),
             loops: BTreeSet::new(),
             breaks: BTreeSet::new(),
             reholds: BTreeSet::new(),
@@ -4144,6 +4154,7 @@ impl<'run> Sink<'run>
             exits,
             distributed,
             host,
+            theories,
             loops,
             breaks,
             reholds,
@@ -4155,6 +4166,7 @@ impl<'run> Sink<'run>
             exits,
             distributed,
             host,
+            theories,
             loops,
             breaks,
             reholds,
@@ -4172,6 +4184,7 @@ impl<'run> Sink<'run>
             exits,
             distributed,
             host,
+            theories,
             loops,
             breaks,
             reholds,
@@ -4182,6 +4195,7 @@ impl<'run> Sink<'run>
             exits,
             distributed,
             host,
+            theories,
             loops,
             breaks,
             reholds,
@@ -4964,6 +4978,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             instance_types: BTreeMap::new(),
             instantiated: BTreeMap::new(),
             capabilities: BTreeSet::new(),
+            theory_capabilities: BTreeMap::new(),
             regions: BTreeMap::new(),
             resumptions: BTreeSet::new(),
             described_types: BTreeMap::new(),
@@ -22618,6 +22633,7 @@ mod tests
             breaks: super::BTreeSet::new(),
             reholds: super::BTreeSet::new(),
             identities: super::BTreeMap::new(),
+            theories: super::BTreeMap::new(),
         };
         lowerer.mint(&mut sink).unwrap();
         let [ref slot] = *lowerer.collected.slots

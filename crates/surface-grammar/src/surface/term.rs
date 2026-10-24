@@ -2909,7 +2909,8 @@ fn arm() -> Regex
 
 /// Build one clause of a capability scope: the return clause `pure(x) => e`,
 /// or an operation clause `oper op(p, k) => e` binding the payload and the
-/// resumption, or `oper op(p, b, k) => e` binding as well the buffer the
+/// resumption, `oper op(k) => e` binding the resumption of an operation that
+/// sends nothing, or `oper op(p, b, k) => e` binding as well the buffer the
 /// scope mints for an operation that replies one.
 ///
 /// Both clauses open on a keyword: `pure`, the returner's, and `oper`, the
@@ -2920,7 +2921,7 @@ fn arm() -> Regex
 /// # Specification
 /// - requires: nothing.
 /// - ensures: two alternatives, `pure ( identifier ) => E` and `oper identifier
-///   ( identifier , identifier [, identifier] ) => E`.
+///   ( identifier [, identifier [, identifier]] ) => E`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -2945,9 +2946,11 @@ fn handler_clause() -> Regex
             t(TileLabel("identifier")),
             t(TileLabel("(")),
             t(TileLabel("identifier")),
-            t(TileLabel(",")),
-            t(TileLabel("identifier")),
-            opt(seq([t(TileLabel(",")), t(TileLabel("identifier"))])),
+            opt(seq([
+                t(TileLabel(",")),
+                t(TileLabel("identifier")),
+                opt(seq([t(TileLabel(",")), t(TileLabel("identifier"))])),
+            ])),
             t(TileLabel(")")),
             t(TileLabel("=>")),
             h(Sort::Expression),
@@ -3997,15 +4000,18 @@ fn primary_expressions(
     ));
     out.push(case);
     // The capability scope `handle c : I { … } with { pure(x) => e, oper
-    // op(p, k) => e, … }`: a deep handler for the host interface `I` whose
-    // body is handed the capability `c` it introduces, the only form that
-    // brings a capability into a body's scope. The clauses follow the body:
-    // the return clause, spelled with the returner's own keyword `pure`,
-    // binds the body's result, and each operation clause, spelled with the
-    // keyword a signature declares an operation with, binds the operation's
-    // payload and its resumption. A clause is keyword-led after a `{` or `,`
-    // this rule owns, so no expression hole competes with it. The tree-sitter
-    // grammar has no handler, so the kind is in `PBG_ONLY_KINDS`.
+    // op(p, k) => e, … }`: a deep handler for the interface `I` whose body is
+    // handed the capability `c` it introduces, the only form that brings a
+    // capability into a body's scope. `I` is a host interface or a theory,
+    // whose value sorts follow it as a model type's do, `State with sort S =
+    // Integer`; the manifest's `with` is followed by `sort`, the clauses' by
+    // the body, so the two never compete. The clauses follow the body: the
+    // return clause, spelled with the returner's own keyword `pure`, binds the
+    // body's result, and each operation clause, spelled with the keyword a
+    // signature declares an operation with, binds the operation's payload and
+    // its resumption. A clause is keyword-led after a `{` or `,` this rule
+    // owns, so no expression hole competes with it. The tree-sitter grammar
+    // has no handler, so the kind is in `PBG_ONLY_KINDS`.
     out.push(r(
         RuleName("handle_expression"),
         Provenance("handle_expression"),
@@ -4016,6 +4022,13 @@ fn primary_expressions(
             t(TileLabel("identifier")),
             t(TileLabel(":")),
             t(TileLabel("type_identifier")),
+            repeat(seq([
+                t(TileLabel("with")),
+                t(TileLabel("sort")),
+                t(TileLabel("type_identifier")),
+                t(TileLabel("=")),
+                h(Sort::Type),
+            ])),
             block(),
             t(TileLabel("with")),
             t(TileLabel("{")),
