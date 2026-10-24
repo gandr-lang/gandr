@@ -1,7 +1,9 @@
-// An `else if` chain whose answer is written on a later rung alone. Where
-// nothing states its type the answer is not read yet (#2089), so the run
-// target is refused as not synthesisable.
+// An `else if` chain whose answer is written on a later rung alone. A rung's
+// written answer types that rung's case; the chain is the head's case, whose
+// head writes none, so where nothing states its type the run target is not
+// synthesisable (#2089).
 
-/// The answer written on the second rung only (#2089).
+/// The answer written on the second rung only: the chain's head answers
+/// nothing.
 @[ refuses("NotSynthesisable") ]
 if false { pure 0 } else if true -> -F Integer { pure 1 } else { pure 2 }

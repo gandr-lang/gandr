@@ -4876,3 +4876,53 @@ fn a_data_field_some_constructor_lacks_is_refused_1106()
         refusal_of(&module, SurfaceName::from("sizeOf"))
     );
 }
+
+/// #2089: a match that writes its answer has its root ascribed it, an
+/// integer test's case under its comparison's binder, so it synthesises where
+/// nothing states its type; a data case carries the answer as its motive
+/// alone.
+#[test]
+fn a_written_answer_ascribes_the_match_2089()
+{
+    let source = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef bound() -> \
+                  -F Integer {\n  run m <- case 3 -> -F Integer { 0 => pure 0, _ => pure 5 } ;\n  \
+                  pure (m + m)\n}\ndef counted(n : Nat) -> -F Nat {\n  run m <- case n -> -F Nat \
+                  { Zero => pure n, Succ(p) => pure p } ;\n  pure m\n}\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let bound = |name| {
+        let tail = tail_of(&arena, body_named(&module, SurfaceName::from(name)));
+        let Some(&Computation::Bind(matched, _)) = arena.computation(tail)
+        else {
+            panic!("`{name}` runs its match: {:?}", arena.computation(tail));
+        };
+        matched
+    };
+    let compared = bound("bound");
+    let Some(&Computation::Bind(_, case)) = arena.computation(compared)
+    else {
+        panic!(
+            "the integer test binds its comparison: {:?}",
+            arena.computation(compared)
+        );
+    };
+    assert!(
+        matches!(
+            arena.computation(case),
+            Some(&Computation::Ascribe { body, .. })
+                if matches!(arena.computation(body), Some(&Computation::Case { .. }))
+        ),
+        "the case under the comparison is ascribed the written answer: {:?}",
+        arena.computation(case)
+    );
+    let counted = bound("counted");
+    assert!(
+        matches!(
+            arena.computation(counted),
+            Some(&Computation::DataCase { .. })
+        ),
+        "a data case carries its answer as its motive alone: {:?}",
+        arena.computation(counted)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}

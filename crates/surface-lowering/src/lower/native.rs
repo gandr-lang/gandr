@@ -295,6 +295,7 @@ use gandr_core_term::Carried;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComponentCount;
+use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ConstructorTag;
 use gandr_core_term::CoreArena;
@@ -1463,6 +1464,10 @@ pub(super) struct CaseForm
     frame: Frame,
     /// The answer the motive is read from.
     answer: Maybe<Answer, answered::Absent>,
+    /// The answer written on the match itself, `case e -> C { … }`, which
+    /// the tree's root is ascribed; absent where only its position states
+    /// one.
+    ascribed: Maybe<Answer, answered::Absent>,
     /// Each constructor arm's body.
     bodies: Vec<NodeIndex>,
     /// The decision tree.
@@ -3670,13 +3675,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   no branches, the eliminator of the empty sum `Void`; otherwise the
     ///   match stands as a computation, its arms' patterns read and compiled to
     ///   a decision tree over the scrutinee, read as a value under the site's
-    ///   frame; the written answer is read where a result is read, and else the
-    ///   answer the position states is taken; each arm body is read as a
-    ///   computation under the case's frame, the tree's anonymous binders and
-    ///   its own variables, answers what the match does, and takes the paths
-    ///   through the match's position; a match on a recursive function's
-    ///   parameter records that parameter for its arm bodies
-    ///   ([`Self::scrutinise`]).
+    ///   frame; the written answer is read where a result is read and ascribes
+    ///   the tree's root, which a data switch or a dependent split takes as its
+    ///   motive instead, and else the answer the position states is taken; each
+    ///   arm body is read as a computation under the case's frame, the tree's
+    ///   anonymous binders and its own variables, answers what the match does,
+    ///   and takes the paths through the match's position; a match on a
+    ///   recursive function's parameter records that parameter for its arm
+    ///   bodies ([`Self::scrutinise`]).
     /// - provides: the reading of `case`.
     /// - fails: the wrong-sort refusal outside computation position; the view
     ///   form `case … with` by the view's name; a match of no arms as
@@ -3834,12 +3840,16 @@ impl<'source> Lowerer<'_, 'source>
                     }
             )
         });
-        let answer = match written {
+        let ascribed = match written {
             Maybe::Present(node) => Maybe::Present(Answer {
                 node: node.node,
                 frame,
                 over: Over::Written,
             }),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        let answer = match ascribed {
+            Maybe::Present(written) => Maybe::Present(written),
             Maybe::Absent(reason) => self
                 .answers
                 .get(&site.at.node)
@@ -3899,6 +3909,7 @@ impl<'source> Lowerer<'_, 'source>
             scrutinee: scrutinee.node,
             frame,
             answer,
+            ascribed,
             bodies: arms.iter().map(|&(_pattern, body)| body.node).collect(),
             tests,
             loops,
@@ -3964,12 +3975,16 @@ impl<'source> Lowerer<'_, 'source>
             self.plan(site, Plan::EmptyCase(scrutinee.node));
             return Ok(());
         };
-        let answer = match written {
+        let ascribed = match written {
             Maybe::Present(node) => Maybe::Present(Answer {
                 node: node.node,
                 frame,
                 over: Over::Written,
             }),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
+        let answer = match ascribed {
+            Maybe::Present(written) => Maybe::Present(written),
             Maybe::Absent(reason) => self
                 .answers
                 .get(&site.at.node)
@@ -3988,6 +4003,7 @@ impl<'source> Lowerer<'_, 'source>
             scrutinee: scrutinee.node,
             frame,
             answer,
+            ascribed,
             bodies: Vec::new(),
             tests: Vec::from([Test::Data {
                 level: TreeLevel::default(),
@@ -8488,8 +8504,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   arm's body the origin of what it copies, every other node the inserted
     ///   match origin, and the arms are recorded beside the root with the
     ///   scrutinee's value; a match whose first arm matches anything is that
-    ///   arm's body. Nothing when the scrutinee, a reached body or a needed
-    ///   answer did not lower.
+    ///   arm's body. A match that writes its answer has its root ascribed it,
+    ///   an integer test's case under the comparison's binder, but for a data
+    ///   case and a dependent split, whose motive is that answer. Nothing when
+    ///   the scrutinee, a reached body or a needed answer did not lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -8499,6 +8517,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::native::tests::literal_patterns_compare_and_branch`
     /// - witness: `lower::native::tests::a_pattern_hole_leaves_its_leaf_stuck`
     /// - witness: `lower::native::tests::a_match_keeps_its_patterns_beside_its_tree`
+    /// - witness: `lower::native::tests::a_written_answer_ascribes_the_match_2089`
     #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::Computation(_))))]
     pub(super) fn mint_case(
         &self,
@@ -8543,6 +8562,13 @@ impl<'source> Lowerer<'_, 'source>
             },
             Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
+        // The answer written on the match is its root's type: the motive's
+        // base, read where the match stands.
+        let ascription = match (form.ascribed, motive) {
+            (Maybe::Present(_), Maybe::Present((base, _gap))) => Maybe::Present(base),
+            (Maybe::Present(_), Maybe::Absent(reason)) => return Maybe::Absent(reason),
+            (Maybe::Absent(_), _) => Maybe::Absent(lowered::Absent::Unminted),
+        };
         let scrutinised = Scrutinised {
             scrutinee,
             outer: Depth(self.scope.telescope_binders(form.frame).count()),
@@ -8580,12 +8606,18 @@ impl<'source> Lowerer<'_, 'source>
                 .get(position)
                 .copied()
                 .unwrap_or(Maybe::Absent(refined::Absent::Unswitched));
+            let answered = if position == 0_usize {
+                ascription
+            }
+            else {
+                Maybe::Absent(lowered::Absent::Unminted)
+            };
             let id = mint_test(
                 test,
                 scrutinised,
                 &bodies,
                 &minted,
-                (read, at),
+                (read, at, answered),
                 sink,
                 &mut copies,
             );
@@ -9415,15 +9447,17 @@ fn abstracted(
 ///
 /// # Specification
 /// - requires: every child of `test` is minted in `minted` or absent; `read` is
-///   the motive [`tracked_motives`] read for this node, and `refined` the
-///   constructor [`refinements`] reads the node's scrutinee at.
+///   the motive [`tracked_motives`] read for this node, `refined` the
+///   constructor [`refinements`] reads the node's scrutinee at, and `answered`
+///   the answer the match writes, read where the node stands, for its root.
 /// - ensures: as [`Lowerer::mint_case`], for one node; a data case and a
 ///   dependent split read the read motive; a leaf under a refining root reads
 ///   the scrutinee's variable as the refined constructor over the root's
-///   fields; nothing when a child, the arm's body or a needed motive is absent.
-///   A leaf's copy of an exit or of a bind whose rest is distributed is
-///   recorded as its original is, and every copy a leaf makes is reported in
-///   `copies` beside its original.
+///   fields; any other node ascribed `answered`, an integer test's case under
+///   its comparison's binder; nothing when a child, the arm's body or a needed
+///   motive is absent. A leaf's copy of an exit or of a bind whose rest is
+///   distributed is recorded as its original is, and every copy a leaf makes is
+///   reported in `copies` beside its original.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -9438,9 +9472,10 @@ fn mint_test(
     scrutinised: Scrutinised,
     bodies: &[Maybe<ComputationId, lowered::Absent>],
     minted: &[Maybe<ComputationId, lowered::Absent>],
-    (read, refined): (
+    (read, refined, answered): (
         Maybe<CompTypeId, lowered::Absent>,
         Maybe<Refined, refined::Absent>,
+        Maybe<CompTypeId, lowered::Absent>,
     ),
     sink: &mut Sink<'_>,
     copies: &mut Vec<Carried>,
@@ -9454,7 +9489,10 @@ fn mint_test(
     };
     match *test {
         Test::Pending => Maybe::Absent(lowered::Absent::Unminted),
-        Test::Stuck(hole) => Maybe::Present(sink.arena.computation_hole(hole)),
+        Test::Stuck(hole) => {
+            let hole = sink.arena.computation_hole(hole);
+            Maybe::Present(answered_at(sink, hole, answered))
+        },
         Test::Absurd => {
             let Maybe::Present(motive) = read
             else {
@@ -9481,7 +9519,7 @@ fn mint_test(
                 && bindings.is_empty()
                 && matches!(refined, Maybe::Absent(_))
             {
-                return Maybe::Present(body);
+                return Maybe::Present(answered_at(sink, body, answered));
             }
             let mut environment =
                 Vec::with_capacity(bindings.len().saturating_add(scrutinised.outer.0));
@@ -9515,7 +9553,7 @@ fn mint_test(
                 TermId::Computation(substituted) => {
                     exits::mark_copies(sink, &carried);
                     copies.extend_from_slice(&carried);
-                    Maybe::Present(substituted)
+                    Maybe::Present(answered_at(sink, substituted, answered))
                 },
                 TermId::Value(_) => Maybe::Absent(lowered::Absent::Unminted),
             }
@@ -9565,7 +9603,8 @@ fn mint_test(
         } => match (child(yes), child(no)) {
             (Maybe::Present(left), Maybe::Present(right)) => {
                 let scrutinee = level_value(sink.arena, scrutinised, depth, level);
-                Maybe::Present(sink.arena.computation_case(scrutinee, &[left, right]))
+                let case = sink.arena.computation_case(scrutinee, &[left, right]);
+                Maybe::Present(answered_at(sink, case, answered))
             },
             _ => Maybe::Absent(lowered::Absent::Unminted),
         },
@@ -9593,6 +9632,15 @@ fn mint_test(
                 .computation_primitive(equal, Arguments::Binary([scrutinee, compared]));
             let answer = variable(sink.arena, Depth::default());
             let branched = sink.arena.computation_case(answer, &[left, right]);
+            // The case stands under the comparison's binder.
+            let answered = match answered {
+                Maybe::Present(ty) => Maybe::Present(
+                    gandr_core_term::shift_comp_type(sink.arena, ty, Binders::ONE)
+                        .settle(sink.arena),
+                ),
+                Maybe::Absent(reason) => Maybe::Absent(reason),
+            };
+            let branched = answered_at(sink, branched, answered);
             Maybe::Present(sink.arena.computation_bind(test, branched))
         },
         Test::Split {
@@ -9620,11 +9668,10 @@ fn mint_test(
                     body,
                 ));
             }
-            Maybe::Present(sink.arena.computation_split(
-                scrutinee,
-                ComponentCount::from(arity),
-                body,
-            ))
+            let split = sink
+                .arena
+                .computation_split(scrutinee, ComponentCount::from(arity), body);
+            Maybe::Present(answered_at(sink, split, answered))
         },
         Test::Record {
             level,
@@ -9644,7 +9691,7 @@ fn mint_test(
                     .computation_record_projection(record, label.clone());
                 body = sink.arena.computation_bind(projected, body);
             }
-            Maybe::Present(body)
+            Maybe::Present(answered_at(sink, body, answered))
         },
         Test::Sum {
             level,
@@ -9660,7 +9707,8 @@ fn mint_test(
                 lowered_branches.push(branch);
             }
             let scrutinee = level_value(sink.arena, scrutinised, depth, level);
-            Maybe::Present(sink.arena.computation_case(scrutinee, &lowered_branches))
+            let case = sink.arena.computation_case(scrutinee, &lowered_branches);
+            Maybe::Present(answered_at(sink, case, answered))
         },
         Test::List {
             level,
@@ -9670,10 +9718,40 @@ fn mint_test(
         } => match (child(nil), child(cell)) {
             (Maybe::Present(empty), Maybe::Present(cons)) => {
                 let scrutinee = level_value(sink.arena, scrutinised, depth, level);
-                Maybe::Present(sink.arena.computation_list_case(scrutinee, empty, cons))
+                let case = sink.arena.computation_list_case(scrutinee, empty, cons);
+                Maybe::Present(answered_at(sink, case, answered))
             },
             _ => Maybe::Absent(lowered::Absent::Unminted),
         },
+    }
+}
+
+/// `id`, a match's root, ascribed `answered` when the match writes its
+/// answer, and `id` itself otherwise.
+///
+/// # Specification
+/// - requires: `answered` is read where `id` stands.
+/// - ensures: the ascription of `id` to `answered` when present, else `id`.
+/// - provides: the one ascription a written answer gives a match's root.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Lowerer::mint_case`].
+/// - witness: `lower::native::tests::a_written_answer_ascribes_the_match_2089`
+#[spec(ensures: |ret| match answered {
+    | Maybe::Present(ty) => matches!(sink.arena.computation(ret), Some(&Computation::Ascribe { body, ty: written }) if body == id && written == ty),
+    | Maybe::Absent(_) => ret == id,
+})]
+fn answered_at(
+    sink: &mut Sink<'_>,
+    id: ComputationId,
+    answered: Maybe<CompTypeId, lowered::Absent>,
+) -> ComputationId
+{
+    match answered {
+        Maybe::Present(ty) => sink.arena.computation_ascribe(id, ty),
+        Maybe::Absent(_) => id,
     }
 }
 

@@ -1,7 +1,8 @@
-// An `if` whose written answer disagrees with its arms. Where nothing states
-// its type the answer is not read yet (#2089), so the run target is refused
-// as not synthesisable before its arms meet the answer.
+// An `if` whose written answer disagrees with its arms. The case is ascribed
+// the answer it writes, so each arm is checked against that answer and the
+// first that disagrees is refused where it stands (#2089).
 
-/// `-> -F String` written over integer arms (#2089).
-@[ refuses("NotSynthesisable") ]
+/// `-> -F String` written over integer arms: `1` is refused as no `String`
+/// (#2089).
+@[ refuses("TypeMismatch") ]
 if true -> -F String { pure 1 } else { pure 2 }

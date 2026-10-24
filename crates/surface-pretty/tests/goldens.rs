@@ -6299,3 +6299,40 @@ fn a_placed_buffer_is_written_by_its_bind_s_name()
         ))
     );
 }
+
+/// A sum case and a split ascribed their answer write it after the scrutinee,
+/// `case a -> -F Integer { … }`, the match that writes its answer lowering to
+/// that ascription, from the arena as from its content (#2089).
+#[test]
+fn an_ascribed_case_writes_its_answer_2089()
+{
+    let mut core = CoreArena::new();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let one = integer(&mut core, Sign::NonNegative, Written("1"));
+    let two = integer(&mut core, Sign::NonNegative, Written("2"));
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let returns_integer = core.comp_type_returner(integer_type);
+    let pure_one = core.computation_return(one);
+    let pure_two = core.computation_return(two);
+    let case = core.computation_case(bound, &[pure_one, pure_two]);
+    let answered_case = core.computation_ascribe(case, returns_integer);
+    let analysed = core.computation_lambda(answered_case);
+    let split = core.computation_split(bound, ComponentCount::from(2_usize), pure_one);
+    let answered_split = core.computation_ascribe(split, returns_integer);
+    let opened = core.computation_lambda(answered_split);
+    let source = CoreSource::new(&core, &[]);
+    for (root, expected) in [
+        (
+            analysed,
+            "fn (a) { case a -> -F Integer { +{.0 = b} => 1, +{.1 = b} => 2 } }",
+        ),
+        (opened, "fn (a) { case a -> -F Integer { #{b, c} => 1 } }"),
+    ] {
+        agrees(&core, &[], CoreNode::Computation(root));
+        assert_eq!(
+            spelled(&source, Root::Computation(CoreNode::Computation(root))),
+            faithful(Written(expected)),
+            "{expected}"
+        );
+    }
+}

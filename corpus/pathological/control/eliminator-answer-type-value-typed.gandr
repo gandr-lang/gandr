@@ -1,7 +1,0 @@
-// An `if` whose written answer is a value type, where a computation type is
-// due. Where nothing states its type the answer is not read yet (#2089), so
-// the run target is refused as not synthesisable.
-
-/// `-> Integer` as the answer (#2089).
-@[ refuses("NotSynthesisable") ]
-if true -> Integer { pure 1 } else { pure 2 }

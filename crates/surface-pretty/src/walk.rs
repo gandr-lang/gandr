@@ -1639,13 +1639,14 @@ enum Surface
 ///   computation that writes itself — an annotation, a binder's type, a typed
 ///   bind's result — where the expression grammar embeds a type, and for a
 ///   static abstraction's body, which the grammar reads as a type; `surface`
-///   itself otherwise. A quote, a nested or returned computation and an elided
-///   ascription write nothing of their own, so their slot is read as they are;
-///   a type former's value slot is read as the type is, since every type
-///   application reads its arguments in the type's own sort and a path or a
-///   flow whose endpoints are codes is over a universe, which reads them as
-///   types. A call reads its own head and arguments as expressions, which
-///   [`Walk::visit`] schedules itself.
+///   itself otherwise. A quote, a nested or returned computation and an
+///   ascription, elided or written as the match that answers it, write nothing
+///   of their own around a slot, so their slot is read as they are; a type
+///   former's value slot is read as the type is, since every type application
+///   reads its arguments in the type's own sort and a path or a flow whose
+///   endpoints are codes is over a universe, which reads them as types. A call
+///   reads its own head and arguments as expressions, which [`Walk::visit`]
+///   schedules itself.
 /// - provides: whether a quote in the slot stands where an expression reads.
 /// - fails: never.
 /// - panics: none.
@@ -4326,14 +4327,16 @@ where
     Some(chosen)
 }
 
-/// Whether a data case writes its motive, `case n -> C { … }`.
+/// Whether a case writes its type, `case n -> C { … }`: a data case its
+/// motive, and a sum case, a split or a list case the answer it is ascribed.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Motive
 {
-    /// `case n -> C { … }`: nothing else states the case's type.
+    /// `case n -> C { … }`: nothing else states the case's type, or the case
+    /// is ascribed it.
     Written,
     /// `case n { … }`: its position states the type, or the motive names
     /// the scrutinee its binder stands for, which no written motive can.
@@ -6168,6 +6171,47 @@ impl Walk<'_, '_>
         Some((value, result))
     }
 
+    /// The former of the eliminator `body`, when an ascription over it writes
+    /// its answer: a sum case, a split or a list case.
+    ///
+    /// # Specification
+    /// - requires: nothing; `source` may be malformed.
+    /// - ensures: `body`'s former when it reads as a sum case, a split or a
+    ///   list case; none when it reads as anything else or the walk's remaining
+    ///   visits run out first. The read is one visit spent.
+    /// - provides: the shape the lowering gives a match or a conditional that
+    ///   writes its answer, `case s -> C { … }` and `if c -> C { … }`, which
+    ///   the printer spells back with that answer.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ascribed sum case, split and list case each spell
+    ///   with their answer, and an ascription over any other computation stands
+    ///   as its body.
+    /// - witness: `tests::goldens::an_ascribed_case_writes_its_answer_2089`
+    #[spec(
+        captures: [entry = self.remaining],
+        ensures: |ref ret| self.remaining <= entry
+            && (ret.is_none() || self.remaining.checked_add(1_u32) == Some(entry)),
+    )]
+    fn answered_case<'source, S>(
+        &mut self,
+        source: &'source S,
+        body: S::Node,
+    ) -> Option<Former<'source, S::Node>>
+    where
+        S: Source + ?Sized,
+    {
+        self.remaining = self.remaining.checked_sub(1_u32)?;
+        let former = source.read(body);
+        matches!(
+            former,
+            Former::Case { .. } | Former::Split { .. } | Former::ListCase { .. }
+        )
+        .then_some(former)
+    }
+
     /// Whether `node` is written with a head no expression reads as the type:
     /// a session type standing at a receive `?A. S`, a selection `+{…}` or an
     /// offer `&{…}`; a sum or a lazy product, written between braces or, in
@@ -6607,26 +6651,28 @@ impl Walk<'_, '_>
     ///   the closing of the binders it stands under; a former spelled by parts
     ///   pushes its parts as [`Self::form`] builds them, a `for` loop's
     ///   application and a threading loop's among them, and so does a return
-    ///   ascribed its returner where no pass ends, over its value and type; any
-    ///   other ascription outside a typed bind pushes its body's visit alone,
-    ///   noted as elided; a static application schedules its spine as
-    ///   [`Self::spine`] does and any other application its call as
-    ///   [`Self::call`] does, under `become` where it ends a loop's pass; a
-    ///   decode, a quote, a returner where the body ends, a nested computation,
-    ///   a returned value and a reset where a body ends push their child's
-    ///   visit alone, so the child's piece is theirs, the reset's child inside
-    ///   the body it delimits; there, in a handler's subject, a shift over a
-    ///   returner where a body or a pass ends is `return v`, the stack's binder
-    ///   unwritten; the loop's own binder forced at the end of a pass, or
-    ///   applied to what the pass hands on, finishes as `continue`, a returner
-    ///   ending a pass is `break(v)` or `return v` and a loop ending a pass is
-    ///   written with its rest, as [`Self::pass_end`] reads them, and a
-    ///   computation the end of a pass cannot write is noted as the fixpoint's
-    ///   notation; a returner anywhere else is `pure v` and a run `run c`; a
-    ///   projection out of a forced variable naming a context binder is the
-    ///   observation `a.i`, the binder's name its one piece; a decode of a
-    ///   positional projection, which the type grammar writes no spelling of,
-    ///   is noted as the printer's notation.
+    ///   ascribed its returner where no pass ends, over its value and type, and
+    ///   a sum case, a split or a list case ascribed its answer, over the
+    ///   eliminator's slots with the answer after the scrutinee; any other
+    ///   ascription outside a typed bind pushes its body's visit alone, noted
+    ///   as elided; a static application schedules its spine as [`Self::spine`]
+    ///   does and any other application its call as [`Self::call`] does, under
+    ///   `become` where it ends a loop's pass; a decode, a quote, a returner
+    ///   where the body ends, a nested computation, a returned value and a
+    ///   reset where a body ends push their child's visit alone, so the child's
+    ///   piece is theirs, the reset's child inside the body it delimits; there,
+    ///   in a handler's subject, a shift over a returner where a body or a pass
+    ///   ends is `return v`, the stack's binder unwritten; the loop's own
+    ///   binder forced at the end of a pass, or applied to what the pass hands
+    ///   on, finishes as `continue`, a returner ending a pass is `break(v)` or
+    ///   `return v` and a loop ending a pass is written with its rest, as
+    ///   [`Self::pass_end`] reads them, and a computation the end of a pass
+    ///   cannot write is noted as the fixpoint's notation; a returner anywhere
+    ///   else is `pure v` and a run `run c`; a projection out of a forced
+    ///   variable naming a context binder is the observation `a.i`, the
+    ///   binder's name its one piece; a decode of a positional projection,
+    ///   which the type grammar writes no spelling of, is noted as the
+    ///   printer's notation.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -7537,6 +7583,17 @@ impl Walk<'_, '_>
                 })]));
                 None
             },
+            // A sum case, a split or a list case ascribed its answer is the
+            // match that writes it, `case s -> C { … }`: its slots are the
+            // eliminator's, the answer after the scrutinee.
+            Former::Ascription { body, ty }
+                if let Some(eliminator) = self.answered_case(source, body) =>
+            {
+                let mut read = children(source, body, &eliminator, admits, self.bodies);
+                read.insert(1_usize, Slot::of(ty, Admits::CompType, Binds::NONE));
+                shaped = Some(read);
+                Some(self.form(source, node, &former, admits))
+            },
             // A returned value ascribed its returner, `(return v : -F T)`, is
             // the annotated value the source wrote, `(v : T)`, under the
             // return its position writes. Any other ascription outside a
@@ -7546,8 +7603,8 @@ impl Walk<'_, '_>
                 dylint_lib = "quenchant_dylints",
                 expect(
                     answer_totality,
-                    reason = "the surface writes an ascription only in a typed bind and over a \
-                              returned value: elsewhere it stands as its body"
+                    reason = "the surface writes an ascription only on a match, in a typed bind \
+                              and over a returned value: elsewhere it stands as its body"
                 )
             )]
             Former::Ascription { body, .. } => match self.ascribed_return(source, node) {
@@ -9176,52 +9233,9 @@ impl Walk<'_, '_>
                     .body();
                 Binding::Prefix
             },
-            Former::Case { arity, .. } => {
-                let _ = parts
-                    .text("case ")
-                    .piece(Binding::Prefix)
-                    .text(" {")
-                    .part(Part::Open);
-                for index in 0_usize .. usize::from(arity) {
-                    let _ = parts
-                        .separated(Component::from(index))
-                        .text(format!("+{{.{index} = "))
-                        .part(Part::Binder(0_usize))
-                        .text("} => ")
-                        .piece(Binding::Arrow);
-                }
-                let _ = parts.part(Part::Close);
-                writes(
-                    Production("case_expression"),
-                    writes(
-                        Production("labelled_sum_pattern"),
-                        writes(Production("identifier.pattern"), Binding::Prefix),
-                    ),
-                )
-            },
-            Former::Split { arity, .. } => {
-                let _ = parts
-                    .text("case ")
-                    .piece(Binding::Prefix)
-                    .text(" {")
-                    .part(Part::Open);
-                let pattern = if usize::from(arity) == 0_usize {
-                    let _ = parts.text("unit");
-                    writes(Production("unit.pattern"), Binding::Prefix)
-                }
-                else {
-                    let _ = parts
-                        .text("#{")
-                        .binders(Arity(usize::from(arity)))
-                        .text("}");
-                    writes(
-                        Production("telescope_pattern"),
-                        writes(Production("identifier.pattern"), Binding::Prefix),
-                    )
-                };
-                let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
-                writes(Production("case_expression"), pattern)
-            },
+            Former::Case { .. } | Former::Split { .. } | Former::ListCase { .. } => self
+                .eliminator(&mut parts, former, Motive::Left)
+                .unwrap_or(Binding::Prefix),
             Former::DataCase { motive, arity, .. } => {
                 let _ = parts.text("case ").piece(Binding::Prefix);
                 if case_motive(source, motive, admits) == Motive::Written {
@@ -9298,24 +9312,6 @@ impl Walk<'_, '_>
                 self.note(Unspelled::Notation(Notation::ListFold));
                 let _ = parts
                     .text("fold ")
-                    .piece(Binding::Prefix)
-                    .text(" {")
-                    .part(Part::Open)
-                    .text("nil => ")
-                    .piece(Binding::Arrow)
-                    .text(",")
-                    .part(Part::Line)
-                    .text("cons(")
-                    .binders(Arity(2_usize))
-                    .text(") => ")
-                    .piece(Binding::Arrow)
-                    .part(Part::Close);
-                Binding::Prefix
-            },
-            Former::ListCase { .. } => {
-                self.note(Unspelled::Notation(Notation::ListCase));
-                let _ = parts
-                    .text("case ")
                     .piece(Binding::Prefix)
                     .text(" {")
                     .part(Part::Open)
@@ -9554,26 +9550,32 @@ impl Walk<'_, '_>
                 let _ = parts.text("migrate [").text(world).text("] {").body();
                 writes(Production("migrate_expression"), Binding::Prefix)
             },
-            // `(return v : -F T)`, its value and type shaped by the visit:
-            // bare where a body ends, which takes the return, and under a
-            // `pure` anywhere else.
-            Former::Ascription { .. } => {
-                let returned = !matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated));
-                if returned {
-                    let _ = parts.text("pure ");
-                }
-                let _ = parts
-                    .text("(")
-                    .piece(Binding::Arrow)
-                    .text(" : ")
-                    .piece(Binding::Arrow)
-                    .text(")");
-                if returned {
-                    writes(Production("pure_expression"), Binding::Prefix)
-                }
-                else {
-                    writes(Production("parenthesized_expression"), Binding::Atom)
-                }
+            // A sum case, a split or a list case ascribed its answer, `case s
+            // -> C { … }`; otherwise `(return v : -F T)`, its value and type
+            // shaped by the visit: bare where a body ends, which takes the
+            // return, and under a `pure` anywhere else.
+            Former::Ascription { body, .. } => {
+                let answered = source.read(body);
+                self.eliminator(&mut parts, &answered, Motive::Written)
+                    .unwrap_or_else(|| {
+                        let returned =
+                            !matches!(admits, Admits::Computation(Tail::Ends | Tail::Unstated));
+                        if returned {
+                            let _ = parts.text("pure ");
+                        }
+                        let _ = parts
+                            .text("(")
+                            .piece(Binding::Arrow)
+                            .text(" : ")
+                            .piece(Binding::Arrow)
+                            .text(")");
+                        if returned {
+                            writes(Production("pure_expression"), Binding::Prefix)
+                        }
+                        else {
+                            writes(Production("parenthesized_expression"), Binding::Atom)
+                        }
+                    })
             },
             // `(v : T)`, the annotation the source wrote; `(true : Bool)` for an
             // ascribed truth value.
@@ -9670,6 +9672,106 @@ impl Walk<'_, '_>
         let pieces = Arity(parts.pieces);
         self.forms.push(parts.parts);
         Join::Form { pieces, binding }
+    }
+
+    /// The parts of the eliminator `former`, written with its answer when
+    /// `answer` is [`Motive::Written`]: `case s -> C { … }`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `former` may be any former.
+    /// - ensures: for a sum case `case v { +{.i = a} => c, … }`, one arm per
+    ///   branch; for a split `case v { #{a, b} => c }`, or `case v { unit => c
+    ///   }` binding nothing; for a list case `case l { nil => …, cons(x, t) =>
+    ///   … }`, noted as the printer's notation; each with ` -> ` and the
+    ///   answer's piece after the scrutinee's when the answer is written. None
+    ///   for any other former, `parts` unchanged.
+    /// - provides: the one spelling an eliminator and its ascription to its
+    ///   answer share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a sum case, a split and a list case each spell with
+    ///   their answer when ascribed it and without it otherwise.
+    /// - witness: `tests::goldens::an_ascribed_case_writes_its_answer_2089`
+    #[spec(ensures: |ret| ret.is_some() == matches!(*former, Former::Case { .. } | Former::Split { .. } | Former::ListCase { .. }))]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            answer_totality,
+            reason = "a list case has no syntax the grammar admits: it is written in the \
+                      printer's notation, noted as such"
+        )
+    )]
+    fn eliminator<N>(
+        &mut self,
+        parts: &mut Parts,
+        former: &Former<'_, N>,
+        answer: Motive,
+    ) -> Option<Binding>
+    {
+        let head = |parts: &mut Parts| {
+            let _ = parts.text("case ").piece(Binding::Prefix);
+            if answer == Motive::Written {
+                let _ = parts.text(" -> ").piece(Binding::Prefix);
+            }
+            let _ = parts.text(" {").part(Part::Open);
+        };
+        if let Former::Case { arity, .. } = *former {
+            head(parts);
+            for index in 0_usize .. usize::from(arity) {
+                let _ = parts
+                    .separated(Component::from(index))
+                    .text(format!("+{{.{index} = "))
+                    .part(Part::Binder(0_usize))
+                    .text("} => ")
+                    .piece(Binding::Arrow);
+            }
+            let _ = parts.part(Part::Close);
+            return Some(writes(
+                Production("case_expression"),
+                writes(
+                    Production("labelled_sum_pattern"),
+                    writes(Production("identifier.pattern"), Binding::Prefix),
+                ),
+            ));
+        }
+        if let Former::Split { arity, .. } = *former {
+            head(parts);
+            let pattern = if usize::from(arity) == 0_usize {
+                let _ = parts.text("unit");
+                writes(Production("unit.pattern"), Binding::Prefix)
+            }
+            else {
+                let _ = parts
+                    .text("#{")
+                    .binders(Arity(usize::from(arity)))
+                    .text("}");
+                writes(
+                    Production("telescope_pattern"),
+                    writes(Production("identifier.pattern"), Binding::Prefix),
+                )
+            };
+            let _ = parts.text(" => ").piece(Binding::Arrow).part(Part::Close);
+            return Some(writes(Production("case_expression"), pattern));
+        }
+        let Former::ListCase { .. } = *former
+        else {
+            return None;
+        };
+        self.note(Unspelled::Notation(Notation::ListCase));
+        head(parts);
+        let _ = parts
+            .text("nil => ")
+            .piece(Binding::Arrow)
+            .text(",")
+            .part(Part::Line)
+            .text("cons(")
+            .binders(Arity(2_usize))
+            .text(") => ")
+            .piece(Binding::Arrow)
+            .part(Part::Close);
+        Some(Binding::Prefix)
     }
 
     /// Combines the finished pieces a join takes into one.
