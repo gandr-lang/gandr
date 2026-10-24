@@ -277,6 +277,7 @@ use crate::rules::Settled;
 use crate::rules::Spines;
 use crate::rules::Step;
 use crate::rules::Subgoal;
+use crate::rules::absorbed_eliminations;
 use crate::rules::other;
 use crate::rules::plan;
 use crate::rules::spine_subgoals;
@@ -1486,9 +1487,10 @@ where
     /// - ensures: when the memo holds a support agreeing with `sides` at
     ///   `level`, the process recorded under it, and nothing is started;
     ///   otherwise a pending goal with no frozen constant and an empty chain —
-    ///   two heads compared from `level`, or two closures opened at `level` on
-    ///   their opening channels and compared one binder deeper — recorded under
-    ///   its support as a memo entry. The null memo starts every goal.
+    ///   two heads compared from `level`, two closures opened at `level` on
+    ///   their opening channels and compared one binder deeper, or one closure
+    ///   so opened against a head in hand — recorded under its support as a
+    ///   memo entry. The null memo starts every goal.
     /// - provides: process re-sharing, at the two places a goal is started
     ///   fresh: the root and a decomposition's premises.
     /// - fails: [`ConversionFault::Domain`] for a node that does not resolve,
@@ -1515,7 +1517,7 @@ where
     /// - witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`
     #[spec(
         ensures: |ret| (ret.as_ref().is_ok_and(|id| self.processes.get(id.0).is_some()) || ret.is_err())
-            && (!matches!(sides, SupportSides::Opened(_, _) | SupportSides::OpenedUnder(..))
+            && (!matches!(sides, SupportSides::Opened(_, _) | SupportSides::OpenedUnder(..) | SupportSides::OpenedBeside(..))
             || u32::from(level) != u32::MAX || ret.is_err())
     )]
     fn start_fresh(
@@ -1566,6 +1568,22 @@ where
                 Goal {
                     left: Slot::Waiting(left),
                     right: Slot::Waiting(right),
+                    depth: deeper,
+                    frozen: Frozen::default(),
+                    chain: Chain::default(),
+                    next: Next::Classify,
+                }
+            },
+            SupportSides::OpenedBeside(side, closure, head) => {
+                let deeper = deeper(level)?;
+                let opened = Slot::Waiting(self.open_channel(closure, level, Opening::One)?);
+                let (left, right) = match side {
+                    ConversionSide::Left => (opened, Slot::Ready(head)),
+                    ConversionSide::Right => (Slot::Ready(head), opened),
+                };
+                Goal {
+                    left,
+                    right,
                     depth: deeper,
                     frozen: Frozen::default(),
                     chain: Chain::default(),
@@ -3022,6 +3040,22 @@ where
                         depth,
                     )
                 },
+                Subgoal::Bound {
+                    side,
+                    held,
+                    continuation,
+                } => {
+                    let variable = self.variable(goal.depth)?;
+                    let applied = self.continued(held, variable)?;
+                    (
+                        SupportSides::OpenedBeside(
+                            other(side),
+                            continuation,
+                            Glued::Computation(applied),
+                        ),
+                        goal.depth,
+                    )
+                },
                 Subgoal::Projected {
                     side,
                     neutral,
@@ -3311,18 +3345,20 @@ where
         }
     }
 
-    /// The first elimination of `held` applied to `variable`: the
-    /// continuation of the bind the kernel reads over a held endpoint an
-    /// elimination inspects.
+    /// The eliminations of `held` before its first bind applied to `variable`:
+    /// the continuation of the bind the kernel reads over a held endpoint an
+    /// elimination inspects, `E[c] ⇝ c to x. E[x]` with `E` the elimination
+    /// context up to that bind.
     ///
     /// # Specification
     /// - requires: `variable` is fresh at the parent goal's depth.
     /// - ensures: a stuck computation whose head is `variable` and whose spine
-    ///   is `held`'s first elimination alone.
-    /// - provides: one side of [`Subgoal::Continued`].
+    ///   is the first part of `held`'s by [`absorbed_eliminations`].
+    /// - provides: one side of [`Subgoal::Continued`] and the held side of
+    ///   [`Subgoal::Bound`].
     /// - fails: [`ConversionFault::Domain`] for a dangling node,
-    ///   [`ConversionFault::MachineInvariant`] when `held` has an empty spine
-    ///   or `variable` is no neutral.
+    ///   [`ConversionFault::MachineInvariant`] when `held`'s spine starts with
+    ///   a bind or is empty, or `variable` is no neutral.
     /// - panics: none.
     ///
     /// # Errors
@@ -3330,28 +3366,45 @@ where
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two applications of one fixpoint at one held call
-    ///   compare their fixpoints at the bound variable, as the kernel compares
-    ///   the binds' continuations; applying the whole spine there would compare
-    ///   the arguments past the gate twice.
+    ///   compare their fixpoints and the arguments past the gate at the bound
+    ///   variable, as the kernel compares the binds' continuations, and refute
+    ///   at the argument apart; a forced, applied endpoint compares with a bind
+    ///   whose continuation forces and applies its variable.
     /// - witness: `machine::tests::two_held_eliminations_of_one_call_compare_by_their_parts_879`
+    /// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|continued|
         matches!(self.domain.computation(*continued), Some(&DomainComp::Neutral { neutral, .. })
-            if self.domain.neutral(neutral).is_some_and(|node| node.spine().len() == 1_usize))))]
+            if self.domain.neutral(neutral).is_some_and(|node| Some(node.spine().len())
+                == self.domain.neutral(held).map(|node| absorbed_eliminations(node.spine()).0.len())))))]
     fn continued(
         &mut self,
         held: NeutralId,
         variable: DomainValueId,
     ) -> Result<DomainCompId, ConversionFault>
     {
-        let first = *self
-            .domain
-            .neutral(held)
-            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
-            .spine()
-            .first()
-            .ok_or(ConversionFault::MachineInvariant)?;
-        let fresh = self.neutral_of(Glued::Value(variable))?;
-        let grown = extend_spine(self.domain, fresh, first).map_err(ConversionFault::Evaluation)?;
+        let count = absorbed_eliminations(
+            self.domain
+                .neutral(held)
+                .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+                .spine(),
+        )
+        .0
+        .len();
+        if count == 0 {
+            return Err(ConversionFault::MachineInvariant);
+        }
+        let mut grown = self.neutral_of(Glued::Value(variable))?;
+        for position in 0 .. count {
+            let elimination = *self
+                .domain
+                .neutral(held)
+                .ok_or(ConversionFault::Domain(DomainFault::Dangling))?
+                .spine()
+                .get(position)
+                .ok_or(ConversionFault::MachineInvariant)?;
+            grown = extend_spine(self.domain, grown, elimination)
+                .map_err(ConversionFault::Evaluation)?;
+        }
         Ok(self.domain.comp_neutral(grown, CompTermFace::Reduced))
     }
 

@@ -231,10 +231,23 @@ pub enum Subgoal
         CompClosureId,
         gandr_core_term::ComponentCount,
     ),
-    /// The first eliminations of two neutrals headed by returned endpoints,
-    /// each applied to one fresh variable: the continuations of the binds the
-    /// kernel reads over the endpoints' calls.
+    /// The eliminations of two neutrals headed by returned endpoints up to
+    /// their first binds, each applied to one fresh variable: the
+    /// continuations of the binds the kernel reads over the endpoints' calls.
     Continued(NeutralId, NeutralId),
+    /// A bind's continuation, opened under one fresh variable, against the
+    /// eliminations up to the first bind of a neutral headed by the returned
+    /// endpoint of the bound call, applied to that variable.
+    Bound
+    {
+        /// The side the neutral headed by the returned endpoint stands on;
+        /// the continuation is on the other.
+        side: ConversionSide,
+        /// The neutral headed by the returned endpoint.
+        held: NeutralId,
+        /// The bind's continuation.
+        continuation: CompClosureId,
+    },
     /// A tuple's component or a record's field against the same projection
     /// of a neutral: η, the neutral read as the tuple or record of its own
     /// projections.
@@ -1781,10 +1794,12 @@ enum Term
 /// closures by their environments, where the machine opens them under one
 /// fresh variable. Two computations that eliminate held endpoints over calls
 /// of one head decompose as the kernel reads them, a bind over each call:
-/// the calls' spines, the first eliminations under one fresh variable, then
-/// the eliminations past them. A held endpoint against any other side
-/// declines, since its spine is a computation's, which a decomposition would
-/// compare against the other side's term rather than its call.
+/// the calls' spines, the eliminations up to the first binds under one fresh
+/// variable, then the eliminations past them; so does a held elimination
+/// against a bind written over a call of the same head. A held endpoint
+/// against any other side declines, since its spine is a computation's, which
+/// a decomposition would compare against the other side's term rather than
+/// its call.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1792,11 +1807,13 @@ enum Term
 ///   [`Settled::Convertible`] when the walk finds the sides identical or
 ///   structurally equal; otherwise [`Step::Returned`] when both sides are
 ///   values that are returned endpoints with empty spines, the decomposition
-///   [`held_eliminations`] gives for two computations it answers, and an
-///   [`DeclineReason::Indeterminate`] decline for the rest.
+///   [`held_eliminations`] or else [`held_against_bind`] gives for two
+///   computations one of them answers, and an [`DeclineReason::Indeterminate`]
+///   decline for the rest.
 /// - provides: the comparison of a held endpoint against its own call, of two
-///   held endpoints whose calls differ only beneath a binder, and of two held
-///   eliminations of one call whose operands differ.
+///   held endpoints whose calls differ only beneath a binder, of two held
+///   eliminations of one call whose operands differ, and of a held elimination
+///   against a bind over its call.
 /// - fails: as the walk.
 /// - panics: none.
 ///
@@ -1808,19 +1825,23 @@ enum Term
 ///   convert and the kernel replays the shared comparison; two endpoints over
 ///   transports whose motives close over different environments convert by
 ///   their computations; two applications of one fixpoint at one held call, one
-///   argument unfolded on one side only, convert by their parts; an endpoint
-///   and a different value decline rather than settle apart.
+///   argument unfolded on one side only, convert by their parts; a bind over a
+///   stuck call converts with the call's endpoint forced and applied as its
+///   continuation does; an endpoint and a different value decline rather than
+///   settle apart.
 /// - witness: `machine::tests::a_bind_over_a_stuck_call_reads_through_its_continuation_369`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
 /// - witness: `machine::tests::two_held_transports_convert_by_their_computations`
 /// - witness: `machine::tests::two_held_eliminations_of_one_call_compare_by_their_parts_879`
+/// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
 #[spec(ensures: |ret| match ret.as_ref().map(Option::as_ref) {
     Ok(None) => !matches!(heads, (Neutrality::Neutral(_, Head::Held), _) | (_, Neutrality::Neutral(_, Head::Held))),
     Ok(Some(plan)) => matches!(*plan, Plan::Shared(Settled::Convertible) | Plan::Decline(DeclineReason::Indeterminate))
         || (*plan == Plan::Step(Step::Returned) && matches!(term, Term::Values(left, right)
             if matches!((returned(domain, left), returned(domain, right)), (Ok(Some(_)), Ok(Some(_))))))
         || matches!((plan, term), (Plan::Decompose(subgoals), Term::Comps(left, right))
-            if held_eliminations(core, domain, left, right).is_ok_and(|held| held.as_ref() == Some(subgoals))),
+            if held_eliminations(core, domain, left, right).is_ok_and(|held| held.as_ref() == Some(subgoals))
+                || held_against_bind(core, domain, left, right).is_ok_and(|bound| bound.as_ref() == Some(subgoals))),
     Err(_) => true,
 })]
 fn whole(
@@ -1852,8 +1873,11 @@ fn whole(
             {
                 Plan::Step(Step::Returned)
             },
-            Term::Comps(left, right) => held_eliminations(core, domain, left, right)?
-                .map_or(Plan::Decline(DeclineReason::Indeterminate), Plan::Decompose),
+            Term::Comps(left, right) => match held_eliminations(core, domain, left, right)? {
+                Some(subgoals) => Plan::Decompose(subgoals),
+                None => held_against_bind(core, domain, left, right)?
+                    .map_or(Plan::Decline(DeclineReason::Indeterminate), Plan::Decompose),
+            },
             Term::Values(..) => Plan::Decline(DeclineReason::Indeterminate),
         },
     }))
@@ -1864,11 +1888,11 @@ fn whole(
 /// over its call.
 ///
 /// The kernel runs a returned endpoint an elimination inspects first, `E[c]
-/// ⇝ c to x. E[x]`, so each side reads as its call's spine, a bind whose
-/// continuation is the first elimination over the bound variable, and the
-/// eliminations past it. The decomposition compares the calls' spines, the
-/// first eliminations under one fresh variable, and the eliminations past
-/// them, in that order.
+/// ⇝ c to x. E[x]`, `E` the whole elimination context up to the nearest bind,
+/// so each side reads as its call's spine and a bind whose continuation is
+/// every elimination over the bound variable. The decomposition compares the
+/// calls' spines, then the eliminations under one fresh variable, in that
+/// order.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -1878,7 +1902,8 @@ fn whole(
 ///   one kind on both sides, both endpoints' computations are neutrals over one
 ///   head that is no returned endpoint, and the calls' spines and the
 ///   eliminations past the first agree by [`eliminations_subgoals`]; the
-///   subgoals are the calls', then [`Subgoal::Continued`], then the rest's.
+///   subgoals are the calls', then [`Subgoal::Continued`], then the
+///   eliminations from each side's first bind on.
 /// - provides: the premises of two held eliminations of one call.
 /// - fails: [`ConversionFault::Domain`] when a node does not resolve.
 /// - panics: none.
@@ -1940,7 +1965,12 @@ fn held_eliminations(
     else {
         return Ok(None);
     };
-    let Spines::Agree(past) = eliminations_subgoals(core, domain, left_past, right_past)?
+    let (left_inside, left_outside) = absorbed_eliminations(left_past);
+    let (right_inside, right_outside) = absorbed_eliminations(right_past);
+    let (Spines::Agree(_inside), Spines::Agree(outside)) = (
+        eliminations_subgoals(core, domain, left_inside, right_inside)?,
+        eliminations_subgoals(core, domain, left_outside, right_outside)?,
+    )
     else {
         return Ok(None);
     };
@@ -1948,8 +1978,129 @@ fn held_eliminations(
         left_held.elimination,
         right_held.elimination,
     ));
+    subgoals.extend(outside);
+    Ok(Some(subgoals))
+}
+
+/// The decomposition of a bind over a call against a held elimination of the
+/// same call, in the order the kernel's replay reads both as binds over it.
+///
+/// The kernel reads the held elimination `E[⟨c⟩]` as `c to x. E[x]`, `E` up
+/// to its first bind, so it compares with the bind `c' to y. N` written over
+/// a call of the same head as two binds: the calls' spines, then `N` against
+/// `E[x]` under one fresh variable, then the eliminations past the two binds.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` exactly when one side is a held elimination by
+///   [`held_elimination`] and the other is not, the other is a neutral over the
+///   held call's head whose spine continues past the call's length with a bind,
+///   and the calls' spines and the eliminations past each side's first bind
+///   agree by [`eliminations_subgoals`]; the subgoals are the calls', then
+///   [`Subgoal::Bound`], then the eliminations past the binds.
+/// - provides: the premises of a bind written over a call against an
+///   elimination of that call's returned endpoint.
+/// - fails: [`ConversionFault::Domain`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ConversionFault::Domain`] — a node does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a bind over a stuck call whose continuation forces and
+///   applies the bound value converts with the call's endpoint forced and
+///   applied, at the root and under a binder, and the kernel replays the
+///   decomposition; a continuation that applies to another argument refutes
+///   there.
+/// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
+#[spec(ensures: |ret| ret.as_ref().ok().and_then(Option::as_ref).is_none_or(|subgoals|
+    subgoals.iter().filter(|subgoal| matches!(**subgoal, Subgoal::Bound { .. })).count() == 1))]
+fn held_against_bind(
+    core: &CoreArena,
+    domain: &DomainArena,
+    left: DomainCompId,
+    right: DomainCompId,
+) -> Result<Option<Vec<Subgoal>>, ConversionFault>
+{
+    let dangling = ConversionFault::Domain(DomainFault::Dangling);
+    let (side, held, bound) = match (
+        held_elimination(domain, left)?,
+        held_elimination(domain, right)?,
+    ) {
+        (Some(held), None) => (ConversionSide::Left, held, right),
+        (None, Some(held)) => (ConversionSide::Right, held, left),
+        (Some(_), Some(_)) | (None, None) => return Ok(None),
+    };
+    let DomainComp::Neutral { neutral: bound, .. } = *domain.computation(bound).ok_or(dangling)?
+    else {
+        return Ok(None);
+    };
+    let bound = domain.neutral(bound).ok_or(dangling)?;
+    let call = domain.neutral(held.call).ok_or(dangling)?;
+    let eliminations = domain.neutral(held.elimination).ok_or(dangling)?;
+    if bound.head() != call.head() {
+        return Ok(None);
+    }
+    let Some((prefix, rest)) = bound.spine().split_at_checked(call.spine().len())
+    else {
+        return Ok(None);
+    };
+    let Some((&Elimination::Bind(continuation), after)) = rest.split_first()
+    else {
+        return Ok(None);
+    };
+    let (_, outside) = absorbed_eliminations(eliminations.spine());
+    let (calls, past) = match side {
+        ConversionSide::Left => (
+            eliminations_subgoals(core, domain, call.spine(), prefix)?,
+            eliminations_subgoals(core, domain, outside, after)?,
+        ),
+        ConversionSide::Right => (
+            eliminations_subgoals(core, domain, prefix, call.spine())?,
+            eliminations_subgoals(core, domain, after, outside)?,
+        ),
+    };
+    let (Spines::Agree(mut subgoals), Spines::Agree(past)) = (calls, past)
+    else {
+        return Ok(None);
+    };
+    subgoals.push(Subgoal::Bound {
+        side,
+        held: held.elimination,
+        continuation,
+    });
     subgoals.extend(past);
     Ok(Some(subgoals))
+}
+
+/// A held elimination's spine split where the kernel's replay stops moving it
+/// under the bind it reads over the endpoint's call: the eliminations before
+/// the first bind, and the rest from that bind on.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the two parts concatenate to `spine`, the first holds no bind,
+///   and the second is empty or starts with one.
+/// - provides: the continuation [`Subgoal::Continued`] and [`Subgoal::Bound`]
+///   apply, and the eliminations compared past it.
+/// - fails: none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`held_against_bind`]: the eliminations before the
+///   bind are compared under the binder, the ones from it on outside.
+/// - witness: `machine::tests::a_held_elimination_compares_with_a_bind_over_its_call_2326`
+#[spec(ensures: |ret| spine.split_at_checked(ret.0.len()) == Some(ret)
+    && !ret.0.iter().any(|elimination| matches!(*elimination, Elimination::Bind(_)))
+    && ret.1.first().is_none_or(|elimination| matches!(*elimination, Elimination::Bind(_))))]
+pub fn absorbed_eliminations(spine: &[Elimination]) -> (&[Elimination], &[Elimination])
+{
+    spine.split_at(
+        spine
+            .iter()
+            .position(|elimination| matches!(*elimination, Elimination::Bind(_)))
+            .unwrap_or(spine.len()),
+    )
 }
 
 /// A computation that eliminates a held endpoint: its neutral, and the call
@@ -1970,7 +2121,8 @@ struct HeldElimination
 /// - ensures: `Some` exactly when `computation` is a neutral headed by a
 ///   returned endpoint whose first elimination inspects its operand, and the
 ///   endpoint's computation is a neutral headed by no returned endpoint.
-/// - provides: one side of [`held_eliminations`].
+/// - provides: one side of [`held_eliminations`], and the held side of
+///   [`held_against_bind`].
 /// - fails: [`ConversionFault::Domain`] when a node does not resolve.
 /// - panics: none.
 ///

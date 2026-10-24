@@ -3986,6 +3986,78 @@ fn a_continuation_handing_its_stuck_call_to_a_definition_reads_as_that_call_761(
 }
 
 #[test]
+fn a_held_elimination_compares_with_a_bind_over_its_call_2326()
+{
+    // `S to f. force f ()` against `force ⟨S⟩ ()` for the stuck call `S`:
+    // `bound(k, s)` against `apply(k(s), s)` unfolded, in miniature, and the
+    // same two under a binder for the argument, as `agree` compares them. The
+    // kernel reads the forced endpoint as `S to x. force x ()`, so both sides
+    // are binds over `S`: they compare by the calls, then the continuations
+    // under one fresh variable. A continuation that applies the bound value
+    // to a pair refutes at that argument. Before, every pair declined.
+    let build = || {
+        let mut core = CoreArena::new();
+        let stuck = stuck_call(&mut core);
+        let unit = core.value_unit();
+        let pair = core.value_tuple(&[unit, unit]);
+        let bound_variable = innermost(&mut core);
+        let argument = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let endpoint = core.value_returned(stuck);
+        let bind_applying = |core: &mut CoreArena, applied| {
+            let forced = core.computation_force(bound_variable);
+            let continuation = core.computation_application(forced, applied);
+            core.computation_bind(stuck, continuation)
+        };
+        let forced = core.computation_force(endpoint);
+        let at_unit = bind_applying(&mut core, unit);
+        let held_at_unit = core.computation_application(forced, unit);
+        let under = bind_applying(&mut core, argument);
+        let under = core.computation_lambda(under);
+        let held_under = core.computation_application(forced, bound_variable);
+        let held_under = core.computation_lambda(held_under);
+        let at_pair = bind_applying(&mut core, pair);
+        let converting = [
+            Sides::Computations(at_unit, held_at_unit),
+            Sides::Computations(held_at_unit, at_unit),
+            Sides::Computations(under, held_under),
+        ];
+        let refuting = Sides::Computations(at_pair, held_at_unit);
+        (core, converting, refuting)
+    };
+    let (core, converting, refuting) = build();
+    let read = World::new(core, &[]);
+    let (core, ..) = build();
+    let held = World::new(core, &[]).holding();
+
+    for world in [&read, &held] {
+        for sides in converting {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(
+                MachineVerdict::Convertible,
+                verdict,
+                "the bind and the forced endpoint compare as binds over `S`: {decisions:?}"
+            );
+            assert_eq!(
+                KernelVerdict::Convertible,
+                world.replayed(sides, verdict, &decisions),
+                "the kernel decomposes the same binds: {decisions:?}"
+            );
+        }
+        let (verdict, decisions) = world.traced(refuting);
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            verdict,
+            "a continuation applying to a pair refutes: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::NotConvertible,
+            world.replayed(refuting, verdict, &decisions),
+            "and the kernel refutes at the same argument: {decisions:?}"
+        );
+    }
+}
+
+#[test]
 fn two_held_eliminations_of_one_call_compare_by_their_parts_879()
 {
     // `⟨g ⟨S⟩ ⟨unit⟩⟩` against `⟨g ⟨S⟩ ()⟩` for the stuck call `S`, the

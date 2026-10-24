@@ -118,6 +118,7 @@ use gandr_kernel_check_memo::DigestWord;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::OrderedMemo;
+use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_term::ConstantIndex;
 
 use crate::arena::CompClosureId;
@@ -165,6 +166,10 @@ pub enum SupportSides
         CompClosureId,
         gandr_core_term::ComponentCount,
     ),
+    /// A closure on the named side, to be opened under the fresh variable at
+    /// the support's level, against a weak head in hand on the other that
+    /// mentions that variable.
+    OpenedBeside(ConversionSide, CompClosureId, Glued),
 }
 
 /// The whole input of a goal the machine starts fresh: its sides and the
@@ -174,8 +179,8 @@ pub struct GoalSupport
 {
     /// The sides compared.
     sides: SupportSides,
-    /// For two heads, the first binder level neither mentions; for two
-    /// closures, the level they are opened at.
+    /// For two heads, the first binder level neither mentions; for a closure,
+    /// the level it is opened at.
     level: BinderLevel,
     /// The digest folded from the sides' content and the level.
     digest: ContentDigest,
@@ -217,8 +222,8 @@ impl GoalSupport
     /// - ensures: a support that agrees with another exactly when both name the
     ///   same sides at the same level, with a digest folded from the sides'
     ///   content: a rigid side's guard, a flexible neutral's polarity and head,
-    ///   a flexible former's polarity, and the level.
-    /// - provides: the key the machine recalls and records a fresh goal under.
+    ///   a flexible former's polarity, a closure as opened or entered, and the
+    ///   level.
     /// - fails: [`ConversionFault::Domain`] for a node that does not resolve.
     /// - panics: none.
     ///
@@ -237,6 +242,7 @@ impl GoalSupport
         let resolving = match sides {
             SupportSides::Heads(left, right) => side_content(domain, left).is_ok() && side_content(domain, right).is_ok(),
             SupportSides::Opened(left, right) | SupportSides::Closed(left, right) | SupportSides::OpenedUnder(left, right, _) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
+            SupportSides::OpenedBeside(_, closure, head) => domain.comp_closure(closure).is_some() && side_content(domain, head).is_ok(),
         };
         if resolving { ret.as_ref().is_ok_and(|support| support.sides == sides && support.level == level) }
         else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) }
@@ -253,6 +259,16 @@ impl GoalSupport
                 let right = side_content(domain, right)?;
                 (left, right)
             },
+            SupportSides::OpenedBeside(side, closure, head) => {
+                domain
+                    .comp_closure(closure)
+                    .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+                let head = side_content(domain, head)?;
+                match side {
+                    ConversionSide::Left => (SideContent::Opened, head),
+                    ConversionSide::Right => (head, SideContent::Opened),
+                }
+            },
             SupportSides::Opened(left, right)
             | SupportSides::Closed(left, right)
             | SupportSides::OpenedUnder(left, right, _) => {
@@ -268,7 +284,8 @@ impl GoalSupport
                     SupportSides::Closed(..) => SideContent::Closed,
                     SupportSides::Heads(..)
                     | SupportSides::Opened(..)
-                    | SupportSides::OpenedUnder(..) => SideContent::Opened,
+                    | SupportSides::OpenedUnder(..)
+                    | SupportSides::OpenedBeside(..) => SideContent::Opened,
                 };
                 (content, content)
             },
