@@ -101,6 +101,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 
+use crate::arity::SortRef;
 use crate::boundary::EmbeddingStatus;
 use crate::boundary::PathOrderStatus;
 use crate::boundary::RuleIndex;
@@ -250,6 +251,9 @@ pub struct Precedence<'desc>
     /// Each declared operation's rank, in declaration order; zero for an
     /// operation on a call cycle or calling into one.
     ranks: Vec<Rank>,
+    /// The sorts some declared operation returns; a port of any other sort
+    /// takes a value, which only constructors and variables build.
+    returned: BTreeSet<&'desc Name>,
 }
 
 impl<'desc> Precedence<'desc>
@@ -282,7 +286,8 @@ impl<'desc> Precedence<'desc>
     ///   undeclared operation does. A call is an operation other than the
     ///   face's own anywhere in its right-hand side; a face defining an
     ///   undeclared operation induces nothing; a rewrite of `ranking` calls as
-    ///   a written face does.
+    ///   a written face does. The returned sorts are the sorts every declared
+    ///   operation's outputs name.
     /// - panics: none.
     /// - intension: callees counted per operation, then ranked leaves first, an
     ///   operation ranked once its last callee is.
@@ -363,9 +368,15 @@ impl<'desc> Precedence<'desc>
                 }
             }
         }
+        let returned = desc
+            .opers
+            .iter()
+            .flat_map(|operation| operation.arity.outputs.iter().map(|output| &output.sort))
+            .collect();
         Self {
             opers: &desc.opers,
             ranks,
+            returned,
         }
     }
 
@@ -384,6 +395,21 @@ impl<'desc> Precedence<'desc>
             .position(|operation| operation.name == *name)
             .and_then(|position| self.ranks.get(position).copied())
             .unwrap_or_default()
+    }
+
+    /// The input ports of the declared operation `name`, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn inputs(
+        &self,
+        name: &Name,
+    ) -> Option<&'desc [SortRef]>
+    {
+        self.opers
+            .iter()
+            .find(|operation| operation.name == *name)
+            .map(|operation| &*operation.arity.inputs)
     }
 
     /// Each declared operation's name and rank, in declaration order.
@@ -446,11 +472,15 @@ impl From<Rank> for usize
 ///   `left` covers, and either `left`'s symbol precedes `right`'s or the two
 ///   share a symbol and the first argument pair that differs, left to right, is
 ///   in the order; or `right` instantiates a metavariable an argument of `left`
-///   holds, and `left` covers every argument of the instantiation. An argument
-///   holds a metavariable it is, or one it applies under abstractions of the
-///   names it is applied to last, as `bind t . k(s, t)` is `k(s)` read up to η.
-///   `left` covers a term it is above, or one of its own arguments is equal to
-///   or above.
+///   holds, and `left` covers every argument of the instantiation but those
+///   that are values. An argument holds a metavariable it is, or one it applies
+///   under abstractions of the names it is applied to last, as `bind t . k(s,
+///   t)` is `k(s)` read up to η. `left` covers a term it is above, or one of
+///   its own arguments is equal to or above. A value is a variable every
+///   occurrence of which on `left` is an argument of a declared operation at an
+///   input port of a sort no declared operation returns, so only constructors
+///   and variables build what it stands for: instantiating at it selects a
+///   branch of the abstraction `left` holds and calls no operation.
 /// - ensures: a variable is above nothing, and no term is above itself.
 /// - panics: none.
 /// - intension: one table of every argument pair of the two terms, filled from
@@ -468,11 +498,15 @@ impl From<Rank> for usize
 ///   at base type orients β, and dropping the instantiation case refuses `let`.
 ///   A get-get rule whose left side holds `k` under the abstraction it applies
 ///   it in is above the instantiation, and reading only a bare argument as
-///   holding refuses it.
+///   holding refuses it. A put-get rule instantiating its continuation at the
+///   value the put stores is above the instantiation, and reading the value as
+///   needing cover refuses it; once an operation returns the value's sort, the
+///   rule is refused.
 /// - witness: `termination::tests::recursion_on_a_descending_argument_is_oriented`
 /// - witness: `termination::tests::the_order_is_irreflexive_and_reads_variables_by_occurrence`
 /// - witness: `termination::tests::an_instantiation_is_below_the_application_that_binds_its_metavariable`
 /// - witness: `termination::tests::a_pattern_under_its_abstraction_holds_its_metavariable_2115`
+/// - witness: `termination::tests::an_instantiation_at_a_value_selects_a_branch_2272`
 #[spec(ensures: |ret| !bool::from(ret) || (left != right && !matches!(left.view(), TermView::Var(_))))]
 #[inline]
 #[must_use]
@@ -485,8 +519,14 @@ pub fn path_greater(
     let above = flatten(left);
     let below = flatten(right);
     let metavariables = metavariables(&below);
+    let values = values(precedence, &above);
     let higher =
         |node: &Node<'_>| matches!(node.symbol, Symbol::Var(name) if metavariables.contains(name));
+    let value = |argument: At| {
+        below
+            .get(argument.0)
+            .is_some_and(|node| matches!(node.symbol, Symbol::Var(name) if values.contains(name)))
+    };
     let mut table: Table<Comparison> = Table::new(&above, &below);
     let precedes = |above: Symbol<'_>, below: Symbol<'_>| match (above, below) {
         (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results | Symbol::Abs | Symbol::Atom(_)) => true,
@@ -544,9 +584,9 @@ pub fn path_greater(
                     Symbol::Var(_) => false,
                     Symbol::Inst(name) => {
                         node.arguments().any(|argument| holds(argument, name))
-                            && other
-                                .arguments()
-                                .all(|argument| covers(&table, node, row, argument))
+                            && other.arguments().all(|argument| {
+                                value(argument) || covers(&table, node, row, argument)
+                            })
                     },
                     Symbol::Ctor(_)
                     | Symbol::Op(_)
@@ -661,6 +701,61 @@ fn metavariables<'term>(nodes: &[Node<'term>]) -> BTreeSet<&'term Name>
             | Symbol::Atom(_) => None,
         })
         .collect()
+}
+
+/// The values of the left side `nodes`: the variables every occurrence of
+/// which is an argument of a declared operation at an input port of a sort no
+/// declared operation returns.
+///
+/// # Specification
+/// - ensures: exactly the variables of `nodes` each occurrence of which, as an
+///   argument, stands at such a port of the operation applying it.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`path_greater`]: the put-get rule orients only while
+///   its stored value is one, and is refused once an operation returns the
+///   value's sort.
+/// - witness: `termination::tests::an_instantiation_at_a_value_selects_a_branch_2272`
+#[spec(ensures: |ret| ret.iter().all(|name| nodes.iter().any(|node| node.symbol == Symbol::Var(name))))]
+fn values<'term>(
+    precedence: &Precedence<'_>,
+    nodes: &[Node<'term>],
+) -> BTreeSet<&'term Name>
+{
+    let mut values = BTreeSet::new();
+    let mut served = BTreeSet::new();
+    for node in nodes {
+        let inputs = match node.symbol {
+            Symbol::Op(operation) => precedence.inputs(operation),
+            Symbol::Var(_)
+            | Symbol::Ctor(_)
+            | Symbol::Results
+            | Symbol::Inst(_)
+            | Symbol::Abs
+            | Symbol::Atom(_) => None,
+        };
+        for (index, argument) in node.arguments().enumerate() {
+            let Some(&Node {
+                symbol: Symbol::Var(name),
+                ..
+            }) = nodes.get(argument.0)
+            else {
+                continue;
+            };
+            let valued = inputs
+                .and_then(|inputs| inputs.get(index))
+                .is_some_and(|port| !precedence.returned.contains(&port.sort));
+            let _new = if valued {
+                values.insert(name)
+            }
+            else {
+                served.insert(name)
+            };
+        }
+    }
+    values.retain(|name| !served.contains(name));
+    values
 }
 
 /// What a node of a flattened term applies.
@@ -1220,6 +1315,60 @@ mod tests
             orient_rules(&applied),
             Termination::Oriented,
             "`run` holds `k` under the abstraction of the name it applies `k` to"
+        );
+    }
+
+    /// #2272: a continuation instantiated at a value — a variable every
+    /// occurrence of which stands at a port of a sort no operation returns —
+    /// selects a branch of the abstraction the left side holds, so put-get is
+    /// above `k(s)`. Once an operation returns the sort, or the variable also
+    /// stands at another port, the instantiation needs a cover it lacks.
+    #[test]
+    fn an_instantiation_at_a_value_selects_a_branch_2272()
+    {
+        let value = |name| SortRef::new(name, "S");
+        let get = |k| FreeTerm::op("get", [k]);
+        let put = |s, k| FreeTerm::op("put", [s, k]);
+        let selected = |s| FreeTerm::inst("k", [s]);
+        let branches = || get(FreeTerm::abs("t", selected(FreeTerm::atom("t"))));
+        let put_get = || (put(var("s"), branches()), put(var("s"), selected(var("s"))));
+        let store = || oper("put", vec![value("s"), SortRef::new("k", "Nat")]);
+        let state = nat([unary("get"), store()], vec![put_get()]);
+        assert_eq!(
+            orient_rules(&state),
+            Termination::Oriented,
+            "`k(s)` selects the branch of `get`'s abstraction at the value `put` stores"
+        );
+        let read = OperDesc::new(
+            "read",
+            BridgeArity::single_output(vec![SortRef::new("c", "Nat")], value("y")),
+            Attrs::empty(),
+        );
+        let returned = nat([unary("get"), store(), read], vec![put_get()]);
+        assert_eq!(
+            orient_rules(&returned),
+            Termination::Unoriented(RuleIndex::from(0_usize)),
+            "once `read` returns `S`, a term of it can call an operation"
+        );
+        let both = |s, n, k| FreeTerm::op("both", [s, n, k]);
+        let shared = nat(
+            [
+                unary("get"),
+                oper("both", vec![
+                    value("s"),
+                    SortRef::new("n", "Nat"),
+                    SortRef::new("k", "Nat"),
+                ]),
+            ],
+            vec![(
+                both(var("s"), var("s"), branches()),
+                both(var("s"), var("s"), selected(var("s"))),
+            )],
+        );
+        assert_eq!(
+            orient_rules(&shared),
+            Termination::Unoriented(RuleIndex::from(0_usize)),
+            "`s` also stands at a `Nat` port, so it is no value"
         );
     }
 

@@ -1,0 +1,37 @@
+// The twin of `model/effects/state.gandr`: where the State laws are refused.
+
+/// Once an operation returns the stored sort, a term of it can call an
+/// operation. Instantiating the continuation at the stored value is then no
+/// branch selection, and put-get does not descend.
+@[ refuses("RulesUnoriented") ]
+theory StateObserved {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  oper peek : (c : C) --> S;
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+}
+
+/// Put-put's continuation can be a `get`, so its inner `put` is a put-get
+/// redex: an overlap between second-order rules, which waits on #2116.
+@[ refuses("RulesOverlapSecondOrder") ]
+theory StatePutLaws {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putPut : put(s, put(u, k)) <=> put(u, k);
+}
+
+/// Reading twice is reading once at the same state. The inner `get` is an
+/// instance of the rule's own left side through its pattern, which waits on
+/// #2116.
+@[ refuses("RulesOverlapSecondOrder") ]
+theory StateGetGet {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+}
