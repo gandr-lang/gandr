@@ -239,6 +239,7 @@ pub use crate::session::admitted;
 pub use crate::session::evaluate;
 pub use crate::session::evaluation;
 pub use crate::session::import;
+pub use crate::session::imported;
 pub use crate::session::reopened;
 pub use crate::session::resumed;
 pub use crate::typed::spelled;

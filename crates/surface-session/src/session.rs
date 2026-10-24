@@ -354,6 +354,7 @@ use gandr_surface_dispatcher::lower_onto_closure;
 use gandr_surface_dispatcher::lower_parsed;
 use gandr_surface_dispatcher::lower_parsed_unit;
 use gandr_surface_dispatcher::lower_resumed_unit;
+use gandr_surface_dispatcher::path_imports;
 use gandr_surface_dispatcher::tabled;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationCount;
@@ -421,6 +422,22 @@ quenchant_shape::reason_enum! {
             /// The revision was judged and its admission has not run: the
             /// submission came from [`Session::judge`](super::Session::judge).
             Pending,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a submission carries no reading of its revision's own imports.
+    pub mod imported {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The revision was parsed joined to the closure it is laid out
+            /// after, so no parse of its own text alone was read.
+            Joined,
+            /// The revision was a trial's candidate, whose imports nothing
+            /// lays out from.
+            Tried,
         }
     }
 }
@@ -932,6 +949,9 @@ pub struct Submission<'text>
     /// The type table the judgement kept of the revision's own source, or why
     /// it holds none.
     table: Maybe<TypeTable, tabled::Absent>,
+    /// The path addresses the revision's own root imports write, in source
+    /// order, as the session's parse of its text alone read them.
+    written: Maybe<Vec<String>, imported::Absent>,
 }
 
 impl<'text> Submission<'text>
@@ -1040,6 +1060,36 @@ impl<'text> Submission<'text>
     pub const fn forms(&self) -> FormCensus
     {
         self.forms
+    }
+
+    /// The path addresses the revision's own root imports write, in source
+    /// order, as the session's parse of its own text read them: what a
+    /// lay-out of the revision reads them as.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`path_imports`] of the parse of the revision's own text,
+    ///   when the session parsed that text alone; [`imported::Absent::Joined`]
+    ///   when it parsed the revision joined to its closure's text, and
+    ///   [`imported::Absent::Tried`] for a trial's candidate.
+    /// - provides: the reading a language server lays the document's next
+    ///   revision out over, and checks the lay-out it judged against.
+    /// - panics: none.
+    /// - executable: none — the reading was taken off the parse when the
+    ///   revision was judged; this lends it, and a predicate here could only
+    ///   restate the field.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a revision importing a sibling reads its import,
+    ///   whether laid after its closure or alone.
+    /// - witness: `tests::session::a_revision_reads_the_imports_its_own_parse_writes_2439`
+    #[inline]
+    pub fn written(&self) -> Maybe<&[String], imported::Absent>
+    {
+        match self.written {
+            Maybe::Present(ref written) => Maybe::Present(written.as_slice()),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
     }
 
     /// The completion obligations the parse of the revision recorded, in
@@ -2620,7 +2670,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             },
             Held::Whole => None,
         });
-        let (lowering, checking, led, forms) = if let Some(closure) = closure {
+        let (lowering, checking, led, forms, written) = if let Some(closure) = closure {
             let document = SourceText::from(
                 <&str>::from(revision)
                     .get(usize::from(base) ..)
@@ -2630,6 +2680,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 .forms
                 .parse(&self.grammar, document, self.threads)
                 .map_err(parse_fault)?;
+            let written = Maybe::Present(path_imports(&self.grammar, parsed.tree()));
             let parsed = parsed
                 .after(closure.lowering().tree(), revision)
                 .map_err(|fault| parse_fault(MeldError::Build(fault)))?;
@@ -2667,13 +2718,19 @@ impl<Store, Blocks> Session<Store, Blocks>
                 .map(|lowering| (lowering, Checking::Whole, None)),
             }
             .map_err(SessionFault::Compose)?;
-            (lowering, checking, led, forms)
+            (lowering, checking, led, forms, written)
         }
         else {
             let (parsed, forms) = self
                 .forms
                 .parse(&self.grammar, revision, self.threads)
                 .map_err(parse_fault)?;
+            let written = if usize::from(base) == 0 {
+                Maybe::Present(path_imports(&self.grammar, parsed.tree()))
+            }
+            else {
+                Maybe::Absent(imported::Absent::Joined)
+            };
             read(parsed.tree());
             let lowering = lower_parsed_unit(
                 &self.grammar,
@@ -2683,7 +2740,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 &mut self.decisions,
             )
             .map_err(SessionFault::Compose)?;
-            (lowering, Checking::Whole, None, forms)
+            (lowering, Checking::Whole, None, forms, written)
         };
         let mut obligations = lowering.obligations().to_vec();
         obligations.retain(|obligation| obligation.span.start() >= base);
@@ -2703,6 +2760,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                     kernel: Maybe::Absent(admitted::Absent::RefusedWhole),
                     obligations,
                     forms,
+                    written,
                     table: Maybe::Absent(match self.tables {
                         Tables::Kept => tabled::Absent::RefusedWhole,
                         Tables::Unkept => tabled::Absent::Untabled,
@@ -2837,6 +2895,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             obligations,
             forms,
             table,
+            written,
         }))
     }
 
@@ -4090,6 +4149,7 @@ fn try_candidate<'text>(
         obligations,
         forms: census,
         table: Maybe::Absent(tabled::Absent::Untabled),
+        written: Maybe::Absent(imported::Absent::Tried),
     })
 }
 

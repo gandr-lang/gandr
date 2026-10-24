@@ -1943,3 +1943,67 @@ fn a_held_parse_is_the_grammar_s_own_parse()
     let _first = submit(&mut session, "def a = 1 ;");
     assert_eq!(held(&session), afresh, "with the first form held");
 }
+
+/// #2439: a revision's submission carries the path imports a parse of its own
+/// text writes, laid after its closure and judged alone alike: the reading a
+/// lay-out of the revision is made over.
+#[test]
+fn a_revision_reads_the_imports_its_own_parse_writes_2439()
+{
+    use gandr_surface_dispatcher::lay_out;
+    use gandr_surface_session::ClosureSlot;
+    use gandr_surface_syntax::SourceText;
+
+    let directory =
+        std::env::temp_dir().join(format!("gandr-session-imports-2439-{}", std::process::id()));
+    let _cleared = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+    let directory =
+        std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
+    std::fs::write(
+        directory.join("base.gandr"),
+        "/// #2439: the closure.\ndef one : Integer ;\ndef one = 1 ;\n",
+    )
+    .expect("the sibling is written");
+    let document = directory.join("document.gandr");
+    std::fs::write(&document, "").expect("the document is written");
+    let own = "import \"./base.gandr\" ;\nimport \"file:///far.gandr\" as far ;\ndef two : \
+               Integer ;\ndef two = one ;\n";
+    let laid = lay_out(
+        &crate::common::GRAMMAR,
+        &document,
+        SourceRoot::Strict,
+        own.into(),
+    );
+    assert_eq!(
+        laid.written,
+        ["./base.gandr"],
+        "the lay-out reads the path import alone"
+    );
+    let slot = ClosureSlot::new();
+    let mut after = session(SourceRoot::Strict);
+    let submission = after
+        .judge_unit_reading(
+            SourceText::from(laid.text.as_str()),
+            &laid.unit,
+            laid.base,
+            &slot,
+            |_| (),
+        )
+        .expect("the revision is judged after its closure");
+    assert_eq!(
+        submission.written(),
+        Maybe::Present(laid.written.as_slice()),
+        "laid after its closure, its own parse reads what the lay-out read"
+    );
+    let mut alone = session(SourceRoot::Strict);
+    let judged = alone
+        .judge_reading(SourceText::from(own), |_| ())
+        .expect("the revision is judged alone");
+    assert_eq!(
+        judged.written(),
+        Maybe::Present(laid.written.as_slice()),
+        "judged alone, its parse reads the same"
+    );
+    let _removed = std::fs::remove_dir_all(&directory);
+}

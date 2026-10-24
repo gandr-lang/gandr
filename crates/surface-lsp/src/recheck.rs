@@ -178,13 +178,16 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::entries;
 use gandr_surface_dispatcher::laid;
-use gandr_surface_dispatcher::lay_out_shadowed;
+use gandr_surface_dispatcher::lay_out_written;
+use gandr_surface_dispatcher::path_imports;
 use gandr_surface_dispatcher::tabled;
+use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
+use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_session::CandidateIndex;
@@ -458,6 +461,32 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a recheck carries no reading of its document's imports.
+    pub mod reread {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Nothing was parsed to read: the document has no session, or its
+            /// judgement faulted.
+            Unparsed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a recheck need not be laid out again.
+    pub mod misread {
+        /// The reason it need not.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The lay-out it judged was made over the imports its parse read,
+            /// or there was no lay-out or no parse to compare.
+            Agreed,
+        }
+    }
+}
+
 impl fmt::Display for Timing
 {
     /// Writes the forms molded, the items judged and the wall, one line.
@@ -547,9 +576,8 @@ impl Timing
 
 /// What one recheck produced: the diagnostics to publish, the binders left
 /// unused, the imports nothing reads, the form under the caret it was asked
-/// about, the paths its closure
-/// named, the lay-out it judged, the type table its judgement kept, and its
-/// timing.
+/// about, the paths its closure named, the lay-out it judged, the imports its
+/// parse read, the type table its judgement kept, and its timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
@@ -574,8 +602,47 @@ pub struct Rechecked
     /// The type table the judgement kept of the document's own text, which
     /// the document's hovers read, or why it kept none.
     pub table: Maybe<TypeTable, tabled::Absent>,
+    /// The path addresses the document's root imports write, in source order,
+    /// as the judgement's parse of its text read them: what its next revision
+    /// is laid out over.
+    pub written: Maybe<Vec<String>, reread::Absent>,
     /// What the recheck cost.
     pub timing: Timing,
+}
+
+impl Rechecked
+{
+    /// The imports the judgement's parse read, when the lay-out it judged was
+    /// made over others: the document is laid out over these, and judged
+    /// again unless that lay-out closes it over the same closure.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Rechecked::written`] when it and the lay-out are both
+    ///   present and the lay-out's own imports ([`Laid::written`]) differ from
+    ///   it; [`misread::Absent::Agreed`] otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an edit that changes the document's imports is laid
+    ///   out over the ones its last judgement read, found misread, and
+    ///   published as a fresh connection publishes it.
+    /// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(read) => matches!(self.laid, Maybe::Present(ref laid) if laid.written.as_slice() != read),
+        Maybe::Absent(_) => true,
+    })]
+    pub fn misread(&self) -> Maybe<&[String], misread::Absent>
+    {
+        match (&self.laid, &self.written) {
+            (&Maybe::Present(ref laid), &Maybe::Present(ref written))
+                if laid.written != *written =>
+            {
+                Maybe::Present(written.as_slice())
+            },
+            (&Maybe::Present(_) | &Maybe::Absent(_), _) => Maybe::Absent(misread::Absent::Agreed),
+        }
+    }
 }
 
 /// Judge `text`, the document at `uri`, in its `session` over `laid`, the
@@ -607,15 +674,19 @@ pub struct Rechecked
 ///   imports no lookup reached are the composition's, moved back by the
 ///   document's base; none when the judgement faulted or refused the document
 ///   whole. The lay-out is the one judged, `named` taken out of it, and
-///   [`laid::Absent::Alone`] when the grammar did not build. The timing carries
-///   the judgement's form census, the incremental checker's census, and the
-///   wall of the whole recheck; its admission is pending when the judgement
-///   left one. The form is [`caret_form`] of the judged tree at `caret`,
-///   `caret`'s own reason when it is absent, and [`formless::Absent::Unparsed`]
-///   when the judgement faulted or the grammar did not build. A text the
-///   session last judged, submitted again, molds no form and judges no item,
-///   and its diagnostics are the ones its previous judgement produced. Retired
-///   before an item, [`Polled::Retired`], the session left as
+///   [`laid::Absent::Alone`] when the grammar did not build. The imports read
+///   are the path addresses the root imports of `text` write, in source order,
+///   as [`Submission::written`] reads them off the judgement's parse, else as a
+///   parse of `text` alone writes them; [`reread::Absent::Unparsed`] when the
+///   judgement faulted or the grammar did not build. The timing carries the
+///   judgement's form census, the incremental checker's census, and the wall of
+///   the whole recheck; its admission is pending when the judgement left one.
+///   The form is [`caret_form`] of the judged tree at `caret`, `caret`'s own
+///   reason when it is absent, and [`formless::Absent::Unparsed`] when the
+///   judgement faulted or the grammar did not build. A text the session last
+///   judged, submitted again, molds no form and judges no item, and its
+///   diagnostics are the ones its previous judgement produced. Retired before
+///   an item, [`Polled::Retired`], the session left as
 ///   [`Session::judge_reading_retiring`] leaves it.
 /// - provides: the one judgement every synchronisation publishes, on whatever
 ///   thread runs it.
@@ -644,6 +715,7 @@ pub struct Rechecked
 /// - witness: `recheck::tests::a_shadowed_builtin_is_published_as_a_warning`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
 /// - witness: `server::tests::a_change_during_a_judgement_retires_it_1547`
+/// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
 #[spec(ensures: |ret| match ret {
     Polled::Whole(ref rechecked) => rechecked.diagnostics.iter().all(|diagnostic|
         diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
@@ -677,6 +749,7 @@ where
             named,
             laid,
             table: Maybe::Absent(tabled::Absent::Untabled),
+            written: Maybe::Absent(reread::Absent::Unparsed),
             timing: Timing {
                 forms: FormCensus::default(),
                 judged: Maybe::Absent(judged::Absent::Unchecked),
@@ -735,6 +808,16 @@ where
             return unchecked(Diagnostic::at_origin(fault), named, laid);
         },
     };
+    // What the judgement's parse read of the document's own imports: the
+    // session's reading of its text alone, or, when it parsed the document
+    // joined to its closure, a parse of the document's own text.
+    let written = match submission.written() {
+        Maybe::Present(written) => written.to_vec(),
+        Maybe::Absent(_) => parse(session.grammar(), text).map_or_else(
+            |_| Vec::new(),
+            |parsed| path_imports(session.grammar(), parsed.tree()),
+        ),
+    };
     let table = submission.take_table();
     let forms = submission.forms();
     let (judged, pending) = match submission.resumed() {
@@ -777,6 +860,7 @@ where
         named,
         laid,
         table,
+        written: Maybe::Present(written),
         timing: Timing {
             forms,
             judged,
@@ -788,13 +872,18 @@ where
 }
 
 /// The import closure `text`, the document at `uri`, is laid out in under the
-/// root its path classifies, each import read as `shadows` holds it, or why it
-/// is judged alone.
+/// root its path classifies, each import read as `shadows` holds it, its root
+/// path imports read as `written` gives them when it does, or why it is judged
+/// alone.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: a present `written` is what a parse of a revision of the
+///   document read of its root path imports.
 /// - ensures: the lay-out [`judge_laid`] judges `text` over, under the root
-///   [`open`] gives the document's session.
+///   [`open`] gives the document's session; laid out over a present `written`,
+///   it is the lay-out of `text` whenever `text`'s root path imports are
+///   `written`, and otherwise the judgement over it reads them as
+///   [`Rechecked::misread`].
 /// - provides: the half of a synchronisation that reads the workspace, run
 ///   where the workspace is, so the judgement can run elsewhere.
 /// - fails: never; a closure that cannot be laid out is judged alone.
@@ -805,14 +894,16 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`judge_laid`].
 /// - witness: `tests::session::sweeps::every_corpus_diagnostic_is_published_as_the_model_builds_it`
+/// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn lay(
     uri: &DocumentUri,
     text: SourceText<'_>,
     shadows: &dyn Shadows,
+    written: Maybe<&[String], written::Absent>,
 ) -> Maybe<Laid, laid::Absent>
 {
-    laid_out(uri, classify(&uri.path()), text, shadows)
+    laid_out(uri, (classify(&uri.path()), text), shadows, written)
 }
 
 /// [`judge_laid`] of `text`, laid out by [`lay`], never retired: the whole
@@ -832,7 +923,7 @@ pub fn recheck(
 ) -> Rechecked
 {
     let started = Instant::now();
-    let laid = lay(uri, text, shadows);
+    let laid = lay(uri, text, shadows, Maybe::Absent(written::Absent::Unread));
     judge_laid(
         uri,
         session,
@@ -1170,7 +1261,14 @@ pub fn trial(
     let root = session.root();
     let laid: Vec<Maybe<Laid, laid::Absent>> = candidates
         .iter()
-        .map(|&candidate| laid_out(uri, root, candidate, shadows))
+        .map(|&candidate| {
+            laid_out(
+                uri,
+                (root, candidate),
+                shadows,
+                Maybe::Absent(written::Absent::Unread),
+            )
+        })
         .collect();
     let members: Vec<(SourceText<'_>, Laying<'_>)> = candidates
         .iter()
@@ -1225,13 +1323,14 @@ pub fn trial(
 }
 
 /// The import closure the document at `uri`, written as `text` under `root`,
-/// is judged in: the dispatcher's [`lay_out_shadowed`] under the process's
-/// grammar, each import read as `shadows` holds it.
+/// is judged in: the dispatcher's [`lay_out_written`] under the process's
+/// grammar, each import read as `shadows` holds it, the root's path imports
+/// as `written` gives them when it does.
 ///
 /// # Specification
-/// - requires: nothing.
-/// - ensures: [`lay_out_shadowed`] of the document's path under `shadows`;
-///   [`laid::Absent::Alone`] when the grammar did not build.
+/// - requires: as [`lay_out_written`].
+/// - ensures: [`lay_out_written`] of the document's path under `shadows` and
+///   `written`; [`laid::Absent::Alone`] when the grammar did not build.
 /// - provides: the unit a recheck and a trial judge a document in.
 /// - fails: never.
 /// - panics: none.
@@ -1246,13 +1345,18 @@ pub fn trial(
 })]
 fn laid_out(
     uri: &DocumentUri,
-    root: SourceRoot,
-    text: SourceText<'_>,
+    (root, text): (SourceRoot, SourceText<'_>),
     shadows: &dyn Shadows,
+    written: Maybe<&[String], written::Absent>,
 ) -> Maybe<Laid, laid::Absent>
 {
     grammar().map_or(Maybe::Absent(laid::Absent::Alone), |grammar| {
-        Maybe::Present(lay_out_shadowed(grammar, &uri.path(), root, text, shadows))
+        Maybe::Present(lay_out_written(
+            grammar,
+            (&uri.path(), root, text),
+            shadows,
+            written,
+        ))
     })
 }
 

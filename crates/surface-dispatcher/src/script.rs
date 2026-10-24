@@ -476,7 +476,7 @@ impl Script
         let laid = &*self.laid.insert(Laid::alone(
             &self.path,
             SourceText::from(self.text.as_str()),
-            Vec::new(),
+            (Vec::new(), Vec::new()),
         ));
         let source = SourceText::from(laid.text.as_str());
         let composed = lower_unit_source(grammar, source, &laid.unit, &mut self.lowerings)
