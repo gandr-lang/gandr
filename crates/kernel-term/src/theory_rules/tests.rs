@@ -1,3 +1,4 @@
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -394,6 +395,106 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
     );
 }
 
+/// #2272: read from a presentation, put-get instantiates its continuation at
+/// the value `put` stores. While no operation returns that value's sort, the
+/// variable is one of the rule's values and the rule is decided. Once `read`
+/// returns it, the instantiation needs a cover the left side lacks.
+#[test]
+fn an_instantiation_at_a_value_selects_a_branch_2272()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let tag = ConstructorTag::from;
+    let state = |reads: bool| -> Result<Vec<Box<[RuleVariable]>>, TheoryRuleRefusal> {
+        let mut code = Code::new();
+        let [
+            values,
+            computations,
+            get,
+            put,
+            read,
+            stored,
+            branch,
+            observed,
+            answer,
+            put_get,
+        ] = ["S", "C", "get", "put", "read", "s", "t", "c", "y", "putGet"]
+            .map(|text| code.text(literal(text)));
+        let continuation = code.text(literal("k"));
+        let end = code.end();
+        let computation_sort = code.node(tag(super::tag::SORT), vec![computations, end, end]);
+        let sorts = code.node(tag(super::tag::SORT), vec![values, end, computation_sort]);
+        let returns =
+            |code: &mut Code, sort| code.node(tag(super::tag::PORT), vec![answer, sort, end, end]);
+        let binder = code.node(tag(super::tag::PORT), vec![branch, values, end, end]);
+        let branches = code.node(tag(super::tag::BOUND), vec![
+            continuation,
+            computations,
+            end,
+            binder,
+            end,
+        ]);
+        let resumed = code.node(tag(super::tag::PORT), vec![
+            continuation,
+            computations,
+            end,
+            end,
+        ]);
+        let stores = code.node(tag(super::tag::PORT), vec![stored, values, end, resumed]);
+        let observes = code.node(tag(super::tag::PORT), vec![
+            observed,
+            computations,
+            end,
+            end,
+        ]);
+        let mut operations = end;
+        if reads {
+            let reply = returns(&mut code, values);
+            operations = code.node(tag(super::tag::OPER), vec![
+                read, observes, reply, operations,
+            ]);
+        }
+        let returned = returns(&mut code, computations);
+        operations = code.node(tag(super::tag::OPER), vec![
+            put, stores, returned, operations,
+        ]);
+        let returned = returns(&mut code, computations);
+        operations = code.node(tag(super::tag::OPER), vec![
+            get, branches, returned, operations,
+        ]);
+        // put(s, get(bind t . k(t))) ==> put(s, k(s))
+        let value = code.var(literal("s"));
+        let named = code.occ(literal("t"));
+        let pattern = code.inst(literal("k"), &[named]);
+        let held = code.abs(literal("t"), pattern);
+        let got = code.app(literal("get"), &[held]);
+        let left = code.app(literal("put"), &[value, got]);
+        let selected = code.inst(literal("k"), &[value]);
+        let right = code.app(literal("put"), &[value, selected]);
+        let presentation = code.presenting(sorts, operations, vec![(tag(super::tag::RULE), vec![
+            put_get, left, right,
+        ])]);
+        let read = TheoryRules::read(&code.arena, presentation)?;
+        let read_values = read
+            .rules()
+            .iter()
+            .map(|rule| rule.values.clone())
+            .collect::<Vec<_>>();
+        read.decide(&mut fuel())?;
+        Ok(read_values)
+    };
+    assert_eq!(
+        state(false),
+        Ok(vec![Box::from([RuleVariable::from(0_u32)])]),
+        "`s` stands only at `put`'s port of `S`, which no operation returns, so `k(s)` selects \
+         the branch `get` holds"
+    );
+    assert_eq!(
+        state(true).map(|_| ()),
+        refused!(0, TheoryRuleFault::Unoriented),
+        "once `read` returns `S`, `s` is no value and `k(s)` needs a cover"
+    );
+}
+
 /// Values of the presentation code minted into one arena.
 struct Code
 {
@@ -479,6 +580,24 @@ impl Code
         }
         let name = self.text(name);
         self.node(ConstructorTag::from(super::tag::APP), vec![name, chain])
+    }
+
+    /// The variable `name` instantiated at `arguments`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn inst(
+        &mut self,
+        name: StringLiteral,
+        arguments: &[ValueId],
+    ) -> ValueId
+    {
+        let mut chain = self.end();
+        for &argument in arguments.iter().rev() {
+            chain = self.node(ConstructorTag::from(super::tag::ARG), vec![argument, chain]);
+        }
+        let name = self.text(name);
+        self.node(ConstructorTag::from(super::tag::INST), vec![name, chain])
     }
 
     /// The abstraction of the atom `atom` over `body`.

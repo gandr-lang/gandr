@@ -404,6 +404,11 @@ pub struct TheoryRule
     /// where its instance names no atom it may not, so it too rewrites no term
     /// the decision normalizes and overlaps no rule.
     conditioned: bool,
+    /// The variables every occurrence of which on the left side is an
+    /// argument of an operation at an input port of a sort no operation of
+    /// the presentation returns: values, which only constructors and
+    /// variables build, so instantiating at one calls no operation.
+    values: Box<[RuleVariable]>,
 }
 
 impl TheoryRule
@@ -428,6 +433,7 @@ impl TheoryRule
             right,
             instantiates,
             conditioned: false,
+            values: Box::default(),
         }
     }
 
@@ -444,6 +450,20 @@ impl TheoryRule
             conditioned: true,
             ..self
         }
+    }
+
+    /// The rule, `values` read as its values.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn valued(
+        self,
+        values: Box<[RuleVariable]>,
+    ) -> Self
+    {
+        Self { values, ..self }
     }
 
     /// The left side.
@@ -788,7 +808,7 @@ impl TheoryRules
         }
         let mut order = OrderBuffers::default();
         for (index, rule) in self.rules.iter().enumerate() {
-            if self.path_greater(rule.left(), rule.right(), &mut order) == Verdict::Fails {
+            if self.path_greater(rule, &mut order) == Verdict::Fails {
                 return Err(refuse(index, TheoryRuleFault::Unoriented));
             }
         }
@@ -1071,25 +1091,26 @@ impl TheoryRules
     }
 
     /// Whether the higher-order recursive path order over the stated ranks
-    /// puts `left` above `right`: the lexicographic path order, with every
-    /// variable `right` instantiates read at a function type.
+    /// puts `rule`'s left side above its right: the lexicographic path order,
+    /// with every variable the right side instantiates read at a function type.
     ///
     /// # Specification
     /// - requires: both sides are well formed.
-    /// - ensures: negative when `right` is a variable `right` instantiates
-    ///   somewhere. Otherwise positive exactly when `left` is an application
-    ///   some argument of which is equal to or above `right`; or `right` is an
-    ///   application every argument of which `left` covers, and either `left`'s
-    ///   symbol precedes `right`'s — an operation above an operation of a lower
-    ///   rank, and above every constructor, results tuple, abstraction and
-    ///   occurrence — or the two are one symbol and the first argument pair
-    ///   that differs, left to right, is in the order; or `right` instantiates
-    ///   a variable an argument of `left` holds, and `left` covers every
-    ///   argument of the instantiation. An argument holds a variable it is, or
-    ///   one it instantiates under abstractions, as `bind t . k(s, t)` holds
-    ///   `k` read up to η. `left` covers a term it is above, or one of its own
-    ///   arguments is equal to or above. A variable is above nothing and no
-    ///   term above itself.
+    /// - ensures: for `left` and `right` the rule's sides, negative when
+    ///   `right` is a variable `right` instantiates somewhere. Otherwise
+    ///   positive exactly when `left` is an application some argument of which
+    ///   is equal to or above `right`; or `right` is an application every
+    ///   argument of which `left` covers, and either `left`'s symbol precedes
+    ///   `right`'s — an operation above an operation of a lower rank, and above
+    ///   every constructor, results tuple, abstraction and occurrence — or the
+    ///   two are one symbol and the first argument pair that differs, left to
+    ///   right, is in the order; or `right` instantiates a variable an argument
+    ///   of `left` holds, and `left` covers every argument of the instantiation
+    ///   but the rule's values. An argument holds a variable it is, or one it
+    ///   instantiates under abstractions, as `bind t . k(s, t)` holds `k` read
+    ///   up to η. `left` covers a term it is above, or one of its own arguments
+    ///   is equal to or above. A variable is above nothing and no term above
+    ///   itself.
     /// - panics: none.
     /// - executable: none — the order is the table this fills; a predicate
     ///   restating it would be the function again.
@@ -1101,17 +1122,20 @@ impl TheoryRules
     ///   inverse law orient, and a rule calling an operation of its head's rank
     ///   does not until the head ranks higher; a `let` instantiating its own
     ///   argument orients and β does not; a get-get rule holding its
-    ///   continuation under the abstraction it instantiates it in orients.
+    ///   continuation under the abstraction it instantiates it in orients; a
+    ///   put-get rule instantiating its continuation at the value the put
+    ///   stores orients, and not once an operation returns the value's sort.
     /// - witness: `theory_rules::tests::a_rule_the_ranks_do_not_decrease_is_unoriented`
     /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
     /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
+    /// - witness: `theory_rules::tests::an_instantiation_at_a_value_selects_a_branch_2272`
     fn path_greater(
         &self,
-        left: &[TheoryNode],
-        right: &[TheoryNode],
+        rule: &TheoryRule,
         buffers: &mut OrderBuffers,
     ) -> Verdict
     {
+        let (left, right) = (rule.left(), rule.right());
         let columns = right.len();
         self.ends(left, &mut buffers.left_ends);
         self.ends(right, &mut buffers.right_ends);
@@ -1127,8 +1151,22 @@ impl TheoryRules
                 }
             }
         }
+        buffers.values.clear();
+        for &variable in &rule.values {
+            let Ordinal(place) = ordinal(variable);
+            if buffers.values.len() <= place {
+                buffers.values.resize(place.saturating_add(1), false);
+            }
+            if let Some(slot) = buffers.values.get_mut(place) {
+                *slot = true;
+            }
+        }
         let higher = &buffers.higher;
         let functional = |node: TheoryNode| matches!(node, TheoryNode::Variable(variable) if higher.get(ordinal(variable).0).copied().unwrap_or(false));
+        let values = &buffers.values;
+        // A value needs no cover: instantiating at it selects a branch of the
+        // abstraction the left side holds and calls no operation.
+        let value = |argument: Position| matches!(right.get(argument.0), Some(&TheoryNode::Variable(variable)) if values.get(ordinal(variable).0).copied().unwrap_or(false));
         buffers.table.clear();
         buffers
             .table
@@ -1213,7 +1251,10 @@ impl TheoryRules
                     }) || match other {
                         TheoryNode::Variable(_) => false,
                         TheoryNode::Instance(variable, _) => {
-                            rows.clone().any(|own| holds(own, variable)) && cols.clone().all(covers)
+                            rows.clone().any(|own| holds(own, variable))
+                                && cols
+                                    .clone()
+                                    .all(|argument| value(argument) || covers(argument))
                         },
                         TheoryNode::Symbol(_) => {
                             cols.clone().all(covers)
@@ -1648,7 +1689,7 @@ struct Node(usize);
 /// # Specification
 /// trivial.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Ordinal(usize);
 
 /// A number a peak or a rank spells.
@@ -1959,6 +2000,8 @@ struct OrderBuffers
     table: Vec<Comparison>,
     /// Whether the right side instantiates each variable, by ordinal.
     higher: Vec<bool>,
+    /// Whether each variable is one of the rule's values, by ordinal.
+    values: Vec<bool>,
 }
 
 /// The buffers [`TheoryRules::peak_of`] seeks a peak in, kept by its caller
@@ -2449,6 +2492,23 @@ enum Naming
 /// A symbol's interning key: its class, its name, and its argument count.
 type SymbolKey<'arena> = (Class, Option<&'arena StringLiteral>, FieldCount);
 
+/// An input port, by its operation's name and its place among the inputs.
+type InputPort<'arena> = (&'arena StringLiteral, Ordinal);
+
+/// Where a node of a rule side stands.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Stands
+{
+    /// An argument of an operation on the left side, at an input port of a
+    /// sort no operation returns.
+    AtValue,
+    /// Anywhere else.
+    Elsewhere,
+}
+
 /// The buffers a rule's terms are read through, reused across rules.
 ///
 /// # Specification
@@ -2458,8 +2518,9 @@ struct ReadBuffers<'arena>
 {
     /// The rule's variables, each by its place in first-occurrence order.
     variables: BTreeMap<&'arena StringLiteral, Ordinal>,
-    /// The nodes still to read, each with the number of abstractions above it.
-    stack: Vec<(ValueId, usize)>,
+    /// The nodes still to read, each with the number of abstractions above it
+    /// and where it stands.
+    stack: Vec<(ValueId, usize, Stands)>,
     /// One node's arguments.
     arguments: Vec<ValueId>,
     /// The atoms the abstractions above the node being read abstract,
@@ -2477,6 +2538,10 @@ struct ReadBuffers<'arena>
     split: bool,
     /// Whether the side being read is the left side.
     left: bool,
+    /// The variables with an occurrence on the left side at a value port.
+    valued: BTreeSet<RuleVariable>,
+    /// The variables with an occurrence on the left side anywhere else.
+    served: BTreeSet<RuleVariable>,
 }
 
 /// A reading of a presentation value's rule chain.
@@ -2504,6 +2569,8 @@ struct Reader<'arena>
     /// occurrence on its left side than at another there, where a term can
     /// name an atom.
     split: Option<RuleIndex>,
+    /// The input ports of a sort no operation returns.
+    value_ports: BTreeSet<InputPort<'arena>>,
 }
 
 impl<'arena> Reader<'arena>
@@ -2523,6 +2590,7 @@ impl<'arena> Reader<'arena>
             ranks: BTreeMap::new(),
             naming: Naming::Unnamed,
             split: None,
+            value_ports: BTreeSet::new(),
         }
     }
 
@@ -2557,6 +2625,11 @@ impl<'arena> Reader<'arena>
             return Err(self.unreadable());
         };
         self.naming = naming;
+        let Some(value_ports) = self.value_ports(operations)
+        else {
+            return Err(self.unreadable());
+        };
+        self.value_ports = value_ports;
         let mut at = rules;
         let mut stage = Stage::Written;
         let mut buffers = ReadBuffers::default();
@@ -2742,6 +2815,79 @@ impl<'arena> Reader<'arena>
         })
     }
 
+    /// The input ports of the presentation's operations that stand at a sort
+    /// no member of the operation chain returns: the ports that take a value.
+    ///
+    /// # Specification
+    /// - ensures: [`Some`] with every input port, by its member's name and its
+    ///   place among the inputs, of an `Oper`, `Obs`, `Const` or `Nested` of
+    ///   the chain `operations` whose sort no output port of any member names;
+    ///   [`None`] when the chain, or a port chain, holds a member the code does
+    ///   not write there.
+    /// - panics: none.
+    /// - executable: none — the answer is the walk of the chain, which a
+    ///   predicate would walk again.
+    /// - intension: one walk of the chain, each input kept with its sort and
+    ///   filtered once every returned sort is known.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`TheoryRules::read`]: put-get orients while no
+    ///   operation returns the sort `put` stores, and is refused once one does.
+    /// - witness: `theory_rules::tests::an_instantiation_at_a_value_selects_a_branch_2272`
+    fn value_ports(
+        &self,
+        operations: ValueId,
+    ) -> Option<BTreeSet<InputPort<'arena>>>
+    {
+        let tagged = |id: ValueId| {
+            self.constructor(id)
+                .map(|(tag, fields)| (usize::from(tag), fields))
+        };
+        let mut returned: BTreeSet<&StringLiteral> = BTreeSet::new();
+        let mut inputs: Vec<(InputPort<'arena>, &StringLiteral)> = Vec::new();
+        let mut at = operations;
+        loop {
+            let (name, ports, outputs, rest) = match tagged(at)? {
+                (tag::END, &[]) => break,
+                (
+                    tag::OPER | tag::OBS | tag::CONST | tag::NESTED,
+                    &[name, ports, outputs, rest],
+                ) => (self.text(name)?, ports, outputs, rest),
+                _ => return None,
+            };
+            // The inputs, kept by their operation's name, then the outputs.
+            for (chain, input) in [(ports, Some(name)), (outputs, None)] {
+                let mut port = chain;
+                let mut place = Ordinal(0);
+                loop {
+                    let (sort, next) = match tagged(port)? {
+                        (tag::END, &[]) => break,
+                        (tag::PORT, &[_, sort, _, next])
+                        | (tag::BOUND, &[_, sort, _, _, next])
+                        | (tag::ABSTRACTED, &[_, sort, _, _, _, next]) => (self.text(sort)?, next),
+                        _ => return None,
+                    };
+                    match input {
+                        Some(name) => inputs.push(((name, place), sort)),
+                        None => {
+                            let _new = returned.insert(sort);
+                        },
+                    }
+                    place = Ordinal(place.0.saturating_add(1));
+                    port = next;
+                }
+            }
+            at = rest;
+        }
+        Some(
+            inputs
+                .into_iter()
+                .filter(|&(_, sort)| !returned.contains(sort))
+                .map(|(port, _)| port)
+                .collect(),
+        )
+    }
+
     /// The refusal at the rule the reading has reached.
     ///
     /// # Specification
@@ -2815,17 +2961,20 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// - ensures: [`Some`] with the rule appended, its variables numbered by
-    ///   first occurrence on `left`, then on `right`; where a term can name an
-    ///   atom, the rule conditioned when a variable stands under other
-    ///   abstractions at one occurrence than at its first, and itself recorded
-    ///   as the first split rule unless one is when that occurrence is on
-    ///   `left`; [`None`] when either term is not one the code writes.
+    ///   first occurrence on `left`, then on `right`; its values the variables
+    ///   every occurrence of which on `left` is an argument of an operation at
+    ///   one of the value ports; where a term can name an atom, the rule
+    ///   conditioned when a variable stands under other abstractions at one
+    ///   occurrence than at its first, and itself recorded as the first split
+    ///   rule unless one is when that occurrence is on `left`; [`None`] when
+    ///   either term is not one the code writes.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`].
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
+    /// - witness: `theory_rules::tests::an_instantiation_at_a_value_selects_a_branch_2272`
     fn rule(
         &mut self,
         left: ValueId,
@@ -2838,12 +2987,19 @@ impl<'arena> Reader<'arena>
         buffers.above.clear();
         buffers.moved = false;
         buffers.split = false;
+        buffers.valued.clear();
+        buffers.served.clear();
         let mut sides = (Vec::new(), Vec::new());
         buffers.left = true;
         self.term(left, buffers, &mut sides.0)?;
         buffers.left = false;
         self.term(right, buffers, &mut sides.1)?;
-        let mut rule = TheoryRule::new(sides.0.into(), sides.1.into());
+        let values = buffers
+            .valued
+            .difference(&buffers.served)
+            .copied()
+            .collect();
+        let mut rule = TheoryRule::new(sides.0.into(), sides.1.into()).valued(values);
         if self.naming == Naming::Named {
             rule.conditioned = buffers.moved;
             if buffers.split {
@@ -2866,7 +3022,9 @@ impl<'arena> Reader<'arena>
     ///   above it, outermost first, are kept at its first occurrence and
     ///   compared at every other, `buffers.moved` set when they differ; an
     ///   `Occ` is the occurrence symbol of the number of `Abs` between it and
-    ///   the innermost abstracting its atom.
+    ///   the innermost abstracting its atom; on the left side, a variable an
+    ///   `App` takes at one of the value ports is kept in `buffers.valued`, and
+    ///   one anywhere else, instantiated or not, in `buffers.served`.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
     /// - intension: a worklist of the nodes still to read, each with the number
@@ -2889,14 +3047,20 @@ impl<'arena> Reader<'arena>
         };
         buffers.stack.clear();
         buffers.atoms.clear();
-        buffers.stack.push((root, 0));
-        while let Some((node, depth)) = buffers.stack.pop() {
+        buffers.stack.push((root, 0, Stands::Elsewhere));
+        while let Some((node, depth, stands)) = buffers.stack.pop() {
             buffers.atoms.truncate(depth);
             let (applied, chain, below) = match tagged(self.constructor(node))? {
                 (tag::VAR, &[name]) => {
                     let name = self.text(name)?;
                     let variable = variable(name, buffers)?;
                     scoped(name, buffers);
+                    if buffers.left {
+                        let _new = match stands {
+                            Stands::AtValue => buffers.valued.insert(variable),
+                            Stands::Elsewhere => buffers.served.insert(variable),
+                        };
+                    }
                     out.push(TheoryNode::Variable(variable));
                     continue;
                 },
@@ -2931,6 +3095,9 @@ impl<'arena> Reader<'arena>
                     let name = self.text(name)?;
                     let variable = variable(name, buffers)?;
                     scoped(name, buffers);
+                    if buffers.left {
+                        let _new = buffers.served.insert(variable);
+                    }
                     (Applied::Instance(variable), chain, depth)
                 },
                 _ => return None,
@@ -2947,6 +3114,11 @@ impl<'arena> Reader<'arena>
                     _ => return None,
                 }
             }
+            // An operation's arguments on the left side stand at its ports.
+            let operation = match applied {
+                Applied::Symbol(Class::Operation, Some(name)) if buffers.left => Some(name),
+                Applied::Symbol(..) | Applied::Instance(_) => None,
+            };
             match applied {
                 Applied::Symbol(class, name) => {
                     let symbol =
@@ -2958,13 +3130,25 @@ impl<'arena> Reader<'arena>
                     FieldCount::from(buffers.arguments.len()),
                 )),
             }
-            buffers.stack.extend(
-                buffers
-                    .arguments
-                    .iter()
-                    .rev()
-                    .map(|&argument| (argument, below)),
-            );
+            let value_ports = &self.value_ports;
+            buffers
+                .stack
+                .extend(
+                    buffers
+                        .arguments
+                        .iter()
+                        .enumerate()
+                        .rev()
+                        .map(|(place, &argument)| {
+                            let stands = match operation {
+                                Some(name) if value_ports.contains(&(name, Ordinal(place))) => {
+                                    Stands::AtValue
+                                },
+                                Some(_) | None => Stands::Elsewhere,
+                            };
+                            (argument, below, stands)
+                        }),
+                );
         }
         Some(())
     }

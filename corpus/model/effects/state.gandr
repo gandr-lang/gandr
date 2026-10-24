@@ -1,0 +1,32 @@
+// State as a theory: `get` passes the state to what runs after it, and `put`
+// replaces the state before what runs after it. The laws are the rules of
+// global state in Cooper, "The marriage of effects and rewrites" (2023),
+// § 2.1, oriented by the path order, one theory per law.
+//
+// A put stores a value: no operation returns the sort `S`, so only
+// constructors and variables build a term of it. A continuation instantiated
+// at the stored value selects one branch of the abstraction a `get` holds and
+// calls no operation, so put-get descends as Cooper's branch selection does.
+// Two of the laws in one theory overlap through a pattern, as get-get
+// overlaps itself; those are in the twin until #2116.
+
+/// Storing a value and then reading the state is storing it and continuing
+/// at it.
+@[ checks ]
+theory StatePutGet {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+}
+
+/// Storing twice keeps the second value.
+@[ checks ]
+theory StatePutPut {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putPut : put(s, put(u, k)) <=> put(u, k);
+}
