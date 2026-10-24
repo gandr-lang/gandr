@@ -17,9 +17,9 @@
 use alloc::collections::VecDeque;
 
 use anodized::spec;
-use gandr_theory_orders::OrderError;
-use gandr_theory_orders::OrderMaintenance;
-use gandr_theory_orders::Pos;
+use gandr_theory_order_maintenance::OrderError;
+use gandr_theory_order_maintenance::OrderMaintenance;
+use gandr_theory_order_maintenance::Pos;
 use proptest::prelude::ProptestConfig;
 use proptest::prelude::Strategy;
 use proptest::prelude::any;

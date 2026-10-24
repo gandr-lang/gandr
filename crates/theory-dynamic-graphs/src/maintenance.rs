@@ -39,9 +39,9 @@ use gandr_theory_graphs::EdgeId;
 use gandr_theory_graphs::EdgeSource;
 use gandr_theory_graphs::NodeCount;
 use gandr_theory_graphs::NodeId;
-use gandr_theory_orders::OrderError;
-use gandr_theory_orders::OrderMaintenance;
-use gandr_theory_orders::Pos;
+use gandr_theory_order_maintenance::OrderError;
+use gandr_theory_order_maintenance::OrderMaintenance;
+use gandr_theory_order_maintenance::Pos;
 
 use crate::slot::SlotIndex;
 

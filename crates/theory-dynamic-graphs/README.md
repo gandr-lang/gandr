@@ -13,7 +13,7 @@ Insertion-only topological orders and feasible valuations for standing graphs.
 ## References
 
 - David J. Pearce and Paul H. J. Kelly. “A Dynamic Topological Sort Algorithm for Directed Acyclic Graphs.” _ACM Journal of Experimental Algorithmics_ 11, article 1.7. [doi:10.1145/1187436.1210590](https://doi.org/10.1145/1187436.1210590). The bounded order-repair design; this API supports insertion only.
-- [`gandr-theory-orders`](../theory-orders/README.md): stable order positions and label comparisons.
+- [`gandr-theory-order-maintenance`](../theory-order-maintenance/README.md): stable order positions and label comparisons.
 - [`gandr-theory-graphs`](../theory-graphs/README.md): graph identities, closed-cycle evidence, and the independent batch traversal used by the differential witnesses.
 
 ## Provided features

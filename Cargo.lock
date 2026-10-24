@@ -624,7 +624,7 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-theory-levitation",
- "gandr-theory-orders",
+ "gandr-theory-order-maintenance",
  "gandr-theory-sites",
  "hashbrown 0.17.1",
  "proptest",
@@ -1282,7 +1282,7 @@ name = "gandr-theory-dynamic-graphs"
 version = "0.0.0"
 dependencies = [
  "gandr-theory-graphs",
- "gandr-theory-orders",
+ "gandr-theory-order-maintenance",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
@@ -1319,7 +1319,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gandr-theory-orders"
+name = "gandr-theory-order-maintenance"
 version = "0.0.0"
 dependencies = [
  "proptest",

@@ -46,9 +46,9 @@
 
 #[cfg(not(target_has_atomic = "ptr"))]
 compile_error!(
-    "gandr-theory-orders requires a target with atomic compare-exchange \
-     (target_has_atomic = \"ptr\"): structure identities are minted from a \
-     shared atomic counter"
+    "gandr-theory-order-maintenance requires a target with atomic \
+     compare-exchange (target_has_atomic = \"ptr\"): structure identities \
+     are minted from a shared atomic counter"
 );
 
 extern crate alloc;
