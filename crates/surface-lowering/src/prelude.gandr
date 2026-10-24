@@ -4,6 +4,12 @@ theory Eq {
   oper eq : (a : Carrier, b : Carrier) --> Bool;
 }
 
+/// Structural equality from `T`'s constructors.
+module Eq {
+  /// `def eq = Eq.generic(T)`.
+  def generic : (T : Type) => (T, T) => Bool ;
+}
+
 /// Integer equality, the integer primitive.
 module EqInteger : Model(Eq) with sort Carrier = Integer {
   /// Whether two integers are equal.

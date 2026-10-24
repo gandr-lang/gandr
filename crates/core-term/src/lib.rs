@@ -32,6 +32,8 @@
 //! - [`identity`] derives `back`, `then` and `cong` as transports in families
 //!   of paths, so element identity has one eliminator, `tr`, beside its type
 //!   `Path` and its reflexivity `here`.
+//! - [`generic`] derives a closed, free data declaration's equality from its
+//!   constructors, the body a model member written `Eq.generic(T)` takes.
 //! - [`ua`] holds what univalence at a stratum reads: the stratum a statement
 //!   fixes and the two descriptions it relates, read as graphical species.
 //! - [`world`] holds the located vocabulary: the handle type `A at w`, the
@@ -202,6 +204,7 @@ mod definition;
 pub mod description;
 pub mod effect;
 mod failure;
+pub mod generic;
 pub mod hole;
 pub mod identity;
 mod import;

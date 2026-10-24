@@ -156,6 +156,9 @@ impl TrackingIssue
     pub const EMPTY_CASE_ANSWER: Self = Self(1998);
     /// A constructor field at a finite grade other than `1`.
     pub const FIELD_GRADE: Self = Self(2033);
+    /// `Eq.generic` at a declaration with parameters or indices, a nested or
+    /// mutual recursion, or a dependent field.
+    pub const GENERIC_EQUALITY: Self = Self(2345);
 
     /// The issue's page.
     ///

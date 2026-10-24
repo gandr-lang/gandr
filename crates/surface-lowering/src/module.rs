@@ -686,8 +686,9 @@ pub enum Container
 ///   state coordinate preconditions separately.
 /// - ensures: Declared slots introduce names, witnesses check an extra type
 ///   without declaring a name, held slots own components or refusals without
-///   becoming exports, and abstract slots declare the atom an opaque ascription
-///   mints without entering a name table.
+///   becoming exports, abstract slots declare the atom an opaque ascription
+///   mints without entering a name table, and the generic program is named
+///   without declaring anything.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -740,6 +741,11 @@ pub enum Role
     /// the parser did not repair: entered in no name table, its definition the
     /// expression read as a computation and suspended, which the source runs.
     RunTarget,
+    /// The prelude's generic program, `Eq.generic`: entered in its module's
+    /// name table under its written signature, read only as the head of a
+    /// definition `def m = Eq.generic(T)`, whose body the lowering derives
+    /// from `T`'s constructors, and declaring nothing itself.
+    Generic,
 }
 
 /// One member of a module's body, or one component it exports.

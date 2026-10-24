@@ -349,8 +349,9 @@ fn kind(
 /// product chain, as the value a discarded bind drops, as an arrow of a data
 /// family's kind, as the sort of a stage binder or the binder a call
 /// supplies, as the sort of a region binder, as the theory a model type
-/// names, as the module and the model type a pack names, or as a binding
-/// operation or a variable a binding port binds in a theory's rule.
+/// names, as the module and the model type a pack names, as a binding
+/// operation or a variable a binding port binds in a theory's rule, or as the
+/// head or the type of an `Eq.generic(T)`.
 ///
 /// # Specification
 /// trivial.
@@ -426,6 +427,12 @@ enum Placed
     /// and the port's own names answer nowhere, and the application around
     /// answers at its sort.
     Unstated,
+    /// The head and the type of a derived equality, `Eq.generic` and `T` in
+    /// `def eq = Eq.generic(T)` (#2302): the declaration is derived whole from
+    /// `T`'s signature, so neither the prelude's member nor the data type is a
+    /// core node of the definition, and the call, located at the derived
+    /// body, answers.
+    Generic,
 }
 
 /// Every gated node of `tree` with its kind, its span and where it stands.
@@ -596,6 +603,9 @@ fn gated(
         // The theory a model type names: every child of `Model(…)` in a type
         // but its head.
         let modelled = melded && def.sort == Sort::Type && spelled(opener) == "Model";
+        // The head and the type of a derived equality: every child of an
+        // `Eq.generic(T)` call.
+        let deriving = applied && spelled(opener) == "Eq.generic";
         // The module and the model type a pack names: every child of a
         // `pack M at Model(T)`, its third child the `at` tile.
         let packing = melded
@@ -625,7 +635,10 @@ fn gated(
                     let qualifying = melded && opener == Some(child) && def.label == ".";
                     (
                         child,
-                        if modelled && opener != Some(child) {
+                        if deriving {
+                            placed.or(Some(Placed::Generic))
+                        }
+                        else if modelled && opener != Some(child) {
                             placed.or(Some(Placed::Theory))
                         }
                         else if packing || (stating && Some(child) == last) {

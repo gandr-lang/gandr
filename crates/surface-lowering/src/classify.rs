@@ -83,6 +83,7 @@
 use anodized::spec;
 pub use gandr_core_term::FailureClass;
 pub use gandr_core_term::TrackingIssue;
+use gandr_core_term::generic::Uncovered;
 
 use crate::derive::DeriveFault;
 use crate::description::MemberFault;
@@ -182,6 +183,13 @@ impl LoweringRefusal<'_>
                 ..
             }
             | Self::RulesOverlapCondition { .. }
+            | Self::GenericUncovered {
+                fault: Uncovered::Applied(_)
+                    | Uncovered::Nested(..)
+                    | Uncovered::Cycle(..)
+                    | Uncovered::Dependent(..),
+                ..
+            }
             | Self::GradedBridge { .. }
             | Self::UnreadAscription { .. }
             | Self::ImplicitTelescope { .. } => matches!(ret, FailureClass::Unimplemented(_)),
@@ -197,6 +205,10 @@ impl LoweringRefusal<'_>
                 ..
             }
             | Self::UnknownMold { .. }
+            | Self::GenericUncovered {
+                fault: Uncovered::BinderCeiling,
+                ..
+            }
             | Self::Unminted { .. } => matches!(ret, FailureClass::EngineFault),
             | Self::OutOfFragment { .. }
             | Self::UnstatedComponent { .. }
@@ -256,7 +268,9 @@ impl LoweringRefusal<'_>
             | Self::RulesUncompleted { .. }
             | Self::RulesNeverComplete { .. }
             | Self::UnderivedRule { .. }
-            | Self::AcrossHandler { .. } => {
+            | Self::AcrossHandler { .. }
+            | Self::GenericMisplaced { .. }
+            | Self::GenericUncovered { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
         },
@@ -327,7 +341,9 @@ impl LoweringRefusal<'_>
             | Self::DescentOnSeveralParameters { .. }
             | Self::UnguardedCorecursion { .. }
             | Self::BareFeedback { .. }
-            | Self::IllFormedDescription { .. } => FailureClass::MalformedSource,
+            | Self::IllFormedDescription { .. }
+            | Self::GenericMisplaced { .. } => FailureClass::MalformedSource,
+            Self::GenericUncovered { fault, .. } => uncovered(fault),
             Self::OutOfFragment {
                 form,
                 sort,
@@ -583,6 +599,40 @@ fn underived(fault: DeriveFault) -> FailureClass
     }
 }
 
+/// The class of a data type `Eq.generic` derives no equality for.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a declaration with parameters or indices, a recursive occurrence
+///   under a product or a sum, a cycle through two declarations and a dependent
+///   field are unimplemented, under the issue tracking them; a binder count
+///   past the ceiling is an engine fault; a field with no equality, a presented
+///   declaration and no declaration at all are malformed source.
+/// - provides: the lowering classifier's arm for `GenericUncovered`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every fault is pinned to its class.
+/// - witness: `classify::tests::a_type_eq_generic_does_not_cover_names_its_class_by_its_fault_2302`
+#[spec(
+    ensures: |ret| matches!(ret, FailureClass::EngineFault) == matches!(fault, Uncovered::BinderCeiling),
+)]
+#[must_use]
+fn uncovered(fault: Uncovered) -> FailureClass
+{
+    match fault {
+        Uncovered::Applied(_)
+        | Uncovered::Nested(..)
+        | Uncovered::Cycle(..)
+        | Uncovered::Dependent(..) => FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY),
+        Uncovered::BinderCeiling => FailureClass::EngineFault,
+        Uncovered::Unknown(_) | Uncovered::Presented(_) | Uncovered::Field(..) => {
+            FailureClass::MalformedSource
+        },
+    }
+}
+
 /// The class of a description member the route or its cell layer does not
 /// read.
 ///
@@ -647,6 +697,7 @@ mod tests
 {
     use anodized::spec;
     use gandr_core_term::TrackingIssue;
+    use gandr_core_term::generic::Uncovered;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::GrammarFingerprint;
@@ -697,7 +748,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 68_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 70_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -980,6 +1031,12 @@ mod tests
                 span: empty,
                 implicit: SurfaceName::from("s"),
             },
+            LoweringRefusal::GenericMisplaced { span: empty },
+            LoweringRefusal::GenericUncovered {
+                span: empty,
+                data: SurfaceName::from("Box"),
+                fault: Uncovered::Applied(gandr_kernel_term::ConstantIndex::from(0_usize)),
+            },
         ]
     }
 
@@ -1055,6 +1112,8 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY),
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {
@@ -1407,6 +1466,43 @@ mod tests
                 LoweringRefusal::UndescribedMember { span: empty, fault }.classify(),
                 class,
                 "a member refused for {fault} carries its pinned class"
+            );
+        }
+    }
+
+    #[test]
+    fn a_type_eq_generic_does_not_cover_names_its_class_by_its_fault_2302()
+    {
+        let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
+        let at = gandr_kernel_term::ConstantIndex::from(0_usize);
+        let site = gandr_kernel_term::OccurrenceSite::Field {
+            tag: gandr_kernel_term::ConstructorTag::from(0_usize),
+            field: gandr_kernel_term::FieldPosition::from(0_usize),
+        };
+        // A type with no structural equality is the author's; one a fuller
+        // derivation would cover names its issue; past the ceiling is the
+        // engine's.
+        let unfinished = FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY);
+        let rows = [
+            (Uncovered::Unknown(at), FailureClass::MalformedSource),
+            (Uncovered::Presented(at), FailureClass::MalformedSource),
+            (Uncovered::Field(at, site), FailureClass::MalformedSource),
+            (Uncovered::Applied(at), unfinished),
+            (Uncovered::Dependent(at, site), unfinished),
+            (Uncovered::Cycle(at, site), unfinished),
+            (Uncovered::Nested(at, site), unfinished),
+            (Uncovered::BinderCeiling, FailureClass::EngineFault),
+        ];
+        for (fault, class) in rows {
+            assert_eq!(
+                LoweringRefusal::GenericUncovered {
+                    span: empty,
+                    data: SurfaceName::from("Shape"),
+                    fault,
+                }
+                .classify(),
+                class,
+                "a data type refused for {fault:?} carries its pinned class"
             );
         }
     }

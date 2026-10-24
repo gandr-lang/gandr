@@ -650,6 +650,9 @@ fn lowered(
             f,
             "the theory `{theory}` does not derive `{rule}`: {fault}"
         ),
+        LoweringRefusal::GenericMisplaced { .. } | LoweringRefusal::GenericUncovered { .. } => {
+            fmt::Display::fmt(&refusal, f)
+        },
         LoweringRefusal::BudgetExceeded { budget } => write!(
             f,
             "the source is too large to read within the allowance of {budget} steps"
@@ -1577,6 +1580,12 @@ mod tests
             LoweringRefusal::Unminted {
                 span,
                 name: SurfaceName::from("windHom"),
+            },
+            LoweringRefusal::GenericMisplaced { span },
+            LoweringRefusal::GenericUncovered {
+                span,
+                data: name,
+                fault: gandr_core_term::generic::Uncovered::Applied(ConstantIndex::from(0_usize)),
             },
         ]
         .map(Refusal::Lowering);

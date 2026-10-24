@@ -1,0 +1,46 @@
+// `Eq.generic` where it derives nothing (#2302): a field with no equality, a
+// type the derivation does not yet cover (#2345), the derivation read
+// anywhere but as a definition's whole body, and a stated type the derived
+// equality does not meet.
+
+/// A shape holding a function, which has no equality the program decides.
+@[ checks ]
+data Shape : Type {
+  Shape : (f : Integer => Integer) --> Shape;
+}
+
+/// A box over any type: its equality needs its argument's.
+@[ checks ]
+data Box(a : Type) : Type {
+  Box : (x : a) --> Box(a);
+}
+
+/// A point in the plane.
+@[ checks ]
+data Point : Type {
+  Point : (x : Integer, y : Integer) --> Point;
+}
+
+/// No equality for a function field.
+@[ refuses("GenericUncovered") ]
+def eqShape = Eq.generic(Shape) ;
+
+/// No equality for a type with parameters, yet.
+@[ refuses("GenericUncovered") ]
+def eqBox = Eq.generic(Box) ;
+
+/// The derivation applied inside a larger body.
+@[ refuses("GenericMisplaced") ]
+def inside() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }
+
+/// The derivation over a type that is no data declaration.
+@[ refuses("GenericMisplaced") ]
+def eqInteger = Eq.generic(Integer) ;
+
+/// The derivation read as a value.
+@[ refuses("GenericMisplaced") ]
+def bare = Eq.generic ;
+
+/// A stated type the derived equality does not meet.
+@[ refuses("TypeMismatch") ]
+def eqWrong : (Point, Point) => Integer = Eq.generic(Point) ;

@@ -1,0 +1,8 @@
+/// `GenericMisplaced`: `Eq.generic` applied inside a larger body rather than as a definition's whole body.
+@[ checks ]
+data Point : Type {
+  Point : (x : Integer, y : Integer) --> Point;
+}
+
+@[ refuses("GenericMisplaced") ]
+def same() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }

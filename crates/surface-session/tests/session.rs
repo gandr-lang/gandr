@@ -1644,7 +1644,6 @@ fn an_importer_lowers_its_closure_once_1033()
     use gandr_surface_dispatcher::lower_closure;
     use gandr_surface_dispatcher::lower_onto_closure;
     use gandr_surface_lowering::OriginTable;
-    use gandr_surface_lowering::Unit;
     use gandr_surface_session::ClosureSlot;
     use gandr_surface_session::Led;
     use gandr_surface_session::Session;
@@ -1714,18 +1713,13 @@ fn an_importer_lowers_its_closure_once_1033()
     {
         let text = SourceText::from(laid.text.as_str());
         let base = usize::from(laid.base);
-        let sources = laid.unit.sources();
         let closure = Arc::new(
             lower_closure(
                 Arc::new(crate::common::grammar()),
                 String::from(laid.text.get(.. base).unwrap_or_default()),
-                Unit::new(
-                    sources
-                        .get(.. sources.len().saturating_sub(1))
-                        .unwrap_or_default()
-                        .to_vec(),
-                )
-                .expect("the closure's sources make a unit"),
+                laid.unit
+                    .before_last()
+                    .expect("the closure's sources make a unit"),
                 &mut LoweringCount::default(),
             )
             .expect("the closure is held"),

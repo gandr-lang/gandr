@@ -693,6 +693,11 @@ pub enum RefusalName
     /// A `derive` declaration whose statement its theory's completed rules
     /// do not prove.
     UnderivedRule,
+    /// `Eq.generic` read anywhere but as a definition's whole body, applied
+    /// to one data type.
+    GenericMisplaced,
+    /// A data type `Eq.generic` derives no equality for.
+    GenericUncovered,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -876,7 +881,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 207_usize] = [
+    pub const VOCABULARY: [Self; 209_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1006,6 +1011,8 @@ impl RefusalName
         Self::RulesNeverComplete,
         Self::RulesUndecided,
         Self::UnderivedRule,
+        Self::GenericMisplaced,
+        Self::GenericUncovered,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -1200,6 +1207,8 @@ impl RefusalName
         (Self::RulesNeverComplete, b"RulesNeverComplete") |
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::UnderivedRule, b"UnderivedRule") |
+        (Self::GenericMisplaced, b"GenericMisplaced") |
+        (Self::GenericUncovered, b"GenericUncovered") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -1531,6 +1540,8 @@ impl RefusalName
             Self::RulesNeverComplete => "RulesNeverComplete",
             Self::RulesUndecided => "RulesUndecided",
             Self::UnderivedRule => "UnderivedRule",
+            Self::GenericMisplaced => "GenericMisplaced",
+            Self::GenericUncovered => "GenericUncovered",
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
             Self::UnknownMold => "UnknownMold",
@@ -2135,6 +2146,10 @@ impl Refusal<'_>
         RefusalName::RulesUndecided) |
         (Self::Lowering(LoweringRefusal::UnderivedRule { .. }),
         RefusalName::UnderivedRule) |
+        (Self::Lowering(LoweringRefusal::GenericMisplaced { .. }),
+        RefusalName::GenericMisplaced) |
+        (Self::Lowering(LoweringRefusal::GenericUncovered { .. }),
+        RefusalName::GenericUncovered) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -2366,7 +2381,9 @@ impl Refusal<'_>
         RefusalName::RulesUncompleted) | (LoweringRefusal::RulesNeverComplete { .. },
         RefusalName::RulesNeverComplete) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::UnderivedRule { .. },
-        RefusalName::UnderivedRule) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::UnderivedRule) | (LoweringRefusal::GenericMisplaced { .. },
+        RefusalName::GenericMisplaced) | (LoweringRefusal::GenericUncovered { .. },
+        RefusalName::GenericUncovered) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold) | (LoweringRefusal::Unminted { .. },
@@ -2460,6 +2477,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RulesNeverComplete { .. } => RefusalName::RulesNeverComplete,
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         LoweringRefusal::UnderivedRule { .. } => RefusalName::UnderivedRule,
+        LoweringRefusal::GenericMisplaced { .. } => RefusalName::GenericMisplaced,
+        LoweringRefusal::GenericUncovered { .. } => RefusalName::GenericUncovered,
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,
