@@ -1,9 +1,9 @@
 // A handler over a theory: the scope takes `State` as its interface, fixes
 // the stored sort `S` at `Integer` where it names the theory, and answers
 // each operation by a clause, or names a model of the theory whose
-// operations answer them. The carrier `C` is what the scope answers; `get`
-// replies an integer to its continuation, and `put` sends one and is replied
-// the unit.
+// operations answer them, or leaves that to the one model of the theory in
+// scope. The carrier `C` is what the scope answers; `get` replies an integer
+// to its continuation, and `put` sends one and is replied the unit.
 
 // The theory `State`.
 import "./state.gandr" ;
@@ -45,5 +45,24 @@ def answeredByPassing() -> Integer => Integer {
 @[ runs("44") ]
 def answeredFromZero() -> Integer {
   run f <- answeredByPassing();
+  f(0)
+}
+
+/// No model named: `Passing` is the one model of `State` at an integer state
+/// in scope, so it answers the scope as naming it does.
+@[ checks ]
+def answeredInScope() -> Integer => Integer {
+  handle st : State with sort S = Integer {
+    st.put(4);
+    run a <- st.get();
+    run b <- st.get();
+    pure fn (_s) { pure a * 10 + b }
+  }
+}
+
+/// The program the model in scope answers, from an initial zero.
+@[ runs("44") ]
+def inScopeFromZero() -> Integer {
+  run f <- answeredInScope();
   f(0)
 }

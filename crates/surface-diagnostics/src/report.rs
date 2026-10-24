@@ -1170,9 +1170,10 @@ impl fmt::Display for MessageText<'_>
     ///   an omitted implicit the solver left unbound names the implicit and the
     ///   function its call wrote, where the origins record them, as does a
     ///   model slot no module or more than one answers, naming every module
-    ///   that answers it; a source refused as a whole says so, then the plain
-    ///   message; every other report writes its title, which is already the
-    ///   user's.
+    ///   that answers it; a capability scope's model left to the models in
+    ///   scope names the theory instead, and `with M`, its spelling naming one;
+    ///   a source refused as a whole says so, then the plain message; every
+    ///   other report writes its title, which is already the user's.
     /// - provides: the first line of a diagnostic.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1220,6 +1221,19 @@ impl fmt::Display for MessageText<'_>
                          as `{function}[{implicit} = …](…)`"
                     ),
                 },
+                Maybe::Present(&Omitted::Scope { ref theory, .. }) => match unsolved(reason) {
+                    Maybe::Present(why) => write!(
+                        f,
+                        "the solver cannot determine the model of `{theory}` this scope leaves \
+                         to the models in scope: {why}; name one after its subject, `}} with M`"
+                    ),
+                    Maybe::Absent(()) => write!(
+                        f,
+                        "the model of `{theory}` this scope leaves to the models in scope is \
+                         determined by neither its subject nor the type it is checked against; \
+                         name one after its subject, `}} with M`"
+                    ),
+                },
                 Maybe::Present(&Omitted::Wildcard) => match unsolved(reason) {
                     Maybe::Present(why) => write!(
                         f,
@@ -1259,6 +1273,29 @@ impl fmt::Display for MessageText<'_>
                     }
                     write!(f, "; supply one as `{function}[{implicit} = …](…)`")
                 },
+                Maybe::Present(&Omitted::Scope {
+                    ref theory,
+                    ref candidates,
+                }) => {
+                    write!(
+                        f,
+                        "no module in scope is a model of `{theory}` answering this scope"
+                    )?;
+                    if !candidates.is_empty() {
+                        f.write_str(" at the types its manifest and subject force: ")?;
+                        named(f, candidates.iter().map(String::as_str))?;
+                        f.write_str(if candidates.len() == 1 {
+                            " is not"
+                        }
+                        else {
+                            " are not"
+                        })?;
+                    }
+                    f.write_str(
+                        "; name one after its subject, `} with M`, or write its clauses, `} with \
+                         { … }`",
+                    )
+                },
                 Maybe::Present(&(Omitted::Implicit { .. } | Omitted::Wildcard))
                 | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
@@ -1292,6 +1329,28 @@ impl fmt::Display for MessageText<'_>
                         f,
                         "; supply the one meant as `{function}[{implicit} = …](…)`"
                     )
+                },
+                Maybe::Present(&Omitted::Scope {
+                    ref theory,
+                    ref candidates,
+                }) => {
+                    write!(
+                        f,
+                        "more than one module in scope is a model of `{theory}` answering this \
+                         scope: "
+                    )?;
+                    named(
+                        f,
+                        survivors
+                            .places()
+                            .filter_map(|place| candidates.get(usize::from(place)))
+                            .map(String::as_str),
+                    )?;
+                    let beyond = u32::from(survivors.beyond());
+                    if beyond > 0 {
+                        write!(f, ", and {beyond} more")?;
+                    }
+                    f.write_str("; name the one meant after its subject, `} with M`")
                 },
                 Maybe::Present(&(Omitted::Implicit { .. } | Omitted::Wildcard))
                 | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),

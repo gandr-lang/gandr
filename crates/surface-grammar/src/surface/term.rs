@@ -4017,7 +4017,8 @@ fn primary_expressions(
     // operation's payload and its resumption. A clause is keyword-led after a
     // `{` or `,` this rule owns, so no expression hole competes with it. A
     // theory's scope may name a model of the theory in place of the clauses,
-    // `with M`. The tree-sitter grammar has no handler, so the kind is in
+    // `with M`, or write no `with`, the one model of the theory in scope
+    // answering it. The tree-sitter grammar has no handler, so the kind is in
     // `PBG_ONLY_KINDS`.
     out.push(r(
         RuleName("handle_expression"),
@@ -4037,17 +4038,19 @@ fn primary_expressions(
                 h(Sort::Type),
             ])),
             block(),
-            t(TileLabel("with")),
-            alt([
-                seq([
-                    t(TileLabel("{")),
-                    handler_clause(),
-                    repeat(seq([t(TileLabel(",")), handler_clause()])),
-                    opt(t(TileLabel(","))),
-                    t(TileLabel("}")),
+            opt(seq([
+                t(TileLabel("with")),
+                alt([
+                    seq([
+                        t(TileLabel("{")),
+                        handler_clause(),
+                        repeat(seq([t(TileLabel(",")), handler_clause()])),
+                        opt(t(TileLabel(","))),
+                        t(TileLabel("}")),
+                    ]),
+                    t(TileLabel("type_identifier")),
                 ]),
-                t(TileLabel("type_identifier")),
-            ]),
+            ])),
         ]),
     ));
     let mut if_expression = r(

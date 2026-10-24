@@ -767,19 +767,21 @@ impl Deferrals
     /// # Specification
     /// - requires: the judgement over the body has run, so every equation its
     ///   arguments force has been posed.
-    /// - ensures: for each slot, in order, every hole of which the judgement
-    ///   met and some hole of which the solver left unbound: each candidate is
+    /// - ensures: for each slot, in order, some hole of which the judgement met
+    ///   and some hole of which the solver left unbound: each candidate is
     ///   tried in a trial of the store ([`Metas::trial`]), which puts back what
-    ///   the solver bound, its components posed against the holes and its code
-    ///   of each sort the slot fixes against the slot's, where the slot's code
-    ///   reads no binder of the callee, and one the solver refutes is dropped.
+    ///   the solver bound, its components posed against the holes the judgement
+    ///   met and its code of each sort the slot fixes against the slot's, where
+    ///   the slot's code reads no binder of the callee, and one the solver
+    ///   refutes is dropped. A hole the judgement did not meet stands in no
+    ///   term, as a law no handler clause reads, so nothing binds it.
     ///   Candidates left are counted up to conversion: one whose components and
     ///   codes convert with the first one left's ([`agreement`]) is the same
     ///   elaboration, as a model including another is at the included model's
     ///   theory, and is not counted again. A single elaboration binds the holes
     ///   as its candidate's trial did, its equations solved again against the
-    ///   store. A slot whose holes are all bound, one a hole of which the
-    ///   judgement did not meet, and a candidate of another arity, or carrying
+    ///   store. A slot whose met holes are all bound, one none of whose holes
+    ///   the judgement met, and a candidate of another arity, or carrying
     ///   another number of fixed sorts, are left out.
     /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
     ///   no candidate is left; [`CheckRefusal::ModelAmbiguous`] there, naming
@@ -800,12 +802,14 @@ impl Deferrals
     ///   two candidates of the forced sort are ambiguous, naming both; a slot
     ///   no candidate of the forced sort answers is unanswered; a slot whose
     ///   type fixes the sort resolves to the candidate of that sort alone; two
-    ///   candidates passing the same members are one elaboration.
+    ///   candidates passing the same members are one elaboration; a slot with a
+    ///   hole the judgement never met resolves on the others.
     /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
     /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
     /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
     /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
     /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
+    /// - witness: `elaboration::tests::a_model_slot_resolves_on_the_holes_the_judgement_met_2272`
     #[spec(ensures: |ret| match ret {
         | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
         | Err((at, refusal)) => refusal == CheckRefusal::ModelUnanswered { at },
@@ -827,25 +831,31 @@ impl Deferrals
                 _ => None,
             })
             .collect();
-        let mut holes: Vec<(ValueId, MetaId)> = Vec::new();
+        let mut holes: Vec<(Component, ValueId, MetaId)> = Vec::new();
         let mut equations: Vec<gandr_core_unify::Equation> = Vec::new();
         let mut closed: Vec<Option<ValueId>> = Vec::new();
-        'slots: for slot in models {
+        for slot in models {
             holes.clear();
-            for hole in &slot.holes {
-                let (Some(&at), Maybe::Present(meta)) = (met.get(hole), self.metas.meta(*hole))
-                else {
-                    continue 'slots;
-                };
-                holes.push((at, meta));
-            }
-            let Some(&(first, _)) = holes.first()
+            holes.extend(
+                slot.holes
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(component, hole)| {
+                        match (met.get(hole), self.metas.meta(*hole)) {
+                            (Some(&at), Maybe::Present(meta)) => {
+                                Some((Component(component), at, meta))
+                            },
+                            _ => None,
+                        }
+                    }),
+            );
+            let Some(&(_, first, _)) = holes.first()
             else {
                 continue;
             };
             if holes
                 .iter()
-                .all(|&(_, meta)| matches!(self.metas.solution(meta), Maybe::Present(_)))
+                .all(|&(_, _, meta)| matches!(self.metas.solution(meta), Maybe::Present(_)))
             {
                 continue;
             }
@@ -858,13 +868,12 @@ impl Deferrals
                 .is_ok_and(|reach| usize::from(reach) == 0)
                 .then_some(code)
             }));
+            let (components, sorts) = (slot.holes.len(), slot.fixed.len());
             let mut survivors = Survivors::default();
             let mut count = 0_usize;
             let mut elaborated = None;
             for (place, candidate) in slot.candidates.iter().enumerate() {
-                if candidate.components.len() != holes.len()
-                    || candidate.fixed.len() != slot.fixed.len()
-                {
+                if candidate.components.len() != components || candidate.fixed.len() != sorts {
                     continue;
                 }
                 pose(&mut equations, &self.metas, &holes, &closed, candidate);
@@ -908,45 +917,53 @@ impl Deferrals
     }
 }
 
+/// A hole's place among a slot's components: the candidate's component at
+/// the same place answers it.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Component(usize);
+
 /// Pose into `equations` what trying `candidate` at a slot asks: each of its
 /// components against the slot's hole at its place, under the hole's context,
 /// and its code of each sort the slot fixes against the slot's closed code.
 ///
 /// # Specification
-/// - requires: `holes` are the slot's holes with their metavariables in
-///   `metas`, as many as `candidate` has components, and `closed` the slot's
-///   fixed codes in sort order, each present when it reads no binder of the
-///   callee.
+/// - requires: `holes` are the slot's holes the judgement met, each with its
+///   place among the slot's components and its metavariable in `metas`, and
+///   `closed` the slot's fixed codes in sort order, each present when it reads
+///   no binder of the callee.
 /// - ensures: `equations` holds exactly those equations, the components' first,
-///   in place order; what it held before is gone.
+///   in place order, a hole whose place `candidate` has no component at posing
+///   none; what it held before is gone.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Deferrals::resolve`].
 /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
 /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
+/// - witness: `elaboration::tests::a_model_slot_resolves_on_the_holes_the_judgement_met_2272`
 #[spec(ensures: equations.len() <= holes.len().saturating_add(closed.len()))]
 fn pose(
     equations: &mut Vec<gandr_core_unify::Equation>,
     metas: &Metas,
-    holes: &[(ValueId, MetaId)],
+    holes: &[(Component, ValueId, MetaId)],
     closed: &[Option<ValueId>],
     candidate: &gandr_core_term::model::Candidate,
 )
 {
     equations.clear();
-    equations.extend(
-        holes
-            .iter()
-            .zip(&candidate.components)
-            .map(|(&(at, meta), &component)| {
-                let scope = match metas.scope(meta) {
-                    Maybe::Present(scope) => scope,
-                    Maybe::Absent(_) => Binders::NONE,
-                };
-                gandr_core_unify::Equation::new(scope, Side::Value(at), Side::Value(component))
-            }),
-    );
+    equations.extend(holes.iter().filter_map(|&(Component(place), at, meta)| {
+        let scope = match metas.scope(meta) {
+            Maybe::Present(scope) => scope,
+            Maybe::Absent(_) => Binders::NONE,
+        };
+        candidate.components.get(place).map(|&component| {
+            gandr_core_unify::Equation::new(scope, Side::Value(at), Side::Value(component))
+        })
+    }));
     equations.extend(
         closed
             .iter()

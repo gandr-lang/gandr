@@ -1,6 +1,8 @@
 //! A capability scope a model answers, `handle c : T with sort x = A { M }
 //! with N`: each operation's clause hands the operation to `N`'s component of
-//! its name, and the scope answers `N`'s carrier.
+//! its name, and the scope answers `N`'s carrier. A scope writing no `with` is
+//! answered so by the one model of `T` in scope, its components holes the
+//! checker fills from it.
 //!
 //! A theory's operation `op : (p : P, k : K) --> C` is, in a model, the
 //! component `op : P -> K -> -F C`: its port `K` is the carrier where it binds
@@ -12,8 +14,9 @@
 //! subject's result at the carrier, so the subject computes a value of it.
 //! Each component a clause applies is ascribed its type, every sort read as
 //! the manifest's type or the module's, so the checker reads the module's
-//! members at the theory's signature. The scope owes no law: the module's
-//! ascription to the theory's model type states each one.
+//! members at the theory's signature, and a hole standing for one is met at
+//! its type. The scope owes no law: the module's ascription to the theory's
+//! model type states each one.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -42,7 +45,7 @@ use crate::origin::Origin;
 
 /// The model answering a capability scope over a theory: the theory's slot,
 /// the sorts the scope's manifest fixes left out, and what the module the
-/// scope names passes for it.
+/// scope names passes for it, or the holes the scope nominates for it.
 ///
 /// # Specification
 /// trivial.
@@ -51,7 +54,7 @@ pub(in crate::lower) struct Answering
 {
     /// The theory's slot.
     pub slot: ModelSlot,
-    /// The module's members.
+    /// The module's members, or the scope's holes.
     pub supplied: Supplied,
 }
 

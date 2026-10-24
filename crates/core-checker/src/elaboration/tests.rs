@@ -1358,6 +1358,44 @@ fn a_model_slot_resolves_to_the_candidate_its_sort_admits_739()
     );
 }
 
+/// A handle answered by the model in scope reads its theory's operations
+/// and never its laws, so the hole standing for a law is in no term (#2272):
+/// the slot resolves on the holes the judgement met.
+#[test]
+fn a_model_slot_resolves_on_the_holes_the_judgement_met_2272()
+{
+    // `Up` and `Flag` as above, each passing a law the judgement never meets.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let ([sort, step], _, [integer, unit]) = forced_slot(&mut arena, &mut deferrals);
+    let law = gandr_core_term::hole::HoleId::nominated(
+        gandr_core_term::hole::NominationIndex::from(2_u32),
+    )
+    .expect("a nominated name");
+    let _unmet = arena.value_hole(law);
+    let [up, flag] = [(integer, 1_usize), (unit, 2)].map(|(code, at)| {
+        let mut lawful = candidate(&mut arena, code, ConstantIndex::from(at));
+        lawful.components.push(arena.value_unit());
+        lawful
+    });
+    let up_step = up.components[1];
+    let slot = gandr_core_term::model::ModelSlot {
+        holes: Vec::from([sort, step, law]),
+        fixed: Vec::new(),
+        candidates: Vec::from([flag, up]),
+    };
+    let definitions = crate::code::CodeDefinitions::new();
+    assert_eq!(deferrals.resolve(&mut arena, &definitions, &[slot]), Ok(()));
+    let solutions = deferrals.solutions(&arena);
+    assert!(
+        solutions.as_ref().is_ok_and(|solved| solved
+            .get(&step)
+            .is_some_and(|&(solved, _)| solved == up_step)
+            && !solved.contains_key(&law)),
+        "the step is `Up`'s and the law is bound by nothing: {solutions:?}"
+    );
+}
+
 #[test]
 fn a_model_slot_two_candidates_answer_is_ambiguous_739()
 {

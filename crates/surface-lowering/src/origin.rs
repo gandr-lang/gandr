@@ -539,8 +539,11 @@ pub enum ComponentName
     Labelled(FieldLabel),
 }
 
-/// What a hole the elaborator nominated stands for: the implicit a call omits,
-/// as written, a component of a model slot it omits, or a wildcard.
+/// What a hole the elaborator nominated stands for.
+///
+/// The implicit a call omits, as written; a component of a model slot it
+/// omits; a component of the model a capability scope leaves to the models in
+/// scope; or a wildcard.
 ///
 /// # Specification
 /// trivial.
@@ -564,6 +567,16 @@ pub enum Omitted
         /// The model implicit the call omits.
         implicit: String,
         /// The name of each module that may answer the slot, in the order
+        /// the checker places them.
+        candidates: Vec<String>,
+    },
+    /// A component of the model answering a capability scope over `theory`
+    /// that names none, beside the modules that may answer it.
+    Scope
+    {
+        /// The theory the scope handles.
+        theory: String,
+        /// The name of each module that may answer the scope, in the order
         /// the checker places them.
         candidates: Vec<String>,
     },
