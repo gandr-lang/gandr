@@ -3262,6 +3262,51 @@ fn a_malformed_member_is_repaired_and_its_siblings_kept()
     );
 }
 
+/// #2484: a member definition with its `def` misspelt is refused at the word
+/// and held under the name it declares, inside the module, so a signature of
+/// that name beside it owes its body because of that refusal; a member that
+/// misspells nothing is still refused under its module.
+#[test]
+fn a_member_definition_misspelt_is_held_under_its_name_2484()
+{
+    let refused = |source: &'static str| -> Vec<(String, LoweringRefusal<'static>)> {
+        rows(&repaired(source))
+            .into_iter()
+            .filter_map(|(name, _, amounts)| match amounts {
+                Amounts::Refused(refusal) => Some((name, refusal)),
+                Amounts::Completed
+                | Amounts::Uncompleted
+                | Amounts::Bodied
+                | Amounts::Data
+                | Amounts::Codata
+                | Amounts::Abstract
+                | Amounts::World => None,
+            })
+            .collect()
+    };
+    let source = "module Counts {\n  def zero : Integer ;\n  de zero = 0 ;\n}\n";
+    let word = source.find("de zero").expect("the misspelt keyword");
+    let held = refused(source);
+    assert!(
+        held.iter().any(|&(ref name, ref refusal)| name == "Counts.zero"
+            && matches!(*refusal, LoweringRefusal::MalformedForm {
+                span,
+                fault: FormFault::Misspelt(_),
+                ..
+            } if usize::from(span.start()) == word && usize::from(span.end()) == word.saturating_add(2))),
+        "the member is refused at `de` under `zero`: {held:?}"
+    );
+    let stray = refused("module Counts {\n  zero one ;\n}\n");
+    assert!(
+        stray.iter().all(|&(ref name, ref refusal)| name == "Counts"
+            && !matches!(*refusal, LoweringRefusal::MalformedForm {
+                fault: FormFault::Misspelt(_),
+                ..
+            })),
+        "a member that misspells no keyword is refused under its module: {stray:?}"
+    );
+}
+
 #[test]
 fn a_malformed_member_named_by_the_signature_is_reported_once()
 {
