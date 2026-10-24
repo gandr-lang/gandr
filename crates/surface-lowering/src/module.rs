@@ -410,6 +410,18 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a model implicit's slot holds no model type.
+    pub mod model_type {
+        /// The written model type did not mint as a value type.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type `Model(S)` was not minted: refused, or under a refusal.
+            Unminted,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why a module holds no data signature at an index.
     pub mod data_signature {
         /// The index is past the module's signature list.
@@ -9620,7 +9632,8 @@ pub struct Forgetting
 ///   parameter the first component binds, the next `components.len()`
 ///   parameters the components' in signature order; each component beside
 ///   whether it is a sort; each fixed sort beside the type it fixes it to, read
-///   under the parameters before the slot.
+///   under the parameters before the slot; `named` the bytes of the implicit's
+///   name, and `model` the written model type as minted, read there too.
 /// - executable: none — the record is data the lowering reads.
 ///
 /// # Adequacy
@@ -9634,6 +9647,11 @@ pub struct FlattenedSlot<'source>
     pub at: usize,
     /// The implicit's name, `s`.
     pub name: SurfaceName<'source>,
+    /// Where the implicit's name is written.
+    pub named: ByteSpan,
+    /// Its model type, `Model(S) with sort x = A`, as the lowering minted it
+    /// under the parameters before the slot.
+    pub model: Maybe<ValueTypeId, model_type::Absent>,
     /// The theory its model type names, `S`, as written.
     pub theory: SurfaceName<'source>,
     /// Each component's name in signature order, beside whether it is a

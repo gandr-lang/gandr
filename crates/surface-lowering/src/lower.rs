@@ -4551,6 +4551,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         let flattened = fixed.map(|fixed| FlattenedSlot {
                             at: 0,
                             name: spelled.name,
+                            named: spelled.named,
+                            model: match self.value_type_at(spelled.declared) {
+                                Maybe::Present(id) => Maybe::Present(id),
+                                Maybe::Absent(_) => {
+                                    Maybe::Absent(crate::module::model_type::Absent::Unminted)
+                                },
+                            },
                             theory: spelled.theory,
                             components: spelled.components,
                             fixed,

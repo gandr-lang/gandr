@@ -231,6 +231,10 @@ pub(in crate::lower) struct WrittenSlot<'source>
 {
     /// The implicit's name, `s`.
     pub name: SurfaceName<'source>,
+    /// Where the implicit's name is written.
+    pub named: ByteSpan,
+    /// The node of its model type, `Model(S) with sort x = A`.
+    pub declared: NodeIndex,
     /// The theory its model type names, `S`.
     pub theory: SurfaceName<'source>,
     /// Each component's name in signature order, beside whether it is a
@@ -413,10 +417,11 @@ impl<'source> Lowerer<'_, 'source>
     /// writes it.
     ///
     /// # Specification
-    /// - requires: `slot` is [`Self::model_slot`]'s answer for `entry`'s type.
-    /// - ensures: the implicit's name, the theory's, each component's name with
-    ///   whether it is a sort, in signature order, and each fixed sort beside
-    ///   its type's node.
+    /// - requires: `slot` is [`Self::model_slot`]'s answer for `entry`'s type,
+    ///   which `declared` writes.
+    /// - ensures: the implicit's name and where it and `declared` are written,
+    ///   the theory's, each component's name with whether it is a sort, in
+    ///   signature order, and each fixed sort beside its type's node.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -428,11 +433,14 @@ impl<'source> Lowerer<'_, 'source>
     pub(in crate::lower) fn written_slot(
         &self,
         entry: TelescopeEntry<'source>,
+        declared: Placed,
         slot: &ModelSlot,
     ) -> WrittenSlot<'source>
     {
         WrittenSlot {
             name: entry.name,
+            named: entry.binder.span,
+            declared: declared.node,
             theory: self.name_at(slot.theory),
             components: slot
                 .components()
