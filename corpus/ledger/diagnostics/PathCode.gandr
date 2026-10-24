@@ -1,0 +1,4 @@
+/// `PathCode`: a native path at a type that is no closed first-order code.
+@[ refuses("PathCode") ]
+def thunked : Path(Type, +U (-F Integer) * Unit, +U (-F Integer) * Unit) ;
+def thunked = pathProduct(here(+U (-F Integer)), here(Unit)) ;

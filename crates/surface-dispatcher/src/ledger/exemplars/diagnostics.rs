@@ -124,7 +124,7 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 65_usize] = [
+const OWED: [(&str, Owed); 63_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
@@ -245,8 +245,6 @@ const OWED: [(&str, Owed); 65_usize] = [
              `NonExhaustiveMatch` before the checker reads it",
         )),
     ),
-    ("PathCode", Owed::Unwritten(CHECKER)),
-    ("TranslatorStuck", Owed::Unwritten(CHECKER)),
     (
         "CapabilityUngranted",
         Owed::Unreachable(Reason(
@@ -256,7 +254,13 @@ const OWED: [(&str, Owed); 65_usize] = [
     ),
     ("BudgetExceeded", Owed::Unwritten(CHECKER)),
     ("Undecided", Owed::Unwritten(CHECKER)),
-    ("EffectSignatureConflict", Owed::Unwritten(CHECKER)),
+    (
+        "EffectSignatureConflict",
+        Owed::Unreachable(Reason(
+            "every interface a row or a handler names is a host interface, minted from its one \
+             signature, so no two signatures of one name give it different operations",
+        )),
+    ),
     (
         "UnknownOperation",
         Owed::Unreachable(Reason(
