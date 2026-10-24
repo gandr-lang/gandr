@@ -7,6 +7,7 @@
 //! | `stage readmission` | `gandr stage pow:0..8 double:0..8` | the kernel's readmission of each staged certificate |
 //! | `rule completion` | `gandr check` of the corpus's completion sources: the group laws, a completed block, and a block whose completion never ends | each rule block's decision, and the completion's overlap queries and normalization |
 //! | `component walk` | `gandr check` of a directory of twenty sources in sixteen components, each laid after the prelude | the prelude's lowering and judgement, once per walk, and each component's own |
+//! | `component floor` | `gandr check` of a directory of sixty-four components of one definition each, every one laid after the prelude | what each component pays to reuse the prelude's judgement: its lowering resumed onto the prelude's (`lower_onto_closure`), its program continued from the prelude's (`Program::after`) and its readmission resumed from the prelude's record (`Crossed::resume`) |
 //! | `prelude resolve` | `gandr check` of one component whose `==` and `<` resolve at the integers, the strings and a point whose `Eq` member is derived | the prelude's lowering and judgement (`lower_closure`, `judge_closure`), the candidates a model slot collects (`Lowerer::model_candidates`), each candidate's packing, an include's among them (`Lowerer::packed_structure`), the include's reduct maps (`Lowerer::mint_reducts`), the checker's trial of each candidate (`Deferrals::resolve`) and the derived equality (`Lowerer::mint_generics`) |
 //! | `many candidates` | `gandr check` of one body calling a function sixteen times, each call leaving out a model implicit sixteen modules in scope answer | each candidate's trial against the one solver store all sixteen slots share (`tried`), and the slots' resolution (`Deferrals::resolve`) |
 //! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
@@ -85,6 +86,9 @@ const RESOLVE: &str = "../../corpus/model/modules/prelude-resolve.gandr";
 /// The source the many candidates check: sixteen models of one theory, each
 /// forced at one of sixteen calls in one body.
 const MANY: &str = "../../corpus/model/modules/model-resolution-many.gandr";
+
+/// How many one-definition components the component floor checks.
+const FLOOR: usize = 64;
 
 /// The path of a corpus source from the driver's manifest directory.
 ///
@@ -172,6 +176,28 @@ fn prelude_resolve()
 fn many_candidates()
 {
     check(vec![corpus(MANY)]);
+}
+
+/// Check [`FLOOR`] components of one definition each, written under a
+/// directory of their own: each component's cost is what it pays for the
+/// prelude its judgement reuses.
+///
+/// # Specification
+/// trivial.
+fn component_floor()
+{
+    let directory =
+        std::env::temp_dir().join(format!("gandr-hotpath-floor-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("the floor's directory is created");
+    for component in 0 .. FLOOR {
+        std::fs::write(
+            directory.join(format!("floor{component}.gandr")),
+            format!("def floor{component} = {component} ;\n"),
+        )
+        .expect("a floor component is written");
+    }
+    check(vec![directory.clone()]);
+    std::fs::remove_dir_all(&directory).expect("the floor's directory is removed");
 }
 
 /// Stage [`PROGRAMS`] and readmit every certificate they produce.
@@ -332,6 +358,7 @@ fn main()
     hotpath::measure_block!("stage readmission", stage_readmission());
     hotpath::measure_block!("rule completion", rule_completion());
     hotpath::measure_block!("component walk", component_walk());
+    hotpath::measure_block!("component floor", component_floor());
     hotpath::measure_block!("prelude resolve", prelude_resolve());
     hotpath::measure_block!("many candidates", many_candidates());
     hotpath::measure_block!("lsp keystroke", lsp_keystroke());

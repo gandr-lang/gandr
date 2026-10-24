@@ -800,6 +800,7 @@ impl<'source> Program<'source>
     /// - witness: `evaluate::tests::a_skipped_admission_position_holds_no_declaration`
     /// - witness: `evaluate::tests::a_run_naming_a_hidden_member_is_opaque_at_its_module`
     #[must_use]
+    #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub(crate) fn after(
         focused: Focused<'source>,
         core: &CoreArena,

@@ -2092,6 +2092,7 @@ impl Recorded
     ensures: lowerings.0 == before.saturating_add(
         unit.sources().len().saturating_sub(judged.lowering().unit().sources().len())),
 )]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn lower_onto_closure<'held>(
     judged: &'held JudgedClosure,
     onto: &CoreArena,
