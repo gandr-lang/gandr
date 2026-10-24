@@ -1,0 +1,23 @@
+/// `ModelImplicitValue`: a model implicit named alone where a value is read, or supplied by what names neither a module nor a model implicit.
+///
+/// A unit: a carrier and a point.
+@[ checks ]
+theory Pointed {
+  sort C : Type;
+  oper point : C;
+}
+
+/// The point read as an integer.
+module Origin : Model(Pointed) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def point = 0;
+}
+
+/// The point of any pointed model the slot names.
+@[ checks ]
+def pointOf @[s : Model(Pointed)] () -> s.C { s.point }
+
+@[ refuses("ModelImplicitValue") ]
+def packed() -> -F Integer { pointOf[s = pack Origin at Model(Pointed)]() }

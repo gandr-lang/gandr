@@ -4,13 +4,17 @@ use alloc::vec::Vec;
 
 use gandr_core_checker::Verdict;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompType;
 use gandr_core_term::Computation;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
 use gandr_core_term::equal_certificate_syntax;
 use gandr_core_term::equal_type_syntax;
 use gandr_core_term::hole::HoleOrigin;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -19,6 +23,7 @@ use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
 use crate::lower::native::tests::lowered;
 use crate::lower::native::tests::refusal_of;
+use crate::model::Dependent;
 use crate::module::DeclarationOutcome;
 use crate::module::LoweredModule;
 use crate::origin::Omitted;
@@ -54,7 +59,8 @@ fn declared_type_of(
     declared_type
 }
 
-/// Assert that every declaration of `module` checks.
+/// Assert that every declaration of `module` checks, a theory forming as
+/// data does.
 ///
 /// # Specification
 /// trivial.
@@ -72,7 +78,7 @@ fn assert_checked(
     );
     for verdict in report.judged() {
         assert!(
-            matches!(verdict.verdict(), Verdict::Checked { .. }),
+            matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data),
             "every declaration checks: {report:?}"
         );
     }
@@ -509,5 +515,258 @@ fn a_standing_stage_supply_stands_as_its_call_1498()
             .iter()
             .all(|verdict| matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data)),
         "the naturals are data and every function checks, `passAt` among them: {report:?}"
+    );
+}
+
+/// A counter theory, a counter that also resets, a module of each, and a
+/// step over any counter its model implicit names.
+const STEPPED: &str = "\
+theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
+theory ResetCounter { include Counter; oper reset : (c : C) --> C; }
+module Up : Model(Counter) {
+  type C = Integer;
+  def zero = 0;
+  def incr(c : Integer) -> -F Integer { c + 1 }
+  def read(c : Integer) -> -F Integer { c }
+}
+module Tens : Model(ResetCounter) {
+  type C = Integer;
+  def zero = 0;
+  def incr(c : Integer) -> -F Integer { c + 10 }
+  def read(c : Integer) -> -F Integer { c }
+  def reset(c : Integer) -> -F Integer { 0 }
+}
+def stepped @[s : Model(Counter)] (c : s.C) -> -F Integer { s.read(s.incr(c)) }
+";
+
+/// Each parameter the declared type `declared` binds, outermost first: its
+/// domain beside whether its arrow is dependent.
+///
+/// # Specification
+/// trivial.
+fn parameters_of(
+    arena: &CoreArena,
+    declared: ValueTypeId,
+) -> Vec<(ValueTypeId, Dependent)>
+{
+    let Some(&ValueType::Thunk(mut arrow)) = arena.value_type(declared)
+    else {
+        panic!("a function's declared type is a thunk");
+    };
+    let mut parameters = Vec::new();
+    loop {
+        match arena.comp_type(arrow) {
+            Some(&CompType::Pi { domain, codomain }) => {
+                parameters.push((domain, Dependent(true)));
+                arrow = codomain;
+            },
+            Some(&CompType::Arrow { domain, codomain }) => {
+                parameters.push((domain, Dependent(false)));
+                arrow = codomain;
+            },
+            _ => return parameters,
+        }
+    }
+}
+
+#[test]
+fn a_model_implicit_binds_one_parameter_per_component_739()
+{
+    // `@[s : Model(Counter)] (c : s.C)` binds the sort, the zero, the step
+    // and the reading, each dependent, then `c` at the sort's variable three
+    // binders out: no parameter holds a record of the model.
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(STEPPED), &mut arena);
+    let parameters = parameters_of(
+        &arena,
+        declared_type_of(&module, SurfaceName::from("stepped")),
+    );
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|&(_, dependent)| dependent)
+            .collect::<Vec<_>>(),
+        [
+            Dependent(true),
+            Dependent(true),
+            Dependent(true),
+            Dependent(true),
+            Dependent(false)
+        ],
+        "one dependent parameter per component, then `c`"
+    );
+    let domain = |at: usize| arena.value_type(parameters.get(at)?.0);
+    assert!(
+        matches!(domain(0), Some(&ValueType::Universe { .. })),
+        "the sort is a type"
+    );
+    let decoded = |at: usize| match domain(at) {
+        Some(&ValueType::Element { code, .. }) => arena.value(code).cloned(),
+        _ => None,
+    };
+    assert_eq!(
+        decoded(1),
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32)
+        }),
+        "the zero is an element of the sort just outside it"
+    );
+    assert_eq!(
+        decoded(4),
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(3_u32)
+        }),
+        "`s.C` reads the sort's parameter past the zero, the step and the reading"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_manifest_model_implicit_binds_no_fixed_sort_739()
+{
+    // `@[s : Model(Counter) with sort C = Integer]` binds the zero, the step
+    // and the reading at `Integer`, and no parameter for the fixed sort.
+    let source = format!(
+        "{STEPPED}def fixed @[s : Model(Counter) with sort C = Integer] (c : Integer) -> -F \
+         Integer {{ s.read(s.incr(c + s.zero)) }}\ndef manifest() -> -F Integer {{ fixed[s = \
+         Up](4) }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let parameters = parameters_of(
+        &arena,
+        declared_type_of(&module, SurfaceName::from("fixed")),
+    );
+    assert_eq!(
+        parameters.len(),
+        4,
+        "the zero, the step, the reading and `c`"
+    );
+    assert!(
+        matches!(
+            parameters
+                .first()
+                .and_then(|&(domain, _)| arena.value_type(domain)),
+            Some(&ValueType::Base(_))
+        ),
+        "the zero is an integer: the fixed sort is its type"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_module_supplied_for_a_model_implicit_passes_its_members_739()
+{
+    // `stepped[s = Up](4)` passes `Up`'s carrier's code and its three members
+    // as four arguments before `4`; a resetting counter passes the members a
+    // counter's slot names, and a model implicit of the caller's passes its
+    // own components on.
+    let source = format!(
+        "{STEPPED}def supplied() -> -F Integer {{ stepped[s = Up](4) }}\ndef reduct() -> -F \
+         Integer {{ stepped[s = Tens](4) }}\ndef passed @[t : Model(Counter)] (c : t.C) -> -F \
+         Integer {{ stepped[s = t](c) }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let Some(&Value::Thunk(mut at)) =
+        arena.value(body_named(&module, SurfaceName::from("supplied")))
+    else {
+        panic!("`supplied`'s body is a thunk");
+    };
+    let mut arguments = Vec::new();
+    while let Some(&Computation::Application(function, argument)) = arena.computation(at) {
+        arguments.push(arena.value(argument).cloned());
+        at = function;
+    }
+    arguments.reverse();
+    assert!(
+        matches!(arguments.as_slice(), [
+            Some(Value::Quote(_)),
+            Some(Value::Constant(_)),
+            Some(Value::Constant(_)),
+            Some(Value::Constant(_)),
+            Some(Value::Literal(_)),
+        ]),
+        "the carrier's code, the three members, then `4`: {arguments:?}"
+    );
+    assert_checked(&module, &mut arena);
+
+    let source = format!("{STEPPED}def nowhere() -> -F Integer {{ stepped[s = Nowhere](4) }}\n");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("nowhere")),
+            LoweringRefusal::UnresolvedName { name, .. } if name == SurfaceName::from("Nowhere")
+        ),
+        "no module answers `Nowhere`"
+    );
+}
+
+#[test]
+fn an_omitted_model_implicit_nominates_a_hole_per_component_739()
+{
+    // `stepped(4)` passes one hole per component, each naming the slot.
+    let source = format!("{STEPPED}def omitted() -> -F Integer {{ stepped(4) }}\n");
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let holes = nominated_holes(&module, &arena, SurfaceName::from("omitted"));
+    let slot = Omitted::Implicit {
+        function: String::from("stepped"),
+        implicit: String::from("s"),
+    };
+    assert_eq!(
+        holes
+            .iter()
+            .map(|&(at, _)| module.origins().omitted(at))
+            .collect::<Vec<_>>(),
+        [
+            Maybe::Present(&slot),
+            Maybe::Present(&slot),
+            Maybe::Present(&slot),
+            Maybe::Present(&slot)
+        ],
+        "one hole per component, each the slot's"
+    );
+}
+
+#[test]
+fn a_model_implicit_named_alone_is_refused_739()
+{
+    // `s` is its components: passed where a model value is asked, it is
+    // refused naming it.
+    let source = format!(
+        "{STEPPED}def observe(m : Model(Counter)) -> -F Integer {{ 0 }}\ndef named \
+         @[s : Model(Counter)] (c : s.C) -> -F Integer {{ observe(s) }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("named")),
+            LoweringRefusal::ModelImplicitValue { implicit, .. } if implicit == SurfaceName::from("s")
+        ),
+        "the model implicit stands as no value"
+    );
+}
+
+#[test]
+fn a_model_implicit_supplied_by_a_value_is_refused_739()
+{
+    // A slot takes a module's name or a model implicit's, never a value: the
+    // pack written out is refused naming the slot.
+    let source = format!(
+        "{STEPPED}def packed() -> -F Integer {{ stepped[s = pack Up at Model(Counter)](4) }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("packed")),
+            LoweringRefusal::ModelImplicitValue { implicit, .. } if implicit == SurfaceName::from("s")
+        ),
+        "a value supplies no model implicit"
     );
 }

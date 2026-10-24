@@ -1,0 +1,57 @@
+// A model implicit (#739) is its components: it is supplied by a module's
+// name or a model implicit's, and read as `s.x`. `corpus/model/modules/
+// model-implicit.gandr` supplies `Up`; here one name answers no module, one
+// module gives no reading, a value stands where a model is supplied, and a
+// model implicit is named alone.
+
+/// A tally: a carrier, a zero, a step and a reading.
+@[ checks ]
+theory Tally {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
+
+/// A tally without its reading.
+@[ checks ]
+theory Stepper {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+}
+
+/// Counting up by one, with no reading.
+module Mute : Model(Stepper) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// One count more.
+  @[ checks ]
+  def incr(c : Integer) -> Integer { c + 1 }
+}
+
+/// The reading after one step, over any tally the slot names.
+@[ checks ]
+def stepped @[s : Model(Tally)] (c : s.C) -> Integer { s.read(s.incr(c)) }
+
+/// A step counted, whatever the model.
+@[ checks ]
+def observe(m : Model(Stepper)) -> Integer { 0 }
+
+/// No module is named `Nowhere`.
+@[ refuses("UnresolvedName") ]
+def nowhere() -> -F Integer { stepped[s = Nowhere](4) }
+
+/// `Mute` gives no `read`, so it is no model of a tally.
+@[ refuses("UnknownMember") ]
+def mute() -> -F Integer { stepped[s = Mute](4) }
+
+/// A value supplies no model implicit, though it is the model packed.
+@[ refuses("ModelImplicitValue") ]
+def packed() -> -F Integer { stepped[s = pack Mute at Model(Stepper)](4) }
+
+/// `s` is its components, never a value to pass.
+@[ refuses("ModelImplicitValue") ]
+def alone @[s : Model(Stepper)] (c : s.C) -> -F Integer { observe(s) }

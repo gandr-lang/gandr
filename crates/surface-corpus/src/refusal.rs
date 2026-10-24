@@ -619,6 +619,9 @@ pub enum RefusalName
     ImplicitUnsupplied,
     /// A call writing a function's implicit arguments among its parentheses.
     ImplicitInParentheses,
+    /// A model implicit named alone where a value is read, or supplied by what
+    /// names neither a module nor a model implicit.
+    ModelImplicitValue,
     /// A call omitting an implicit neither its arguments nor the type it is
     /// checked against determine.
     ImplicitUnsolved,
@@ -868,7 +871,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 204_usize] = [
+    pub const VOCABULARY: [Self; 205_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -968,6 +971,7 @@ impl RefusalName
         Self::TelescopeCycle,
         Self::ImplicitUnsupplied,
         Self::ImplicitInParentheses,
+        Self::ModelImplicitValue,
         Self::ImplicitUnsolved,
         Self::RegionAsValue,
         Self::EntryType,
@@ -1159,6 +1163,7 @@ impl RefusalName
         (Self::TelescopeCycle, b"TelescopeCycle") |
         (Self::ImplicitUnsupplied, b"ImplicitUnsupplied") |
         (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
+        (Self::ModelImplicitValue, b"ModelImplicitValue") |
         (Self::ImplicitUnsolved, b"ImplicitUnsolved") |
         (Self::RegionAsValue, b"RegionAsValue") |
         (Self::EntryType, b"EntryType") |
@@ -1487,6 +1492,7 @@ impl RefusalName
             Self::TelescopeCycle => "TelescopeCycle",
             Self::ImplicitUnsupplied => "ImplicitUnsupplied",
             Self::ImplicitInParentheses => "ImplicitInParentheses",
+            Self::ModelImplicitValue => "ModelImplicitValue",
             Self::ImplicitUnsolved => "ImplicitUnsolved",
             Self::RegionAsValue => "RegionAsValue",
             Self::EntryType => "EntryType",
@@ -2062,6 +2068,8 @@ impl Refusal<'_>
         RefusalName::ImplicitUnsupplied) |
         (Self::Lowering(LoweringRefusal::ImplicitInParentheses { .. }),
         RefusalName::ImplicitInParentheses) |
+        (Self::Lowering(LoweringRefusal::ModelImplicitValue { .. }),
+        RefusalName::ModelImplicitValue) |
         (Self::Lowering(LoweringRefusal::RegionAsValue { .. }),
         RefusalName::RegionAsValue) |
         (Self::Lowering(LoweringRefusal::EntryType { .. }),
@@ -2316,7 +2324,8 @@ impl Refusal<'_>
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
         RefusalName::ImplicitUnsupplied) | (LoweringRefusal::ImplicitInParentheses { .. },
-        RefusalName::ImplicitInParentheses) | (LoweringRefusal::RegionAsValue { .. },
+        RefusalName::ImplicitInParentheses) | (LoweringRefusal::ModelImplicitValue { .. },
+        RefusalName::ModelImplicitValue) | (LoweringRefusal::RegionAsValue { .. },
         RefusalName::RegionAsValue) | (LoweringRefusal::EntryType { .. },
         RefusalName::EntryType) | (LoweringRefusal::StrayReceiverMode { .. },
         RefusalName::StrayReceiverMode) | (LoweringRefusal::AmbiguousMethod { .. },
@@ -2407,6 +2416,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::TelescopeCycle { .. } => RefusalName::TelescopeCycle,
         LoweringRefusal::ImplicitUnsupplied { .. } => RefusalName::ImplicitUnsupplied,
         LoweringRefusal::ImplicitInParentheses { .. } => RefusalName::ImplicitInParentheses,
+        LoweringRefusal::ModelImplicitValue { .. } => RefusalName::ModelImplicitValue,
         LoweringRefusal::RegionAsValue { .. } => RefusalName::RegionAsValue,
         LoweringRefusal::EntryType { .. } => RefusalName::EntryType,
         LoweringRefusal::StrayReceiverMode { .. } => RefusalName::StrayReceiverMode,

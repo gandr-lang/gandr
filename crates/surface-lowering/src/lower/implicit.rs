@@ -36,6 +36,15 @@
 //! `idAt(Integer, 3)` lowers to. Where a computation is read the wildcard
 //! leaves the fragment: the solver binds values.
 //!
+//! # Model implicits
+//!
+//! An implicit at a model type, `@[s : Model(S)]`, is one parameter per
+//! component of `S`, and a call passes one argument per component in its
+//! place: the members of the module a resident names, `f[s = M]`, or of a
+//! model implicit of the caller's, `f[s = t]`, and one nominated hole per
+//! component when the call omits it, each naming the slot. The flattening,
+//! its supply and its refusals live in [`super::model`]'s `flattened`.
+//!
 //! # Boundaries
 //!
 //! - A use of a function with implicits standing as a value supplies all of
@@ -62,6 +71,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -80,6 +90,7 @@ use super::Site;
 use super::Stretch;
 use super::arguments;
 use super::arity;
+use super::model;
 use super::stated;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
@@ -227,11 +238,13 @@ impl<'source> Lowerer<'_, 'source>
     ///   `function` is the function tail's site.
     /// - ensures: for a function with a merged telescope, each entry is bound
     ///   in a frame extending the one before it, its type, when written, read
-    ///   as a value type under that frame and recorded on its parameter; the
-    ///   cursor then stands at the list's `)`, and the frame the last entry
-    ///   bound is returned. Otherwise nothing changes and `frame` is returned.
-    /// - fails: a binder's own refusal; a fault at the parameter list when it
-    ///   ends before its `)`.
+    ///   as a value type under that frame and recorded on its parameter, a
+    ///   model implicit flattened into one parameter per component
+    ///   ([`Self::flatten_implicit`]); the cursor then stands at the list's
+    ///   `)`, and the frame the last entry bound is returned. Otherwise nothing
+    ///   changes and `frame` is returned.
+    /// - fails: a binder's own refusal; a model type's ([`Self::model_slot`]);
+    ///   a fault at the parameter list when it ends before its `)`.
     /// - panics: none.
     ///
     /// # Errors
@@ -243,6 +256,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   function written with every parameter explicit, in that order, gives.
     /// - witness: `lower::implicit::tests::plicity_is_metadata_not_type_structure`
     /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
+    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     #[spec(
         captures: before = self.parameters.len(),
         ensures: |ret| ret.is_err() || self.parameters.len() >= before,
@@ -262,6 +276,10 @@ impl<'source> Lowerer<'_, 'source>
         let entries = entries.to_vec();
         let mut frame = frame;
         for entry in entries {
+            if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
+                frame = self.flatten_implicit(entry, declared, &slot, frame)?;
+                continue;
+            }
             let declared = match entry.declared {
                 Maybe::Present(declared) => {
                     self.read(declared.node, Reading::ValueType(frame));
@@ -281,6 +299,7 @@ impl<'source> Lowerer<'_, 'source>
                 binder: entry.binder.node,
                 frame: bound,
                 declared,
+                component: None,
             });
             frame = Frame::Inner(bound);
         }
@@ -291,6 +310,42 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(frame)
+    }
+
+    /// The model type the implicit `entry` of the declaration at `site` is
+    /// written at, beside its slot, when it is a model implicit whose theory
+    /// states a component.
+    ///
+    /// # Specification
+    /// - requires: `entry` is an entry of the declaration's merged telescope.
+    /// - ensures: the written type and [`Self::model_slot`]'s answer for an
+    ///   implicit written at a model type whose slot states a component;
+    ///   nothing for an explicit parameter, an implicit written at any other
+    ///   type, and one written at no type.
+    /// - fails: as [`Self::model_slot`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::model_slot`].
+    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| slot.as_ref().is_none_or(|&(_, ref slot)| !slot.components().is_empty())))]
+    fn implicit_slot(
+        &mut self,
+        site: Site,
+        entry: TelescopeEntry<'source>,
+    ) -> Result<Option<(Placed, model::ModelSlot)>, LoweringRefusal<'source>>
+    {
+        let (Plicity::Implicit, Maybe::Present(declared)) = (entry.plicity, entry.declared)
+        else {
+            return Ok(None);
+        };
+        Ok(self
+            .model_slot(site, declared)?
+            .filter(|slot| !slot.components().is_empty())
+            .map(|slot| (declared, slot)))
     }
 
     /// Refuse the use at `site` of the declaration `constant` when the
@@ -690,6 +745,13 @@ impl<'source> Lowerer<'_, 'source>
             .map(Some)
             .chain(core::iter::repeat_n(None, unlisted))
         {
+            if let Some(&entry) = entry
+                && let Some((_, slot)) = self.implicit_slot(site, entry)?
+            {
+                let value = supplied.get(&entry.name).map(|&(_, value)| value);
+                self.pass_model(site, frame, (function, entry.name), &slot, value)?;
+                continue;
+            }
             let plicity = entry.map_or(Plicity::Explicit, |entry| entry.plicity);
             let argument = match (plicity, entry) {
                 (Plicity::Implicit, Some(entry)) => {
@@ -733,7 +795,10 @@ impl<'source> Lowerer<'_, 'source>
         }
         self.read(inner.node, Reading::Head(frame));
         for position in applied.start .. applied.end {
-            if self.nominated.contains_key(&position) || self.abstracted.contains_key(&position) {
+            if self.nominated.contains_key(&position)
+                || self.abstracted.contains_key(&position)
+                || self.components.contains_key(&position)
+            {
                 continue;
             }
             if let Some(&argument) = self.operands.get(position) {
@@ -743,6 +808,68 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(site, Plan::Application(inner.node, applied));
 
         Ok(arity::Planned(true))
+    }
+
+    /// Pass the model implicit `implicit` of `function`, whose slot is
+    /// `slot`, at the call `site` read under `frame`: one operand per
+    /// component, the value the resident `value` supplies when it is written
+    /// ([`Self::supply_model`]) and a hole the call nominates otherwise.
+    ///
+    /// # Specification
+    /// - requires: the operands so far are the call's arguments before the
+    ///   implicit's.
+    /// - ensures: one operand per component of the slot, in signature order,
+    ///   each the call's own node, kept with the supply and the component's
+    ///   place, or with a hole nominated as the implicit's.
+    /// - fails: the refusals [`Self::supply_model`] yields; the budget refusal
+    ///   once no hole can be nominated.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module supplied passes its members and an omitted
+    ///   model a hole per component.
+    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_nominates_a_hole_per_component_739`
+    #[spec(
+        captures: before = self.operands.len(),
+        ensures: |ret| ret.is_err() || self.operands.len() == before.saturating_add(slot.components().len()),
+    )]
+    fn pass_model(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        (function, implicit): (SurfaceName<'source>, SurfaceName<'source>),
+        slot: &model::ModelSlot,
+        value: Option<NodeIndex>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let supplied = match value {
+            Some(value) => Some(Arc::new(self.supply_model(
+                site,
+                frame,
+                (implicit, slot),
+                value,
+            )?)),
+            None => None,
+        };
+        for place in 0 .. slot.components().len() {
+            if let Some(ref supplied) = supplied {
+                let _first = self.components.insert(
+                    self.operands.len(),
+                    (Arc::clone(supplied), model::ComponentPlace::from(place)),
+                );
+            }
+            else {
+                let hole = self.nominate(Nomination::Omitted { function, implicit })?;
+                let _first = self.nominated.insert(self.operands.len(), hole);
+            }
+            self.operands.push(site.at.node);
+        }
+
+        Ok(())
     }
 
     /// Nominate a hole for `nomination`, an implicit a call omits or a

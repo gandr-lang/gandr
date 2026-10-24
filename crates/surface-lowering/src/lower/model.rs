@@ -1803,8 +1803,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   binder's bundle holds, projected at its field — at its label when no
     ///   field of the bundle names another, along the nesting otherwise — with
     ///   the binder mentioned in the type, which so depends on it. Either way
-    ///   the head is labelled at the binder's written type. Nothing is planned
-    ///   for a head no such binder answers.
+    ///   the head is labelled at the binder's written type. A head naming a
+    ///   flattened model implicit plans as [`Self::flattened_sort`] does.
+    ///   Nothing is planned for a head no such binder answers.
     /// - fails: [`LoweringRefusal::UnknownMember`], naming the binder and the
     ///   member, for a name that is no component of `T`; the wrong-sort refusal
     ///   for a component that is no unindexed sort, and where no value type is
@@ -1828,8 +1829,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   one it fixes; an operation and a name the theory lacks, refused.
     /// - witness: `tests::modules::models::a_model_binder_s_carrier_is_its_projected_sort_2131`
     /// - witness: `tests::modules::models::a_sort_a_partly_manifest_type_leaves_a_field_is_read_off_its_binder_2158`
+    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
     /// - witness: `tests::modules::models::a_carrier_path_s_head_and_a_fixed_path_answer_2182`
-    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&(Plan::Carrier(Code::Bound { .. }, ..) | Plan::FixedCarrier(Code::Bound { .. }, _)))))]
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&(Plan::Carrier(Code::Bound { .. }, ..) | Plan::FixedCarrier(Code::Bound { .. }, _) | Plan::Decode(Code::Bound { .. }, ..)))))]
     pub(super) fn carrier(
         &mut self,
         site: Site,
@@ -1844,6 +1846,9 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(arity::Planned(false));
         };
+        if let Some(flattened) = self.flattened_at(bound.binder) {
+            return self.flattened_sort(site, head, member, &flattened);
+        }
         let Maybe::Present(declared) = bound.declared
         else {
             return Ok(arity::Planned(false));
@@ -1932,8 +1937,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   with sort C = A …`: the component the member names among those the
     ///   type leaves fields, the name read as a value under the form's frame,
     ///   beside the stated type and the member's label, so the mint projects a
-    ///   keyed record at its label and a dependent one along the nesting;
-    ///   nothing is planned otherwise.
+    ///   keyed record at its label and a dependent one along the nesting; a
+    ///   member of a flattened model implicit as [`Self::flattened_member`]
+    ///   plans it; nothing is planned otherwise.
     /// - fails: the unknown-member refusal for a name the theory lacks; the
     ///   wrong-sort refusal for a sort the type fixes, which is no field, and
     ///   where no computation is read; the name's own resolution refusals.
@@ -1951,7 +1957,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   manifest and off one whose carrier is a field, run; a sort the type
     ///   fixes and a name the theory lacks, refused.
     /// - witness: `tests::modules::models::an_operation_is_selected_off_a_model_binder_2246`
-    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Select(..))))]
+    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&(Plan::Select(..) | Plan::Variable(..) | Plan::StaticApplication(Code::Bound { .. }, _)))))]
     pub(super) fn model_member(
         &mut self,
         site: Site,
@@ -1971,10 +1978,18 @@ impl<'source> Lowerer<'_, 'source>
             name: FormName::IDENTIFIER,
             reading: Reading::Value(frame),
         };
-        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
-            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
-            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+        let resolved = match self.resolve_name(named, frame, self.name_at(target))? {
+            Maybe::Present(resolved) => resolved,
             Maybe::Absent(_) => return Ok(arity::Planned(false)),
+        };
+        if let Resolved::Binder(bound) = resolved
+            && let Some(flattened) = self.flattened_at(bound.binder)
+        {
+            return self.flattened_member(site, (target, selected), bound, &flattened);
+        }
+        let declared = match resolved {
+            Resolved::Binder(bound) => bound.declared,
+            Resolved::Declaration { declared, .. } => declared,
         };
         let Maybe::Present(mut stated) = declared
         else {
@@ -2506,26 +2521,17 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is a pack-at form and `cursor` stands before its
     ///   `pack` tile.
-    /// - ensures: the form stands as a value and is planned over the theories
-    ///   [`Self::bundled`] reads off the theory `S` names, the outermost beside
-    ///   the top-level module `M` names, declared before the form, and each
-    ///   nested one beside the member module its component names in the module
-    ///   nesting it.
+    /// - ensures: the form stands as a value and is planned as
+    ///   [`Self::packed_module`] reads the module `M` names at the theory `S`
+    ///   names.
     /// - fails: the wrong-sort refusal where no value is read; a misplaced or
     ///   missing piece; a module operand that is no capitalised name, or a
-    ///   stated type that is not `Model(S)`, out of the fragment; a name no
-    ///   module declared before answers, unresolved; a component no member of
-    ///   its module answers, an unknown member; an unindexed sort its module
-    ///   seals or states as a family, out of the fragment as a pack; the
-    ///   refusals [`Self::bundled`] yields.
+    ///   stated type that is not `Model(S)`, out of the fragment; the refusals
+    ///   [`Self::packed_module`] yields.
     /// - panics: none.
     ///
     /// # Errors
     /// The form's refusal.
-    ///
-    /// # Termination
-    /// The outer loop visits each theory of the finite bundle once, the inner
-    /// one each of its finite components once.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a counter's module packed at its models, the same
@@ -2557,6 +2563,56 @@ impl<'source> Lowerer<'_, 'source>
             at_stated,
             at_stated.out(FragmentBoundary::Unadmitted(Unbuilt::PackModel)),
         )?;
+        let theories = self.packed_module(site, module, theory, &BTreeMap::new())?;
+        self.plan(site, Plan::Packed(Arc::new(theories)));
+
+        Ok(())
+    }
+
+    /// The theories [`Self::bundled`] reads off the theory `theory` names,
+    /// each beside the module giving its members: the outermost beside the
+    /// top-level module `module` names, declared before `site`, and each
+    /// nested one beside the member module its component names in the module
+    /// nesting it; the outermost theory holds no component `fixed` names.
+    ///
+    /// # Specification
+    /// - requires: `module` is a capitalised name and `theory` the name tile of
+    ///   a model type, both written in `site`; `fixed` names sorts the model
+    ///   type fixes.
+    /// - ensures: one module per theory, the outermost theory's components
+    ///   those its signature states but `fixed`; every component the bundle
+    ///   reads given by its module.
+    /// - fails: a name no module declared before `site` answers, unresolved; a
+    ///   component no member of its module answers, an unknown member; an
+    ///   unindexed sort its module seals or states as a family, out of the
+    ///   fragment as a pack; a component its theory cannot state; the refusals
+    ///   [`Self::bundled`] yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// The outer loop visits each theory of the finite bundle once, the inner
+    /// one each of its finite components once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's module packed at its models, the same
+    ///   module sealed, and a name no module answers; a module supplied for a
+    ///   model implicit.
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    /// - witness: `tests::modules::models::a_pack_of_a_sealed_sort_is_refused`
+    /// - witness: `tests::modules::models::a_pack_of_no_module_is_refused`
+    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |packed| packed.theories.len() == packed.modules.len()))]
+    fn packed_module(
+        &mut self,
+        site: Site,
+        module: Placed,
+        theory: Placed,
+        fixed: &BTreeMap<Name, Placed>,
+    ) -> Result<Packed, LoweringRefusal<'source>>
+    {
         let name = self.name_at(module);
         let Some(outermost) = self.collected.structures.iter().rposition(|structure| {
             structure.name.as_ref() == name.as_ref()
@@ -2571,7 +2627,13 @@ impl<'source> Lowerer<'_, 'source>
             });
         };
         let written = Site { at: theory, ..site };
-        let theories = self.bundled(written, (site.at.span.start(), self.name_at(theory)))?;
+        let mut theories = self.bundled(written, (site.at.span.start(), self.name_at(theory)))?;
+        if let Some(outermost) = theories.first_mut() {
+            outermost
+                .signature
+                .components
+                .retain(|component| !fixed.contains_key(&component.name));
+        }
         let mut modules = vec![StructureIndex::from(outermost); theories.len()];
         for (place, read) in theories.iter().enumerate() {
             let Some(&holder) = modules.get(place)
@@ -2635,9 +2697,8 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
         }
-        self.plan(site, Plan::Packed(Arc::new(Packed { theories, modules })));
 
-        Ok(())
+        Ok(Packed { theories, modules })
     }
 
     /// The theory's name `S` the type `Model(S)` written at `site` names, or
@@ -2806,63 +2867,113 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Maybe<Lowered, lowered::Absent>
     {
         let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        self.packed_records(packed, sink, origin)
+            .and_then(|minted| minted.first().copied().flatten())
+            .map_or(unminted, |id| Maybe::Present(Lowered::Value(id)))
+    }
+
+    /// The record of each theory of `packed` as [`Self::mint_packed`] mints
+    /// it, by its place in the bundle.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_packed`].
+    /// - ensures: one record per theory, the innermost minted first so a
+    ///   nesting theory reads its nested ones; the outermost carrying `origin`
+    ///   and every other node `origin` marked [`Insertion::Model`]; nothing
+    ///   when a member did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// The loop runs once per theory of the finite bundle, the inner one once
+    /// per component of its finite signature.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|minted| minted.len() == packed.theories.len()))]
+    pub(super) fn packed_records(
+        &self,
+        packed: &Packed,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<Vec<Option<ValueId>>>
+    {
         let below = origin.inserted(Insertion::Model);
         let mut minted: Vec<Option<ValueId>> = vec![None; packed.theories.len()];
         let mut values = Vec::new();
         for (place, theory) in packed.theories.iter().enumerate().rev() {
-            let Some(&module) = packed.modules.get(place)
-            else {
-                return unminted;
-            };
+            let &module = packed.modules.get(place)?;
             let mut nested = theory.nested.iter();
             values.clear();
             for component in &theory.signature.components {
-                let name = self.name_at(component.named);
                 let value = match component.form {
                     Ok(ModelForm::Nested(_)) => nested
                         .next()
                         .and_then(|&inner| minted.get(inner).copied().flatten()),
-                    Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
-                        self.packed_sort(module, name, sink, below)
-                    },
-                    Ok(
-                        ModelForm::Sort { .. }
-                        | ModelForm::Operation { .. }
-                        | ModelForm::Constant(_)
-                        | ModelForm::Law { .. },
-                    ) => self
-                        .collected
-                        .by_name
-                        .get(&(Container::Module(module), name))
-                        .and_then(|&slot| self.collected.slots.get(usize::from(slot)))
-                        .filter(|declared| matches!(declared.refusal, Maybe::Absent(_)))
-                        .map(|declared| {
-                            let id = sink.arena.value_constant(declared.constant);
-                            sink.origins.record_value(id, below);
-                            id
-                        }),
-                    Err(_) => None,
+                    Ok(_) | Err(_) => self.packed_member(module, component, sink, below),
                 };
-                let Some(value) = value
-                else {
-                    return unminted;
-                };
-                values.push(value);
+                values.push(value?);
             }
             let top = if place == 0 { origin } else { below };
-            let Some(id) = packed_record(&theory.signature, &values, sink, (top, below))
-            else {
-                return unminted;
-            };
+            let id = packed_record(&theory.signature, &values, sink, (top, below))?;
             if let Some(at) = minted.get_mut(place) {
                 *at = Some(id);
             }
         }
-        minted
-            .first()
-            .copied()
-            .flatten()
-            .map_or(unminted, |id| Maybe::Present(Lowered::Value(id)))
+
+        Some(minted)
+    }
+
+    /// The value the module at `module` gives for `component`, a component
+    /// no nested theory states: the code of the type it states for an
+    /// unindexed sort, and its member of the component's name otherwise.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: as [`Self::packed_sort`] for an unindexed sort; the member
+    ///   declaration's constant for any other sort, operation, constant or law,
+    ///   carrying `origin`; nothing for a nested component, a component that
+    ///   states nothing, and a member the module lacks or refused.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::pack_model`].
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    #[spec(ensures: |ret| ret.is_none() || matches!(component.form, Ok(ref form) if !matches!(*form, ModelForm::Nested(_))))]
+    pub(super) fn packed_member(
+        &self,
+        module: StructureIndex,
+        component: &ModelComponent,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<ValueId>
+    {
+        let name = self.name_at(component.named);
+        match component.form {
+            Ok(ModelForm::Sort { ref indices }) if indices.is_empty() => {
+                self.packed_sort(module, name, sink, origin)
+            },
+            Ok(
+                ModelForm::Sort { .. }
+                | ModelForm::Operation { .. }
+                | ModelForm::Constant(_)
+                | ModelForm::Law { .. },
+            ) => self
+                .collected
+                .by_name
+                .get(&(Container::Module(module), name))
+                .and_then(|&slot| self.collected.slots.get(usize::from(slot)))
+                .filter(|declared| matches!(declared.refusal, Maybe::Absent(_)))
+                .map(|declared| {
+                    let id = sink.arena.value_constant(declared.constant);
+                    sink.origins.record_value(id, origin);
+                    id
+                }),
+            Ok(ModelForm::Nested(_)) | Err(_) => None,
+        }
     }
 
     /// The code of the type the module at `module` states for its sort
@@ -2960,25 +3071,7 @@ impl<'source> Lowerer<'_, 'source>
     {
         let components = &signature.components;
         let binds = bundle_dependence(signature);
-        let mut nested = nested.iter();
-        let mut fields = Vec::with_capacity(components.len());
-        for (at, component) in components.iter().enumerate() {
-            let minting = Minting {
-                members: Members::Fields(Fields {
-                    before: components.get(.. at).unwrap_or_default(),
-                    binds: binds.get(.. at).unwrap_or_default(),
-                    manifests,
-                }),
-                origin: below,
-            };
-            let field = match component.form {
-                Ok(ModelForm::Sort { ref indices }) => self.sort_field(indices, &minting, sink)?,
-                Ok(ModelForm::Nested(_)) => *nested.next().ok_or(Missing::Unlowered)?,
-                Ok(ref form) => self.mint_form(form, &minting, sink)?,
-                Err(_) => return Err(Missing::Unlowered),
-            };
-            fields.push(field);
-        }
+        let fields = self.bundle_fields(signature, &binds, nested, manifests, sink, below)?;
         if !binds.iter().any(|binds| binds.0) {
             let record = components
                 .iter()
@@ -3008,6 +3101,66 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(chained)
+    }
+
+    /// The field each component of `signature` states, in signature order,
+    /// each read under the fields before it whose link `binds` says binds:
+    /// one field per component, as [`Self::bundle_type`] states it.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::bundle_type`]; `binds` holds one flag per
+    ///   component.
+    /// - ensures: one type per component — a sort as [`Self::sort_field`]
+    ///   states it, a nested model the next type of `nested`, any other
+    ///   component its type as [`Self::mint_form`] states it — each sort and
+    ///   operation it names read as the variable of the binding field before
+    ///   it, counted past the binding links between, and each sort `manifests`
+    ///   fixes as its type raised past the binding links before it; every node
+    ///   carries `below`.
+    /// - fails: a field that does not mint, as unlowered.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Missing::Unlowered`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bundle_type`], and a model implicit's
+    ///   components bound one parameter each, every link binding.
+    /// - witness: `tests::modules::models::a_model_type_is_the_record_its_theory_derives`
+    /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |fields| fields.len() == signature.components.len()))]
+    fn bundle_fields(
+        &self,
+        signature: &ModelSignature,
+        binds: &[Dependent],
+        nested: &[ValueTypeId],
+        manifests: &[(&Name, ValueTypeId)],
+        sink: &mut Sink<'_>,
+        below: Origin,
+    ) -> Result<Vec<ValueTypeId>, Missing<'source>>
+    {
+        let components = &signature.components;
+        let mut nested = nested.iter();
+        let mut fields = Vec::with_capacity(components.len());
+        for (at, component) in components.iter().enumerate() {
+            let minting = Minting {
+                members: Members::Fields(Fields {
+                    before: components.get(.. at).unwrap_or_default(),
+                    binds: binds.get(.. at).unwrap_or_default(),
+                    manifests,
+                }),
+                origin: below,
+            };
+            let field = match component.form {
+                Ok(ModelForm::Sort { ref indices }) => self.sort_field(indices, &minting, sink)?,
+                Ok(ModelForm::Nested(_)) => *nested.next().ok_or(Missing::Unlowered)?,
+                Ok(ref form) => self.mint_form(form, &minting, sink)?,
+                Err(_) => return Err(Missing::Unlowered),
+            };
+            fields.push(field);
+        }
+
+        Ok(fields)
     }
 
     /// The field a sort over the index telescope `indices` states.
@@ -3729,6 +3882,13 @@ fn member_read<'source>(
 
 mod derived;
 
+mod flattened;
+
 mod forget;
 
 mod reduct;
+
+pub(super) use self::flattened::ComponentPlace;
+pub(super) use self::flattened::Flattened;
+pub(super) use self::flattened::ModelSlot;
+pub(super) use self::flattened::Supplied;

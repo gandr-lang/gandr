@@ -1614,6 +1614,7 @@ impl<'source> Lowerer<'_, 'source>
                         binder: key.node,
                         frame: extended,
                         declared: Maybe::Present(declared.node),
+                        component: None,
                     });
                     inner = Frame::Inner(extended);
                 }
@@ -3370,6 +3371,7 @@ impl<'source> Lowerer<'_, 'source>
                 binder: binder.node,
                 frame: extended,
                 declared: Maybe::Present(declared.node),
+                component: None,
             });
             inner = Frame::Inner(extended);
         }
@@ -3605,6 +3607,7 @@ impl<'source> Lowerer<'_, 'source>
             binder: key.node,
             frame: extended,
             declared: Maybe::Present(declared.node),
+            component: None,
         });
         self.read(codomain.node, Reading::CompType(Frame::Inner(extended)));
         self.plan(

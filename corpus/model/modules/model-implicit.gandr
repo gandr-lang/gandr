@@ -1,0 +1,85 @@
+// A model passed to an implicit (#739): a function quantifies over a model in
+// its prefix block, `@[s : Model(Tally)]`, which binds one parameter per
+// component of `Tally`, and reads each as `s.x`. A call supplies a module for
+// it by name, `stepped[s = Up](4)`, passing the module's members; a module of
+// a theory that includes `Tally` passes its reduct, and a function passes its
+// own model implicit on, `stepped[s = t]`. A manifest model type fixes a sort,
+// which binds no parameter.
+
+/// A tally: a carrier, a zero, a step and a reading.
+@[ checks ]
+theory Tally {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
+
+/// A tally that also resets.
+@[ checks ]
+theory ResetTally {
+  include Tally;
+  oper reset : (c : C) --> C;
+}
+
+/// Counting up by one.
+module Up : Model(Tally) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// One count more.
+  @[ checks ]
+  def incr(c : Integer) -> Integer { c + 1 }
+  /// The count as it is.
+  @[ checks ]
+  def read(c : Integer) -> Integer { c }
+}
+
+/// Counting up by ten, and resetting.
+module Tens : Model(ResetTally) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// Ten counts more.
+  @[ checks ]
+  def incr(c : Integer) -> Integer { c + 10 }
+  /// The count as it is.
+  @[ checks ]
+  def read(c : Integer) -> Integer { c }
+  /// Back to zero.
+  @[ checks ]
+  def reset(c : Integer) -> Integer { 0 }
+}
+
+/// The reading after one step, over any tally the slot names.
+@[ checks ]
+def stepped @[s : Model(Tally)] (c : s.C) -> Integer { s.read(s.incr(c)) }
+
+/// One step more than `stepped` takes, passing its own model on.
+@[ checks ]
+def further @[t : Model(Tally)] (c : t.C) -> Integer { stepped[s = t](t.incr(c)) }
+
+/// The reading after one step from zero, over any tally of integers.
+@[ checks ]
+def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
+  s.read(s.incr(s.zero))
+}
+
+/// Counting up, supplied by the module's name.
+@[ runs("5") ]
+def suppliedUp() -> Integer { stepped[s = Up](4) }
+
+/// A resetting tally where a tally is asked: its reduct is passed.
+@[ runs("14") ]
+def suppliedTens() -> Integer { stepped[s = Tens](4) }
+
+/// A model implicit passed on: two steps of ten.
+@[ runs("24") ]
+def passedOn() -> Integer { further[t = Tens](4) }
+
+/// A manifest model implicit, supplied by a module whose carrier is the sort
+/// it fixes.
+@[ runs("1") ]
+def manifest() -> Integer { fromZero[s = Up]() }

@@ -237,6 +237,7 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
+            | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
@@ -301,6 +302,7 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
+            | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
             | Self::EntryType { .. }
             | Self::StrayReceiverMode { .. }
@@ -693,7 +695,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 67_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 68_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -972,6 +974,10 @@ mod tests
                 field: SurfaceName::from("start"),
                 constructor: SurfaceName::from("Dot"),
             },
+            LoweringRefusal::ModelImplicitValue {
+                span: empty,
+                implicit: SurfaceName::from("s"),
+            },
         ]
     }
 
@@ -1041,6 +1047,8 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
