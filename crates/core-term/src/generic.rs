@@ -34,16 +34,6 @@
 //! structural equality does not respect; a field reading an earlier field, a
 //! cycle through two declarations and a recursive occurrence under a product
 //! or a sum each need a recursion the one structural fixpoint does not give.
-//!
-//! # Decision
-//!
-//! **Choice.** The body is derived source over the signature the lowering
-//! mints, judged like any declaration, rather than a checker-native equality
-//! former or a body written in the language over codes. **Alternatives.** A
-//! native former needs a kernel rule; a body over codes needs data codes and
-//! their decoding as surface values first. **Reversal.** When data codes stand
-//! in the language, `Eq.generic` is written in the prelude over them and this
-//! derivation retires; its spelling at a use does not change.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
