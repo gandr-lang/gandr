@@ -299,7 +299,7 @@ use quenchant_shape::shape::Maybe;
 use crate::check::check_closed_value;
 use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::KernelError;
 use crate::path_universe;
 use crate::replay::ReplayBudget;
@@ -471,12 +471,12 @@ enum Clause
 /// - witness: `element_identity::bridge_tests::an_interfaced_atom_bears_its_relation_as_its_bridge`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-pub struct Interfaces<'entries>(&'entries [AdmittedDeclaration]);
+pub struct Interfaces<'entries>(&'entries Entries);
 
 impl<'entries> Interfaces<'entries>
 {
     /// No admitted atom: every sealed atom refuses.
-    pub const NONE: Interfaces<'static> = Interfaces(&[]);
+    pub const NONE: Interfaces<'static> = Interfaces(&crate::env::NO_ENTRIES);
 
     /// The interfaces the admission log `entries` states.
     ///
@@ -484,7 +484,7 @@ impl<'entries> Interfaces<'entries>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn of(entries: &'entries [AdmittedDeclaration]) -> Self
+    pub const fn of(entries: &'entries Entries) -> Self
     {
         Self(entries)
     }
@@ -495,7 +495,7 @@ impl<'entries> Interfaces<'entries>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn entries(self) -> &'entries [AdmittedDeclaration]
+    pub const fn entries(self) -> &'entries Entries
     {
         self.0
     }
@@ -1052,7 +1052,7 @@ impl Interpretation
         }
         let classifier = crate::check::synth_closed_value(arena, path)
             .map_err(|error| RelationError::Typing(Box::new(error)))?;
-        path_universe::endpoints(arena, &[], classifier, budget)
+        path_universe::endpoints(arena, &crate::env::NO_ENTRIES, classifier, budget)
             .map_err(|error| RelationError::Path(Box::new(error)))
     }
 

@@ -24,7 +24,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use gandr_kernel_term::presentation_code;
 
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::KernelError;
 
 /// Decide the rules of the presentation a definition declared at `declared`
@@ -57,7 +57,7 @@ use crate::error::KernelError;
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::PresentationRulesRefused(_))))]
 pub fn admit(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     (declared, body): (ValueTypeId, ValueId),
 ) -> Result<(), KernelError>
 {

@@ -27,11 +27,11 @@ judged = false
 
 # The per-component floor (#2395): what a component laid after the prelude
 # allocates to reuse the prelude's judgement, checked on every report without
-# a baseline. Each reuse copies the prelude's part rather than sharing it
-# (#2461), so these averages grow with the prelude; a ceiling broken by a
-# grown prelude is the floor growing with it. Measured in the series: 1.47 MB
-# per resumed lowering, 439 KB per continued program, 159 KB per resumed
-# kernel record.
+# a baseline. Where a reuse still copies the prelude's part rather than
+# sharing it (#2461), its average grows with the prelude; a ceiling broken by
+# a grown prelude is the floor growing with it. Measured in the series: 1.47
+# MB per resumed lowering, 439 KB per continued program, 14 KB per resumed
+# kernel record, whose arena, entries and exports are shared.
 [[functions.budgets]]
 match = "gandr_surface_dispatcher::compose::lower_onto_closure"
 alloc = { avg = "1792 KB" }
@@ -44,5 +44,5 @@ message = "a component's program continued from the prelude's copies the prelude
 
 [[functions.budgets]]
 match = "gandr_core_checker::bridge::resume"
-alloc = { avg = "192 KB" }
-message = "a component's readmission resumed from the prelude's record copies the kernel environment (#2461)"
+alloc = { avg = "16 KB" }
+message = "a component's readmission resumed from the prelude's record shares its kernel arena, entries and exports; a grown average copies one of them again (#2461)"

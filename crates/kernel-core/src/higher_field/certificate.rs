@@ -151,10 +151,10 @@ pub fn unfold(
 {
     let first = crate::check::synth_closed_value(arena, left)
         .map_err(|error| RelationError::Typing(Box::new(error)))?;
-    let first = endpoints(arena, &[], first, budget)?;
+    let first = endpoints(arena, &crate::env::NO_ENTRIES, first, budget)?;
     let second = crate::check::synth_closed_value(arena, right)
         .map_err(|error| RelationError::Typing(Box::new(error)))?;
-    let second = endpoints(arena, &[], second, budget)?;
+    let second = endpoints(arena, &crate::env::NO_ENTRIES, second, budget)?;
     if convertible_value_types(arena, first.source, second.source) != Convertibility::Convertible
         || convertible_value_types(arena, first.target, second.target)
             != Convertibility::Convertible

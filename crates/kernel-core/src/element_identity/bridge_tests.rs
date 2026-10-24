@@ -731,7 +731,7 @@ fn an_interface_is_checked_where_its_atom_is_admitted()
         irreflexive.is_err(),
         "a reflexivity outside its relation's diagonal"
     );
-    assert!(environment.entries().is_empty());
+    assert_eq!(environment.entries().len(), 0_usize);
 }
 
 /// An atom over `representation` at the value universe, admitted with the
@@ -1014,7 +1014,7 @@ fn a_law_is_checked_where_its_atom_is_admitted()
         matches!(unfunctional, Err(KernelError::ValueShapeMismatch { .. })),
         "a law that is no function: {unfunctional:?}"
     );
-    assert!(environment.entries().is_empty());
+    assert_eq!(environment.entries().len(), 0_usize);
 }
 
 /// The relation relating two points of the unit type by the paths between

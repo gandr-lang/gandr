@@ -72,6 +72,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::Goal;
 use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::ExpectedComputationShape;
 use crate::error::KernelError;
 use crate::rewrite;
@@ -137,7 +138,7 @@ pub(super) struct Read
 #[spec(ensures: |ret| ret.is_ok() == matches!(arena.value_type(datatype), Some(&ValueType::Data { .. })))]
 pub(super) fn families(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     datatype: ValueTypeId,
 ) -> Result<super::occurrence::Block, KernelError>
 {
@@ -550,7 +551,7 @@ pub(super) fn returns_recursed_on(
 })]
 pub(super) fn open_case(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     stages: &mut StageOrder,
     scrutinee: ValueTypeId,
 ) -> Result<(ValueTypeId, Maybe<StageId, Unstaged>), KernelError>
@@ -1462,7 +1463,7 @@ where
 })]
 pub(super) fn followed(
     arena: &mut TermArena,
-    (session, entries, context): (&mut SupportContext, &[AdmittedDeclaration], &[ValueTypeId]),
+    (session, entries, context): (&mut SupportContext, &Entries, &[ValueTypeId]),
     (head, last): (ComputationId, ValueId),
 ) -> Maybe<ValueTypeId, Unstaged>
 {

@@ -27,7 +27,7 @@ use super::PatternPosition;
 use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
 use crate::encoding::ContentTable;
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::path_universe::anchor;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -70,7 +70,7 @@ use crate::support::Reaches;
 pub(super) fn code(
     arena: &TermArena,
     code: ValueId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     allowance: &mut Allowance,
 ) -> Result<ValueTypeId, FlowError>
 {
@@ -103,7 +103,7 @@ pub(super) fn code(
     && matches!(arena.value_type(id), Some(&ValueType::Data { declaration: held, .. }) if held == declaration)))]
 pub fn data_signature<'entries>(
     arena: &TermArena,
-    entries: &'entries [AdmittedDeclaration],
+    entries: &'entries Entries,
     id: ValueTypeId,
 ) -> Option<(ConstantIndex, &'entries [Vec<ValueTypeId>])>
 {
@@ -177,7 +177,7 @@ pub fn data_signature<'entries>(
 fn first_order(
     arena: &TermArena,
     root: ValueTypeId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     allowance: &mut Allowance,
 ) -> Result<(), FlowError>
 {
@@ -323,8 +323,8 @@ pub fn function(
     else {
         return Err(FlowError::UnsupportedType(root));
     };
-    first_order(arena, domain, &[], allowance)?;
-    first_order(arena, codomain, &[], allowance)?;
+    first_order(arena, domain, &crate::env::NO_ENTRIES, allowance)?;
+    first_order(arena, codomain, &crate::env::NO_ENTRIES, allowance)?;
     Ok(Arrow {
         code: root,
         domain,
@@ -356,7 +356,7 @@ pub fn function(
 pub fn endpoint(
     arena: &TermArena,
     code: ValueId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     allowance: &mut Allowance,
 ) -> Result<ValueTypeId, FlowError>
 {
@@ -391,7 +391,7 @@ pub fn endpoint(
 pub(super) fn vocabulary(
     arena: &TermArena,
     code: ValueId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     allowance: &mut Allowance,
     budget: ReplayBudget,
 ) -> Result<ValueTypeId, FlowError>
@@ -490,7 +490,7 @@ Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patter
 fn patterns(
     arena: &mut TermArena,
     root: ValueTypeId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     allowance: &mut Allowance,
 ) -> Result<Vec<Pattern>, FlowError>
 {
@@ -725,7 +725,7 @@ fn natural(
     arena: &TermArena,
     output: ValueId,
     target: ValueTypeId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     leaves: &[Leaf],
     allowance: &mut Allowance,
 ) -> Result<(), FlowError>
@@ -898,7 +898,7 @@ fn peel(
 pub fn forward(
     arena: &mut TermArena,
     unfoldings: &Unfoldings,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     flow: FlowType,
     translator: ValueId,
     (images, dialogues): (&[ValueId], &[Dialogue]),
@@ -984,8 +984,13 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let text = arena.value_type_base(BaseType::String);
         let triple = arena.value_type_product(&[integer, text, integer]);
-        let covered =
-            patterns(&mut arena, triple, &[], &mut Allowance(u64::MAX)).expect("a product covers");
+        let covered = patterns(
+            &mut arena,
+            triple,
+            &crate::env::NO_ENTRIES,
+            &mut Allowance(u64::MAX),
+        )
+        .expect("a product covers");
         let [ref only] = *covered.as_slice()
         else {
             panic!("one pattern for a product of base types");
@@ -1012,7 +1017,7 @@ mod tests
 
         let empty = arena.value_type_empty();
         assert!(matches!(
-            patterns(&mut arena, empty, &[], &mut Allowance(u64::MAX)),
+            patterns(&mut arena, empty, &crate::env::NO_ENTRIES, &mut Allowance(u64::MAX)),
             Err(FlowError::UnsupportedType(found)) if found == empty
         ));
     }
@@ -1030,8 +1035,13 @@ mod tests
         let unit = arena.value_type_unit();
         let boolean = arena.value_type_sum(&[unit, unit]);
         let booleans = arena.value_type_list(boolean);
-        let covered =
-            patterns(&mut arena, booleans, &[], &mut Allowance(u64::MAX)).expect("a list covers");
+        let covered = patterns(
+            &mut arena,
+            booleans,
+            &crate::env::NO_ENTRIES,
+            &mut Allowance(u64::MAX),
+        )
+        .expect("a list covers");
         let [ref empty, ref truth, ref falsity] = *covered.as_slice()
         else {
             panic!("the empty list and one cell per boolean");
@@ -1054,8 +1064,13 @@ mod tests
 
         let integer = arena.value_type_base(BaseType::Integer);
         let integers = arena.value_type_list(integer);
-        let covered =
-            patterns(&mut arena, integers, &[], &mut Allowance(u64::MAX)).expect("a list covers");
+        let covered = patterns(
+            &mut arena,
+            integers,
+            &crate::env::NO_ENTRIES,
+            &mut Allowance(u64::MAX),
+        )
+        .expect("a list covers");
         let [_, ref cell] = *covered.as_slice()
         else {
             panic!("the empty list and one cell");
@@ -1085,7 +1100,7 @@ mod tests
                     &arena,
                     natural_output,
                     again,
-                    &[],
+                    &crate::env::NO_ENTRIES,
                     &leaves,
                     &mut Allowance(u64::MAX)
                 ),
@@ -1099,7 +1114,7 @@ mod tests
                 &arena,
                 misplaced,
                 integers,
-                &[],
+                &crate::env::NO_ENTRIES,
                 &leaves,
                 &mut Allowance(u64::MAX)
             ),
@@ -1109,7 +1124,14 @@ mod tests
         let text = arena.value_type_base(BaseType::String);
         let texts = arena.value_type_list(text);
         assert_eq!(
-            natural(&arena, tail, texts, &[], &leaves, &mut Allowance(u64::MAX)),
+            natural(
+                &arena,
+                tail,
+                texts,
+                &crate::env::NO_ENTRIES,
+                &leaves,
+                &mut Allowance(u64::MAX)
+            ),
             Err(FlowError::NonNatural(tail)),
             "the tail at another list type"
         );
@@ -1129,7 +1151,12 @@ mod tests
         for root in [empty, holding] {
             let quoted = arena.value_quote(root);
             assert_eq!(
-                super::code(&arena, quoted, &[], &mut Allowance(u64::MAX)),
+                super::code(
+                    &arena,
+                    quoted,
+                    &crate::env::NO_ENTRIES,
+                    &mut Allowance(u64::MAX)
+                ),
                 Err(FlowError::UnsupportedType(empty))
             );
         }
@@ -1142,7 +1169,7 @@ mod tests
                 &arena,
                 short,
                 pair,
-                &[],
+                &crate::env::NO_ENTRIES,
                 &[Leaf::Base(BaseType::Integer)],
                 &mut Allowance(u64::MAX)
             ),
@@ -1158,7 +1185,7 @@ mod tests
             super::forward(
                 &mut arena,
                 &crate::replay::Unfoldings::default(),
-                &[],
+                &crate::env::NO_ENTRIES,
                 super::FlowType {
                     source: unit,
                     target: unit,
@@ -1280,7 +1307,7 @@ mod tests
         }
 
         let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-        for (root, prefix) in [(naturals, entries), (shape, &[][..])] {
+        for (root, prefix) in [(naturals, entries), (shape, &crate::env::NO_ENTRIES)] {
             let quoted = arena.value_quote(root);
             assert!(
                 matches!(

@@ -298,6 +298,20 @@ impl From<ArenaLength> for usize
     }
 }
 
+impl From<ArenaLength> for ConstantIndex
+{
+    /// The position past `length` admitted declarations: the one the next
+    /// admission takes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(length: ArenaLength) -> Self
+    {
+        Self::from(length.0)
+    }
+}
+
 impl PartialEq<usize> for ArenaLength
 {
     /// The length names `other` nodes.
@@ -673,6 +687,20 @@ impl<Node: Eq> Eq for Family<Node>
 
 impl<Node> Family<Node>
 {
+    /// The empty family, for a constant or a static.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            frozen: None,
+            own: Vec::new(),
+        }
+    }
+
     /// The nodes frozen before the family's own.
     ///
     /// # Specification
@@ -712,11 +740,14 @@ impl<Node> Family<Node>
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn get(
+    pub fn get<Offset>(
         &self,
-        offset: ArenaLength,
+        offset: Offset,
     ) -> Option<&Node>
+    where
+        Offset: Into<ArenaLength>,
     {
+        let offset = offset.into();
         // The frozen nodes are read first, so a read of one costs what a read
         // of an unfrozen family does.
         self.frozen.as_deref().map_or_else(
@@ -830,6 +861,42 @@ impl<Node: Clone> Family<Node>
             None => alloc::sync::Arc::from(own),
             Some(frozen) => frozen.iter().cloned().chain(own).collect(),
         });
+    }
+
+    /// The node at `offset`, to change in place, or `None` past the family.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the node [`Self::get`] reads at `offset`. A node among the
+    ///   frozen ones is reached through the family's own copy of them, taken
+    ///   when another clone shares them, so no clone made before the change
+    ///   sees it; the family's length is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer borrows the family mutably, so no clause
+    ///   can read the family beside it; the witness reads it after.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a frozen node and a node minted since, each changed
+    ///   through one clone and read back beside a clone taken before.
+    /// - witness: `arena::tests::a_family_changed_in_place_leaves_its_earlier_clones_alone`
+    #[inline]
+    pub fn get_mut<Offset>(
+        &mut self,
+        offset: Offset,
+    ) -> Option<&mut Node>
+    where
+        Offset: Into<ArenaLength>,
+    {
+        let offset = offset.into();
+        let frozen = self.frozen().len();
+        if let Some(own) = offset.0.checked_sub(frozen) {
+            self.own.get_mut(own)
+        }
+        else {
+            let shared = self.frozen.as_mut()?;
+            alloc::sync::Arc::make_mut(shared).get_mut(offset.0)
+        }
     }
 }
 
@@ -4208,6 +4275,46 @@ mod tests
                 u128::from(index).min(u128::try_from(usize::MAX).expect("host ceiling fits u128"))
             );
         }
+    }
+
+    /// A family changed in place through one clone, at a frozen node and at a
+    /// node minted since, reads the change there alone: a clone taken before
+    /// keeps every node, and the length holds.
+    #[test]
+    fn a_family_changed_in_place_leaves_its_earlier_clones_alone()
+    {
+        let rows = |family: &super::Family<char>| {
+            family.iter().copied().collect::<alloc::string::String>()
+        };
+        let mut family = super::Family::default();
+        for node in ['a', 'b'] {
+            family.push(node);
+        }
+        family.freeze();
+        family.push('c');
+        let before = family.clone();
+        if let Some(node) = family.get_mut(super::ArenaLength::from(0_usize)) {
+            *node = 'x';
+        }
+        if let Some(node) = family.get_mut(super::ArenaLength::from(2_usize)) {
+            *node = 'z';
+        }
+        assert_eq!(
+            None,
+            family.get_mut(super::ArenaLength::from(3_usize)),
+            "past the end"
+        );
+        assert_eq!(
+            "xbz",
+            rows(&family),
+            "the changes read back where they were made"
+        );
+        assert_eq!(
+            "abc",
+            rows(&before),
+            "a clone taken before keeps every node"
+        );
+        assert_eq!(before.len(), family.len(), "and the length holds");
     }
 
     /// An arena frozen part way answers every read, mint, truncation and

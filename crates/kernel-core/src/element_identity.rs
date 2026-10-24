@@ -346,6 +346,7 @@ use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::encoding::content_digest;
 use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::CompTypeWitness;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
@@ -1182,7 +1183,7 @@ pub(crate) fn bridge_fibre(
 pub(crate) fn sigma_fibre<M>(
     arena: &mut TermArena,
     (table, memo): (&mut ContentTable, &mut M),
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     (first, second): (ValueTypeId, ValueTypeId),
     (left, right): (ValueId, ValueId),
 ) -> ValueTypeId
@@ -1230,7 +1231,7 @@ where
 #[spec(ensures: |ret| arena.value_type(ret).is_some())]
 pub(crate) fn product_fibre(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     parts: &[ValueTypeId],
     (left, right): (ValueId, ValueId),
 ) -> ValueTypeId
@@ -1265,7 +1266,7 @@ pub(crate) fn product_fibre(
 #[spec(ensures: |ret| ret.iter().all(|&component| arena.value(component).is_some()))]
 fn pair_components(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     pair: ValueId,
 ) -> [ValueId; 2]
 {
@@ -1302,7 +1303,7 @@ fn pair_components(
 #[spec(ensures: |ret| ret.len() == parts.len() && ret.iter().all(|&component| arena.value(component).is_some()))]
 fn tuple_components(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     tuple: ValueId,
     parts: &[ValueTypeId],
 ) -> Vec<ValueId>
@@ -1366,12 +1367,12 @@ fn tuple_components(
 #[spec(ensures: |ret| arena.value(ret).is_some() || ret == value)]
 fn admitted_head(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     value: ValueId,
 ) -> ValueId
 {
     let mut head = value;
-    let mut below = entries.len();
+    let mut below = usize::from(entries.len());
     while let Some(&Value::Constant(constant)) = arena.value(head)
         && usize::from(constant) < below
         && let Some(&DeclarationContent::Def { body, .. }) = entries

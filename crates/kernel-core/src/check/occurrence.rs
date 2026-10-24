@@ -386,7 +386,7 @@ pub(super) trait Admitted
     ) -> Variance;
 }
 
-impl Admitted for [crate::env::AdmittedDeclaration]
+impl Admitted for crate::env::Entries
 {
     /// The admitted family's variance, or none.
     ///

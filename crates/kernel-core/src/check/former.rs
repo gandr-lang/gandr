@@ -51,6 +51,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::Goal;
 use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::ExpectedValueShape;
 use crate::error::KernelError;
 use crate::presented;
@@ -125,7 +126,7 @@ impl Signature<'_>
 /// - witness: `tests::native_formers::nominal_identity_and_constructor_refusals`
 #[spec(ensures: |ret| ret.is_ok() == matches!(entries.get(usize::from(index)).map(AdmittedDeclaration::content), Some(DeclarationContent::Data { .. })))]
 pub(super) fn signature(
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     index: ConstantIndex,
 ) -> Result<Signature<'_>, KernelError>
 {
@@ -429,7 +430,7 @@ pub(super) fn field_type(
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckValue(..)))))]
 pub(super) fn constructor(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     session: &mut SupportContext,
     value: ValueId,
 ) -> Result<(ValueTypeId, Vec<Goal>), KernelError>
@@ -879,7 +880,7 @@ pub(super) type Scrutinised = (
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|result| result.1.iter().all(|goal| matches!(goal, &Goal::CheckComp(..)))))]
 pub(super) fn case(
     arena: &mut TermArena,
-    (entries, presentations): (&[AdmittedDeclaration], &crate::presented::Presentations),
+    (entries, presentations): (&Entries, &crate::presented::Presentations),
     session: &mut SupportContext,
     (case, read): (ComputationId, CompTypeId),
     (datatype, opened, own): Scrutinised,
@@ -1075,7 +1076,7 @@ quenchant_shape::reason_enum! {
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotApart(_) | KernelError::NotADataType { .. } | KernelError::ArenaFault)))]
 pub(super) fn absurd(
     arena: &mut TermArena,
-    (entries, presentations): (&[AdmittedDeclaration], &Presentations),
+    (entries, presentations): (&Entries, &Presentations),
     session: &mut SupportContext,
     case: ComputationId,
     datatype: ValueTypeId,

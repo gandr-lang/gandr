@@ -659,8 +659,9 @@ fn hole_unknown_class_rejects_exactly()
         ),
         "a hole with no type to owe is refused naming the hole, at its origin"
     );
-    assert!(
-        readmission.environment().entries().is_empty(),
+    assert_eq!(
+        readmission.environment().entries().len(),
+        0_usize,
         "no axiom stands in for a hole with no type"
     );
 }
@@ -693,7 +694,11 @@ fn a_sorted_universe_readmits_at_its_level()
     ];
     for (position, (sort, level)) in expected.into_iter().enumerate() {
         let admitted = crossed_at(&readmission, At(position));
-        let entry = &readmission.environment().entries()[usize::from(admitted)];
+        let entry = readmission
+            .environment()
+            .entries()
+            .get(usize::from(admitted))
+            .expect("the crossed position holds an entry");
         assert_eq!(
             readmission
                 .environment()
@@ -1819,8 +1824,9 @@ fn a_declining_certificate_faults_the_declaration()
             "the refusal and replay record preserve the same reason"
         );
         assert_eq!(refusal.classify(), FailureClass::EngineFault);
-        assert!(
-            readmission.environment().entries().is_empty(),
+        assert_eq!(
+            readmission.environment().entries().len(),
+            0_usize,
             "the refused declaration left the environment as it was"
         );
     }
@@ -2429,8 +2435,9 @@ fn a_body_naming_a_withheld_declaration_is_refused()
         FailureClass::MalformedSource,
         "a withheld reference is the source's"
     );
-    assert!(
-        readmission.environment().entries().is_empty(),
+    assert_eq!(
+        readmission.environment().entries().len(),
+        0_usize,
         "nothing entered the kernel"
     );
 }

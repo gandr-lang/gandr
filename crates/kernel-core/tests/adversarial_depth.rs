@@ -126,7 +126,7 @@ fn check_a_deep_chain(active: MemoActivityChoice) -> ExpansionCensus
             let mut memo: DefaultMemo = DefaultMemo::new();
             check_declaration_with_memo(
                 &mut arena,
-                Judgement::new(&[], &levels()),
+                Judgement::new(&gandr_kernel_core::Entries::new(), &levels()),
                 &declaration,
                 &mut memo,
                 &mut session,
@@ -137,7 +137,7 @@ fn check_a_deep_chain(active: MemoActivityChoice) -> ExpansionCensus
             let mut memo = NullMemo;
             check_declaration_with_memo(
                 &mut arena,
-                Judgement::new(&[], &levels()),
+                Judgement::new(&gandr_kernel_core::Entries::new(), &levels()),
                 &declaration,
                 &mut memo,
                 &mut session,

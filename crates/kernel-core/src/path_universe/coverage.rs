@@ -20,7 +20,7 @@ use super::Direction;
 use super::PathError;
 use super::PatternPosition;
 use crate::encoding::ContentTable;
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::flow_universe::data_signature;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -74,7 +74,7 @@ use crate::rewrite::shift_value;
 pub(super) fn code(
     arena: &TermArena,
     code: ValueId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     allowance: &mut Allowance,
 ) -> Result<ValueTypeId, PathError>
 {
@@ -251,7 +251,7 @@ Some(held) if held.product_parts() == Some(&[]) => patterns.len() == 1 && patter
 fn patterns(
     arena: &mut TermArena,
     root: ValueTypeId,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     allowance: &mut Allowance,
 ) -> Result<Vec<Pattern>, PathError>
 {
@@ -460,7 +460,7 @@ fn patterns(
 })]
 pub fn round_trip(
     arena: &mut TermArena,
-    (unfoldings, entries): (&Unfoldings, &[AdmittedDeclaration]),
+    (unfoldings, entries): (&Unfoldings, &Entries),
     (source, direction): (ValueTypeId, Direction),
     (forward, backward): (ValueId, ValueId),
     dialogues: &[Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>],
@@ -528,8 +528,13 @@ mod tests
         let mut arena = TermArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
         let triple = arena.value_type_product(&[integer, integer, integer]);
-        let covered =
-            patterns(&mut arena, triple, &[], &mut Allowance(u64::MAX)).expect("a product covers");
+        let covered = patterns(
+            &mut arena,
+            triple,
+            &crate::env::NO_ENTRIES,
+            &mut Allowance(u64::MAX),
+        )
+        .expect("a product covers");
         let [ref only] = *covered.as_slice()
         else {
             panic!("one pattern for a product of base types");
@@ -551,8 +556,13 @@ mod tests
 
         let unit = arena.value_type_unit();
         let choice = arena.value_type_sum(&[unit, unit, unit]);
-        let covered =
-            patterns(&mut arena, choice, &[], &mut Allowance(u64::MAX)).expect("a sum covers");
+        let covered = patterns(
+            &mut arena,
+            choice,
+            &crate::env::NO_ENTRIES,
+            &mut Allowance(u64::MAX),
+        )
+        .expect("a sum covers");
         let summands = covered
             .iter()
             .map(|pattern| match arena.value(pattern.value) {
@@ -571,7 +581,7 @@ mod tests
 
         let empty = arena.value_type_empty();
         assert!(matches!(
-            patterns(&mut arena, empty, &[], &mut Allowance(u64::MAX)),
+            patterns(&mut arena, empty, &crate::env::NO_ENTRIES, &mut Allowance(u64::MAX)),
             Err(PathError::UnsupportedType(found)) if found == empty
         ));
     }
@@ -588,7 +598,12 @@ mod tests
         for root in [empty, holding] {
             let quoted = arena.value_quote(root);
             assert_eq!(
-                super::code(&arena, quoted, &[], &mut Allowance(u64::MAX)),
+                super::code(
+                    &arena,
+                    quoted,
+                    &crate::env::NO_ENTRIES,
+                    &mut Allowance(u64::MAX)
+                ),
                 Err(PathError::UnsupportedType(empty))
             );
         }
@@ -672,7 +687,7 @@ mod tests
         }
 
         let naturals = arena.value_type_data(ConstantIndex::from(1_usize), Vec::new());
-        for (root, prefix) in [(naturals, entries), (shape, &[][..])] {
+        for (root, prefix) in [(naturals, entries), (shape, &crate::env::NO_ENTRIES)] {
             let quoted = arena.value_quote(root);
             assert!(
                 matches!(

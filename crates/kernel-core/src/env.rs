@@ -113,6 +113,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationBuilder;
 use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::Family;
 use gandr_kernel_term::LevelSignature;
 use gandr_kernel_term::MarkedDeclaration;
 use gandr_kernel_term::RelatedEndpoints;
@@ -1186,6 +1187,14 @@ impl ArtifactRefusal
     }
 }
 
+/// An environment's admitted declarations, in admission order, indexed by
+/// admission position: those [`Environment::freeze`] froze are shared with
+/// every clone of the environment made after.
+pub type Entries = Family<AdmittedDeclaration>;
+
+/// No admitted declaration: what a judgement over an empty environment reads.
+pub(crate) static NO_ENTRIES: Entries = Entries::new();
+
 /// The append-only kernel environment: one arena, and the admitted
 /// declarations in admission order.
 #[derive(Clone, Debug, Default)]
@@ -1193,8 +1202,9 @@ pub struct Environment
 {
     /// The one arena every declaration's content lives in.
     arena: TermArena,
-    /// The admitted declarations, in admission order.
-    entries: Vec<AdmittedDeclaration>,
+    /// The admitted declarations, in admission order: those a freeze froze
+    /// shared with every clone made after.
+    entries: Entries,
     /// The admission floor: the watermark at the most recent admission,
     /// checked or bypassed. No rejection truncates below it.
     admission_floor: ArenaWatermark,
@@ -1219,9 +1229,10 @@ impl Environment
         Self::default()
     }
 
-    /// Share the arena's nodes with every clone of the environment made
-    /// after: such a clone copies, and its drop releases, only the nodes
-    /// minted after the freeze ([`TermArena::freeze`]).
+    /// Share the arena's nodes and the admitted declarations with every clone
+    /// of the environment made after: such a clone copies, and its drop
+    /// releases, only what was minted and admitted after the freeze
+    /// ([`TermArena::freeze`], [`Family::freeze`]).
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1247,6 +1258,7 @@ impl Environment
     pub fn freeze(&mut self)
     {
         self.arena.freeze();
+        self.entries.freeze();
     }
 
     /// The arena, for a consumer reading admitted content.
@@ -1266,9 +1278,9 @@ impl Environment
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn entries(&self) -> &[AdmittedDeclaration]
+    pub const fn entries(&self) -> &Entries
     {
-        self.entries.as_slice()
+        &self.entries
     }
 
     /// Begin building one declaration's content into this environment's arena.
@@ -1498,7 +1510,7 @@ impl Environment
     // *well-typed* is what the body decides and is not restated here.
     #[inline]
     #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| ret.is_err()
-        || (arith::Int::from(self.entries.len()) == arith::add(arith::Int::from(entry_len), arith::Int::from(1_usize))
+        || (arith::Int::from(usize::from(self.entries.len())) == arith::add(arith::Int::from(usize::from(entry_len)), arith::Int::from(1_usize))
             && self.admission_floor == self.arena.watermark()))]
     pub fn add_decl(
         &mut self,
@@ -1522,7 +1534,7 @@ impl Environment
             self.outstanding.register(content_start);
             return Err(KernelError::OutstandingStagedContent { above });
         }
-        let position = ConstantIndex::from(self.entries.len());
+        let position = ConstantIndex::from(usize::from(self.entries.len()));
         let content_end = self.arena.watermark();
         // The rejection mark: this declaration's content-start, clamped into
         // `[admission floor, content-end]`, so a rollback can neither delete an
@@ -1614,7 +1626,7 @@ impl Environment
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::a_rejection_keeps_bypassed_content_resolvable`
     #[inline]
-    #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: arith::Int::from(self.entries.len()) == arith::add(arith::Int::from(entry_len), arith::Int::from(1_usize))
+    #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: arith::Int::from(usize::from(self.entries.len())) == arith::add(arith::Int::from(usize::from(entry_len)), arith::Int::from(1_usize))
         && self
             .entries
             .last()
@@ -1631,7 +1643,7 @@ impl Environment
             declaration,
         } = staged;
         self.outstanding.resolve(content_start);
-        let position = ConstantIndex::from(self.entries.len());
+        let position = ConstantIndex::from(usize::from(self.entries.len()));
         // The bypass commits whatever content the arena holds, so the floor
         // rises to the current watermark. Without this a later rejection could
         // truncate through bypassed content.
@@ -1695,7 +1707,7 @@ impl Environment
     #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark(), members = staged.len()],
         ensures: |ret| match ret.as_ref() {
             Ok(ids) => ids.len() == members
-                && self.entries.len().checked_sub(entry_len) == Some(members)
+                && usize::from(self.entries.len()).checked_sub(usize::from(entry_len)) == Some(members)
                 && self.admission_floor == self.arena.watermark(),
             Err(_) => self.entries.len() == entry_len
                 && self.arena.watermark().clamped_into(gandr_kernel_term::ArenaWatermark::default(), entry_watermark) == self.arena.watermark(),
@@ -1766,14 +1778,14 @@ impl Environment
     /// - hypothesis: L3 — as [`Self::add_block`].
     /// - witness: `tests::recursive_data::a_mutual_block_is_admitted`
     #[spec(captures: entry_len = self.entries.len(), ensures: |ret| ret.as_ref().map_or(true,
-        |ids| self.entries.len().checked_sub(entry_len) == Some(ids.len())))]
+        |ids| usize::from(self.entries.len()).checked_sub(usize::from(entry_len)) == Some(ids.len())))]
     fn admit_block(
         &mut self,
         members: &[Declaration],
         content_end: ArenaWatermark,
     ) -> Result<Vec<CheckedId>, KernelError>
     {
-        let base = self.entries.len();
+        let base = usize::from(self.entries.len());
         let first = ConstantIndex::from(base);
         let families = members
             .iter()
@@ -1865,8 +1877,10 @@ impl Environment
         for entry in self.entries.iter().skip(base) {
             rested.extend(entry.rested_on.iter().copied());
         }
-        for entry in self.entries.iter_mut().skip(base) {
-            entry.rested_on.clone_from(&rested);
+        for offset in base .. usize::from(self.entries.len()) {
+            if let Some(entry) = self.entries.get_mut(offset) {
+                entry.rested_on.clone_from(&rested);
+            }
         }
         Ok(admitted)
     }
@@ -1909,7 +1923,7 @@ impl Environment
                 && *error == KernelError::SealNotOpen { index: atom.position() },
             |extent| self.manifest.len().checked_add(1) == Some(entry_manifest)
                 && self.manifest.binary_search(&atom.position()).is_err()
-                && usize::from(atom.position()).checked_add(usize::from(*extent)).and_then(|end| end.checked_add(1)) == Some(entry_len),
+                && usize::from(atom.position()).checked_add(usize::from(*extent)).and_then(|end| end.checked_add(1)) == Some(usize::from(entry_len)),
         ),
     )]
     #[inline]
@@ -1925,8 +1939,7 @@ impl Environment
             return Err(refused);
         };
         let extent = SealExtent::from(
-            self.entries
-                .len()
+            usize::from(self.entries.len())
                 .saturating_sub(usize::from(position))
                 .saturating_sub(1),
         );
@@ -3177,7 +3190,11 @@ mod tests
             environment.arena().watermark(),
             "and the arena holds exactly what it held before the call"
         );
-        assert!(environment.entries().is_empty(), "with nothing appended");
+        assert_eq!(
+            environment.entries().len(),
+            0_usize,
+            "with nothing appended"
+        );
     }
 
     #[test]
@@ -3914,7 +3931,11 @@ mod tests
             refused,
             "a declaration with a later staging outstanding above it is refused, naming how many"
         );
-        assert!(environment.entries().is_empty(), "with nothing appended");
+        assert_eq!(
+            environment.entries().len(),
+            0_usize,
+            "with nothing appended"
+        );
 
         // The producer's remedy: resolve the later staging, then retry. The
         // retry now runs the check, and refuses on the declaration's own merits.

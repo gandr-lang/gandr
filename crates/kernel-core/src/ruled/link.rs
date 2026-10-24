@@ -35,6 +35,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 use crate::replay::ReplaySides;
@@ -191,7 +192,7 @@ enum Ending
 struct Linker<'walk>
 {
     /// The declarations admitted before the definition.
-    entries: &'walk [AdmittedDeclaration],
+    entries: &'walk Entries,
     /// The definition's position.
     position: ConstantIndex,
     /// Each input's data declaration, where its type is one.
@@ -257,7 +258,7 @@ struct Linker<'walk>
 )]
 pub fn link(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     position: ConstantIndex,
     declared: ValueTypeId,
     body: ValueId,

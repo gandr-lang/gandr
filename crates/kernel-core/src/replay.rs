@@ -520,7 +520,7 @@ impl Unfoldings
     #[must_use]
     pub fn identifying(
         self,
-        entries: &[crate::env::AdmittedDeclaration],
+        entries: &crate::env::Entries,
     ) -> Self
     {
         let mut identities = BTreeMap::new();

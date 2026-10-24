@@ -97,6 +97,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::KernelError;
 
 /// One presented type as conversion reads it: its rules and the arity of each
@@ -173,10 +174,10 @@ impl Presentations
     /// # Adequacy
     /// - hypothesis: L3 — as [`normal_form`].
     /// - witness: `presented::tests::a_circle_word_normalizes_keeping_what_it_did_not_touch`
-    #[spec(ensures: |ret| ret.0.as_ref().is_none_or(|table| !table.is_empty() && table.len() <= entries.len()))]
+    #[spec(ensures: |ret| ret.0.as_ref().is_none_or(|table| !table.is_empty() && table.len() <= usize::from(entries.len())))]
     #[inline]
     #[must_use]
-    pub fn of(entries: &[AdmittedDeclaration]) -> Self
+    pub fn of(entries: &Entries) -> Self
     {
         let mut presented = BTreeMap::new();
         for (position, entry) in entries.iter().enumerate() {
@@ -466,7 +467,7 @@ fn spells(
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::RuleNotPresentable(_) | KernelError::WordsRefused(_))))]
 pub(crate) fn admit(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     (position, parameters): (ConstantIndex, &[ValueTypeId]),
     constructors: &[Vec<ValueTypeId>],
     presentation: &Presentation,
@@ -518,7 +519,7 @@ pub(crate) fn admit(
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CellFault::Sort | CellFault::Empty | CellFault::Endpoint(_) | CellFault::Open | CellFault::NotALoop | CellFault::Apart | CellFault::NotMinted | CellFault::Twice)))]
 fn words(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     (position, parameters): (ConstantIndex, &[ValueTypeId]),
     (constructors, rules): (&[Vec<ValueTypeId>], &[PresentedRule]),
     cells: &FreeCells,
@@ -781,7 +782,7 @@ pub(crate) fn normal_form(
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::NotADataType { .. })))]
 pub(crate) fn apart(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     declaration: ConstantIndex,
     endpoints: (ValueId, ValueId),
 ) -> Result<Apartness, KernelError>
@@ -820,7 +821,7 @@ pub(crate) fn apart(
 #[spec(captures: before = fields.len(), ensures: |ret| matches!(ret, TermReading::Constructor(_)) || fields.len() == before)]
 fn node(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     declaration: ConstantIndex,
     at: ValueId,
     fields: &mut Vec<ValueId>,
@@ -959,7 +960,7 @@ mod tests
         assert_eq!(
             super::admit(
                 &arena,
-                &[],
+                &crate::env::NO_ENTRIES,
                 (ConstantIndex::from(0_usize), &[]),
                 &table,
                 &circle()
@@ -973,7 +974,7 @@ mod tests
         assert_eq!(
             super::admit(
                 &arena,
-                &[],
+                &crate::env::NO_ENTRIES,
                 (ConstantIndex::from(0_usize), &[]),
                 &table,
                 &other
@@ -986,7 +987,7 @@ mod tests
         assert_eq!(
             super::admit(
                 &arena,
-                &[],
+                &crate::env::NO_ENTRIES,
                 (ConstantIndex::from(1_usize), &[]),
                 &table,
                 &circle()
@@ -1255,7 +1256,8 @@ mod tests
         let here = arena.value_here(point);
         let staged = staging.def(LevelSignature::monomorphic(), declared, here);
         let reflexivity = environment.add_decl(staged).map(|_checked| ());
-        let position = ConstantIndex::from(environment.entries().len().saturating_sub(1));
+        let position =
+            ConstantIndex::from(usize::from(environment.entries().len()).saturating_sub(1));
         let mut staging = environment.stage();
         let arena = staging.arena();
         let own = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());

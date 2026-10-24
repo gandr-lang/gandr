@@ -678,7 +678,7 @@ where
     let mut census = ExpansionCensus::new();
     let verdict = check_declaration_with_memo(
         arena,
-        Judgement::new(&[], &levels()),
+        Judgement::new(&gandr_kernel_core::Entries::new(), &levels()),
         declaration,
         memo,
         session,
@@ -984,7 +984,7 @@ fn a_billion_occurrence_definition_admits_checked()
     );
     let admitted = environment
         .entries()
-        .first()
+        .get(0_usize)
         .expect("the declaration was appended");
     assert!(
         matches!(admitted.admission(), Admission::Checked),
@@ -1483,8 +1483,9 @@ fn the_public_admission_entry_cannot_be_handed_a_memo()
         environment.add_decl(staged).is_err(),
         "admission re-derives the obligation with a memo it built itself"
     );
-    assert!(
-        environment.entries().is_empty(),
+    assert_eq!(
+        environment.entries().len(),
+        0_usize,
         "and nothing entered the environment"
     );
 }

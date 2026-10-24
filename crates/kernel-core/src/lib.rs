@@ -695,6 +695,7 @@ pub use crate::env::AdmittedDeclaration;
 pub use crate::env::ArtifactRefusal;
 pub use crate::env::AxiomReport;
 pub use crate::env::CheckedId;
+pub use crate::env::Entries;
 pub use crate::env::Environment;
 pub use crate::env::OutstandingContent;
 pub use crate::env::OutstandingCount;
