@@ -90,6 +90,7 @@ use gandr_surface_dispatcher::imports_named;
 use gandr_surface_dispatcher::laid;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_dispatcher::tabled;
+use gandr_surface_dispatcher::written;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_pretty::Form;
@@ -433,6 +434,11 @@ struct Document
     /// `lay_out` names them, sorted: a change to one of those files changes
     /// the judgement.
     named: Vec<PathBuf>,
+    /// The path addresses its root imports wrote at its last judgement, as
+    /// that judgement's parse read them: its next revision is laid out over
+    /// them, and that revision's judgement confirms them or lays it out
+    /// again.
+    written: Maybe<Vec<String>, written::Absent>,
     /// The diagnostics last published at its version.
     published: Vec<Diagnostic>,
     /// The checked proposals kept for its version, in the order kept.
@@ -492,6 +498,7 @@ impl Document
             caret: Maybe::Absent(uncareted::Absent::Unranged),
             checked: Vec::new(),
             named: Vec::new(),
+            written: Maybe::Absent(written::Absent::Unread),
             published: Vec::new(),
             proposals: Vec::new(),
             asked: Vec::new(),
@@ -3244,11 +3251,17 @@ impl Server
                         position,
                     )
                 };
-                document
-                    .text
-                    .laid
-                    .as_ref()
-                    .map_or_else(|| over(&lay(&uri, text, &shadows)), over)
+                document.text.laid.as_ref().map_or_else(
+                    || {
+                        over(&lay(
+                            &uri,
+                            text,
+                            &shadows,
+                            Maybe::Absent(written::Absent::Unread),
+                        ))
+                    },
+                    over,
+                )
             },
             Err(Unlent) => Err(Unran::Declined(String::from(
                 "gandr's grammar did not build, so nothing runs",
@@ -3365,7 +3378,12 @@ impl Server
         let started = Instant::now();
         let own = Seen::now(&path, &shadows);
         let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let laid = lay(&uri, SourceText::from(text.as_str()), &shadows);
+        let laid = lay(
+            &uri,
+            SourceText::from(text.as_str()),
+            &shadows,
+            Maybe::Absent(written::Absent::Unread),
+        );
         let mut closure = vec![(path.clone(), own)];
         if let Maybe::Present(ref laid) = laid {
             closure.extend(
@@ -3503,13 +3521,14 @@ impl Server
     /// - ensures: each copy this connection holds whose judgement is due first
     ///   retires the admission its last judgement left, if it still runs, that
     ///   line returned with its admission retired; then the copy is laid out,
-    ///   each import read as the editors hold it, and its judgement is started
-    ///   on the pool at this connection's verbosity and spelling, retiring the
-    ///   copy's judgement still running, polling its own retirement before it
-    ///   takes the session, once it holds it, and before each declaration and
-    ///   item; the copy's judgement runs, delivered by [`Server::admitted`],
-    ///   and no copy is left due. A source the sweep judges whose copy is now
-    ///   judged is swept no more; then the sweep's next step starts, as
+    ///   each import read as the editors hold it and its own path imports as
+    ///   its last judgement read them, and its judgement is started on the pool
+    ///   at this connection's verbosity and spelling, retiring the copy's
+    ///   judgement still running, polling its own retirement before it takes
+    ///   the session, once it holds it, and before each declaration and item;
+    ///   the copy's judgement runs, delivered by [`Server::admitted`], and no
+    ///   copy is left due. A source the sweep judges whose copy is now judged
+    ///   is swept no more; then the sweep's next step starts, as
     ///   [`Server::sweep_next`] states.
     /// - provides: the first half of every synchronisation; the connection
     ///   reads its next frame while the copy is judged.
@@ -3638,7 +3657,13 @@ impl Server
     ///   starts, as [`Server::sweep_next`] states; the delivered judgement of
     ///   the source the sweep judges is kept as its report, as [`reported`]
     ///   reads it, and once no source is swept the pulls waiting are answered
-    ///   as [`Server::swept`] states. With [`Awaiting::All`], no judgement or
+    ///   as [`Server::swept`] states. A judgement whose parse read other
+    ///   imports than its lay-out was made over ([`Rechecked::misread`]) is
+    ///   laid out again over them, which its copy, still at its version, keeps:
+    ///   over the same closure (the same text before the document and the same
+    ///   unit) it stands, its lay-out and named paths the new lay-out's; over
+    ///   another it publishes nothing and ends no progress, and while the copy
+    ///   runs it is judged again. With [`Awaiting::All`], no judgement or
     ///   admission is left running and no progress end left waiting.
     /// - provides: the second half of every synchronisation, on the
     ///   connection's thread.
@@ -3654,6 +3679,7 @@ impl Server
     /// - witness: `tests::session::an_edit_to_a_large_document_rechecks_its_forms`
     /// - witness: `server::tests::a_pulled_report_is_named_by_its_digest_and_answered_unchanged`
     /// - witness: `server::tests::a_pulling_client_is_sent_no_publication_and_asked_to_pull_again`
+    /// - witness: `server::tests::an_edit_that_changes_the_imports_is_laid_out_again_2439`
     #[spec(ensures: |ret| (self.pulled.0 || !self.notebooks.is_empty()
             || ret.judged.len() <= ret.messages.len())
         && (awaiting == Awaiting::Ended || (admissions.judging.is_empty()
@@ -3698,6 +3724,33 @@ impl Server
                 }
                 continue;
             };
+            // A judgement laid out over imports its own parse does not read
+            // is laid out again over the ones it reads. Over the same closure
+            // it is the judgement that lay-out makes, and stands; over another
+            // it publishes nothing, the copy is judged again, and its progress
+            // waits for that judgement.
+            let mut rechecked = rechecked;
+            if let Maybe::Present(written) = rechecked.misread()
+                && let Some(judging) = self.relaid(workspace, &uri, version, written)
+            {
+                match judging.standing(rechecked) {
+                    Relaid::Kept(kept) => rechecked = *kept,
+                    Relaid::Again(judging) => {
+                        let submission = admissions.next();
+                        let _started =
+                            admissions
+                                .judgements
+                                .submit(uri.clone(), submission, move |watch| {
+                                    match (*judging).run(watch) {
+                                        Polled::Whole(rechecked) => Ok(rechecked),
+                                        Polled::Retired(retired, ()) => Err(retired),
+                                    }
+                                });
+                        let _superseded = admissions.judging.insert(uri, version);
+                        continue;
+                    },
+                }
+            }
             for &mut (ref mut waiting, _) in &mut admissions.ending {
                 let _delivered = waiting.remove(&uri);
             }
@@ -3835,6 +3888,47 @@ impl Server
                 }
             }
             settled.log.push(logged);
+        }
+    }
+
+    /// The judgement of this connection's copy at `uri` made again over
+    /// `written`, the imports its judgement at `version` read: the copy, still
+    /// at `version`, keeps them as the ones its revisions are laid out over;
+    /// none when the copy was let go, has changed since, or is not running
+    /// that judgement.
+    ///
+    /// # Specification
+    /// trivial.
+    fn relaid(
+        &self,
+        workspace: &mut Workspace,
+        uri: &DocumentUri,
+        version: DocumentVersion,
+        written: &[String],
+    ) -> Option<Judging>
+    {
+        let document = workspace
+            .documents
+            .get_mut(uri)
+            .and_then(|held| match held.own_mut(self.peer) {
+                Maybe::Present(document) => Some(document),
+                Maybe::Absent(_) => None,
+            })
+            .filter(|document| document.version == version)?;
+        document.written = Maybe::Present(written.to_vec());
+        let Judgement::Running(_) = document.judgement
+        else {
+            return None;
+        };
+        let shadows = workspace.shadowing(self.peer);
+        match workspace.documents.get(uri)?.own(self.peer) {
+            Maybe::Present(document) => Some(Judging::of(
+                uri,
+                document,
+                &shadows,
+                (self.verbosity, self.style.spelling, self.quiet),
+            )),
+            Maybe::Absent(_) => None,
         }
     }
 
@@ -8427,6 +8521,17 @@ fn locked(session: &Mutex<DocumentSession>) -> MutexGuard<'_, DocumentSession>
     session.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// What a judgement whose parse misread its lay-out's imports leaves, once its
+/// copy is laid out again over the ones it read.
+enum Relaid
+{
+    /// The new lay-out closes the copy over the same closure: the judgement
+    /// stands, re-pointed at the new lay-out.
+    Kept(Box<Rechecked>),
+    /// The closure moved: the copy is judged again over the new lay-out.
+    Again(Box<Judging>),
+}
+
 /// One copy's judgement, taken off the serving loop: what it judges, owned,
 /// and the session it judges in.
 struct Judging
@@ -8451,8 +8556,9 @@ struct Judging
 impl Judging
 {
     /// The judgement of `document`, open at `uri`, each import read as
-    /// `shadows` holds it, at `verbosity` and in `spelling`, the form under its
-    /// caret held back while `quiet` is not zero.
+    /// `shadows` holds it and its own path imports as its last judgement read
+    /// them, at `verbosity` and in `spelling`, the form under its caret held
+    /// back while `quiet` is not zero.
     ///
     /// # Specification
     /// trivial.
@@ -8468,14 +8574,47 @@ impl Judging
             Maybe::Present(caret) if !quiet.is_zero() => Maybe::Present(caret),
             Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(formless::Absent::Uncareted),
         };
+        let written = match document.written {
+            Maybe::Present(ref written) => Maybe::Present(written.as_slice()),
+            Maybe::Absent(reason) => Maybe::Absent(reason),
+        };
         Self {
             uri: uri.clone(),
             session: Arc::clone(&document.session),
             text: String::from(<&str>::from(document.text.source())),
-            laid: lay(uri, document.text.source(), shadows),
+            laid: lay(uri, document.text.source(), shadows, written),
             wanted: document.text.wanted.get(),
             rendering: (verbosity, spelling, caret),
             started,
+        }
+    }
+
+    /// `rechecked`, judged over a lay-out its parse found misread, kept when
+    /// this judgement, laid out over the imports that parse read, closes the
+    /// document over the same closure: the same text and base, so the same
+    /// text before the document, which keys the closure's lowering, and the
+    /// same unit, which are all a judgement reads of its lay-out. Kept, its
+    /// lay-out and the paths its closure named are this judgement's; otherwise
+    /// this judgement runs in its place.
+    ///
+    /// # Specification
+    /// trivial.
+    fn standing(
+        self,
+        mut rechecked: Rechecked,
+    ) -> Relaid
+    {
+        match (self.laid, &rechecked.laid) {
+            (Maybe::Present(mut relaid), &Maybe::Present(ref judged))
+                if relaid.base == judged.base
+                    && relaid.text == judged.text
+                    && relaid.unit == judged.unit =>
+            {
+                rechecked.named = core::mem::take(&mut relaid.named);
+                rechecked.laid = Maybe::Present(relaid);
+                Relaid::Kept(Box::new(rechecked))
+            },
+            (laid, _) => Relaid::Again(Box::new(Self { laid, ..self })),
         }
     }
 
@@ -8558,9 +8697,11 @@ fn reported(
 ///   hints [`unused`] answers off its unused binders and those [`unreached`]
 ///   answers off its imports no lookup reached, less those [`publishable`]
 ///   holds for the form under the document's caret; the copy records every
-///   judged diagnostic and hint as checked, and its judgement as settled. One
-///   log line names the same URI and version, its admission pending when the
-///   judgement left one, and whether the publication held any.
+///   judged diagnostic and hint as checked, the imports the judgement read as
+///   those its next revision is laid out over ([`written::Absent::Unread`] when
+///   it read none), and its judgement as settled. One log line names the same
+///   URI and version, its admission pending when the judgement left one, and
+///   whether the publication held any.
 /// - provides: the publication shared by open, change, closure and
 ///   configuration synchronisations.
 /// - fails: never.
@@ -8601,6 +8742,10 @@ fn publication(
     let (published, holding) = publishable(&rechecked.diagnostics, &form);
     document.checked = rechecked.diagnostics;
     document.named = rechecked.named;
+    document.written = match rechecked.written {
+        Maybe::Present(written) => Maybe::Present(written),
+        Maybe::Absent(_) => Maybe::Absent(written::Absent::Unread),
+    };
     document.text.judged_over(rechecked.laid, rechecked.table);
     document.judgement = Judgement::Settled;
     (
@@ -12410,6 +12555,147 @@ mod tests
             published(&mut server, &close),
             [(Some(uri("base.gandr")), 0_usize)],
             "a copy closed as the disk holds it rechecks no importer"
+        );
+        let _removed = std::fs::remove_dir_all(&directory);
+    }
+
+    /// #2439: a revision is laid out over the imports its copy's last
+    /// judgement read; an edit that changes them, re-pointing, removing or
+    /// adding one, is laid out again over the ones its own parse reads, and
+    /// each revision publishes once, what a connection opening it fresh
+    /// publishes, whether its closure stays as it was (an import spelled
+    /// anew) or moves; a path its new closure names, created, rechecks it.
+    #[test]
+    fn an_edit_that_changes_the_imports_is_laid_out_again_2439()
+    {
+        let directory = std::env::temp_dir().join(format!("gandr-relaid-{}", std::process::id()));
+        let _cleared = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("the scratch directory is created");
+        std::fs::write(
+            directory.join("base.gandr"),
+            "def one : Integer ;\ndef one = 1 ;\n",
+        )
+        .expect("the base is written");
+        std::fs::write(
+            directory.join("other.gandr"),
+            "def uno : Integer ;\ndef uno = 1 ;\n",
+        )
+        .expect("the other base is written");
+        std::fs::create_dir_all(directory.join("sub")).expect("the sub-directory is created");
+        std::fs::write(directory.join("document.gandr"), "").expect("the document is written");
+        let uri = format!("file://{}", directory.join("document.gandr").display());
+        // The version and the diagnostics of each publication a message sends.
+        let published = |server: &mut Connected, message: &Value| {
+            send(server, Json(&message.to_string()))
+                .as_array()
+                .map(|messages| {
+                    messages
+                        .iter()
+                        .filter(|message| message["method"] == "textDocument/publishDiagnostics")
+                        .map(|message| {
+                            (
+                                message["params"]["version"].clone(),
+                                message["params"]["diagnostics"].clone(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        let open = |text: &str| {
+            serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didOpen", "params": {
+                "textDocument": {"uri": uri, "languageId": "gandr", "version": 1_i32, "text": text}}})
+        };
+        let fresh = |text: &str| {
+            let mut server = initialized();
+            published(&mut server, &open(text))
+                .into_iter()
+                .map(|(_, diagnostics)| diagnostics)
+                .collect::<Vec<_>>()
+        };
+        let mut server = initialized();
+        assert_eq!(
+            published(
+                &mut server,
+                &open("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n")
+            ),
+            [(serde_json::json!(1_i32), serde_json::json!([]))],
+            "the document checks against the base"
+        );
+        let revisions = [
+            (
+                2_i32,
+                "import \"./other.gandr\" ;\ndef two : Integer ;\ndef two = uno ;\n",
+            ),
+            (
+                3_i32,
+                "import \"./other.gandr\" ;\ndef two : Integer ;\ndef two = uno ;\ndef three : \
+                 Integer ;\ndef three = two ;\n",
+            ),
+            (4_i32, "def two : Integer ;\ndef two = uno ;\n"),
+            (
+                5_i32,
+                "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\ndef two : Integer ;\ndef \
+                 two = uno ;\n",
+            ),
+            (
+                6_i32,
+                "import \"./sub/../base.gandr\" ;\nimport \"./other.gandr\" ;\ndef two : \
+                 Integer ;\ndef two = uno ;\n",
+            ),
+        ];
+        for (version, revision) in revisions {
+            let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+                "textDocument": {"uri": uri, "version": version},
+                "contentChanges": [{"text": revision}]}});
+            let expected: Vec<(Value, Value)> = fresh(revision)
+                .into_iter()
+                .map(|diagnostics| (serde_json::json!(version), diagnostics))
+                .collect();
+            assert_eq!(
+                published(&mut server, &change),
+                expected,
+                "revision {version} publishes once, as a fresh connection publishes it"
+            );
+        }
+        assert!(
+            fresh(revisions[2].1)
+                .first()
+                .and_then(Value::as_array)
+                .is_some_and(|diagnostics| !diagnostics.is_empty()),
+            "with its import removed the document no longer finds `uno`"
+        );
+        // An import of a file not yet written moves the closure, its import
+        // unresolved: the file its new lay-out names, once created, rechecks
+        // the document.
+        let awaiting = "import \"./base.gandr\" ;\nimport \"./other.gandr\" ;\nimport \
+                        \"./later.gandr\" ;\ndef two : Integer ;\ndef two = uno ;\n";
+        let change = serde_json::json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
+            "textDocument": {"uri": uri, "version": 7_i32},
+            "contentChanges": [{"text": awaiting}]}});
+        let missing: Vec<(Value, Value)> = fresh(awaiting)
+            .into_iter()
+            .map(|diagnostics| (serde_json::json!(7_i32), diagnostics))
+            .collect();
+        assert_eq!(
+            published(&mut server, &change),
+            missing,
+            "an import of a missing file publishes as a fresh connection publishes it"
+        );
+        let later = directory.join("later.gandr");
+        std::fs::write(&later, "def tres : Integer ;\ndef tres = 3 ;\n")
+            .expect("the later base is written");
+        let created = serde_json::json!({"jsonrpc": "2.0", "method": "workspace/didChangeWatchedFiles",
+            "params": {"changes": [{"uri": format!("file://{}", later.display()), "type": 1_u8}]}});
+        let found: Vec<(Value, Value)> = fresh(awaiting)
+            .into_iter()
+            .map(|diagnostics| (serde_json::json!(7_i32), diagnostics))
+            .collect();
+        assert_ne!(found, missing, "the created file is found");
+        assert_eq!(
+            published(&mut server, &created),
+            found,
+            "the file the import names, created, rechecks the document"
         );
         let _removed = std::fs::remove_dir_all(&directory);
     }

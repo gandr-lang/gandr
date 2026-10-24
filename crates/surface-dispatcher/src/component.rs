@@ -242,7 +242,9 @@ impl ParsedBytes
 ///   dependency order, one newline apart, the importer last and starting at
 ///   `base`; `unit` says where each starts and what each path import resolved
 ///   to, the prelude its first source; `paths` holds each source's canonical
-///   path by its position in the unit, the prelude's named [`prelude::NAME`].
+///   path by its position in the unit, the prelude's named [`prelude::NAME`];
+///   `written` holds the path addresses the importer's root imports write, in
+///   source order, as the lay-out read them.
 /// - panics: none.
 /// - executable: none — a data type; [`lay_out`] and [`Laid::alone`] carry the
 ///   clauses.
@@ -267,6 +269,11 @@ pub struct Laid
     /// Every path an import of a source the closure read names, resolved or
     /// not, sorted, as [`lay_out`] states.
     pub named: Vec<PathBuf>,
+    /// The path addresses the importer's root imports write, in source order,
+    /// as the lay-out read them: what [`path_imports`] reads off a parse of
+    /// its text, or what [`lay_out_written`] was given; none for a source
+    /// laid alone unread.
+    pub written: Vec<String>,
 }
 
 quenchant_shape::reason_enum! {
@@ -279,6 +286,19 @@ quenchant_shape::reason_enum! {
             /// build, or a laying the unit refuses, which
             /// [`group`](super::group) never makes.
             Alone,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an importer's path imports are not given to its lay-out.
+    pub mod written {
+        /// The reason they are not given.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// Nothing has read them: the lay-out parses the importer whole to
+            /// read them.
+            Unread,
         }
     }
 }
@@ -487,6 +507,9 @@ struct Graph
     parsed: ParsedBytes,
     /// How many files the graph read from disk rather than from [`FILES`].
     fetched: usize,
+    /// The source whose path imports were given rather than read, and those
+    /// imports, until the graph reads it.
+    given: Option<(Position, Vec<String>)>,
 }
 
 /// The path `target` will have once a file is written there: its directory's
@@ -651,7 +674,8 @@ pub fn lay_out(
 ///   is the component [`group`] lays out for the source given alone.
 ///   [`Laid::named`] holds, sorted and once each, every path an import of a
 ///   source the closure read names, resolved or not, as [`named_path`] names
-///   it.
+///   it, and [`Laid::written`] the importer's path imports as a parse of `text`
+///   reads them.
 /// - provides: the unit the session judges a document in.
 /// - fails: never.
 /// - panics: none.
@@ -682,21 +706,77 @@ pub fn lay_out_shadowed(
     shadows: &dyn Shadows,
 ) -> Laid
 {
+    lay_out_written(
+        grammar,
+        (path, root, text),
+        shadows,
+        Maybe::Absent(written::Absent::Unread),
+    )
+}
+
+/// The import closure of the source at `path`, read as `text` under `root`,
+/// laid out as one unit, each import read as `shadows` holds it, the
+/// source's own path imports `written` when they are given.
+///
+/// # Specification
+/// - requires: `text` is the source at `path`, classified under `root`;
+///   `written`, when given, is what [`path_imports`] reads off a parse of
+///   `text`.
+/// - ensures: [`lay_out_shadowed`] of the source under `shadows`, its own path
+///   imports `written` when given, which [`Laid::written`] then holds.
+/// - provides: a lay-out that does not parse the importer again when a parse of
+///   its text was read already: a language server's next keystroke lays the
+///   document out over the imports its last judgement's parse read, and that
+///   judgement's parse confirms them.
+/// - fails: never.
+/// - panics: none.
+/// - intension: as [`lay_out_shadowed`], the importer not parsed when its
+///   imports are given.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer laid out over the imports a parse of its text
+///   reads is laid out as when it is parsed whole, and over other imports it is
+///   laid out as those imports name.
+/// - witness: `component::tests::an_importer_given_its_imports_is_laid_out_as_read_2439`
+#[spec(ensures: |ref ret| ret.text.get(usize::from(ret.base) ..) == Some(text.as_ref())
+    && ret.paths.len() == ret.unit.sources().len()
+    && ret.unit.prelude().is_some()
+    && match written {
+        Maybe::Present(given) => !text.as_ref().contains(IMPORT) || ret.written.as_slice() == given,
+        Maybe::Absent(_) => true,
+    })]
+#[inline]
+#[must_use]
+pub fn lay_out_written(
+    grammar: &Pbg,
+    (path, root, text): (&Path, SourceRoot, SourceText<'_>),
+    shadows: &dyn Shadows,
+    written: Maybe<&[String], written::Absent>,
+) -> Laid
+{
     if !text.as_ref().contains(IMPORT) {
-        return Laid::alone(path, text, Vec::new());
+        return Laid::alone(path, text, (Vec::new(), Vec::new()));
     }
     let mut graph = Graph::default();
     let importer = graph.admit(named_path(path), root, String::from(text.as_ref()));
+    if let Maybe::Present(given) = written {
+        graph.given = Some((importer, given.to_vec()));
+    }
     graph.expand(grammar, shadows);
     let named: Vec<PathBuf> = core::mem::take(&mut graph.named).into_iter().collect();
+    let read = graph
+        .read
+        .get(importer.0)
+        .map(|read| read.written.clone())
+        .unwrap_or_default();
     match graph.read.get(importer.0) {
         Some(read) if read.parse == Parse::Parsed && !read.edges.is_empty() => {},
-        Some(_) | None => return Laid::alone(path, text, named),
+        Some(_) | None => return Laid::alone(path, text, (named, read)),
     }
     let mut layings = graph.layings(&[importer]);
     let Some(laying) = layings.pop()
     else {
-        return Laid::alone(path, text, named);
+        return Laid::alone(path, text, (named, read));
     };
     let paths = core::iter::once(PathBuf::from(prelude::NAME))
         .chain(
@@ -718,16 +798,18 @@ pub fn lay_out_shadowed(
                 base,
                 paths,
                 named,
+                written: read,
             }
         },
-        Maybe::Absent(_) => Laid::alone(path, text, named),
+        Maybe::Absent(_) => Laid::alone(path, text, (named, read)),
     }
 }
 
 impl Laid
 {
     /// The source at `path`, read as `text`, laid after the prelude alone,
-    /// its imports unresolved, the paths its imports name `named`.
+    /// its imports unresolved, the paths its imports name `named` and its own
+    /// path imports `written`.
     ///
     /// # Specification
     /// - requires: `named` is sorted, each path once.
@@ -747,7 +829,7 @@ impl Laid
     pub(crate) fn alone(
         path: &Path,
         text: SourceText<'_>,
-        named: Vec<PathBuf>,
+        (named, written): (Vec<PathBuf>, Vec<String>),
     ) -> Self
     {
         let base = prelude::base();
@@ -762,6 +844,7 @@ impl Laid
             base,
             paths: Vec::from([PathBuf::from(prelude::NAME), named_path(path)]),
             named,
+            written,
         }
     }
 }
@@ -925,14 +1008,15 @@ impl Graph
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each source whose text spells `import` is read for its path
-    ///   imports as the graph's [`Reading`] says and its imports resolved in
-    ///   the order it writes them, each read as [`Graph::resolve`] reads it
-    ///   under `shadows`. Read whole, it is [`Parse::Parsed`] with its edges,
-    ///   or [`Parse::Unparsed`] with none; read by its import forms, it is
-    ///   [`Parse::Parsed`] with its edges when they write a path import and
-    ///   stays [`Parse::Unchecked`] otherwise. Each source an edge names is
-    ///   [`Parse::Parsed`] or [`Parse::Unparsed`]; every other source stays
-    ///   [`Parse::Unchecked`].
+    ///   imports as the graph's [`Reading`] says, unless they were given, and
+    ///   its imports resolved in the order it writes them, each read as
+    ///   [`Graph::resolve`] reads it under `shadows`. Given, it is
+    ///   [`Parse::Parsed`] with their edges, unparsed; read whole, it is
+    ///   [`Parse::Parsed`] with its edges, or [`Parse::Unparsed`] with none;
+    ///   read by its import forms, it is [`Parse::Parsed`] with its edges when
+    ///   they write a path import and stays [`Parse::Unchecked`] otherwise.
+    ///   Each source an edge names is [`Parse::Parsed`] or [`Parse::Unparsed`];
+    ///   every other source stays [`Parse::Unchecked`].
     /// - fails: never.
     /// - panics: none.
     /// - intension: one breadth-first pass over the sources as they are read;
@@ -966,12 +1050,14 @@ impl Graph
             let root = source.root;
             let text = SourceText::from(source.text.as_str());
             let mut parsed = ParsedBytes::default();
-            let (parse, written) = match self.reading {
-                Reading::Whole => match read_whole(grammar, text, &mut parsed) {
+            let given = self.given.take_if(|&mut (at, _)| at.0 == next);
+            let (parse, written) = match (given, self.reading) {
+                (Some((_, written)), _) => (Parse::Parsed, written),
+                (None, Reading::Whole) => match read_whole(grammar, text, &mut parsed) {
                     Maybe::Present(written) => (Parse::Parsed, written),
                     Maybe::Absent(_) => (Parse::Unparsed, Vec::new()),
                 },
-                Reading::ImportForms => {
+                (None, Reading::ImportForms) => {
                     let written = paths_formed(grammar, text, &mut parsed);
                     let parse = if written.is_empty() {
                         Parse::Unchecked
@@ -1607,7 +1693,36 @@ fn paths_formed(
     else {
         return Vec::new();
     };
-    written_imports(grammar, read.tree()).map_or_else(
+    path_imports(grammar, read.tree())
+}
+
+/// The path addresses the imports at `tree`'s root write, in source order.
+///
+/// # Specification
+/// - requires: `tree` was molded under `grammar`.
+/// - ensures: each root import whose address has no scheme, its address as
+///   written with escapes decoded; none when the root's imports do not read,
+///   its own lowering refusing it.
+/// - provides: the reading [`lay_out_written`] is given: a parse of a source's
+///   text, read here, names the imports its lay-out reads them as.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the addresses are the lowering's reading of the root's
+///   imports, which a predicate could state only by reading them again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closure witnesses read a path import and a scheme
+///   import beside it.
+/// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
+/// - witness: `component::tests::an_importer_given_its_imports_is_laid_out_as_read_2439`
+#[inline]
+#[must_use]
+pub fn path_imports(
+    grammar: &Pbg,
+    tree: &SyntaxTree<'_>,
+) -> Vec<String>
+{
+    written_imports(grammar, tree).map_or_else(
         |_| Vec::new(),
         |written| {
             written
@@ -1623,10 +1738,8 @@ fn paths_formed(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: each import whose address has no scheme, its address as written
-///   with escapes decoded; a source whose imports do not read is taken to write
-///   none, its own lowering refusing it; a source that does not parse is
-///   unparsed.
+/// - ensures: [`path_imports`] of `text`'s parse; a source that does not parse
+///   is unparsed.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1647,15 +1760,7 @@ fn paths_written(
     else {
         return Maybe::Absent(laid::Absent::Alone);
     };
-    let tree = parsed.into_tree();
-    let written = written_imports(grammar, &tree).unwrap_or_default();
-    Maybe::Present(
-        written
-            .into_iter()
-            .filter(|import| import.address == Address::Path)
-            .map(|import| String::from(import.uri.as_ref()))
-            .collect(),
-    )
+    Maybe::Present(path_imports(grammar, &parsed.into_tree()))
 }
 
 /// The import form the `import` at byte `at` of `source` opens: the text from
@@ -2228,10 +2333,12 @@ mod tests
     use super::Placed;
     use super::Reading;
     use super::Shadows;
+    use super::Unshadowed;
     use super::group;
     use super::imports_named;
     use super::lay_out;
     use super::lay_out_shadowed;
+    use super::lay_out_written;
     use super::named_path;
     use crate::root::SourceRoot;
 
@@ -2396,6 +2503,60 @@ mod tests
                 tree.0.join("main.gandr")
             ],
             "the importer is named by its directory's canonical path and its file name"
+        );
+    }
+
+    /// #2439: an importer given the imports a parse of its text reads is laid
+    /// out exactly as when it is parsed whole; given other imports, it is laid
+    /// out over the sources those name, which is what the judgement's own
+    /// parse then catches.
+    #[test]
+    fn an_importer_given_its_imports_is_laid_out_as_read_2439()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let importer =
+            SourceText::from("import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;");
+        let tree = Scratch::new(Path::new("given"), &[
+            (
+                Path::new("base.gandr"),
+                SourceText::from("def one : Integer ;\ndef one = 1 ;"),
+            ),
+            (
+                Path::new("other.gandr"),
+                SourceText::from("def one : Integer ;\ndef one = 2 ;"),
+            ),
+            (Path::new("main.gandr"), importer),
+        ]);
+        let main = tree.0.join("main.gandr");
+        let read = lay_out(&grammar, &main, SourceRoot::Strict, importer);
+        assert_eq!(
+            read.written,
+            ["./base.gandr"],
+            "the parse reads the one path import"
+        );
+        let given = lay_out_written(
+            &grammar,
+            (&main, SourceRoot::Strict, importer),
+            &Unshadowed,
+            Maybe::Present(read.written.as_slice()),
+        );
+        assert_eq!(
+            given, read,
+            "given what its parse reads, it is laid out as parsed"
+        );
+        let other = [String::from("./other.gandr")];
+        let misread = lay_out_written(
+            &grammar,
+            (&main, SourceRoot::Strict, importer),
+            &Unshadowed,
+            Maybe::Present(other.as_slice()),
+        );
+        assert!(
+            misread.text.contains("def one = 2 ;")
+                && !misread.text.contains("def one = 1 ;")
+                && misread.written == other,
+            "given other imports, it is laid out over what they name: {}",
+            misread.text
         );
     }
 
