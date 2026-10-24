@@ -560,6 +560,9 @@ struct Engine<'arena>
     /// themselves, where the close rebuilt it: the node a splice copies, which
     /// no memo entry reports.
     closings: Vec<Carried>,
+    /// Each region that only returned its run's value, answered by that run's
+    /// computation rather than a node rebuilt from it.
+    returned: alloc::collections::BTreeSet<ComputationId>,
     /// The constants and atoms a renaming replaces; nothing outside one.
     renaming: &'arena Renaming,
     /// The nodes, each at its depth, an instantiation found reading the
@@ -597,6 +600,7 @@ impl<'arena> Engine<'arena>
             slots: BTreeMap::new(),
             binds: Vec::new(),
             closings: Vec::new(),
+            returned: alloc::collections::BTreeSet::new(),
             renaming: &NOTHING_RENAMED,
             reads: alloc::collections::BTreeSet::new(),
             reading: Vec::new(),
@@ -1567,21 +1571,29 @@ impl<'arena> Engine<'arena>
     /// Bind a region's runs over its spliced body, the first written
     /// outermost, and answer the binds as the region's elaboration.
     ///
+    /// A region that only returns its innermost run's value is that run's
+    /// computation: `x ← c ; return x` is `c`, the returner's right unit, so a
+    /// tail's `return f(x)` elaborates as the tail `f(x)` does.
+    ///
     /// # Specification
     /// - requires: the result stack holds, on top, the region's spliced body
     ///   and beneath it its runs' computations, each shifted past the runs
     ///   before it, the first written lowest.
-    /// - ensures: consumes them, mints one bind per run from the innermost out,
-    ///   records each run beside its bind, and records and answers the
-    ///   outermost as the region's elaboration at `depth`.
+    /// - ensures: consumes them; where the body is the return of the innermost
+    ///   run's variable, that run's computation stands for it and no bind is
+    ///   minted for that run; mints one bind per other run from the innermost
+    ///   out, records each such run beside its bind, and records and answers
+    ///   the outermost as the region's elaboration at `depth`.
     /// - provides: the minting half of a region's hoist.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two runs of one region bind in written order over the
-    ///   body, which reads each through its slot.
+    ///   body, which reads each through its slot; an arm's and a thunk's run
+    ///   their region only returns stand as their computations.
     /// - witness: `rewrite::tests::an_elaboration_runs_in_written_order_before_its_region`
+    /// - witness: `rewrite::tests::an_elaboration_never_hoists_out_of_a_thunk_or_an_arm`
     #[spec(captures: recorded = self.binds.len(),
         ensures: self.binds.len() >= recorded
             && self.memo.contains_key(&(Node::Computation(region), depth, Rewrite::Elaborate)))]
@@ -1601,7 +1613,19 @@ impl<'arena> Engine<'arena>
             .iter()
             .map(|_| Self::computation(&mut self.results, region))
             .collect();
-        for (&run, nested) in runs.iter().rev().zip(shifted) {
+        let returns_innermost = matches!(self.arena.computation(bound), Some(&Computation::Return(read))
+        if self.arena.value(read) == Some(&Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        }));
+        let mut innermost_out = runs.iter().rev().zip(shifted);
+        if returns_innermost && let Some((_, returned)) = innermost_out.next() {
+            bound = returned;
+            if runs.len() == 1 {
+                let _new = self.returned.insert(region);
+            }
+        }
+        for (&run, nested) in innermost_out {
             bound = self.arena.computation_bind(nested, bound);
             self.binds.push((run, bound));
         }
@@ -6403,7 +6427,14 @@ pub fn elaborate_nested_traced(
     engine.nesting = nesting.clone();
     engine.regions = regions;
     let elaborated = engine.run(Node::Value(subject), Binders::NONE, Rewrite::Elaborate);
-    report(&engine.memo, carried);
+    // A region answered by its run's computation was not rebuilt: that node
+    // stands for the run, and reporting it beside the region would carry it
+    // the region's origin, or record a node the elaboration did not mint.
+    let mut reported = Vec::new();
+    report(&engine.memo, &mut reported);
+    carried.extend(reported.into_iter().filter(|&pair| {
+        !matches!(pair, Carried::Computation(region, _) if engine.returned.contains(&region))
+    }));
     carried.append(&mut engine.closings);
     binds.append(&mut engine.binds);
     match elaborated {

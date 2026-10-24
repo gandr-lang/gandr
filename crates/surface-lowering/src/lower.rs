@@ -718,6 +718,7 @@ pub use exits::ElidableExit;
 pub use exits::Exit;
 pub use exits::Explicitness;
 pub use exits::InferredExit;
+pub use exits::Returned;
 
 mod functor;
 
@@ -3193,8 +3194,9 @@ struct Lowerer<'run, 'source>
     /// Every inferred exit the mint sweep minted, with its tail's position.
     elided: Vec<(NodeIndex, Exit)>,
     /// Every written `return` the mint sweep minted that the lowering would
-    /// infer were it left out, with its position and its operand's.
-    elidable: Vec<(NodeIndex, NodeIndex)>,
+    /// infer were it left out, with its position, its operand's and what the
+    /// operand is.
+    elidable: Vec<(NodeIndex, NodeIndex, Returned)>,
     /// The slots an `explicit_exits` attribute asks written exits of: a
     /// declaration it decorates, and every member of a module it decorates.
     asked: BTreeSet<SlotIndex>,
@@ -13973,8 +13975,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Bridge::Bare | Bridge::Inserted(_) => Exit::Become,
                 }));
             }
-            else if let Some(operand) = self.elidable_at(position) {
-                self.elidable.push((position, operand));
+            else if let Some((operand, returned)) = self.elidable_at(position) {
+                self.elidable.push((position, operand, returned));
             }
         }
         if self.breaking.contains(&position)

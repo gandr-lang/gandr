@@ -24,7 +24,7 @@ theory CircleShape {
 @[ checks ]
 def rec laws(chain : Theory) -> Integer {
   case chain {
-    Rule(name, left, right, rest) => { run r <- laws[<](rest); return r + 1 },
+    Rule(name, left, right, rest) => { run r <- laws[<](rest); r + 1 },
     _ => 0
   }
 }
@@ -80,9 +80,9 @@ module NativeWinding : Model(CircleShape) {
 
   def base = 0 ;
 
-  def turn(n : Integer) -> Integer { return n + 1 }
+  def turn(n : Integer) -> Integer { n + 1 }
 
-  def unturn(n : Integer) -> Integer { return n - 1 }
+  def unturn(n : Integer) -> Integer { n - 1 }
 
   @[ owes(1) ]
   def turnUnturn : (n : Integer) => Path(Integer, turn(unturn(n)), n) ;

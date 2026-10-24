@@ -69,16 +69,17 @@
 //! without. The sugared form also leaves out a tail's `return` where the
 //! lowering would infer it, as the printer's canonical body does: a `return`
 //! of a value where a path through its body ends, which the lowering lists
-//! (`gandr_surface_lowering::ElidableExit`). An early `return`, one of a
-//! computation, one an `explicit_exits` attribute asks for and every written
-//! `become` keep their keyword, and the explicit form writes none it was not
-//! given. A value-function alias written longer than the printer writes it,
-//! `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared to its
-//! shortest, `A => B`. The `run x <- c ;` statements ending a block whose
-//! binders its tail reads once each, first and in order, are written away,
-//! each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`), a match
-//! branch's as any other's; a block left with no statement is written as its
-//! one computation where that computation fits without the braces. A
+//! (`gandr_surface_lowering::ElidableExit`), and one of a call or an operator
+//! there, which the checker runs and returns as it runs the bare tail. An
+//! early `return`, one an `explicit_exits` attribute asks for and every
+//! written `become` keep their keyword, and the explicit form writes none it
+//! was not given. A value-function alias written longer than the printer
+//! writes it, `(A) => B` or `(x : A) => B` where nothing reads `x`, is sugared
+//! to its shortest, `A => B`. The `run x <- c ;` statements ending a block
+//! whose binders its tail reads once each, first and in order, are written
+//! away, each `c` at its `x`'s read (`gandr_surface_lowering::LinearRun`), a
+//! match branch's as any other's; a block left with no statement is written as
+//! its one computation where that computation fits without the braces. A
 //! `thunk { e }` of one computation, no grade and no statement written, is
 //! written `e` where the checker would insert the thunk: where it checks `e`
 //! against a thunk type. A call of a reduct, `T.S(m)` where a theory `T`
@@ -151,24 +152,27 @@
 //! - Reversal: a printer that carries the source's comments and names, at which
 //!   point one printing serves both and this table retires.
 //!
-//! A linear run, an inserted thunk and an inserted reduct are the rewrites
-//! whose two spellings lower to different cores: a bind, and a nested call
-//! the checker elaborates to that bind; a thunk, and the computation the
+//! A linear run, a tail's `return` of a call, an inserted thunk and an
+//! inserted reduct are the rewrites whose two spellings lower to different
+//! cores: a bind, and a nested call the checker elaborates to that bind; a
+//! nested call returned, and the call, which the checker's elaboration
+//! makes one by the returner's right unit; a thunk, and the computation the
 //! checker wraps in one; a call of a reduct, and the value the checker
 //! applies it to. Their meaning check is the checker's, through
 //! [`Elaborate`], which a caller that judges modules supplies to
 //! [`format_beside`] (the crate depends on no checker): where the lowerings
 //! differ, a declaration agrees when the checker elaborates both to equal
 //! bodies. The source is elaborated at most once: up front when the lowering
-//! lists a run or mints a reduct — the explicit form writes a reduct where
-//! the checker applied it ([`Elaboration::crossings`]) — and otherwise only
-//! when a rewritten source first lowers otherwise. Without a checker no
-//! statement is written away, no thunk left out and no reduct written or left
-//! out, and in a declaration the checker refuses as written no statement is
-//! written away and no reduct moved; a thunk left out there elaborates to
-//! nothing on either side, so the declaration keeps it. A nested call the
-//! checker would suspend rather than run, at a thunk-typed parameter,
-//! elaborates otherwise and is withdrawn as any rewrite is. A declaration
+//! lists a run or such a tail or mints a reduct — the explicit form writes a
+//! reduct where the checker applied it ([`Elaboration::crossings`]) — and
+//! otherwise only when a rewritten source first lowers otherwise. Without a
+//! checker no statement or such `return` is written away, no thunk left out
+//! and no reduct written or left out, and in a declaration the checker
+//! refuses as written no statement or such `return` is written away and no
+//! reduct moved; a thunk left out there elaborates to nothing on either side,
+//! so the declaration keeps it. A nested call the checker would suspend
+//! rather than run, at a thunk-typed parameter, elaborates otherwise and is
+//! withdrawn as any rewrite is, a returned one among them. A declaration
 //! that elaborates otherwise with its thunks left out, or a reduct written or
 //! left out, keeps them and is formatted again, unreported: there the checker
 //! inserts no thunk — a returned one, one around a value — or applies no
@@ -297,6 +301,7 @@ use gandr_surface_layout::PhysicalLineEnding;
 use gandr_surface_layout::RenderError;
 use gandr_surface_layout::error::BuildError;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Returned;
 use gandr_surface_lowering::Unit as LoweringUnit;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::ParseResult;
@@ -765,22 +770,24 @@ pub fn declared_form(
 ///   `beside`'s unit, so a declaration that reads an imported name is rewritten
 ///   as one that does not; a withdrawal's span is in the source's own text.
 ///   With `checker`, the sugared form also writes away each `run` statement the
-///   lowering lists as linear, and a declaration whose two lowerings differ
-///   agrees when `checker` elaborates both to one body; without it, no
-///   statement is written away.
+///   lowering lists as linear and each tail's `return` of a call, and a
+///   declaration whose two lowerings differ agrees when `checker` elaborates
+///   both to one body; without it, neither is written away.
 /// - provides: the formatting `gandr fmt` runs, beside a source's imports.
 /// - fails: as [`format`].
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source importing the declaration its signature names is
-///   sugared beside the import and kept alone; a linear run is written away
-///   where the checker elaborates both spellings alike, withdrawn where it
-///   elaborates them otherwise, and kept where it refuses the source; a
-///   signature and its thunk merge into one function form, and keep their
-///   halves where the thunk is commented, graded or no thunk.
+///   sugared beside the import and kept alone; a linear run and a tail's
+///   `return` of a call are written away where the checker elaborates both
+///   spellings alike, withdrawn where it elaborates them otherwise, and kept
+///   where it refuses the source; a signature and its thunk merge into one
+///   function form, and keep their halves where the thunk is commented, graded
+///   or no thunk.
 /// - witness: `tests::rewrite::an_importing_source_is_rewritten_beside_its_imports`
 /// - witness: `tests::rewrite::a_linear_run_follows_the_checker_s_elaborations`
+/// - witness: `tests::rewrite::a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255`
 /// - witness: `tests::rewrite::an_inserted_thunk_follows_the_checker_s_elaborations`
 /// - witness: `tests::rewrite::the_runs_ending_a_block_are_written_away_together`
 /// - witness: `tests::rewrite::a_signed_thunk_merges_into_its_function_form_1449`
@@ -837,25 +844,26 @@ pub fn format_beside(
         ),
         (Some(_) | None, _) => composite::Motives::default(),
     };
-    let tails = match (chosen, lowered.as_ref()) {
-        (Some(_), Some(module)) => tail::Tails::of(module, base),
-        (Some(_) | None, _) => tail::Tails::default(),
-    };
     // A linear run lowers otherwise than the call written at its read, a
-    // thunk otherwise than the computation the checker wraps in it, and a
-    // reduct's or forgetting map's call otherwise than the value the checker
-    // applies the map to, so each is written away only where a checker can
-    // compare the two. The source is elaborated at most once: here when the
-    // lowering lists a run, which is written only in a declaration the
-    // checker elaborates as written, or mints a reduct or a forgetting map,
-    // which the explicit form writes where the checker applies it; otherwise
-    // only once a rewritten source lowers otherwise — a thunk left out of a
-    // declaration the checker refuses elaborates to nothing on either side,
-    // and that declaration keeps its thunks.
+    // tail's `return` of a call otherwise than the call, a thunk otherwise
+    // than the computation the checker wraps in it, and a reduct's or
+    // forgetting map's call otherwise than the value the checker applies the
+    // map to, so each is written away only where a checker can compare the
+    // two. The source is elaborated at most once: here when the lowering lists
+    // a run or such a tail, each written only in a declaration the checker
+    // elaborates as written, or mints a reduct or a forgetting map, which the
+    // explicit form writes where the checker applies it; otherwise only once
+    // a rewritten source lowers otherwise — a thunk left out of a declaration
+    // the checker refuses elaborates to nothing on either side, and that
+    // declaration keeps its thunks.
     let checker = chosen.and(lowered.as_ref()).and(checker);
     let mut elaborations: Elaborations = match (lowered.as_ref(), checker) {
         (Some(module), Some(checker))
             if !module.linear_runs().is_empty()
+                || module
+                    .elidable_exits()
+                    .iter()
+                    .any(|exit| exit.returned == Returned::Run)
                 || !module.reducts().is_empty()
                 || !module.forgets().is_empty() =>
         {
@@ -863,12 +871,21 @@ pub fn format_beside(
         },
         (Some(_) | None, _) => None,
     };
-    let unchecked = match (lowered.as_ref(), elaborations.as_ref()) {
+    let mut unchecked = match (lowered.as_ref(), elaborations.as_ref()) {
         (Some(module), Some(elaboration)) => forms_of(
             tree,
             &meaning::unelaborated(module, &elaboration.definitions),
         ),
         (Some(_) | None, _) => Vec::new(),
+    };
+    unchecked.sort_unstable();
+    let tails = match (chosen, lowered.as_ref()) {
+        (Some(_), Some(module)) => tail::Tails::of(
+            module,
+            base,
+            elaborations.as_ref().map(|_| unchecked.as_slice()),
+        ),
+        (Some(_) | None, _) => tail::Tails::default(),
     };
     let runs = match (lowered.as_ref(), elaborations.as_ref()) {
         (Some(module), Some(_)) => linear::Runs::of(module, base, unchecked.clone()),

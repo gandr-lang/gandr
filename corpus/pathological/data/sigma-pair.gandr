@@ -14,7 +14,7 @@ def loose = (2, (MkIx : Ix(2))) ;
 
 @[ checks ]
 def tag_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
-  return p.n
+  p.n
 }
 
 @[ refuses("TypeMismatch") ]

@@ -34,7 +34,7 @@ def rec abstracted(chain : Theory) -> Integer {
   case chain {
     Abstracted(name, sort, indices, atoms, binders, rest) => {
       run r <- abstracted[<](rest);
-      return r + 1
+      r + 1
     },
     Port(name, sort, indices, rest) => abstracted[<](rest),
     Bound(name, sort, indices, binders, rest) => abstracted[<](rest),
@@ -50,7 +50,7 @@ def rec abstracting(chain : Theory) -> Integer {
     Oper(name, inputs, outputs, rest) => {
       run here <- abstracted(inputs);
       run r <- abstracting[<](rest);
-      return here + r
+      here + r
     },
     _ => 0
   }

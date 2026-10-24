@@ -26,7 +26,7 @@ theory Cells {
 @[ checks ]
 def rec faces(chain : Theory) -> Integer {
   case chain {
-    Face(name, points, rest) => { run r <- faces[<](rest); return r + 1 },
+    Face(name, points, rest) => { run r <- faces[<](rest); r + 1 },
     _ => 0
   }
 }

@@ -19,6 +19,7 @@ use super::Exit;
 use super::Explicitness;
 use super::InferredExit;
 use super::Leaves;
+use super::Returned;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
@@ -650,22 +651,39 @@ fn a_tail_return_of_a_value_is_listed_as_elidable_1327()
     let at = |context: &str, needle: &str| {
         spelled_within(text, SourceText::from(context), SourceText::from(needle))
     };
-    let elidable = |context: &str, written: &str, value: &str| ElidableExit {
+    let elidable = |context: &str, written: &str, value: &str, returned: Returned| ElidableExit {
         span: at(context, written),
         value: at(context, value),
+        returned,
     };
     assert_eq!(
         module.elidable_exits(),
         [
-            elidable("{ return Succ(n) }", "return Succ(n)", "Succ(n)"),
-            elidable("Zero => return m,", "return m", "m"),
-            elidable("=> return p }", "return p", "p"),
-            elidable("Zero => return k,", "return k", "k"),
-            elidable("{ return (Succ(n)) }", "return (Succ(n))", "(Succ(n))"),
+            elidable(
+                "{ return Succ(n) }",
+                "return Succ(n)",
+                "Succ(n)",
+                Returned::Value
+            ),
+            elidable("Zero => return m,", "return m", "m", Returned::Value),
+            elidable("=> return p }", "return p", "p", Returned::Value),
+            elidable("Zero => return k,", "return k", "k", Returned::Value),
+            elidable(
+                "{ return succeeded(n) }",
+                "return succeeded(n)",
+                "succeeded(n)",
+                Returned::Run
+            ),
+            elidable(
+                "{ return (Succ(n)) }",
+                "return (Succ(n))",
+                "(Succ(n))",
+                Returned::Value
+            ),
         ],
-        "a tail's return of a value is listed, in a body, in a match arm and grouped; an \
-         early one, one of a computation, of a grouped type or of a hole, one written as a \
-         statement or in tail position of one, one an attribute asks for and one in a \
+        "a tail's return of a value is listed, in a body, in a match arm and grouped, and so is \
+         one of a call, as a run; an early one, one of a grouped type or of a hole, one written \
+         as a statement or in tail position of one, one an attribute asks for and one in a \
          refused declaration are not"
     );
     for (written, bare) in [("succeeded", "succeeded_bare"), ("arms", "arms_bare")] {

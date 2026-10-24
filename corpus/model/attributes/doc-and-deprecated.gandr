@@ -8,7 +8,7 @@
 @[doc("Squares its argument.")]
 @[deprecated(#{ since = "0.2", note = "use square_checked" })]
 def square(x: Integer) -> Integer {
-  return (x * x)
+  x * x
 }
 
 // Two uses of it: the function checks, and each use is reported with the

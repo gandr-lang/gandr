@@ -104,7 +104,7 @@ def identityRun() -> Integer { become identityAt(Integer, 5) }
 module Adding {
   /// The sum of two integers.
   @[ checks ]
-  def plus(x : Integer, y : Integer) -> Integer { return x + y }
+  def plus(x : Integer, y : Integer) -> Integer { x + y }
 }
 
 /// A value combined with itself, the combination and its carrier implicit.

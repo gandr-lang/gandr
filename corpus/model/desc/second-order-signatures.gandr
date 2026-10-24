@@ -44,7 +44,7 @@ theory IdentityReturn {
 @[ checks ]
 def rec representable(chain : Theory) -> Integer {
   case chain {
-    Representable(name, indices, rest) => { run r <- representable[<](rest); return r + 1 },
+    Representable(name, indices, rest) => { run r <- representable[<](rest); r + 1 },
     Sort(name, indices, rest) => representable[<](rest),
     _ => 0
   }
@@ -55,7 +55,7 @@ def rec representable(chain : Theory) -> Integer {
 @[ checks ]
 def rec bound(chain : Theory) -> Integer {
   case chain {
-    Bound(name, sort, indices, binders, rest) => { run r <- bound[<](rest); return r + 1 },
+    Bound(name, sort, indices, binders, rest) => { run r <- bound[<](rest); r + 1 },
     Port(name, sort, indices, rest) => bound[<](rest),
     _ => 0
   }
