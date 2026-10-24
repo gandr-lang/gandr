@@ -2568,6 +2568,42 @@ fn a_declaration_naming_a_refused_one_is_a_note()
     );
 }
 
+/// #2339: a signature whose definition is written with its keyword misspelt
+/// owes its body because the lowering refused that form; it is a note saying
+/// so, and the first error is the misspelt keyword's.
+#[test]
+fn a_signature_whose_definition_is_refused_is_a_note_2339()
+{
+    let text = SourceText::from("@[ checks ]\ndef pair : Integer ;\nde pair = 1 ;\n");
+    let printed = printed(
+        Path::new("unread.gandr"),
+        SourceRoot::Strict,
+        text,
+        Verb::Check(Goals::Gated),
+    );
+    let Some(signature) = printed.first()
+    else {
+        panic!("the source prints its diagnostics");
+    };
+    assert_eq!(signature.severity, Severity::Note, "{printed:?}");
+    assert_eq!(
+        signature.note,
+        Maybe::Present(String::from(
+            "`pair` states checks owing 0 and produced checks owing 1: a form of `pair` the \
+             lowering refused leaves it so"
+        )),
+        "the note names what the signature owes and the refused form of its name"
+    );
+    assert_eq!(
+        printed
+            .iter()
+            .find(|diagnostic| diagnostic.severity == Severity::Error)
+            .map(|diagnostic| diagnostic.span),
+        Some(Maybe::Present(nth(text, SourceText::from("de"))[1])),
+        "the first error is the misspelt keyword's"
+    );
+}
+
 #[test]
 fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
 {
