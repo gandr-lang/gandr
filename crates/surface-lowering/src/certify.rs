@@ -15,6 +15,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::BinderDistance;
 use gandr_kernel_term::FieldCount;
 use gandr_kernel_term::OperationRank;
 use gandr_kernel_term::PRESENTATION_FUEL;
@@ -24,6 +25,7 @@ use gandr_kernel_term::RuleVariable;
 use gandr_kernel_term::SymbolKind;
 use gandr_kernel_term::TheoryNode;
 use gandr_kernel_term::TheoryRule;
+use gandr_kernel_term::TheoryRuleFault;
 use gandr_kernel_term::TheoryRules;
 use gandr_kernel_term::TheorySymbol;
 use gandr_theory_levitation::DerivedFace;
@@ -162,6 +164,73 @@ where
     }
 }
 
+/// The first critical pair of `description`'s rules and `derived`, one of
+/// them instantiating a variable, that the kernel's second-order reading
+/// does not join: its two rules' places, the later first, the written rules
+/// numbered before the derived ones.
+///
+/// # Specification
+/// - requires: `description`'s rules are oriented.
+/// - ensures: [`None`] exactly when [`TheoryRules::second_order`] accepts the
+///   written rules, conditioned as [`rule_certificate`] conditions them,
+///   followed by `derived`; else [`Some`] with the larger and the smaller of
+///   the refused rule's place and its partner's, both the refused rule's when
+///   the fault names no partner.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a relative monad's laws pass, and a `let` rule beside a
+///   second rewriting its constant apart is named with that rule.
+/// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
+#[spec(ensures: |ref ret| ret.is_none_or(|(later, earlier)| earlier <= later
+    && usize::from(later) < description.rules.len().saturating_add(derived.len())))]
+pub fn second_order_parts<G>(
+    description: &TheoryDesc<G>,
+    derived: &[&(FreeTerm, FreeTerm)],
+) -> Option<(RuleIndex, RuleIndex)>
+{
+    let mut symbols = Symbols::new(&[]);
+    let nameable = naming_port(description).is_some();
+    let mut rules: Vec<TheoryRule> = description
+        .rules
+        .iter()
+        .map(|face| {
+            let rule = symbols.rule(&face.lhs, &face.rhs);
+            if nameable && bool::from(face.conditioned()) {
+                rule.conditioned()
+            }
+            else {
+                rule
+            }
+        })
+        .collect();
+    rules.extend(
+        derived
+            .iter()
+            .map(|&&(ref left, ref right)| symbols.rule(left, right)),
+    );
+    let refusal = TheoryRules::new(symbols.table(), rules)
+        .second_order(&mut RewriteFuel::from(PRESENTATION_FUEL))
+        .err()?;
+    let outer = usize::from(refusal.rule);
+    let inner = match refusal.fault {
+        TheoryRuleFault::Diverges(inner)
+        | TheoryRuleFault::Overlaps(inner)
+        | TheoryRuleFault::Conditioned(inner) => usize::from(inner),
+        TheoryRuleFault::Unreadable
+        | TheoryRuleFault::Malformed
+        | TheoryRuleFault::Unbound
+        | TheoryRuleFault::Unoriented
+        | TheoryRuleFault::NoPeak
+        | TheoryRuleFault::Exhausted
+        | TheoryRuleFault::UndecidedCondition => outer,
+    };
+    Some((
+        RuleIndex::from(outer.max(inner)),
+        RuleIndex::from(outer.min(inner)),
+    ))
+}
+
 /// A symbol's interning key: its class, its name, and its argument count.
 type SymbolKey<'term> = (Class, Option<&'term Name>, usize);
 
@@ -259,9 +328,13 @@ impl<'term> Symbols<'term>
                         SymbolKind::Constructor
                     },
                     (Class::Abstraction, _) => SymbolKind::Abstraction,
-                    (Class::Occurrence(_), _) => SymbolKind::Occurrence,
+                    (Class::Occurrence(between), _) => {
+                        SymbolKind::Occurrence(BinderDistance::from(between))
+                    },
                     (Class::Field, _) => SymbolKind::Field,
-                    (Class::BoundVariable(_), _) => SymbolKind::Bound,
+                    (Class::BoundVariable(between), _) => {
+                        SymbolKind::Bound(BinderDistance::from(between))
+                    },
                 };
                 (kind, FieldCount::from(arity))
             })

@@ -6,8 +6,8 @@
 // host half is ordinary definitions: the option monad's two operations, a
 // program sequenced through them, and code polymorphic in the carrier. Of
 // the laws, the left unit is a second-order rule and the right unit
-// abstracts the variable the continuation binds; the twin holds
-// associativity, whose left side overlaps itself.
+// abstracts the variable the continuation binds; associativity overlaps
+// itself and both units, and every pair joins, so the three are one theory.
 
 // `Maybe`, the option monad's values.
 import "../data/data-maybe.gandr" ;
@@ -33,6 +33,21 @@ theory MonadRightUnit {
   oper ret : (a : V) --> C;
   oper ext : (m : C, k : pi+ (x : V) . C) --> C;
   rule unitR : ext(m, bind x . ret(x)) <=> m;
+}
+
+/// The three laws together. Associativity's inner `ext(m, k)` is an instance
+/// of its own left side and of both unit laws', and its right side
+/// substitutes `k` under `bind x .`: each pair is found by pattern
+/// unification, and its two reducts normalize to one term (#2116).
+@[ checks ]
+theory RelativeMonad {
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  rule unitL : ext(ret(a), k) <=> k(a);
+  rule unitR : ext(m, bind x . ret(x)) <=> m;
+  rule assoc : ext(ext(m, k), l) <=> ext(m, bind x . ext(k(x), l));
 }
 
 /// The option monad's unit: the value, present.

@@ -1,9 +1,9 @@
-/// `RulesOverlapSecondOrder`: two rules of a block whose left sides overlap, one of which instantiates a variable a binding port binds.
+/// `RulesOverlapSecondOrder`: two rules of a block whose left sides overlap, one of which instantiates a variable a binding port binds, and whose overlap rewrites to two normal forms.
 @[ refuses("RulesOverlapSecondOrder") ]
-theory LetOverlap {
+theory LetToZero {
   sort Tm : Type+;
   oper zero : () --> Tm;
   oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u);
-  rule zetaZero : let(zero(), t) <=> t(zero());
+  rule toZero : let(zero(), t) <=> zero();
 }

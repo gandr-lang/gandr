@@ -13,25 +13,15 @@ theory StateObserved {
   rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
 }
 
-/// Put-put's continuation can be a `get`, so its inner `put` is a put-get
-/// redex: an overlap between second-order rules, which waits on #2116.
+/// Put-put keeping the first value, beside put-get: put-put's continuation
+/// can be a `get`, and the read after the two puts sees `s` by one rule and
+/// `u` by the other, so the pair parts.
 @[ refuses("RulesOverlapSecondOrder") ]
-theory StatePutLaws {
+theory StatePutKeepsFirst {
   sort S : Type+;
   sort C : Type;
   oper get : (k : pi+ (s : S) . C) --> C;
   oper put : (s : S, k : C) --> C;
   rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
-  rule putPut : put(s, put(u, k)) <=> put(u, k);
-}
-
-/// Reading twice is reading once at the same state. The inner `get` is an
-/// instance of the rule's own left side through its pattern, which waits on
-/// #2116.
-@[ refuses("RulesOverlapSecondOrder") ]
-theory StateGetGet {
-  sort S : Type+;
-  sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+  rule putFirst : put(s, put(u, k)) <=> put(s, k);
 }

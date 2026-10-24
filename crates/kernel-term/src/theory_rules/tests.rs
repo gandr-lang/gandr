@@ -3,6 +3,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use super::BinderDistance;
 use super::CriticalPeak;
 use super::OperationRank;
 use super::PRESENTATION_CODE;
@@ -290,9 +291,16 @@ fn a_let_rule_converges_and_beta_is_unoriented()
     // let(zero, t) ==> t(zero)
     let at_zero = rule(&[s!(0), s!(3), v!(0)], &[i!(0, 1), s!(3)]);
     assert_eq!(
-        decided(vec![zeta, at_zero]),
-        refused!(0, TheoryRuleFault::Overlaps(RuleIndex::from(1_usize))),
-        "a second-order rule takes part in no critical pair, even one that would join"
+        decided(vec![zeta.clone(), at_zero]),
+        Ok(()),
+        "a second-order rule's critical pair joins: both reducts are `t(zero)`"
+    );
+    // let(zero, t) ==> zero
+    let to_zero = rule(&[s!(0), s!(3), v!(0)], &[s!(3)]);
+    assert_eq!(
+        decided(vec![zeta, to_zero]),
+        refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "`t(zero)` and `zero` part"
     );
     assert_eq!(
         decided(vec![rule(&[s!(0), v!(0), i!(1, 1), s!(3)], &[v!(0)])]),
@@ -318,8 +326,14 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
         operation!(1, 2),
         operation!(1, 1),
         (SymbolKind::Field, FieldCount::from(1_usize)),
-        (SymbolKind::Bound, FieldCount::from(0_usize)),
-        (SymbolKind::Bound, FieldCount::from(0_usize)),
+        (
+            SymbolKind::Bound(BinderDistance::from(0_usize)),
+            FieldCount::from(0_usize),
+        ),
+        (
+            SymbolKind::Bound(BinderDistance::from(1_usize)),
+            FieldCount::from(0_usize),
+        ),
         (SymbolKind::Constructor, FieldCount::from(0_usize)),
     ];
     let decided =
@@ -341,9 +355,9 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
     ]);
     assert_eq!(
         decided(vec![get_get]),
-        refused!(0, TheoryRuleFault::Overlaps(RuleIndex::from(0_usize))),
-        "get-get is oriented, and its inner `get` is an instance of its own left side through \
-         the pattern"
+        Ok(()),
+        "get-get's inner `get` is an instance of its own left side through the pattern, and the \
+         pair joins at `get(bind s . k(s, s, s))`"
     );
     let malformed = refused!(0, TheoryRuleFault::Malformed);
     assert_eq!(
@@ -392,6 +406,59 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
         conditioned("C"),
         Ok(vec![false]),
         "where no port takes a bound variable no term names one"
+    );
+}
+
+/// #2328: a relative monad's associativity overlaps itself and both unit
+/// laws, its right side substituting under the binder it writes; every pair
+/// joins in the second-order reading.
+#[test]
+fn a_relative_monads_laws_join_their_overlaps_2328()
+{
+    // ext = 0, ret = 1, the binding field = 2, the bound occurrence = 3.
+    let symbols = vec![
+        operation!(1, 2),
+        operation!(0, 1),
+        (SymbolKind::Field, FieldCount::from(1_usize)),
+        (
+            SymbolKind::Bound(BinderDistance::from(0_usize)),
+            FieldCount::from(0_usize),
+        ),
+    ];
+    let decided =
+        |rules: Vec<TheoryRule>| TheoryRules::new(symbols.clone(), rules).decide(&mut fuel());
+    // ext(ret(a), k) ==> k(a)
+    let unit_left = rule(&[s!(0), s!(1), v!(0), v!(1)], &[i!(1, 1), v!(0)]);
+    // ext(m, bind x . ret(x)) ==> m
+    let unit_right = rule(&[s!(0), v!(0), s!(2), s!(1), s!(3)], &[v!(0)]);
+    // ext(ext(m, k), l) ==> ext(m, bind x . ext(k(x), l))
+    let assoc = rule(&[s!(0), s!(0), v!(0), v!(1), v!(2)], &[
+        s!(0),
+        v!(0),
+        s!(2),
+        s!(0),
+        i!(1, 1),
+        s!(3),
+        v!(2),
+    ]);
+    assert_eq!(
+        decided(vec![assoc.clone()]),
+        Ok(()),
+        "associativity overlaps itself at its inner `ext`, both reducts normalizing to \
+         `ext(m, bind x . ext(k(x), bind y . ext(l(y), n)))`"
+    );
+    assert_eq!(
+        decided(vec![unit_left.clone(), unit_right.clone(), assoc]),
+        Ok(()),
+        "with the unit laws, every pair joins"
+    );
+    // ext(ext(m, k), l) ==> ext(m, l), dropping `k`
+    let lossy = rule(&[s!(0), s!(0), v!(0), v!(1), v!(2)], &[s!(0), v!(0), v!(2)]);
+    assert_eq!(
+        decided(vec![unit_left, unit_right, lossy]),
+        refused!(2, TheoryRuleFault::Diverges(RuleIndex::from(0_usize))),
+        "the lossy rule, overlapping the left unit law at its inner `ext`, parts in the \
+         second-order reading: `l(a)` against `ext(k(a), l)`"
     );
 }
 
@@ -962,8 +1029,11 @@ fn an_occurrence_counts_to_its_abstraction()
     );
     assert_eq!(
         read.symbols().get(3),
-        Some(&(SymbolKind::Occurrence, FieldCount::from(0_usize))),
-        "an occurrence is a constant"
+        Some(&(
+            SymbolKind::Occurrence(BinderDistance::from(0_usize)),
+            FieldCount::from(0_usize)
+        )),
+        "an occurrence is a constant, counted to its own abstraction"
     );
     let under_b = restricted(&mut code, "b", on_a);
     let skipping = restricted(&mut code, "a", under_b);

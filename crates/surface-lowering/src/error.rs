@@ -1407,8 +1407,9 @@ pub enum LoweringRefusal<'source>
     },
 
     /// Two rules of a block whose left sides overlap, one of which
-    /// instantiates a variable a binding port binds: a second-order rule may
-    /// overlap no rule, so the block's rules are not known to be confluent.
+    /// instantiates a variable a binding port binds, and whose critical pair
+    /// does not join in the second-order reading: the block's rules are not
+    /// confluent.
     RulesOverlapSecondOrder
     {
         /// The bytes the later rule covers.
@@ -1983,9 +1984,9 @@ impl fmt::Display for LoweringRefusal<'_>
                  have, so the rule is refused",
             ),
             Self::RulesOverlapSecondOrder { .. } => f.write_str(
-                "this rule and an earlier one rewrite overlapping terms, and one of them \
-                 instantiates a variable: a rule that substitutes under a binder may overlap no \
-                 rule, so the block's rules are refused",
+                "this rule and an earlier one rewrite overlapping terms, one of them instantiates \
+                 a variable, and the overlap rewrites to two different normal forms in the \
+                 second-order reading, so the block's rules are refused",
             ),
             Self::RulesOverlapCondition { .. } => f.write_str(
                 "this rule and another rewrite overlapping terms, and one of them fires only where \

@@ -436,6 +436,7 @@ pub use crate::term::StagedPosition;
 pub use crate::term::Standing;
 pub use crate::term::Summand;
 pub use crate::term::Value;
+pub use crate::theory_rules::BinderDistance;
 pub use crate::theory_rules::CodeRecognition;
 pub use crate::theory_rules::CriticalPeak;
 pub use crate::theory_rules::OperationRank;
