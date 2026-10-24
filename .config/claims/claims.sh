@@ -33,8 +33,15 @@ removals=$(jq -rn --argjson now "$(date +%s)" --argjson claimed "$claimed" --arg
 count=0
 while IFS=$'\t' read -r number reason; do
   [[ -n "$number" ]] || continue
-  if [[ "$dry" != --dry-run ]]; then
-    gh api -X DELETE "repos/$repo/issues/$number/labels/${label/:/%3A}" > /dev/null
+  if [[ "$dry" != --dry-run ]] && ! gh api -X DELETE "repos/$repo/issues/$number/labels/${label/:/%3A}" > /dev/null; then
+    # A merge's run and a sweep may remove one label at once (#2470): the
+    # removal that finds it gone is done, any other failure is not.
+    if gh api "repos/$repo/issues/$number/labels" --jq '.[].name' | grep -qxF "$label"; then
+      echo "could not unclaim #$number" >&2
+      exit 1
+    fi
+    printf 'already unclaimed #%s: %s\n' "$number" "$reason"
+    continue
   fi
   printf 'unclaimed #%s: %s\n' "$number" "$reason"
   count=$((count + 1))

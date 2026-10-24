@@ -26,10 +26,13 @@ on:
 permissions:
   contents: read
 
-# Runs never overlap, so a sweep and a merge never remove the same label
-# twice; neither is cancelled.
+# Each merge runs in its own group, and the sweeps share one. A group holds
+# one pending run and a newer one cancels it, so with one group for every
+# merge a merge queue landing three at once lost the middle one's unclaim
+# (#2470). A merge and a sweep may now remove the same label at once;
+# `claims.sh` reads a removal whose label is already gone as done.
 concurrency:
-  group: claims
+  group: claims-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'sweep' }}
   cancel-in-progress: false
 
 jobs:
