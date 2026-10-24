@@ -176,6 +176,39 @@ theory Counting {
     }
 }
 
+/// #2384: a law's statement is kept as written in either form, the
+/// value-function alias over its named telescope, which is the only spelling
+/// a theory reads there, while an operation's judgment beside it is respelled.
+#[test]
+fn a_law_keeps_its_statement_in_either_form_2384()
+{
+    let grammar = grammar();
+    let explicit = "\
+theory Lawful {
+  sort C : Type;
+  oper next : +U (C -> -F C);
+  law trivial : (a : C) => Path(Bool, true, true);
+}
+";
+    let sugared = "\
+theory Lawful {
+  sort C : Type;
+  oper next : C => C;
+  law trivial : (a : C) => Path(Bool, true, true);
+}
+";
+    for (source, form, expected) in [
+        (explicit, Form::Sugared, sugared),
+        (sugared, Form::Explicit, explicit),
+    ] {
+        assert_eq!(
+            spelled(&grammar, source, form, Selection::Every),
+            expected,
+            "{form}"
+        );
+    }
+}
+
 /// #1327: the sugared form leaves out a tail's `return` of a value, in a
 /// body, a match arm, a block and a nested function, as the lowering would
 /// infer it; an early `return`, one of a computation, one written as a
