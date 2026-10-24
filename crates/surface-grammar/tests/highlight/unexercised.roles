@@ -653,7 +653,7 @@
 1081 Type module_declaration type_identifier L[sort] R[=]
 1082 Other module_declaration = L[type_identifier] R[<type>]
 1088 Keyword module_declaration law L[] R[identifier]
-1089 Variable module_declaration identifier L[law] R[admitted]
+1089 FunctionDef module_declaration identifier L[law] R[admitted]
 1090 Keyword module_declaration admitted L[identifier] R[;]
 1091 Other module_declaration ; L[admitted] R[]
 1100 Other tuple_pattern , L[<pattern>] R[<pattern>]

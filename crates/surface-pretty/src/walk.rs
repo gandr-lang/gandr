@@ -1033,27 +1033,29 @@ where
 ///   record update's base and then the fields it writes after their labels, and
 ///   an injection's body after its summand; type children admit types and term
 ///   children terms as the grammar places them, an update's every slot a value,
-///   and an ascription's value and type but the type alone for a truth value
-///   ascribed `Bool`, written as its word; a dependent arrow's codomain, a
-///   dependent pair's second factor, a static abstraction's, a lambda's and a
-///   fixpoint's body, a bind's rest, a case's branches, a transport's motive, a
-///   return clause and a stack capture's body stand under one binder, a split's
-///   body under one per component, a data case's branch under one per field of
-///   its constructor, a fold's cell branch and a handler's operation clauses
-///   under two, a scope's subject under the capability's and a fork's child and
-///   parent each under one linear binder, a hold's scope and an access's body
-///   each under one linear binder; the computation a bind runs, the function an
-///   application applies, a computation where a value is read, an offer's arms
-///   and a fork's child admit computations where the body goes on, a body in
-///   braces one where it ends, a thunk's body below a value and a lambda's body
-///   there one whose type nothing states, and a bind's rest and the branches of
-///   a case what its own position admits; a data case's motive is a type under
-///   one binder where `written` writes it; a thunk's body is a child only where
-///   bodies are spelled; a family's arguments, a codata family's included,
-///   admit values their parameters state the type of, and a constructor's
-///   classifier is a child only where bodies are spelled and its position
-///   states no type; a model type's children are the carriers of the sorts it
-///   fixes, each a type, none for a bare one; every leaf former has none.
+///   an ascription's value and type but the type alone for a truth value
+///   ascribed `Bool`, written as its word, and a path type's carrier and each
+///   endpoint but one that is a truth value at a `Bool` carrier; a dependent
+///   arrow's codomain, a dependent pair's second factor, a static
+///   abstraction's, a lambda's and a fixpoint's body, a bind's rest, a case's
+///   branches, a transport's motive, a return clause and a stack capture's body
+///   stand under one binder, a split's body under one per component, a data
+///   case's branch under one per field of its constructor, a fold's cell branch
+///   and a handler's operation clauses under two, a scope's subject under the
+///   capability's and a fork's child and parent each under one linear binder, a
+///   hold's scope and an access's body each under one linear binder; the
+///   computation a bind runs, the function an application applies, a
+///   computation where a value is read, an offer's arms and a fork's child
+///   admit computations where the body goes on, a body in braces one where it
+///   ends, a thunk's body below a value and a lambda's body there one whose
+///   type nothing states, and a bind's rest and the branches of a case what its
+///   own position admits; a data case's motive is a type under one binder where
+///   `written` writes it; a thunk's body is a child only where bodies are
+///   spelled; a family's arguments, a codata family's included, admit values
+///   their parameters state the type of, and a constructor's classifier is a
+///   child only where bodies are spelled and its position states no type; a
+///   model type's children are the carriers of the sorts it fixes, each a type,
+///   none for a bare one; every leaf former has none.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -1255,12 +1257,23 @@ where
         | Former::ListCons(first, second)
         | Former::StaticApplication(first, second)
         | Former::Transport(first, second) => Vec::from([value(first), value(second)]),
+        // An endpoint that is a truth value at the path's carrier is a word:
+        // the endpoint has no child.
         Former::Path {
             carrier,
             left,
             right,
-        }
-        | Former::Flow {
+        } => {
+            let mut slots = Vec::from([value_type(carrier)]);
+            slots.extend(
+                [left, right]
+                    .into_iter()
+                    .filter(|&end| truth(source, end, carrier).is_none())
+                    .map(value),
+            );
+            slots
+        },
+        Former::Flow {
             carrier,
             left,
             right,
@@ -9321,8 +9334,23 @@ impl Walk<'_, '_>
             let _ = parts.part(Part::Close);
         };
         let binding = match *former {
-            Former::Path { .. } => {
-                let _ = parts.text("Path").arguments(Arity(3_usize));
+            // `Path(Bool, alike(a, a), true)`: an endpoint that is a truth
+            // value at the carrier is written as its word, as the source
+            // writes it.
+            Former::Path {
+                carrier,
+                left,
+                right,
+            } => {
+                let _ = parts.text("Path(").piece(Binding::Sequence);
+                for end in [left, right] {
+                    let _ = parts.text(",").part(Part::Space);
+                    let _ = match truth(source, end, carrier) {
+                        Some(word) => parts.text(word.0),
+                        None => parts.piece(Binding::Sequence),
+                    };
+                }
+                let _ = parts.part(Part::Tight).text(")");
                 writes(Production("path_type"), Binding::Atom)
             },
             Former::Flow { .. } => {

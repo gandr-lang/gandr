@@ -180,7 +180,9 @@ const PRIMITIVE_TYPES: &[&str] = &[
 ];
 
 /// The keywords whose next identifier names what the declaration defines.
-const DEFINERS: &[&str] = &["data", "def", "derive", "obs", "op", "oper", "rec", "rule"];
+const DEFINERS: &[&str] = &[
+    "data", "def", "derive", "law", "obs", "op", "oper", "rec", "rule",
+];
 
 /// The keywords whose next identifier binds a name.
 const BINDERS: &[&str] = &[
