@@ -31,7 +31,8 @@ path = "tests/lib.rs"
 # A closure's judgement is held in a self_cell with the closure's lowering,
 # whose names it borrows.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. `hotpath` profiles a closure's lowering and
+# judgement, the prelude's among them, for the benchmark report.
 [dependencies]
 anodized.workspace = true
 gandr-core-checker.workspace = true
@@ -49,6 +50,7 @@ gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
+hotpath = { workspace = true, optional = true }
 memmap2.workspace = true
 quenchant-shape.workspace = true
 rayon.workspace = true
@@ -73,10 +75,15 @@ sysctl.workspace = true
 
 [features]
 default = []
-# The checker's judgement and readmission, and a rule block's decision with
-# its completion, profiled for the benchmark report (the driver's `hotpath`
-# bench).
-hotpath = ["gandr-core-checker/hotpath", "gandr-surface-lowering/hotpath"]
+# The checker's judgement and readmission, a rule block's decision with its
+# completion, and a closure's lowering and judgement, the prelude's among
+# them, profiled for the benchmark report (the driver's `hotpath` bench).
+hotpath = [
+  "dep:hotpath",
+  "gandr-core-checker/hotpath",
+  "gandr-surface-lowering/hotpath",
+  "hotpath/hotpath",
+]
 # Invocation boundary diagnostics through the caller-owned subscriber.
 tracing = ["dep:tracing"]
 

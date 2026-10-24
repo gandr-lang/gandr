@@ -40,7 +40,8 @@ path = "tests/lib.rs"
 # anodized facade supplies the executable specifications; logic/BigInt stays
 # disabled in this no_std library. Nothing here names a surface crate: names,
 # spans and syntax stay above the core.
-# `hotpath` profiles checking and readmission for the benchmark report.
+# `hotpath` profiles checking, a model slot's resolution and readmission for
+# the benchmark report.
 [dependencies]
 anodized.workspace = true
 gandr-core-nbe.workspace = true
@@ -73,8 +74,9 @@ serde_json.workspace = true
 
 [features]
 default = []
-# Per-declaration checking and kernel readmission timed and their allocations
-# counted for the benchmark report (the driver's `hotpath` bench).
+# Per-declaration checking, the trial of each model slot's candidates, and
+# kernel readmission timed and their allocations counted for the benchmark
+# report (the driver's `hotpath` bench).
 hotpath = ["dep:hotpath", "hotpath/hotpath"]
 
 [lints]

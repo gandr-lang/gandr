@@ -802,6 +802,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   an include, and leaves a module of another theory out.
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(_, ref supplied)| matches!(*supplied, Supplied::Module(_)))))]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
     pub(in crate::lower) fn model_candidates(
         &mut self,
         site: Site,

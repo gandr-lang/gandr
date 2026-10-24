@@ -22,8 +22,8 @@ path = "tests/lib.rs"
 # readers and minters; logic/BigInt stays disabled in this no_std library.
 # The specification combinators bound a clause to what a call appended.
 # self_cell holds a closure's text beside its parse and its suspended
-# lowering, which borrow it. `hotpath` profiles a rule block's decision for
-# the benchmark report.
+# lowering, which borrow it. `hotpath` profiles a rule block's decision and
+# a model slot's candidates for the benchmark report.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
@@ -52,8 +52,9 @@ gandr-theory-sites.workspace = true
 [features]
 default = []
 # A rule block's decision, its completion included, and the completion's
-# overlap queries and normalization timed and their allocations counted for
-# the benchmark report (the driver's `hotpath` bench).
+# overlap queries and normalization; a model slot's candidates, each one's
+# packing, an include's reduct maps and a derived equality: timed and their
+# allocations counted for the benchmark report (the driver's `hotpath` bench).
 hotpath = ["dep:hotpath", "gandr-theory-coherent-resolutions/hotpath", "hotpath/hotpath"]
 
 [lints]

@@ -1536,6 +1536,7 @@ pub enum Unheld
         && ret.as_ref().map_or(true, |closure| closure.unit().sources().len() == sources),
 )]
 #[inline]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub fn lower_closure(
     grammar: Arc<Pbg>,
     text: String,
@@ -1839,6 +1840,7 @@ impl fmt::Debug for JudgedClosure
 /// # Adequacy
 /// - hypothesis: L3 — as [`JudgedClosure`].
 /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn judge_closure<'held>(
     closure: &'held ClosureLowering,
     grant: &HostGrant,
