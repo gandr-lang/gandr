@@ -131,6 +131,18 @@ impl Count
     }
 }
 
+/// Which kind of name a binder binds: an atom an abstraction abstracts, or a
+/// variable a binding field binds.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Binds
+{
+    /// An atom's abstraction, `bind a . t` at a port written
+    /// `bind (a : N) . T`.
+    Atom,
+    /// A binding field, `bind x . t` at a port written `pi+ (x : S) . T`.
+    Variable,
+}
+
 /// One node of a term.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Head
@@ -150,16 +162,15 @@ enum Head
     /// as a head of its own, since no store holds a cell whose face
     /// instantiates a metavariable.
     Inst(Name, Count),
-    /// An atom's abstraction over its one body, keyed by nothing: two
-    /// abstractions that differ only in their atom are one head at any depth,
-    /// so a rule's abstraction matches below another.
-    Abs,
-    /// An atom named inside an abstraction that binds it, keyed by how many
-    /// abstractions stand between them: one head at any depth, as an
-    /// abstraction is.
-    Occ(Count),
-    /// An atom no abstraction above it binds, keyed by its name.
-    Free(Name),
+    /// A binder over its one body, keyed by what it binds and not by the name:
+    /// two binders of a kind that differ only in their name are one head at
+    /// any depth, so a rule's binder matches below another.
+    Abs(Binds),
+    /// A name a binder of its kind binds, keyed by how many binders stand
+    /// between them: one head at any depth, as a binder is.
+    Occ(Binds, Count),
+    /// A name no binder of its kind above it binds, keyed by its name.
+    Free(Binds, Name),
     /// A metavariable leaf whose instance crosses abstractions: on a left
     /// side it matches only an instance its scope admits, and on a right
     /// side its image's atoms are counted to their abstractions' places here.
@@ -183,17 +194,17 @@ impl Head
     /// - witness: `term::tests::abstractions_naming_different_atoms_are_one_term`
     /// - witness: `term::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
     #[spec(ensures: |ret| match *self {
-        | Self::Var(_) | Self::Konst(_) | Self::Occ(_) | Self::Free(_) | Self::Scoped(..) => ret.0 == 0,
-        | Self::Abs => ret.0 == 1,
+        | Self::Var(_) | Self::Konst(_) | Self::Occ(..) | Self::Free(..) | Self::Scoped(..) => ret.0 == 0,
+        | Self::Abs(_) => ret.0 == 1,
         | Self::Ctor(_, count) | Self::Op(_, count) | Self::Results(count) | Self::Inst(_, count) => ret.0 == count.0,
     })]
     const fn arity(&self) -> Count
     {
         match *self {
-            Self::Var(_) | Self::Konst(_) | Self::Occ(_) | Self::Free(_) | Self::Scoped(..) => {
+            Self::Var(_) | Self::Konst(_) | Self::Occ(..) | Self::Free(..) | Self::Scoped(..) => {
                 Count(0)
             },
-            Self::Abs => Count(1),
+            Self::Abs(_) => Count(1),
             Self::Ctor(_, arity)
             | Self::Op(_, arity)
             | Self::Results(arity)
@@ -272,14 +283,14 @@ impl Scope
             |(head, Count(depth))| {
                 match *head {
                     Head::Var(_) | Head::Scoped(..) | Head::Konst(_) | Head::Inst(..) => false,
-                    Head::Occ(Count(between)) => between
+                    Head::Occ(_, Count(between)) => between
                         .checked_sub(depth)
                         .is_none_or(|free| self.place(Count(free)).is_some()),
                     Head::Ctor(..)
                     | Head::Op(..)
                     | Head::Results(_)
-                    | Head::Abs
-                    | Head::Free(_) => true,
+                    | Head::Abs(_)
+                    | Head::Free(..) => true,
                 }
             },
         ))
@@ -308,7 +319,7 @@ impl Scope
             .iter()
             .zip(instance.depths())
             .map(|(head, Count(depth))| {
-                let Head::Occ(Count(between)) = *head
+                let Head::Occ(binds, Count(between)) = *head
                 else {
                     return head.clone();
                 };
@@ -317,7 +328,7 @@ impl Scope
                     .and_then(|free| self.place(Count(free)))
                     .map_or_else(
                         || head.clone(),
-                        |Count(place)| Head::Occ(Count(place.saturating_add(depth))),
+                        |Count(place)| Head::Occ(binds, Count(place.saturating_add(depth))),
                     )
             })
             .collect()
@@ -344,20 +355,21 @@ quenchant_shape::reason_enum! {
 
 impl From<&FreeTerm> for Term
 {
-    /// The free term's nodes in prefix order, each head kept, each
-    /// abstraction's atom dropped and each atom it binds counted from it.
+    /// The free term's nodes in prefix order, each head kept, each binder's
+    /// name dropped and each name it binds counted from it.
     ///
     /// # Specification
     /// - ensures: one node per free-term node in prefix order, a variable a
     ///   metavariable, a constructor, an operation, a results tuple and an
     ///   instantiation each their own head over their argument count, an
-    ///   abstraction the one abstraction head, an atom an enclosing abstraction
-    ///   of its name binds the occurrence of the number of abstractions between
-    ///   it and the innermost such, and any other atom its free head.
+    ///   abstraction and a binding field each the binder head of its kind, an
+    ///   atom or a bound variable an enclosing binder of its kind and name
+    ///   binds the occurrence of the number of binders between it and the
+    ///   innermost such, and any other its free head.
     /// - panics: none.
     /// - intension: one pass with an explicit stack of the subterms still to
-    ///   visit, so nesting costs no call stack; the abstractions in scope form
-    ///   a tree of links, each node naming its innermost.
+    ///   visit, so nesting costs no call stack; the binders in scope form a
+    ///   tree of links, each node naming its innermost.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a term nesting a constructor, an operation and a
@@ -365,7 +377,8 @@ impl From<&FreeTerm> for Term
     ///   term's; a child order reversed or a head kind merged changes the read.
     ///   Two abstractions naming different atoms read as one term, and an
     ///   abstraction below another is the same head as at the root; an atom
-    ///   named under two abstractions counts to its own, not the innermost.
+    ///   named under two abstractions counts to its own, not the innermost; a
+    ///   binding field is not an atom's abstraction.
     /// - witness: `term::tests::a_free_term_reads_back_through_the_alphabet`
     /// - witness: `term::tests::abstractions_naming_different_atoms_are_one_term`
     /// - witness: `term::tests::an_atom_counts_the_abstractions_to_its_binder`
@@ -374,9 +387,9 @@ impl From<&FreeTerm> for Term
     fn from(term: &FreeTerm) -> Self
     {
         let mut nodes = Vec::new();
-        // Each abstraction read: its atom, its depth among the abstractions
-        // above it, and the abstraction enclosing it.
-        let mut scopes: Vec<(&Name, usize, Option<usize>)> = Vec::new();
+        // Each binder read: its name, what it binds, its depth among the
+        // binders above it, and the binder enclosing it.
+        let mut scopes: Vec<(&Name, Binds, usize, Option<usize>)> = Vec::new();
         let mut pending = alloc::vec![(term.to_node(), 0_usize, None)];
         while let Some((node, depth, scope)) = pending.pop() {
             let (head, args, below, inner) = match node.view() {
@@ -384,12 +397,23 @@ impl From<&FreeTerm> for Term
                     nodes.push(Head::Var(name.clone()));
                     continue;
                 },
-                TermView::Atom(name) => {
+                TermView::Atom(name) | TermView::Bound(name) => {
+                    let binds = if matches!(node.view(), TermView::Bound(_)) {
+                        Binds::Variable
+                    }
+                    else {
+                        Binds::Atom
+                    };
                     let mut link = scope;
-                    let mut head = Head::Free(name.clone());
-                    while let Some(&(atom, level, outer)) = link.and_then(|at| scopes.get(at)) {
-                        if atom == name {
-                            head = Head::Occ(Count(depth.saturating_sub(level).saturating_sub(1)));
+                    let mut head = Head::Free(binds, name.clone());
+                    while let Some(&(bound, kind, level, outer)) =
+                        link.and_then(|at| scopes.get(at))
+                    {
+                        if bound == name && kind == binds {
+                            head = Head::Occ(
+                                binds,
+                                Count(depth.saturating_sub(level).saturating_sub(1)),
+                            );
                             break;
                         }
                         link = outer;
@@ -418,10 +442,16 @@ impl From<&FreeTerm> for Term
                     depth,
                     scope,
                 ),
-                TermView::Abs { atom, args } => {
-                    scopes.push((atom, depth, scope));
+                TermView::Abs { atom: name, args } | TermView::Lam { var: name, args } => {
+                    let binds = if matches!(node.view(), TermView::Lam { .. }) {
+                        Binds::Variable
+                    }
+                    else {
+                        Binds::Atom
+                    };
+                    scopes.push((name, binds, depth, scope));
                     let inner = Some(scopes.len().saturating_sub(1));
-                    (Head::Abs, args, depth.saturating_add(1), inner)
+                    (Head::Abs(binds), args, depth.saturating_add(1), inner)
                 },
             };
             nodes.push(head);
@@ -483,23 +513,30 @@ impl Term
                 Head::Op(ref name, arity) => FreeTerm::op(name, take(&mut built, arity)),
                 Head::Results(arity) => FreeTerm::results(take(&mut built, arity)),
                 Head::Inst(ref name, arity) => FreeTerm::inst(name, take(&mut built, arity)),
-                Head::Abs => {
+                Head::Abs(binds) => {
                     let mut body = take(&mut built, Count(1));
-                    FreeTerm::abs(
-                        FreeTerm::canonical_atom(AbstractionDepth::from(depth)),
-                        body.pop().unwrap_or_else(|| FreeTerm::results([])),
-                    )
+                    let name = FreeTerm::canonical_atom(AbstractionDepth::from(depth));
+                    let body = body.pop().unwrap_or_else(|| FreeTerm::results([]));
+                    match binds {
+                        Binds::Atom => FreeTerm::abs(name, body),
+                        Binds::Variable => FreeTerm::lam(name, body),
+                    }
                 },
-                Head::Occ(Count(between)) => FreeTerm::atom(
-                    depth
+                Head::Occ(binds, Count(between)) => {
+                    let name = depth
                         .checked_sub(between)
                         .and_then(|above| above.checked_sub(1))
                         .map_or_else(
                             || Name::from(alloc::format!("^{}", between.saturating_sub(depth))),
                             |level| FreeTerm::canonical_atom(AbstractionDepth::from(level)),
-                        ),
-                ),
-                Head::Free(ref name) => FreeTerm::atom(name.clone()),
+                        );
+                    match binds {
+                        Binds::Atom => FreeTerm::atom(name),
+                        Binds::Variable => FreeTerm::bound(name),
+                    }
+                },
+                Head::Free(Binds::Atom, ref name) => FreeTerm::atom(name.clone()),
+                Head::Free(Binds::Variable, ref name) => FreeTerm::bound(name.clone()),
             };
             built.push(node);
         }
@@ -532,7 +569,7 @@ impl Term
             depths.push(Count(depth));
             let arity = head.arity().0;
             if arity > 0 {
-                let abstraction = matches!(*head, Head::Abs);
+                let abstraction = matches!(*head, Head::Abs(_));
                 if abstraction {
                     depth = depth.saturating_add(1);
                 }
@@ -672,9 +709,9 @@ impl Term
             | Head::Op(..)
             | Head::Results(_)
             | Head::Inst(..)
-            | Head::Abs
-            | Head::Occ(_)
-            | Head::Free(_) => None,
+            | Head::Abs(_)
+            | Head::Occ(..)
+            | Head::Free(..) => None,
         })
     }
 
@@ -720,9 +757,9 @@ impl Term
                     | Head::Op(..)
                     | Head::Results(_)
                     | Head::Inst(..)
-                    | Head::Abs
-                    | Head::Occ(_)
-                    | Head::Free(_) => head.clone(),
+                    | Head::Abs(_)
+                    | Head::Occ(..)
+                    | Head::Free(..) => head.clone(),
                 })
                 .collect(),
         )
@@ -774,7 +811,7 @@ impl TermSubst
     ///   Re-entering an image or dropping a binding changes the resulting term.
     /// - witness: `term::tests::substitution_walks_are_transactional_and_bounded`
     #[spec(ensures: |output| output.0.len() == term.0.iter().fold(0_usize, |size, head| size.saturating_add(match *head {
-        Head::Var(ref var) | Head::Scoped(ref var, _) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs | Head::Occ(_) | Head::Free(_) => 1,
+        Head::Var(ref var) | Head::Scoped(ref var, _) => self.0.get(var).map_or(1, |image| image.0.len()), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs(_) | Head::Occ(..) | Head::Free(..) => 1,
     })) && (term.vars().any(|var| self.0.contains_key(var)) || output == *term))]
     fn apply_once(
         &self,
@@ -793,9 +830,9 @@ impl TermSubst
                 | Head::Op(..)
                 | Head::Results(_)
                 | Head::Inst(..)
-                | Head::Abs
-                | Head::Occ(_)
-                | Head::Free(_) => None,
+                | Head::Abs(_)
+                | Head::Occ(..)
+                | Head::Free(..) => None,
             };
             match bound {
                 Some((image, None)) => nodes.extend(image.0.iter().cloned()),
@@ -1398,9 +1435,9 @@ impl CellAlphabet for TermAlphabet
                 | Head::Op(..)
                 | Head::Results(_)
                 | Head::Inst(..)
-                | Head::Abs
-                | Head::Occ(_)
-                | Head::Free(_) => None,
+                | Head::Abs(_)
+                | Head::Occ(..)
+                | Head::Free(..) => None,
             };
             if let Some((var, scope)) = variable {
                 let end = target.end_of(at);
@@ -1979,7 +2016,7 @@ impl CellAlphabet for TermAlphabet
     /// - witness: `term::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
     #[spec(ensures: |output| output.vars().next().is_none() && output.0.len() == cmd.0.len()
-        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) | Head::Scoped(ref var, _) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs | Head::Occ(_) | Head::Free(_) => after == before }))]
+        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { Head::Var(ref var) | Head::Scoped(ref var, _) => matches!(*after, Head::Konst(ref constant) if constant == var), Head::Konst(_) | Head::Ctor(..) | Head::Op(..) | Head::Results(_) | Head::Inst(..) | Head::Abs(_) | Head::Occ(..) | Head::Free(..) => after == before }))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| Head::Konst(var.clone()))
@@ -2302,8 +2339,8 @@ fn scopes_of(term: &FreeTerm) -> Vec<(&Name, Vec<&Name>)>
                 found.push((name, atoms));
                 continue;
             },
-            TermView::Atom(_) => continue,
-            TermView::Abs { atom, args } => {
+            TermView::Atom(_) | TermView::Bound(_) => continue,
+            TermView::Abs { atom, args } | TermView::Lam { var: atom, args } => {
                 scopes.push((atom, scope));
                 (args, Some(scopes.len().saturating_sub(1)))
             },

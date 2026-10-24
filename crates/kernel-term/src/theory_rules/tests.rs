@@ -312,14 +312,14 @@ fn a_let_rule_converges_and_beta_is_unoriented()
 #[test]
 fn a_pattern_on_the_left_is_read_and_decided_2115()
 {
-    // run = 0, get = 1, abs = 2, the occurrences counting none and one
-    // abstraction = 3 and 4, zero = 5.
+    // run = 0, get = 1, the binding field = 2, the bound occurrences counting
+    // none and one binder = 3 and 4, zero = 5.
     let symbols = vec![
         operation!(1, 2),
         operation!(1, 1),
-        (SymbolKind::Abstraction, FieldCount::from(1_usize)),
-        (SymbolKind::Occurrence, FieldCount::from(0_usize)),
-        (SymbolKind::Occurrence, FieldCount::from(0_usize)),
+        (SymbolKind::Field, FieldCount::from(1_usize)),
+        (SymbolKind::Bound, FieldCount::from(0_usize)),
+        (SymbolKind::Bound, FieldCount::from(0_usize)),
         (SymbolKind::Constructor, FieldCount::from(0_usize)),
     ];
     let decided =
@@ -369,7 +369,7 @@ fn a_pattern_on_the_left_is_read_and_decided_2115()
     let conditioned = |unit: &str| {
         let mut code = Code::new();
         let (m, n) = (code.var(literal("m")), code.var(literal("n")));
-        let over = code.abs(literal("x"), n);
+        let over = code.lam(literal("x"), n);
         let left = code.app(literal("ext"), &[m, over]);
         let leak = code.text(literal("leak"));
         let (sorts, operations) = code.monad(literal(unit));
@@ -463,9 +463,9 @@ fn an_instantiation_at_a_value_selects_a_branch_2272()
         ]);
         // put(s, get(bind t . k(t))) ==> put(s, k(s))
         let value = code.var(literal("s"));
-        let named = code.occ(literal("t"));
+        let named = code.bvar(literal("t"));
         let pattern = code.inst(literal("k"), &[named]);
-        let held = code.abs(literal("t"), pattern);
+        let held = code.lam(literal("t"), pattern);
         let got = code.app(literal("get"), &[held]);
         let left = code.app(literal("put"), &[value, got]);
         let selected = code.inst(literal("k"), &[value]);
@@ -627,6 +627,35 @@ impl Code
     {
         let atom = self.text(atom);
         self.node(ConstructorTag::from(super::tag::OCC), vec![atom])
+    }
+
+    /// The binding field of the variable `var` over `body`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lam(
+        &mut self,
+        var: StringLiteral,
+        body: ValueId,
+    ) -> ValueId
+    {
+        let end = self.end();
+        let chain = self.node(ConstructorTag::from(super::tag::ARG), vec![body, end]);
+        let var = self.text(var);
+        self.node(ConstructorTag::from(super::tag::BIND), vec![var, chain])
+    }
+
+    /// The variable `var`, named inside a binding field of it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn bvar(
+        &mut self,
+        var: StringLiteral,
+    ) -> ValueId
+    {
+        let var = self.text(var);
+        self.node(ConstructorTag::from(super::tag::BVAR), vec![var])
     }
 
     /// The presentation whose rule chain is `members`, each a tag and its

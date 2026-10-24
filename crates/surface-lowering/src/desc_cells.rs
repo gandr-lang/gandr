@@ -536,12 +536,13 @@ fn second_leaf(
                 }
                 seen = true;
             },
-            TermView::Var(_) | TermView::Atom(_) => {},
+            TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
             TermView::Ctor { args, .. }
             | TermView::Op { args, .. }
             | TermView::Results { args }
             | TermView::Inst { args, .. }
-            | TermView::Abs { args, .. } => pending.push(args),
+            | TermView::Abs { args, .. }
+            | TermView::Lam { args, .. } => pending.push(args),
         }
         next = None;
         while let Some(arguments) = pending.last_mut() {

@@ -656,7 +656,10 @@ impl Engine
             TermView::Ctor { .. } => return Err(ModelFault::Constructor),
             TermView::Results { .. } => return Err(ModelFault::ManyOut),
             TermView::Inst { .. } => return Err(ModelFault::Binding),
-            TermView::Abs { .. } | TermView::Atom(_) => return Err(ModelFault::Abstraction),
+            TermView::Abs { .. }
+            | TermView::Atom(_)
+            | TermView::Lam { .. }
+            | TermView::Bound(_) => return Err(ModelFault::Abstraction),
         }
         Ok(())
     }

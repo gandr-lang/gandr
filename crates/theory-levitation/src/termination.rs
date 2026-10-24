@@ -594,10 +594,12 @@ pub fn embeds(
             && match (node.symbol, other.symbol) {
                 (Symbol::Ctor(left), Symbol::Ctor(right))
                 | (Symbol::Op(left), Symbol::Op(right))
-                | (Symbol::Atom(left), Symbol::Atom(right)) => left == right,
+                | (Symbol::Atom(left), Symbol::Atom(right))
+                | (Symbol::Bound(left), Symbol::Bound(right)) => left == right,
                 (Symbol::Var(_), Symbol::Var(_))
                 | (Symbol::Results, Symbol::Results)
                 | (Symbol::Abs, Symbol::Abs)
+                | (Symbol::Lam, Symbol::Lam)
                 | (Symbol::Inst(_), Symbol::Inst(_)) => true,
                 _ => false,
             }
@@ -647,7 +649,9 @@ fn values<'term>(
             | Symbol::Results
             | Symbol::Inst(_)
             | Symbol::Abs
-            | Symbol::Atom(_) => None,
+            | Symbol::Atom(_)
+            | Symbol::Lam
+            | Symbol::Bound(_) => None,
         };
         for (index, argument) in node.arguments().enumerate() {
             let Some(&Node {
@@ -687,10 +691,16 @@ enum Symbol<'term>
     /// A metavariable's instantiation.
     Inst(&'term Name),
     /// An atom's abstraction: two abstractions are one symbol whatever atoms
-    /// they name, as the canonical form at admission reads them.
+    /// they name, as the canonical form at admission reads them; a ground
+    /// symbol of one field.
     Abs,
-    /// An atom named inside an abstraction of it, a symbol of no arguments.
+    /// An atom named inside an abstraction of it, a ground symbol of no
+    /// arguments.
     Atom(&'term Name),
+    /// A binding field: two fields are one whatever variables they bind.
+    Lam,
+    /// A variable named inside a binding field of it.
+    Bound(&'term Name),
 }
 
 /// One node of a term read breadth first: what it applies, how many
@@ -731,11 +741,13 @@ fn flatten(term: &FreeTerm) -> Vec<Node<'_>>
         let (symbol, arguments) = match current.view() {
             TermView::Var(name) => (Symbol::Var(name), None),
             TermView::Atom(name) => (Symbol::Atom(name), None),
+            TermView::Bound(name) => (Symbol::Bound(name), None),
             TermView::Ctor { name, args } => (Symbol::Ctor(name), Some(args)),
             TermView::Op { name, args } => (Symbol::Op(name), Some(args)),
             TermView::Results { args } => (Symbol::Results, Some(args)),
             TermView::Inst { name, args } => (Symbol::Inst(name), Some(args)),
             TermView::Abs { args, .. } => (Symbol::Abs, Some(args)),
+            TermView::Lam { args, .. } => (Symbol::Lam, Some(args)),
         };
         let arity = arguments.map_or(0, |arguments| {
             let count = arguments.len();
@@ -816,9 +828,13 @@ impl<'term> Term for Side<'term, '_>
         {
             Symbol::Var(name) => Former::Variable(name),
             Symbol::Inst(name) => Former::Application(name),
-            Symbol::Abs => Former::Abstraction,
-            Symbol::Atom(name) => Former::Bound(name),
-            symbol @ (Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results) => Former::Symbol(symbol),
+            Symbol::Lam => Former::Abstraction,
+            Symbol::Bound(name) => Former::Bound(name),
+            symbol @ (Symbol::Ctor(_)
+            | Symbol::Op(_)
+            | Symbol::Results
+            | Symbol::Abs
+            | Symbol::Atom(_)) => Former::Symbol(symbol),
         }
     }
 
@@ -897,7 +913,9 @@ impl<'term> gandr_theory_path_orders::Precedence for Ranks<'_, '_, 'term>
             | Symbol::Results
             | Symbol::Inst(_)
             | Symbol::Abs
-            | Symbol::Atom(_) => Place::Ground,
+            | Symbol::Atom(_)
+            | Symbol::Lam
+            | Symbol::Bound(_) => Place::Ground,
         }
     }
 
@@ -1339,13 +1357,13 @@ mod tests
     fn a_pattern_under_its_abstraction_holds_its_metavariable_2115()
     {
         let get = |k| FreeTerm::op("get", [k]);
-        let pattern = |names: [&str; 2]| FreeTerm::inst("k", names.map(FreeTerm::atom));
+        let pattern = |names: [&str; 2]| FreeTerm::inst("k", names.map(FreeTerm::bound));
         let get_get = nat([unary("get")], vec![(
-            get(FreeTerm::abs(
+            get(FreeTerm::lam(
                 "s",
-                get(FreeTerm::abs("t", pattern(["s", "t"]))),
+                get(FreeTerm::lam("t", pattern(["s", "t"]))),
             )),
-            get(FreeTerm::abs("s", pattern(["s", "s"]))),
+            get(FreeTerm::lam("s", pattern(["s", "s"]))),
         )]);
         assert_eq!(
             orient_rules(&get_get),
@@ -1355,7 +1373,7 @@ mod tests
         let run = |k, u| FreeTerm::op("run", [k, u]);
         let applied = nat([binary("run")], vec![(
             run(
-                FreeTerm::abs("x", FreeTerm::inst("k", [FreeTerm::atom("x")])),
+                FreeTerm::lam("x", FreeTerm::inst("k", [FreeTerm::bound("x")])),
                 var("u"),
             ),
             FreeTerm::inst("k", [var("u")]),
@@ -1379,7 +1397,7 @@ mod tests
         let get = |k| FreeTerm::op("get", [k]);
         let put = |s, k| FreeTerm::op("put", [s, k]);
         let selected = |s| FreeTerm::inst("k", [s]);
-        let branches = || get(FreeTerm::abs("t", selected(FreeTerm::atom("t"))));
+        let branches = || get(FreeTerm::lam("t", selected(FreeTerm::bound("t"))));
         let put_get = || (put(var("s"), branches()), put(var("s"), selected(var("s"))));
         let store = || oper("put", vec![value("s"), SortRef::new("k", "Nat")]);
         let state = nat([unary("get"), store()], vec![put_get()]);

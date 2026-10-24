@@ -39,15 +39,18 @@
 //!
 //! The terms are first order but for instantiations. A symbol is an
 //! operation application, a constructor application, a results tuple, an
-//! atom's abstraction or an atom named inside one, interned by its kind, its
-//! name and its argument count; two symbols are one exactly when all three
-//! agree. An abstraction is interned without the atom it names, and an
-//! occurrence by the number of abstractions between it and the one binding
-//! it, so both are the canonical re-minting the checker admits them under: a
-//! rule that renames the atom is the same rule. Matching reads an abstraction
-//! as a constructor of one field and an occurrence as a constant; the order
-//! reads them as the abstraction and bound-occurrence formers, both ground.
-//! No substitution shifts that number in the decision. Where some
+//! atom's abstraction or an atom named inside one, or a binding field or a
+//! variable named inside one, interned by its kind, its name and its argument
+//! count; two symbols are one exactly when all three agree. A binder is
+//! interned without the name it binds, and an occurrence by the number of
+//! binders between it and the innermost of its kind naming it, so both are
+//! the canonical re-minting the checker admits them under: a rule that
+//! renames a bound name is the same rule. Matching reads a binder as a
+//! constructor of one field and an occurrence as a constant; the order reads
+//! a binding field and its variable as the abstraction and bound-occurrence
+//! formers, and an atom's abstraction and its atom as ground symbols. A
+//! pattern instantiates its variable at bound variables alone. No
+//! substitution shifts that number in the decision. Where some
 //! operation's input port takes an atom, so a term can name one, a rule that
 //! states a freshness condition, or whose variable stands under other
 //! abstractions at one occurrence than at another, is conditioned: it fires
@@ -124,7 +127,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 27] = [
+pub const PRESENTATION_CODE: [(usize, usize); 29] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -151,6 +154,8 @@ pub const PRESENTATION_CODE: [(usize, usize); 27] = [
     (2, 4),
     (1, 1),
     (2, 1),
+    (1, 0),
+    (1, 1),
     (1, 0),
 ];
 
@@ -209,6 +214,10 @@ mod tag
     pub(super) const FRESH: usize = 25;
     /// An atom named inside an abstraction of it.
     pub(super) const OCC: usize = 26;
+    /// A binding field over its body.
+    pub(super) const BIND: usize = 27;
+    /// A variable named inside a binding field of it.
+    pub(super) const BVAR: usize = 28;
 }
 
 /// Whether a data declaration's constructor table is the presentation code's.
@@ -374,12 +383,18 @@ pub enum SymbolKind
     Operation(OperationRank),
     /// A constructor or a results tuple: below every operation.
     Constructor,
-    /// An abstraction of one bound name over its body: below every
-    /// operation, as a constructor is.
+    /// An atom's abstraction over its body: a ground symbol below every
+    /// operation, as a constructor of one field is.
     Abstraction,
-    /// An occurrence of a bound name, by the abstractions between it and the
-    /// one binding it: a constant below every operation, as a constructor is.
+    /// An atom named inside an abstraction of it, by the binders between it
+    /// and the one binding it: a constant below every operation, as a
+    /// constructor is.
     Occurrence,
+    /// A binding field over its body: the order's abstraction former.
+    Field,
+    /// A variable named inside a binding field of it, by the binders between
+    /// it and the one binding it: the order's bound occurrence.
+    Bound,
 }
 
 /// One node of a rule side, in pre-order: a symbol applied to the next
@@ -704,29 +719,31 @@ impl TheoryRules
     ///   each followed by its freshness conditions (`Fresh`, an atom's and a
     ///   variable's names), then derived rules (`Derived`, its peak's three
     ///   numerals), then ranks (`Rank`, an operation's name and a numeral),
-    ///   then `End`. Each term is a `Var`, or an `App`, `Con`, `Tuple`, `Inst`
-    ///   or `Abs` over its `Arg` chain, or an `Occ` naming an atom an enclosing
-    ///   `Abs` abstracts; a symbol is interned by kind, name and argument
-    ///   count, an `Abs` without its atom's name and an `Occ` by the number of
-    ///   `Abs` between it and the innermost naming its atom, an `App` symbol
-    ///   taking the rank its name is given and every other symbol a
-    ///   constructor's place. A rule's variables are numbered by first
+    ///   then `End`. Each term is a `Var`, or an `App`, `Con`, `Tuple`, `Inst`,
+    ///   `Abs` or `Bind` over its `Arg` chain, or an `Occ` naming an atom an
+    ///   enclosing `Abs` abstracts, or a `Bvar` naming a variable an enclosing
+    ///   `Bind` binds; a symbol is interned by kind, name and argument count,
+    ///   an `Abs` or a `Bind` without its name and an `Occ` or a `Bvar` by the
+    ///   number of binders between it and the innermost of its kind naming it,
+    ///   an `App` symbol taking the rank its name is given and every other
+    ///   symbol a constructor's place. A rule's variables are numbered by first
     ///   occurrence on its left side, then on its right. Where some operation's
     ///   input port is at a sort the sort chain states an atom sort (`Atom`), a
     ///   rule followed by a condition, or whose variable stands under other
-    ///   `Abs` at one occurrence than at another, is conditioned; where none
+    ///   binders at one occurrence than at another, is conditioned; where none
     ///   is, no term names an atom, a condition holds of every instance, and no
     ///   rule is.
     /// - fails: [`TheoryRuleFault::Unreadable`] at the rule the chain stops
     ///   being readable at: a member out of that order, a condition before
     ///   every written rule, a term position holding no term, a field that is
     ///   no string where a name or numeral stands, a numeral not in its one
-    ///   decimal spelling, an `Occ` no enclosing `Abs` binds, or a second rank
-    ///   for one name, and at the first rule when the sort or operation chain
-    ///   holds a member the code does not write there;
-    ///   [`TheoryRuleFault::UndecidedCondition`] at the first rule whose
-    ///   variable stands under other `Abs` at one occurrence on its left side
-    ///   than at another there, when some input port is at an atom sort.
+    ///   decimal spelling, an `Occ` no enclosing `Abs` binds, a `Bvar` no
+    ///   enclosing `Bind` binds, or a second rank for one name, and at the
+    ///   first rule when the sort or operation chain holds a member the code
+    ///   does not write there; [`TheoryRuleFault::UndecidedCondition`] at the
+    ///   first rule whose variable stands under other binders at one occurrence
+    ///   on its left side than at another there, when some input port is at an
+    ///   atom sort.
     /// - panics: none.
     /// - intension: the chain walked in a loop and each term read from a
     ///   worklist, so no step recurses.
@@ -1048,7 +1065,7 @@ impl TheoryRules
                                     TheoryNode::Symbol(symbol)
                                         if matches!(
                                             self.symbols.get(symbol.0),
-                                            Some(&(SymbolKind::Occurrence, _))
+                                            Some(&(SymbolKind::Bound, _))
                                         ) =>
                                     {
                                         Some(symbol)
@@ -1922,11 +1939,16 @@ impl Term for RuleSide<'_>
     {
         match self.side.get(usize::from(node)) {
             Some(&TheoryNode::Symbol(symbol)) => match self.rules.symbols.get(symbol.0) {
-                Some(&(SymbolKind::Abstraction, _)) => Former::Abstraction,
-                Some(&(SymbolKind::Occurrence, _)) => Former::Bound(symbol),
-                Some(&(SymbolKind::Operation(_) | SymbolKind::Constructor, _)) | None => {
-                    Former::Symbol(symbol)
-                },
+                Some(&(SymbolKind::Field, _)) => Former::Abstraction,
+                Some(&(SymbolKind::Bound, _)) => Former::Bound(symbol),
+                Some(&(
+                    SymbolKind::Operation(_)
+                    | SymbolKind::Constructor
+                    | SymbolKind::Abstraction
+                    | SymbolKind::Occurrence,
+                    _,
+                ))
+                | None => Former::Symbol(symbol),
             },
             Some(&TheoryNode::Variable(variable)) => Former::Variable(variable),
             Some(&TheoryNode::Instance(variable, _)) => Former::Application(variable),
@@ -1996,7 +2018,11 @@ impl Precedence for StatedRanks<'_>
                 Place::Ranked(Rank::from(u64::from(u32::from(rank))))
             },
             Some(&(
-                SymbolKind::Constructor | SymbolKind::Abstraction | SymbolKind::Occurrence,
+                SymbolKind::Constructor
+                | SymbolKind::Abstraction
+                | SymbolKind::Occurrence
+                | SymbolKind::Field
+                | SymbolKind::Bound,
                 _,
             ))
             | None => Place::Ground,
@@ -2453,9 +2479,27 @@ enum Class
     /// abstractions that differ only in the atom they name are one symbol.
     Abstraction,
     /// An atom named inside an abstraction of it, keyed by the number of
-    /// abstractions between the two, so it too is one symbol whatever the
-    /// atom's name.
+    /// binders between the two, so it too is one symbol whatever the atom's
+    /// name.
     Occurrence(usize),
+    /// A binding field, its variable's name not part of its key.
+    Field,
+    /// A variable named inside a binding field of it, keyed by the number of
+    /// binders between the two.
+    BoundVariable(usize),
+}
+
+/// Which kind of name a binder in scope binds.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Binds
+{
+    /// An atom's abstraction binds an atom.
+    Atom,
+    /// A binding field binds a variable.
+    Variable,
 }
 
 /// What a term node over an argument chain applies.
@@ -2535,13 +2579,13 @@ struct ReadBuffers<'arena>
     stack: Vec<(ValueId, usize, Stands)>,
     /// One node's arguments.
     arguments: Vec<ValueId>,
-    /// The atoms the abstractions above the node being read abstract,
-    /// outermost first.
-    atoms: Vec<&'arena StringLiteral>,
-    /// Each variable's atoms at its first occurrence, as a range of `above`.
+    /// The binders above the node being read, outermost first: each one's
+    /// name and what it binds.
+    atoms: Vec<(&'arena StringLiteral, Binds)>,
+    /// Each variable's binders at its first occurrence, as a range of `above`.
     scopes: BTreeMap<&'arena StringLiteral, (usize, usize)>,
-    /// The atoms of every variable's first occurrence, end to end.
-    above: Vec<&'arena StringLiteral>,
+    /// The binders of every variable's first occurrence, end to end.
+    above: Vec<(&'arena StringLiteral, Binds)>,
     /// Whether some variable of the rule stands under other abstractions at
     /// one occurrence than at another.
     moved: bool,
@@ -2724,6 +2768,8 @@ impl<'arena> Reader<'arena>
                     },
                     (Class::Abstraction, _) => SymbolKind::Abstraction,
                     (Class::Occurrence(_), _) => SymbolKind::Occurrence,
+                    (Class::Field, _) => SymbolKind::Field,
+                    (Class::BoundVariable(_), _) => SymbolKind::Bound,
                 };
                 (kind, arity)
             })
@@ -3027,21 +3073,23 @@ impl<'arena> Reader<'arena>
     ///
     /// # Specification
     /// - ensures: [`Some`] when every node reached is a `Var`, an `Occ` naming
-    ///   an atom some enclosing `Abs` abstracts, or an `App`, `Con`, `Tuple`,
-    ///   `Inst` or `Abs` whose arguments are an `Arg` chain ended by `End`; a
+    ///   an atom some enclosing `Abs` abstracts, a `Bvar` naming a variable
+    ///   some enclosing `Bind` binds, or an `App`, `Con`, `Tuple`, `Inst`,
+    ///   `Abs` or `Bind` whose arguments are an `Arg` chain ended by `End`; a
     ///   variable, instantiated or not, takes its place among
-    ///   `buffers.variables`, appended when new, and the atoms of the `Abs`
-    ///   above it, outermost first, are kept at its first occurrence and
-    ///   compared at every other, `buffers.moved` set when they differ; an
-    ///   `Occ` is the occurrence symbol of the number of `Abs` between it and
-    ///   the innermost abstracting its atom; on the left side, a variable an
-    ///   `App` takes at one of the value ports is kept in `buffers.valued`, and
-    ///   one anywhere else, instantiated or not, in `buffers.served`.
+    ///   `buffers.variables`, appended when new, and the binders above it,
+    ///   outermost first, are kept at its first occurrence and compared at
+    ///   every other, `buffers.moved` set when they differ; an `Occ` is the
+    ///   occurrence symbol and a `Bvar` the bound symbol of the number of
+    ///   binders between it and the innermost of its kind naming it; on the
+    ///   left side, a variable an `App` takes at one of the value ports is kept
+    ///   in `buffers.valued`, and one anywhere else, instantiated or not, in
+    ///   `buffers.served`.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
     /// - intension: a worklist of the nodes still to read, each with the number
-    ///   of abstractions above it, so no step recurses; the atoms in scope are
-    ///   one stack cut back to a node's number as it is read.
+    ///   of binders above it, so no step recurses; the binders in scope are one
+    ///   stack cut back to a node's number as it is read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`].
@@ -3076,11 +3124,20 @@ impl<'arena> Reader<'arena>
                     out.push(TheoryNode::Variable(variable));
                     continue;
                 },
-                (tag::OCC, &[name]) => {
+                (kind @ (tag::OCC | tag::BVAR), &[name]) => {
                     let name = self.text(name)?;
-                    let between = buffers.atoms.iter().rev().position(|&atom| atom == name)?;
-                    let symbol =
-                        self.intern((Class::Occurrence(between), None, FieldCount::default()));
+                    let (binds, class): (Binds, fn(usize) -> Class) = if kind == tag::OCC {
+                        (Binds::Atom, Class::Occurrence)
+                    }
+                    else {
+                        (Binds::Variable, Class::BoundVariable)
+                    };
+                    let between = buffers
+                        .atoms
+                        .iter()
+                        .rev()
+                        .position(|&binder| binder == (name, binds))?;
+                    let symbol = self.intern((class(between), None, FieldCount::default()));
                     out.push(TheoryNode::Symbol(symbol));
                     continue;
                 },
@@ -3096,9 +3153,17 @@ impl<'arena> Reader<'arena>
                 ),
                 (tag::TUPLE, &[chain]) => (Applied::Symbol(Class::Tuple, None), chain, depth),
                 (tag::ABS, &[name, chain]) => {
-                    buffers.atoms.push(self.text(name)?);
+                    buffers.atoms.push((self.text(name)?, Binds::Atom));
                     (
                         Applied::Symbol(Class::Abstraction, None),
+                        chain,
+                        depth.saturating_add(1),
+                    )
+                },
+                (tag::BIND, &[name, chain]) => {
+                    buffers.atoms.push((self.text(name)?, Binds::Variable));
+                    (
+                        Applied::Symbol(Class::Field, None),
                         chain,
                         depth.saturating_add(1),
                     )

@@ -269,6 +269,8 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ("Abs", vec!["String", "Theory"]),
         ("Fresh", vec!["String", "String", "Theory"]),
         ("Occ", vec!["String"]),
+        ("Bind", vec!["String", "Theory"]),
+        ("Bvar", vec!["String"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -1499,6 +1501,9 @@ fn an_atom_occurrence_takes_its_own_tag()
         }
     };
     let parts = sends(FreeTerm::atom("a"));
+    let mut read = parts.clone();
+    read.bind_fields();
+    assert_eq!(read, parts, "an atom's abstraction stays the atom's");
     let value = TheoryValue::encode(&parts);
     assert_eq!(value.decode(), Ok(parts), "a rule's occurrence reads back");
     assert_eq!(
@@ -1510,5 +1515,68 @@ fn an_atom_occurrence_takes_its_own_tag()
         TheoryValue::encode(&sends(FreeTerm::var("a"))),
         value,
         "an occurrence is not the variable of its name"
+    );
+}
+
+#[test]
+fn a_binding_field_takes_its_own_tags()
+{
+    // `ext`'s continuation binds a variable of the representable `V`, so
+    // `ext(m, bind x . ret(x))` abstracts at a binding port: read against the
+    // parts, its abstraction is the field and its occurrence the bound
+    // variable, each coded with its own tag.
+    let unit = |field: FreeTerm| {
+        let mut continuation = port("k", "C", []);
+        continuation.bindings.push(binder("x", "V"));
+        let operation = |name: &str, inputs: Vec<TheoryPort>| TheoryOperation {
+            name: Name::from(name),
+            kind: OperationKind::Operation,
+            inputs,
+            outputs: vec![port("", "C", [])],
+        };
+        TheoryParts {
+            sorts: vec![
+                sort("V", Representability::Representable),
+                sort("C", Representability::Ordinary),
+            ],
+            operations: vec![
+                operation("ret", vec![port("a", "V", [])]),
+                operation("ext", vec![port("m", "C", []), continuation]),
+            ],
+            rules: vec![TheoryRule {
+                name: Name::from("unitR"),
+                left: FreeTerm::op("ext", [FreeTerm::var("m"), field]),
+                right: FreeTerm::var("m"),
+                fresh: Vec::new(),
+            }],
+            ..TheoryParts::default()
+        }
+    };
+    let written = || FreeTerm::abs("x", FreeTerm::op("ret", [FreeTerm::atom("x")]));
+    let fielded = unit(FreeTerm::lam(
+        "x",
+        FreeTerm::op("ret", [FreeTerm::bound("x")]),
+    ));
+    let mut read = unit(written());
+    read.bind_fields();
+    assert_eq!(read, fielded, "the port reads the abstraction as its field");
+    let value = TheoryValue::encode(&fielded);
+    assert_eq!(
+        value.decode(),
+        Ok(fielded),
+        "a field and its variable read back"
+    );
+    assert_eq!(
+        (Tag::Lam.constructor(), Tag::Bvar.constructor()),
+        (
+            ConstructorTag::from(27_usize),
+            ConstructorTag::from(28_usize)
+        ),
+        "appended, so a presentation binding nothing keeps its bytes"
+    );
+    assert_ne!(
+        TheoryValue::encode(&unit(written())),
+        value,
+        "a field is not an atom's abstraction"
     );
 }

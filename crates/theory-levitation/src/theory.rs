@@ -64,7 +64,7 @@
 //!
 //! # One sort, chained
 //!
-//! `Theory` is one self-recursive sort of twenty-seven constructors, in tag
+//! `Theory` is one self-recursive sort of twenty-nine constructors, in tag
 //! order:
 //!
 //! | tag | constructor | fields |
@@ -96,6 +96,8 @@
 //! | 24 | `Abs` | an atom's name, its body as a chain of one argument |
 //! | 25 | `Fresh` | an atom's name, a metavariable's name, the rest of the rules |
 //! | 26 | `Occ` | an atom's name, named inside an abstraction of it |
+//! | 27 | `Bind` | a bound variable's name, its body as a chain of one argument |
+//! | 28 | `Bvar` | a bound variable's name, named inside a `Bind` of it |
 //!
 //! Every list a presentation holds is a chain of its member constructor ended
 //! by `End`, and every name is a `String` field; an unnamed port carries the
@@ -126,6 +128,15 @@
 //! variable's name and an argument chain, one term per binder. `Inst` is
 //! appended to the table, so a presentation that instantiates nothing keeps
 //! the bytes it had.
+//!
+//! A rule term writes `bind x . t` at a `Bound` port as a `Bind` node, the
+//! binding field: the variable's name and its body as a chain of one
+//! argument. Inside the body, the variable it binds is a `Bvar` node with the
+//! variable's name, which the instantiation of a variable the left term
+//! passes at that port takes as an argument. A field and an atom's
+//! abstraction are written alike and coded apart: the port decides
+//! ([`FreeTerm::bind_fields`]). Both are appended to the table, so a
+//! presentation that binds nothing keeps the bytes it had.
 //!
 //! - **Choice.** Representability and binding are constructors of their own,
 //!   appended to the table, rather than a field of every `Sort` and `Port`.
@@ -169,8 +180,8 @@
 //! atom of each abstraction's depth, its occurrences renamed with it
 //! ([`FreeTerm::canonical_atoms`]), so a rule that renames an abstraction's
 //! atom is the same rule; [`crate::check_desc`] refuses an abstraction where
-//! no port abstracts or binds as many names, and an occurrence at a port of
-//! another sort than the one its abstraction binds it at.
+//! no port abstracts as many atoms, and an occurrence at a port of another
+//! sort than the one its abstraction binds it at.
 //!
 //! # The shape parameter
 //!
@@ -318,7 +329,7 @@ use crate::wellformed::derive_cell_var_meta;
 
 /// The names of `Theory`'s constructors, in tag order: the names a program that
 /// matches on a presentation writes.
-pub const THEORY_CONSTRUCTORS: [&str; 27] = [
+pub const THEORY_CONSTRUCTORS: [&str; 29] = [
     "Presents",
     "End",
     "Sort",
@@ -346,11 +357,13 @@ pub const THEORY_CONSTRUCTORS: [&str; 27] = [
     "Abs",
     "Fresh",
     "Occ",
+    "Bind",
+    "Bvar",
 ];
 
 /// Each constructor of `Theory`, in tag order, with its count of `String`
 /// fields, which come first, and its count of recursive fields after them.
-const CONSTRUCTORS: [(&str, usize, usize); 27] = [
+const CONSTRUCTORS: [(&str, usize, usize); 29] = [
     (THEORY_CONSTRUCTORS[0], 0, 3),
     (THEORY_CONSTRUCTORS[1], 0, 0),
     (THEORY_CONSTRUCTORS[2], 1, 2),
@@ -378,6 +391,8 @@ const CONSTRUCTORS: [(&str, usize, usize); 27] = [
     (THEORY_CONSTRUCTORS[24], 1, 1),
     (THEORY_CONSTRUCTORS[25], 2, 1),
     (THEORY_CONSTRUCTORS[26], 1, 0),
+    (THEORY_CONSTRUCTORS[27], 1, 1),
+    (THEORY_CONSTRUCTORS[28], 1, 0),
 ];
 
 /// One constructor of `Theory`, by its tag.
@@ -440,6 +455,10 @@ enum Tag
     Fresh,
     /// An atom named inside an abstraction of it.
     Occ,
+    /// A binding field over its body.
+    Lam,
+    /// A variable named inside a binding field of it.
+    Bvar,
 }
 
 impl Tag
@@ -485,11 +504,13 @@ impl Tag
             Self::Abs => 24,
             Self::Fresh => 25,
             Self::Occ => 26,
+            Self::Lam => 27,
+            Self::Bvar => 28,
         })
     }
 }
 
-/// The description of `Theory`, one data sort of twenty-seven constructors.
+/// The description of `Theory`, one data sort of twenty-nine constructors.
 ///
 /// The constructors stand in the order the module documentation tables; every
 /// name is a `String` field and every other field a recursive occurrence.
@@ -499,11 +520,11 @@ impl Tag
 ///   `Presents`, `End`, `Sort`, `Oper`, `Port`, `Rule`, `Var`, `App`, `Con`,
 ///   `Tuple`, `Arg`, `Representable`, `Bound`, `Shape`, `Face`, `Obs`,
 ///   `Turned`, `Derived`, `Rank`, `Const`, `Nested`, `Inst`, `Atom`,
-///   `Abstracted`, `Abs`, `Fresh` and `Occ` in that order, each at the result
-///   sort `Theory`; a constructor's `String` fields carry `grade` and come
-///   first, three for `Derived`, two for `Port`, `Bound`, `Shape`, `Face`,
-///   `Rank`, `Abstracted` and `Fresh` and one for every other constructor that
-///   names something, and its remaining fields are `Theory`.
+///   `Abstracted`, `Abs`, `Fresh`, `Occ`, `Bind` and `Bvar` in that order, each
+///   at the result sort `Theory`; a constructor's `String` fields carry `grade`
+///   and come first, three for `Derived`, two for `Port`, `Bound`, `Shape`,
+///   `Face`, `Rank`, `Abstracted` and `Fresh` and one for every other
+///   constructor that names something, and its remaining fields are `Theory`.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1056,6 +1077,40 @@ impl TheoryParts
             sorts: at_positions(&self.sorts, &inclusion.sorts),
             operations: at_positions(&self.operations, &inclusion.operations),
             rules: at_positions(&self.rules, &inclusion.rules),
+        }
+    }
+
+    /// Read every rule's abstractions at a binding port of these parts'
+    /// operations as the binding fields they are ([`FreeTerm::bind_fields`]).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each rule's sides read by [`FreeTerm::bind_fields`], an
+    ///   operation's input port answering how many atoms it abstracts and how
+    ///   many variables it binds, the first operation of a name answering for
+    ///   it; every other member kept.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a rule abstracting at a binding port is coded with
+    ///   the field's tags, and one abstracting an atom keeps the atom's.
+    /// - witness: `theory::tests::a_binding_field_takes_its_own_tags`
+    /// - witness: `theory::tests::an_atom_occurrence_takes_its_own_tag`
+    #[inline]
+    #[spec(captures: before = self.rules.len(), ensures: self.rules.len() == before)]
+    pub fn bind_fields(&mut self)
+    {
+        let operations = &self.operations;
+        let ports = |name: &Name, index: usize| {
+            operations
+                .iter()
+                .find(|operation| operation.name == *name)
+                .and_then(|operation| operation.inputs.get(index))
+                .map(|port| (port.abstractions.len(), port.bindings.len()))
+        };
+        for rule in &mut self.rules {
+            rule.left = rule.left.bind_fields(ports);
+            rule.right = rule.right.bind_fields(ports);
         }
     }
 }
@@ -1685,9 +1740,9 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - ensures: a variable is `Var`, an operation application `App`, a
 ///   constructor application `Con`, a results tuple `Tuple`, a metavariable's
-///   instantiation `Inst`, an atom's abstraction `Abs` and an atom named inside
-///   one `Occ`, each application over the argument chain of its arguments in
-///   order.
+///   instantiation `Inst`, an atom's abstraction `Abs`, an atom named inside
+///   one `Occ`, a binding field `Bind` and a variable named inside one `Bvar`,
+///   each application over the argument chain of its arguments in order.
 /// - panics: none.
 /// - executable: none — the coding is observed by reading it back, which the
 ///   round trip of [`TheoryValue::decode`] does.
@@ -1697,6 +1752,7 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — as [`TheoryValue::encode`].
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 /// - witness: `theory::tests::an_atom_occurrence_takes_its_own_tag`
+/// - witness: `theory::tests::a_binding_field_takes_its_own_tags`
 fn term(root: TermNode<'_>) -> DescValue
 {
     let mut pending = vec![Build::Visit(root)];
@@ -1713,6 +1769,10 @@ fn term(root: TermNode<'_>) -> DescValue
                         built.push(value(Tag::Occ, vec![leaf(name)]));
                         continue;
                     },
+                    TermView::Bound(name) => {
+                        built.push(value(Tag::Bvar, vec![leaf(name)]));
+                        continue;
+                    },
                     TermView::Op { name, args } => (Tag::App, Maybe::Present(name), args),
                     TermView::Ctor { name, args } => (Tag::Con, Maybe::Present(name), args),
                     TermView::Results { args } => {
@@ -1720,6 +1780,7 @@ fn term(root: TermNode<'_>) -> DescValue
                     },
                     TermView::Inst { name, args } => (Tag::Inst, Maybe::Present(name), args),
                     TermView::Abs { atom, args } => (Tag::Abs, Maybe::Present(atom), args),
+                    TermView::Lam { var, args } => (Tag::Lam, Maybe::Present(var), args),
                 };
                 pending.push(Build::Apply(tag, head, args.len()));
                 let first = pending.len();
@@ -2320,6 +2381,8 @@ enum Applied
     Instantiation(Name),
     /// An atom's abstraction over its one body, by the atom's name.
     Abstraction(Name),
+    /// A binding field over its one body, by the bound variable's name.
+    Field(Name),
 }
 
 /// One pending step of [`read_term`].
@@ -2335,11 +2398,12 @@ enum Read<'value>
 ///
 /// # Specification
 /// - ensures: the inverse of [`term`]: `Var`, `App`, `Con`, `Tuple`, `Inst`,
-///   `Abs` and `Occ` read back to a variable, an operation application, a
-///   constructor application, a results tuple, a metavariable's instantiation,
-///   an atom's abstraction and an atom named inside one.
+///   `Abs`, `Occ`, `Bind` and `Bvar` read back to a variable, an operation
+///   application, a constructor application, a results tuple, a metavariable's
+///   instantiation, an atom's abstraction, an atom named inside one, a binding
+///   field and a variable named inside one.
 /// - fails: [`TheoryFault::Misplaced`] for any other constructor, and for an
-///   `Abs` whose chain is not one body; as [`expect`], [`text`] and
+///   `Abs` or a `Bind` whose chain is not one body; as [`expect`], [`text`] and
 ///   [`argument_nodes`] beneath.
 /// - panics: none.
 /// - executable: none — the reading is observed by coding it again, which the
@@ -2354,6 +2418,7 @@ enum Read<'value>
 /// - witness: `theory::tests::a_presentation_round_trips_through_its_value`
 /// - witness: `theory::tests::a_value_outside_the_grammar_is_refused_by_name`
 /// - witness: `theory::tests::an_atom_occurrence_takes_its_own_tag`
+/// - witness: `theory::tests::a_binding_field_takes_its_own_tags`
 fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
 {
     let mut pending = vec![Read::Visit(root)];
@@ -2371,6 +2436,12 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                     let [name] = expect::<1>(node, Tag::Occ)?;
                     let name = text(name)?;
                     read.push(FreeTerm::atom(name));
+                    continue;
+                }
+                else if node.ctor == Tag::Bvar.constructor() {
+                    let [name] = expect::<1>(node, Tag::Bvar)?;
+                    let name = text(name)?;
+                    read.push(FreeTerm::bound(name));
                     continue;
                 }
                 else if node.ctor == Tag::App.constructor() {
@@ -2397,13 +2468,29 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                     let atom = text(atom)?;
                     (Applied::Abstraction(atom), chain)
                 }
+                else if node.ctor == Tag::Lam.constructor() {
+                    let [var, chain] = expect::<2>(node, Tag::Lam)?;
+                    let var = text(var)?;
+                    (Applied::Field(var), chain)
+                }
                 else {
                     return Err(TheoryFault::Misplaced(node.ctor));
                 };
                 let chain = nested(chain)?;
                 let arguments = argument_nodes(chain)?;
-                if matches!(applied, Applied::Abstraction(_)) && arguments.len() != 1 {
-                    return Err(TheoryFault::Misplaced(Tag::Abs.constructor()));
+                match applied {
+                    Applied::Abstraction(_) if arguments.len() != 1 => {
+                        return Err(TheoryFault::Misplaced(Tag::Abs.constructor()));
+                    },
+                    Applied::Field(_) if arguments.len() != 1 => {
+                        return Err(TheoryFault::Misplaced(Tag::Lam.constructor()));
+                    },
+                    Applied::Operation(_)
+                    | Applied::Constructor(_)
+                    | Applied::Tuple
+                    | Applied::Instantiation(_)
+                    | Applied::Abstraction(_)
+                    | Applied::Field(_) => {},
                 }
                 pending.push(Read::Apply(applied, arguments.len()));
                 pending.extend(arguments.into_iter().rev().map(Read::Visit));
@@ -2421,6 +2508,13 @@ fn read_term(root: Node<'_>) -> Result<FreeTerm, TheoryFault>
                         match (arguments.next(), arguments.next()) {
                             (Some(body), None) => FreeTerm::abs(atom, body),
                             _ => return Err(TheoryFault::Misplaced(Tag::Abs.constructor())),
+                        }
+                    },
+                    Applied::Field(var) => {
+                        let mut arguments = arguments.into_iter();
+                        match (arguments.next(), arguments.next()) {
+                            (Some(body), None) => FreeTerm::lam(var, body),
+                            _ => return Err(TheoryFault::Misplaced(Tag::Lam.constructor())),
                         }
                     },
                 });

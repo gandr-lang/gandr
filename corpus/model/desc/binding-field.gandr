@@ -1,0 +1,99 @@
+// The binding field in rule terms (Kaposi and Xie, _Second-Order Generalised
+// Algebraic Theories_, FSCD 2024, doi:10.4230/LIPIcs.FSCD.2024.10). At a port
+// written `pi+ (x : S) . T` a rule writes `bind x . t` for the field the port
+// binds: `x` is a variable of the representable sort `S`, which substitution
+// instantiates. At a port written `bind (a : N) . T` the same spelling
+// abstracts the atom `a` (`bind-term.gandr`), which swapping renames. The port
+// decides which: the value of `Theory` keeps a field as `Bind` and its variable
+// as `Bvar`, an abstraction as `Abs` and its atom as `Occ`, so a program tells
+// the two binders apart by `case`.
+
+/// A receive on a restricted channel: `nu` abstracts the channel `c`, and
+/// `listen`'s continuation is a field binding the value `x` received on it.
+/// No process outside the restriction can name `c` to send on it, so the
+/// receive never fires. The checker orients the law and the kernel replays
+/// the verdict.
+@[ checks ]
+theory Deaf {
+  sort Name : Atom;
+  sort Val : Type+;
+  sort Proc : Type;
+  oper nil : () --> Proc;
+  oper out : (v : Val, p : Proc) --> Proc;
+  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  oper listen : (c : Name, k : pi+ (x : Val) . Proc) --> Proc;
+  rule deaf : nu(bind c . listen(c, bind x . out(x, nil()))) ==> nil();
+}
+
+/// A field whose variable the body does not take: `q` is a metavariable
+/// written without `x` as an argument, so no instance of it names `x`, and
+/// the law needs no freshness condition where an abstraction's atom would
+/// (`freshness.gandr`): a field binds for substitution, never for swapping.
+@[ checks ]
+theory Vacuous {
+  sort Val : Type+;
+  sort Proc : Type;
+  oper new : (body : pi+ (x : Val) . Proc) --> Proc;
+  rule gc : new(bind x . q) <=> q;
+}
+
+/// Structural recursion over a rule term: one per `Bind` node, the binding
+/// fields; an `Abs` node counts none of its own.
+@[ checks ]
+def rec fieldsOf(term : Theory) -> Integer {
+  case term {
+    Bind(var, body) => {
+      run r <- fieldsOf[<](body);
+      r + 1
+    },
+    Abs(atom, body) => fieldsOf[<](body),
+    App(name, args) => fieldsOf[<](args),
+    Arg(head, rest) => {
+      run here <- fieldsOf[<](head);
+      run r <- fieldsOf[<](rest);
+      here + r
+    },
+    _ => 0
+  }
+}
+
+/// Structural recursion over a rule term: one per `Abs` node, the atom
+/// abstractions; a `Bind` node counts none of its own.
+@[ checks ]
+def rec abstractionsOf(term : Theory) -> Integer {
+  case term {
+    Abs(atom, body) => {
+      run r <- abstractionsOf[<](body);
+      r + 1
+    },
+    Bind(var, body) => abstractionsOf[<](body),
+    App(name, args) => abstractionsOf[<](args),
+    Arg(head, rest) => {
+      run here <- abstractionsOf[<](head);
+      run r <- abstractionsOf[<](rest);
+      here + r
+    },
+    _ => 0
+  }
+}
+
+/// `deaf`'s left side writes `bind` twice: once a field, `bind x`, read at
+/// `listen`'s `pi+` port.
+@[ runs("1") ]
+def deafFields() -> Integer { case Deaf {
+  Presents(sorts, opers, rules) => case rules {
+    Rule(name, lhs, rhs, rest) => fieldsOf(lhs),
+    _ => 0
+  },
+  _ => 0
+} }
+
+/// And once an abstraction, `bind c`, read at `nu`'s `bind` port.
+@[ runs("1") ]
+def deafAbstractions() -> Integer { case Deaf {
+  Presents(sorts, opers, rules) => case rules {
+    Rule(name, lhs, rhs, rest) => abstractionsOf(lhs),
+    _ => 0
+  },
+  _ => 0
+} }
