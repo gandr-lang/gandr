@@ -1347,7 +1347,8 @@ fn a_model_slot_resolves_to_the_candidate_its_sort_admits_739()
         fixed: Vec::new(),
         candidates: Vec::from([flag, up]),
     };
-    assert_eq!(deferrals.resolve(&mut arena, &[slot]), Ok(()));
+    let definitions = crate::code::CodeDefinitions::new();
+    assert_eq!(deferrals.resolve(&mut arena, &definitions, &[slot]), Ok(()));
     let solutions = deferrals.solutions(&arena);
     assert!(
         solutions.as_ref().is_ok_and(|solved| solved
@@ -1382,9 +1383,43 @@ fn a_model_slot_two_candidates_answer_is_ambiguous_739()
             gandr_core_term::model::Survivors::default(),
             gandr_core_term::model::Survivors::with,
         );
+    let definitions = crate::code::CodeDefinitions::new();
     assert_eq!(
-        deferrals.resolve(&mut arena, &[slot]),
+        deferrals.resolve(&mut arena, &definitions, &[slot]),
         Err((at, CheckRefusal::ModelAmbiguous { at, survivors }))
+    );
+}
+
+#[test]
+fn two_candidates_passing_one_member_are_one_elaboration_2333()
+{
+    // `OrdInteger` includes `EqInteger`, so at `Eq` both pass the integers
+    // and the one `eq`: each candidate's values are minted apart, as packing
+    // two modules mints them, and still the slot resolves, to the first.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (holes, _, [integer, _]) = forced_slot(&mut arena, &mut deferrals);
+    let integer_again = {
+        let ty = arena.value_type_base(BaseType::Integer);
+        arena.value_quote(ty)
+    };
+    let included = candidate(&mut arena, integer, ConstantIndex::from(1_usize));
+    let including = candidate(&mut arena, integer_again, ConstantIndex::from(1_usize));
+    let step = included.components[1];
+    assert_ne!(step, including.components[1], "the two are minted apart");
+    let slot = gandr_core_term::model::ModelSlot {
+        holes: Vec::from(holes),
+        fixed: Vec::new(),
+        candidates: Vec::from([included, including]),
+    };
+    let definitions = crate::code::CodeDefinitions::new();
+    assert_eq!(deferrals.resolve(&mut arena, &definitions, &[slot]), Ok(()));
+    let solutions = deferrals.solutions(&arena);
+    assert!(
+        solutions.as_ref().is_ok_and(|solved| solved
+            .get(&holes[1])
+            .is_some_and(|&(solved, _)| solved == step)),
+        "the step is the first candidate's: {solutions:?}"
     );
 }
 
@@ -1397,12 +1432,15 @@ fn a_model_slot_no_candidate_answers_is_refused_739()
     let mut deferrals = super::Deferrals::default();
     let (holes, at, [_, unit]) = forced_slot(&mut arena, &mut deferrals);
     let flag = candidate(&mut arena, unit, ConstantIndex::from(2_usize));
+    let definitions = crate::code::CodeDefinitions::new();
     let [refuted, empty] = [Vec::from([flag]), Vec::new()].map(|candidates| {
-        deferrals.resolve(&mut arena, &[gandr_core_term::model::ModelSlot {
-            holes: Vec::from(holes),
-            fixed: Vec::new(),
-            candidates,
-        }])
+        deferrals.resolve(&mut arena, &definitions, &[
+            gandr_core_term::model::ModelSlot {
+                holes: Vec::from(holes),
+                fixed: Vec::new(),
+                candidates,
+            },
+        ])
     });
     assert_eq!(refuted, Err((at, CheckRefusal::ModelUnanswered { at })));
     assert_eq!(empty, Err((at, CheckRefusal::ModelUnanswered { at })));
@@ -1449,7 +1487,11 @@ fn a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317()
         candidates: candidates.clone(),
     };
     let mut open = collecting();
-    assert_eq!(deferrals.resolve(&mut arena, &[slot(integer)]), Ok(()));
+    let definitions = crate::code::CodeDefinitions::new();
+    assert_eq!(
+        deferrals.resolve(&mut arena, &definitions, &[slot(integer)]),
+        Ok(())
+    );
     let solutions = deferrals.solutions(&arena);
     assert!(
         solutions.as_ref().is_ok_and(|solved| solved
@@ -1466,7 +1508,7 @@ fn a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317()
             gandr_core_term::model::Survivors::with,
         );
     assert_eq!(
-        open.resolve(&mut arena, &[slot(bound)]),
+        open.resolve(&mut arena, &definitions, &[slot(bound)]),
         Err((at, CheckRefusal::ModelAmbiguous { at, survivors })),
         "a fixed type reading the callee's binder refutes neither"
     );

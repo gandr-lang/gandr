@@ -1,0 +1,41 @@
+// Model includes that do not stand (#2333). A second `Eq` model at the
+// integers that includes nothing and states its own equality is another
+// elaboration, so `==` there stays ambiguous; an include naming no module is
+// refused by that name; a member a module writes under a name an include
+// also lends is a second definition of it.
+
+/// An equality at the integers that holds of every pair.
+module EqLoose : Model(Eq) with sort Carrier = Integer {
+  /// Every pair is equal.
+  @[ checks ]
+  def eq(a : Integer, b : Integer) -> Bool { true }
+}
+
+/// `EqInteger` and `EqLoose` both answer, and their `eq` differ.
+@[ refuses("ModelAmbiguous") ]
+def looselyEqual() -> Bool { 3 == 3 }
+
+/// No module is named `Nowhere`.
+@[ refuses("UnresolvedName") ]
+module Stray {
+  include Nowhere;
+  /// A member beside the include.
+  @[ checks ]
+  def kept() -> Integer { 1 }
+}
+
+/// A grade's zero.
+module Zero {
+  /// The least grade.
+  @[ checks ]
+  def least() -> Integer { 0 }
+}
+
+/// `least` written beside an include that lends it.
+@[ refuses("DuplicateDefinition") ]
+module Shadowing {
+  include Zero;
+  /// A second `least`.
+  @[ checks ]
+  def least() -> Integer { 1 }
+}

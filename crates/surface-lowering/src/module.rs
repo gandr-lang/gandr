@@ -5920,6 +5920,34 @@ struct Open
     members: Vec<Placed>,
     /// How many of them have been read.
     next: usize,
+    /// The modules its body includes, in source order, taken in when it
+    /// closes.
+    includes: Vec<Inclusion>,
+}
+
+/// A module a body includes, `include M ;`.
+///
+/// # Specification
+/// - requires: nothing to construct this data; its producers and consumers
+///   state coordinate preconditions separately.
+/// - ensures: The inclusion names the included module and the tile naming it.
+/// - fails: not applicable to the data item.
+/// - panics: not applicable to the data item.
+/// - executable: none — the enabled specification facade does not expose
+///   type-invariant expansion; executable predicates cover the producing and
+///   consuming operations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an included model's members answer as the including
+///   module's own.
+/// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+#[derive(Clone, Copy, Debug)]
+struct Inclusion
+{
+    /// The name tile, where a collision is refused.
+    named: Placed,
+    /// The included module.
+    module: StructureIndex,
 }
 
 /// A signature a module's enclosing module states for it, applied after the
@@ -6134,8 +6162,8 @@ impl<'source> Collector<'_, 'source>
             let structure = top.structure;
             let Some(&member) = top.members.get(top.next)
             else {
-                let _closed = stack.pop();
-                self.close(structure)?;
+                let includes = stack.pop().map(|open| open.includes).unwrap_or_default();
+                self.close(structure, &includes)?;
                 continue;
             };
             top.next = top.next.saturating_add(1_usize);
@@ -6737,6 +6765,7 @@ impl<'source> Collector<'_, 'source>
             structure,
             members: opened.members,
             next: 0_usize,
+            includes: Vec::new(),
         });
     }
 
@@ -6791,10 +6820,15 @@ impl<'source> Collector<'_, 'source>
     ///   module at `structure`.
     /// - ensures: a form holding a `def` tile is a definition member, read as a
     ///   declaration in the module; a form opening on `type` is a type member,
-    ///   filed among the module's type members; a form opening on `module` is a
-    ///   nested module, opened onto `stack` or refused as a whole under its
-    ///   name; every other form is a malformed member, refused under the
-    ///   module's name at the member, and the module's other members are kept.
+    ///   filed among the module's type members; a form opening on `include`
+    ///   names a module whose members this one takes in when it closes, its
+    ///   frame on `stack` holding the inclusion, and a name no module answers
+    ///   is refused there, held at the module's own form as a header refusal
+    ///   is, so an expectation written before the module states it; a form
+    ///   opening on `module` is a nested module, opened onto `stack` or refused
+    ///   as a whole under its name; every other form is a malformed member,
+    ///   refused under the module's name at the member, and the module's other
+    ///   members are kept.
     /// - provides: the per-member half of [`Self::module`].
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
@@ -6882,6 +6916,27 @@ impl<'source> Collector<'_, 'source>
             return Ok(());
         }
         let cursor = Cursor::new(&pieces.pieces, member.span);
+        if let Maybe::Present(_) = cursor.at(TileName::INCLUDE) {
+            match self.inclusion(member, pieces) {
+                Ok(inclusion) => {
+                    if let Some(open) = stack.last_mut().filter(|open| open.structure == structure)
+                    {
+                        open.includes.push(inclusion);
+                    }
+                },
+                Err(refusal) => {
+                    // Held at the module's own form, as a header refusal is,
+                    // so an expectation written before the module states it.
+                    let form = self
+                        .collected
+                        .structures
+                        .get(structure.0)
+                        .map_or(member, |entry| entry.declared_by);
+                    self.fault_at(structure, form, refusal);
+                },
+            }
+            return Ok(());
+        }
         if let Maybe::Absent(_) = cursor.at(TileName::MODULE) {
             self.fault_at(structure, member, misplaced_in(form, cursor.here()));
             return Ok(());
@@ -6902,6 +6957,212 @@ impl<'source> Collector<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// Read the model include `member`, `include M ;`, as the module it
+    /// names.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of `member`, a member form opening
+    ///   on `include`.
+    /// - ensures: the inclusion of the module `M` answers where the form
+    ///   stands, with `M`'s name tile ([`Collected::included_module`]).
+    /// - provides: the reading half of a model include; [`Self::take_in`] is
+    ///   the other.
+    /// - fails: the parser's repair, or a misplaced form, for a form naming no
+    ///   module; and what [`Collected::included_module`] raises.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an include of a model declared before it is read as
+    ///   that model, and one naming no module is refused at the include.
+    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `tests::modules::models::an_include_naming_no_module_is_refused_2333`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |inclusion| member.span.start() <= inclusion.named.span.start() && inclusion.named.span.end() <= member.span.end()))]
+    fn inclusion(
+        &self,
+        member: Placed,
+        pieces: &Pieces,
+    ) -> Result<Inclusion, LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, member.span);
+        let _lead = cursor.tile(TileName::INCLUDE);
+        let Maybe::Present(named) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        else {
+            return Err(match pieces.repair {
+                Maybe::Present(repaired) => repaired.refusal(FormName::MODULE),
+                Maybe::Absent(_) => misplaced_in(FormName::MODULE, cursor.here()),
+            });
+        };
+        let name = self.name_of(named);
+        let module = self
+            .collected
+            .included_module(member.span.start(), named.span, name)?;
+
+        Ok(Inclusion { named, module })
+    }
+
+    /// The members the module `module` lends an includer: its exports when it
+    /// is ascribed, each read through the witness a seal states for it, and
+    /// its body's members otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each lent member is a member of `module`'s body or the
+    ///   witness its seal states for one, one per export when `module` is
+    ///   ascribed and one per body member otherwise; an absent module lends
+    ///   nothing.
+    /// - provides: what [`Self::take_in`] registers.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a transparent model lends its definitions.
+    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+    #[spec(ensures: |ret| self.collected.structures.get(module.0).map_or(ret.is_empty(), |entry| ret.len() == entry.exports.len() || ret.len() == entry.members.len()))]
+    fn offered(
+        &self,
+        module: StructureIndex,
+    ) -> Vec<Member>
+    {
+        let Some(entry) = self.collected.structures.get(module.0)
+        else {
+            return Vec::new();
+        };
+        let ascribed = matches!(entry.ascription, Maybe::Present(_))
+            || matches!(entry.model, Maybe::Present(_));
+        let listed = if ascribed {
+            &entry.exports
+        }
+        else {
+            &entry.members
+        };
+        listed
+            .iter()
+            .map(|&member| match member {
+                Member::Slot(slot) => {
+                    Member::Slot(entry.exported_as.get(&slot).copied().unwrap_or(slot))
+                },
+                Member::Module(nested) => Member::Module(nested),
+            })
+            .collect()
+    }
+
+    /// Take the members the modules `includes` lend into the module at
+    /// `structure`, as its own.
+    ///
+    /// # Specification
+    /// - requires: `structure`'s body is read.
+    /// - ensures: each lent member answers under its name in `structure`, a
+    ///   definition through the name table and a nested module through the
+    ///   module table, and joins its members, so matching finds it as a
+    ///   component the body wrote: the including module's reduct at the
+    ///   included model's theory is that model. A name the module already binds
+    ///   to another member is a second definition, refused at the include's
+    ///   name and held at the module's own form; one bound to the same member,
+    ///   a model included twice along two paths, is that member.
+    /// - provides: the registering half of a model include.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an included model's member is the including module's
+    ///   component, and a member written beside an include of the same name is
+    ///   refused at the include.
+    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
+    /// - witness: `tests::modules::models::a_member_an_include_also_lends_is_refused_2333`
+    #[spec(
+        captures: before = (
+            self.collected.structures.len(),
+            self.collected.by_name.len(),
+            self.collected.modules.len(),
+        ),
+        ensures: self.collected.structures.len() == before.0
+            && self.collected.by_name.len() >= before.1
+            && self.collected.modules.len() >= before.2
+            && (!includes.is_empty()
+                || (self.collected.by_name.len() == before.1 && self.collected.modules.len() == before.2)),
+    )]
+    fn take_in(
+        &mut self,
+        structure: StructureIndex,
+        includes: &[Inclusion],
+    )
+    {
+        let container = Container::Module(structure);
+        for inclusion in includes {
+            for lent in self.offered(inclusion.module) {
+                let named = match lent {
+                    Member::Slot(slot) => self.collected.slots.get(slot.0).map(|slot| slot.name),
+                    Member::Module(nested) => self
+                        .collected
+                        .structures
+                        .get(nested.0)
+                        .map(|entry| entry.name),
+                };
+                let Some(name) = named
+                else {
+                    continue;
+                };
+                let bound = self
+                    .collected
+                    .by_name
+                    .get(&(container, name))
+                    .map(|&slot| {
+                        (
+                            Member::Slot(slot),
+                            self.collected.slots.get(slot.0).map(|held| held.named.span),
+                        )
+                    })
+                    .or_else(|| {
+                        self.collected
+                            .modules
+                            .get(&(container, name))
+                            .map(|&nested| {
+                                (
+                                    Member::Module(nested),
+                                    self.collected
+                                        .structures
+                                        .get(nested.0)
+                                        .map(|entry| entry.named.span),
+                                )
+                            })
+                    });
+                match bound {
+                    Some((same, _)) if same == lent => {},
+                    Some((_, first)) => {
+                        let refusal = LoweringRefusal::DuplicateDefinition {
+                            span: inclusion.named.span,
+                            name,
+                            first: first.unwrap_or(inclusion.named.span),
+                        };
+                        let form = self
+                            .collected
+                            .structures
+                            .get(structure.0)
+                            .map_or(inclusion.named, |entry| entry.declared_by);
+                        self.fault_at(structure, form, refusal);
+                    },
+                    None => {
+                        match lent {
+                            Member::Slot(slot) => {
+                                let _fresh = self.collected.by_name.insert((container, name), slot);
+                            },
+                            Member::Module(nested) => {
+                                let _fresh =
+                                    self.collected.modules.insert((container, name), nested);
+                            },
+                        }
+                        if let Some(entry) = self.collected.structures.get_mut(structure.0) {
+                            entry.members.push(lent);
+                        }
+                    },
+                }
+            }
+        }
     }
 
     /// A slot named `name` in `container` that declares nothing, introduced
@@ -7067,15 +7328,16 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// Match the module at `structure` against its signatures, once its body
-    /// is read.
+    /// is read, the members of the modules `includes` names taken in first.
     ///
     /// # Specification
     /// - requires: every module nested in `structure` is already closed.
-    /// - ensures: a member signature naming a nested module states that
-    ///   module's signature; the module's own signature is matched; then every
-    ///   signature the module states for a nested module is applied after that
-    ///   module's own, deepest last, by an explicit queue; last, each seal the
-    ///   module declared reaches every slot taken so far.
+    /// - ensures: the included modules' members join the module's
+    ///   ([`Self::take_in`]); a member signature naming a nested module states
+    ///   that module's signature; the module's own signature is matched; then
+    ///   every signature the module states for a nested module is applied after
+    ///   that module's own, deepest last, by an explicit queue; last, each seal
+    ///   the module declared reaches every slot taken so far.
     /// - provides: coercive matching.
     /// - fails: [`LoweringRefusal::UnknownMold`] and
     ///   [`LoweringRefusal::BudgetExceeded`].
@@ -7097,6 +7359,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::a_missing_signature_component_is_rejected_at_the_signature`
     /// - witness: `tests::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `tests::modules::opaque_ascription_seals`
+    /// - witness: `tests::modules::models::an_included_model_lends_its_members_2333`
     #[spec(
         captures: structures = self.collected.structures.len(),
         ensures: |ret| {
@@ -7121,8 +7384,10 @@ impl<'source> Collector<'_, 'source>
     fn close(
         &mut self,
         structure: StructureIndex,
+        includes: &[Inclusion],
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        self.take_in(structure, includes);
         let mut layers = Vec::new();
         self.absorb(structure, &mut layers)?;
         self.match_signature(structure, &mut layers)?;

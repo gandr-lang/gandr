@@ -544,6 +544,9 @@ impl TileName
     pub const IDENTIFIER: Self = Self("identifier");
     /// The import keyword `import`.
     pub const IMPORT: Self = Self("import");
+    /// The keyword `include`, opening a module member that takes another
+    /// model's members as its own.
+    pub const INCLUDE: Self = Self("include");
     /// The interpolation opener `${`.
     pub const INTERPOLATION: Self = Self("${");
     /// The keyword `leta`, opening a statement.

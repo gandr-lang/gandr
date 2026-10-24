@@ -7,6 +7,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_nbe::MachineVerdict;
 use gandr_core_term::Binders;
 use gandr_core_term::CompType;
 use gandr_core_term::CoreArena;
@@ -711,13 +712,18 @@ impl Deferrals
     ///   tried on a copy of the store, its components posed against the holes
     ///   and its code of each sort the slot fixes against the slot's, where the
     ///   slot's code reads no binder of the callee, and one the solver refutes
-    ///   is dropped; a single candidate left binds the holes as its trial did.
-    ///   A slot whose holes are all bound, one a hole of which the judgement
-    ///   did not meet, and a candidate of another arity, or carrying another
-    ///   number of fixed sorts, are left out.
+    ///   is dropped. Candidates left are counted up to conversion: one whose
+    ///   components and codes convert with the first one left's ([`agreement`])
+    ///   is the same elaboration, as a model including another is at the
+    ///   included model's theory, and is not counted again. A single
+    ///   elaboration binds the holes as its first candidate's trial did. A slot
+    ///   whose holes are all bound, one a hole of which the judgement did not
+    ///   meet, and a candidate of another arity, or carrying another number of
+    ///   fixed sorts, are left out.
     /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
     ///   no candidate is left; [`CheckRefusal::ModelAmbiguous`] there, naming
-    ///   every candidate left, when more than one is.
+    ///   the first candidate left and every one not converting with it, when
+    ///   two elaborations are left.
     /// - panics: none.
     ///
     /// # Errors
@@ -732,11 +738,13 @@ impl Deferrals
     ///   candidate of that sort, its operation then solved as the candidate's;
     ///   two candidates of the forced sort are ambiguous, naming both; a slot
     ///   no candidate of the forced sort answers is unanswered; a slot whose
-    ///   type fixes the sort resolves to the candidate of that sort alone.
+    ///   type fixes the sort resolves to the candidate of that sort alone; two
+    ///   candidates passing the same members are one elaboration.
     /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
     /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
     /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
     /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
+    /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
     #[spec(ensures: |ret| match ret {
         | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
         | Err((at, refusal)) => refusal == CheckRefusal::ModelUnanswered { at },
@@ -745,6 +753,7 @@ impl Deferrals
     pub fn resolve(
         &mut self,
         arena: &mut CoreArena,
+        definitions: &crate::code::CodeDefinitions,
         models: &[ModelSlot],
     ) -> Result<(), (ValueId, CheckRefusal)>
     {
@@ -795,6 +804,7 @@ impl Deferrals
             let mut survivors = Survivors::default();
             let mut count = 0_usize;
             let mut chosen = None;
+            let mut elaborated = None;
             for (place, candidate) in slot.candidates.iter().enumerate() {
                 if candidate.components.len() != holes.len()
                     || candidate.fixed.len() != slot.fixed.len()
@@ -830,10 +840,17 @@ impl Deferrals
                 {
                     continue;
                 }
+                if let Some(first) = elaborated
+                    && agreement(arena, definitions, first, candidate)
+                        == MachineVerdict::Convertible
+                {
+                    continue;
+                }
                 survivors = survivors.with(CandidatePlace::from(place));
                 count = count.saturating_add(1);
                 if chosen.is_none() {
                     chosen = Some(trial);
+                    elaborated = Some(candidate);
                 }
             }
             match (count, chosen) {
@@ -851,4 +868,46 @@ impl Deferrals
         }
         Ok(())
     }
+}
+
+/// Whether the candidates `one` and `other` are one elaboration: each
+/// component of one converts with the other's at its place, and each code of a
+/// fixed sort with the other's, every definition `definitions` holds
+/// unfolding.
+///
+/// # Specification
+/// - requires: both candidates' values are closed, as a candidate's are, and
+///   live in `arena`.
+/// - ensures: [`MachineVerdict::Convertible`] exactly when every pair converts;
+///   otherwise the first pair's verdict that is not, a pair the machine cannot
+///   decide reading as not convertible, so a slot it leaves open stays
+///   ambiguous rather than guessed.
+/// - provides: uniqueness up to conversion in [`Deferrals::resolve`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two candidates passing the same member and the same
+///   carrier convert; two passing different members do not.
+/// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
+/// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
+#[spec(ensures: |ret| (!one.components.is_empty() && !other.components.is_empty()) || (!one.fixed.is_empty() && !other.fixed.is_empty()) || ret == MachineVerdict::Convertible)]
+fn agreement(
+    arena: &CoreArena,
+    definitions: &crate::code::CodeDefinitions,
+    one: &gandr_core_term::model::Candidate,
+    other: &gandr_core_term::model::Candidate,
+) -> MachineVerdict
+{
+    one.components
+        .iter()
+        .zip(&other.components)
+        .chain(one.fixed.iter().zip(&other.fixed))
+        .map(|(&left, &right)| {
+            definitions
+                .convert_terms(arena, left, right)
+                .unwrap_or(MachineVerdict::NotConvertible)
+        })
+        .find(|&verdict| verdict != MachineVerdict::Convertible)
+        .unwrap_or(MachineVerdict::Convertible)
 }

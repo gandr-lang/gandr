@@ -189,6 +189,7 @@ unproduced = [
   { rule = "moded_type", reason = "a deduced receiver's mode: the lowering erases the mode variable from the telescope and reads `self`'s type plain, and refuses a moded type anywhere else (`StrayReceiverMode`), so no core type carries it" },
   { rule = "module_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "module_definition_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
+  { rule = "module_include_member", reason = "a module item: the printer presents one core term or type, and an include lowers to the module's environment, never to a core node" },
   { rule = "module_type_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "nested_module_member", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "operator_declaration", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },

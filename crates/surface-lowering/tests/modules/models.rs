@@ -31,6 +31,7 @@ use super::name;
 use super::row;
 use super::rows;
 use super::span_of;
+use super::strata;
 use super::verdicts;
 
 /// The `CatShape` theory: a category's objects, morphisms, identities,
@@ -1730,5 +1731,84 @@ fn a_rule_the_theory_does_not_derive_is_refused()
             })
         )),
         "the two sides normalise apart: {found:?}"
+    );
+}
+
+/// #2333: `include Seven` in a model of a theory including `Pointed` takes
+/// `Seven`'s members as the module's own, so the model's reduct at `Pointed`
+/// is `Seven` itself: `Pair` exports `Seven`'s `point`, the one constant,
+/// beside its own `other`, and a client reads it through `Pair`.
+#[test]
+fn an_included_model_lends_its_members_2333()
+{
+    let source = "theory Pointed {\n  sort C : Type;\n  oper point : C;\n}\ntheory Doubly {\n  \
+                  include Pointed;\n  oper other : C;\n}\nmodule Seven : Model(Pointed) with sort \
+                  C = Integer {\n  def point = 7;\n}\nmodule Pair : Model(Doubly) with sort C = \
+                  Integer {\n  include Seven;\n  def other = 8;\n}\ndef read : () => Integer ;\ndef \
+                  read = thunk { return Pair.point } ;\n";
+    let mut lowered = lower(source);
+    let strata = strata(&lowered);
+    let point = |path: &str| {
+        strata
+            .iter()
+            .filter(|stratum| stratum.path == path)
+            .flat_map(|stratum| stratum.values.iter())
+            .find(|&&(ref component, _)| component == "point")
+            .map(|&(_, position)| position)
+    };
+    assert!(
+        point("Seven").is_some() && point("Seven") == point("Pair"),
+        "`Pair` exports `Seven`'s own `point`: {strata:?}"
+    );
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        !judgements.is_empty()
+            && !judgements.iter().any(|&(_, judgement)| {
+                matches!(judgement, Judgement::Refused | Judgement::Mismatched)
+            }),
+        "and the client reading it through `Pair` checks: {judgements:?}"
+    );
+}
+
+/// #2333: an include names a module; a name no module answers is refused at
+/// the include, under the including module.
+#[test]
+fn an_include_naming_no_module_is_refused_2333()
+{
+    let source = "module M {\n  include Nowhere;\n  def x = 1;\n}\n";
+    let found = rows(&lower(source));
+    assert!(
+        found.contains(&row(
+            "M",
+            Role::Held,
+            Amounts::Refused(LoweringRefusal::UnresolvedName {
+                span: span_of(source, "Nowhere", 0_usize),
+                name: name("Nowhere"),
+            })
+        )),
+        "the include names nothing: {found:?}"
+    );
+}
+
+/// #2333: a member the module writes under a name an include also lends is a
+/// second definition of it, refused at the include, where the member it would
+/// shadow is named.
+#[test]
+fn a_member_an_include_also_lends_is_refused_2333()
+{
+    let source = "module Seven {\n  def point = 7;\n}\nmodule Pair {\n  include Seven;\n  def \
+                  point = 8;\n}\n";
+    let found = rows(&lower(source));
+    assert!(
+        found.contains(&row(
+            "Pair",
+            Role::Held,
+            Amounts::Refused(LoweringRefusal::DuplicateDefinition {
+                span: span_of(source, "Seven", 1_usize),
+                name: name("point"),
+                first: span_of(source, "point", 1_usize),
+            })
+        )),
+        "`Pair` writes `point` and includes it: {found:?}"
     );
 }

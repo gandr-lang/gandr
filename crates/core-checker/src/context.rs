@@ -4108,7 +4108,8 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         models: &[gandr_core_term::model::ModelSlot],
     ) -> Result<(), (ValueId, CheckRefusal)>
     {
-        self.deferrals.resolve(self.arena, models)
+        self.deferrals
+            .resolve(self.arena, &self.definitions, models)
     }
 
     /// Forget every stage minted and the fixpoint opened: a declaration's
