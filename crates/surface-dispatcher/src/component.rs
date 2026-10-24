@@ -52,10 +52,11 @@
 //! **Choice.** [`group`] under [`Reading::ImportForms`] reads an importer's
 //! path imports from its import forms alone: each `import` that opens a line
 //! is taken through the `;` after it, and those forms are parsed together and
-//! read as [`paths_written`] reads a whole parse. The component is then parsed
-//! once, whole, for its lowering, and that parse confirms the reading
-//! ([`Component::confirms`]): its root reads, and the import forms in each
-//! source's own bytes write exactly the paths read for it. A component its
+//! read as [`paths_written`] reads a whole parse. The component's own bytes,
+//! past the prelude the walk parses once, are then parsed once for its
+//! lowering, and that parse confirms the reading ([`Component::confirms`]): its
+//! root reads, and the import forms in each source's own bytes write exactly
+//! the paths read for it. A component its
 //! parse does not confirm — a root the parse repaired, an import inside a
 //! module, an import form that does not open its line — is grouped again
 //! under [`Reading::Whole`], each importer parsed alone as [`lay_out`] parses
@@ -134,6 +135,7 @@ use gandr_surface_lowering::UnitSource;
 use gandr_surface_lowering::prelude;
 use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
+use gandr_surface_syntax::ByteLength;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::SourceText;
@@ -1488,17 +1490,18 @@ impl Graph
 
 impl Component
 {
-    /// Whether `tree`, the component's text parsed whole, reads each source's
-    /// path imports as [`group`] read them.
+    /// Whether `tree`, the component's text past its first `past` bytes parsed
+    /// whole, reads each source's path imports as [`group`] read them.
     ///
     /// # Specification
-    /// - requires: `tree` is [`Component::text`] parsed under `grammar`.
+    /// - requires: `tree` is [`Component::text`] past its first `past` bytes
+    ///   parsed under `grammar`, and no member starts inside those bytes.
     /// - ensures: [`Confirmation::Confirmed`] under [`Reading::Whole`], whose
     ///   reading is each source's own parse, and for a text that never spells
     ///   `import`, which writes no import under either reading; otherwise
     ///   confirmed exactly when the tree's root reads and the path imports it
-    ///   writes within each member's bytes are, in order, the paths read for
-    ///   that member.
+    ///   writes within each member's bytes, each moved past `past`, are, in
+    ///   order, the paths read for that member.
     /// - provides: the check that lets a walk parse each importer once.
     /// - fails: never; a root the parse repaired, or an import form that does
     ///   not read, is [`Confirmation::Unconfirmed`].
@@ -1510,6 +1513,7 @@ impl Component
     ///   import names, does not.
     /// - witness: `component::tests::an_importer_s_forms_are_read_as_its_parse_reads_them`
     /// - witness: `component::tests::a_component_read_whole_confirms_without_reading_its_imports`
+    /// - witness: `walk::tests::an_import_parses_its_importer_once_617`
     #[must_use]
     #[inline]
     #[spec(ensures: |ret| ret == Confirmation::Confirmed || self.reading == Reading::ImportForms)]
@@ -1517,6 +1521,7 @@ impl Component
         &self,
         grammar: &Pbg,
         tree: &SyntaxTree<'_>,
+        past: ByteLength,
     ) -> Confirmation
     {
         if self.reading == Reading::Whole || !self.text.contains(IMPORT) {
@@ -1531,7 +1536,7 @@ impl Component
             if import.address != Address::Path {
                 continue;
             }
-            let at = import.span.start();
+            let at = import.span.shifted(past).start();
             let Some(member) = self
                 .members
                 .iter()
@@ -2212,6 +2217,7 @@ mod tests
     use gandr_surface_lowering::Unit;
     use gandr_surface_lowering::prelude;
     use gandr_surface_parser::parse;
+    use gandr_surface_syntax::ByteLength;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
@@ -2992,7 +2998,7 @@ mod tests
             );
             let parsed = parse(&grammar, SourceText::from(component.text.as_str()))
                 .expect("the component parses");
-            component.confirms(&grammar, parsed.tree())
+            component.confirms(&grammar, parsed.tree(), ByteLength::from(0_usize))
         };
         assert_eq!(confirmation("importer.gandr"), Confirmation::Confirmed);
         assert_eq!(
@@ -3237,7 +3243,7 @@ mod tests
         let parsed = parse(&grammar, SourceText::from(component.text.as_str()))
             .expect("the component parses");
         assert_eq!(
-            component.confirms(&grammar, parsed.tree()),
+            component.confirms(&grammar, parsed.tree(), ByteLength::from(0_usize)),
             Confirmation::Confirmed,
             "read whole, the component confirms as laid out"
         );

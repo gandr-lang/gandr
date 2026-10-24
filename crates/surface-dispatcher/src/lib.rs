@@ -398,11 +398,6 @@ pub enum Invocation
 }
 
 /// What an invocation routed to, for the driver to render.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one outcome per process, moved once into the driver's renderer; boxing the walk \
-              buys nothing"
-)]
 #[derive(Debug)]
 pub enum Outcome
 {

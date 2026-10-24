@@ -89,6 +89,7 @@ use core::sync::atomic::Ordering;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use anodized::spec;
 use gandr_core_checker::HostGrant;
@@ -97,6 +98,9 @@ use gandr_surface_corpus::Settlement;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::ClosureLowering;
+use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::prelude;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
@@ -110,13 +114,17 @@ use crate::component::ParsedBytes;
 use crate::component::Reading;
 use crate::component::group;
 use crate::compose::Admission;
+use crate::compose::Checking;
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
+use crate::compose::JudgedClosure;
 use crate::compose::Keeping;
 use crate::compose::Lowering;
 use crate::compose::LoweringCount;
 use crate::compose::judge_component;
 use crate::compose::kept;
+use crate::compose::lower_closure;
+use crate::compose::lower_onto_closure;
 use crate::compose::lower_parsed_unit;
 use crate::compose::lower_unit_source;
 use crate::pool::Pool;
@@ -313,7 +321,7 @@ pub enum Step<'walk>
 pub struct Walk
 {
     /// The grammar every source is parsed under, built once per walk.
-    grammar: Result<Pbg, PbgError>,
+    grammar: Result<Arc<Pbg>, PbgError>,
     /// Where the walk is among the paths it was given.
     traversal: Traversal,
     /// What the walk has counted so far.
@@ -393,8 +401,8 @@ enum Slot
     NoSource,
 }
 
-/// What a thread made of one component: its lowering and the sources it
-/// lowered.
+/// What a thread made of one component: its lowering, how it is checked, and
+/// the sources it lowered.
 #[derive(Debug)]
 struct Job<'text>
 {
@@ -402,11 +410,136 @@ struct Job<'text>
     /// does not confirm how [`group`] read its imports
     /// ([`Component::confirms`]), and it is grouped again ([`regroup`]).
     lowering: Option<Result<Lowering<'text>, ComposeFault<'text>>>,
+    /// How the lowering is checked: after the walk's judged prelude when it
+    /// was lowered onto it, whole otherwise.
+    checking: Checking<'text>,
     /// The sources lowered: the component's, unless its parse failed or did
     /// not confirm its reading.
     lowerings: LoweringCount,
-    /// The bytes parsed: the component's text.
+    /// The bytes parsed: the component's own, past the prelude, when it was
+    /// laid after the walk's prelude; its whole text otherwise.
     parsed: ParsedBytes,
+}
+
+/// The prelude every component lays first, lowered once per walk and its
+/// declarations judged once under each root a component is judged under:
+/// each component is parsed past it, lowered onto its judged arena and
+/// judged after it, so the prelude is parsed, lowered and judged once per walk
+/// rather than once per component (#2331).
+///
+/// - Choice: the closure an editor holds for a document's imports
+///   ([`lower_closure`], [`JudgedClosure`], [`lower_onto_closure`]), held for
+///   the prelude alone, which every component's unit begins with whatever it
+///   imports.
+/// - Alternatives: a closure per component's whole import closure, which two
+///   components share only when they import alike; a cache across walks keyed
+///   by the grammar and the prelude's text, which a process walking once does
+///   not need.
+/// - Reversal: a component's own sources costing less to judge whole than to
+///   resume, which the corpus walk's wall time measures.
+struct Prelude
+{
+    /// The prelude's lowering: `None` when its text is not held as a closure.
+    lowering: Option<Arc<ClosureLowering>>,
+    /// The grant every component is judged under.
+    grant: HostGrant,
+    /// Its declarations judged and settled under the strict root, made the
+    /// first time a component under it is lowered.
+    strict: OnceLock<Option<JudgedClosure>>,
+    /// Its declarations judged and settled under the fixture root, likewise.
+    fixture: OnceLock<Option<JudgedClosure>>,
+}
+
+impl Prelude
+{
+    /// The prelude laid before no source, lowered as a closure under `grammar`
+    /// when one is given, its judgements under `grant` not yet made.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: with `grammar`, the prelude's text and the newline after it
+    ///   lowered as [`lower_closure`] lowers a closure of the prelude alone,
+    ///   `None` when that closure is not held; without one, no lowering. No
+    ///   judgement is made.
+    /// - provides: what every component of a walk is lowered onto and judged
+    ///   after, made once.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a walk of several components parses the prelude once.
+    /// - witness: `walk::tests::a_walk_parses_the_prelude_once_for_every_component_2331`
+    #[spec(ensures: |ref ret| ret.strict.get().is_none() && ret.fixture.get().is_none()
+        && (grammar.is_some() || ret.lowering.is_none())
+        && ret.lowering.as_ref().is_none_or(|lowering| lowering.unit().sources().len() == 1_usize))]
+    fn new(
+        grammar: Option<&Arc<Pbg>>,
+        grant: &HostGrant,
+    ) -> Self
+    {
+        let lowering = grammar.and_then(|grammar| {
+            let (text, unit) = prelude::lay(SourceText::from(""), &Unit::single()).ok()?;
+            lower_closure(
+                Arc::clone(grammar),
+                text,
+                unit.before_last().ok()?,
+                &mut LoweringCount::default(),
+            )
+            .ok()
+            .map(Arc::new)
+        });
+        Self {
+            lowering,
+            grant: grant.clone(),
+            strict: OnceLock::new(),
+            fixture: OnceLock::new(),
+        }
+    }
+
+    /// The bytes parsing the prelude read: its closure's text when it is held,
+    /// none otherwise.
+    ///
+    /// # Specification
+    /// trivial.
+    fn parsed(&self) -> ParsedBytes
+    {
+        ParsedBytes::from(
+            self.lowering
+                .as_ref()
+                .map_or(0_usize, |lowering| <&str>::from(lowering.text()).len()),
+        )
+    }
+
+    /// The prelude's declarations judged under the walk's grant and settled
+    /// under `root`, judged the first time any thread asks for them.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `None` when the prelude is not held or its lowering did not
+    ///   reach its end; otherwise [`JudgedClosure::new`] of its lowering under
+    ///   the walk's grant and `root`, the same judgement on every call.
+    /// - provides: the state each component under `root` is judged after.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the corpus walked under both roots composes as each
+    ///   source composes laid after the prelude whole.
+    /// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
+    #[spec(ensures: |ret| ret.is_none() || self.lowering.is_some())]
+    fn judged(
+        &self,
+        root: CorpusRoot,
+    ) -> Option<&JudgedClosure>
+    {
+        let lowering = self.lowering.as_ref()?;
+        match root {
+            CorpusRoot::Strict => &self.strict,
+            CorpusRoot::Fixture => &self.fixture,
+        }
+        .get_or_init(|| JudgedClosure::new(Arc::clone(lowering), &self.grant, root))
+        .as_ref()
+    }
 }
 
 /// One source's composition, held until the last step standing at it is
@@ -456,7 +589,7 @@ impl Walk
     pub fn new(paths: Vec<PathBuf>) -> Self
     {
         Self {
-            grammar: built_in(),
+            grammar: built_in().map(Arc::new),
             traversal: Traversal::new(paths),
             report: RunReport::default(),
             grant: HostGrant::UNBOUNDED,
@@ -671,6 +804,11 @@ impl Walk
         let grant = &self.grant;
         let grouped = group(grammar, given, Reading::ImportForms, &BTreeSet::new());
         self.report.parsed_mut().absorb(grouped.parsed);
+        // The prelude every component lays first, parsed and lowered here once
+        // and judged once under each root it is asked for.
+        let prelude = Prelude::new((!grouped.components.is_empty()).then_some(grammar), grant);
+        self.report.parsed_mut().absorb(prelude.parsed());
+        let prelude = &prelude;
         // Each component its parse did not confirm, grouped again once its
         // turn comes.
         let regrouped: Vec<OnceCell<Grouped>> =
@@ -705,7 +843,10 @@ impl Walk
         // The largest component no thread has taken, lowered.
         let take = || {
             let &(_, position) = order.get(cursor.fetch_add(1, Ordering::Relaxed))?;
-            Some((position, lower(grammar, grouped.components.get(position)?)))
+            Some((
+                position,
+                lower(grammar, prelude, grouped.components.get(position)?),
+            ))
         };
         let (sender, receiver) = std::sync::mpsc::channel();
         // The calling thread's share: judge each component in walk order as
@@ -751,7 +892,7 @@ impl Walk
                         if let btree_map::Entry::Vacant(unjudged) = judged.entry(placed.component) {
                             let job = loop {
                                 if helpers == 0 {
-                                    break lower(grammar, component);
+                                    break lower(grammar, prelude, component);
                                 }
                                 if let Some(job) = early.remove(&placed.component) {
                                     break job;
@@ -774,7 +915,7 @@ impl Walk
                                     // Every pool thread has stopped without
                                     // it: one panicked, and the scope will say
                                     // so.
-                                    Err(_) => break lower(grammar, component),
+                                    Err(_) => break lower(grammar, prelude, component),
                                 }
                             };
                             self.report.lowerings_mut().absorb(job.lowerings);
@@ -805,7 +946,7 @@ impl Walk
                                         &mut self.report,
                                         (root.corpus_root(), grant, keeping),
                                         component,
-                                        lowering,
+                                        (lowering, job.checking),
                                     )
                                     .into_iter()
                                     .map(Some)
@@ -1156,14 +1297,15 @@ fn settled<'step>(
 ///
 /// # Specification
 /// - requires: `component` was laid out by `component::group`.
-/// - ensures: when the component's text parses and its tree confirms how its
-///   imports were read ([`Component::confirms`]), what [`lower_parsed_unit`]
-///   makes of that tree and the unit, and every source of the component
-///   lowered. A text read [`Reading::Whole`] that does not parse is its
-///   [`ComposeFault::Parse`], no source lowered; under
+/// - ensures: what [`lower_after`] makes of the component after `prelude`, when
+///   it lays it there. Otherwise, when the component's text parses and its tree
+///   confirms how its imports were read ([`Component::confirms`]), what
+///   [`lower_parsed_unit`] makes of that tree and the unit, checked whole, and
+///   every source of the component lowered. A text read [`Reading::Whole`] that
+///   does not parse is its [`ComposeFault::Parse`], no source lowered; under
 ///   [`Reading::ImportForms`], a text that does not parse or does not confirm
 ///   comes to no lowering, no source lowered, for the walk to group again. The
-///   component's text is counted parsed either way.
+///   bytes parsed are counted either way.
 /// - fails: never; a fault is carried in the answer.
 /// - panics: none.
 ///
@@ -1177,15 +1319,25 @@ fn settled<'step>(
 /// - witness: `walk::tests::an_import_its_parse_does_not_read_is_grouped_again`
 /// - witness: `walk::tests::an_import_parses_its_importer_once_617`
 #[spec(ensures: |ref ret| usize::from(ret.lowerings) <= component.members.len()
-    && usize::from(ret.parsed) == component.text.len())]
+    && usize::from(ret.parsed) <= component.text.len())]
 fn lower<'text>(
     grammar: &Pbg,
+    prelude: &'text Prelude,
     component: &'text Component,
 ) -> Job<'text>
 {
+    if let Some(job) = lower_after(grammar, prelude, component) {
+        return job;
+    }
     let mut lowerings = LoweringCount::default();
     let lowering = match parse(grammar, SourceText::from(component.text.as_str())) {
-        Ok(parsed) if component.confirms(grammar, parsed.tree()) == Confirmation::Confirmed => {
+        Ok(parsed)
+            if component.confirms(
+                grammar,
+                parsed.tree(),
+                gandr_surface_syntax::ByteLength::from(0_usize),
+            ) == Confirmation::Confirmed =>
+        {
             Some(lower_parsed_unit(
                 grammar,
                 parsed,
@@ -1200,18 +1352,90 @@ fn lower<'text>(
     };
     Job {
         lowering,
+        checking: Checking::Whole,
         lowerings,
         parsed: ParsedBytes::from(component.text.len()),
     }
 }
 
-/// Judge `component` from what lowering it came to, under `root` and
-/// `grant`: each source's composition beside its unit's text up to the
-/// source's own end and where its bytes start.
+/// Parse `component`'s own bytes past `prelude`, lay them after the prelude's
+/// tree and lower them onto its judged arena.
+///
+/// # Specification
+/// - requires: `component` was laid out by `component::group`.
+/// - ensures: `None`, for the component to be lowered whole, when the prelude
+///   is not judged under the root of the component's last source, the
+///   component's text does not begin with the prelude's, or its own bytes do
+///   not parse or do not lay after the prelude's tree. Otherwise, when its own
+///   parse confirms how its imports were read, what [`lower_onto_closure`]
+///   makes of the joined tree onto the judged prelude's arena and how that is
+///   checked; when it does not, no lowering, for the walk to group again. Its
+///   own bytes are counted parsed.
+/// - provides: a component's lowering at the cost of its own sources.
+/// - fails: never; a fault is carried in the answer.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the corpus walked after the prelude composes as each
+///   source does laid after it whole; a walk of several components parses the
+///   prelude once.
+/// - witness: `tests::corpus::sweeps::every_width_composes_the_corpus_alike`
+/// - witness: `walk::tests::a_walk_parses_the_prelude_once_for_every_component_2331`
+#[spec(ensures: |ref ret| ret.as_ref().is_none_or(|job|
+    usize::from(job.lowerings) <= component.members.len()
+        && usize::from(job.parsed) < component.text.len()))]
+fn lower_after<'text>(
+    grammar: &Pbg,
+    prelude: &'text Prelude,
+    component: &'text Component,
+) -> Option<Job<'text>>
+{
+    let judged = prelude.judged(component.sources.last()?.root.corpus_root())?;
+    let closure = judged.lowering();
+    let own = component.text.strip_prefix(<&str>::from(closure.text()))?;
+    let alone = parse(grammar, SourceText::from(own)).ok()?;
+    // The join's first root is the prelude's: the component's own imports are
+    // read from its own parse, moved past the prelude's text.
+    let confirmation = component.confirms(
+        grammar,
+        alone.tree(),
+        gandr_surface_syntax::ByteLength::from(<&str>::from(closure.text()).len()),
+    );
+    let parsed = alone
+        .after(closure.tree(), SourceText::from(component.text.as_str()))
+        .ok()?;
+    let mut lowerings = LoweringCount::default();
+    let (lowering, checking) = if confirmation == Confirmation::Confirmed {
+        match lower_onto_closure(
+            judged,
+            judged.arena(),
+            parsed,
+            &component.unit,
+            &mut lowerings,
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
+        ) {
+            Ok((lowering, checking)) => (Some(Ok(lowering)), checking),
+            Err(fault) => (Some(Err(fault)), Checking::Whole),
+        }
+    }
+    else {
+        (None, Checking::Whole)
+    };
+    Some(Job {
+        lowering,
+        checking,
+        lowerings,
+        parsed: ParsedBytes::from(own.len()),
+    })
+}
+
+/// Judge `component` from what lowering it came to and how it is checked,
+/// under `root` and `grant`: each source's composition beside its unit's text
+/// up to the source's own end and where its bytes start.
 ///
 /// # Specification
 /// - requires: `lowering` is what [`lower`] or [`lower_unit_source`] made of
-///   `component`.
+///   `component`, beside the checking it came with.
 /// - ensures: one held composition per member, in member order: what
 ///   [`judge_component`] makes of a lowering under `keeping`, each beside the
 ///   component's one kept admission, or the lowering's fault at every source,
@@ -1229,14 +1453,17 @@ fn judge<'text>(
     report: &mut RunReport,
     (root, grant, keeping): (CorpusRoot, &HostGrant, Keeping),
     component: &'text Component,
-    lowering: Result<Lowering<'text>, ComposeFault<'text>>,
+    (lowering, checking): (
+        Result<Lowering<'text>, ComposeFault<'text>>,
+        Checking<'text>,
+    ),
 ) -> Vec<Held<'text>>
 {
     let (composed, admission) = match lowering {
         Ok(lowering) => judge_component(
             root,
             (lowering, SourceText::from(component.text.as_str())),
-            grant,
+            (grant, checking),
             (&component.members, report.spellings_mut()),
             keeping,
         ),
@@ -1313,10 +1540,15 @@ fn judge_regrouped<'text>(
             .parsed_mut()
             .absorb(ParsedBytes::from(part.text.len()));
         parts.push(
-            judge(report, (root, grant, keeping), part, lowering)
-                .into_iter()
-                .map(Some)
-                .collect(),
+            judge(
+                report,
+                (root, grant, keeping),
+                part,
+                (lowering, Checking::Whole),
+            )
+            .into_iter()
+            .map(Some)
+            .collect(),
         );
     }
     again
@@ -2541,6 +2773,58 @@ pub mod tests
             importing.saturating_mul(100) <= flat.saturating_mul(102),
             "the importing walk parses {importing} bytes against the flat walk's {flat}"
         );
+    }
+
+    /// #2331: every component lays the prelude first, and a walk that parsed
+    /// and lowered it again for each one paid the prelude per component —
+    /// with `Ord` in it, 2.5 ms of each component's time. Two rows: one source,
+    /// and eight such sources apart. The seven more cost their own bytes, read
+    /// at most once more to group them, and never the prelude again; every one
+    /// settles, each lowered once.
+    #[test]
+    fn a_walk_parses_the_prelude_once_for_every_component_2331()
+    {
+        let scratch = Scratch::new(Path::new("prelude-once"));
+        let source = |n: usize| format!("@[ checks ]\ndef n{n} : Integer ;\ndef n{n} = {n} ;\n");
+        scratch.file(
+            Path::new("fixture/one/s0.gandr"),
+            SourceText::from(source(0).as_str()),
+        );
+        for n in 0_usize .. 8_usize {
+            scratch.file(
+                Path::new(&format!("fixture/eight/s{n}.gandr")),
+                SourceText::from(source(n).as_str()),
+            );
+        }
+        let own = source(7).len();
+        let prelude = usize::from(gandr_surface_lowering::prelude::base());
+        assert!(
+            prelude > own.saturating_mul(2),
+            "the prelude, {prelude} bytes, outweighs a source read twice"
+        );
+        for width in widths() {
+            let (one_seen, one) = visited(&scratch.0, vec![scratch.0.join("fixture/one")], width);
+            let (eight_seen, eight) =
+                visited(&scratch.0, vec![scratch.0.join("fixture/eight")], width);
+            assert!(
+                one_seen
+                    .iter()
+                    .chain(&eight_seen)
+                    .all(|row| row.1 == Seen::Source(Standing::Settled)),
+                "at {width:?}, every source settles: {one_seen:?} {eight_seen:?}"
+            );
+            assert_eq!(
+                (usize::from(one.lowerings()), usize::from(eight.lowerings())),
+                (1_usize, 8_usize),
+                "at {width:?}, each source is lowered once"
+            );
+            let more = usize::from(eight.parsed()).saturating_sub(usize::from(one.parsed()));
+            assert!(
+                more <= own.saturating_mul(2).saturating_mul(7),
+                "at {width:?}, seven more components parse {more} bytes: their own, never \
+                 the {prelude}-byte prelude again"
+            );
+        }
     }
 
     /// #1027: a source the lowering refuses as a whole is refused alone. The

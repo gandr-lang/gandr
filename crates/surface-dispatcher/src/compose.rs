@@ -1660,6 +1660,11 @@ struct ClosureJudgement<'held>
     settled: Result<Vec<DeclarationReport<'held>>, SettleFault>,
     /// The types their checker refusals compare and their failures name.
     spellings: TypeSpellings,
+    /// What readmitting their declarations built, kept by the first admission
+    /// of a module judged after them ([`judge_component`]): every later one
+    /// resumes from it rather than offering the kernel those declarations
+    /// again.
+    crossed: OnceLock<bridge::Crossed>,
 }
 
 /// The self-referential cell a judged closure is held in: the closure's
@@ -1901,6 +1906,7 @@ fn judge_closure<'held>(
         program: focused,
         settled: settled.map(|report| report.declarations().to_vec()),
         spellings,
+        crossed: OnceLock::new(),
     })
 }
 
@@ -2232,7 +2238,7 @@ where
         (&mut SpellingCount::default(), Tabling::Untabled),
         retirement,
     ) {
-        Polled::Whole((projected, admission, _untabled)) => Polled::Whole(Judged {
+        Polled::Whole((projected, admission, _untabled, _after)) => Polled::Whole(Judged {
             settled: projected.last,
             admission,
         }),
@@ -2327,7 +2333,7 @@ where
         (&mut SpellingCount::default(), Tabling::Tabled(unit)),
         retirement,
     ) {
-        Polled::Whole((projected, admission, table)) => Polled::Whole((
+        Polled::Whole((projected, admission, table, _after)) => Polled::Whole((
             Judged {
                 settled: projected.last,
                 admission,
@@ -2403,11 +2409,13 @@ struct Share<'source>
 }
 
 /// What judging a unit whole holds: its composition projected onto its
-/// sources, its admission and the type table the judgement kept.
+/// sources, its admission, the type table the judgement kept, and how many
+/// leading declarations it took as a closure's judgement, when it took one.
 type JudgedUnit<'source> = (
     Projected<'source>,
     Admission,
     Maybe<TypeTable, tabled::Absent>,
+    Option<bridge::LeadingCount>,
 );
 
 /// Judge and settle one lowered unit once, and project the composition onto
@@ -2630,6 +2638,7 @@ where
             names,
         },
         table,
+        after.map(|closure| bridge::LeadingCount::from(closure.declarations.len())),
     ))
 }
 
@@ -3020,11 +3029,14 @@ fn settled<'source>(
 /// # Specification
 /// - requires: the lowering read `text`, the component's, whose sources' own
 ///   bytes are `members` in the unit's order; `root` is the corpus root they
-///   sit under.
+///   sit under; under [`Checking::After`], the lowering is
+///   [`lower_onto_closure`]'s after that closure.
 /// - ensures: one composition per source of `members`, in order. A module the
 ///   lowering read is judged, settled and admitted once and projected as
-///   [`judge_members`] projects it, each source's composition carrying the
-///   component's kernel artifact; a component of one source is judged as
+///   [`judge_members`] projects it — under [`Checking::After`], its
+///   declarations after the closure's judged on a copy of the closure's state,
+///   as [`judge_member_after`] judges them — each source's composition carrying
+///   the component's kernel artifact; a component of one source is judged as
 ///   [`judge_lowering`] judges it at that source's start, past the prelude. A
 ///   whole-component refusal is every source's. `spelled` advances once for a
 ///   module the lowering read and settled, however many sources it has. Beside
@@ -3058,7 +3070,7 @@ fn settled<'source>(
 pub fn judge_component<'source>(
     root: CorpusRoot,
     (lowering, text): (Lowering<'source>, SourceText<'source>),
-    grant: &HostGrant,
+    (grant, checking): (&HostGrant, Checking<'source>),
     (members, spelled): (&[Member], &mut SpellingCount),
     keeping: Keeping,
 ) -> KeptComponent<'source>
@@ -3073,11 +3085,11 @@ pub fn judge_component<'source>(
     };
     match lowering.into_lowered() {
         Lowered::Module { module, arena } => {
-            let (projected, admission, _untabled) = judge_members(
+            let (projected, admission, _untabled, after) = judge_members(
                 root,
                 (module, text),
                 arena,
-                (grant, Checking::Whole),
+                (grant, checking),
                 (earlier, last),
                 (spelled, Tabling::Untabled),
                 &Unretired,
@@ -3087,7 +3099,28 @@ pub fn judge_component<'source>(
                 Keeping::Composed => Maybe::Absent(kept::Absent::Unasked),
                 Keeping::Admission => Maybe::Present(admission.clone()),
             };
-            let composed = match admission.admit() {
+            // A module judged after a closure leads with the closure's
+            // declarations, judged as the closure's judgement judged them:
+            // its readmission resumes them from the record the first such
+            // admission kept.
+            let admitted = match (checking, after) {
+                (Checking::After(closure), Some(boundary)) => {
+                    let crossed = &closure.judgement().crossed;
+                    let resumption = admission.admit_resuming(
+                        boundary,
+                        crossed.get().map_or(
+                            Maybe::Absent(bridge::crossed::Absent::Unasked),
+                            Maybe::Present,
+                        ),
+                    );
+                    if let Maybe::Present(record) = resumption.crossed {
+                        let _kept = crossed.set(record);
+                    }
+                    resumption.artifact
+                },
+                (Checking::After(_) | Checking::Whole, _) => admission.admit(),
+            };
+            let composed = match admitted {
                 Ok(kernel) => {
                     let mut composed: Vec<_> = projected
                         .earlier
@@ -6591,7 +6624,7 @@ def delivered() -> -F Unit {
         let shares: Vec<(Vec<String>, usize, usize)> = judge_component(
             CorpusRoot::Fixture,
             (lowering, SourceText::from(text.as_str())),
-            &HostGrant::UNBOUNDED,
+            (&HostGrant::UNBOUNDED, crate::compose::Checking::Whole),
             (&members, &mut SpellingCount::default()),
             Keeping::Composed,
         )
@@ -6694,7 +6727,7 @@ def delivered() -> -F Unit {
         let unreached: Vec<Vec<&str>> = judge_component(
             CorpusRoot::Fixture,
             (lowering, SourceText::from(text.as_str())),
-            &HostGrant::UNBOUNDED,
+            (&HostGrant::UNBOUNDED, crate::compose::Checking::Whole),
             (&members, &mut SpellingCount::default()),
             Keeping::Composed,
         )
