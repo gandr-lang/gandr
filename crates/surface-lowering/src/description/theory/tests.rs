@@ -2352,6 +2352,49 @@ fn an_applied_left_variable_reads_as_its_instantiation()
     );
 }
 
+/// #2115: a name applied, on a left side, to the names abstracted above it
+/// reads as a metavariable's pattern, which the right side instantiates; an
+/// operation applied there stays a call.
+#[test]
+fn an_applied_bound_name_reads_as_a_pattern_2115()
+{
+    let faces = |source: &str| {
+        let report = described(source);
+        assert_eq!(report.diagnostics, [], "{source}");
+        report
+            .declarations
+            .iter()
+            .flat_map(|declaration| declaration.description.rules.iter())
+            .map(|face| (face.lhs.clone(), face.rhs.clone()))
+            .collect::<Vec<_>>()
+    };
+    let (atom, bind) = (FreeTerm::atom, FreeTerm::abs);
+    let get = |k: FreeTerm| FreeTerm::op("get", [k]);
+    let pattern = |names: [&str; 2]| FreeTerm::inst("k", names.map(FreeTerm::atom));
+    let state = "sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C;";
+    assert_eq!(
+        faces(&format!(
+            "theory State {{ {state} rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s)); }}"
+        )),
+        [(
+            get(bind("s", get(bind("t", pattern(["s", "t"]))))),
+            get(bind("s", pattern(["s", "s"]))),
+        )],
+        "`k` is applied to the names abstracted above it, so it is a pattern the right side \
+         instantiates"
+    );
+    assert_eq!(
+        faces(&format!(
+            "theory Call {{ {state} oper f : (a : S) --> C; oper g : () --> C; rule r : get(bind s . f(s)) <=> g(); }}"
+        )),
+        [(
+            get(bind("s", FreeTerm::op("f", [atom("s")]))),
+            FreeTerm::op("g", Vec::<FreeTerm>::new()),
+        )],
+        "an operation applied to an abstracted name still calls it"
+    );
+}
+
 #[test]
 fn a_rule_term_names_an_atom_inside_its_abstraction()
 {

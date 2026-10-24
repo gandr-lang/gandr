@@ -427,8 +427,8 @@ impl FreeTerm
         })
     }
 
-    /// Whether the term instantiates a metavariable anywhere: a rule whose
-    /// right-hand side does is a second-order rule.
+    /// Whether the term instantiates a metavariable anywhere: a rule either
+    /// side of which does is a second-order rule.
     ///
     /// # Specification
     /// trivial.
@@ -1019,6 +1019,21 @@ impl RuleFace
     pub fn conditioned(&self) -> ConditionStatus
     {
         ConditionStatus::from(!self.fresh.is_empty() || self.crossing(Crossing::Moved).is_some())
+    }
+
+    /// Whether either side instantiates a metavariable: a second-order rule,
+    /// its right side substituting under a binder or its left side matching
+    /// a pattern, which no first-order rewrite step performs.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn instantiates(&self) -> InstantiationStatus
+    {
+        InstantiationStatus::from(
+            bool::from(self.lhs.instantiates()) || bool::from(self.rhs.instantiates()),
+        )
     }
 }
 

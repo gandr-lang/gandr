@@ -169,8 +169,8 @@
 //! atom of each abstraction's depth, its occurrences renamed with it
 //! ([`FreeTerm::canonical_atoms`]), so a rule that renames an abstraction's
 //! atom is the same rule; [`crate::check_desc`] refuses an abstraction where
-//! no port abstracts as many atoms, and an occurrence at a port of another
-//! sort than the atom its abstraction binds.
+//! no port abstracts or binds as many names, and an occurrence at a port of
+//! another sort than the one its abstraction binds it at.
 //!
 //! # The shape parameter
 //!

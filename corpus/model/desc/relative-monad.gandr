@@ -5,8 +5,9 @@
 // stack-manipulating computation and relative monads_, OOPSLA 2025). Its
 // host half is ordinary definitions: the option monad's two operations, a
 // program sequenced through them, and code polymorphic in the carrier. Of
-// the laws, the left unit is a second-order rule today; the twin holds the
-// two a rule cannot write yet.
+// the laws, the left unit is a second-order rule and the right unit
+// abstracts the variable the continuation binds; the twin holds
+// associativity, whose left side overlaps itself.
 
 // `Maybe`, the option monad's values.
 import "../data/data-maybe.gandr" ;
@@ -20,6 +21,18 @@ theory MonadLeftUnit {
   oper ret : (a : V) --> C;
   oper ext : (m : C, k : pi+ (x : V) . C) --> C;
   rule unitL : ext(ret(a), k) <=> k(a);
+}
+
+/// The right unit: extending a computation by the unit is the computation.
+/// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
+/// it at its port of the sort `V` (#2115).
+@[ checks ]
+theory MonadRightUnit {
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  rule unitR : ext(m, bind x . ret(x)) <=> m;
 }
 
 /// The option monad's unit: the value, present.

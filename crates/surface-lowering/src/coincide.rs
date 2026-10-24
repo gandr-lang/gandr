@@ -194,9 +194,9 @@ use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::Termination;
 use gandr_theory_levitation::TheoryDesc;
-use gandr_theory_levitation::atom_port;
 use gandr_theory_levitation::derive_cell_var_meta;
 use gandr_theory_levitation::embeds;
+use gandr_theory_levitation::naming_port;
 use gandr_theory_levitation::orient_rules;
 use gandr_theory_levitation::orient_rules_with;
 use gandr_theory_levitation::path_greater;
@@ -960,7 +960,8 @@ pub(crate) fn decide<G>(
 ///   the inner rule, as the kernel reads them — at least one of which `apart`
 ///   marks, where the inner rule's left side, renamed apart, unifies with the
 ///   outer one's subterm at a position holding no lone variable, other than the
-///   root of one rule overlapping itself; [`None`] when no such pair exists.
+///   root of one rule overlapping itself, each pattern on a left side read as
+///   its variable; [`None`] when no such pair exists.
 /// - panics: none.
 /// - intension: each left side read as a term once; a pair neither of whose
 ///   rules is marked is never unified.
@@ -971,9 +972,12 @@ pub(crate) fn decide<G>(
 ///   bound term overlaps below it, and `let` beside a first-order rule over
 ///   other operations does not; garbage collection overlaps scope extrusion
 ///   below its root; reading only unmarked pairs, or counting a root
-///   self-overlap, changes a verdict.
+///   self-overlap, changes a verdict. A get-get rule overlaps itself below its
+///   root through its pattern, and reading the pattern as a rigid head finds no
+///   overlap.
 /// - witness: `coincide::tests::a_second_order_rule_overlapping_another_refuses_the_block`
 /// - witness: `coincide::tests::a_conditioned_rule_overlapping_another_refuses_the_block`
+/// - witness: `coincide::tests::a_pattern_overlapping_its_own_rule_refuses_the_block_2115`
 #[spec(ensures: |ret| ret.is_none_or(|(later, earlier)| earlier <= later && usize::from(later) < lefts.len()))]
 fn overlap_apart(
     lefts: &[&FreeTerm],
@@ -983,7 +987,10 @@ fn overlap_apart(
     if !apart.contains(&Apart(true)) {
         return None;
     }
-    let lefts: Vec<Term> = lefts.iter().map(|&left| Term::from(left)).collect();
+    let lefts: Vec<Term> = lefts
+        .iter()
+        .map(|&left| Term::from(&flexible(left)))
+        .collect();
     let root = TermAlphabet::root_position();
     for (outer, left) in lefts.iter().enumerate() {
         let Apart(outer_apart) = apart.get(outer).copied().unwrap_or_default();
@@ -1015,26 +1022,91 @@ fn overlap_apart(
     None
 }
 
+/// `term` with each instantiation read as its variable, its arguments
+/// dropped: a pattern `k(s, t)` unifies with every term `k` may stand for, so
+/// an overlap through it is found.
+///
+/// # Specification
+/// - ensures: `term`'s nodes in order, each `Inst` replaced by the `Var` of its
+///   name.
+/// - panics: none.
+/// - executable: none — the term rebuilt is the only witness.
+/// - intension: one worklist pass, each subterm rebuilt once its arguments are,
+///   so nesting costs no call stack.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`overlap_apart`].
+/// - witness: `coincide::tests::a_pattern_overlapping_its_own_rule_refuses_the_block_2115`
+fn flexible(term: &FreeTerm) -> FreeTerm
+{
+    /// A node to read, or one to rebuild from the arguments read for it.
+    enum Step<'term>
+    {
+        /// Read a node.
+        Read(TermNode<'term>),
+        /// Rebuild a node from its last arguments read.
+        Build(TermNode<'term>, usize),
+    }
+    let mut built: Vec<FreeTerm> = Vec::new();
+    let mut pending = alloc::vec![Step::Read(term.to_node())];
+    while let Some(step) = pending.pop() {
+        match step {
+            Step::Read(node) => match node.view() {
+                TermView::Var(name) | TermView::Inst { name, .. } => {
+                    built.push(FreeTerm::var(name.clone()));
+                },
+                TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
+                TermView::Ctor { args, .. }
+                | TermView::Op { args, .. }
+                | TermView::Results { args }
+                | TermView::Abs { args, .. } => {
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    pending.push(Step::Build(node, args.len()));
+                    pending.extend(args.into_iter().rev().map(Step::Read));
+                },
+            },
+            Step::Build(node, count) => {
+                let args = built.split_off(built.len().saturating_sub(count));
+                built.push(match node.view() {
+                    TermView::Ctor { name, .. } => FreeTerm::ctor(name.clone(), args),
+                    TermView::Op { name, .. } => FreeTerm::op(name.clone(), args),
+                    TermView::Abs { atom, .. } => FreeTerm::abs(
+                        atom.clone(),
+                        args.into_iter()
+                            .next()
+                            .unwrap_or_else(|| FreeTerm::results([])),
+                    ),
+                    TermView::Results { .. }
+                    | TermView::Var(_)
+                    | TermView::Inst { .. }
+                    | TermView::Atom(_) => FreeTerm::results(args),
+                });
+            },
+        }
+    }
+    built.pop().unwrap_or_else(|| term.clone())
+}
+
 /// Whether a rule takes part in no critical pair.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct Apart(bool);
 
-/// Which of `rules` instantiate a variable, and which are conditioned where
-/// some operation of `description` takes an atom: the rules of each kind
-/// take part in no critical pair.
+/// Which of `rules` instantiate a variable on either side, and which are
+/// conditioned where a term of `description` can name an atom or a bound
+/// variable: the rules of each kind take part in no critical pair.
 ///
 /// # Specification
 /// trivial.
 fn apart_rules<G>(description: &TheoryDesc<G>) -> (Vec<Apart>, Vec<Apart>)
 {
-    let nameable = atom_port(description).is_some();
+    let nameable = naming_port(description).is_some();
     description
         .rules
         .iter()
         .map(|face| {
             (
-                Apart(bool::from(face.rhs.instantiates())),
+                Apart(bool::from(face.instantiates())),
                 Apart(nameable && bool::from(face.conditioned())),
             )
         })

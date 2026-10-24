@@ -1646,8 +1646,8 @@ fn ill_formed(
              never produced"
         ),
         WfKind::MisplacedAbstraction => f.write_str(
-            "a rule abstracts atoms where no operation's port abstracts as many; an abstraction \
-             stands only as an argument at a port that binds its atoms",
+            "a rule abstracts names where no operation's port abstracts or binds as many; an \
+             abstraction stands only as an argument at a port that binds its names",
         ),
         WfKind::UnknownFreshness => write!(
             f,

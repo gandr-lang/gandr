@@ -404,10 +404,10 @@ pub use crate::typed_rule::pattern_variable;
 pub use crate::wellformed::RESERVED_DERIVED_MARKERS;
 pub use crate::wellformed::WfDiagnostic;
 pub use crate::wellformed::WfKind;
-pub use crate::wellformed::atom_port;
 pub use crate::wellformed::check_desc;
 pub use crate::wellformed::derive_cell_var_meta;
 pub use crate::wellformed::diagnostic_span;
+pub use crate::wellformed::naming_port;
 
 #[cfg(test)]
 mod test_support

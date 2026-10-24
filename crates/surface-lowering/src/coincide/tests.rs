@@ -917,6 +917,58 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
     });
 }
 
+/// #2115: a metavariable applied to the names its abstractions bind reads
+/// as a pattern, which unifies with every term the metavariable may stand
+/// for, so a get-get rule overlaps its own left side below the root.
+#[test]
+fn a_pattern_overlapping_its_own_rule_refuses_the_block_2115()
+{
+    let theory = |rule: &str| {
+        format!(
+            "theory State {{
+    sort S : Type+;
+    sort C : Type;
+    oper ret : (a : S) --> C;
+    oper ext : (m : C, k : pi+ (x : S) . C) --> C;
+    oper get : (k : pi+ (s : S) . C) --> C;
+    {rule}
+}}"
+        )
+    };
+    let get_get =
+        theory("rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));");
+    let source = SourceText::from(get_get.as_str());
+    lowered(source, |module| {
+        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
+        else {
+            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
+        };
+        let CellFault::Coherence(CoherenceFault::OverlapsSecondOrder { first }) = diagnostic.fault
+        else {
+            panic!("get-get overlaps itself: {:?}", diagnostic.fault)
+        };
+        assert_eq!(
+            (
+                text(source, diagnostic.span).as_ref(),
+                text(source, first).as_ref()
+            ),
+            (
+                "rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s))",
+                "rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s))"
+            ),
+            "the inner `get` is an instance of the rule's own left side"
+        );
+    });
+    let right_unit = theory("rule unitR : ext(m, bind x . ret(x)) <=> m;");
+    lowered(SourceText::from(right_unit.as_str()), |module| {
+        assert_eq!(
+            module.cells().diagnostics,
+            [],
+            "the right unit law abstracts `x` at `ext`'s port and overlaps nothing"
+        );
+    });
+}
+
 #[test]
 fn a_conditioned_rule_overlapping_another_refuses_the_block()
 {

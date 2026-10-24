@@ -127,8 +127,8 @@ pub enum WfKind
     /// to one argument per variable it binds, or applies a variable no binding
     /// port binds.
     UnsortedBinding,
-    /// A rule abstracts an atom, `bind a . t`, where no operation's port
-    /// abstracts as many atoms.
+    /// A rule abstracts an atom or a variable, `bind a . t`, where no
+    /// operation's port abstracts or binds as many.
     MisplacedAbstraction,
     /// An operation's output port sits at an atom sort: an atom is compared
     /// and swapped, never produced.
@@ -451,15 +451,15 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
         .iter()
         .map(|operation| (&operation.name, operation))
         .collect();
-    // A signature in which some port takes an atom: a term of it can name
-    // one.
-    let nameable = atom_port(desc);
+    // A signature in which some port takes an atom or a bound variable: a
+    // term of it can name one.
+    let nameable = naming_port(desc);
     for rule in &desc.rules {
         check_rule_face(rule, &signature, &mut diagnostics);
         check_rule_binders(rule, &operations, &mut diagnostics);
         check_abstractions(rule, &operations, &mut diagnostics);
         check_atoms(rule, &operations, &mut diagnostics);
-        check_freshness(rule, &mut diagnostics);
+        check_freshness(rule, &operations, &mut diagnostics);
         // Two instances of one variable under different abstractions match
         // only up to the atoms they name, where a term can name one.
         if let Some((operation, port)) = nameable
@@ -1019,6 +1019,8 @@ fn check_rule_binders(
 )
 {
     let mut bound: BTreeMap<&Name, &SortRef> = BTreeMap::new();
+    // Each metavariable the left side writes as a pattern, with its arity.
+    let mut patterns: BTreeMap<&Name, usize> = BTreeMap::new();
     let mut pending = vec![cell.lhs.to_node()];
     while let Some(node) = pending.pop() {
         match node.view() {
@@ -1035,9 +1037,13 @@ fn check_rule_binders(
                     pending.push(arg);
                 }
             },
+            TermView::Inst { name, args } => {
+                let args: Vec<TermNode<'_>> = args.collect();
+                let _first = patterns.entry(name).or_insert(args.len());
+                pending.extend(args);
+            },
             TermView::Ctor { args, .. }
             | TermView::Results { args }
-            | TermView::Inst { args, .. }
             | TermView::Abs { args, .. } => {
                 pending.extend(args);
             },
@@ -1077,6 +1083,18 @@ fn check_rule_binders(
             TermView::Inst { name, args } => {
                 match bound.get(name) {
                     Some(binding) if binding.bindings.len() == args.len() => {},
+                    None if patterns.get(name) == Some(&args.len()) => {},
+                    None if let Some(&arity) = patterns.get(name) => diagnostics.push(located(
+                        WfKind::UnsortedBinding,
+                        named(&[&name]),
+                        format!(
+                            "rule applies `{name}` to {} arguments, but its left side applies it \
+                             to {arity}: an instantiation takes one argument per name its pattern \
+                             binds",
+                            args.len()
+                        ),
+                        cell.provenance,
+                    )),
                     Some(binding) => diagnostics.push(located(
                         WfKind::UnsortedBinding,
                         named(&[&name]),
@@ -1118,21 +1136,25 @@ fn check_rule_binders(
     }
 }
 
-/// Append a `MisplacedAbstraction` diagnostic for each atom abstraction of
-/// `cell` that stands where no port abstracts as many atoms.
+/// Append a `MisplacedAbstraction` diagnostic for each abstraction of `cell`
+/// that stands where no port abstracts as many atoms, or as many atoms and
+/// variables its `pi+` binders bind.
 ///
 /// # Specification
 /// - ensures: one diagnostic per maximal chain of `bind a . …` that is not an
 ///   operation's argument at a port abstracting exactly as many atoms as the
-///   chain is long, on either side, at the rule's provenance.
+///   chain is long, or as many atoms and binding as many variables together, on
+///   either side, at the rule's provenance.
 /// - panics: none.
 /// - intension: one worklist pass over each side, each chain read once.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an abstraction at a `bind` port passes, and one at a port
 ///   that abstracts nothing, one at the root and one of the wrong length each
-///   earn one diagnostic.
+///   earn one diagnostic; an abstraction of the variable a `pi+` port binds
+///   passes there.
 /// - witness: `wellformed::tests::an_abstraction_stands_at_a_port_that_abstracts`
+/// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
@@ -1157,13 +1179,19 @@ fn check_abstractions(
                 depth = depth.saturating_add(1);
                 body = next;
             }
-            if depth > 0 && port.is_none_or(|port| port.abstractions.len() != depth) {
+            if depth > 0
+                && port.is_none_or(|port| {
+                    depth != port.abstractions.len()
+                        && depth != port.abstractions.len().saturating_add(port.bindings.len())
+                })
+            {
                 diagnostics.push(located(
                     WfKind::MisplacedAbstraction,
                     named(&[]),
                     format!(
-                        "rule abstracts {depth} atoms at `{body}` where no port abstracts as many: \
-                         write `bind a . t` as an argument at a port written `bind (a : N) . T`",
+                        "rule abstracts {depth} names at `{body}` where no port abstracts or \
+                         binds as many: write `bind a . t` as an argument at a port written \
+                         `bind (a : N) . T` or `pi+ (a : S) . T`",
                         body = body.to_term()
                     ),
                     cell.provenance,
@@ -1188,29 +1216,37 @@ fn check_abstractions(
     }
 }
 
-/// Append a `MisplacedAtom` diagnostic for each atom `cell` names where it
-/// does not stand: under no abstraction of it, or at a port that is not of its
-/// atom sort.
+/// Append a `MisplacedAtom` diagnostic for each name `cell`'s abstractions
+/// bind that it names where the name does not stand: under no abstraction of
+/// it, or at a place that is not of its sort.
 ///
 /// # Specification
-/// - ensures: an abstraction at an operation's argument whose port abstracts as
-///   many atoms binds its atom at the sort the port's abstraction of the same
-///   place states, and any other binds it at no sort; one diagnostic per named
-///   atom, in pre-order on either side, that no enclosing abstraction of its
-///   name binds, or that is not an operation's argument (or an abstraction's
-///   body) at a port of the sort its innermost such abstraction binds it at;
+/// - ensures: an abstraction at an operation's argument whose port binds as
+///   many names — atoms, then `pi+` variables — binds its name at the sort the
+///   port's binder of the same place states, and any other binds it at no sort;
+///   a metavariable binds its arguments at the sorts of the `pi+` binders of
+///   the port its left side passes it at, or, written as a pattern on the left,
+///   at the sorts of the names it is applied to there. One diagnostic per bound
+///   name, in pre-order on either side, that no enclosing abstraction of it
+///   binds, or that is neither an operation's argument (or an abstraction's
+///   body) at a port of the sort its innermost such abstraction binds it at,
+///   nor an instantiation's argument whose metavariable binds that sort there;
 ///   each at the rule's provenance.
 /// - panics: none.
-/// - intension: one worklist pass over each side; the abstractions in scope
-///   form a tree of links, each node naming its innermost, so an atom looks its
-///   binder up along the abstractions above it alone.
+/// - intension: one worklist pass over each side, the left first; the
+///   abstractions in scope form a tree of links, each node naming its
+///   innermost, so a name looks its binder up along the abstractions above it
+///   alone.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the channel a restriction abstracts, named at `out`'s
 ///   channel port, passes; the same atom named at a process port, as a
 ///   constructor's argument, and under no abstraction of it each earn one
-///   diagnostic.
+///   diagnostic. A variable a `pi+` port's abstraction binds passes at a port
+///   of its sort and as the argument of a metavariable that binds its sort, and
+///   earns one at a port of another sort.
 /// - witness: `wellformed::tests::an_atom_is_named_at_a_port_of_its_sort`
+/// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
@@ -1222,50 +1258,97 @@ fn check_atoms(
     diagnostics: &mut Vec<WfDiagnostic>,
 )
 {
-    /// A node to read: its port, when it is an operation's argument or the
-    /// body of a chain of abstractions there, its place in that chain, and
-    /// the innermost abstraction in scope.
-    type Pending<'term> = (
-        TermNode<'term>,
-        Option<&'term SortRef>,
-        usize,
-        Option<usize>,
-    );
+    /// Where a node stands: an operation's argument at its port, or the body
+    /// of a chain of abstractions there; or an instantiation's argument at
+    /// the sort its metavariable binds there.
+    #[derive(Clone, Copy)]
+    enum Place<'term>
+    {
+        /// At a port.
+        Port(&'term SortRef),
+        /// At a sort.
+        Sort(&'term Name),
+    }
+    /// An abstraction's place among those read on one side.
+    #[derive(Clone, Copy)]
+    #[repr(transparent)]
+    struct Link(usize);
+    /// An abstraction read: its name, the sort its port binds it at, and the
+    /// abstraction enclosing it.
+    type Scope<'term> = (&'term Name, Option<&'term Name>, Option<Link>);
+    /// How the innermost abstraction of a name in scope binds it.
+    #[derive(Clone, Copy)]
+    enum Binding<'term>
+    {
+        /// No abstraction in scope binds it.
+        Free,
+        /// One binds it at this sort.
+        Sorted(&'term Name),
+        /// One binds it at no sort.
+        Unsorted,
+    }
+    /// A node to read: where it stands, its place in a chain of abstractions
+    /// there, and the innermost abstraction in scope.
+    type Pending<'term> = (TermNode<'term>, Option<Place<'term>>, usize, Option<Link>);
+    /// How the innermost abstraction of `name` in scope from `link` binds it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binding<'term>(
+        scopes: &[Scope<'term>],
+        mut link: Option<Link>,
+        name: &Name,
+    ) -> Binding<'term>
+    {
+        while let Some(&(atom, sort, outer)) = link.and_then(|Link(at)| scopes.get(at)) {
+            if atom == name {
+                return sort.map_or(Binding::Unsorted, Binding::Sorted);
+            }
+            link = outer;
+        }
+        Binding::Free
+    }
+    // Each metavariable's binder sorts, by place: a port's, or a pattern's.
+    let mut binders: BTreeMap<&Name, Vec<Option<&Name>>> = BTreeMap::new();
     for side in [&cell.lhs, &cell.rhs] {
-        // Each abstraction read: its atom, the sort its port binds it at, and
-        // the abstraction enclosing it.
-        let mut scopes: Vec<(&Name, Option<&Name>, Option<usize>)> = Vec::new();
+        let mut scopes: Vec<Scope<'_>> = Vec::new();
         let mut pending: Vec<Pending<'_>> = vec![(side.to_node(), None, 0, None)];
-        while let Some((node, port, place, scope)) = pending.pop() {
+        while let Some((node, at, place, scope)) = pending.pop() {
             match node.view() {
                 TermView::Abs { atom, args } => {
-                    let sort = port
-                        .and_then(|port| port.abstractions.get(place))
-                        .map(|abstraction| &abstraction.sort);
+                    let sort = match at {
+                        Some(Place::Port(port)) => port
+                            .abstractions
+                            .get(place)
+                            .or_else(|| {
+                                port.bindings
+                                    .get(place.checked_sub(port.abstractions.len())?)
+                            })
+                            .map(|binder| &binder.sort),
+                        Some(Place::Sort(_)) | None => None,
+                    };
                     scopes.push((atom, sort, scope));
-                    let inner = Some(scopes.len().saturating_sub(1));
-                    pending.extend(args.map(|body| (body, port, place.saturating_add(1), inner)));
+                    let inner = Some(Link(scopes.len().saturating_sub(1)));
+                    pending.extend(args.map(|body| (body, at, place.saturating_add(1), inner)));
                 },
                 TermView::Atom(name) => {
-                    let mut link = scope;
-                    let mut bound = None;
-                    while let Some(&(atom, sort, outer)) = link.and_then(|at| scopes.get(at)) {
-                        if atom == name {
-                            bound = Some(sort);
-                            break;
-                        }
-                        link = outer;
-                    }
-                    let misplaced = bound.map_or_else(
-                        || Some(String::from("under no abstraction of it")),
-                        |sort| match (sort, port) {
-                            (Some(sort), Some(port)) if port.sort == *sort => None,
-                            (Some(sort), _) => {
-                                Some(format!("where no port of its sort `{sort}` stands"))
-                            },
-                            (None, _) => Some(String::from("under an abstraction no port binds")),
+                    let misplaced = match (binding(&scopes, scope, name), at) {
+                        (Binding::Free, _) => Some(String::from("under no abstraction of it")),
+                        (Binding::Sorted(sort), Some(Place::Port(port))) if port.sort == *sort => {
+                            None
                         },
-                    );
+                        (Binding::Sorted(sort), Some(Place::Sort(expected)))
+                            if expected == sort =>
+                        {
+                            None
+                        },
+                        (Binding::Sorted(sort), _) => {
+                            Some(format!("where no port of its sort `{sort}` stands"))
+                        },
+                        (Binding::Unsorted, _) => {
+                            Some(String::from("under an abstraction no port binds"))
+                        },
+                    };
                     if let Some(misplaced) = misplaced {
                         diagnostics.push(located(
                             WfKind::MisplacedAtom,
@@ -1282,14 +1365,49 @@ fn check_atoms(
                     let ports = operations
                         .get(name)
                         .map_or(&[][..], |operation| &*operation.arity.inputs);
+                    for (index, arg) in args.enumerate() {
+                        let port = ports.get(index);
+                        if let (Some(port), TermView::Var(variable)) = (port, arg.view())
+                            && !port.bindings.is_empty()
+                        {
+                            let _first = binders.entry(variable).or_insert_with(|| {
+                                port.bindings
+                                    .iter()
+                                    .map(|binder| Some(&binder.sort))
+                                    .collect()
+                            });
+                        }
+                        pending.push((arg, port.map(Place::Port), 0, scope));
+                    }
+                },
+                TermView::Inst { name, args } => {
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    let sorts = binders.entry(name).or_insert_with(|| {
+                        args.iter()
+                            .map(|arg| match arg.view() {
+                                TermView::Atom(bound) => match binding(&scopes, scope, bound) {
+                                    Binding::Sorted(sort) => Some(sort),
+                                    Binding::Free | Binding::Unsorted => None,
+                                },
+                                TermView::Var(_)
+                                | TermView::Ctor { .. }
+                                | TermView::Op { .. }
+                                | TermView::Results { .. }
+                                | TermView::Inst { .. }
+                                | TermView::Abs { .. } => None,
+                            })
+                            .collect()
+                    });
+                    let places: Vec<Option<Place<'_>>> = (0 .. args.len())
+                        .map(|index| sorts.get(index).copied().flatten().map(Place::Sort))
+                        .collect();
                     pending.extend(
-                        args.enumerate()
-                            .map(|(at, arg)| (arg, ports.get(at), 0, scope)),
+                        args.into_iter()
+                            .zip(places)
+                            .map(|(arg, expected)| (arg, expected, 0, scope)),
                     );
                 },
-                TermView::Ctor { args, .. }
-                | TermView::Results { args }
-                | TermView::Inst { args, .. } => {
+                TermView::Ctor { args, .. } | TermView::Results { args } => {
                     pending.extend(args.map(|arg| (arg, None, 0, scope)));
                 },
                 TermView::Var(_) => {},
@@ -1305,7 +1423,11 @@ fn check_atoms(
 /// variable's occurrences and not others, with no condition naming that atom
 /// fresh for it: the variable's instance moves into the abstraction, or out of
 /// it, and an occurrence of the atom in it would be captured or escape
-/// (Fernández and Gabbay, _Nominal rewriting_, I&C 2007, § 3).
+/// (Fernández and Gabbay, _Nominal rewriting_, I&C 2007, § 3). An abstraction
+/// a `pi+` port binds a variable by encloses nothing: the variable is renamed
+/// apart, as a combinatory reduction system's metaterm `[x]t` is (Klop, van
+/// Oostrom and van Raamsdonk, _Combinatory reduction systems_, TCS 1993), so
+/// an instance cannot name it unless an instantiation passes it.
 ///
 /// # Specification
 /// - ensures: one `UnknownFreshness` per such condition, in written order, then
@@ -1323,7 +1445,11 @@ fn check_atoms(
 ///   the abstraction; a variable under the same abstractions on both sides
 ///   passes unstated; a condition naming an atom the rule never abstracts and
 ///   one naming no variable of the left side each earn one `UnknownFreshness`.
+///   A monad's associativity moving its last continuation under the abstraction
+///   of `x` at the bind's port passes, and counting that abstraction refuses
+///   it.
 /// - witness: `wellformed::tests::a_metavariable_crossing_an_abstraction_names_its_atom_fresh`
+/// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
 #[spec(
     captures: before = diagnostics.len(),
     ensures: diagnostics.get(before ..).is_some_and(|added| added.iter().all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
@@ -1331,6 +1457,7 @@ fn check_atoms(
 )]
 fn check_freshness(
     cell: &RuleFace,
+    operations: &BTreeMap<&Name, &OperDesc>,
     diagnostics: &mut Vec<WfDiagnostic>,
 )
 {
@@ -1342,8 +1469,11 @@ fn check_freshness(
     for (side, left) in [(&cell.lhs, true), (&cell.rhs, false)] {
         let mut stack: Vec<&Name> = Vec::new();
         let mut above: BTreeMap<&Name, usize> = BTreeMap::new();
-        let mut pending: Vec<(TermNode<'_>, usize)> = vec![(side.to_node(), 0)];
-        while let Some((node, depth)) = pending.pop() {
+        // A node, the number of atoms abstracted above it, and the port it
+        // stands at with its place in a chain of abstractions there.
+        let mut pending: Vec<(TermNode<'_>, usize, Option<&SortRef>, usize)> =
+            vec![(side.to_node(), 0, None, 0)];
+        while let Some((node, depth, at, place)) = pending.pop() {
             while stack.len() > depth {
                 if let Some(atom) = stack.pop()
                     && let Some(count) = above.get_mut(atom)
@@ -1359,15 +1489,31 @@ fn check_freshness(
                 TermView::Inst { name, args } => (Some(name), Some(args)),
                 TermView::Abs { atom, args } => {
                     let _new = atoms.insert(atom);
-                    stack.push(atom);
-                    let count = above.entry(atom).or_insert(0);
-                    *count = count.saturating_add(1);
-                    pending.extend(args.map(|arg| (arg, depth.saturating_add(1))));
+                    // Past the port's atom abstractions, an abstraction binds
+                    // a variable, which encloses nothing.
+                    let below = if at.is_none_or(|port| place < port.abstractions.len()) {
+                        stack.push(atom);
+                        let count = above.entry(atom).or_insert(0);
+                        *count = count.saturating_add(1);
+                        depth.saturating_add(1)
+                    }
+                    else {
+                        depth
+                    };
+                    pending.extend(args.map(|arg| (arg, below, at, place.saturating_add(1))));
                     continue;
                 },
-                TermView::Op { args, .. }
-                | TermView::Ctor { args, .. }
-                | TermView::Results { args } => (None, Some(args)),
+                TermView::Op { name, args } => {
+                    let ports = operations
+                        .get(name)
+                        .map_or(&[][..], |operation| &*operation.arity.inputs);
+                    pending.extend(
+                        args.enumerate()
+                            .map(|(index, arg)| (arg, depth, ports.get(index), 0)),
+                    );
+                    continue;
+                },
+                TermView::Ctor { args, .. } | TermView::Results { args } => (None, Some(args)),
                 TermView::Atom(_) => (None, None),
             };
             if let Some(variable) = variable {
@@ -1382,7 +1528,7 @@ fn check_freshness(
                 }
             }
             if let Some(args) = args {
-                pending.extend(args.map(|arg| (arg, depth)));
+                pending.extend(args.map(|arg| (arg, depth, None, 0)));
             }
         }
     }
@@ -1434,35 +1580,52 @@ fn check_freshness(
     }
 }
 
-/// The first input port at an atom sort, with its operation: where one
-/// stands, a term of the signature can name an atom.
+/// The first input port at a sort a term can name a thing of, with its
+/// operation.
+///
+/// Such a sort is an atom sort, or a sort some port's binder binds a variable
+/// of: where one stands, a term of the signature can name an atom or a bound
+/// variable.
 ///
 /// # Specification
 /// - ensures: the name of the first operation, in declaration order, with an
-///   input port at a sort `desc` declares an atom sort, and of its first such
-///   port; [`None`] when no input port takes an atom.
+///   input port at a sort `desc` declares an atom sort or some input port of
+///   `desc` binds a variable of, and of its first such port; [`None`] when no
+///   input port stands at such a sort.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a signature sending on a channel names the sending
-///   operation and its channel port, and one of processes alone names none.
+///   operation and its channel port, and one of processes alone names none; a
+///   monad's unit, taking a value at the sort its bind's continuation binds,
+///   names the unit and that port.
 /// - witness: `wellformed::tests::a_condition_is_decided_where_a_term_names_an_atom`
+/// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| ret.is_none_or(|(operation, port)| desc.opers.iter().any(|oper| oper.name == *operation
     && oper.arity.inputs.iter().any(|input| input.name == *port))))]
-pub fn atom_port<G>(desc: &TheoryDesc<G>) -> Option<(&Name, &Name)>
+pub fn naming_port<G>(desc: &TheoryDesc<G>) -> Option<(&Name, &Name)>
 {
+    let nameable: BTreeSet<&Name> = desc
+        .sorts
+        .iter()
+        .filter(|sort| sort.representability == Representability::Atom)
+        .map(|sort| &sort.name)
+        .chain(
+            desc.opers
+                .iter()
+                .flat_map(|operation| operation.arity.inputs.iter())
+                .flat_map(|port| port.bindings.iter())
+                .map(|binder| &binder.sort),
+        )
+        .collect();
     desc.opers.iter().find_map(|operation| {
         operation
             .arity
             .inputs
             .iter()
-            .find(|port| {
-                desc.sorts.iter().any(|sort| {
-                    sort.name == port.sort && sort.representability == Representability::Atom
-                })
-            })
+            .find(|port| nameable.contains(&port.sort))
             .map(|port| (&operation.name, &port.name))
     })
 }
@@ -2293,11 +2456,11 @@ mod tests
                 .collect::<Vec<_>>()
         };
         assert_eq!(
-            atom_port(&channels(Output::Named, Vec::new())),
+            naming_port(&channels(Output::Named, Vec::new())),
             Some((&Name::from("out"), &Name::from("c"))),
             "`out` takes a channel"
         );
-        assert_eq!(atom_port(&channels(Output::Absent, Vec::new())), None);
+        assert_eq!(naming_port(&channels(Output::Absent, Vec::new())), None);
         for output in [Output::Absent, Output::Named] {
             assert_eq!(
                 found(output, face(scope(), extruded(), &[("a", "q")])),
@@ -2507,6 +2670,91 @@ mod tests
                 "{what}: {messages:?}"
             );
         }
+    }
+
+    /// #2115: a variable a `pi+` port's abstraction binds is named at a port
+    /// of its sort and passed to a metavariable as a pattern, and a move
+    /// across its abstraction captures nothing.
+    #[test]
+    fn a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115()
+    {
+        let op = |name: &str, inputs: Vec<SortRef>| {
+            OperDesc::new(
+                name,
+                BridgeArity::single_output(inputs, SortRef::new("r", "Nat")),
+                Attrs::empty(),
+            )
+        };
+        let over = |port: &str, binder: &str| {
+            SortRef::new(port, "Nat").pi_plus([SortIndex::new(binder, "Nat")])
+        };
+        let ops = || {
+            vec![
+                op("ret", vec![SortRef::new("a", "Nat")]),
+                op("ext", vec![SortRef::new("m", "Nat"), over("k", "x")]),
+                op("get", vec![over("k", "s")]),
+            ]
+        };
+        // `Nat` representable, as a `pi+` binder's domain must be.
+        let desc = |lhs: FreeTerm, rhs: FreeTerm| {
+            nat_with(
+                vec![RuleFace::new(lhs, rhs, Vec::new(), span())],
+                ops(),
+                Attrs::empty(),
+            )
+            .with_sorts([SortDesc {
+                representability: Representability::Representable,
+                ..SortDesc::new("Nat", DeclPolarity::Data)
+            }])
+        };
+        let refused = |lhs: FreeTerm, rhs: FreeTerm| {
+            check_desc(&desc(lhs, rhs))
+                .into_iter()
+                .map(|diagnostic| diagnostic.kind)
+                .collect::<Vec<_>>()
+        };
+        let (var, atom, bind) = (FreeTerm::var, FreeTerm::atom, FreeTerm::abs);
+        let ext = |m: FreeTerm, k: FreeTerm| FreeTerm::op("ext", [m, k]);
+        let get = |k: FreeTerm| FreeTerm::op("get", [k]);
+        let ret = |a: FreeTerm| FreeTerm::op("ret", [a]);
+        for (lhs, rhs, what) in [
+            (
+                ext(var("m"), bind("x", ret(atom("x")))),
+                var("m"),
+                "the unit law names `x` at `ret`'s port of its sort",
+            ),
+            (
+                get(bind(
+                    "s",
+                    get(bind("t", FreeTerm::inst("k", [atom("s"), atom("t")]))),
+                )),
+                get(bind("s", FreeTerm::inst("k", [atom("s"), atom("s")]))),
+                "get-get passes its names to `k` as a pattern",
+            ),
+            (
+                ext(ext(var("m"), var("k")), var("l")),
+                ext(
+                    var("m"),
+                    bind("x", ext(FreeTerm::inst("k", [atom("x")]), var("l"))),
+                ),
+                "associativity moves `l` under `bind x .`, which captures nothing",
+            ),
+        ] {
+            assert_eq!(refused(lhs, rhs), Vec::<WfKind>::new(), "{what}");
+        }
+        assert_eq!(
+            refused(
+                ext(var("m"), bind("x", FreeTerm::ctor("Succ", [atom("x")]))),
+                var("m")
+            ),
+            [WfKind::MisplacedAtom],
+            "`x` as a constructor's field stands at no port of its sort"
+        );
+        assert_eq!(
+            naming_port(&desc(var("m"), var("m"))),
+            Some((&Name::from("ret"), &Name::from("a"))),
+            "`ret` takes a value at the sort `ext` binds a variable of"
+        );
     }
 
     #[test]

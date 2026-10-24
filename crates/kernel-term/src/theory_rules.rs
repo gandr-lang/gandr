@@ -12,17 +12,18 @@
 //! [`TheoryRules::decide`] decides it in four steps:
 //!
 //! 1. every side is one term, every left side is headed by an operation and
-//!    instantiates no variable, its variables numbered by first occurrence, and
-//!    every right side names and instantiates only variables its left side
-//!    binds;
+//!    instantiates a variable only at distinct bound occurrences — a pattern
+//!    (Miller) — its variables numbered by first occurrence, and every right
+//!    side names and instantiates only variables its left side binds;
 //! 2. the lexicographic path order over the stated ranks puts every left side
 //!    above its right: an operation stands above every operation of a lower
 //!    rank and above every constructor and results tuple, and the order is a
 //!    simplification order whatever the ranks, so the rules terminate. A
 //!    variable a right side instantiates is read at a function type, the order
 //!    then the higher-order recursive path order: a left side is above an
-//!    instantiation when the variable is one of its arguments and it covers
-//!    every argument of the instantiation;
+//!    instantiation when one of its arguments holds the variable, bare or as a
+//!    pattern under the abstractions of the names it is applied to last (read
+//!    up to η), and it covers every argument of the instantiation;
 //! 3. each derived rule is, up to its variables' names, the two normal forms
 //!    under the rules before it of the critical pair it names, so it is an
 //!    equation the rules before it prove;
@@ -358,6 +359,12 @@ pub enum SymbolKind
     Operation(OperationRank),
     /// A constructor or a results tuple: below every operation.
     Constructor,
+    /// An abstraction of one bound name over its body: below every
+    /// operation, as a constructor is.
+    Abstraction,
+    /// An occurrence of a bound name, by the abstractions between it and the
+    /// one binding it: a constant below every operation, as a constructor is.
+    Occurrence,
 }
 
 /// One node of a rule side, in pre-order: a symbol applied to the next
@@ -389,8 +396,8 @@ pub struct TheoryRule
     left: Box<[TheoryNode]>,
     /// The right side, in pre-order.
     right: Box<[TheoryNode]>,
-    /// Whether the right side instantiates a variable: a second-order rule,
-    /// which rewrites no term the decision normalizes and overlaps no rule.
+    /// Whether a side instantiates a variable: a second-order rule, which
+    /// rewrites no term the decision normalizes and overlaps no rule.
     instantiates: bool,
     /// Whether the rule states a freshness condition or moves a variable
     /// across an abstraction where a term can name an atom: it fires only
@@ -412,8 +419,9 @@ impl TheoryRule
         right: Box<[TheoryNode]>,
     ) -> Self
     {
-        let instantiates = right
+        let instantiates = left
             .iter()
+            .chain(right.iter())
             .any(|node| matches!(*node, TheoryNode::Instance(..)));
         Self {
             left,
@@ -952,9 +960,10 @@ impl TheoryRules
     ///
     /// # Specification
     /// - ensures: `Ok(())` exactly when both sides are one term over known
-    ///   symbols, the left side is headed by an operation and instantiates no
-    ///   variable, its variables read in pre-order as first occurrences `0, 1,
-    ///   2, …` with repeats of earlier ones, and every right-side variable and
+    ///   symbols, the left side is headed by an operation and instantiates a
+    ///   variable only at pairwise distinct occurrence symbols, its variables,
+    ///   instantiated or not, read in pre-order as first occurrences `0, 1, 2,
+    ///   …` with repeats of earlier ones, and every right-side variable and
     ///   instantiated variable is one of them.
     /// - panics: none.
     /// - executable: none — restating the shape is this walk over the sides.
@@ -963,8 +972,11 @@ impl TheoryRules
     /// [`TheoryRuleFault::Malformed`] or [`TheoryRuleFault::Unbound`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::decide`].
+    /// - hypothesis: L3 — as [`Self::decide`]; a get-get rule instantiating its
+    ///   continuation at the two names it abstracts reads, and one
+    ///   instantiating it at one name twice, or at a constructor, is malformed.
     /// - witness: `theory_rules::tests::a_malformed_rule_is_refused_by_its_fault`
+    /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
     fn well_formed(
         &self,
         rule: &TheoryRule,
@@ -978,25 +990,53 @@ impl TheoryRules
             Some(&(TheoryNode::Variable(_) | TheoryNode::Instance(..))) | None => false,
         };
         if !headed
-            || rule
-                .left()
-                .iter()
-                .any(|node| matches!(*node, TheoryNode::Instance(..)))
             || self.side_end(rule.left(), Position(0)) != Some(Position(rule.left().len()))
             || self.side_end(rule.right(), Position(0)) != Some(Position(rule.right().len()))
         {
             return Err(TheoryRuleFault::Malformed);
         }
         let mut bound = 0_usize;
-        for &node in rule.left() {
-            if let TheoryNode::Variable(variable) = node {
-                let Ordinal(ordinal) = ordinal(variable);
-                if ordinal == bound {
-                    bound = bound.saturating_add(1);
-                }
-                else if ordinal > bound {
-                    return Err(TheoryRuleFault::Malformed);
-                }
+        for (at, &node) in rule.left().iter().enumerate() {
+            let variable = match node {
+                TheoryNode::Variable(variable) => variable,
+                TheoryNode::Instance(variable, count) => {
+                    // A pattern: the instance's arguments, each one node, are
+                    // pairwise distinct occurrences of bound names.
+                    let first = at.saturating_add(1);
+                    let names = rule
+                        .left()
+                        .get(first .. first.saturating_add(usize::from(count)))
+                        .and_then(|arguments| {
+                            arguments
+                                .iter()
+                                .map(|&argument| match argument {
+                                    TheoryNode::Symbol(symbol)
+                                        if matches!(
+                                            self.symbols.get(symbol.0),
+                                            Some(&(SymbolKind::Occurrence, _))
+                                        ) =>
+                                    {
+                                        Some(symbol)
+                                    },
+                                    TheoryNode::Symbol(_)
+                                    | TheoryNode::Variable(_)
+                                    | TheoryNode::Instance(..) => None,
+                                })
+                                .collect::<Option<BTreeSet<TheorySymbol>>>()
+                        });
+                    if names.is_none_or(|names| names.len() != usize::from(count)) {
+                        return Err(TheoryRuleFault::Malformed);
+                    }
+                    variable
+                },
+                TheoryNode::Symbol(_) => continue,
+            };
+            let Ordinal(ordinal) = ordinal(variable);
+            if ordinal == bound {
+                bound = bound.saturating_add(1);
+            }
+            else if ordinal > bound {
+                return Err(TheoryRuleFault::Malformed);
             }
         }
         if rule.right().iter().any(|&node| {
@@ -1041,12 +1081,15 @@ impl TheoryRules
     ///   some argument of which is equal to or above `right`; or `right` is an
     ///   application every argument of which `left` covers, and either `left`'s
     ///   symbol precedes `right`'s — an operation above an operation of a lower
-    ///   rank, and above every constructor and results tuple — or the two are
-    ///   one symbol and the first argument pair that differs, left to right, is
-    ///   in the order; or `right` instantiates a variable that is an argument
-    ///   of `left`, and `left` covers every argument of the instantiation.
-    ///   `left` covers a term it is above, or one of its own arguments is equal
-    ///   to or above. A variable is above nothing and no term above itself.
+    ///   rank, and above every constructor, results tuple, abstraction and
+    ///   occurrence — or the two are one symbol and the first argument pair
+    ///   that differs, left to right, is in the order; or `right` instantiates
+    ///   a variable an argument of `left` holds, and `left` covers every
+    ///   argument of the instantiation. An argument holds a variable it is, or
+    ///   one it instantiates under abstractions, as `bind t . k(s, t)` holds
+    ///   `k` read up to η. `left` covers a term it is above, or one of its own
+    ///   arguments is equal to or above. A variable is above nothing and no
+    ///   term above itself.
     /// - panics: none.
     /// - executable: none — the order is the table this fills; a predicate
     ///   restating it would be the function again.
@@ -1057,9 +1100,11 @@ impl TheoryRules
     /// - hypothesis: L3 — as [`Self::decide`]: associativity, a unit law and an
     ///   inverse law orient, and a rule calling an operation of its head's rank
     ///   does not until the head ranks higher; a `let` instantiating its own
-    ///   argument orients and β does not.
+    ///   argument orients and β does not; a get-get rule holding its
+    ///   continuation under the abstraction it instantiates it in orients.
     /// - witness: `theory_rules::tests::a_rule_the_ranks_do_not_decrease_is_unoriented`
     /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
+    /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
     fn path_greater(
         &self,
         left: &[TheoryNode],
@@ -1095,15 +1140,38 @@ impl TheoryRules
                         Some(&(SymbolKind::Operation(high), _)),
                         Some(&(SymbolKind::Operation(low), _)),
                     ) => high > low,
-                    (Some(&(SymbolKind::Operation(_), _)), Some(&(SymbolKind::Constructor, _))) => {
-                        true
-                    },
+                    (
+                        Some(&(SymbolKind::Operation(_), _)),
+                        Some(&(
+                            SymbolKind::Constructor
+                            | SymbolKind::Abstraction
+                            | SymbolKind::Occurrence,
+                            _,
+                        )),
+                    ) => true,
                     _ => false,
                 }
             },
             (TheoryNode::Symbol(_) | TheoryNode::Variable(_) | TheoryNode::Instance(..), _) => {
                 false
             },
+        };
+        // An argument holds a variable it is, or one it instantiates under the
+        // abstractions above it: each abstraction's body is the next node.
+        let holds = |own: Position, variable: RuleVariable| {
+            let mut at = own.0;
+            while let Some(&TheoryNode::Symbol(symbol)) = left.get(at)
+                && matches!(
+                    self.symbols.get(symbol.0),
+                    Some(&(SymbolKind::Abstraction, _))
+                )
+            {
+                at = at.saturating_add(1);
+            }
+            matches!(
+                left.get(at),
+                Some(&(TheoryNode::Variable(held) | TheoryNode::Instance(held, _))) if held == variable
+            )
         };
         for row in (0 .. left.len()).rev() {
             for column in (0 .. columns).rev() {
@@ -1145,9 +1213,7 @@ impl TheoryRules
                     }) || match other {
                         TheoryNode::Variable(_) => false,
                         TheoryNode::Instance(variable, _) => {
-                            rows.clone()
-                                .any(|own| left.get(own.0) == Some(&TheoryNode::Variable(variable)))
-                                && cols.clone().all(covers)
+                            rows.clone().any(|own| holds(own, variable)) && cols.clone().all(covers)
                         },
                         TheoryNode::Symbol(_) => {
                             cols.clone().all(covers)
@@ -1717,8 +1783,9 @@ fn matched(
                 Some(&Flat::Symbol(found, _)) if found == symbol => at = at.saturating_add(1),
                 Some(&(Flat::Symbol(..) | Flat::Variable(_))) | None => return Ok(None),
             },
-            // A pattern instantiating a variable matches nothing: a
-            // well-formed left side instantiates none.
+            // A pattern instantiating a variable matches nothing: matching
+            // one is higher-order, and a rule whose left side holds one
+            // instantiates, so it fires in no normal form.
             TheoryNode::Instance(..) => return Ok(None),
             TheoryNode::Variable(variable) => {
                 let Some(end) = flat_end(term, Position(at))
@@ -2016,14 +2083,17 @@ impl Graph
     /// - requires: `side` is well formed under `rules`' table.
     /// - ensures: [`Some`] with the root's node; a variable's node is the one
     ///   `variables` holds for its ordinal, made free and recorded when it
-    ///   holds none. [`None`] when `side` is not one term or instantiates a
-    ///   variable, which no node of the graph stands for.
+    ///   holds none, and an instantiation's is its variable's, its arguments
+    ///   dropped: a pattern unifies with every term its variable may stand for,
+    ///   so an overlap through it is found. [`None`] when `side` is not one
+    ///   term.
     /// - panics: none.
     /// - executable: none — the nodes made are the graph's own state.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::decide`].
     /// - witness: `theory_rules::tests::a_groups_completion_replays_from_its_peaks`
+    /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
     fn load(
         &mut self,
         rules: &TheoryRules,
@@ -2050,7 +2120,12 @@ impl Graph
                 continue;
             }
             let made = match node {
-                TheoryNode::Variable(variable) => {
+                TheoryNode::Variable(variable) | TheoryNode::Instance(variable, _) => {
+                    if let TheoryNode::Instance(_, count) = node {
+                        for _ in 0 .. usize::from(count) {
+                            let _argument = stack.pop()?;
+                        }
+                    }
                     let Ordinal(ordinal) = ordinal(variable);
                     if variables.len() <= ordinal {
                         variables.resize(ordinal.saturating_add(1), None);
@@ -2079,7 +2154,6 @@ impl Graph
                     });
                     Node(self.nodes.len().saturating_sub(1))
                 },
-                TheoryNode::Instance(..) => return None,
             };
             if let Some(slot) = positions.get_mut(index) {
                 *slot = made;
@@ -2357,16 +2431,18 @@ enum Stage
     Ranks,
 }
 
-/// Whether a term of a presentation can name one of its atoms.
+/// Whether a term of a presentation can name one of its atoms or a variable
+/// one of its binders binds.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Naming
 {
-    /// Some operation's input port stands at an atom sort.
+    /// Some operation's input port stands at an atom sort, or at a sort a
+    /// binder binds a variable of.
     Named,
-    /// No operation's input port stands at an atom sort.
+    /// No operation's input port stands at such a sort.
     Unnamed,
 }
 
@@ -2421,7 +2497,8 @@ struct Reader<'arena>
     peaks: Vec<CriticalPeak>,
     /// Each ranked operation's rank, by its name.
     ranks: BTreeMap<&'arena StringLiteral, OperationRank>,
-    /// Whether a term of the presentation can name an atom.
+    /// Whether a term of the presentation can name an atom or a bound
+    /// variable.
     naming: Naming,
     /// The first rule whose variable stands under other abstractions at one
     /// occurrence on its left side than at another there, where a term can
@@ -2557,14 +2634,11 @@ impl<'arena> Reader<'arena>
                     (Class::Operation, Some(name)) => {
                         SymbolKind::Operation(self.ranks.get(name).copied().unwrap_or_default())
                     },
-                    (Class::Operation, None)
-                    | (
-                        Class::Constructor
-                        | Class::Tuple
-                        | Class::Abstraction
-                        | Class::Occurrence(_),
-                        _,
-                    ) => SymbolKind::Constructor,
+                    (Class::Operation, None) | (Class::Constructor | Class::Tuple, _) => {
+                        SymbolKind::Constructor
+                    },
+                    (Class::Abstraction, _) => SymbolKind::Abstraction,
+                    (Class::Occurrence(_), _) => SymbolKind::Occurrence,
                 };
                 (kind, arity)
             })
@@ -2576,25 +2650,30 @@ impl<'arena> Reader<'arena>
         })
     }
 
-    /// Whether a term of the presentation can name an atom: some operation's
-    /// input port stands at a sort the sort chain states an atom sort.
+    /// Whether a term of the presentation can name an atom or a bound variable:
+    /// some operation's input port stands at a sort the sort chain states an
+    /// atom sort, or at one a binder binds a variable of.
     ///
     /// # Specification
     /// - ensures: [`Naming::Named`] when an `Oper`, `Obs`, `Const` or `Nested`
     ///   of the chain `operations` has a `Port`, `Bound` or `Abstracted` input
-    ///   whose sort an `Atom` of the chain `sorts` names, [`Naming::Unnamed`]
+    ///   whose sort an `Atom` of the chain `sorts` names, or a binder of some
+    ///   `Bound` or `Abstracted` input binds a variable of, [`Naming::Unnamed`]
     ///   otherwise; [`None`] when either chain, or a port chain, holds a member
     ///   the code does not write there.
     /// - panics: none.
     /// - executable: none — the answer is the walk of the two chains, which a
     ///   predicate would walk again.
-    /// - intension: one walk of each chain, the atom sorts kept as they are
-    ///   read.
+    /// - intension: one walk of each chain, the nameable sorts and the sorts
+    ///   the inputs stand at kept as they are read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`TheoryRules::read`]: one input port taking the
-    ///   channel decides a condition refused, and its absence decides it read.
+    ///   channel decides a condition refused, and its absence decides it read;
+    ///   a monad's unit taking a value at the sort its bind's continuation
+    ///   binds names a bound variable.
     /// - witness: `theory_rules::tests::an_occurrence_counts_to_its_abstraction`
+    /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
     fn nameable(
         &self,
         sorts: ValueId,
@@ -2605,13 +2684,13 @@ impl<'arena> Reader<'arena>
             self.constructor(id)
                 .map(|(tag, fields)| (usize::from(tag), fields))
         };
-        let mut atoms: BTreeSet<&StringLiteral> = BTreeSet::new();
+        let mut nameable: BTreeSet<&StringLiteral> = BTreeSet::new();
         let mut at = sorts;
         loop {
             at = match tagged(at)? {
                 (tag::END, &[]) => break,
                 (tag::ATOM, &[name, _, rest]) => {
-                    let _new = atoms.insert(self.text(name)?);
+                    let _new = nameable.insert(self.text(name)?);
                     rest
                 },
                 (tag::SORT | tag::REPRESENTABLE, &[_, _, rest])
@@ -2619,33 +2698,48 @@ impl<'arena> Reader<'arena>
                 _ => return None,
             };
         }
-        if atoms.is_empty() {
-            return Some(Naming::Unnamed);
-        }
+        let mut stood: BTreeSet<&StringLiteral> = BTreeSet::new();
         let mut at = operations;
         loop {
             let (mut port, rest) = match tagged(at)? {
-                (tag::END, &[]) => return Some(Naming::Unnamed),
+                (tag::END, &[]) => break,
                 (tag::OPER | tag::OBS | tag::CONST | tag::NESTED, &[_, inputs, _, rest]) => {
                     (inputs, rest)
                 },
                 _ => return None,
             };
             loop {
-                let (sort, next) = match tagged(port)? {
+                let (sort, binders, next) = match tagged(port)? {
                     (tag::END, &[]) => break,
-                    (tag::PORT, &[_, sort, _, next])
-                    | (tag::BOUND, &[_, sort, _, _, next])
-                    | (tag::ABSTRACTED, &[_, sort, _, _, _, next]) => (sort, next),
+                    (tag::PORT, &[_, sort, _, next]) => (sort, None, next),
+                    (tag::BOUND, &[_, sort, _, binders, next])
+                    | (tag::ABSTRACTED, &[_, sort, _, _, binders, next]) => {
+                        (sort, Some(binders), next)
+                    },
                     _ => return None,
                 };
-                if atoms.contains(&self.text(sort)?) {
-                    return Some(Naming::Named);
+                let _new = stood.insert(self.text(sort)?);
+                let mut binder = binders;
+                while let Some(at) = binder {
+                    binder = match tagged(at)? {
+                        (tag::END, &[]) => None,
+                        (tag::PORT, &[_, sort, _, next]) => {
+                            let _new = nameable.insert(self.text(sort)?);
+                            Some(next)
+                        },
+                        _ => return None,
+                    };
                 }
                 port = next;
             }
             at = rest;
         }
+        Some(if stood.iter().any(|sort| nameable.contains(sort)) {
+            Naming::Named
+        }
+        else {
+            Naming::Unnamed
+        })
     }
 
     /// The refusal at the rule the reading has reached.
