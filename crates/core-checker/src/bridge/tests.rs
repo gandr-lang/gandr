@@ -6474,3 +6474,259 @@ fn a_native_call_on_open_arguments_converts_as_a_neutral_2378()
         "calls over swapped arguments are apart: {verdicts:?}"
     );
 }
+
+/// The declarations of `first` and of `via`, a definition taking its operation
+/// as an omitted model, at positions zero and one, and the candidate `first`
+/// answers an omitted operation with. The comparison `x == y` lowers to the
+/// shape of a call of `via` ([`omitted_call`]).
+///
+/// ```text
+/// def first : U (Integer -> Integer -> F Integer) = thunk λa λb. return a ;
+/// def via : U (U (Integer -> Integer -> F Integer) -> Integer -> Integer
+///   -> F Integer) = thunk λop λa λb. (force op) a b ;
+/// ```
+///
+/// # Specification
+/// trivial.
+fn via_an_omitted_model(arena: &mut CoreArena) -> ([Declaration; 2], ValueId)
+{
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns_integer = arena.comp_type_returner(integer);
+    let binary = arena.comp_type_arrow(integer, returns_integer);
+    let binary = arena.comp_type_arrow(integer, binary);
+    let operation = arena.value_type_thunk(binary);
+    let first_argument = variable(arena, 1);
+    let returned = arena.computation_return(first_argument);
+    let inner = arena.computation_lambda(returned);
+    let first = arena.computation_lambda(inner);
+    let first = arena.value_thunk(first);
+    let [op, a, b] = [2, 1, 0].map(|index| variable(arena, index));
+    let forced = arena.computation_force(op);
+    let applied = arena.computation_application(forced, a);
+    let applied = arena.computation_application(applied, b);
+    let via = arena.computation_lambda(applied);
+    let via = arena.computation_lambda(via);
+    let via = arena.computation_lambda(via);
+    let via = arena.value_thunk(via);
+    let via_type = arena.comp_type_arrow(operation, binary);
+    let via_type = arena.value_type_thunk(via_type);
+    (
+        [
+            declaration(At(0), Maybe::Present(operation), Maybe::Present(first)),
+            declaration(At(1), Maybe::Present(via_type), Maybe::Present(via)),
+        ],
+        arena.value_constant(ConstantIndex::from(0_usize)),
+    )
+}
+
+/// The call `⟨via ?o one other⟩` of [`via_an_omitted_model`]'s `via`, its
+/// operation omitted as the nominated hole `hole`.
+///
+/// # Specification
+/// trivial.
+fn omitted_call(
+    arena: &mut CoreArena,
+    hole: gandr_core_term::hole::HoleId,
+    (one, other): (ValueId, ValueId),
+) -> ValueId
+{
+    let omitted = arena.value_hole(hole);
+    let head = arena.value_constant(ConstantIndex::from(1_usize));
+    let forced = arena.computation_force(head);
+    let instantiated = arena.computation_application(forced, omitted);
+    let applied = arena.computation_application(instantiated, one);
+    let applied = arena.computation_application(applied, other);
+    arena.value_returned(applied)
+}
+
+/// The slot of the omitted operation `hole`, which `candidate` alone answers.
+///
+/// # Specification
+/// trivial.
+fn omitted_slot(
+    candidate: ValueId,
+    hole: gandr_core_term::hole::HoleId,
+) -> gandr_core_term::model::ModelSlot
+{
+    gandr_core_term::model::ModelSlot {
+        holes: Vec::from([hole]),
+        fixed: Vec::new(),
+        candidates: Vec::from([gandr_core_term::model::Candidate {
+            components: Vec::from([candidate]),
+            fixed: Vec::new(),
+        }]),
+    }
+}
+
+/// The `count` nominated holes from the first on.
+///
+/// # Specification
+/// trivial.
+fn nominated_holes<const COUNT: usize>() -> [gandr_core_term::hole::HoleId; COUNT]
+{
+    core::array::from_fn(|index| {
+        gandr_core_term::hole::HoleId::nominated(gandr_core_term::hole::NominationIndex::from(
+            u32::try_from(index).expect("a nominated index"),
+        ))
+        .expect("a nominated name")
+    })
+}
+
+/// A path whose endpoints call a definition over an omitted model, each call
+/// its own slot, is met at its point once the slots are resolved, and the
+/// kernel admits it; with the arguments swapped at one endpoint it is
+/// refused.
+#[test]
+fn an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391()
+{
+    // def met : U ((x : Integer) -> (y : Integer)
+    //   -> F Path(Integer, ⟨via ?o0 x y⟩, ⟨via ?o1 x y⟩))
+    //   = thunk λx λy. return here(⟨via ?o2 x y⟩) ;
+    // def turned : … Path(Integer, ⟨via ?o3 x y⟩, ⟨via ?o4 y x⟩) …
+    //   = thunk λx λy. return here(⟨via ?o5 x y⟩) ;
+    let mut arena = CoreArena::new();
+    let ([first, via], candidate) = via_an_omitted_model(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let holes: [gandr_core_term::hole::HoleId; 6] = nominated_holes();
+    // Under `λx λy`, `y` is index zero and `x` one.
+    let [y, x] =
+        [0, 1].map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+    let [met, turned] = [
+        [(holes[0], (x, y)), (holes[1], (x, y)), (holes[2], (x, y))],
+        [(holes[3], (x, y)), (holes[4], (y, x)), (holes[5], (x, y))],
+    ]
+    .map(|[left, right, point]| {
+        let left = omitted_call(&mut arena, left.0, left.1);
+        let right = omitted_call(&mut arena, right.0, right.1);
+        let point = omitted_call(&mut arena, point.0, point.1);
+        let path = arena.value_type_path(integer, left, right);
+        let returns = arena.comp_type_returner(path);
+        let inner = arena.comp_type_pi(integer, returns);
+        let outer = arena.comp_type_pi(integer, inner);
+        let here = arena.value_here(point);
+        let returned = arena.computation_return(here);
+        let body = arena.computation_lambda(returned);
+        let body = arena.computation_lambda(body);
+        (arena.value_type_thunk(outer), arena.value_thunk(body))
+    });
+    let models = |range: core::ops::Range<usize>| {
+        holes[range]
+            .iter()
+            .map(|&hole| omitted_slot(candidate, hole))
+            .collect()
+    };
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        first,
+        via,
+        declaration(At(2), Maybe::Present(met.0), Maybe::Present(met.1)).resolving(models(0 .. 3)),
+        declaration(At(3), Maybe::Present(turned.0), Maybe::Present(turned.1))
+            .resolving(models(3 .. 6)),
+    ]);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.get(2), Some(Verdict::Checked { .. })),
+        "the point meets both endpoints once the slots are resolved: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            readmission.readmitted().get(2).map(Readmitted::outcome),
+            Some(&Outcome::Defined { .. })
+        ),
+        "the kernel admits the filled declaration: {:?}",
+        readmission.readmitted()
+    );
+    assert!(
+        matches!(
+            verdicts.get(3),
+            Some(Verdict::Refused(CheckRefusal::EndpointMismatch { .. }))
+        ),
+        "a call over swapped arguments is apart once filled: {verdicts:?}"
+    );
+}
+
+/// A path over calls of a definition over an omitted model, returned at a
+/// path type over calls of their own, converts once the slots are resolved,
+/// and the kernel admits it; at a path type over swapped calls it is refused.
+#[test]
+fn a_path_type_over_an_omitted_model_converts_once_resolved_2391()
+{
+    // def kept : U ((x : Integer) -> (y : Integer)
+    //   -> (p : Path(Integer, ⟨via ?o0 x y⟩, ⟨via ?o1 x y⟩))
+    //   -> F Path(Integer, ⟨via ?o2 x y⟩, ⟨via ?o3 x y⟩)) = thunk λx λy λp. return
+    // p ; def turned : … -> F Path(Integer, ⟨via ?o6 y x⟩, ⟨via ?o7 y x⟩)) … ;
+    let mut arena = CoreArena::new();
+    let ([first, via], candidate) = via_an_omitted_model(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let holes: [gandr_core_term::hole::HoleId; 8] = nominated_holes();
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    // Under `x y`, `y` is index zero and `x` one; under `x y p`, one and two.
+    let [y, x] = [0, 1].map(|index| variable(&mut arena, index));
+    let [y_past, x_past] = [1, 2].map(|index| variable(&mut arena, index));
+    let [kept, turned] = [
+        (
+            holes[0 .. 4].try_into().expect("four holes"),
+            (x_past, y_past),
+        ),
+        (
+            holes[4 .. 8].try_into().expect("four holes"),
+            (y_past, x_past),
+        ),
+    ]
+    .map(|(own, returned): ([gandr_core_term::hole::HoleId; 4], _)| {
+        let given_left = omitted_call(&mut arena, own[0], (x, y));
+        let given_right = omitted_call(&mut arena, own[1], (x, y));
+        let given = arena.value_type_path(integer, given_left, given_right);
+        let left = omitted_call(&mut arena, own[2], returned);
+        let right = omitted_call(&mut arena, own[3], returned);
+        let path = arena.value_type_path(integer, left, right);
+        let returns = arena.comp_type_returner(path);
+        let innermost = arena.comp_type_pi(given, returns);
+        let inner = arena.comp_type_pi(integer, innermost);
+        let outer = arena.comp_type_pi(integer, inner);
+        let p = variable(&mut arena, 0);
+        let body = arena.computation_return(p);
+        let body = arena.computation_lambda(body);
+        let body = arena.computation_lambda(body);
+        let body = arena.computation_lambda(body);
+        (arena.value_type_thunk(outer), arena.value_thunk(body))
+    });
+    let models = |range: core::ops::Range<usize>| {
+        holes[range]
+            .iter()
+            .map(|&hole| omitted_slot(candidate, hole))
+            .collect()
+    };
+    let (report, readmission) = judge_and_readmit(&mut arena, &[
+        first,
+        via,
+        declaration(At(2), Maybe::Present(kept.0), Maybe::Present(kept.1))
+            .resolving(models(0 .. 4)),
+        declaration(At(3), Maybe::Present(turned.0), Maybe::Present(turned.1))
+            .resolving(models(4 .. 8)),
+    ]);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.get(2), Some(Verdict::Checked { .. })),
+        "the path converts to the type over calls of their own once resolved: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            readmission.readmitted().get(2).map(Readmitted::outcome),
+            Some(&Outcome::Defined { .. })
+        ),
+        "the kernel admits the filled declaration: {:?}",
+        readmission.readmitted()
+    );
+    assert!(
+        matches!(
+            verdicts.get(3),
+            Some(Verdict::Refused(CheckRefusal::TypeMismatch(_)))
+        ),
+        "a path type over swapped calls is apart once filled: {verdicts:?}"
+    );
+}

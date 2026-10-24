@@ -1413,8 +1413,11 @@ impl CodeDefinitions
     /// - requires: as [`Self::relate_terms`].
     /// - ensures: the verdict the machine reached, with the decisions its
     ///   recording sink kept; a decline keeps its reason.
-    /// - provides: [`Self::relate_terms`]'s answer, and the reason a returned
-    ///   step's dialogue was declined, which [`Self::certify`] reads.
+    /// - provides: [`Self::relate_terms`]'s answer; the reason a returned
+    ///   step's dialogue was declined, which [`Self::certify`] reads; and the
+    ///   decline over a hole a reflexivity's endpoints and a type conversion's
+    ///   path endpoints wait on
+    ///   ([`crate::context::CheckingContext::awaits_fill`]).
     /// - fails: as [`Self::relate_terms`].
     /// - panics: none.
     ///
@@ -1430,7 +1433,7 @@ impl CodeDefinitions
     /// - witness: `bridge::tests::a_closed_decode_holding_a_call_under_its_quote_crosses_read`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(CheckRefusal::Undecided { at } ) if at == point)
         || matches!(ret, Err(CheckRefusal::DanglingNode { .. } | CheckRefusal::MachineInvariant)))]
-    fn relation(
+    pub(crate) fn relation(
         &self,
         core: &CoreArena,
         point: ValueId,
