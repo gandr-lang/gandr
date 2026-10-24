@@ -263,6 +263,7 @@ use gandr_core_term::effect::Purity;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::NameSegment;
 use gandr_kernel_term::StructuredName;
+use gandr_surface_grammar::LabelText;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_syntax::ByteOffset;
@@ -298,6 +299,7 @@ use crate::form::Placed;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
+use crate::form::misspelt_keyword;
 use crate::form::read_pieces;
 use crate::form::repair_at;
 use crate::form::shape_of;
@@ -6870,9 +6872,12 @@ impl<'source> Collector<'_, 'source>
     ///   opening on `law` admits the law it names, as [`Self::admitted_law`]
     ///   reads it, and is refused at the member when it does not read; a form
     ///   opening on `module` is a nested module, opened onto `stack` or refused
-    ///   as a whole under its name; every other form is a malformed member,
-    ///   refused under the module's name at the member, and the module's other
-    ///   members are kept.
+    ///   as a whole under its name; a form opening on a word one edit from
+    ///   `def` and a name after it is a definition with its keyword misspelt,
+    ///   refused at the word and held in the module under that name, as the top
+    ///   level holds the stray forms such a definition molds to (#2484); every
+    ///   other form is a malformed member, refused under the module's name at
+    ///   the member, and the module's other members are kept.
     /// - provides: the per-member half of [`Self::module`].
     /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
     /// - panics: none.
@@ -6886,6 +6891,7 @@ impl<'source> Collector<'_, 'source>
     ///   module. The predicate reads only the slots and structures this call
     ///   appended.
     /// - witness: `tests::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `tests::modules::a_member_definition_misspelt_is_held_under_its_name_2484`
     /// - witness: `tests::modules::modules_lower_to_named_member_declarations`
     /// - witness: `tests::modules::module_members_admit_in_source_order`
     /// - witness: `tests::modules::a_readable_module_keeps_its_members_and_its_successor`
@@ -6933,6 +6939,21 @@ impl<'source> Collector<'_, 'source>
                 name,
             } => name,
             Shape::Form { name, .. } => {
+                if let Some((word, named)) = self.misspelt_definition(member) {
+                    let declared = self.tree.fragment(named.node).map_or("", <&str>::from);
+                    let _held = self.refuse_held(
+                        container,
+                        SurfaceName::from(declared),
+                        member,
+                        named,
+                        LoweringRefusal::MalformedForm {
+                            span: word,
+                            form: FormName::DECLARATION,
+                            fault: FormFault::Misspelt(TileName::DEF),
+                        },
+                    );
+                    return Ok(());
+                }
                 self.fault_at(structure, member, LoweringRefusal::OutOfFragment {
                     span: member.span,
                     form: name,
@@ -7468,6 +7489,63 @@ impl<'source> Collector<'_, 'source>
         };
         let (container, name, named) = (entry.container, entry.name, entry.named);
         let _held = self.refuse_held(container, name, at, named, refusal);
+    }
+
+    /// The misspelt `def` the member form `member` opens on, and the name
+    /// written after it, when the member is a definition with its keyword
+    /// written wrong.
+    ///
+    /// `de zero = 0 ;` molds in a module as one form of another sort, not as
+    /// the stray words the top level reads it as, so its refusal would be
+    /// held under the module's name and a signature `def zero : T ;` beside it
+    /// would owe its body ahead of the mistake (#2484). The word is `def`
+    /// misspelt when [`misspelt_keyword`] reads it so before the name.
+    ///
+    /// # Specification
+    /// - requires: `member` is a child of `self.tree`.
+    /// - ensures: the span of `member`'s first tile and its second tile, when
+    ///   [`misspelt_keyword`] reads the first as `def` misspelt before the
+    ///   second and the second is a word the grammar spells as no tile; `None`
+    ///   otherwise.
+    /// - provides: what holds a misspelt member definition under its name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `de zero = 0 ;` in a module is refused at `de` and
+    ///   held under `zero`; a member that misspells nothing is refused under
+    ///   its module.
+    /// - witness: `tests::modules::a_member_definition_misspelt_is_held_under_its_name_2484`
+    #[spec(ensures: |ret| ret.is_none_or(|(word, named)| word.end() <= named.span.start()))]
+    fn misspelt_definition(
+        &self,
+        member: Placed,
+    ) -> Option<(ByteSpan, Placed)>
+    {
+        let mut tiles: Vec<Placed> = self
+            .tree
+            .positions()
+            .filter_map(|position| {
+                let node = self.tree.node(position)?;
+                let span = node.span();
+                (matches!(node.label(), NodeLabel::Tile(_))
+                    && member.span.start() <= span.start()
+                    && span.end() <= member.span.end())
+                .then_some(Placed {
+                    node: position,
+                    span,
+                })
+            })
+            .collect();
+        tiles.sort_by_key(|tile| tile.span.start());
+        let (first, named) = (*tiles.first()?, *tiles.get(1_usize)?);
+        let (word, keyword) = misspelt_keyword(self.pbg, self.tree, member.span, named.span)?;
+        let declared: &str = self.tree.fragment(named.node).map_or("", <&str>::from);
+        (keyword == TileName::DEF
+            && word == first.span
+            && declared.starts_with(|letter: char| letter.is_alphabetic() || letter == '_')
+            && self.pbg.tile_label(LabelText(declared)).is_none())
+        .then_some((word, named))
     }
 
     /// Match the module at `structure` against its signatures, once its body
