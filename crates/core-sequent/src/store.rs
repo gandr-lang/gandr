@@ -19,12 +19,13 @@
 //! read them in place and the move disappears.
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
 use gandr_core_term::control::StackFrame;
+use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::Family;
 use gandr_kernel_term::Literal;
 
 use crate::boundary::FamilyAddress as _;
@@ -206,9 +207,9 @@ impl core::error::Error for StoreFault
 pub struct Store
 {
     /// The values.
-    values: Vec<HeapValue>,
+    values: Family<HeapValue>,
     /// The producer bindings of every environment chain.
-    value_bindings: Vec<ValueBinding>,
+    value_bindings: Family<ValueBinding>,
 }
 
 impl Store
@@ -241,16 +242,16 @@ impl Store
     /// # Adequacy
     /// - hypothesis: L3 — dense distinct allocations, exact retrieval and the
     ///   first missing offset distinguish address reuse, a shifted offset and a
-    ///   misplaced value. The helper covers the ceiling with zero-sized slices;
-    ///   the store is not populated to the ceiling.
+    ///   misplaced value. The helper covers the ceiling with families of
+    ///   zero-sized nodes; the store is not populated to the ceiling.
     /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
     #[spec(
-        captures: [entry = self.values.len()],
+        captures: [entry = usize::from(self.values.len())],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(entry)
-                && entry.checked_add(1) == Some(self.values.len()),
+                && entry.checked_add(1) == Some(usize::from(self.values.len())),
             | Err(error) => error == StoreFault::RegionFull(HeapFamily::Values)
                 && self.values.len() == entry,
         },
@@ -284,9 +285,9 @@ impl Store
     #[must_use]
     #[spec(ensures: |ret| match ret {
         | Some(value) => usize::try_from(u32::from(id)).ok()
-            .and_then(|offset| self.values.get(offset))
+            .and_then(|offset| self.values.get(ArenaLength::from(offset)))
             .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(value))),
-        | None => usize::try_from(u32::from(id)).map_or(true, |offset| offset >= self.values.len()),
+        | None => usize::try_from(u32::from(id)).map_or(true, |offset| offset >= usize::from(self.values.len())),
     })]
     pub fn value(
         &self,
@@ -315,9 +316,9 @@ impl Store
     /// - witness: `store::tests::environments_bind_innermost_first`
     #[inline]
     #[spec(
-        captures: [entry = self.value_bindings.len()],
+        captures: [entry = usize::from(self.value_bindings.len())],
         ensures: |ret| match ret {
-            | Ok(extended) => entry.checked_add(1) == Some(self.value_bindings.len())
+            | Ok(extended) => entry.checked_add(1) == Some(usize::from(self.value_bindings.len()))
                 && match extended.values {
                     | ValueScope::Empty => false,
                     | ValueScope::Innermost(id) => usize::try_from(u32::from(id)) == Ok(entry)
