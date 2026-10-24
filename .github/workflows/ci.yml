@@ -856,13 +856,17 @@ jobs:
   # that chain, one the chain's middle and the rest the leaves: measured on
   # the arm64 runner over #699's core-term change, the whole graph rebuilt in
   # 301 s and tested in 51 s, the shards in 146 + 35, 141 + 4 and 73 + 17.
-  # The packages above the chain are two shards, the engine and its faces,
-  # each building the chain's top once (#1177): at four jobs after a
-  # surface-lowering change the one shard rebuilt in 70.7 s and the two in
-  # 45.6 and 45.7 s, after a dispatcher change in 56.2 s against 31.3 and
-  # 32.0 s. The engine holds 150 s of the 215 s of tests the one shard ran.
-  # Every shard restores the lane's one state; its join overlays what each
-  # built on that state and hands the whole on.
+  # The packages above the chain are three shards: the dispatcher, the rest
+  # of the engine and its faces, each building the chain's top once (#1177).
+  # At four jobs after a surface-lowering change one shard rebuilt in 70.7 s
+  # and two in 45.6 and 45.7 s, and after a dispatcher change in 56.2 s
+  # against 31.3 and 32.0 s. The dispatcher has a shard of its own because
+  # its crate alone holds 166 s of the engine's 223 s of tests and the longest
+  # build chain. At four jobs after a core-sequent change, the engine shard
+  # that held it rebuilt in 45 s; the dispatcher alone rebuilt in 24 s and the
+  # rest of the engine in 32 s (#2148). Every shard restores the lane's one
+  # state; its join overlays what each built on that state and hands the
+  # whole on.
   cargo-test-enforcing-shard:
     name: test enforcing targets (linux, ${{ matrix.shard }})
     needs: *rust-needs
@@ -875,10 +879,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - shard: dispatcher
+            packages: &dispatcher-shard >-
+              gandr-surface-dispatcher
           - shard: engine
             packages: &engine-shard >-
               gandr-runtime-stencils gandr-surface-corpus gandr-surface-diagnostics
-              gandr-surface-dispatcher gandr-surface-session
+              gandr-surface-session
           - shard: faces
             packages: &faces-shard >-
               gandr-lang gandr-surface-lsp gandr-surface-mcp gandr-surface-render-terminal
@@ -888,7 +895,7 @@ jobs:
               gandr-core-checker gandr-core-incremental gandr-core-sequent gandr-runtime-emitter
               gandr-surface-lowering gandr-surface-pretty
           - shard: rest
-            excludes: [*engine-shard, *faces-shard, *checker-shard]
+            excludes: [*dispatcher-shard, *engine-shard, *faces-shard, *checker-shard]
     env:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
