@@ -71,7 +71,7 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-strata
 
 ## Where the detail lives
 
-The canonical form, the order oracle, admission and entailment, the evidence and its validators, the level language, the specification attributes, the differential suites and the relationship to `gandr-theory-orders` are stated in [`src/lib.rs`](src/lib.rs); the bottom-generator soundness argument is in [`src/poset.rs`](src/poset.rs).
+The canonical form, the order oracle, admission and entailment, the evidence and its validators, the level language, the specification attributes, the differential suites and the relationship to `gandr-theory-order-maintenance` are stated in [`src/lib.rs`](src/lib.rs); the bottom-generator soundness argument is in [`src/poset.rs`](src/poset.rs).
 
 ## License
 

@@ -21,7 +21,7 @@ path = "tests/lib.rs"
 [dependencies]
 anodized.workspace = true
 gandr-theory-graphs.workspace = true
-gandr-theory-orders.workspace = true
+gandr-theory-order-maintenance.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]

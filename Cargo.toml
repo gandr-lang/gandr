@@ -49,7 +49,7 @@ members = [
   "crates/theory-graphs",
   "crates/theory-levitation",
   "crates/theory-nominal-automata",
-  "crates/theory-orders",
+  "crates/theory-order-maintenance",
   "crates/theory-shapes",
   "crates/theory-sites",
   "crates/theory-spec-combinators",
@@ -159,7 +159,7 @@ default-features = false
 # - theory-graphs
 # - theory-levitation
 # - theory-nominal-automata
-# - theory-orders
+# - theory-order-maintenance
 # - theory-shapes
 # - theory-sites
 # - theory-spec-combinators
@@ -820,8 +820,8 @@ default-features = false
 # consumers:
 # - core-incremental
 # - theory-dynamic-graphs
-[workspace.dependencies.gandr-theory-orders]
-path = "crates/theory-orders"
+[workspace.dependencies.gandr-theory-order-maintenance]
+path = "crates/theory-order-maintenance"
 default-features = false
 
 # The carrier's shapes as a site, its degree, Reedy and Segal checks, and
@@ -1091,7 +1091,7 @@ features = ["span-locations"]
 # - theory-dynamic-graphs (dev)
 # - theory-graphs (dev)
 # - theory-levitation (dev)
-# - theory-orders (dev)
+# - theory-order-maintenance (dev)
 # - theory-virtual-doctrines (dev)
 [workspace.dependencies.proptest]
 version = "1.11.0"

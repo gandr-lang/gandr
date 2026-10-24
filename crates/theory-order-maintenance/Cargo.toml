@@ -1,5 +1,5 @@
 [package]
-name = "gandr-theory-orders"
+name = "gandr-theory-order-maintenance"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

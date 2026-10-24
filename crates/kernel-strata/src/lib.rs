@@ -145,14 +145,15 @@
 //! explicit frame stack. A shared node denotes one value, so sharing is
 //! semantically transparent.
 //!
-//! # Relationship to `gandr-theory-orders`
+//! # Relationship to `gandr-theory-order-maintenance`
 //!
 //! The two crates share no machinery, and the kernel takes no dependency on
-//! the theory crate. `gandr-theory-orders` maintains a total order over opaque
-//! handles for constant-time comparison. This crate decides a partial order
-//! over level terms, quantified over all valuations, and returns a certificate
-//! either way. Neither operation is expressible in the other's vocabulary, and
-//! the trusted base depends on no workspace crate outside the kernel category.
+//! the theory crate. `gandr-theory-order-maintenance` maintains a total order
+//! over opaque handles for constant-time comparison. This crate decides a
+//! partial order over level terms, quantified over all valuations, and
+//! returns a certificate either way. Neither operation is expressible in the
+//! other's vocabulary, and the trusted base depends on no workspace crate
+//! outside the kernel category.
 //!
 //! The papers the crate draws on are in its `README.md`, § References.
 

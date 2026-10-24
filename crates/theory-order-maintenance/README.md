@@ -1,4 +1,4 @@
-# gandr-theory-orders
+# gandr-theory-order-maintenance
 
 An order-maintenance structure: a total order over payload-carrying elements in which any two elements compare in constant time.
 
@@ -50,8 +50,8 @@ An order-maintenance structure: a total order over payload-carrying elements in 
 Build the order, insert relative to what is already there, and compare.
 
 ```rust
-use gandr_theory_orders::OrderError;
-use gandr_theory_orders::OrderMaintenance;
+use gandr_theory_order_maintenance::OrderError;
+use gandr_theory_order_maintenance::OrderMaintenance;
 
 fn example() -> Result<(), OrderError> {
     let mut order: OrderMaintenance<()> = OrderMaintenance::new()?;
@@ -66,8 +66,8 @@ fn example() -> Result<(), OrderError> {
 Run the tests, then the enforcing twin with every specification checked:
 
 ```sh
-cargo nextest run -p gandr-theory-orders
-RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-orders
+cargo nextest run -p gandr-theory-order-maintenance
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-order-maintenance
 ```
 
 ## List labeling

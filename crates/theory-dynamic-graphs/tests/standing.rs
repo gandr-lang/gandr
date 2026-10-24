@@ -16,7 +16,7 @@ use gandr_theory_graphs::EdgeId;
 use gandr_theory_graphs::EdgeSource as _;
 use gandr_theory_graphs::NodeCount;
 use gandr_theory_graphs::NodeId;
-use gandr_theory_orders::OrderError;
+use gandr_theory_order_maintenance::OrderError;
 use quenchant_shape::shape::Maybe;
 
 /// Construct a fixture edge.

@@ -142,7 +142,7 @@ use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_check_memo::OrderedMemo;
-use gandr_theory_orders::OrderError;
+use gandr_theory_order_maintenance::OrderError;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemCount;

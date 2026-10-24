@@ -73,7 +73,7 @@ crates/
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-nominal-automata/       nominal word and tree automata over caller-owned names, literal word membership and name dropping
-├── theory-orders/                 order maintenance with constant-time comparison
+├── theory-order-maintenance/      order maintenance with constant-time comparison
 ├── theory-shapes/                 finite shapes: decidable subshapes, inclusions with complements, the outer pushout and its mediator, and face entailment in the conjunctive band and its column disjunctions with a derivation or a countermodel
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── theory-spec-combinators/       the bounded checks a specification clause makes of accumulated state: what a sequence gained since a mark, one push, order around an insertion point
