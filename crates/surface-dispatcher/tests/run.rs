@@ -13,6 +13,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_dispatcher::Captured;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
@@ -120,7 +121,8 @@ fn ran_text(text: SourceText<'_>) -> Ran<'_>
 {
     let grammar = built_in().expect("the built-in grammar builds");
     let mut lowerings = LoweringCount::default();
-    let (_composed, ran) = run_source(&grammar, text, &mut lowerings).expect("the source composes");
+    let (_composed, ran) = run_source(&grammar, text, &mut lowerings, &mut Captured::default())
+        .expect("the source composes");
     ran
 }
 
@@ -151,7 +153,7 @@ fn assert_runs_to(
 )
 {
     let mut script = Script::new(path.to_path_buf());
-    let actual = script.run();
+    let actual = script.run(&mut Captured::default());
     assert_eq!(
         actual.status(),
         expected_status,
@@ -243,7 +245,7 @@ fn a_script_runs_to_its_value_in_the_spelling_asked_782()
     ] {
         let mut script = Script::new(file.0.clone());
         script.spell_in(spelling);
-        let run = script.run();
+        let run = script.run(&mut Captured::default());
         let ScriptRun::Source {
             ran:
                 Ran::Evaluated {
@@ -272,7 +274,7 @@ fn a_script_passes_its_arguments_to_its_entry_1881()
         let mut script = Script::new(file.0.clone());
         let count = u8::try_from(arguments.len()).expect("a few arguments");
         script.pass(arguments);
-        let run = script.run();
+        let run = script.run(&mut Captured::default());
         assert!(
             matches!(
                 run,
@@ -298,7 +300,7 @@ fn run_source_file_reports_the_path_of_an_absent_file()
     ));
     drop(std::fs::remove_file(&absent));
     let mut script = Script::new(absent.clone());
-    let run = script.run();
+    let run = script.run(&mut Captured::default());
     assert_eq!(
         run.status(),
         RunStatus::Unreached,

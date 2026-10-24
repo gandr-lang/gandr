@@ -28,6 +28,7 @@ use crate::compose::ComposeFault;
 use crate::compose::Composed;
 use crate::compose::LoweringCount;
 use crate::compose::compose;
+use crate::evaluate::Console;
 use crate::evaluate::Entered;
 use crate::evaluate::Entry;
 use crate::evaluate::Evaluation;
@@ -115,7 +116,7 @@ impl Ran<'_>
 }
 
 /// Run the program `composed` holds, its entry given `arguments`, unless a
-/// declaration of it was refused.
+/// declaration of it was refused, each line it prints handed to `console`.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -124,6 +125,7 @@ impl Ran<'_>
 ///   a source declaring no name is [`Ran::NoProgram`]; a program with an entry
 ///   enters it once with `arguments` and [`Ran::Entered`] carries it; otherwise
 ///   its program's run target is run once and [`Ran::Evaluated`] carries it.
+///   Either run writes each line it prints to `console`, in order.
 /// - provides: the run step `gandr run` and [`run_source`] share.
 /// - fails: never; every failure is a [`Ran`].
 /// - panics: none.
@@ -166,6 +168,7 @@ impl Ran<'_>
 pub fn execute<'source>(
     composed: &mut Composed<'source>,
     arguments: &[String],
+    console: &mut dyn Console,
 ) -> Ran<'source>
 {
     let Composed::Settled {
@@ -189,7 +192,7 @@ pub fn execute<'source>(
         return match program.name(entry.constant) {
             Maybe::Present(name) => Ran::Entered {
                 target: name,
-                entered: program.enter(entry, arguments),
+                entered: program.enter(entry, arguments, console),
             },
             Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
         };
@@ -201,14 +204,15 @@ pub fn execute<'source>(
     match program.name(target) {
         Maybe::Present(name) => Ran::Evaluated {
             target: name,
-            evaluation: program.evaluate(target),
+            evaluation: program.evaluate_printing(target, console),
         },
         Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
 }
 
 /// Compose `source` under the strict root, as a source at no path, and run
-/// its program, its entry given no arguments.
+/// its program, its entry given no arguments, each line it prints handed to
+/// `console`.
 ///
 /// # Specification
 /// - requires: `grammar` is the checked grammar the source is parsed under.
@@ -240,10 +244,11 @@ pub fn run_source<'source>(
     grammar: &Pbg,
     source: SourceText<'source>,
     lowerings: &mut LoweringCount,
+    console: &mut dyn Console,
 ) -> Result<(Composed<'source>, Ran<'source>), ComposeFault<'source>>
 {
     let mut composed = compose(grammar, CorpusRoot::Strict, source, lowerings)?;
-    let ran = execute(&mut composed, &[]);
+    let ran = execute(&mut composed, &[], console);
     Ok((composed, ran))
 }
 
@@ -400,7 +405,8 @@ impl Script
         self.arguments = arguments;
     }
 
-    /// Read the source, compose it as `check` would, and run its program.
+    /// Read the source, compose it as `check` would, and run its program,
+    /// each line it prints handed to `console`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -435,7 +441,10 @@ impl Script
             ScriptRun::Source { step: Step::Fault { .. }, .. } => false,
         },
     )]
-    pub fn run(&mut self) -> ScriptRun<'_>
+    pub fn run(
+        &mut self,
+        console: &mut dyn Console,
+    ) -> ScriptRun<'_>
     {
         let root = match read_source(&self.reader, &self.path, &mut self.text) {
             Ok(root) => root,
@@ -464,7 +473,7 @@ impl Script
                 {
                     program.spell_in(self.spelling);
                 }
-                let ran = execute(&mut composed, &self.arguments);
+                let ran = execute(&mut composed, &self.arguments, console);
                 let standing = Standing::of(root, &composed);
                 ScriptRun::Source {
                     step: Step::Source {
@@ -495,6 +504,7 @@ mod tests
     use super::Ran;
     use super::run_source;
     use crate::compose::LoweringCount;
+    use crate::evaluate::Captured;
     use crate::evaluate::Entered;
     use crate::evaluate::Evaluation;
     use crate::evaluate::ExitStatus;
@@ -525,8 +535,13 @@ mod tests
         ];
         for (source, status) in rows {
             let mut lowerings = LoweringCount::default();
-            let (_composed, ran) = run_source(&grammar, SourceText::from(source), &mut lowerings)
-                .expect("the source composes");
+            let (_composed, ran) = run_source(
+                &grammar,
+                SourceText::from(source),
+                &mut lowerings,
+                &mut Captured::default(),
+            )
+            .expect("the source composes");
             assert_eq!(ran.status(), status, "`{source}` runs as pinned: {ran:?}");
         }
 
@@ -535,6 +550,7 @@ mod tests
             &grammar,
             SourceText::from(r#"def answer : Integer ; def answer = "forty-two" ;"#),
             &mut lowerings,
+            &mut Captured::default(),
         )
         .expect("the source composes");
         assert_eq!(ran, Ran::Refused, "a refused source runs nothing");
@@ -542,6 +558,7 @@ mod tests
             &grammar,
             SourceText::from(r#"// nothing to run"#),
             &mut lowerings,
+            &mut Captured::default(),
         )
         .expect("the source composes");
         assert_eq!(ran, Ran::NoProgram, "a source of no name has no program");
@@ -549,6 +566,7 @@ mod tests
             &grammar,
             SourceText::from(r#"def later : Integer ; def answer : Integer ; def answer = 42 ;"#),
             &mut lowerings,
+            &mut Captured::default(),
         )
         .expect("the source composes");
         let Ran::Evaluated { target, evaluation } = ran
@@ -578,6 +596,7 @@ mod tests
             &grammar,
             SourceText::from("def main() -> -F Integer { return 3 }\ndef later = 1 ;\n"),
             &mut lowerings,
+            &mut Captured::default(),
         )
         .expect("the source composes");
         let Ran::Entered { target, entered } = ran
@@ -593,6 +612,7 @@ mod tests
             &grammar,
             SourceText::from("def main() -> -F Integer { ? }\n"),
             &mut lowerings,
+            &mut Captured::default(),
         )
         .expect("the source composes");
         let Ran::Entered {
@@ -616,6 +636,7 @@ mod tests
                 &grammar,
                 SourceText::from("// nothing to run"),
                 &mut lowerings,
+                &mut Captured::default(),
             )
             .expect("an empty program composes");
             assert_eq!(Ran::NoProgram, ran);

@@ -2157,6 +2157,40 @@ fn a_program_leaves_with_its_entry_s_status_1881()
     }
 }
 
+/// #2279: `gandr run` of the hello-world exemplar prints its greeting as the
+/// whole of standard output and leaves with 0; a program whose row names an
+/// effect no host provides, the exemplar's twin without its expectation, is
+/// refused by that name and runs nothing.
+#[test]
+fn a_program_prints_hello_world_2279()
+{
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus");
+    let hello = corpus.join("model/effects/hello.gandr");
+    let output = ran(gandr(&[Path::new("run"), hello.as_path()]));
+    assert_eq!(
+        (code(&output), stdout(&output).as_str()),
+        (Code(0), "hello, world!\n"),
+        "{}",
+        stderr(&output)
+    );
+    let scratch = Scratch::new(Path::new("program-unprovided"));
+    let unprovided = scratch.file(
+        Path::new("unprovided.gandr"),
+        Text::from("def main() -> -F [Clock] Unit {\n  Clock.print(\"hello, world!\")\n}\n"),
+    );
+    let output = ran(gandr(&[Path::new("run"), unprovided.as_path()]));
+    assert_eq!(
+        (code(&output), stdout(&output).as_str()),
+        (Code(2), ""),
+        "nothing runs"
+    );
+    assert!(
+        stderr(&output).contains("Clock"),
+        "the refusal names the effect: {}",
+        stderr(&output)
+    );
+}
+
 /// The value of a completed run is the whole of standard output, once,
 /// however many declarations the script holds.
 #[test]

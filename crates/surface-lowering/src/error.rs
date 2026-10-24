@@ -1201,7 +1201,8 @@ pub enum LoweringRefusal<'source>
 
     /// A source's top-level `main`, its program's entry, declared at a type no
     /// entry has: an entry is a computation returning the exit code, `-F
-    /// Integer`, taking the arguments as one `List(String)` when it takes any.
+    /// Integer`, or the unit, `-F Unit`, taking the arguments as one
+    /// `List(String)` when it takes any.
     EntryType
     {
         /// The bytes of the name.
@@ -1833,9 +1834,9 @@ impl fmt::Display for LoweringRefusal<'_>
                  explicit arguments alone"
             ),
             Self::EntryType { .. } => f.write_str(
-                "`main` is the program's entry: it is a computation returning the exit code, `() \
-                 -> -F Integer`, or one taking the arguments, `(args : List(String)) -> -F \
-                 Integer`",
+                "`main` is the program's entry: it is a computation returning the exit code or the \
+                 unit, `() -> -F Integer` or `() -> -F Unit`, or one taking the arguments, `(args \
+                 : List(String)) -> -F Integer`",
             ),
             Self::RegionAsValue { name, .. } => write!(
                 f,

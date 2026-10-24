@@ -1,18 +1,21 @@
 //! A program's entry run: the `main` its source declares at the top level,
 //! forced, applied to the arguments when it reads them, its integer the
-//! process's exit status.
+//! process's exit status, or zero when it returns the unit.
 //!
 //! The run takes a host. An operation no handler of the run claims is offered
-//! to it: `Proc.exit` stops the run with its payload as the exit status, and
-//! every other operation is declined, so the run is stuck at it and reported
-//! as any stuck run is.
+//! to it: `Proc.exit` stops the run with its payload as the exit status,
+//! `Console.print` writes its line to the run's [`Console`], and every other
+//! operation is declined, so the run is stuck at it and reported as any stuck
+//! run is.
 
 use alloc::string::String;
 
 use anodized::spec;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::Verdict;
+use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::HeapValue;
+use gandr_core_sequent::ProducerArity;
 use gandr_core_sequent::Provenance;
 use gandr_core_sequent::Store;
 use gandr_core_sequent::focus_computation;
@@ -40,12 +43,14 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::entry_shape;
 use quenchant_shape::shape::Maybe;
 
+use super::Console;
 use super::Evaluation;
 use super::Program;
 use super::RUN_BUDGET;
 use super::Start;
 use super::Unfinished;
 use super::Unrunnable;
+use super::console;
 use super::declaration_name;
 
 /// The operation of [`PROC`] that ends the process.
@@ -142,15 +147,21 @@ pub enum Entered<'source>
     Ended(Evaluation<'source>),
 }
 
-/// The host of an entry run: `Proc.exit` ends it, and nothing else is served.
-#[derive(Clone, Copy, Debug, Default)]
-struct EntryHost;
+/// The host of an entry run: `Proc.exit` ends it, `Console.print` writes to
+/// its console, and nothing else is served.
+#[repr(transparent)]
+struct EntryHost<'console>
+{
+    /// Where the run's printed lines go.
+    console: &'console mut dyn Console,
+}
 
-impl HostHandler for EntryHost
+impl HostHandler for EntryHost<'_>
 {
     type Abort = ExitStatus;
 
-    /// Stop at `Proc.exit` with its integer payload as the status; decline
+    /// Stop at `Proc.exit` with its integer payload as the status; write a
+    /// `Console.print` line to the console and resume with the unit; decline
     /// every other operation.
     ///
     /// # Specification
@@ -161,6 +172,9 @@ impl HostHandler for EntryHost
         values: &mut HostValues<'_>,
     ) -> HostReply<Self::Abort>
     {
+        if let Some(reply) = console::served(self.console, request, values) {
+            return reply;
+        }
         if request.signature.name().as_ref() != PROC || request.operation.as_ref() != EXIT {
             return HostReply::Decline;
         }
@@ -186,15 +200,18 @@ impl<'source> Program<'source>
         self.entry
     }
 
-    /// Run `entry` with `arguments`, under a host that serves `Proc.exit`.
+    /// Run `entry` with `arguments`, under a host that serves `Proc.exit` and
+    /// writes each `Console.print` line to `console`.
     ///
     /// # Specification
     /// - requires: nothing; an entry the program cannot run is an outcome.
     /// - ensures: [`Evaluation::Unrunnable`], as [`Self::evaluate`] decides it,
     ///   before any command runs. Otherwise the entry is forced, and, when it
-    ///   reads them, applied to [`argument_list`] of `arguments`; a run that
-    ///   performs `Proc.exit` with an integer, or returns an integer, is
-    ///   [`Entered::Exited`] with that integer's low byte, and any other end is
+    ///   reads them, applied to [`argument_list`] of `arguments`; each line it
+    ///   prints is handed to `console` in order as it runs; a run that performs
+    ///   `Proc.exit` with an integer, or returns an integer, is
+    ///   [`Entered::Exited`] with that integer's low byte, one returning the
+    ///   unit is [`Entered::Exited`] with zero, and any other end is
     ///   [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
     ///   [`Evaluation::Holed`] for a hole reached.
     /// - fails: never; every failure is an outcome.
@@ -205,15 +222,17 @@ impl<'source> Program<'source>
     /// # Adequacy
     /// - hypothesis: L3 — an entry returning a code, one counting its
     ///   arguments, one exiting early through `Proc.exit`, one reaching a goal,
-    ///   one reaching a hole after a call and one passing a hole a branch never
-    ///   reaches.
+    ///   one reaching a hole after a call, one passing a hole a branch never
+    ///   reaches, and one printing two lines and returning the unit.
     /// - witness: `evaluate::entry::tests::an_entry_runs_to_its_exit_status_1881`
     /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
+    /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
     #[inline]
     pub fn enter(
         &mut self,
         entry: Entry,
         arguments: &[String],
+        console: &mut dyn Console,
     ) -> Entered<'source>
     {
         let constant = entry.constant;
@@ -251,7 +270,7 @@ impl<'source> Program<'source>
             &self.definitions,
             command,
             (Fuel::from(RUN_BUDGET), &mut store),
-            &mut EntryHost,
+            &mut EntryHost { console },
         );
         match ran {
             Err(declined) => Entered::Ended(Evaluation::Unfinished(Unfinished::Declined(declined))),
@@ -262,6 +281,10 @@ impl<'source> Program<'source>
                     Some(&HeapValue::Literal(Literal::Integer(ref code))) => {
                         Entered::Exited(ExitStatus::from(code))
                     },
+                    Some(&HeapValue::Constructed {
+                        tag: ConstructorTag::Tuple(arity),
+                        ..
+                    }) if arity == ProducerArity::ZERO => Entered::Exited(ExitStatus::from(0_u8)),
                     Some(_) | None => Entered::Ended(self.finish(constant, &store, terminal)),
                 },
             },

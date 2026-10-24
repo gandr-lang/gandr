@@ -29,6 +29,7 @@ gandr fmt --check my-sources/                 # list the sources out of layout
 ```sh
 mise install                     # the pinned toolchain and tools
 cargo build --release -p gandr-lang
+target/release/gandr run corpus/model/effects/hello.gandr   # hello, world!
 mise run check                   # every gate
 ```
 

@@ -1,4 +1,7 @@
 use gandr_core_term::CoreArena;
+use gandr_core_term::effect::EffectName;
+use gandr_core_term::effect::EffectRow;
+use gandr_core_term::effect::host::HostSignatures;
 use gandr_kernel_term::BaseType;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -106,4 +109,48 @@ fn a_main_of_another_type_is_refused_by_name_1881()
             "the refusal marks the name: {source}"
         );
     }
+}
+
+/// An entry returns the unit as it returns an exit code, under the empty row
+/// or a row of one host interface, after the arguments or not; a `main`
+/// printing through `Console` is lowered as written (#2279).
+#[test]
+fn an_entry_returns_the_unit_2279()
+{
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let string = arena.value_type_base(BaseType::String);
+    let strings = arena.value_type_list(string);
+    let console = HostSignatures::new(&mut arena)
+        .ok()
+        .and_then(|table| match table.named(&EffectName::from("Console")) {
+            Maybe::Present(signature) => Some(signature.clone()),
+            Maybe::Absent(_) => None,
+        })
+        .expect("the host declares the console");
+    let pure = arena.comp_type_returner(unit);
+    let printing = arena.comp_type_returner_with_effects(unit, EffectRow::singleton(console));
+    let reads = arena.comp_type_arrow(strings, printing);
+    for (body, wanted) in [
+        (pure, Arguments::Unread),
+        (printing, Arguments::Unread),
+        (reads, Arguments::Read),
+    ] {
+        let declared = arena.value_type_thunk(body);
+        assert_eq!(
+            entry_shape(&arena, declared),
+            Maybe::Present(wanted),
+            "{:?}",
+            arena.comp_type(body)
+        );
+    }
+    let source = "def main() -> -F [Console] Unit { Console.print(\"hello, world!\") }\n";
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert!(
+        module.declarations().iter().all(|declaration| matches!(
+            declaration.outcome(),
+            DeclarationOutcome::Completed { .. }
+        )),
+        "{source}"
+    );
 }
