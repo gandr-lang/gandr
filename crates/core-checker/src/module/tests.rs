@@ -1962,6 +1962,107 @@ fn a_nested_computation_is_decided_by_its_expected_type()
     );
 }
 
+/// #2327: a call returning a function, read where that function's thunk is
+/// read, runs before the call it is passed to; a call returning an integer,
+/// read where a thunk of its returner is read, stays suspended.
+#[test]
+fn a_call_returning_a_function_runs_where_one_is_read_2327()
+{
+    let mut arena = CoreArena::new();
+    let (function, identity) = integer_function(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns = arena.comp_type_returner(integer);
+    // `maker : U (Integer -> F (U (Integer -> F Integer)))`, `λn. return identity`.
+    let makes = arena.comp_type_returner(function);
+    let maker_arrow = arena.comp_type_arrow(integer, makes);
+    let maker_type = arena.value_type_thunk(maker_arrow);
+    let maker = {
+        let held = arena.value_constant(ConstantIndex::from(0_usize));
+        let returned = arena.computation_return(held);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    // `at_zero : U (U (Integer -> F Integer) -> F Integer)`, `λg. force g 0`.
+    let at_zero_arrow = arena.comp_type_arrow(function, returns);
+    let at_zero_type = arena.value_type_thunk(at_zero_arrow);
+    let at_zero = {
+        let applied = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let forced = arena.computation_force(applied);
+        let zero = arena.value_literal(integer_literal());
+        let application = arena.computation_application(forced, zero);
+        let lambda = arena.computation_lambda(application);
+        arena.value_thunk(lambda)
+    };
+    let suspended_type = arena.value_type_thunk(returns);
+    // `passed : U (F Integer)`, `thunk (at_zero (maker 0))`, `maker 0` nested.
+    let made_at = arena.value_literal(integer_literal());
+    let made = call(&mut arena, ConstantIndex::from(1_usize), made_at);
+    let ran = arena.value_nested(made);
+    let passed_call = call(&mut arena, ConstantIndex::from(2_usize), ran);
+    let passed = arena.value_thunk(passed_call);
+    // `held : U (F Integer)`, `identity 0` nested.
+    let held_at = arena.value_literal(integer_literal());
+    let held_call = call(&mut arena, ConstantIndex::from(0_usize), held_at);
+    let held = arena.value_nested(held_call);
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(function), Maybe::Present(identity)),
+            declaration(At(1), Maybe::Present(maker_type), Maybe::Present(maker)),
+            declaration(At(2), Maybe::Present(at_zero_type), Maybe::Present(at_zero)),
+            declaration(
+                At(3),
+                Maybe::Present(suspended_type),
+                Maybe::Present(passed),
+            ),
+            declaration(At(4), Maybe::Present(suspended_type), Maybe::Present(held)),
+        ])
+    };
+    assert!(
+        matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+        "the call returning a function checks where the function is read: {:?}",
+        report.judged()[3].verdict()
+    );
+    let passing = &report.nested_elaborations()[&ConstantIndex::from(3_usize)];
+    assert_eq!(
+        passing.decisions().get(&ran),
+        Some(&Nesting::Ran(Purity::Pure)),
+        "it runs, purely"
+    );
+    assert_eq!(
+        passing
+            .binds()
+            .iter()
+            .map(|&(run, _)| run)
+            .collect::<Vec<_>>(),
+        [ran],
+        "and binds what it returns before the call it is passed to"
+    );
+    assert!(
+        matches!(report.judged()[4].verdict(), Verdict::Checked { .. }),
+        "the call returning an integer checks at a thunk of its returner: {:?}",
+        report.judged()[4].verdict()
+    );
+    assert_eq!(
+        report.nested_elaborations()[&ConstantIndex::from(4_usize)]
+            .decisions()
+            .get(&held),
+        Some(&Nesting::Suspended),
+        "it is suspended, as a thunk of its returner reads it"
+    );
+    let readmission = crate::bridge::readmit(&mut arena, &report);
+    assert!(
+        readmission.readmitted().iter().all(|readmitted| matches!(
+            readmitted.outcome(),
+            crate::bridge::Outcome::Defined { .. }
+        )),
+        "the kernel re-derives the elaborated bodies: {readmission:?}"
+    );
+}
+
 #[test]
 fn a_computation_written_as_a_scrutinee_runs_1141()
 {

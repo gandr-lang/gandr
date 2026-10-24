@@ -1413,6 +1413,16 @@ enum Read
     Unsuspended,
 }
 
+/// How a computation written where a thunk is read is judged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NestedRead
+{
+    /// Checked against the thunk's body, and suspended.
+    Body,
+    /// A call synthesised first: it runs when its type is a returner.
+    Call,
+}
+
 /// A rule waiting on the judgement of one of its subterms.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Frame
@@ -1821,6 +1831,21 @@ enum Frame
         at: ValueId,
         /// Whether `at` is the goal of a judgement of its own.
         read: Read,
+    },
+    /// Await the type a call written where a thunk is read synthesises, when
+    /// the thunk's body is no returner: a call that returns runs, and the
+    /// value it returns crosses the value bridge; any other is suspended, and
+    /// its type crosses the computation bridge to the body.
+    NestedCall
+    {
+        /// The nested computation's value.
+        at: ValueId,
+        /// The call.
+        call: ComputationId,
+        /// The thunk type `at` is checked against.
+        expected: ValueTypeId,
+        /// The body that thunk type matches.
+        body: CompTypeId,
     },
     /// Await the element path's classifier; the motive is then formed under a
     /// binder of its carrier.
@@ -2561,6 +2586,7 @@ impl Frame
             Self::UnivalenceChecked { .. } => FrameRole::UnivalenceChecked,
             Self::ReturnedEndpoint { .. } => FrameRole::ReturnedEndpoint,
             Self::Ran { .. } => FrameRole::Ran,
+            Self::NestedCall { .. } => FrameRole::NestedCall,
             Self::ElementTransportPath { .. } => FrameRole::ElementTransportPath,
             Self::ElementTransportMotive { .. } => FrameRole::ElementTransportMotive,
             Self::TelescopePath { .. } => FrameRole::TelescopePath,
@@ -2720,6 +2746,7 @@ impl Frame
             | Self::UnivalenceChecked { .. }
             | Self::ReturnedEndpoint { .. }
             | Self::Ran { .. }
+            | Self::NestedCall { .. }
             | Self::ElementTransportPath { .. }
             | Self::ElementTransportMotive { .. }
             | Self::TelescopePath { .. }
@@ -3173,6 +3200,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::UnivalenceChecked { .. }
                 | Frame::ReturnedEndpoint { .. }
                 | Frame::Ran { .. }
+                | Frame::NestedCall { .. }
                 | Frame::ElementTransportPath { .. }
                 | Frame::ElementTransportMotive { .. }
                 | Frame::SessionStatement { .. }
@@ -4914,8 +4942,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   once; a computation written where a value is read is decided by
     ///   `expected` — against a thunk type, or the unknown type, its
     ///   computation checks against the thunk's body and it is recorded
-    ///   suspended, and against any other it runs: its computation synthesises
-    ///   a returner whose result crosses the value bridge to `expected`, and it
+    ///   suspended, except a call against a thunk whose body is no returner
+    ///   ([`Self::nested_read`]), which synthesises first and runs when it
+    ///   returns; against any other it runs: its computation synthesises a
+    ///   returner whose result crosses the value bridge to `expected`, and it
     ///   is recorded run; a constructor checked at a staged type checks as
     ///   [`Self::staged_constructor`] does; a synthesising value synthesises,
     ///   then crosses the value bridge to `expected`. Every other rule
@@ -4937,6 +4967,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
+    /// - witness: `module::tests::a_call_returning_a_function_runs_where_one_is_read_2327`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     ///
     /// # Judgement
@@ -5027,6 +5058,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 let head = self.context.whnf_value_type(expected)?;
                 match matched_thunk(self.context.arena_mut(), head) {
                     Maybe::Present(body_type) => {
+                        // Against a thunk whose body no returner converts
+                        // with, a call is read by what it synthesises.
+                        if self.nested_read(computation, body_type)? == NestedRead::Call {
+                            self.wait(Frame::NestedCall {
+                                at: term,
+                                call: computation,
+                                expected: entered,
+                                body: body_type,
+                            });
+                            return Ok(Step::Descend(Goal::Computation {
+                                term: computation,
+                                direction: Direction::Synthesise,
+                            }));
+                        }
                         self.context.record_nesting(term, Nesting::Suspended);
                         self.wait(Frame::ThunkBody);
                         Ok(Step::Descend(Goal::Computation {
@@ -6267,6 +6312,60 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 },
             )),
         }
+    }
+
+    /// How a computation written where a thunk is read is judged: a call, read
+    /// against a body no returner converts with, may return the function the
+    /// thunk holds, so the type it synthesises decides it.
+    ///
+    /// # Specification
+    /// - requires: `body` is formed.
+    /// - ensures: [`NestedRead::Call`] exactly when `computation` is an
+    ///   application whose head is no fixpoint, or a force — the calls, which
+    ///   check by synthesis — and `body` at its weak head is neither a returner
+    ///   nor the unknown type; [`NestedRead::Body`] otherwise.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a computation the arena does
+    ///   not hold; the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call returning a function, read where that
+    ///   function's thunk is read, runs; a call returning a value, read where a
+    ///   thunk of its returner is read, stays suspended.
+    /// - witness: `module::tests::a_call_returning_a_function_runs_where_one_is_read_2327`
+    /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&read| read == NestedRead::Body
+        || matches!(
+            self.context.arena().computation(computation),
+            Some(&(Computation::Application(..) | Computation::Force(_)))
+        )))]
+    fn nested_read(
+        &mut self,
+        computation: ComputationId,
+        body: CompTypeId,
+    ) -> Result<NestedRead, CheckRefusal>
+    {
+        let node = self.computation(computation)?;
+        let call = if let &Computation::Application(head, _) = node {
+            !matches!(
+                self.context.arena().computation(head),
+                Some(&Computation::Fixpoint { .. })
+            )
+        }
+        else {
+            matches!(*node, Computation::Force(_))
+        };
+        if !call {
+            return Ok(NestedRead::Body);
+        }
+        let head = self.context.whnf_comp_type(body)?;
+        if matches!(
+            comp_type_view(self.context.arena(), head)?,
+            CompTypeView::Returner { .. } | CompTypeView::Unknown
+        ) {
+            return Ok(NestedRead::Body);
+        }
+        Ok(NestedRead::Call)
     }
 
     /// The factors a pair's components check against: the ones the expected
@@ -7780,9 +7879,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   computation's returned type and judges its body, then closes the
     ///   binder and has what the body had, lowered out of the binder; a lambda
     ///   closes its binder; a bridge frame crosses its bridge and the check
-    ///   succeeds; a quote has its universe; a formation frame forms the next
-    ///   child, closes its binder, checks a lift's raise, crosses the decode
-    ///   bridge or checks a static Pi's classifiers; a pair checks or
+    ///   succeeds; a call read where a thunk of no returner is read runs when
+    ///   it synthesises a returner, its result crossing the value bridge, and
+    ///   is suspended otherwise, its type crossing the computation bridge to
+    ///   the thunk's body; a quote has its universe; a formation frame forms
+    ///   the next child, closes its binder, checks a lift's raise, crosses the
+    ///   decode bridge or checks a static Pi's classifiers; a pair checks or
     ///   synthesises its second component after its first; a static application
     ///   meets each argument at the domain of the static Pi its head so far
     ///   has, and has the codomain. Every type read for its former is read at
@@ -8367,6 +8469,34 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     });
                 }
                 Ok(Step::Ascend(Produced::ValueType(result.into())))
+            },
+            // A call read where a thunk of no returner is read: one that
+            // returns runs, its value crossing to the thunk type, and any other
+            // is suspended, its type crossing to the thunk's body.
+            (
+                Frame::NestedCall {
+                    at,
+                    call,
+                    expected,
+                    body,
+                },
+                Produced::CompType(synthesised),
+            ) => {
+                let head = self.context.whnf_comp_type(synthesised)?;
+                if matches!(
+                    comp_type_view(self.context.arena(), head)?,
+                    CompTypeView::Returner { .. }
+                ) {
+                    self.wait(Frame::ValueBridge { at, expected });
+                    self.wait(Frame::Ran {
+                        at,
+                        read: Read::Goal,
+                    });
+                    return Ok(Step::Ascend(Produced::CompType(synthesised)));
+                }
+                self.context.record_nesting(at, Nesting::Suspended);
+                comp_bridge(self.context, call, synthesised, body, &mut self.conversions)?;
+                Ok(Step::Ascend(Produced::Checked))
             },
             (Frame::ReturnedEndpoint { at }, Produced::CompType(synthesised)) => {
                 let head = self.context.whnf_comp_type(synthesised)?;
@@ -9472,6 +9602,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::CompBridge { .. }
                 | Frame::ReturnedEndpoint { .. }
                 | Frame::Ran { .. }
+                | Frame::NestedCall { .. }
                 | Frame::BindBound { .. }
                 | Frame::Project { .. }
                 | Frame::HandlerSubject { .. }

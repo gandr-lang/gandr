@@ -57,6 +57,7 @@ fn every_role_has_its_own_name()
         FrameRole::UnivalenceChecked,
         FrameRole::ReturnedEndpoint,
         FrameRole::Ran,
+        FrameRole::NestedCall,
         FrameRole::ElementTransportPath,
         FrameRole::ElementTransportMotive,
         FrameRole::TelescopePath,
