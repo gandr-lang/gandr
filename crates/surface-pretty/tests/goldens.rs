@@ -5877,6 +5877,35 @@ fn a_kept_value_names_the_hold_it_is_kept_in()
     );
 }
 
+/// An operation performed through its interface writes the call through the
+/// interface's name, `Proc.exit(3)`, the one spelling the lowering reads as
+/// a perform: the bare `exit(3)` names nothing in scope (#2304).
+#[test]
+fn a_performed_operation_is_called_through_its_interface_s_name_2304()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let code = core.value_type_base(BaseType::Integer);
+    let unit = core.value_type_product(&[]);
+    let signature = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+        name: "exit".into(),
+        payload: code,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    let three = integer(&mut core, Sign::NonNegative, Written("3"));
+    let performed = core.computation_perform(signature, "exit".into(), three);
+    let source = CoreSource::new(&core, &[]);
+    agrees(&core, &[], CoreNode::Computation(performed));
+    assert_eq!(
+        spelled(&source, Root::Computation(CoreNode::Computation(performed))),
+        faithful(Written("Proc.exit(3)"))
+    );
+}
+
 /// An operation clause resuming its continuation with a value writes the
 /// continuation's call, `k(v)`, which the lowering reads as the resumption
 /// of `pure v`; a resumption with a computation that is no return keeps the

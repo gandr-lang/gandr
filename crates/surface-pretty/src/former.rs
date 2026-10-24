@@ -850,9 +850,12 @@ pub enum Former<'source, Node>
         /// The cell branch.
         cons: Node,
     },
-    /// An operation performed on its payload, `op(v)`.
+    /// An operation performed on its payload through its interface's name,
+    /// `I.op(v)`: the one spelling the lowering reads as a perform (#2304).
     Perform
     {
+        /// The interface's name.
+        interface: Name<'source>,
         /// The operation's name.
         operation: Name<'source>,
         /// The payload.
