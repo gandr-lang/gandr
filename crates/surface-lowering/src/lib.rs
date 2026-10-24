@@ -373,6 +373,7 @@ mod operation;
 mod origin;
 pub mod prelude;
 mod resolve;
+mod table;
 pub mod unbuilt;
 mod unit;
 

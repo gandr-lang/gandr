@@ -751,9 +751,7 @@ mod native;
 
 mod phase;
 
-mod plans;
-
-use plans::Plans;
+use crate::table::NodeTable;
 
 mod sealing;
 
@@ -2990,25 +2988,25 @@ struct Lowerer<'run, 'source>
     /// The module's declarations and the slot each node belongs to.
     collected: Collected<'source>,
     /// How each node's position reads it.
-    readings: Vec<Reading>,
+    readings: NodeTable<Reading>,
     /// What the mint sweep does for each node, kept once it is done: a later
     /// source's classification reads an earlier source's plans.
-    plans: Plans,
+    plans: NodeTable<Plan>,
     /// Each written name resolved, with what it names, in the order resolved:
     /// a name of a declaration refused later is kept.
     resolutions: Vec<(ByteSpan, crate::Resolution)>,
     /// Whether the mint sweep has carried out each node's plan, which it does
     /// once.
-    taken: Vec<bool>,
+    taken: NodeTable<bool>,
     /// What the mint sweep writes over each node's own core node.
-    bridges: Vec<Bridge>,
+    bridges: NodeTable<Bridge>,
     /// Each node's lowered core node.
-    lowered: Vec<Maybe<Lowered, lowered::Absent>>,
+    lowered: NodeTable<Maybe<Lowered, lowered::Absent>>,
     /// Which nodes lie inside an attribute payload.
-    payload: Vec<InPayload>,
+    payload: NodeTable<InPayload>,
     /// The manifest type components each node sees, where it lies in a
     /// module signature.
-    scopes: Vec<Maybe<ComponentScope, scoped::Absent>>,
+    scopes: NodeTable<Maybe<ComponentScope, scoped::Absent>>,
     /// Each type head that named a manifest type component, with the held
     /// slot owning that component's type.
     manifests: Vec<(SlotIndex, NodeIndex)>,
@@ -3144,7 +3142,7 @@ struct Lowerer<'run, 'source>
     at_endpoint: BTreeSet<NodeIndex>,
     /// What every node's paths do with the body it stands in, surveyed before
     /// the classification reads it.
-    leaves: Vec<exits::Leaves>,
+    leaves: NodeTable<exits::Leaves>,
     /// The computation positions where a path through a body ends: the last
     /// computation of a function's, a lambda's or a thunk's body, and what
     /// stands in tail position of one — a block's last computation, a match's
@@ -3478,7 +3476,7 @@ struct Lowerer<'run, 'source>
     described_types:
         BTreeMap<gandr_theory_levitation::Name, gandr_core_term::description::TypeBinding>,
     /// Each node's source: the source its top-level form starts in.
-    source_of: Vec<SourceIndex>,
+    source_of: NodeTable<SourceIndex>,
     /// The source the passes are lowering, and where its share of each list
     /// they read begins.
     current: Current,
@@ -3637,13 +3635,16 @@ struct Ours(bool);
 ///   document's laid after it.
 /// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
 /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
-#[spec(ensures: |ret| ret.len() == usize::from(tree.node_count()))]
+#[spec(ensures: |ret| ret.count() == tree.node_count())]
 fn sources_of(
     tree: &SyntaxTree<'_>,
     unit: &Unit,
-) -> Vec<SourceIndex>
+) -> NodeTable<SourceIndex>
 {
-    let mut of = Vec::new();
+    let mut of = NodeTable::filled(
+        gandr_surface_syntax::NodeCount::from(0_usize),
+        SourceIndex::default(),
+    );
     extend_sources(&mut of, tree, unit);
     of
 }
@@ -3666,16 +3667,16 @@ fn sources_of(
 /// # Adequacy
 /// - hypothesis: L3 — as [`sources_of`].
 /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
-#[spec(ensures: of.len() == usize::from(tree.node_count()))]
+#[spec(ensures: of.count() == tree.node_count())]
 fn extend_sources(
-    of: &mut Vec<SourceIndex>,
+    of: &mut NodeTable<SourceIndex>,
     tree: &SyntaxTree<'_>,
     unit: &Unit,
 )
 {
-    let read = of.len();
+    let read = usize::from(of.count());
     let count = usize::from(tree.node_count());
-    of.resize(count, SourceIndex::default());
+    of.widen(tree.node_count(), SourceIndex::default());
     let roots = tree.roots();
     let added = roots
         .get(roots.partition_point(|&root| usize::from(root) < read) ..)
@@ -3727,7 +3728,7 @@ const fn half_at(half: Half) -> HalfAt
 /// - witness: `tests::namespace::a_source_lowers_alike_whatever_follows_it_776`
 #[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|&position| source_of.get(usize::from(position)) == Some(&source)))]
 fn own_positions(
-    source_of: &[SourceIndex],
+    source_of: &NodeTable<SourceIndex>,
     source: SourceIndex,
 ) -> Vec<NodeIndex>
 {
@@ -4788,8 +4789,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a document resumed after its closure lowers as the
     ///   whole unit does, holes and descriptions included.
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
-    #[spec(ensures: self.readings.len() == usize::from(tree.node_count())
-        && self.source_of.len() == usize::from(tree.node_count()))]
+    #[spec(ensures: self.readings.count() == tree.node_count()
+        && self.source_of.count() == tree.node_count())]
     fn widen(
         &mut self,
         tree: &'run SyntaxTree<'source>,
@@ -4798,25 +4799,54 @@ impl<'run, 'source> Lowerer<'run, 'source>
         decisions: &mut Decisions,
     )
     {
-        let read = NodeIndex::from(self.readings.len());
-        let count = usize::from(tree.node_count());
+        let read = NodeIndex::from(usize::from(self.readings.count()));
         self.tree = tree;
-        self.readings.resize(count, Reading::Unread);
-        self.plans.widen(tree.node_count());
-        self.taken.resize(count, false);
-        self.bridges.resize(count, Bridge::Bare);
+        self.readings.widen(tree.node_count(), Reading::Unread);
+        self.plans.widen(tree.node_count(), Plan::Unplanned);
+        self.taken.widen(tree.node_count(), false);
+        self.bridges.widen(tree.node_count(), Bridge::Bare);
         self.lowered
-            .resize(count, Maybe::Absent(lowered::Absent::Unminted));
-        self.payload.resize(count, InPayload(false));
+            .widen(tree.node_count(), Maybe::Absent(lowered::Absent::Unminted));
+        self.payload.widen(tree.node_count(), InPayload(false));
         self.scopes
-            .resize(count, Maybe::Absent(scoped::Absent::Unscoped));
-        self.leaves.resize(count, exits::Leaves::Never);
+            .widen(tree.node_count(), Maybe::Absent(scoped::Absent::Unscoped));
+        self.leaves.widen(tree.node_count(), exits::Leaves::Never);
         self.collected
             .widen(tree.node_count(), unit, described, decisions);
         extend_sources(&mut self.source_of, tree, unit);
         if !self.holes.is_empty() {
             self.read_holes(read);
         }
+    }
+
+    /// Share every per-node table's cells, so a lowering resumed from a clone
+    /// of this one copies none of them and widens by its own nodes alone.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every per-node table holds the cells it held, all of them
+    ///   shared.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — each table's [`NodeTable::share`] states its own
+    ///   clause.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a document resumed after its closure lowers as the
+    ///   whole does.
+    /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
+    fn share_tables(&mut self)
+    {
+        self.readings.share();
+        self.plans.share();
+        self.taken.share();
+        self.bridges.share();
+        self.lowered.share();
+        self.payload.share();
+        self.scopes.share();
+        self.leaves.share();
+        self.source_of.share();
+        self.collected.owner.share();
     }
 }
 
@@ -4843,7 +4873,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     #[spec(
         ensures: |ret| {
             let count = usize::from(tree.node_count());
-            ret.readings.len() == count
+            usize::from(ret.readings.count()) == count
                 && ret
                     .readings
                     .iter()
@@ -4853,16 +4883,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .plans
                     .iter()
                     .all(|plan| matches!(*plan, Plan::Unplanned))
-                && ret.bridges.len() == count
+                && usize::from(ret.bridges.count()) == count
                 && ret.bridges.iter().all(|bridge| *bridge == Bridge::Bare)
-                && ret.lowered.len() == count
+                && usize::from(ret.lowered.count()) == count
                 && ret
                     .lowered
                     .iter()
                     .all(|node| matches!(*node, Maybe::Absent(lowered::Absent::Unminted)))
-                && ret.payload.len() == count
+                && usize::from(ret.payload.count()) == count
                 && ret.payload.iter().all(|flag| !flag.0)
-                && ret.scopes.len() == count
+                && usize::from(ret.scopes.count()) == count
                 && ret
                     .scopes
                     .iter()
@@ -4893,22 +4923,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         recognition: Recognition,
     ) -> Self
     {
-        let count = usize::from(tree.node_count());
-        let mut readings = Vec::new();
-        readings.resize(count, Reading::Unread);
-        let plans = Plans::unplanned(tree.node_count());
-        let mut taken = Vec::new();
-        taken.resize(count, false);
-        let mut bridges = Vec::new();
-        bridges.resize(count, Bridge::Bare);
-        let mut lowered = Vec::new();
-        lowered.resize(count, Maybe::Absent(lowered::Absent::Unminted));
-        let mut payload = Vec::new();
-        payload.resize(count, InPayload(false));
-        let mut scopes = Vec::new();
-        scopes.resize(count, Maybe::Absent(scoped::Absent::Unscoped));
-        let mut leaves = Vec::new();
-        leaves.resize(count, exits::Leaves::Never);
+        let count = tree.node_count();
+        let readings = NodeTable::filled(count, Reading::Unread);
+        let plans = NodeTable::filled(count, Plan::Unplanned);
+        let taken = NodeTable::filled(count, false);
+        let bridges = NodeTable::filled(count, Bridge::Bare);
+        let lowered = NodeTable::filled(count, Maybe::Absent(lowered::Absent::Unminted));
+        let payload = NodeTable::filled(count, InPayload(false));
+        let scopes = NodeTable::filled(count, Maybe::Absent(scoped::Absent::Unscoped));
+        let leaves = NodeTable::filled(count, exits::Leaves::Never);
         let source_of = sources_of(tree, &collected.unit);
         let own = own_positions(&source_of, SourceIndex::default());
 
@@ -5718,11 +5741,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         )
     )]
     #[spec(
-        captures: before = (self.readings.len(), self.payload.len(), self.scopes.len()),
+        captures: before = (usize::from(self.readings.count()), usize::from(self.payload.count()), usize::from(self.scopes.count())),
         ensures: |ret| {
-            self.readings.len() == before.0
-                && self.payload.len() == before.1
-                && self.scopes.len() == before.2
+            usize::from(self.readings.count()) == before.0
+                && usize::from(self.payload.count()) == before.1
+                && usize::from(self.scopes.count()) == before.2
                 && (ret.is_err()
                     || self
                         .collected
@@ -6127,11 +6150,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_key`
     #[spec(
         captures: before = (
-            self.collected.owner.len(),
+            usize::from(self.collected.owner.count()),
             self.collected.owner_of(position),
         ),
         ensures: |_| {
-            self.collected.owner.len() == before.0
+            usize::from(self.collected.owner.count()) == before.0
                 && self.collected.owner_of(position) == before.1
                 && (!matches!(before.1, Maybe::Present(_))
                     || self
@@ -6179,10 +6202,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::arity::tests::a_field_of_a_record_no_type_states_projects_its_label_1106`
     #[spec(
         captures: before = (
-            self.collected.owner.len(),
+            usize::from(self.collected.owner.count()),
             self.collected.owner_of(anchor),
         ),
-        ensures: |_| self.collected.owner.len() == before.0
+        ensures: |_| usize::from(self.collected.owner.count()) == before.0
             && self.collected.owner_of(anchor) == before.1,
     )]
     fn own_written(
@@ -6223,11 +6246,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::modules::a_manifest_type_component_expands_in_later_components`
     #[spec(
         captures: before = (
-            self.scopes.len(),
+            usize::from(self.scopes.count()),
             self.scopes.get(usize::from(position)).copied(),
         ),
         ensures: |_| {
-            self.scopes.len() == before.0
+            usize::from(self.scopes.count()) == before.0
                 && self.scopes.get(usize::from(position)).copied() == before.1
                 && (!matches!(before.1, Some(Maybe::Present(_)))
                     || self.tree.children(position).all(|child| {
@@ -6319,9 +6342,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
     /// - witness: `lower::tests::a_refused_declarations_compound_payload_is_lowered_to_its_leaves`
     #[spec(
-        captures: before = (self.payload.len(), self.in_payload(position)),
+        captures: before = (usize::from(self.payload.count()), self.in_payload(position)),
         ensures: |_| {
-            self.payload.len() == before.0
+            usize::from(self.payload.count()) == before.0
                 && self.in_payload(position) == before.1
                 && (!before.1.0
                     || self.tree.children(position).all(|child| {
@@ -6725,10 +6748,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::scopes::an_unclosed_call_keeps_its_head_s_referent_843`
     #[spec(
         captures: before = (
-            self.collected.owner.len(),
+            usize::from(self.collected.owner.count()),
             self.collected.owner_of(declaration),
         ),
-        ensures: |_| self.collected.owner.len() == before.0
+        ensures: |_| usize::from(self.collected.owner.count()) == before.0
             && self.collected.owner_of(declaration) == before.1,
     )]
     fn repaired_calls(
@@ -6987,8 +7010,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   joins, each keep their binder.
     /// - witness: `tests::scopes::a_use_inside_a_refused_form_keeps_its_referent_1265`
     #[spec(
-        captures: before = (self.readings.len(), self.collected.owner.len()),
-        ensures: |_| self.readings.len() == before.0 && self.collected.owner.len() == before.1,
+        captures: before = (usize::from(self.readings.count()), usize::from(self.collected.owner.count())),
+        ensures: |_| usize::from(self.readings.count()) == before.0 && usize::from(self.collected.owner.count()) == before.1,
     )]
     fn refused_uses(
         &mut self,
@@ -13558,9 +13581,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
     /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
     #[spec(
-        captures: count = self.readings.len(),
+        captures: count = usize::from(self.readings.count()),
         ensures: |_| {
-            self.readings.len() == count
+            usize::from(self.readings.count()) == count
                 && self
                     .readings
                     .get(usize::from(position))
@@ -14159,10 +14182,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ) || self.taken.get(usize::from(position)) == Some(&true),
             self.lowered_at(position),
             self.plans.count(),
-            self.lowered.len(),
+            usize::from(self.lowered.count()),
         ),
         ensures: self.plans.count() == before.3
-            && self.lowered.len() == before.4
+            && usize::from(self.lowered.count()) == before.4
             && (if before.0 || before.1 {
                 self.lowered_at(position) == before.2
             }
@@ -14291,10 +14314,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ) || self.taken.get(usize::from(position)) == Some(&true),
             self.lowered_at(position),
             self.plans.count(),
-            self.lowered.len(),
+            usize::from(self.lowered.count()),
         ),
         ensures: self.plans.count() == before.2
-            && self.lowered.len() == before.3
+            && usize::from(self.lowered.count()) == before.3
             && (if before.0 {
                 self.lowered_at(position) == before.1
             }
@@ -19413,16 +19436,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> crate::InScope
     {
         let from = resumed.map_or(0, |resumed| resumed.nodes);
-        let read = self
-            .readings
-            .get(from ..)
-            .unwrap_or_default()
-            .iter()
-            .enumerate()
-            .filter_map(|(offset, reading)| match reading.frame() {
+        let read = (from .. usize::from(self.readings.count()))
+            .filter_map(|position| match self.readings.get(position)?.frame() {
                 Frame::Inner(frame) => self
                     .tree
-                    .node(NodeIndex::from(from.saturating_add(offset)))
+                    .node(NodeIndex::from(position))
                     .map(|node| (node.span(), frame)),
                 Frame::Outermost => None,
             })
@@ -19446,7 +19464,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         Resumed {
             finished,
-            nodes: self.readings.len(),
+            nodes: usize::from(self.readings.count()),
             values: origins.values().len(),
             resolved: self.resolutions.len(),
             declared: self.collected.declared_uses.len(),
@@ -22975,8 +22993,10 @@ mod tests
         };
         // The two halves of the issue's `windHom`: the function tail's node
         // left unminted, with no refusal filed against the name.
-        let node = usize::from(half.declaration.node);
-        lowerer.lowered[node] = Maybe::Absent(super::lowered::Absent::Unminted);
+        *lowerer
+            .lowered
+            .get_mut(half.declaration.node)
+            .expect("the definition half's node") = Maybe::Absent(super::lowered::Absent::Unminted);
         let declarations = lowerer.assemble(&mut origins);
         let [ref declaration] = *declarations
         else {

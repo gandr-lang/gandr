@@ -1398,7 +1398,7 @@ pub struct Collected<'source>
     /// The slots, in admission order.
     pub slots: Vec<DeclarationSlot<'source>>,
     /// Each arena position's owning slot, where it has one.
-    pub owner: Vec<Maybe<SlotIndex, slot_owner::Absent>>,
+    pub owner: crate::table::NodeTable<Maybe<SlotIndex, slot_owner::Absent>>,
     /// Each declared name's slot by where it is declared, for the term-name
     /// resolution table.
     pub by_name: BTreeMap<(Container, SurfaceName<'source>), SlotIndex>,
@@ -2209,8 +2209,8 @@ impl<'source> Collected<'source>
     /// - witness: `module::tests::ownership_routes_refusals_without_touching_other_slots`
     #[spec(
         requires: slot.0 < self.slots.len(),
-        captures: before = self.owner.len(),
-        ensures: self.owner.len() == before
+        captures: before = usize::from(self.owner.count()),
+        ensures: usize::from(self.owner.count()) == before
             && self
                 .owner
                 .get(usize::from(position))
@@ -2247,7 +2247,7 @@ impl<'source> Collected<'source>
     #[spec(
         captures: before = (
             self.slots.len(),
-            self.owner.len(),
+            usize::from(self.owner.count()),
             self.owner_of(position),
             match self.owner_of(position) {
                 | Maybe::Present(slot) => self
@@ -2260,7 +2260,7 @@ impl<'source> Collected<'source>
             },
         ),
         ensures: self.slots.len() == before.0
-            && self.owner.len() == before.1
+            && usize::from(self.owner.count()) == before.1
             && self.owner_of(position) == before.2
             && match before.2 {
                 | Maybe::Absent(_) => true,
@@ -2617,7 +2617,7 @@ struct Collector<'run, 'source>
 /// - witness: `module::tests::a_mutual_block_collects_its_members_as_one_run`
 #[cfg(test)]
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
-    collected.owner.len() == usize::from(tree.node_count())
+    usize::from(collected.owner.count()) == usize::from(tree.node_count())
         && collected.owner.iter().all(|owner| match *owner {
             | Maybe::Present(slot) => slot.0 < collected.slots.len(),
             | Maybe::Absent(_) => true,
@@ -2687,7 +2687,7 @@ pub fn collect<'source>(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |collected| {
     collected.slots.is_empty()
         && collected.structures.is_empty()
-        && collected.owner.len() == usize::from(tree.node_count())
+        && usize::from(collected.owner.count()) == usize::from(tree.node_count())
 }))]
 pub fn begin_collection<'source>(
     pbg: &Pbg,
@@ -2698,9 +2698,8 @@ pub fn begin_collection<'source>(
 {
     let described = crate::description::elaborate_descriptions(pbg, tree, unit)?;
     let cells = crate::desc_cells::elaborate_desc_cells(&described.declarations, decisions);
-    let mut owner = Vec::new();
-    owner.resize(
-        usize::from(tree.node_count()),
+    let owner = crate::table::NodeTable::filled(
+        tree.node_count(),
         Maybe::Absent(slot_owner::Absent::Unowned),
     );
 
@@ -2777,7 +2776,7 @@ impl Collected<'_>
     /// - hypothesis: L3 — a document resumed after its closure collects as the
     ///   whole unit does.
     /// - witness: `tests::namespace::a_document_resumed_after_its_closure_lowers_as_the_whole_1033`
-    #[spec(ensures: self.owner.len() >= usize::from(count))]
+    #[spec(ensures: usize::from(self.owner.count()) >= usize::from(count))]
     pub(crate) fn widen(
         &mut self,
         count: NodeCount,
@@ -2797,10 +2796,9 @@ impl Collected<'_>
         self.natives.extend(described.natives);
         self.cells.declarations.extend(cells.declarations);
         self.cells.diagnostics.extend(cells.diagnostics);
-        let count = usize::from(count);
-        if self.owner.len() < count {
+        if usize::from(self.owner.count()) < usize::from(count) {
             self.owner
-                .resize(count, Maybe::Absent(slot_owner::Absent::Unowned));
+                .widen(count, Maybe::Absent(slot_owner::Absent::Unowned));
         }
         self.unit = unit.clone();
     }
@@ -2994,7 +2992,7 @@ pub fn source_pieces(
     ensures: |ret| {
         ret.is_err()
             || (collected.slots.len() >= before
-                && collected.owner.len() == usize::from(tree.node_count()))
+                && usize::from(collected.owner.count()) == usize::from(tree.node_count()))
     },
 )]
 pub fn collect_source<'source>(
@@ -3706,11 +3704,11 @@ impl<'source> Collector<'_, 'source>
         captures: before = (
             self.collected.slots.len(),
             self.collected.structures.len(),
-            self.collected.owner.len(),
+            usize::from(self.collected.owner.count()),
         ),
         ensures: self.collected.slots.len() >= before.0
             && self.collected.structures.len() >= before.1
-            && self.collected.owner.len() == before.2,
+            && usize::from(self.collected.owner.count()) == before.2,
     )]
     fn module_child(
         &mut self,
@@ -6163,12 +6161,12 @@ impl<'source> Collector<'_, 'source>
         captures: before = (
             self.collected.slots.len(),
             self.collected.structures.len(),
-            self.collected.owner.len(),
+            usize::from(self.collected.owner.count()),
         ),
         ensures: |_| {
             self.collected.slots.len() >= before.0
                 && self.collected.structures.len() >= before.1
-                && self.collected.owner.len() == before.2
+                && usize::from(self.collected.owner.count()) == before.2
                 && self.collected.structures.get(before.1 ..).is_some_and(|appended| {
                     appended.iter().zip(before.1 ..).all(|(module, index)| match module.container {
                         | Container::TopLevel(_) => true,
