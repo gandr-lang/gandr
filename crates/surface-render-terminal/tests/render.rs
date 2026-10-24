@@ -746,8 +746,13 @@ fn scratch_scope_removal_is_visible_to_a_new_walk()
     let ControlFlow::Continue(_report) = Walk::new(vec![path.clone()]).visit(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
-            if let Step::Source { text, .. } = step {
-                observed.push(<&str>::from(text).to_owned());
+            if let Step::Source { text, base, .. } = step {
+                observed.push(
+                    <&str>::from(text)
+                        .get(usize::from(base) ..)
+                        .unwrap_or_default()
+                        .to_owned(),
+                );
             }
             ControlFlow::Continue(())
         },

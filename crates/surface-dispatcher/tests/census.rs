@@ -158,13 +158,13 @@ fn collapsed(text: SourceText<'_>) -> String
         .join(" ")
 }
 
-/// The table of the walk's source at `path`, typed beside the siblings it
-/// imports: the walk's `text` lays out the source's import closure, its
-/// own text from `base`, and read as one source the importer's imports
-/// resolve to nothing and refuse every declaration of it (#552). A source
-/// that imports nothing is typed from its own bytes alone: the walk's text
-/// before `base` holds the component's earlier members, whose imports are
-/// not its own (#625).
+/// The table of the walk's source at `path`, typed beside the prelude and
+/// the siblings it imports: the walk's `text` lays out the source's
+/// component, its own text from `base`, and read as one source the
+/// importer's imports resolve to nothing and refuse every declaration of it
+/// (#552). The source is laid out again alone: the walk's text before
+/// `base` holds the component's earlier members, whose imports are not its
+/// own (#625).
 ///
 /// # Specification
 /// trivial.
@@ -176,16 +176,14 @@ fn typed(
 ) -> Option<TypeTable>
 {
     let own = SourceText::from(text.as_ref().get(usize::from(base) ..)?);
-    match lay_out(grammar, path, root, own) {
-        Maybe::Present(laid) => TypeTable::of_unit(
-            grammar,
-            SourceText::from(laid.text.as_str()),
-            &laid.unit,
-            laid.base,
-        )
-        .ok(),
-        Maybe::Absent(_) => TypeTable::of(grammar, own).ok(),
-    }
+    let laid = lay_out(grammar, path, root, own);
+    TypeTable::of_unit(
+        grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .ok()
 }
 
 /// The printer as a fixed point over the values the corpus states: each
@@ -498,7 +496,7 @@ mod sweeps
     struct Checked(usize);
 
     /// The bytes a check of the walk's source at `path` reads: its text laid
-    /// out after its import closure, or its own text when it imports nothing.
+    /// out after the prelude and its import closure.
     ///
     /// # Specification
     /// trivial.
@@ -510,10 +508,11 @@ mod sweeps
     ) -> Checked
     {
         let own = text.as_ref().get(usize::from(base) ..).unwrap_or_default();
-        match lay_out(grammar, path, root, SourceText::from(own)) {
-            Maybe::Present(laid) => Checked(laid.text.len()),
-            Maybe::Absent(_) => Checked(own.len()),
-        }
+        Checked(
+            lay_out(grammar, path, root, SourceText::from(own))
+                .text
+                .len(),
+        )
     }
 
     #[test]

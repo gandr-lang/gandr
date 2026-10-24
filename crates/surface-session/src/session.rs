@@ -2205,7 +2205,13 @@ impl<Store, Blocks> Session<Store, Blocks>
 
     /// Judge one revision: parse it through the form store, lower it, judge
     /// and settle it, and resume the incremental checker over it, keeping its
-    /// kernel admission for [`admit`](Self::admit).
+    /// kernel admission for [`admit`](Self::admit). The revision is lowered
+    /// alone, a unit of its own text without the prelude, so `==` is the
+    /// integer primitive here and the prelude's names are unbound; a face that
+    /// judges a source as `check` does lays it out first
+    /// ([`lay_out`](gandr_surface_dispatcher::lay_out)) and judges the unit
+    /// ([`judge_unit_reading`](Self::judge_unit_reading),
+    /// [`submit_unit`](Self::submit_unit)).
     ///
     /// # Specification
     /// - requires: `revision` is the whole text of the session's source.
@@ -3422,7 +3428,8 @@ impl<Store, Blocks> Session<Store, Blocks>
         if let Some(held) = lowerings::find(text, sources, fingerprint) {
             return held;
         }
-        let held = Unit::new(sources.to_vec())
+        let held = unit
+            .before_last()
             .ok()
             .and_then(|closure| {
                 lower_closure(

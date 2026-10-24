@@ -1386,7 +1386,6 @@ mod sweeps
     use gandr_workflow_sweep::SampleSize;
     use gandr_workflow_sweep::Sweep;
     use proptest::test_runner::RngSeed;
-    use quenchant_shape::shape::Maybe;
 
     use super::*;
 
@@ -1586,15 +1585,16 @@ mod sweeps
     ) -> Checked
     {
         let path = DocumentUri::from(source.uri.as_str()).path();
-        match lay_out(
-            grammar,
-            &path,
-            classify(&path),
-            SourceText::from(source.text.as_str()),
-        ) {
-            Maybe::Present(laid) => Checked(laid.text.len()),
-            Maybe::Absent(_) => Checked(source.text.len()),
-        }
+        Checked(
+            lay_out(
+                grammar,
+                &path,
+                classify(&path),
+                SourceText::from(source.text.as_str()),
+            )
+            .text
+            .len(),
+        )
     }
 
     /// The bytes one check of a source may read past which a sampled sweep

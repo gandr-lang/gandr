@@ -139,6 +139,7 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::fmt;
+use core::ops::Range;
 
 use anodized::spec;
 use gandr_core_checker::Judged;
@@ -325,6 +326,10 @@ pub struct Program<'source>
     entry: Maybe<Entry, program_entry::Absent>,
     /// Where the program's sources write each hole an entry run can reach.
     holes: BTreeMap<HoleId, Maybe<ByteSpan, hole_site::Absent>>,
+    /// The admission positions of the declarations the source run writes,
+    /// among which its run target is chosen: every position, unless the
+    /// source is laid after others in its unit.
+    own: Range<ConstantIndex>,
 }
 
 /// The part of a program a module's leading declarations make: each of them
@@ -935,6 +940,7 @@ impl<'source> Program<'source>
             spelling: Spelling::Unicode,
             entry: entry::entry_of(core, module, verdicts),
             holes: hole::hole_sites(core, module),
+            own: ConstantIndex::from(0_usize) .. ConstantIndex::from(usize::MAX),
         }
     }
 
@@ -987,14 +993,43 @@ impl<'source> Program<'source>
         self.spelling = spelling;
     }
 
+    /// This program, run as the source whose declarations stand at the
+    /// admission positions `own`.
+    ///
+    /// # Specification
+    /// - requires: `own` holds exactly the positions of the declarations the
+    ///   source writes.
+    /// - ensures: [`Self::target`] reads only the declarations at `own`;
+    ///   nothing else changes.
+    /// - provides: a source laid after the prelude and its imports runs its own
+    ///   last declaration, never theirs.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the store is a move; [`Self::target`] states what
+    ///   it changes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a script declaring nothing, laid after the prelude,
+    ///   has no program.
+    /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
+    #[inline]
+    pub(crate) fn run_within(
+        &mut self,
+        own: Range<ConstantIndex>,
+    )
+    {
+        self.own = own;
+    }
+
     /// The declaration `gandr run` runs: the source's run target, or the last
     /// name the source declares when it writes none.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the highest admission position of the program, which is the
-    ///   source's run target, admitted after every name, when it writes one,
-    ///   and otherwise the name the source declared last for the first time.
+    /// - ensures: the highest admission position among the source's own
+    ///   ([`Self::run_within`]), which is the source's run target, admitted
+    ///   after every name, when it writes one, and otherwise the name the
+    ///   source declared last for the first time.
     /// - provides: the declaration a source runs.
     /// - fails: [`run_target::Absent::NoDeclaration`] when the source declares
     ///   no name and writes no run target.
@@ -1002,19 +1037,21 @@ impl<'source> Program<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a source of several names, a later declaration of an
-    ///   earlier name among them, a source of none, and a final expression
-    ///   after a name and after a later declaration of an earlier name.
+    ///   earlier name among them, a source of none, a final expression after a
+    ///   name and after a later declaration of an earlier name, and a source of
+    ///   none laid after the prelude.
     /// - witness: `evaluate::tests::the_run_target_is_the_last_name_declared`
     /// - witness: `evaluate::tests::a_final_expression_is_the_run_target_1105`
+    /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(last) => self.declarations.last_key_value().is_some_and(|(&held, _)| held == last),
-        Maybe::Absent(run_target::Absent::NoDeclaration) => self.declarations.is_empty(),
+        Maybe::Present(last) => self.own.contains(&last) && self.declarations.contains_key(&last),
+        Maybe::Absent(run_target::Absent::NoDeclaration) => true,
     })]
     #[inline]
     pub fn target(&self) -> Maybe<ConstantIndex, run_target::Absent>
     {
-        match self.declarations.keys().next_back() {
-            Some(&last) => Maybe::Present(last),
+        match self.declarations.range(self.own.clone()).next_back() {
+            Some((&last, _)) => Maybe::Present(last),
             None => Maybe::Absent(run_target::Absent::NoDeclaration),
         }
     }

@@ -1230,11 +1230,11 @@ fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
         panic!("one timing line per synchronisation: {log:?}");
     };
     assert!(
-        opened.contains(", 3/3 declarations crossed"),
-        "opening offers the kernel the closure and the document: {opened}"
+        opened.contains(", 10/10 declarations crossed"),
+        "opening offers the kernel the prelude, the closure and the document: {opened}"
     );
     assert!(
-        changed.contains(", 2/4 declarations crossed"),
+        changed.contains(", 2/11 declarations crossed"),
         "an edit to its own text offers the document's declarations alone: {changed}"
     );
 }

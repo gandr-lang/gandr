@@ -296,8 +296,10 @@ impl Exercised
     /// The rows the settled declarations of one source carry.
     ///
     /// # Specification
-    /// - requires: `report` settled `module`, whose terms `arena` holds.
-    /// - ensures: each settled declaration counts once in each row it carries,
+    /// - requires: `report` settled `module`, or the declarations of one source
+    ///   of it, whose terms `arena` holds.
+    /// - ensures: each settled declaration, read beside the lowered declaration
+    ///   at its own admission position, counts once in each row it carries,
     ///   however often the row's former stands in its body; an unsettled
     ///   declaration counts in no row. An accepted body carries the direction
     ///   row of each of the four formers standing in it and, when it crossed a
@@ -320,6 +322,7 @@ impl Exercised
     /// - witness: `exercised::tests::a_module_carries_exactly_its_rows`
     /// - witness: `exercised::tests::an_unsettled_declaration_carries_no_row`
     /// - witness: `exercised::tests::a_near_miss_carries_no_refusal_row`
+    /// - witness: `tests::corpus::the_two_roots_exercise_every_row`
     #[spec(
         captures: [settled = report.declarations().iter()
             .filter(|declaration| declaration.settlement() == Settlement::Settled).count()],
@@ -334,9 +337,23 @@ impl Exercised
     {
         let mut exercised = Self::default();
         let mut worklist = Vec::new();
-        for (declaration, lowered) in report.declarations().iter().zip(module.declarations()) {
-            if declaration.settlement() == Settlement::Settled {
-                let carried = carried(arena, declaration, lowered, &mut worklist);
+        // The report may hold one source's declarations of a unit laid after
+        // the prelude and its imports: each is read beside the lowered
+        // declaration at its own position, never the one at its index.
+        let mut lowered = module.declarations().iter().peekable();
+        for declaration in report.declarations() {
+            while lowered
+                .next_if(|held| held.constant() < declaration.constant())
+                .is_some()
+            {}
+            let Some(&held) = lowered.peek()
+            else {
+                break;
+            };
+            if held.constant() == declaration.constant()
+                && declaration.settlement() == Settlement::Settled
+            {
+                let carried = carried(arena, declaration, held, &mut worklist);
                 exercised.absorb(&carried);
             }
         }

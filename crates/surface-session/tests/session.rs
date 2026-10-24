@@ -1082,6 +1082,10 @@ fn a_deprecation_is_kept_by_declaration_identity()
     );
 }
 
+/// The declarations the prelude lays before every unit: a unit's first
+/// admission offers them, and its items lead with theirs.
+const PRELUDE: usize = 7;
+
 /// How many declarations an admission offered the kernel, of how many were
 /// judged.
 #[derive(Debug, Eq, PartialEq)]
@@ -1135,10 +1139,6 @@ fn admitted_after<'text>(
     let crate::common::Text(own) = own.into();
     let grammar = &*crate::common::GRAMMAR;
     let laid = lay_out(grammar, document, SourceRoot::Strict, own.into());
-    let Maybe::Present(laid) = laid
-    else {
-        panic!("the document is laid out after its sibling: {laid:?}");
-    };
     let text = SourceText::from(laid.text.as_str());
     let slot = gandr_surface_session::ClosureSlot::new();
     let _judged = session
@@ -1216,16 +1216,17 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     assert_eq!(
         admitted_after(&mut session, &document, first),
         Counted {
-            offered: 3,
-            judged: 3
+            offered: PRELUDE + 3,
+            judged: PRELUDE + 3
         },
-        "the closure's first admission offers the kernel every declaration"
+        "the closure's first admission offers the kernel every declaration, the prelude's \
+         among them"
     );
     assert_eq!(
         admitted_after(&mut session, &document, &second),
         Counted {
             offered: 2,
-            judged: 4
+            judged: PRELUDE + 4
         },
         "an edit to the document's own text offers its own declarations alone"
     );
@@ -1238,8 +1239,8 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     assert_eq!(
         admitted_after(&mut session, &document, &second),
         Counted {
-            offered: 4,
-            judged: 4
+            offered: PRELUDE + 4,
+            judged: PRELUDE + 4
         },
         "a changed sibling offers the whole closure again"
     );
@@ -1247,7 +1248,7 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
         admitted_after(&mut session, &document, first),
         Counted {
             offered: 1,
-            judged: 3
+            judged: PRELUDE + 3
         },
         "and the changed closure is resumed thereafter"
     );
@@ -1289,7 +1290,7 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
     for (own, offered, said) in [
         (
             revision("two", "three", ""),
-            5_usize,
+            PRELUDE + 5,
             "opening offers the kernel the closure and the document",
         ),
         (
@@ -1320,7 +1321,10 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
     ] {
         assert_eq!(
             admitted_after(&mut session, &document, &own),
-            Counted { offered, judged: 5 },
+            Counted {
+                offered,
+                judged: PRELUDE + 5
+            },
             "{said}"
         );
     }
@@ -1388,10 +1392,6 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     let own = "import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\ndef four : \
                Integer ;\ndef four = three ;\n";
     let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
-    let Maybe::Present(laid) = laid
-    else {
-        panic!("the document is laid out after its sibling: {laid:?}");
-    };
     let text = SourceText::from(laid.text.as_str());
     let judge = |session: &mut gandr_surface_session::Session<
         gandr_core_incremental::MemoryCheckpointStore,
@@ -1431,7 +1431,7 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     let (crossed, judged, inside) = retire_then_admit(1_usize);
     assert_eq!(
         (crossed, judged),
-        (3_usize, 4_usize),
+        (PRELUDE + 3, PRELUDE + 4),
         "retired inside the closure, the next admission crosses the rest"
     );
     let Lowered::Module { module, arena } =
@@ -1456,7 +1456,7 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     let (crossed, judged, past) = retire_then_admit(1_usize);
     assert_eq!(
         (crossed, judged),
-        (1_usize, 4_usize),
+        (1_usize, PRELUDE + 4),
         "retired past the closure, the next admission crosses the last declaration alone"
     );
     assert!(*past.kernel() == whole, "and exports the whole artifact");
@@ -1567,10 +1567,6 @@ fn a_document_after_its_closure_shares_the_closure_s_images_776()
     // and the item ordinals its edits are anchored at.
     let mut judge = |own: &str| {
         let laid = lay_out(grammar, &document, SourceRoot::Strict, own.into());
-        let Maybe::Present(laid) = laid
-        else {
-            panic!("the document is laid out after its sibling: {laid:?}");
-        };
         let text = SourceText::from(laid.text.as_str());
         let slot = gandr_surface_session::ClosureSlot::new();
         let judged = session
@@ -1603,18 +1599,18 @@ fn a_document_after_its_closure_shares_the_closure_s_images_776()
     let (after, anchors) = judge(&format!(
         "{first}def four : Integer ;\ndef four = three ;\n"
     ));
-    assert_eq!((before.len(), after.len()), (3_usize, 4_usize));
+    assert_eq!((before.len(), after.len()), (PRELUDE + 3, PRELUDE + 4));
     assert!(
         before
             .iter()
             .zip(&after)
-            .take(2)
+            .take(PRELUDE + 2)
             .all(|(before, after)| Arc::ptr_eq(before, after)),
-        "the closure's two items keep their images"
+        "the prelude's and the closure's items keep their images"
     );
     assert_eq!(
         anchors,
-        [3_usize],
+        [PRELUDE + 3],
         "the one edit inserts the document's new item"
     );
     let _removed = std::fs::remove_dir_all(&directory);
@@ -1836,17 +1832,12 @@ fn an_importer_lowers_its_closure_once_1033()
     // The editor's buffer is what is judged; the file only has to exist.
     std::fs::write(&document, "").expect("the document is written");
     let laid = |own: &str| {
-        let laid = lay_out(
+        lay_out(
             &crate::common::GRAMMAR,
             &document,
             SourceRoot::Strict,
             own.into(),
-        );
-        let Maybe::Present(laid) = laid
-        else {
-            panic!("the document is laid out after its sibling: {laid:?}");
-        };
-        laid
+        )
     };
     let first = laid("import \"./base.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n");
     let second = laid(
@@ -1864,7 +1855,7 @@ fn an_importer_lowers_its_closure_once_1033()
     );
     assert_eq!(
         (cold_census.adopted, cold_census.judged),
-        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
+        (ItemCount::from(PRELUDE + 2), ItemCount::from(1_usize)),
         "and judges the document's item after the closure's, which are judged once per closure"
     );
     let cold_typings = resumed(&cold);
@@ -1878,7 +1869,7 @@ fn an_importer_lowers_its_closure_once_1033()
         ),
         (
             ItemCount::from(2_usize),
-            ItemCount::from(3_usize),
+            ItemCount::from(PRELUDE + 3),
             ItemCount::from(1_usize)
         ),
         "#776: an edit to the document's own text recalls only the document's items, adopting \
@@ -1900,7 +1891,7 @@ fn an_importer_lowers_its_closure_once_1033()
     assert_eq!(warmed, composed, "to the composition the cold store gave");
     assert_eq!(
         (warm_census.adopted, warm_census.judged),
-        (ItemCount::from(2_usize), ItemCount::from(1_usize)),
+        (ItemCount::from(PRELUDE + 2), ItemCount::from(1_usize)),
         "its first submission adopts the closure's items and judges the document's"
     );
     assert_eq!(

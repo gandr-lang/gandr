@@ -1472,6 +1472,104 @@ fn an_unqualified_import_answers_a_name_its_source_declares()
     );
 }
 
+/// The declarations of `module` the lowering refused, as their refusals read.
+///
+/// # Specification
+/// trivial.
+fn refused(module: &LoweredModule<'_>) -> Vec<String>
+{
+    module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some(format!("{refusal:?}"))
+            }
+            else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn the_prelude_answers_a_name_nothing_written_binds_2302()
+{
+    // A source writing no import reads the prelude's `Eq` in a model type and
+    // in an include, and its own `eq` shadows the prelude's; alone, it reads
+    // neither.
+    let pbg = grammar();
+    let source = "theory Decided { include Eq; }\ndef same @[e : Model(Eq)] (a : e.Carrier, b \
+                  : e.Carrier) -> Bool { e.eq(a, b) }\ndef eq(a : Bool) -> Bool { a }\ndef \
+                  mine() -> Bool { eq(true) }\n";
+    let (text, unit) =
+        gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
+            .expect("a unit of one source lays after the prelude");
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    assert_eq!(
+        refused(&module),
+        Vec::<String>::new(),
+        "`Eq` answers from the prelude"
+    );
+    assert_eq!(
+        include_faults(&module),
+        Vec::new(),
+        "the include reads the prelude's `Eq`"
+    );
+    let own = module
+        .declarations()
+        .iter()
+        .rev()
+        .find(|declaration| declaration.name() == SurfaceName::from("eq"))
+        .expect("the source declares `eq`")
+        .constant();
+    let called = ByteOffset::from(text.rfind("eq(true)").expect("`mine` calls `eq`"));
+    assert!(
+        module
+            .resolutions()
+            .iter()
+            .any(|&(span, resolved)| span.start() == called
+                && resolved == gandr_surface_lowering::Resolution::Declaration(own)),
+        "the source's own `eq` shadows the prelude's"
+    );
+    let alone = lowered_unit(
+        &pbg,
+        &parsed(&pbg, SourceText::from(source)),
+        &Unit::single(),
+    )
+    .expect("the source lowers alone");
+    assert_ne!(
+        refused(&alone),
+        Vec::<String>::new(),
+        "alone, nothing answers `Eq`"
+    );
+}
+
+/// #2302: the prelude's `theory Eq` enters the presentation's constructors in
+/// the prelude, as any block does, but offers none of them: a source laid
+/// after it reads `Shape` as the type it declares, where the presentation's
+/// `Shape` once answered and the code was refused.
+#[test]
+fn the_prelude_offers_no_presentation_constructor_2302()
+{
+    let pbg = grammar();
+    let source = "data Shape : Type {\n  Circle : (r : Integer) --> Shape;\n}\ndata Figure : \
+                  Type {\n  Round : (r : Integer) --> Figure;\n}\ndef toFigure(shape : Shape) \
+                  -> Figure {\n  case shape {\n    Circle(r) => Round(r)\n  }\n}\ndef redrawn : \
+                  Flow(Type, Shape, Figure) = forward(toFigure) ;\n";
+    let (text, unit) =
+        gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
+            .expect("a unit of one source lays after the prelude");
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    assert_eq!(
+        refused(&module),
+        Vec::<String>::new(),
+        "`Shape` is the source's own type, not the presentation's constructor"
+    );
+}
+
 #[test]
 fn a_method_of_a_source_not_imported_is_out_of_scope()
 {

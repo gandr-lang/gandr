@@ -535,13 +535,10 @@ fn lay_out<'formatting>(
     let text = read.text();
     let grammar = grammar.map_err(FormatFault::Grammar)?;
     let parsed = parse(grammar, text).map_err(FormatFault::Parse)?;
-    let closure = component::lay_out(grammar, path, root::classify(path), text);
-    let beside = match closure {
-        Maybe::Present(ref laid) => Beside::Imports {
-            before: SourceText::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
-            unit: &laid.unit,
-        },
-        Maybe::Absent(_) => Beside::Alone,
+    let laid = component::lay_out(grammar, path, root::classify(path), text);
+    let beside = Beside::Imports {
+        before: SourceText::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
+        unit: &laid.unit,
     };
     let formatted = format_beside(
         grammar,

@@ -6411,10 +6411,7 @@ mod tests
                 }
                 let own =
                     SourceText::from(text.as_ref().get(usize::from(base) ..).unwrap_or_default());
-                let Maybe::Present(laid) = lay_out(&grammar, path, root, own)
-                else {
-                    panic!("the member is laid out beside its import");
-                };
+                let laid = lay_out(&grammar, path, root, own);
                 let table = TypeTable::of_unit(
                     &grammar,
                     SourceText::from(laid.text.as_str()),
@@ -8130,7 +8127,6 @@ mod tests
         use alloc::sync::Arc;
 
         use gandr_surface_corpus::CorpusRoot;
-        use gandr_surface_lowering::Unit;
         use gandr_surface_parser::parse;
 
         use crate::HostGrant;
@@ -8147,27 +8143,19 @@ mod tests
         )
         .expect("the rose trees are in the corpus");
         let own = std::fs::read_to_string(&path).expect("the rose trees read");
-        let Maybe::Present(laid) = lay_out(
+        let laid = lay_out(
             &grammar,
             &path,
             SourceRoot::Fixture,
             SourceText::from(own.as_str()),
-        )
-        else {
-            panic!("the rose trees are laid out after their siblings");
-        };
-        let sources = laid.unit.sources();
+        );
         let closure = Arc::new(
             lower_closure(
                 Arc::clone(&grammar),
                 String::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
-                Unit::new(
-                    sources
-                        .get(.. sources.len().saturating_sub(1))
-                        .unwrap_or_default()
-                        .to_vec(),
-                )
-                .expect("the siblings make a unit"),
+                laid.unit
+                    .before_last()
+                    .expect("the prelude and the siblings make a unit"),
                 &mut LoweringCount::default(),
             )
             .expect("the siblings are held"),

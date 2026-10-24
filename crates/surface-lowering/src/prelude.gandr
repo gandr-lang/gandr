@@ -1,0 +1,21 @@
+/// Decidable equality over a carrier.
+theory Eq {
+  sort Carrier : Type;
+  oper eq : (a : Carrier, b : Carrier) --> Bool;
+}
+
+/// Integer equality, the integer primitive.
+module EqInteger : Model(Eq) with sort Carrier = Integer {
+  /// Whether two integers are equal.
+  def eq(a : Integer, b : Integer) -> Bool { int.eq(a, b) }
+}
+
+/// String equality, the string primitive.
+module EqString : Model(Eq) with sort Carrier = String {
+  /// Whether two strings are equal, byte for byte.
+  def eq(a : String, b : String) -> Bool { string.eq(a, b) }
+}
+
+/// Equality through the model of `Eq` the operands' type resolves: what `a ==
+/// b` calls.
+def eq @[e : Model(Eq)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }

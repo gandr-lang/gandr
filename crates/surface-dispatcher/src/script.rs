@@ -4,10 +4,11 @@
 //!
 //! # A script never reaches the machine with a refusal in it
 //!
-//! A source is composed exactly as `check` composes it, under the root its path
-//! sits under, and is run only when no declaration of it was refused — by the
-//! lowering, the checker or its root. A declaration owed its body is no
-//! refusal: the run goes ahead, and is blamed on the goal if it reaches it.
+//! A source is composed exactly as `check` composes it — laid after the
+//! prelude, under the root its path sits under — and is run only when no
+//! declaration of it was refused — by the lowering, the checker or its root. A
+//! declaration owed its body is no refusal: the run goes ahead, and is blamed
+//! on the goal if it reaches it.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -20,14 +21,17 @@ use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_pretty::Spelling;
-use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::HostGrant;
+use crate::component::Laid;
 use crate::compose::ComposeFault;
 use crate::compose::Composed;
 use crate::compose::LoweringCount;
 use crate::compose::compose;
+use crate::compose::judge_lowering;
+use crate::compose::lower_unit_source;
 use crate::evaluate::Console;
 use crate::evaluate::Entered;
 use crate::evaluate::Entry;
@@ -327,6 +331,8 @@ pub struct Script
     reader: Reader,
     /// The source's text, once read.
     text: String,
+    /// The source laid after the prelude, once read.
+    laid: Option<Laid>,
     /// The lowerings the script has run.
     lowerings: LoweringCount,
     /// The spelling its run's value is written in.
@@ -351,6 +357,7 @@ impl Script
             path,
             reader: Reader::new(),
             text: String::new(),
+            laid: None,
             lowerings: LoweringCount::default(),
             spelling: Spelling::Unicode,
             arguments: Vec::new(),
@@ -415,9 +422,10 @@ impl Script
     ///   [`SourceFault::Unreadable`], a grammar that did not build a
     ///   [`SourceFault::Grammar`], and a pipeline fault a
     ///   [`SourceFault::Compose`], each naming the path given. Otherwise the
-    ///   source is composed under its root, its step built as a walk builds it,
-    ///   and [`execute`] runs it, its value written in the script's spelling
-    ///   and its entry given the script's arguments.
+    ///   source is laid after the prelude alone, composed under its root, its
+    ///   step built as a walk builds it, and [`execute`] runs it, its value
+    ///   written in the script's spelling and its entry given the script's
+    ///   arguments.
     /// - provides: `gandr run`.
     /// - fails: never; every failure is a [`ScriptRun`].
     /// - panics: none.
@@ -428,6 +436,7 @@ impl Script
     ///   in-memory source cover pipeline agreement, not an independent oracle
     ///   for arbitrary programs or all filesystem failures.
     /// - witness: `tests::run::run_source_file_runs_a_script_file`
+    /// - witness: `tests::run::a_script_compares_through_the_prelude_s_eq_2302`
     /// - witness: `tests::run::run_source_file_accepts_an_executable_shebang_line`
     /// - witness: `tests::run::run_source_file_reports_the_path_of_an_absent_file`
     /// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
@@ -464,8 +473,22 @@ impl Script
                 };
             },
         };
-        let source = SourceText::from(self.text.as_str());
-        match compose(grammar, root.corpus_root(), source, &mut self.lowerings) {
+        let laid = &*self.laid.insert(Laid::alone(
+            &self.path,
+            SourceText::from(self.text.as_str()),
+            Vec::new(),
+        ));
+        let source = SourceText::from(laid.text.as_str());
+        let composed = lower_unit_source(grammar, source, &laid.unit, &mut self.lowerings)
+            .and_then(|lowering| {
+                judge_lowering(
+                    root.corpus_root(),
+                    (lowering, source),
+                    &HostGrant::UNBOUNDED,
+                    laid.base,
+                )
+            });
+        match composed {
             Ok(mut composed) => {
                 if let Composed::Settled {
                     ref mut program, ..
@@ -480,7 +503,7 @@ impl Script
                         path: &self.path,
                         root,
                         text: source,
-                        base: ByteOffset::from(0_usize),
+                        base: laid.base,
                         composed,
                         standing,
                     },

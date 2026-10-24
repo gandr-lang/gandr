@@ -132,7 +132,8 @@ fn ran_text(text: SourceText<'_>) -> Ran<'_>
 /// - requires: the fixture file is readable and composes as a module;
 ///   `expected_status` is the status of `expected`.
 /// - ensures: returning establishes that the source step preserves `path` and
-///   `expected_text`, and its execution equals both expectations.
+///   holds `expected_text` from its base, after the prelude, and its execution
+///   equals both expectations.
 /// - fails: never.
 /// - panics: if the script does not produce that source and execution.
 ///
@@ -165,6 +166,7 @@ fn assert_runs_to(
                 Step::Source {
                     path: observed_path,
                     text,
+                    base,
                     composed: Composed::Settled { .. },
                     ..
                 },
@@ -175,8 +177,9 @@ fn assert_runs_to(
                 "the source step names the supplied path"
             );
             assert_eq!(
-                text, expected_text,
-                "the complete file is retained as source"
+                text.as_ref().get(usize::from(base) ..),
+                Some(expected_text.as_ref()),
+                "the complete file is retained as source, after the prelude"
             );
             assert_eq!(ran, *expected, "the file face runs as its text does");
         },
@@ -258,6 +261,38 @@ fn a_script_runs_to_its_value_in_the_spelling_asked_782()
             panic!("the word runs to a value: {run:?}");
         };
         assert_eq!(value.as_ref(), spelled, "the word in {spelling:?}");
+    }
+}
+
+/// #2302: a script is laid after the prelude, so `==` between two strings
+/// resolves the prelude's `EqString` and runs to whether they are the same
+/// text; bare, `==` would be the integer primitive and refuse them.
+#[test]
+fn a_script_compares_through_the_prelude_s_eq_2302()
+{
+    for (test, compared, spelled) in [
+        ("same", r#""types" == "types""#, "+{.0 = unit}"),
+        ("different", r#""types" == "machines""#, "+{.1 = unit}"),
+    ] {
+        let text = format!("def compared() -> Bool {{ {compared} }}\n");
+        let file = Scratch::write(
+            Path::new(&format!("eq-2302-{test}")),
+            SourceText::from(text.as_str()),
+        );
+        let mut script = Script::new(file.0.clone());
+        let run = script.run(&mut Captured::default());
+        let ScriptRun::Source {
+            ran:
+                Ran::Evaluated {
+                    evaluation: Evaluation::Value(ref value),
+                    ..
+                },
+            ..
+        } = run
+        else {
+            panic!("`{compared}` runs to a value: {run:?}");
+        };
+        assert_eq!(value.as_ref(), spelled, "`{compared}`");
     }
 }
 

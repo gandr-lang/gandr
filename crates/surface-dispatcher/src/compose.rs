@@ -160,6 +160,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
+use core::ops::Range;
 use std::sync::OnceLock;
 
 use anodized::spec;
@@ -1015,12 +1016,13 @@ mod lowering
 
     /// Lower the sources `unit` lays out in `tree` into `arena` against the
     /// empty outermost scope, each rule block decided through `decisions`,
-    /// counting each of them in `lowerings`.
+    /// counting each written one in `lowerings`.
     ///
     /// # Specification
     /// - requires: `tree` was molded under `grammar`.
-    /// - ensures: `lowerings` is more by the unit's sources, saturating,
-    ///   whatever the lowering answered.
+    /// - ensures: `lowerings` is more by the unit's sources but the prelude,
+    ///   saturating, whatever the lowering answered: the prelude is lowered
+    ///   with every unit, so a count of the sources read stays one per source.
     /// - provides: the lowering's own answer, unchanged.
     /// - fails: the lowering's refusal of the whole module, unchanged.
     /// - panics: none.
@@ -1039,7 +1041,8 @@ mod lowering
     /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
     #[spec(
         captures: [before = lowerings.0],
-        ensures: lowerings.0 == before.saturating_add(unit.sources().len()),
+        ensures: lowerings.0 == before.saturating_add(
+            unit.sources().len().saturating_sub(usize::from(unit.prelude().is_some()))),
     )]
     pub(super) fn lower<'source>(
         grammar: &Pbg,
@@ -1050,7 +1053,11 @@ mod lowering
         decisions: &mut Decisions,
     ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
     {
-        *lowerings = LoweringCount(lowerings.0.saturating_add(unit.sources().len()));
+        let written = unit
+            .sources()
+            .len()
+            .saturating_sub(usize::from(unit.prelude().is_some()));
+        *lowerings = LoweringCount(lowerings.0.saturating_add(written));
         lower_unit(
             grammar,
             tree,
@@ -1069,8 +1076,8 @@ mod lowering
     ///
     /// # Specification
     /// - requires: `text` lays out `unit`'s sources end to end.
-    /// - ensures: on success, `lowerings` is more by the closure's sources,
-    ///   saturating; on refusal, unchanged.
+    /// - ensures: on success, `lowerings` is more by the closure's sources but
+    ///   the prelude, saturating; on refusal, unchanged.
     /// - provides: the closure's lowering, once per closure.
     /// - fails: [`Unheld::Parse`] when the text does not parse, and
     ///   [`Unheld::Unlayable`] when its parse repairs it or it ends inside a
@@ -1085,7 +1092,8 @@ mod lowering
     ///   ends inside a comment is not held and counts nothing.
     /// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
     #[spec(
-        captures: [before = lowerings.0, sources = unit.sources().len()],
+        captures: [before = lowerings.0,
+            sources = unit.sources().len().saturating_sub(usize::from(unit.prelude().is_some()))],
         ensures: |ret| lowerings.0 == if ret.is_ok() { before.saturating_add(sources) } else { before },
     )]
     pub(super) fn suspend(
@@ -1095,7 +1103,10 @@ mod lowering
         lowerings: &mut LoweringCount,
     ) -> Result<ClosureLowering, Unheld>
     {
-        let sources = unit.sources().len();
+        let sources = unit
+            .sources()
+            .len()
+            .saturating_sub(usize::from(unit.prelude().is_some()));
         let closure = ClosureLowering::new(
             grammar,
             text,
@@ -1397,7 +1408,7 @@ pub fn lower_parsed<'source>(
 /// - requires: `source` is the text `unit` lays out.
 /// - ensures: as [`lower_source`], the sources' names resolved within the unit
 ///   as its imports say, and `lowerings` advancing by each of the unit's
-///   sources once the parse succeeds.
+///   sources but the prelude once the parse succeeds.
 /// - provides: the lowering the walk performs for a component (the `component`
 ///   module).
 /// - fails: as [`lower_source`].
@@ -1416,7 +1427,7 @@ pub fn lower_parsed<'source>(
     ensures: |ref ret| lowerings.0 == if matches!(ret, Err(ComposeFault::Parse(_))) {
         before
     } else {
-        before.saturating_add(unit.sources().len())
+        before.saturating_add(unit.sources().len().saturating_sub(usize::from(unit.prelude().is_some())))
     },
 )]
 pub fn lower_unit_source<'source>(
@@ -1438,7 +1449,7 @@ pub fn lower_unit_source<'source>(
 /// - requires: `grammar` is the checked grammar `parsed` was committed under,
 ///   over the text `unit` lays out.
 /// - ensures: as [`lower_parsed`], over the unit, `lowerings` advancing by each
-///   of its sources.
+///   of its sources but the prelude.
 /// - provides: the lowering of a session's document beside the siblings it
 ///   imports.
 /// - fails: as [`lower_parsed`].
@@ -1456,7 +1467,8 @@ pub fn lower_unit_source<'source>(
 #[inline]
 #[spec(
     captures: [before = lowerings.0],
-    ensures: lowerings.0 == before.saturating_add(unit.sources().len()),
+    ensures: lowerings.0 == before.saturating_add(
+        unit.sources().len().saturating_sub(usize::from(unit.prelude().is_some()))),
 )]
 pub fn lower_parsed_unit<'source>(
     grammar: &Pbg,
@@ -1503,7 +1515,8 @@ pub enum Unheld
 /// # Specification
 /// - requires: `text` lays out `unit`'s sources end to end.
 /// - ensures: the closure's sources lowered as [`lower_parsed_unit`] lowers
-///   them ahead of any source after them, each counted in `lowerings`.
+///   them ahead of any source after them, each but the prelude counted in
+///   `lowerings`.
 /// - provides: what a session holds for a document's closure across the
 ///   document's edits.
 /// - fails: [`Unheld`] when the text does not parse, its parse repairs it, or
@@ -1518,8 +1531,8 @@ pub enum Unheld
 ///   ends inside a comment is not held and counts nothing.
 /// - witness: `compose::tests::a_closure_lowers_once_and_resumes_per_document_1033`
 #[spec(
-    captures: [before = lowerings.0, sources = unit.sources().len()],
-    ensures: |ret| lowerings.0 == if ret.is_ok() { before.saturating_add(sources) } else { before }
+    captures: [before = lowerings.0, sources = unit.sources().len(), prelude = unit.prelude().is_some()],
+    ensures: |ret| lowerings.0 == if ret.is_ok() { before.saturating_add(sources.saturating_sub(usize::from(prelude))) } else { before }
         && ret.as_ref().map_or(true, |closure| closure.unit().sources().len() == sources),
 )]
 #[inline]
@@ -2580,9 +2593,11 @@ where
                 .map(|&member| {
                     let own = owned(&report, (&module, &verdicts), member);
                     let held = share(member, (own, spellings.clone()), (&arena, &module), &unit);
+                    let mut program = program.clone();
+                    program.run_within(own_constants(&module, member));
                     Ok(settled(
                         held,
-                        (module.origins().clone(), failures.clone(), program.clone()),
+                        (module.origins().clone(), failures.clone(), program),
                     ))
                 })
                 .collect();
@@ -2590,6 +2605,7 @@ where
                 report
             }
             else {
+                program.run_within(own_constants(&module, last));
                 owned(&report, (&module, &verdicts), last)
             };
             let last_share = share(last, (own, spellings), (&arena, &module), &unit);
@@ -2629,30 +2645,27 @@ struct Unitwide<'source>
     deprecated: Vec<DeprecatedUse<'source>>,
 }
 
-/// The report of the declarations written in `member`, owing what their
-/// verdicts owe.
+/// The admission positions of the declarations written in `member`: from its
+/// first declaration up to the first declaration after it.
 ///
 /// # Specification
-/// - requires: `report` settled `verdicts`, judged over `module`'s
-///   declarations.
-/// - ensures: [`SettleReport::within`] `member`, its ledger the number of
-///   `verdicts`' obligations owed by a constant from the member's first
-///   declaration up to the first declaration after it.
+/// - requires: nothing.
+/// - ensures: from the constant of `module`'s first declaration starting within
+///   `member`, its end included, up to that of the first starting past it; an
+///   end at [`usize::MAX`] when there is none.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an importer reports its own declarations, its sibling's
-///   obligations left to the sibling; each source of a component, separated by
-///   one line, reports exactly the declarations written in it.
+/// - hypothesis: L3 — an importer reports and runs its own declarations, its
+///   sibling's and the prelude's left to them.
 /// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
-/// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
-#[spec(ensures: |ref ret| ret.declarations().iter().all(|declaration| member.start <= declaration.span().start() && declaration.span().start() <= member.end))]
-fn owned<'source>(
-    report: &SettleReport<'source>,
-    (module, verdicts): (&LoweredModule<'source>, &ModuleReport),
+/// - witness: `tests::run::run_source_file_surfaces_a_source_failure_unchanged`
+#[spec(ensures: |ref ret| ret.start <= ret.end || usize::from(ret.start) == usize::MAX)]
+fn own_constants(
+    module: &LoweredModule<'_>,
     member: Member,
-) -> SettleReport<'source>
+) -> Range<ConstantIndex>
 {
     let written = |span: ByteSpan| member.start <= span.start() && span.start() <= member.end;
     let constant = |found: Option<&LoweredDeclaration<'_>>| {
@@ -2673,11 +2686,39 @@ fn owned<'source>(
             .iter()
             .find(|declaration| declaration.span().start() > member.end),
     );
+    first .. after
+}
+
+/// The report of the declarations written in `member`, owing what their
+/// verdicts owe.
+///
+/// # Specification
+/// - requires: `report` settled `verdicts`, judged over `module`'s
+///   declarations.
+/// - ensures: [`SettleReport::within`] `member`, its ledger the number of
+///   `verdicts`' obligations owed by a constant among [`own_constants`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an importer reports its own declarations, its sibling's
+///   obligations left to the sibling; each source of a component, separated by
+///   one line, reports exactly the declarations written in it.
+/// - witness: `walk::tests::an_importer_is_judged_over_its_sibling`
+/// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
+#[spec(ensures: |ref ret| ret.declarations().iter().all(|declaration| member.start <= declaration.span().start() && declaration.span().start() <= member.end))]
+fn owned<'source>(
+    report: &SettleReport<'source>,
+    (module, verdicts): (&LoweredModule<'source>, &ModuleReport),
+    member: Member,
+) -> SettleReport<'source>
+{
+    let own = own_constants(module, member);
     let owed = verdicts
         .ledger()
         .entries()
         .iter()
-        .filter(|entry| (first .. after).contains(&entry.absence().constant()))
+        .filter(|entry| own.contains(&entry.absence().constant()))
         .count();
     report.within(member.start, member.end, ObligationCount::from(owed))
 }
@@ -2983,15 +3024,15 @@ fn settled<'source>(
 /// - ensures: one composition per source of `members`, in order. A module the
 ///   lowering read is judged, settled and admitted once and projected as
 ///   [`judge_members`] projects it, each source's composition carrying the
-///   component's kernel artifact; a component of one source is
-///   [`judge_lowering`] at offset zero. A whole-component refusal is every
-///   source's. `spelled` advances once for a module the lowering read and
-///   settled, however many sources it has. Beside the compositions, under
-///   [`Keeping::Admission`], the admission of a module the lowering read as it
-///   stood before the kernel was offered anything — its arena, verdicts and
-///   names — or [`kept::Absent::Unjudged`] for a component the lowering refused
-///   whole or that has no source; under [`Keeping::Composed`],
-///   [`kept::Absent::Unasked`] and no copy made.
+///   component's kernel artifact; a component of one source is judged as
+///   [`judge_lowering`] judges it at that source's start, past the prelude. A
+///   whole-component refusal is every source's. `spelled` advances once for a
+///   module the lowering read and settled, however many sources it has. Beside
+///   the compositions, under [`Keeping::Admission`], the admission of a module
+///   the lowering read as it stood before the kernel was offered anything — its
+///   arena, verdicts and names — or [`kept::Absent::Unjudged`] for a component
+///   the lowering refused whole or that has no source; under
+///   [`Keeping::Composed`], [`kept::Absent::Unasked`] and no copy made.
 /// - provides: the walk's verdict at each source of a component, the component
 ///   lowered, checked and spelled once, and a hold on its checked core for a
 ///   differential that evaluates it apart from the program.
@@ -3259,6 +3300,11 @@ pub fn judge_module<'source>(
 }
 
 /// Carry one source through the pipeline: parse, lower, adapt, check, settle.
+///
+/// The source is lowered alone, without the prelude, so `==` is the integer
+/// primitive and the prelude's names are unbound; the walk and `gandr run`
+/// lay a source after the prelude ([`lay_out`](crate::lay_out)) and judge the
+/// unit.
 ///
 /// # Specification
 /// - requires: `grammar` is the checked grammar the source is parsed under;
