@@ -8528,14 +8528,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// The value type an answer returns, as the node that writes it: the
-    /// returned type of a written `-F A`, or the type a returning answer
+    /// returned type of a written `-F A`, a written list or product type the
+    /// lowering inserts the returner over, or the type a returning answer
     /// writes.
     ///
     /// # Specification
     /// - requires: nothing beyond a well-formed tree.
     /// - ensures: the operand of the answer's node, its parentheses stripped,
     ///   when the answer is written and the node a returner type of one
-    ///   operand; the node itself when the answer returns it; nothing for a
+    ///   operand; the node, its parentheses stripped, when the answer is
+    ///   written as a type application or a product type, `-> List(T)` or `->
+    ///   (A * B)`; the node itself when the answer returns it; nothing for a
     ///   loop arm's, a valued answer or another written type.
     /// - fails: the walk's refusal reading the node.
     /// - panics: none.
@@ -8544,9 +8547,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The walk's refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a function result `-F List(T)` and a thunk signed `()
-    ///   => List(T)`, each giving a listed constructor its element type, and a
-    ///   function result `-F (A * B)` giving a tuple's members theirs.
+    /// - hypothesis: L3 — a function result `-F List(T)`, `-> List(T)` and a
+    ///   thunk signed `() => List(T)`, each giving a listed constructor its
+    ///   element type, and a function result `-F (A * B)` or `-> (A * B)`
+    ///   giving a tuple's members theirs.
     /// - witness: `lower::native::tests::a_listed_constructor_takes_the_answered_element_type_1602`
     /// - witness: `lower::native::tests::a_tuple_gives_its_members_the_product_s_components_1877`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |node| match answer.over {
@@ -8567,6 +8571,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         [returned] => Ok(Some(returned)),
                         _ => Ok(None),
                     }
+                },
+                // A list's or a product's type written at a result without
+                // its returner, `-> List(T)` or `-> (A * B)`, is the value type
+                // the returner the lowering inserts there returns: neither
+                // former writes a computation type.
+                Maybe::Present(written)
+                    if matches!(
+                        written.former,
+                        Former::TypeApplication | Former::ProductType
+                    ) =>
+                {
+                    Ok(Some(written.node))
                 },
                 Maybe::Present(_) | Maybe::Absent(_) => Ok(None),
             },

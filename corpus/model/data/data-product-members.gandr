@@ -2,7 +2,8 @@
 // the tuple is written at, as a list's elements take its element type
 // (`data-answered-list.gandr`). `Maybe` is the one `data-maybe.gandr`
 // declares. Before #1877 each constructor among the members was refused for
-// want of a stated type.
+// want of a stated type. A result written without its returner, `-> A * B`,
+// answers its components as `-> -F (A * B)` does (#2255).
 
 /// Optional values, `None` and `Some(x)`.
 import "./data-maybe.gandr" ;
@@ -13,14 +14,14 @@ def paired = ((Some(1), None) : Maybe(Integer) * Maybe(Integer)) ;
 
 /// The same pair at the type the function returns.
 @[ checks ]
-def answered_pair(n : Integer) -> -F (Maybe(Integer) * Maybe(Integer)) {
+def answered_pair(n : Integer) -> Maybe(Integer) * Maybe(Integer) {
   (None, Some(n))
 }
 
 /// Pairs in a list: each takes the element type, and gives its members the
 /// components.
 @[ checks ]
-def pair_list() -> -F List(Maybe(Integer) * Maybe(Integer)) {
+def pair_list() -> List(Maybe(Integer) * Maybe(Integer)) {
   [(Some(1), None), (None, Some(2))]
 }
 
