@@ -905,9 +905,13 @@ jobs:
   # its crate alone holds 166 s of the engine's 223 s of tests and the longest
   # build chain. At four jobs after a core-sequent change, the engine shard
   # that held it rebuilt in 45 s; the dispatcher alone rebuilt in 24 s and the
-  # rest of the engine in 32 s (#2148). Every shard restores the lane's one
-  # state; its join overlays what each built on that state and hands the
-  # whole on.
+  # rest of the engine in 32 s (#2148). The chain's middle is two shards, the
+  # checker and the lowering: the checker's, the incremental checker's and the
+  # lowering's library tests are the three longest units of the deep rebuild,
+  # and the lowering's waits on the checker's library. At eight cores' four
+  # jobs after a core-term change the one shard rebuilt in 133 s, the two in
+  # 64 and 80 s (#2148). Every shard restores the lane's one state; its join
+  # overlays what each built on that state and hands the whole on.
   cargo-test-enforcing-shard:
     name: test enforcing targets (linux, ${{ matrix.shard }})
     needs: *rust-needs
@@ -933,10 +937,13 @@ jobs:
               gandr-surface-repl gandr-surface-tui
           - shard: checker
             packages: &checker-shard >-
-              gandr-core-checker gandr-core-incremental gandr-core-sequent gandr-runtime-emitter
-              gandr-surface-lowering gandr-surface-pretty
+              gandr-core-checker gandr-core-incremental
+          - shard: lowering
+            packages: &lowering-shard >-
+              gandr-core-sequent gandr-runtime-emitter gandr-surface-lowering gandr-surface-pretty
           - shard: rest
-            excludes: [*dispatcher-shard, *engine-shard, *faces-shard, *checker-shard]
+            excludes:
+              [*dispatcher-shard, *engine-shard, *faces-shard, *checker-shard, *lowering-shard]
     env:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ON_MAIN: ${{ github.event_name == 'push' }}

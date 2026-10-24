@@ -304,8 +304,9 @@ jobs:
   # shard's build and its own tests' share (#1177); a join is setup,
   # transfer and the witness listing. The dispatcher shard took the engine
   # shard's longest chain and three quarters of its tests (#2148), so it
-  # holds the engine's budgets and the engine keeps them as a bound. The
-  # recovery lane's budget is 1.5 times the sum of the plain lane's hosted
+  # holds the engine's budgets and the engine keeps them as a bound; the
+  # lowering shard took the checker shard's longest unit, the lowering's
+  # library tests, so it holds the checker's in the same way. The
   # steps it repeats, about 175 s: setup, restore, the parser's tests' build
   # and the 77 s sweep, until ten hosted runs give it a median; the plain
   # lane's stands. The mutants lane's budget is its first measurement's, a
@@ -350,6 +351,8 @@ jobs:
           --budget "test enforcing targets (linux, faces):deep=215"
           --budget "test enforcing targets (linux, checker)=190"
           --budget "test enforcing targets (linux, checker):deep=285"
+          --budget "test enforcing targets (linux, lowering)=190"
+          --budget "test enforcing targets (linux, lowering):deep=285"
           --budget "test enforcing targets (linux, rest)=135"
           --budget "test enforcing targets (linux, rest):deep=200"
           --budget "join the enforcing shards (linux)=120"
