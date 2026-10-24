@@ -49,10 +49,14 @@
 //!   the function's stage binders: that resident supplies a stage, which
 //!   crosses beside the declaration rather than as an argument
 //!   ([`super::staged`]).
-//! - A supply standing as a value takes implicits that lead the merged
-//!   telescope: an implicit the merge places after an explicit parameter, whose
-//!   type mentions it, leaves the fragment there, and a lambda that calls the
-//!   function supplies it.
+//! - A supply standing as a value whose merged telescope places an implicit
+//!   after an explicit parameter, whose type mentions it, opens a lambda for
+//!   each explicit parameter before the last implicit and applies the function
+//!   to their variables: `chosen[x = 7]`, for `chosen @[x : t] (t : Type)`,
+//!   lowers to `λ t. chosen(t)[x = 7]`. A supplied value is read where the
+//!   supply stands and raised past those lambdas, so it names none of them.
+//! - A stage crosses only at a call's head, so a supply of one standing as a
+//!   value opens a lambda for every explicit parameter and stands as the call.
 //! - The grammar writes no telescope after `def rec`, so a recursive function
 //!   has no implicits.
 
@@ -62,6 +66,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -405,22 +410,26 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Plan the instantiation at `site` that supplies a function's implicits
-    /// where no call applies it: the function applied to its implicits, which
-    /// lead its merged telescope, a function of the rest.
+    /// or stages where no call applies it: the function applied to its
+    /// implicits under a lambda for each explicit parameter before the last of
+    /// them, a function of the rest; or, a stage supplied, the call of the
+    /// function under a lambda for each explicit parameter.
     ///
     /// # Specification
     /// - requires: `site` is an instantiation.
     /// - ensures: [`arity::Planned`] true exactly when the instantiation's head
-    ///   names a declaration with implicits and every resident `a = e` names
-    ///   one, the instantiation then planned as the declaration applied to the
-    ///   residents in its merged telescope's order, each read as a value, and
-    ///   bridged as a computation read where it stands. False, with nothing
-    ///   changed, for any other instantiation, a recursion's claim among them.
+    ///   names a declaration with implicits or stages and every resident `a =
+    ///   e` names one, the instantiation then planned as the declaration
+    ///   applied in its merged telescope's order to the residents, each read as
+    ///   a value, and to the variable of a lambda the supply opens
+    ///   ([`Self::abstracted`]) for each explicit parameter the telescope
+    ///   places before its last implicit, or for every explicit parameter when
+    ///   a stage is supplied, bridged as a computation read where it stands.
+    ///   False, with nothing changed, for any other instantiation, a
+    ///   recursion's claim among them.
     /// - fails: [`LoweringRefusal::ImplicitUnsupplied`] for a supply leaving an
-    ///   implicit out; the unadmitted refusal for an implicit the merged
-    ///   telescope places after an explicit parameter, whose type its own
-    ///   mentions; the wrong-sort refusal where no computation can stand; the
-    ///   refusals of [`Self::supplied_call`] at a resident.
+    ///   implicit out; the wrong-sort refusal where no computation can stand;
+    ///   the refusals of [`Self::supplied_call`] at a resident.
     /// - panics: none.
     ///
     /// # Errors
@@ -428,10 +437,12 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a supplied function passed as a value applies to its
-    ///   implicits alone, and runs once applied; an implicit placed after an
-    ///   explicit parameter refuses.
+    ///   leading implicits alone, and runs once applied; one whose implicit
+    ///   follows an explicit parameter abstracts that parameter; one supplied a
+    ///   stage stands as its call under a lambda per parameter.
     /// - witness: `lower::implicit::tests::a_supplied_function_stands_as_a_value`
-    /// - witness: `lower::implicit::tests::a_standing_supply_takes_only_leading_implicits`
+    /// - witness: `lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
+    /// - witness: `lower::implicit::tests::a_standing_stage_supply_stands_as_its_call_1498`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| match ret {
@@ -571,15 +582,13 @@ impl<'source> Lowerer<'_, 'source>
         };
         let slot = SlotIndex::from(usize::from(constant));
         let staged = self.stage_supplies(site, slot, &mut supplied)?;
+        let stage_supplied = !staged.is_empty();
         let entries = match self.collected.plicities.get(&slot).cloned() {
             Some(Ok(entries)) => entries,
             None if !staged.is_empty() => Vec::new(),
             Some(Err(_)) | None => return Ok(arity::Planned(false)),
         };
         if !staged.is_empty() {
-            if matches!(used, Use::Standing) {
-                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::PartialSupply)));
-            }
             let caller = match self.collected.owner_of(site.at.node) {
                 Maybe::Present(owner) => self
                     .collected
@@ -644,28 +653,46 @@ impl<'source> Lowerer<'_, 'source>
                 });
             }
         }
-        // Standing, the supply applies the function to its implicits alone:
-        // they must lead the merged telescope, as an implicit placed after an
-        // explicit parameter mentions it in its type.
+        // Standing, the supply applies the function to its implicits and opens
+        // a lambda for each explicit parameter the merged telescope places
+        // before the last of them, whose types those implicits mention:
+        // `chosen[x = 7]` is `λ t. chosen(t)[x = 7]`, a function of the rest.
+        // A supplied stage crosses only at a call's head, so a supply of one
+        // opens a lambda for every explicit parameter and stands as the call:
+        // `applyAt[i = k]` is `λ f. λ x. applyAt[i = k](f, x)`.
+        let mut opened = 0_usize;
         if standing {
-            let leading = entries
-                .iter()
-                .take_while(|entry| entry.plicity == Plicity::Implicit)
-                .count();
-            if entries
-                .iter()
-                .skip(leading)
-                .any(|entry| entry.plicity == Plicity::Implicit)
-            {
-                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::PartialSupply)));
-            }
             let _frame = self.require(site, Produced::Computation)?;
+            opened = if stage_supplied {
+                self.collected.parameters.get(&slot).map_or(0, Vec::len)
+            }
+            else {
+                entries
+                    .iter()
+                    .rposition(|entry| entry.plicity == Plicity::Implicit)
+                    .map_or(0, |last| {
+                        entries
+                            .iter()
+                            .take(last)
+                            .filter(|entry| entry.plicity == Plicity::Explicit)
+                            .count()
+                    })
+            };
         }
+        // A function quantified over stages alone has no merged telescope: its
+        // explicit parameters are known here only by their count.
+        let unlisted = if entries.is_empty() { opened } else { 0 };
+        let mut bound = 0_usize;
         let start = self.operands.len();
         let mut positional = written.iter();
-        for entry in &entries {
-            let argument = match entry.plicity {
-                Plicity::Implicit => {
+        for entry in entries
+            .iter()
+            .map(Some)
+            .chain(core::iter::repeat_n(None, unlisted))
+        {
+            let plicity = entry.map_or(Plicity::Explicit, |entry| entry.plicity);
+            let argument = match (plicity, entry) {
+                (Plicity::Implicit, Some(entry)) => {
                     if let Some(&(_, value)) = supplied.get(&entry.name) {
                         Some(value)
                     }
@@ -678,7 +705,18 @@ impl<'source> Lowerer<'_, 'source>
                         Some(site.at.node)
                     }
                 },
-                Plicity::Explicit => positional.next().copied(),
+                (Plicity::Explicit, _) if bound < opened => {
+                    // The outermost lambda binds the first explicit: its
+                    // variable is the furthest under the application.
+                    let index = opened.saturating_sub(bound).saturating_sub(1);
+                    bound = bound.saturating_add(1);
+                    let _first = self.abstracted.insert(
+                        self.operands.len(),
+                        DeBruijnIndex::from(u32::try_from(index).unwrap_or(u32::MAX)),
+                    );
+                    Some(site.at.node)
+                },
+                (Plicity::Explicit | Plicity::Implicit, _) => positional.next().copied(),
             };
             if let Some(argument) = argument {
                 self.operands.push(argument);
@@ -695,7 +733,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         self.read(inner.node, Reading::Head(frame));
         for position in applied.start .. applied.end {
-            if self.nominated.contains_key(&position) {
+            if self.nominated.contains_key(&position) || self.abstracted.contains_key(&position) {
                 continue;
             }
             if let Some(&argument) = self.operands.get(position) {

@@ -3,8 +3,9 @@
 // argument's own lambda, a call whose argument and expected type disagree on
 // one (#1216), an implicit written among the parentheses, a resident naming
 // no implicit, a use standing as a value with an implicit unsupplied, a
-// supply standing as a value whose implicit follows an explicit parameter,
-// and a telescope whose types mention each other.
+// supply standing as a value whose implicit, once the supply abstracts the
+// explicit parameter before it, holds no value of that parameter, and a
+// telescope whose types mention each other.
 
 // `same`, the identity at a type supplied by name, `twice`, whose combination
 // is implicit, `chosen`, whose implicit's type names its explicit parameter,
@@ -47,12 +48,10 @@ def strayResident = thunk { same[b = Integer](3) } ;
 def sameNamed : +U (Integer -> -F Integer) ;
 def sameNamed = same ;
 
-/// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, which
-/// stands before it and is not supplied, so a lambda calling `chosen` supplies
-/// it.
-@[ refuses("OutOfFragment.instantiation_expression.value") ]
-def chosenStanding : +U (Type -> -F Integer) ;
-def chosenStanding = chosen[x = 7] ;
+/// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, so the
+/// supply is `λ t. chosen(t)[x = 7]`, and `7` is no value of every `t`.
+@[ refuses("TypeMismatch") ]
+def chosenStanding : Type => Integer = chosen[x = 7] ;
 
 /// Two implicits each typed by the other: no order binds either first.
 @[ refuses("TelescopeCycle") ]

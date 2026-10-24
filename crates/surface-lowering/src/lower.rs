@@ -3336,6 +3336,13 @@ struct Lowerer<'run, 'source>
     /// operand's node is the call's own, which no value lowers at, and the
     /// application mints the hole there.
     nominated: BTreeMap<usize, gandr_core_term::hole::HoleId>,
+    /// Each operand a standing supply passes for an explicit parameter its
+    /// merged telescope places before a supplied implicit, by its place among
+    /// the operands, with the variable of the lambda the supply opens for it:
+    /// the operand's node is the supply's own, which no value lowers at, and
+    /// the application mints the variable there, under one lambda per such
+    /// operand.
+    abstracted: BTreeMap<usize, DeBruijnIndex>,
     /// Each hole nominated for an omitted implicit or a written wildcard, in
     /// the order nominated, with what it stands for: the hole's name counts
     /// them.
@@ -4789,6 +4796,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             nullary: BTreeMap::new(),
             supplied: BTreeSet::new(),
             nominated: BTreeMap::new(),
+            abstracted: BTreeMap::new(),
             nominations: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
@@ -15985,7 +15993,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   an implicit is the hole nominated for it ([`Self::nominated`]), marked
     ///   as an implicit's insertion; a call through a joint fixpoint passes its
     ///   argument injected at the called member's summand, the injection marked
-    ///   as the fixpoint's insertion; a call of no arguments is its head's own
+    ///   as the fixpoint's insertion; a standing supply passing `k` explicit
+    ///   parameters as the variables of the lambdas it opens
+    ///   ([`Self::abstracted`]) mints `λ … λ. app(…)`, `k` lambdas marked as an
+    ///   implicit's insertion over the application of the head and every other
+    ///   argument raised past them; a call of no arguments is its head's own
     ///   computation; nothing is minted when the head or a written argument did
     ///   not lower.
     /// - provides: the curried elimination of a lambda.
@@ -16001,11 +16013,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
+    /// - witness: `lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
     #[spec(
-        captures: written = (arguments.start .. arguments.end)
-            .filter(|position| !self.nominated.contains_key(position))
-            .filter_map(|position| self.operands.get(position).copied())
-            .collect::<Vec<_>>(),
+        captures: (written, opened) = (
+            (arguments.start .. arguments.end)
+                .filter(|position| !self.nominated.contains_key(position) && !self.abstracted.contains_key(position))
+                .filter_map(|position| self.operands.get(position).copied())
+                .collect::<Vec<_>>(),
+            (arguments.start .. arguments.end).any(|position| self.abstracted.contains_key(&position)),
+        ),
         ensures: |ret| match self.computation_at(head) {
             | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
             | Maybe::Present(called) => {
@@ -16018,6 +16034,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     | Some(reason) => ret == Maybe::Absent(reason),
                     | None if arguments.start == arguments.end => {
                         ret == Maybe::Present(Lowered::Computation(called))
+                    },
+                    | None if opened => {
+                        matches!(ret, Maybe::Present(Lowered::Computation(id)) if sink.origins.computation(id) == Maybe::Present(origin.inserted(Insertion::Implicit)))
                     },
                     | None => {
                         matches!(ret, Maybe::Present(Lowered::Computation(id)) if sink.origins.computation(id) == Maybe::Present(origin))
@@ -16040,11 +16059,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
         for position in arguments.start .. arguments.end {
             if !self.nominated.contains_key(&position)
+                && !self.abstracted.contains_key(&position)
                 && let Some(&argument) = self.operands.get(position)
                 && let Maybe::Absent(reason) = self.value_at(argument)
             {
                 return Maybe::Absent(reason);
             }
+        }
+        let opened = (arguments.start .. arguments.end)
+            .filter(|position| self.abstracted.contains_key(position))
+            .count();
+        let under = Binders::from(u32::try_from(opened).unwrap_or(u32::MAX));
+        if opened > 0 {
+            applied =
+                gandr_core_term::shift_computation_under(sink.arena, applied, Binders::NONE, under)
+                    .settle(sink.arena);
         }
         for position in arguments.start .. arguments.end {
             let mut passed = if let Some(&hole) = self.nominated.get(&position) {
@@ -16061,12 +16090,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 }
                 id
             }
+            else if let Some(&index) = self.abstracted.get(&position) {
+                let id = sink.arena.value_variable(Zone::Intuitionistic, index);
+                sink.origins
+                    .record_value(id, origin.inserted(Insertion::Implicit));
+                id
+            }
             else {
                 match self
                     .operands
                     .get(position)
                     .map(|&argument| self.value_at(argument))
                 {
+                    Some(Maybe::Present(passed)) if opened > 0 => {
+                        gandr_core_term::shift_value(sink.arena, passed, under).settle(sink.arena)
+                    },
                     Some(Maybe::Present(passed)) => passed,
                     Some(Maybe::Absent(reason)) => return Maybe::Absent(reason),
                     None => return Maybe::Absent(lowered::Absent::Unminted),
@@ -16080,6 +16118,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }
             let id = sink.arena.computation_application(applied, passed);
             sink.origins.record_computation(id, origin);
+            applied = id;
+        }
+        for _ in 0 .. opened {
+            let id = sink.arena.computation_lambda(applied);
+            sink.origins
+                .record_computation(id, origin.inserted(Insertion::Implicit));
             applied = id;
         }
 

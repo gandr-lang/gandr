@@ -9,7 +9,8 @@
 // otherwise opens none for; `sameAt` takes both arguments at the stage itself,
 // which a call solves from the bound each argument shows (#1227); a call may
 // supply a stage by its binder's name, `applyAt[i = j]`, which must be the
-// stage the arguments show (#1227). What refuses is in
+// stage the arguments show (#1227), and so may a use passing the function as
+// a value, which stands as that call (#1498). What refuses is in
 // `../../pathological/data/sized-higher-order.gandr`.
 
 // The naturals the recursion takes apart.
@@ -135,4 +136,23 @@ def agreedTwo : () => Nat = agreed(Succ(Succ(Zero))) ;
 @[ checks ]
 def appliedAt @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {
   applyAt[i = j](f, x)
+}
+
+/// A function and a number below a stage `j`, handed to a third function
+/// that applies the one to the other.
+@[ checks ]
+def handedAt @[j : Size] (
+  g : (Nat[<j] => Nat, Nat[<j]) => Nat,
+  f : Nat[<j] => Nat,
+  x : Nat[<j]
+) -> -F Nat {
+  g(f, x)
+}
+
+/// `applyAt` passed as a value with its stage supplied: a stage crosses only
+/// at a call's head, so the supply stands as `λ f. λ x. applyAt[i = j](f, x)`
+/// (#1498).
+@[ checks ]
+def passedAt @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat {
+  handedAt[j = j](applyAt[i = j], f, x)
 }

@@ -85,6 +85,21 @@ def apply(f : Integer => Integer, x : Integer) -> -F Integer { f(x) }
 @[ runs("3") ]
 def passedRun() -> -F Integer { apply(same[a = Integer], 3) }
 
+/// A function applied to a value of the type it is passed, the function
+/// implicit: its type names `t`, so the merge binds `t` before it.
+@[ checks ]
+def applyAt @[g : t => t] (t : Type, v : t) -> -F t { become g(v) }
+
+/// `applyAt` passed as a value with `g` supplied: the supply opens a lambda
+/// for `t`, which `g`'s type names, and is a function of a type and a value
+/// of it (#1498).
+@[ checks ]
+def identityAt : (t : Type, t) => t = applyAt[g = fn (y) { y }] ;
+
+/// `identityAt` at the integers.
+@[ runs("5") ]
+def identityRun() -> -F Integer { become identityAt(Integer, 5) }
+
 /// The integers' addition, a member of a module.
 module Adding {
   /// The sum of two integers.
