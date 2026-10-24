@@ -7,7 +7,7 @@
 /// A view read after a suspension: the stack holding the access is resumed,
 /// and the view reads the cell it was lent (#1183).
 @[ runs("12") ]
-def suspended() -> -F Integer {
+def suspended() -> Integer {
   hold x = 5;
   run r : Integer <- handle c : Proc {
     access x as v { c.exit(1); resume(v, v + 7) };

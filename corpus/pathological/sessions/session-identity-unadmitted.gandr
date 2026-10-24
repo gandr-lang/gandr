@@ -18,4 +18,4 @@ def served : Run(Evolution.SeatEnd) = recorded(
 ) ;
 
 @[ refuses("RunNotAdmitted") ]
-def retired() -> -F Run(Evolution.Kept) { ride(\X. Run(X), Evolution.keep, served) }
+def retired() -> Run(Evolution.Kept) { ride(\X. Run(X), Evolution.keep, served) }

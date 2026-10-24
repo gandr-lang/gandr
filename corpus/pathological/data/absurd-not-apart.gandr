@@ -13,13 +13,13 @@ data Int : Type {
 
 /// `S(P(Z))` is `Z`: the normal forms agree, and the path is reflexivity.
 @[ refuses("NotApart") ]
-def agree(e : Path(Int, S(P(Z)), Z)) -> -F Empty {
+def agree(e : Path(Int, S(P(Z)), Z)) -> Empty {
   case e {}
 }
 
 /// `S(n)` is `Z` once `n` is `P(Z)`: an endpoint holds a variable of the type.
 @[ refuses("NotApart") ]
-def open(n : Int, e : Path(Int, S(n), Z)) -> -F Empty {
+def open(n : Int, e : Path(Int, S(n), Z)) -> Empty {
   case e {}
 }
 
@@ -34,7 +34,7 @@ def cancelled(e : Path(
   Path(Circle, Base, Base),
   loop ∷ back(loop) ∷ here(Base),
   here(Base)
-)) -> -F Empty {
+)) -> Empty {
   case e {}
 }
 

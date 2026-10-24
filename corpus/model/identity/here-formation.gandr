@@ -8,7 +8,7 @@ def four_eq_four = here(4);
 
 /// A path between four and itself, given back.
 @[ checks ]
-def cast(p: Path(Integer, 4, 4)) -> -F(Path(Integer, 4, 4)) {
+def cast(p: Path(Integer, 4, 4)) -> Path(Integer, 4, 4) {
   p
 }
 
@@ -18,15 +18,15 @@ def checked : Path(Integer, 4, 4) = here(4);
 
 /// Reflexivity at four handed through `cast` by a run.
 @[ checks ]
-def cast_four() -> -F Path(Integer, 4, 4) { cast(four_eq_four) }
+def cast_four() -> Path(Integer, 4, 4) { cast(four_eq_four) }
 
 /// The value a parameter of any type takes, given back.
 @[ checks ]
-def pick(t : Type, x : t) -> -F t {
+def pick(t : Type, x : t) -> t {
   x
 }
 
 /// A path type written as `pick`'s type argument is the code of the type it
 /// spells, not a constructor (#539).
 @[ checks ]
-def picked() -> -F Path(Integer, 4, 4) { pick(Path(Integer, 4, 4), here(4)) }
+def picked() -> Path(Integer, 4, 4) { pick(Path(Integer, 4, 4), here(4)) }

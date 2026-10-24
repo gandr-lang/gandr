@@ -9,6 +9,6 @@ import "../../model/identity/circle-base.gandr" ;
 /// The reflexivity at a successor beside the reflexivity at a predecessor,
 /// refused: no rule relates `P(x)` to `S(x)` (#1723).
 @[ refuses("EndpointMismatch") ]
-def peak_apart(x : Int) -> -F Path(Path(Int, S(x), S(x)), here(S(x)), here(P(x))) {
+def peak_apart(x : Int) -> Path(Path(Int, S(x), S(x)), here(S(x)), here(P(x))) {
   here(here(S(x)))
 }

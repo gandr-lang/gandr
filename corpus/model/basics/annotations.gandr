@@ -16,14 +16,14 @@ def paired = ((3, "three") : Integer * String);
 
 /// A value run as an annotated `pure`, then annotated where the body ends.
 @[ checks ]
-def ran() -> -F Integer {
+def ran() -> Integer {
   run n <- pure (3 : Integer);
   (n : Integer)
 }
 
 /// The annotated value a tail takes the `return` of.
 @[ checks ]
-def tailed(n: Integer) -> -F Integer {
+def tailed(n: Integer) -> Integer {
   (n + 1 : Integer)
 }
 
@@ -38,7 +38,7 @@ def signed : Integer = (3 : Integer);
 
 /// A scrutinee annotated with the sum it is matched at.
 @[ checks ]
-def chosen(b : Bool) -> -F Integer {
+def chosen(b : Bool) -> Integer {
   case (b : Bool) {
     true => 1,
     false => 2
@@ -48,7 +48,7 @@ def chosen(b : Bool) -> -F Integer {
 /// A component of a pair a bind runs, annotated where the kernel synthesises
 /// the pair's type.
 @[ runs("2") ]
-def bound() -> -F Integer {
+def bound() -> Integer {
   run (b, n) <- pure ((true : Bool), 2);
   n
 }
@@ -57,7 +57,7 @@ def bound() -> -F Integer {
 /// summand named by a label of the sum the annotation states: the injection
 /// keeps no type, so the annotation ascribes it (#2168).
 @[ runs("2") ]
-def injected() -> -F Integer {
+def injected() -> Integer {
   run (b, n) <- pure ((+{.yes = unit} : +{yes : Unit, no : Unit}), 2);
   n
 }
@@ -65,27 +65,27 @@ def injected() -> -F Integer {
 /// The second summand of `Bool` written as an injection and annotated: it is
 /// ascribed as `(false : Bool)` is, and reads as that word (#2168).
 @[ runs("2") ]
-def falsity() -> -F Integer {
+def falsity() -> Integer {
   run (b, n) <- pure ((+{.1 = unit} : Bool), 2);
   n
 }
 
 /// An integer doubled, the function the annotated argument is passed to.
 @[ checks ]
-def doubled(n : Integer) -> -F Integer { n + n }
+def doubled(n : Integer) -> Integer { n + n }
 
 /// An argument annotated with the parameter's type.
 @[ runs("6") ]
-def called() -> -F Integer { doubled((3 : Integer)) }
+def called() -> Integer { doubled((3 : Integer)) }
 
 /// The function an application forces, annotated with its type at the head.
 @[ runs("6") ]
-def headed() -> -F Integer { (doubled : Integer => Integer)(3) }
+def headed() -> Integer { (doubled : Integer => Integer)(3) }
 
 /// A pair a bind runs, its two names bound under the product the pattern is
 /// annotated with.
 @[ runs("1") ]
-def split() -> -F Integer {
+def split() -> Integer {
   run (y, z) : Integer * Integer <- pure (1, 2);
   y
 }

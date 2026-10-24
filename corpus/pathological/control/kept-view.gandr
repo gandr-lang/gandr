@@ -8,7 +8,7 @@
 /// The model's thunk at a type kept in no region: the view would outlive the
 /// access that lent it.
 @[ refuses("ViewEscaped") ]
-def unkept() -> -F Integer {
+def unkept() -> Integer {
   hold s = 3;
   handle c : Proc {
     run k : () => Integer <- access shared s as w { pure thunk { pure w } } ;
@@ -22,7 +22,7 @@ def unkept() -> -F Integer {
 /// An exclusive view is kept in no region: its write-back runs when its access
 /// resumes, so nothing may read through it afterwards.
 @[ refuses("ViewEscaped") ]
-def keptExclusive() -> -F Integer {
+def keptExclusive() -> Integer {
   hold s = 3;
   handle c : Proc {
     access s as v {
@@ -39,7 +39,7 @@ def keptExclusive() -> -F Integer {
 /// An exclusive access inside the region that keeps a view of the held value:
 /// the kept thunk would read the value while it is written.
 @[ refuses("HeldKept") ]
-def written() -> -F Integer {
+def written() -> Integer {
   hold s = 3;
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
@@ -54,7 +54,7 @@ def written() -> -F Integer {
 /// A thunk kept in no region that forces the kept one: the kept thunk would
 /// leave its region inside it.
 @[ refuses("KeptEscaped") ]
-def rewrapped() -> -F Integer {
+def rewrapped() -> Integer {
   hold s = 3;
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
@@ -69,7 +69,7 @@ def rewrapped() -> -F Integer {
 /// The kept thunk answered where a thunk kept in no region is promised: a value
 /// kept in a region never stands outside it.
 @[ refuses("TypeMismatch") ]
-def answered() -> -F (() => Integer) {
+def answered() -> () => Integer {
   hold s = 3;
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
@@ -83,7 +83,7 @@ def answered() -> -F (() => Integer) {
 /// An exclusive access while the hold's own region keeps a view of its value:
 /// the kept thunk would read the value while it is written.
 @[ refuses("HeldKept") ]
-def writtenInHold() -> -F Integer {
+def writtenInHold() -> Integer {
   hold s = 3;
   run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
   access s as v { resume(v, v + 1) };
@@ -93,7 +93,7 @@ def writtenInHold() -> -F Integer {
 /// A thunk kept in no region that forces the one kept in the hold's region:
 /// the kept thunk would leave the hold's region inside it.
 @[ refuses("KeptEscaped") ]
-def leftHold() -> -F Integer {
+def leftHold() -> Integer {
   hold s = 3;
   run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
   run j : () => Integer <- pure thunk { force k } ;

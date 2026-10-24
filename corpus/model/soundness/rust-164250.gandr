@@ -6,7 +6,7 @@
 /// A slot kept at the handler's region holds a view of a value the handler's
 /// scope holds, and is forced inside it.
 @[ checks ]
-def kept() -> -F Integer {
+def kept() -> Integer {
   hold l = 42;
   handle inner : Proc {
     run q2 : (() => Integer) at inner <- access shared l as w { pure pure w } ;

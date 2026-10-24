@@ -8,7 +8,7 @@
 
 /// A verdict of three cases nested to the right, renested to the left.
 @[ checks ]
-def toLeft(c : Unit + (Unit + Unit)) -> -F ((Unit + Unit) + Unit) {
+def toLeft(c : Unit + (Unit + Unit)) -> (Unit + Unit) + Unit {
   case c {
     +{.0 = u} => +{.0 = +{.0 = u}},
     +{.1 = +{.0 = u}} => +{.0 = +{.1 = u}},
@@ -18,7 +18,7 @@ def toLeft(c : Unit + (Unit + Unit)) -> -F ((Unit + Unit) + Unit) {
 
 /// A verdict of three cases nested to the left, renested to the right.
 @[ checks ]
-def toRight(c : (Unit + Unit) + Unit) -> -F (Unit + (Unit + Unit)) {
+def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) {
   case c {
     +{.0 = +{.0 = u}} => +{.0 = u},
     +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}},

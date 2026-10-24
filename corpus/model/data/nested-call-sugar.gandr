@@ -9,7 +9,7 @@ import "./data-base.gandr" ;
 
 /// Doubling: each successor and each predecessor written twice.
 @[ checks ]
-def rec dbl(n : Int) -> -F Int {
+def rec dbl(n : Int) -> Int {
   case n {
     Z => Z,
     S(x) => S(S(dbl[<](x))),
@@ -19,7 +19,7 @@ def rec dbl(n : Int) -> -F Int {
 
 /// Negation: successors and predecessors swapped.
 @[ checks ]
-def rec neg(n : Int) -> -F Int {
+def rec neg(n : Int) -> Int {
   case n {
     Z => Z,
     S(x) => P(neg[<](x)),

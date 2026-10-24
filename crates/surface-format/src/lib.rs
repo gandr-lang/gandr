@@ -104,12 +104,13 @@
 //! | `path-inverse`   | `transport(\y. Path(A, y, a), p, here(a))` | `back(p)` |
 //! | `path-action`    | `transport(\y. Path(B, f(a), f(y)), p, here(f(a)))` | `cong(f, p)` |
 //! | `tail-return`    | `return v`, as written  | `v`, where a path ends |
+//! | `inserted-returner` | `-> -F B`, as written | `-> B`, at a definition's result |
 //! | `short-alias`    | `(x : A) => B`, as written | `A => B`, `x` unread |
 //! | `linear-run`     | `run x <- c ; f(x)`, as written | `f(c)`, beside a checker |
 //! | `inserted-thunk` | `thunk { e }`, as written | `e`, beside a checker |
 //! | `inserted-reduct` | `T.S(m)`, beside a checker | `m`, beside a checker |
 //! | `inserted-forget` | `forget[sort C = A](m) at Model(T)`, beside a checker | `m`, beside a checker |
-//! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> -F B { c }`, from `def f : () => B ; def f = thunk { c } ;` |
+//! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> B { c }`, from `def f : () => B ; def f = thunk { c } ;` |
 //! | `joined-definition` | `def x : T ; def x = e ;`, from `def x : T = e ;` | `def x : T = e ;`, the definition directly after |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
@@ -1363,8 +1364,13 @@ fn write<'source>(
                         else {
                             chosen.chosen.joining()
                         };
-                    merge::members(tree, form, (unit.leaves, own), (pairing, joining))
-                        .map(|(leaves, ones)| (leaves, ones, whole))
+                    merge::members(
+                        tree,
+                        form,
+                        (unit.leaves, own),
+                        (pairing, joining, chosen.chosen.returning()),
+                    )
+                    .map(|(leaves, ones)| (leaves, ones, whole))
                 });
                 if let Some((_, ref ones, whole)) = membered {
                     for &one in ones {
@@ -1415,7 +1421,7 @@ fn write<'source>(
                             respelled_form(grammar, tree, defined, next.leaves, Some(chosen));
                         let pair = (next.leaves, definition.as_deref().unwrap_or(next.leaves));
                         let (leaves, one) = merging
-                            .then(|| merge::merged(own, pair))
+                            .then(|| merge::merged(own, pair, chosen.chosen.returning()))
                             .flatten()
                             .map(|leaves| (leaves, merge::OneForm::Function))
                             .or_else(|| {

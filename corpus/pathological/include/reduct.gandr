@@ -9,7 +9,7 @@ import "../../model/include/reduct.gandr" ;
 /// Whether a left zero's zero is there to read: every left zero's is, so
 /// this answers zero.
 @[ checks ]
-def absorbs(z : Model(LeftZero)) -> -F Integer {
+def absorbs(z : Model(LeftZero)) -> Integer {
   case z {
     #{.zero = o} => 0
   }
@@ -18,4 +18,4 @@ def absorbs(z : Model(LeftZero)) -> -F Integer {
 /// The manifest monoid where a left zero is asked: the monoid includes no
 /// zero, so no map puts its carrier back and restricts to one (#2136).
 @[ refuses("TypeMismatch") ]
-def noZero() -> -F Integer { absorbs(endoManifest) }
+def noZero() -> Integer { absorbs(endoManifest) }

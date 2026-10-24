@@ -8,14 +8,14 @@ import "../../model/cancellation/cancel-base.gandr" ;
 /// Resumes the stack it is handed: a stack a parameter holds owes nothing
 /// (#1387).
 @[ checks ]
-def resume_stack(j : Stack(-F Unit, -F Unit)) -> -F Unit {
+def resume_stack(j : Stack(-F Unit, -F Unit)) -> Unit {
   j(unit)
 }
 
 /// A scope whose exit clause hands the rest to `resume_stack` while its task's
 /// end is open (#1387).
 @[ refuses("ContinuationAsValue") ]
-def handed() -> -F Unit {
+def handed() -> Unit {
   handle c : Proc {
     fork (task : Cancel.Join) {
       send(task, Cancel.notes);

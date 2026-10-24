@@ -14,10 +14,10 @@ def join(
   c: Integer,
   q: Path(Integer, a, b),
   r: Path(Integer, b, c)
-) -> -F Path(Integer, a, c) {
+) -> Path(Integer, a, c) {
   q then r
 }
 
 /// Reflexivity at seven composed with itself by a run.
 @[ checks ]
-def joined_here() -> -F Path(Integer, 7, 7) { join(7, 7, 7, p, p) }
+def joined_here() -> Path(Integer, 7, 7) { join(7, 7, 7, p, p) }

@@ -12,7 +12,7 @@ data Nat : Type {
 
 /// The call at the scrutinee itself: `n` stands at the stage, not below it.
 @[ refuses("StageNotBelow") ]
-def rec same(n : Nat) -> -F Nat {
+def rec same(n : Nat) -> Nat {
   case n {
     Zero => n,
     Succ(p) => same[<](n)
@@ -22,11 +22,11 @@ def rec same(n : Nat) -> -F Nat {
 /// A recursion over a type with no constructors to open: nothing stands
 /// below the stage.
 @[ refuses("StageNotBelow") ]
-def rec counted(n : Integer) -> -F Integer { counted[<](n) }
+def rec counted(n : Integer) -> Integer { counted[<](n) }
 
 /// The call at the field the case opened, one stage below the parameter's.
 @[ checks ]
-def rec down(n : Nat) -> -F Nat {
+def rec down(n : Nat) -> Nat {
   case n {
     Zero => n,
     Succ(p) => down[<](p)

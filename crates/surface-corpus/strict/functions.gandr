@@ -1,17 +1,17 @@
 @[ runs("fn (a) { a }") ]
-def identity(x : Integer) -> -F Integer { x }
+def identity(x : Integer) -> Integer { x }
 
 @[ runs("fn (a) { fn (b) { a } }") ]
-def first(x : Integer, y : Integer) -> -F Integer { x }
+def first(x : Integer, y : Integer) -> Integer { x }
 
 @[ runs("42") ]
 def answer : Integer = 42 ;
 
 @[ runs("42") ]
-def applied() -> -F Integer { become (force identity)(answer) }
+def applied() -> Integer { become (force identity)(answer) }
 
 @[ runs("42") ]
-def chosen() -> -F Integer { become (force first)(answer)(7) }
+def chosen() -> Integer { become (force first)(answer)(7) }
 
 @[ runs("\"later\"") ]
-def delayed() -> -F String { "later" }
+def delayed() -> String { "later" }

@@ -32,7 +32,7 @@ module Facts : Model(Faceted) {
 
 /// The nested answer, read through the outer model.
 @[ runs("41") ]
-def nested_answer() -> -F Integer { Facts.inner.answer }
+def nested_answer() -> Integer { Facts.inner.answer }
 
 /// A theory with an abstract sort, the carrier a sealed model hides.
 theory Carrier {

@@ -1,7 +1,7 @@
 /// Past the first-order boundary: `f` is a variable, so its inputs are free
 /// variables no coverage reaches, and the rule decides closed functions only.
 @[ refuses("FunextUnsupported") ]
-def open(f : Unit + Unit => Unit + Unit) -> -F Path(
+def open(f : Unit + Unit => Unit + Unit) -> Path(
   Unit + Unit => Unit + Unit,
   f,
   f

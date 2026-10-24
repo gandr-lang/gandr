@@ -1050,7 +1050,10 @@ quenchant_shape::reason_enum! {
 /// The definition `name` of `source`, `(ty, body)`, laid out at `page` whole.
 ///
 /// It is `def name(x₁ : A₁, …, xₙ : Aₙ) -> C { b }`, or `def rec` over a
-/// fixpoint, or `def name() -> -F B { b }` for a suspended computation.
+/// fixpoint, or `def name() -> B { b }` for a suspended computation; either
+/// form writes a result `-F B` as `B`, the returner the lowering inserts, as
+/// either leaves out the exit the lowering infers, unless `B` is a value at a
+/// world or a region.
 ///
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
@@ -1058,8 +1061,9 @@ quenchant_shape::reason_enum! {
 ///   `body` is `thunk { fn (x₁) { … fn (xₙ) { b } … } }` — or `fn (x₁) { … }`
 ///   read as a value at an arrow, the thunk the checker inserts — `n` the
 ///   abstractions the arrows run through and `n ≥ 1` unless `C` is a returner
-///   `-F B`: the header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C {`, each type under
-///   the binders of the dependent arrows before it, then `b` as
+///   `-F B`: the header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C {` — `C` written
+///   `B` in the sugared form when it is `-F B` with no effect row — each type
+///   under the binders of the dependent arrows before it, then `b` as
 ///   [`present_computation`] writes it at a page two columns narrower under the
 ///   context binding `x₁` to `xₙ`, each of its lines two columns in, then `}`.
 ///   When `body` is instead `thunk { fn (x₁) { … fn (xₖ) { rec f { fn (xₖ₊₁) {
@@ -1301,7 +1305,21 @@ pub fn present_whole(
             bound.push(Some(Name::from(parameter.as_str())));
         }
     }
-    let returned = present_type(&source.within(&bound), codomain, page, style)?;
+    // Either form leaves the returner the lowering inserts unwritten, as
+    // either leaves out the exit it infers: the result is its value type
+    // alone. A value at a world or a region keeps it: `-> A at w` reads as a
+    // computation placed at `w`.
+    let result = if let Former::Returner(value) = source.read(codomain)
+        && !matches!(
+            source.read(value),
+            Former::Located { .. } | Former::Kept { .. }
+        ) {
+        value
+    }
+    else {
+        codomain
+    };
+    let returned = present_type(&source.within(&bound), result, page, style)?;
     let own = fixpoint.map(|recursive| usize::from(recursive.uniform));
     let context: Vec<Option<Name<'_>>> = names
         .iter()

@@ -43,7 +43,7 @@ def onceThree() -> -F [Div] Integer {
 /// A recursive function that never calls itself runs its body once, so it
 /// returns at the empty row.
 @[ checks ]
-def rec unused(x : Bool) -> -F Bool {
+def rec unused(x : Bool) -> Bool {
   x
 }
 
@@ -51,7 +51,7 @@ def rec unused(x : Bool) -> -F Bool {
 /// a call whose value is never read is the computation that follows it: the
 /// function calling `g` and dropping what it returns is `f`.
 @[ checks ]
-def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> -F Path(
+def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   a => b,
   thunk { fn (x) { run v <- g(x); f(x) } },
   f
@@ -61,7 +61,7 @@ def unreadCall(a : Type, b : Type, f : a => b, g : a => b) -> -F Path(
 
 /// Two unread calls in a row are dropped one after the other.
 @[ checks ]
-def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> -F Path(
+def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> Path(
   a => b,
   thunk { fn (x) { run v <- g(x); run w <- h(x); f(x) } },
   f
@@ -71,7 +71,7 @@ def unreadTwice(a : Type, b : Type, f : a => b, g : a => b, h : a => b) -> -F Pa
 
 /// Applies `h` to `x`.
 @[ checks ]
-def apply(a : Type, b : Type, h : a => b, x : a) -> -F b {
+def apply(a : Type, b : Type, h : a => b, x : a) -> b {
   h(x)
 }
 
@@ -79,7 +79,7 @@ def apply(a : Type, b : Type, h : a => b, x : a) -> -F b {
 /// certificate: after it the call of `apply` unfolds, which the kernel's own
 /// reading does not do under a binder.
 @[ checks ]
-def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> -F Path(
+def unreadApplied(a : Type, b : Type, f : a => b, g : a => b) -> Path(
   a => b,
   thunk { fn (x) { run v <- g(x); apply(a, b, f, x) } },
   f

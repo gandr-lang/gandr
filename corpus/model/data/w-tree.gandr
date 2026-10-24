@@ -19,7 +19,7 @@ data Tree : Type {
 /// The number of leaves: each subtree is reached through `f` and counted one
 /// stage below the node.
 @[ checks ]
-def rec size(t : Tree) -> -F Nat {
+def rec size(t : Tree) -> Nat {
   case t {
     Leaf => Succ(Zero),
     Node(f) => {
@@ -32,7 +32,7 @@ def rec size(t : Tree) -> -F Nat {
 
 /// Every branch a leaf.
 @[ checks ]
-def leaves(x : Two) -> -F Tree { Leaf }
+def leaves(x : Two) -> Tree { Leaf }
 
 /// A node over two leaves.
 @[ checks ]

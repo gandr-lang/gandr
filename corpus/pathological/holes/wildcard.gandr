@@ -8,12 +8,12 @@ import "../../model/holes/wildcard.gandr" ;
 /// `idAt` at `Integer` with its value left open: nothing forces which
 /// integer.
 @[ refuses("ImplicitUnsolved") ]
-def loose() -> -F Integer { idAt(Integer, _) }
+def loose() -> Integer { idAt(Integer, _) }
 
 /// `idAt` at a type `3` forces to `Integer` where a unit is expected: the
 /// returned type then disagrees with `Unit`.
 @[ refuses("TypeMismatch") ]
-def disagreeing() -> -F Unit { idAt(_, 3) }
+def disagreeing() -> Unit { idAt(_, 3) }
 
 /// A wildcard bound by `run`, where a computation is read: the solver binds
 /// values, so a wildcard is a form of the wrong sort there.

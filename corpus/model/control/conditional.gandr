@@ -7,40 +7,40 @@
 
 /// A conditional over a boolean value: the true branch runs.
 @[ runs("1") ]
-def pick() -> -F Integer {
+def pick() -> Integer {
   if true { 1 } else { 2 }
 }
 
 /// A conditional over a comparison, which is a computation: the case binds
 /// its result, and the false branch runs.
 @[ runs("20") ]
-def above() -> -F Integer {
+def above() -> Integer {
   if 3 < 2 { 10 } else { 20 }
 }
 
 /// A conditional that states its answer: each branch's last computation is
 /// read at it.
 @[ runs("7") ]
-def statedAnswer() -> -F Integer {
+def statedAnswer() -> Integer {
   if false -> -F Integer { 5 } else { 7 }
 }
 
 /// An `else if` tests its own condition in the false branch of the first.
 @[ checks ]
-def sign(n : Integer) -> -F Integer {
+def sign(n : Integer) -> Integer {
   if n < 0 { 0 } else if n < 1 { 1 } else { 2 }
 }
 
 /// The middle case of `sign`: its first condition fails and its second holds.
 @[ runs("1") ]
-def zero() -> -F Integer {
+def zero() -> Integer {
   sign(0)
 }
 
 /// A conditional whose true branch returns from the function, written as a
 /// statement: the false branch passes on to the rest of the block.
 @[ runs("9") ]
-def early() -> -F Integer {
+def early() -> Integer {
   if 1 < 0 { return 4 } else { pure unit };
   9
 }

@@ -5,7 +5,7 @@
 /// #1831: whether a band's bounds stand low below high, the high one at most
 /// one, in millionths; `false` stands as the answer of an arm.
 @[ checks ]
-def banded(low : Integer, high : Integer) -> -F Bool {
+def banded(low : Integer, high : Integer) -> Bool {
   run below <- low < high;
   case below {
     true => high <= 1000000,
@@ -15,11 +15,11 @@ def banded(low : Integer, high : Integer) -> -F Bool {
 
 /// A band whose bounds are inverted is not one.
 @[ runs("+{.1 = unit}") ]
-def inverted() -> -F Bool { banded(750000, 250000) }
+def inverted() -> Bool { banded(750000, 250000) }
 
 /// A band low below high, the high one under one, is one.
 @[ runs("+{.0 = unit}") ]
-def ordered() -> -F Bool { banded(200000, 800000) }
+def ordered() -> Bool { banded(200000, 800000) }
 
 /// `true` at a stated `Bool`.
 @[ checks ]
@@ -27,4 +27,4 @@ def truth : Bool = true ;
 
 /// Both literals in a pair, each checked against its component.
 @[ runs("(+{.0 = unit}, +{.1 = unit})") ]
-def both() -> -F (Bool * Bool) { (truth, false) }
+def both() -> Bool * Bool { (truth, false) }

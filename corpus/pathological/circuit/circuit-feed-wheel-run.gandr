@@ -10,12 +10,12 @@ import "../../model/circuit/circuit-feed-wheel.gandr" ;
 /// The running sum's step, the `emit` its model gives: the output fed back
 /// plus the stream's value.
 @[ checks ]
-def step(s : Integer, x : Integer) -> -F Integer { s + x }
+def step(s : Integer, x : Integer) -> Integer { s + x }
 
 /// The trace the wheel would run over `1, 2, 3` from zero, unrolled by hand:
 /// each tick's output is the next tick's `s`, reading `1`, `3`, then `6`.
 @[ runs("6") ]
-def unrolled() -> -F Integer {
+def unrolled() -> Integer {
   step(step(step(0, 1), 2), 3)
 }
 

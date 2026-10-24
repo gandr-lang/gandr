@@ -18,14 +18,14 @@ import "./int-sum.gandr" ;
 /// Spinning a successor is one loop more (cubical's `intLoop-sucℤ`), by
 /// computation.
 @[ checks ]
-def spinUp(n : Int) -> -F Path(Path(Circle, Base, Base), spin(S(n)), loop ∷ spin(n)) {
+def spinUp(n : Int) -> Path(Path(Circle, Base, Base), spin(S(n)), loop ∷ spin(n)) {
   here(loop ∷ spin(n))
 }
 
 /// Spinning a predecessor is one inverse loop more (cubical's
 /// `intLoop-predℤ`), by computation.
 @[ checks ]
-def spinDown(n : Int) -> -F Path(Path(Circle, Base, Base), spin(P(n)), back(loop) ∷ spin(n)) {
+def spinDown(n : Int) -> Path(Path(Circle, Base, Base), spin(P(n)), back(loop) ∷ spin(n)) {
   here(back(loop) ∷ spin(n))
 }
 
@@ -40,7 +40,7 @@ def spinDown(n : Int) -> -F Path(Path(Circle, Base, Base), spin(P(n)), back(loop
 def rec spinHom(
   a : Int,
   b : Int
-) -> -F Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
+) -> Path(Path(Circle, Base, Base), spin(plus(a, b)), spin(b) then spin(a)) {
   case b {
     Z => here(spin(a)),
     S(x) => cong(loopOn, spinHom[<](a, x)),
@@ -60,7 +60,7 @@ def rec spinHom(
 def rec windHom(
   q : Path(Circle, Base, Base),
   p : Path(Circle, Base, Base)
-) -> -F Path(Int, wind(p then q), plus(wind(q), wind(p))) {
+) -> Path(Int, wind(p then q), plus(wind(q), wind(p))) {
   case p {
     here => here(wind(q)),
     loop ∷ r => cong(up, windHom[<](q, r)),
@@ -76,7 +76,7 @@ def rec windHom(
 def comm(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Path(Circle, Base, Base), p then q, q then p) {
+) -> Path(Path(Circle, Base, Base), p then q, q then p) {
   back(sect(p then q)) then cong(spin, windHom(q, p)) then cong(
     spin,
     plusComm(wind(q), wind(p))

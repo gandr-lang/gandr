@@ -9,7 +9,7 @@ import "./data-base.gandr" ;
 
 /// Red apart from the rest: one arm, then a wildcard for the others.
 @[ checks ]
-def notRed(c : Color) -> -F Integer {
+def notRed(c : Color) -> Integer {
   case c {
     Red => 0,
     _ => 1
@@ -18,7 +18,7 @@ def notRed(c : Color) -> -F Integer {
 
 /// The warm colours, two constructors sharing one arm.
 @[ checks ]
-def warm(c : Color) -> -F Integer {
+def warm(c : Color) -> Integer {
   case c {
     Red | Green => 1,
     Blue => 0
@@ -42,7 +42,7 @@ data Outer : Type {
 /// The integer two constructors down, or zero: the first arm's pattern nests
 /// `Yes` inside `Some`.
 @[ checks ]
-def depth(m : Outer) -> -F Integer {
+def depth(m : Outer) -> Integer {
   case m {
     Some(Yes(n)) => n,
     Some(No) => 0,

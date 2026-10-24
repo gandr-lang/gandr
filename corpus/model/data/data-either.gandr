@@ -12,7 +12,7 @@ data Either(a : Type, b : Type) : Type {
 
 /// The left side of a left injection, or zero for a right one.
 @[ checks ]
-def from_left() -> -F Integer {
+def from_left() -> Integer {
   case (Left(5) : Either(Integer, String)) {
     Left(x) => x,
     Right(y) => 0

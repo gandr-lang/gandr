@@ -4,30 +4,30 @@
 
 /// A parameter interpolated between two runs of text.
 @[ checks ]
-def greet(name: String) -> -F String {
+def greet(name: String) -> String {
   return "hello ${ name }!"
 }
 
 /// A call interpolated, run where the string reads it, between escapes.
 @[ runs("\"<hello types!>\\t\"") ]
-def greeted() -> -F String {
+def greeted() -> String {
   return "<${ greet("types") }>\t"
 }
 
 /// A lone interpolation is the string it holds.
 @[ runs("\"machines\"") ]
-def alone() -> -F String {
+def alone() -> String {
   return "${ "machines" }"
 }
 
 /// A `$` that opens no interpolation is text.
 @[ checks ]
-def price(count: String) -> -F String {
+def price(count: String) -> String {
   return "total: $5.00 for ${ count } items"
 }
 
 /// A record is not a string, and an interpolation formats nothing into one.
 @[ refuses("ShapeMismatch") ]
-def describe(user: String, count: Integer) -> -F String {
+def describe(user: String, count: Integer) -> String {
   return "user=${ user }\trow=${ #{ n = count } }\n"
 }

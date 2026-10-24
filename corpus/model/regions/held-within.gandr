@@ -7,7 +7,7 @@
 /// Keeps a view of a value held inside the handler at the hold, and forces it
 /// before the hold ends.
 @[ runs("42") ]
-def keptAtHold() -> -F Integer {
+def keptAtHold() -> Integer {
   handle inner : Proc {
     hold l = 42;
     run q : (() => Integer) at l <- access shared l as w { pure pure w } ;
@@ -21,7 +21,7 @@ def keptAtHold() -> -F Integer {
 /// The same inside a handler a `run` binds within another: where a handler is
 /// bound opens no region of its own.
 @[ runs("42") ]
-def keptAtNestedHold() -> -F Integer {
+def keptAtNestedHold() -> Integer {
   handle outer : Proc {
     run x : Integer <- handle inner : Proc {
       hold l = 42;

@@ -9,7 +9,7 @@ import "../../model/identity/circle-base.gandr" ;
 /// successor: at `S(P(x))` it computes `count(S(S(acc)), x)`, which no rule
 /// reads as `count(acc, x)`, so the case is refused at the first rule.
 @[ refuses("RuleNotRespected") ]
-def rec count(acc : Int, b : Int) -> -F Int {
+def rec count(acc : Int, b : Int) -> Int {
   case b {
     Z => acc,
     S(x) => count[<](S(acc), x),

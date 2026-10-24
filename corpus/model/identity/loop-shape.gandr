@@ -22,7 +22,7 @@ theory CircleShape {
 
 /// The number of laws in a presentation's rule chain.
 @[ checks ]
-def rec laws(chain : Theory) -> -F Integer {
+def rec laws(chain : Theory) -> Integer {
   case chain {
     Rule(name, left, right, rest) => { run r <- laws[<](rest); return r + 1 },
     _ => 0
@@ -31,7 +31,7 @@ def rec laws(chain : Theory) -> -F Integer {
 
 /// The number of laws a presentation states.
 @[ checks ]
-def law_count(presented : Theory) -> -F Integer {
+def law_count(presented : Theory) -> Integer {
   case presented {
     Presents(sorts, opers, rules) => laws(rules),
     _ => 0
@@ -40,7 +40,7 @@ def law_count(presented : Theory) -> -F Integer {
 
 /// The shape's laws join, so its `Theory` value carries both as `Rule` entries.
 @[ runs("2") ]
-def shape_laws() -> -F Integer { law_count(CircleShape) }
+def shape_laws() -> Integer { law_count(CircleShape) }
 
 /// The presented integers as a model of the shape: `base` zero, a value, as
 /// the theory's `base : Pt` is a constant; `turn` the successor and `unturn`
@@ -52,22 +52,22 @@ module Winding : Model(CircleShape) {
 
   def base = Z ;
 
-  def turn(n : Int) -> -F Int { S(n) }
+  def turn(n : Int) -> Int { S(n) }
 
-  def unturn(n : Int) -> -F Int { P(n) }
+  def unturn(n : Int) -> Int { P(n) }
 
   @[ checks ]
-  def turnUnturn(n : Int) -> -F Path(Int, turn(unturn(n)), n) {
+  def turnUnturn(n : Int) -> Path(Int, turn(unturn(n)), n) {
     here(n)
   }
 
   @[ checks ]
-  def unturnTurn(n : Int) -> -F Path(Int, unturn(turn(n)), n) {
+  def unturnTurn(n : Int) -> Path(Int, unturn(turn(n)), n) {
     here(n)
   }
 
   @[ runs("S(S(Z))") ]
-  def wound() -> -F Int {
+  def wound() -> Int {
     turn(turn(base))
   }
 }
@@ -80,9 +80,9 @@ module NativeWinding : Model(CircleShape) {
 
   def base = 0 ;
 
-  def turn(n : Integer) -> -F Integer { return n + 1 }
+  def turn(n : Integer) -> Integer { return n + 1 }
 
-  def unturn(n : Integer) -> -F Integer { return n - 1 }
+  def unturn(n : Integer) -> Integer { return n - 1 }
 
   @[ owes(1) ]
   def turnUnturn : (n : Integer) => Path(Integer, turn(unturn(n)), n) ;
@@ -91,7 +91,7 @@ module NativeWinding : Model(CircleShape) {
   def unturnTurn : (n : Integer) => Path(Integer, unturn(turn(n)), n) ;
 
   @[ runs("2") ]
-  def wound() -> -F Integer {
+  def wound() -> Integer {
     run n <- turn(base) ;
     turn(n)
   }

@@ -12,7 +12,7 @@ data List(a : Type) : Type {
 
 /// The first of a list of integers, or zero.
 @[ checks ]
-def first(xs : List(Integer)) -> -F Integer {
+def first(xs : List(Integer)) -> Integer {
   case xs {
     Nil => 0,
     Cons(x, _) => x
@@ -22,11 +22,11 @@ def first(xs : List(Integer)) -> -F Integer {
 /// A string where the parameter takes integers is refused by the checker,
 /// not as unannotated (#1833).
 @[ refuses("TypeMismatch") ]
-def mistyped() -> -F Integer { first(Cons("no", Nil)) }
+def mistyped() -> Integer { first(Cons("no", Nil)) }
 
 /// How many elements a list of any type holds.
 @[ checks ]
-def rec size(a : Type, xs : List(a)) -> -F Integer {
+def rec size(a : Type, xs : List(a)) -> Integer {
   case xs {
     Nil => 0,
     Cons(_, rest) => {
@@ -40,4 +40,4 @@ def rec size(a : Type, xs : List(a)) -> -F Integer {
 /// its type reads the argument before it, and the checker refuses the
 /// strings (#1876).
 @[ refuses("TypeMismatch") ]
-def mistypedAt() -> -F Integer { size(Integer, Cons("no", Nil)) }
+def mistypedAt() -> Integer { size(Integer, Cons("no", Nil)) }

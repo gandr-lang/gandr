@@ -8,7 +8,7 @@ import "./ring-base.gandr" ;
 /// The target's completion reaped first, each half and the body ending in a
 /// closing statement.
 @[ checks ]
-def closedAsStatements() -> -F Unit {
+def closedAsStatements() -> Unit {
   fork (target : Ring.Submission) {
     recv(target) as sqe;
     send(target, Ring.done);

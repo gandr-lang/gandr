@@ -9,8 +9,8 @@ import "./functor-pair.gandr" ;
 
 /// One step from the counter's zero, a value of its abstract type.
 @[ runs("1") ]
-def one() -> -F (Seed.T) { Seed.next(Seed.zero) }
+def one() -> Seed.T { Seed.next(Seed.zero) }
 
 /// That value read back through the exposed reader.
 @[ runs("1") ]
-def shown() -> -F Integer { run n <- force one ; Seed.read(n) }
+def shown() -> Integer { run n <- force one ; Seed.read(n) }

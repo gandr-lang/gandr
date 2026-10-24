@@ -6,7 +6,7 @@ def comp(
   f : a => b,
   g : b => c,
   x : a
-) -> -F c {
+) -> c {
   become g(f(x))
 }
 
@@ -18,7 +18,7 @@ def collide(
   d : Type,
   u : a => c,
   h : c => d
-) -> -F (a => d) {
+) -> a => d {
   thunk { become comp(a, c, d, u, h) }
 }
 
@@ -30,6 +30,6 @@ def clean(
   s : Type,
   u : p => r,
   h : r => s
-) -> -F (p => s) {
+) -> p => s {
   thunk { become comp(p, r, s, u, h) }
 }

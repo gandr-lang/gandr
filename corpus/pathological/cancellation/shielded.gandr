@@ -7,7 +7,7 @@ import "../../model/cancellation/cancel-base.gandr" ;
 
 /// A scope whose exit clause abandons the rest from inside an unwind (#1334).
 @[ refuses("UnwindEffect") ]
-def shielded() -> -F Unit {
+def shielded() -> Unit {
   handle c : Proc {
     fork (task : Cancel.Join) {
       send(task, Cancel.notes);

@@ -22,7 +22,7 @@ data Written : Type {
 /// The string a copy holds: the same inline bytes, or the same buffer with
 /// one more holder.
 @[ checks ]
-def copy(s : Repr) -> -F Repr {
+def copy(s : Repr) -> Repr {
   case s {
     Inline(bs) => Inline(bs),
     Shared(n, bs) => Shared(n + 1, bs)
@@ -31,7 +31,7 @@ def copy(s : Repr) -> -F Repr {
 
 /// The bytes with `b` written before the terminating zero.
 @[ checks ]
-def rec beforeZero(bs : List(Integer), b : Integer) -> -F List(Integer) {
+def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) {
   case bs {
     Nil => Nil,
     Cons(x, rest) => {
@@ -47,7 +47,7 @@ def rec beforeZero(bs : List(Integer), b : Integer) -> -F List(Integer) {
 /// heap when they outgrow it; a buffer held once written in place; a shared
 /// buffer copied first.
 @[ checks ]
-def push(s : Repr, b : Integer) -> -F Written {
+def push(s : Repr, b : Integer) -> Written {
   case s {
     Inline(bs) => {
       run grown <- beforeZero(bs, b);
@@ -70,7 +70,7 @@ def push(s : Repr, b : Integer) -> -F Written {
 
 /// The buffers a write filled anew.
 @[ checks ]
-def copies(w : Written) -> -F Integer {
+def copies(w : Written) -> Integer {
   case w {
     Written(s, n) => n
   }
@@ -78,7 +78,7 @@ def copies(w : Written) -> -F Integer {
 
 /// The written string.
 @[ checks ]
-def written(w : Written) -> -F Repr {
+def written(w : Written) -> Repr {
   case w {
     Written(s, n) => s
   }
@@ -123,7 +123,7 @@ def grown() -> -F [Div] Integer {
 
 /// A short string written where its bytes are: `hi!` stays inline.
 @[ runs("Inside") ]
-def shout() -> -F Place {
+def shout() -> Place {
   run s <- own((Cons(104, Cons(105, Nil)) : List(Integer))) ;
   run w <- push(s, 33) ;
   place(written(w))

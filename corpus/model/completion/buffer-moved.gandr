@@ -12,7 +12,7 @@ import "./ring-base.gandr" ;
 /// the completion is posted: the send consumes the submitter's end, and the
 /// kernel's receive binds it until the kernel closes it.
 @[ checks ]
-def bufferMoved() -> -F Unit {
+def bufferMoved() -> Unit {
   fork (owner : Ring.Buffer) { close(owner) } as buffer;
   fork (kernel : Ring.Moving) {
     recv(kernel) as held;

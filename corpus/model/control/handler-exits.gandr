@@ -8,7 +8,7 @@
 /// The operation's clause resumes the body, whose value passes through the
 /// `pure` clause.
 @[ runs("101") ]
-def resumed() -> -F Integer {
+def resumed() -> Integer {
   handle c : Proc {
     c.exit(5);
     pure 1
@@ -21,7 +21,7 @@ def resumed() -> -F Integer {
 /// A `return` in the handled body leaves the handler, the `pure` clause
 /// skipped.
 @[ checks ]
-def left(n : Integer) -> -F Integer {
+def left(n : Integer) -> Integer {
   handle c : Proc {
     c.exit(1);
     return n
@@ -33,12 +33,12 @@ def left(n : Integer) -> -F Integer {
 
 /// `left` at five, by a run.
 @[ runs("5") ]
-def left_run() -> -F Integer { become left(5) }
+def left_run() -> Integer { become left(5) }
 
 /// The operation's clause discards its continuation and answers for the
 /// handler.
 @[ runs("9") ]
-def discarded() -> -F Integer {
+def discarded() -> Integer {
   handle c : Proc {
     c.exit(5);
     return 1
@@ -50,7 +50,7 @@ def discarded() -> -F Integer {
 
 /// A `return` inside two handlers leaves both.
 @[ runs("4") ]
-def nested() -> -F Integer {
+def nested() -> Integer {
   handle a : Proc {
     handle b : Proc {
       return 4
@@ -66,7 +66,7 @@ def nested() -> -F Integer {
 
 /// A `case` whose one arm returns and whose other arm continues the body.
 @[ checks ]
-def branch(n : Integer) -> -F Integer {
+def branch(n : Integer) -> Integer {
   handle c : Proc {
     run m <- case n {
       0 => return 8,
@@ -82,11 +82,11 @@ def branch(n : Integer) -> -F Integer {
 
 /// The returning arm, by a run.
 @[ runs("8") ]
-def branch_zero() -> -F Integer { become branch(0) }
+def branch_zero() -> Integer { become branch(0) }
 
 /// The continuing arm, through the operation and the `pure` clause.
 @[ runs("102") ]
-def branch_one() -> -F Integer { become branch(1) }
+def branch_one() -> Integer { become branch(1) }
 
 /// A loop's `break` gives the loop's value to the body, which continues. The
 /// loop may run forever, so the row states `Div` (#1481), and the handler of
@@ -119,7 +119,7 @@ def looped_out() -> -F [Div] Integer {
 
 /// An operation clause that returns answers for the handler.
 @[ runs("9") ]
-def answered() -> -F Integer {
+def answered() -> Integer {
   handle c : Proc {
     c.exit(1);
     pure 1
@@ -132,14 +132,14 @@ def answered() -> -F Integer {
 /// A continuation's type is written `Stack(C, D)`, the computation it resumes
 /// from and the one it ends as; a clause hands its continuation on by it.
 @[ checks ]
-def dropped(k : Stack(-F Unit, -F Integer)) -> -F Integer {
+def dropped(k : Stack(-F Unit, -F Integer)) -> Integer {
   9
 }
 
 /// A clause hands its continuation to a function stating the continuation's
 /// type, and the handled body answers what that function returns.
 @[ runs("9") ]
-def handed_on() -> -F Integer {
+def handed_on() -> Integer {
   handle c : Proc {
     c.exit(5);
     return 1
@@ -152,14 +152,14 @@ def handed_on() -> -F Integer {
 /// A function stating a continuation's type resumes the continuation it is
 /// handed, as the clause that bound it would (#1387).
 @[ checks ]
-def resume_stack(j : Stack(-F Unit, -F Integer)) -> -F Integer {
+def resume_stack(j : Stack(-F Unit, -F Integer)) -> Integer {
   j(unit)
 }
 
 /// A clause hands its continuation to `resume_stack`, which resumes the body;
 /// the body's value passes through the `pure` clause, as in `resumed`.
 @[ runs("101") ]
-def resumed_on() -> -F Integer {
+def resumed_on() -> Integer {
   handle c : Proc {
     c.exit(5);
     pure 1
@@ -177,7 +177,7 @@ module Conts {
 
   /// `resume_stack`, through the member.
   @[ checks ]
-  def aliased(j : K) -> -F Integer {
+  def aliased(j : K) -> Integer {
     j(unit)
   }
 }
@@ -185,7 +185,7 @@ module Conts {
 /// A clause hands its continuation to the function stating the member, which
 /// resumes the body.
 @[ runs("101") ]
-def resumed_aliased() -> -F Integer {
+def resumed_aliased() -> Integer {
   handle c : Proc {
     c.exit(5);
     pure 1

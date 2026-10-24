@@ -14,7 +14,7 @@ import "./data-base.gandr" ;
 /// Addition with the recursive call run and its result returned, the run
 /// written at its read.
 @[ checks ]
-def rec plus_returned(n : Nat, m : Nat) -> -F Nat {
+def rec plus_returned(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
     Succ(p) => Succ(plus_returned[<](n, p))
@@ -23,7 +23,7 @@ def rec plus_returned(n : Nat, m : Nat) -> -F Nat {
 
 /// Addition with the `return`s elided, the run written at its read.
 @[ checks ]
-def rec plus_elided(n : Nat, m : Nat) -> -F Nat {
+def rec plus_elided(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
     Succ(p) => Succ(plus_elided[<](n, p))
@@ -32,7 +32,7 @@ def rec plus_elided(n : Nat, m : Nat) -> -F Nat {
 
 /// Addition with the recursive call written `run` inside the successor.
 @[ checks ]
-def rec plus_run(n : Nat, m : Nat) -> -F Nat {
+def rec plus_run(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
     Succ(p) => Succ(run plus_run[<](n, p))
@@ -41,7 +41,7 @@ def rec plus_run(n : Nat, m : Nat) -> -F Nat {
 
 /// Two and three, added with the call returned.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five() -> -F Nat { plus_returned(two, three) }
+def five() -> Nat { plus_returned(two, three) }
 
 /// Two and three, added with the `return`s elided.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
@@ -57,4 +57,4 @@ def five_run : () => Nat = plus_run(two, three) ;
 
 /// One more than two and three, the nested addition inside a successor.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
-def six() -> -F Nat { Succ(plus(two, three)) }
+def six() -> Nat { Succ(plus(two, three)) }

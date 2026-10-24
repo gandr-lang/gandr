@@ -7,7 +7,7 @@ import "../../model/completion/ring-base.gandr" ;
 
 /// The target's half sends its completion and ends without closing.
 @[ refuses("LinearResidue") ]
-def halfUnclosed() -> -F Unit {
+def halfUnclosed() -> Unit {
   fork (target : Ring.Submission) {
     recv(target) as sqe;
     send(target, Ring.done);

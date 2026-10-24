@@ -7,7 +7,7 @@
 /// Keeps a view of a value held inside the handler at the handler's region,
 /// which the hold does not outlive (#1494).
 @[ refuses("ViewEscaped") ]
-def keptPastHold() -> -F Integer {
+def keptPastHold() -> Integer {
   handle inner : Proc {
     hold l = 42;
     run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } } ;
@@ -21,7 +21,7 @@ def keptPastHold() -> -F Integer {
 /// The same inside a handler a `run` binds within another, as #1494 reported
 /// it: where a handler is bound opens no region of its own.
 @[ refuses("ViewEscaped") ]
-def keptPastNestedHold() -> -F Integer {
+def keptPastNestedHold() -> Integer {
   handle outer : Proc {
     run x : Integer <- handle inner : Proc {
       hold l = 42;

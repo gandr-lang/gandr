@@ -9,7 +9,7 @@ import "../../model/completion/ring-base.gandr" ;
 /// submission: the send consumed the submitter's end, so the close acts on a
 /// spent slot.
 @[ refuses("UsedAfterClose") ]
-def bufferTouched() -> -F Unit {
+def bufferTouched() -> Unit {
   fork (owner : Ring.Buffer) { close(owner) } as buffer;
   fork (kernel : Ring.Moving) {
     recv(kernel) as held;

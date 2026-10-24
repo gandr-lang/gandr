@@ -1965,6 +1965,25 @@ fn a_run_binder_splits_the_relation_its_call_returns_656()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// A callee whose result is written bare, `-> A`, returns `A` as one written
+/// `-> -F A` does: the lowering inserts the returner, so a pattern at a `run`
+/// binder of its call splits the record `A` abbreviates (#2255).
+#[test]
+fn a_run_binder_splits_the_relation_a_bare_result_returns_2255()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def kept(i : Bool ≅ Integer) -> Bool ≅ Integer { i }\n",
+            "def made(i : Bool ≅ Integer) -> Bool ≃ Integer { case i { #{t, k, s, r} => #{t, #{#{k, s}, #{k, r}}} } }\n",
+            "def forwardOf(i : Bool ≅ Integer) -> +U (Bool -> -F Integer) { run e <- made(i); case e { #{t, #{g, s}, #{h, r}} => t } }\n",
+            "def backOf(i : Bool ≅ Integer) -> +U (Integer -> -F Bool) { run j <- kept(i); case j { #{.back = k} => k } }\n",
+        )),
+        &mut arena,
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 /// A label pattern writes no variable for the fields it omits; each is named
 /// by its label, the one name the record declares for it (#670), as is the
 /// rest of the record each link holds, by the label it starts at (#1515).

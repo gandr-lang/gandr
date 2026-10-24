@@ -11,18 +11,18 @@ import "./circle-base.gandr" ;
 
 /// The loop is not the empty word.
 @[ checks ]
-def loop_apart(e : Path(Path(Circle, Base, Base), loop, here(Base))) -> -F Empty {
+def loop_apart(e : Path(Path(Circle, Base, Base), loop, here(Base))) -> Empty {
   case e {}
 }
 
 /// Going around twice is not going around once.
 @[ checks ]
-def twice_apart(e : Path(Path(Circle, Base, Base), loop ∷ loop, loop)) -> -F Empty {
+def twice_apart(e : Path(Path(Circle, Base, Base), loop ∷ loop, loop)) -> Empty {
   case e {}
 }
 
 /// The loop is not its inverse.
 @[ checks ]
-def inverse_apart(e : Path(Path(Circle, Base, Base), loop, back(loop) ∷ here(Base))) -> -F Empty {
+def inverse_apart(e : Path(Path(Circle, Base, Base), loop, back(loop) ∷ here(Base))) -> Empty {
   case e {}
 }

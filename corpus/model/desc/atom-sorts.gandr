@@ -24,7 +24,7 @@ theory Renaming {
 /// Structural recursion over a sort chain: one per `Atom` link, none for an
 /// ordinary `Sort`.
 @[ checks ]
-def rec atoms(chain : Theory) -> -F Integer {
+def rec atoms(chain : Theory) -> Integer {
   case chain {
     Atom(name, indices, rest) => { run r <- atoms[<](rest); return r + 1 },
     Sort(name, indices, rest) => atoms[<](rest),
@@ -34,7 +34,7 @@ def rec atoms(chain : Theory) -> -F Integer {
 
 /// The renaming signature declares one atom sort, `Name`.
 @[ runs("1") ]
-def atomSorts() -> -F Integer { case Renaming {
+def atomSorts() -> Integer { case Renaming {
   Presents(sorts, opers, rules) => atoms(sorts),
   _ => 0
 } }

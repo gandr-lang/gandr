@@ -27,7 +27,7 @@ theory Pi {
 /// Structural recursion over a rule chain: one per `Fresh` link, the
 /// conditions its written rules state.
 @[ checks ]
-def rec conditions(chain : Theory) -> -F Integer {
+def rec conditions(chain : Theory) -> Integer {
   case chain {
     Rule(name, lhs, rhs, rest) => become conditions[<](rest),
     Turned(name, lhs, rhs, rest) => become conditions[<](rest),
@@ -41,7 +41,7 @@ def rec conditions(chain : Theory) -> -F Integer {
 
 /// `Pi` states one condition.
 @[ runs("1") ]
-def stated() -> -F Integer { case Pi {
+def stated() -> Integer { case Pi {
   Presents(sorts, opers, rules) => become conditions(rules),
   _ => 0
 } }

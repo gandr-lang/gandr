@@ -42,4 +42,4 @@ module Sealed :> Model(Metering) with sort Ratio = Integer {
 
 /// The sealed model's scale, read as the integer the model type says it is.
 @[ runs("2") ]
-def sealed_scale() -> -F Integer { Sealed.scale }
+def sealed_scale() -> Integer { Sealed.scale }

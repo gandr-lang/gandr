@@ -8,7 +8,7 @@ import "./file-base.gandr" ;
 /// A handle sent to a writer, which sends it back: the parent closes what it
 /// received, never the name it sent.
 @[ checks ]
-def movedThrough() -> -F Unit {
+def movedThrough() -> Unit {
   fork (owner : File.Handle) { close(owner) } as file;
   fork (writer : File.Writer) {
     recv(writer) as held;

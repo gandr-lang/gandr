@@ -10,37 +10,37 @@ import "./syntax.gandr" ;
 
 /// The successor, as a function `cong` can take.
 @[ checks ]
-def succOf(n : N) -> -F N {
+def succOf(n : N) -> N {
   S(n)
 }
 
 /// A variable, as a function `cong` can take.
 @[ checks ]
-def ixOf(n : N) -> -F Term {
+def ixOf(n : N) -> Term {
   Ix(n)
 }
 
 /// An abstraction, as a function `cong` can take.
 @[ checks ]
-def lamOf(t : Term) -> -F Term {
+def lamOf(t : Term) -> Term {
   Lam(t)
 }
 
 /// Equal indices are equal variables.
 @[ checks ]
-def ixCong(x : N, y : N, p : Path(N, x, y)) -> -F Path(Term, Ix(x), Ix(y)) {
+def ixCong(x : N, y : N, p : Path(N, x, y)) -> Path(Term, Ix(x), Ix(y)) {
   cong(ixOf, p)
 }
 
 /// Equal terms weaken to equal terms.
 @[ checks ]
-def wkCong(x : Term, y : Term, p : Path(Term, x, y)) -> -F Path(Term, wk(x), wk(y)) {
+def wkCong(x : Term, y : Term, p : Path(Term, x, y)) -> Path(Term, wk(x), wk(y)) {
   cong(wk, p)
 }
 
 /// Equal terms under one substitution are equal.
 @[ checks ]
-def substCong(s : Env, x : Term, y : Term, p : Path(Term, x, y)) -> -F Path(
+def substCong(s : Env, x : Term, y : Term, p : Path(Term, x, y)) -> Path(
   Term,
   subst(x, s),
   subst(y, s)

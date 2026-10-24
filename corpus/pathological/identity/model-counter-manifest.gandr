@@ -30,7 +30,7 @@ theory Ticker {
 /// A ticker over the integers, its carrier manifest, where a counter is
 /// asked: forgetting its carrier makes a ticker, which has no reading.
 @[ refuses("TypeMismatch") ]
-def tickerObserved(m : Model(Ticker) with sort C = Integer) -> -F Integer {
+def tickerObserved(m : Model(Ticker) with sort C = Integer) -> Integer {
   observe(m)
 }
 
@@ -38,14 +38,14 @@ def tickerObserved(m : Model(Ticker) with sort C = Integer) -> -F Integer {
 /// readings manifest is asked: forgetting puts sorts back, and never moves a
 /// manifest from one sort to another.
 @[ refuses("TypeMismatch") ]
-def countsForReadings(m : Model(ReadCounter) with sort C = Integer) -> -F (Model(ReadCounter) with sort R = Integer) {
+def countsForReadings(m : Model(ReadCounter) with sort C = Integer) -> Model(ReadCounter) with sort R = Integer {
   m
 }
 
 /// A count of one counter stepped by a second whose carrier is its own: the
 /// second's counts are not the first's (#2131).
 @[ refuses("TypeMismatch") ]
-def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> -F Integer {
+def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> Integer {
   case b {
     #{.zero = z, .incr = i, .read = r} => r(i(c))
   }
@@ -54,7 +54,7 @@ def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> -F Integer {
 /// A counter over the integers where one sharing counting up's counts is
 /// asked: counting up counts modulo three, not in the integers (#2131).
 @[ refuses("TypeMismatch") ]
-def integersShared(m : Model(Counter) with sort C = Integer) -> -F Integer {
+def integersShared(m : Model(Counter) with sort C = Integer) -> Integer {
   observeShared(upModel, m)
 }
 
@@ -65,7 +65,7 @@ def countOfNothing(a : Model(Counter), c : a.Nope) -> -F Integer { return 0 }
 /// A count of one counter stepped by a second counter's own step, read off
 /// the second's binder: the second's counts are not the first's (#2246).
 @[ refuses("TypeMismatch") ]
-def stepApart(a : Model(Counter), b : Model(Counter), c : a.C) -> -F Integer {
+def stepApart(a : Model(Counter), b : Model(Counter), c : a.C) -> Integer {
   run i <- b.incr ;
   run r <- b.read ;
   r(i(c))
@@ -92,7 +92,7 @@ def stepOfCarrier(a : Model(Counter) with sort C = Integer) -> -F Integer {
 def rightApart(
   m : Model(Pairing) with sort A = Integer,
   n : Model(Pairing) with sort A = Integer
-) -> -F Integer {
+) -> Integer {
   case n {
     #{.left = l, .right = r} => leftBeside(m, r)
   }

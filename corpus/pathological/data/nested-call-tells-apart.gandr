@@ -14,7 +14,7 @@ data Int : Type {
 /// case is judged on the binds they elaborate to, and refused at the case
 /// as the bound spelling is.
 @[ refuses("RuleNotRespected") ]
-def rec tell(n : Int) -> -F Int {
+def rec tell(n : Int) -> Int {
   case n {
     Z => Z,
     S(x) => S(tell[<](x)),

@@ -38,7 +38,7 @@ theory Alpha {
 /// Structural recursion over a rule chain: one per `Derived` link, the
 /// rules completion added to join a critical pair.
 @[ checks ]
-def rec derived(chain : Theory) -> -F Integer {
+def rec derived(chain : Theory) -> Integer {
   case chain {
     Rule(name, lhs, rhs, rest) => derived[<](rest),
     Turned(name, lhs, rhs, rest) => derived[<](rest),
@@ -55,7 +55,7 @@ def rec derived(chain : Theory) -> -F Integer {
 /// the atoms compared by name, the laws would not overlap and none would be
 /// derived.
 @[ runs("2") ]
-def derivations() -> -F Integer { case Alpha {
+def derivations() -> Integer { case Alpha {
   Presents(sorts, opers, rules) => derived(rules),
   _ => 0
 } }

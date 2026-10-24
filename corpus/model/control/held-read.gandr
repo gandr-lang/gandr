@@ -7,7 +7,7 @@
 /// A held value returned to a statement that binds it: the binder states no
 /// type, and the read synthesises the slot's (#1142).
 @[ runs("3") ]
-def bound() -> -F Integer {
+def bound() -> Integer {
   hold i = 3;
   run k <- pure i;
   pure k

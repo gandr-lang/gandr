@@ -44,7 +44,7 @@ theory LetBeside {
 /// ζ's right side is the instantiation of `t`, which the presentation keeps
 /// as an `Inst` node.
 @[ runs("1") ]
-def instantiates() -> -F Integer { case Let {
+def instantiates() -> Integer { case Let {
   Presents(sorts, opers, rules) => case rules {
     Rule(name, left, right, rest) => case right {
       Inst(variable, arguments) => 1,

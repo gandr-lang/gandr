@@ -22,7 +22,7 @@ data Nat : Type {
 module Repack {
   /// The translator: the field moved back into its constructor.
   @[ checks ]
-  def rebox(box : Box(Integer)) -> -F Box(Integer) {
+  def rebox(box : Box(Integer)) -> Box(Integer) {
     case box {
       Boxed(x) => Boxed(x)
     }
@@ -37,7 +37,7 @@ module Repack {
 module Renumber {
   /// The translator: each constructor to itself, the predecessor moved.
   @[ checks ]
-  def step(n : Nat) -> -F Nat {
+  def step(n : Nat) -> Nat {
     case n {
       Zero => Zero,
       Succ(m) => Succ(m)

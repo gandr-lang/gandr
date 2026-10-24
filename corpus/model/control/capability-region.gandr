@@ -7,7 +7,7 @@
 
 /// The scope's own capability is bound at the type that names its region.
 @[ checks ]
-def named() -> -F Unit {
+def named() -> Unit {
   handle c : Proc {
     run d : Cap {exit} at c <- pure c ;
     return unit
@@ -20,7 +20,7 @@ def named() -> -F Unit {
 /// A capability held for the whole run is not one a scope introduced: the
 /// scope's capability would outlive its scope there.
 @[ refuses("CapabilityEscaped") ]
-def held() -> -F Unit {
+def held() -> Unit {
   handle c : Proc {
     run d : Cap {exit} <- pure c ;
     return unit
@@ -32,7 +32,7 @@ def held() -> -F Unit {
 
 /// Inside a second scope the outer capability still names the outer region.
 @[ checks ]
-def outer() -> -F Unit {
+def outer() -> Unit {
   handle c : Proc {
     handle e : Proc {
       run d : Cap {exit} at c <- pure c ;
@@ -50,7 +50,7 @@ def outer() -> -F Unit {
 /// An outer capability may stand where the inner region is named, since it
 /// lives longer; the inner one may not stand in the outer region.
 @[ refuses("CapabilityEscaped") ]
-def swapped() -> -F Unit {
+def swapped() -> Unit {
   handle c : Proc {
     handle e : Proc {
       run d : Cap {exit} at e <- pure c ;
@@ -81,7 +81,7 @@ def unbound(c : Integer) -> -F Unit {
 /// Any value enters a region the same way: the integer is kept until the scope
 /// binding `c` ends (`kept-view.gandr` keeps a view there).
 @[ checks ]
-def plain() -> -F Unit {
+def plain() -> Unit {
   handle c : Proc {
     run d : Integer at c <- pure 1 ;
     return unit

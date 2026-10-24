@@ -15,23 +15,23 @@ import "../../classifier/implicit-telescope.gandr" ;
 /// `twice` with its implicits omitted: the argument determines `m`, and
 /// nothing determines the combination.
 @[ refuses("ImplicitUnsolved") ]
-def undetermined() -> -F Integer { twice(3) }
+def undetermined() -> Integer { twice(3) }
 
 /// `chosen` with its implicit omitted: `x` is a value of `t`, and nothing
 /// determines which.
 @[ refuses("ImplicitUnsolved") ]
-def unchosen() -> -F Integer { chosen(Integer) }
+def unchosen() -> Integer { chosen(Integer) }
 
 /// `konst` with its implicit omitted where the lambda returns its own
 /// argument: the only solution for `b` is the lambda's binder `t`, which the
 /// call does not stand under.
 @[ refuses("ImplicitUnsolved") ]
-def escaping() -> -F Integer { konst(fn (t) { fn (y) { y } }) }
+def escaping() -> Integer { konst(fn (t) { fn (y) { y } }) }
 
 /// `same(3)` where a unit is expected: the argument solves `a` as `Integer`,
 /// and the returned type then disagrees with `Unit`.
 @[ refuses("TypeMismatch") ]
-def disagreeing() -> -F Unit { same(3) }
+def disagreeing() -> Unit { same(3) }
 
 /// The implicit written among the parentheses, as for `sameExplicit`.
 @[ refuses("ImplicitInParentheses") ]

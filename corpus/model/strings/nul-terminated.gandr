@@ -21,14 +21,14 @@ data CView : Type {
 /// An owned string's bytes: the code points encoded, then the terminating
 /// zero.
 @[ checks ]
-def terminated(cs : List(Integer)) -> -F List(Integer) {
+def terminated(cs : List(Integer)) -> List(Integer) {
   concat(encodeAll(cs), (Cons(0, Nil) : List(Integer)))
 }
 
 /// The C reading of a byte list: borrowed whole when the only zero is the
 /// last byte, refused at an interior zero.
 @[ checks ]
-def rec cView(bs : List(Integer)) -> -F CView {
+def rec cView(bs : List(Integer)) -> CView {
   case bs {
     Nil => Interior,
     Cons(b, rest) => {
@@ -61,21 +61,21 @@ def rec cView(bs : List(Integer)) -> -F CView {
 
 /// `hi`, owned: its two bytes and the zero.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hi() -> -F List(Integer) { terminated((Cons(104, Cons(105, Nil)) : List(Integer))) }
+def hi() -> List(Integer) { terminated((Cons(104, Cons(105, Nil)) : List(Integer))) }
 
 /// C reads `hi` as the bytes it is held in: it borrows them whole.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hiForC() -> -F List(Integer) { run bs <- force hi ; run v <- cView(bs) ; case v {
+def hiForC() -> List(Integer) { run bs <- force hi ; run v <- cView(bs) ; case v {
   Borrowed(t) => t,
   Interior => Nil
 } }
 
 /// A zero inside the string: C would stop at it, so it has no C reading.
 @[ runs("Interior") ]
-def cut() -> -F CView {
+def cut() -> CView {
   cView(terminated((Cons(104, Cons(0, Cons(105, Nil))) : List(Integer))))
 }
 
 /// Bytes with no terminating zero have no C reading either.
 @[ runs("Interior") ]
-def unterminated() -> -F CView { cView((Cons(104, Cons(105, Nil)) : List(Integer))) }
+def unterminated() -> CView { cView((Cons(104, Cons(105, Nil)) : List(Integer))) }

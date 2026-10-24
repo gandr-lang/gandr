@@ -35,7 +35,7 @@ data Figure : Type {
 module Rename {
   /// The translator: the field moved to the new constructor.
   @[ checks ]
-  def toOther(old : Old) -> -F Other {
+  def toOther(old : Old) -> Other {
     case old {
       Mk(n) => Make(n)
     }
@@ -45,7 +45,7 @@ module Rename {
   def renamed : Flow(Type, Old, Other) = forward(toOther) ;
   /// One value ridden along the flow.
   @[ checks ]
-  def moved(old : Old) -> -F Other {
+  def moved(old : Old) -> Other {
     ride(\X. X, renamed, old)
   }
   /// A value migrated by a run.
@@ -57,7 +57,7 @@ module Rename {
 module Shapes {
   /// The translator: each shape to its figure, the sides swapped.
   @[ checks ]
-  def toFigure(shape : Shape) -> -F Figure {
+  def toFigure(shape : Shape) -> Figure {
     case shape {
       Circle(r) => Round(r),
       Rect(w, h) => Box(h, w)
@@ -68,7 +68,7 @@ module Shapes {
   def redrawn : Flow(Type, Shape, Figure) = forward(toFigure) ;
   /// A list of shapes ridden along the flow in the family of lists.
   @[ checks ]
-  def all(shapes : List(Shape)) -> -F List(Figure) {
+  def all(shapes : List(Shape)) -> List(Figure) {
     ride(\X. List(X), redrawn, shapes)
   }
   /// Two shapes migrated by a run.

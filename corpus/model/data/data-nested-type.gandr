@@ -7,7 +7,7 @@ import "./data-maybe.gandr" ;
 /// where it is run as a value, and each element takes the element type,
 /// `Maybe(Integer)`, from that annotation (#1544).
 @[ checks ]
-def sum_first() -> -F Integer {
+def sum_first() -> Integer {
   run items <- pure ([Some(1), None, Some(3)] : List(Maybe(Integer)));
   7
 }

@@ -787,38 +787,38 @@ mod tests
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
         let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
                       \n\
-                      def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                      def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                       \n\
-                      def second(a : Nat, b : Nat) -> -F Nat { b }\n\
+                      def second(a : Nat, b : Nat) -> Nat { b }\n\
                       \n\
-                      def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                      def make(n : Nat) -> () => Nat { thunk { twice(n) } }\n\
                       \n\
-                      def apply(t : () => Nat) -> -F Nat { force t }\n\
+                      def apply(t : () => Nat) -> Nat { force t }\n\
                       \n\
-                      def field(n : Nat) -> -F Nat {\n  run m <- twice(n) ;\n  Succ(m)\n}\n\
+                      def field(n : Nat) -> Nat {\n  run m <- twice(n) ;\n  Succ(m)\n}\n\
                       \n\
-                      def paired(n : Nat) -> -F Nat {\n  run p <- twice(n) ;\n  run q <- twice(Zero) ;\n  second(p, q)\n}\n\
+                      def paired(n : Nat) -> Nat {\n  run p <- twice(n) ;\n  run q <- twice(Zero) ;\n  second(p, q)\n}\n\
                       \n\
-                      def chained(n : Nat) -> -F Nat {\n  run a <- twice(n) ;\n  run b <- twice(a) ;\n  become twice(b)\n}\n\
+                      def chained(n : Nat) -> Nat {\n  run a <- twice(n) ;\n  run b <- twice(a) ;\n  become twice(b)\n}\n\
                       \n\
-                      def suspended(n : Nat) -> -F Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
+                      def suspended(n : Nat) -> Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
         let sugared = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
                        \n\
-                       def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
+                       def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
                        \n\
-                       def second(a : Nat, b : Nat) -> -F Nat { b }\n\
+                       def second(a : Nat, b : Nat) -> Nat { b }\n\
                        \n\
-                       def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
+                       def make(n : Nat) -> () => Nat { thunk { twice(n) } }\n\
                        \n\
-                       def apply(t : () => Nat) -> -F Nat { force t }\n\
+                       def apply(t : () => Nat) -> Nat { force t }\n\
                        \n\
-                       def field(n : Nat) -> -F Nat {\n  Succ(twice(n))\n}\n\
+                       def field(n : Nat) -> Nat {\n  Succ(twice(n))\n}\n\
                        \n\
-                       def paired(n : Nat) -> -F Nat {\n  second(twice(n), twice(Zero))\n}\n\
+                       def paired(n : Nat) -> Nat {\n  second(twice(n), twice(Zero))\n}\n\
                        \n\
-                       def chained(n : Nat) -> -F Nat {\n  run a <- twice(n) ;\n  become twice(twice(a))\n}\n\
+                       def chained(n : Nat) -> Nat {\n  run a <- twice(n) ;\n  become twice(twice(a))\n}\n\
                        \n\
-                       def suspended(n : Nat) -> -F Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
+                       def suspended(n : Nat) -> Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
         let options = FormatOptions {
             form: gandr_surface_format::Form::Sugared,
             ..FormatOptions::default()

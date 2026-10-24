@@ -1,14 +1,13 @@
 10:1-10:29 import "./magma-base.gan… ⇒ import "./magma-base.gandr" ;⏎⏎Reads `<corpus>/corpus/model/higher-cells/magma-base.gandr`. @10:1-10:30
 13:1-13:11 @[ checks ] ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-14:1
-14:1-14:3 def ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:31
+14:1-14:3 def ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:28
 14:5-14:9 flip( ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:5-14:9
 14:10-14:10 b ⇒ b : Bool @14:10-14:11
-14:12-14:12 : ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:31
+14:12-14:12 : ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:28
 14:14-14:17 Bool ⇒ Bool : Type @14:14-14:18
-14:18-14:21 ) -> ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:31
-14:23-14:24 -F ⇒ -F Bool : Type[-] @14:23-14:30
-14:26-14:29 Bool ⇒ Bool : Type @14:26-14:30
-14:31-14:31 { ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
+14:18-14:21 ) -> ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:28
+14:23-14:26 Bool ⇒ Bool : Type @14:23-14:27
+14:28-14:28 { ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
 15:3-15:5 run ⇒ -F Bool @15:3-15:6
 15:7-15:7 c ⇒ c : Bool @15:7-15:8
 15:9-15:10 <- ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2

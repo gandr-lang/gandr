@@ -20,7 +20,7 @@ def touch @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) 
 /// `pass` at the outer region with its answer widened to the inner one is
 /// `pass` at the inner region after its argument is widened.
 @[ runs("5") ]
-def passNatural() -> -F Integer {
+def passNatural() -> Integer {
   hold s = 5;
   handle outer : Proc {
     run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;
@@ -44,7 +44,7 @@ def passNatural() -> -F Integer {
 /// The same square for `touch`, whose two sides nest its binds apart: the
 /// conversion reassociates them.
 @[ runs("5") ]
-def touchNatural() -> -F Integer {
+def touchNatural() -> Integer {
   hold s = 5;
   handle outer : Proc {
     run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;

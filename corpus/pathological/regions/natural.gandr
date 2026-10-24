@@ -11,7 +11,7 @@ import "../../model/regions/natural.gandr" ;
 /// The square against the extension: a view kept at the inner region does not
 /// stand where the outer region's is asked.
 @[ refuses("TypeMismatch") ]
-def backwards() -> -F Integer {
+def backwards() -> Integer {
   hold s = 5;
   handle outer : Proc {
     run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;
@@ -35,7 +35,7 @@ def backwards() -> -F Integer {
 /// Two functions on the square's sides: `pass` widened is not `touch`, which
 /// forces the view first.
 @[ refuses("EndpointMismatch") ]
-def unequal() -> -F Integer {
+def unequal() -> Integer {
   hold s = 5;
   handle outer : Proc {
     run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;

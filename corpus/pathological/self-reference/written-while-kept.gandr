@@ -4,7 +4,7 @@
 
 /// A hold written while its own region keeps a shared view of it (#1183).
 @[ refuses("HeldKept") ]
-def writtenWhileKept() -> -F Integer {
+def writtenWhileKept() -> Integer {
   hold s = 3;
   run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
   access s as v { resume(v, 4) };

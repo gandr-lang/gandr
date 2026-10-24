@@ -21,9 +21,9 @@ theory Counter {
 module Open : Model(Counter) {
   type C = Integer;
 
-  def start() -> -F Integer { 0 }
+  def start() -> Integer { 0 }
 
-  def step(n : Integer) -> -F Integer { n + 1 }
+  def step(n : Integer) -> Integer { n + 1 }
 }
 
 /// The same counter sealed by the theory: its carrier is abstract outside,
@@ -31,18 +31,18 @@ module Open : Model(Counter) {
 module Sealed :> Model(Counter) {
   type C = Integer;
 
-  def start() -> -F Integer { 0 }
+  def start() -> Integer { 0 }
 
-  def step(n : Integer) -> -F Integer { n + 1 }
+  def step(n : Integer) -> Integer { n + 1 }
 }
 
 /// Two steps on the transparent counter, read as an integer.
 @[ runs("2") ]
-def openTwice() -> -F Integer { run s <- Open.start() ; Open.step(Open.step(s)) }
+def openTwice() -> Integer { run s <- Open.start() ; Open.step(Open.step(s)) }
 
 /// Two steps on the sealed counter, at its abstract carrier.
 @[ checks ]
-def sealedTwice() -> -F (Sealed.C) { run s <- Sealed.start() ; Sealed.step(Sealed.step(s)) }
+def sealedTwice() -> Sealed.C { run s <- Sealed.start() ; Sealed.step(Sealed.step(s)) }
 
 /// A toggle: a step that undoes itself. A law, so the models give its proof.
 @[ checks ]
@@ -64,7 +64,7 @@ data Bit : Type {
 module Bits : Model(Toggle) {
   type T = Bit;
 
-  def flip(b : Bit) -> -F Bit {
+  def flip(b : Bit) -> Bit {
     case b {
       Low => High,
       High => Low
@@ -73,7 +73,7 @@ module Bits : Model(Toggle) {
 
   /// The law, by cases.
   @[ checks ]
-  def twice(b : Bit) -> -F Path(Bit, flip(flip(b)), b) {
+  def twice(b : Bit) -> Path(Bit, flip(flip(b)), b) {
     case b {
       Low => here(Low),
       High => here(High)
@@ -83,4 +83,4 @@ module Bits : Model(Toggle) {
 
 /// The toggle twice from `Low`, run.
 @[ runs("Low") ]
-def flippedTwice() -> -F Bit { Bits.flip(Bits.flip(Low)) }
+def flippedTwice() -> Bit { Bits.flip(Bits.flip(Low)) }

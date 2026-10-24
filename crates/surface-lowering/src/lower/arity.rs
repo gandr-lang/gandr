@@ -1109,8 +1109,8 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The type the `run` binder `binder` holds, as the function its
-    /// computation calls wrote it: `A` of the function's result `-F A`, as
-    /// [`Self::called_type`] reads it.
+    /// computation calls wrote it: `A` of the function's result, `-F A` or a
+    /// bare `A`, as [`Self::called_type`] reads it.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1148,14 +1148,16 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// The type the call `written` returns under `frame`, as the function it
-    /// calls wrote it: `A` of the function's result `-F A`.
+    /// calls wrote it: `A` of the function's result `-F A`, or the result `A`
+    /// itself when it is written bare and the lowering inserts the returner.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the node of `A` when `written` calls a name resolving, under
     ///   `frame`, to a function declared with as many parameters as the call
-    ///   passes and a written result `-F A`, read through parentheses; the
-    ///   untyped absence otherwise.
+    ///   passes and a written result `-F A`, read through parentheses, or a
+    ///   result `A` that is no computation type — no returner, arrow or lazy
+    ///   product; the untyped absence otherwise.
     /// - provides: the record layout of a call's result to a match on it, so a
     ///   pattern splits the record a quasi-inverse or an equivalence
     ///   abbreviates as it does at a parameter written with one.
@@ -1168,8 +1170,11 @@ impl<'source> Lowerer<'_, 'source>
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::ran_type`] and [`Self::scrutinee_type`].
+    /// - hypothesis: L3 — as [`Self::ran_type`] and [`Self::scrutinee_type`],
+    ///   and a callee whose result is written bare splits as one written under
+    ///   its returner.
     /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_its_call_returns_656`
+    /// - witness: `lower::identity::tests::a_run_binder_splits_the_relation_a_bare_result_returns_2255`
     /// - witness: `lower::native::tests::a_call_as_the_scrutinee_splits_the_record_it_returns_1141`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| match *found {
         Maybe::Present(node) => node != written,
@@ -1224,13 +1229,25 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(untyped);
         };
-        if let Maybe::Present(returner) = self.unwrapped(result)?
-            && returner.former == Former::ReturnerType
-            && let [returned] = *returner.operands.as_slice()
-        {
-            return Ok(Maybe::Present(returned));
+        let Maybe::Present(read) = self.unwrapped(result)?
+        else {
+            return Ok(untyped);
+        };
+        if read.former == Former::ReturnerType {
+            return Ok(match *read.operands.as_slice() {
+                [returned] => Maybe::Present(returned),
+                _ => untyped,
+            });
         }
-        Ok(untyped)
+        // A value type at the result: the lowering reads it with its returner
+        // inserted, so the call returns it.
+        if matches!(
+            read.former,
+            Former::ArrowType | Former::LazyProductType | Former::LazyRecordType
+        ) {
+            return Ok(untyped);
+        }
+        Ok(Maybe::Present(result))
     }
 
     /// The zone braces at a type's root are read in over `entries`: the session

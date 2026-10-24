@@ -12,13 +12,13 @@ import "./circle-base.gandr" ;
 def comp(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Circle, Base, Base) {
+) -> Path(Circle, Base, Base) {
   p then q
 }
 
 /// Reflexivity is the composite's left unit (#422).
 @[ checks ]
-def leftUnit(p : Path(Circle, Base, Base)) -> -F Path(
+def leftUnit(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   here(Base) then p,
   p
@@ -28,7 +28,7 @@ def leftUnit(p : Path(Circle, Base, Base)) -> -F Path(
 
 /// So it is through the composite's definition.
 @[ checks ]
-def leftUnitComp(p : Path(Circle, Base, Base)) -> -F Path(
+def leftUnitComp(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   comp(here(Base), p),
   p
@@ -39,7 +39,7 @@ def leftUnitComp(p : Path(Circle, Base, Base)) -> -F Path(
 /// A letter before the empty word stays before a path composed after it
 /// (#422).
 @[ checks ]
-def letterFirst(p : Path(Circle, Base, Base)) -> -F Path(
+def letterFirst(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   comp(loop ∷ here(Base), p),
   loop ∷ p
@@ -49,7 +49,7 @@ def letterFirst(p : Path(Circle, Base, Base)) -> -F Path(
 
 /// And no letter is dropped: the loop composed with `p` is not `p`.
 @[ refuses("EndpointMismatch") ]
-def letterKept(p : Path(Circle, Base, Base)) -> -F Path(
+def letterKept(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   comp(loop ∷ here(Base), p),
   p
@@ -62,7 +62,7 @@ def letterKept(p : Path(Circle, Base, Base)) -> -F Path(
 def other(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Circle, Base, Base) {
+) -> Path(Circle, Base, Base) {
   p then q
 }
 
@@ -71,7 +71,7 @@ def other(
 def compSwapped(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Circle, Base, Base) {
+) -> Path(Circle, Base, Base) {
   q then p
 }
 
@@ -81,7 +81,7 @@ def compSwapped(
 def sameComposite(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Path(Circle, Base, Base), comp(p, q), other(p, q)) {
+) -> Path(Path(Circle, Base, Base), comp(p, q), other(p, q)) {
   here(comp(p, q))
 }
 
@@ -90,7 +90,7 @@ def sameComposite(
 def sameAfterLetter(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Path(Circle, Base, Base), loop ∷ comp(p, q), loop ∷ other(p, q)) {
+) -> Path(Path(Circle, Base, Base), loop ∷ comp(p, q), loop ∷ other(p, q)) {
   here(loop ∷ comp(p, q))
 }
 
@@ -99,7 +99,7 @@ def sameAfterLetter(
 def letterThroughNames(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Path(Circle, Base, Base), comp(loop ∷ p, q), loop ∷ other(p, q)) {
+) -> Path(Path(Circle, Base, Base), comp(loop ∷ p, q), loop ∷ other(p, q)) {
   here(loop ∷ comp(p, q))
 }
 
@@ -109,6 +109,6 @@ def letterThroughNames(
 def swapped(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
-) -> -F Path(Path(Circle, Base, Base), comp(p, q), compSwapped(p, q)) {
+) -> Path(Path(Circle, Base, Base), comp(p, q), compSwapped(p, q)) {
   here(comp(p, q))
 }

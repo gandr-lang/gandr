@@ -12,7 +12,7 @@ data Color : Type {
 
 /// Every colour has its arm.
 @[ checks ]
-def classify(c : Color) -> -F Integer {
+def classify(c : Color) -> Integer {
   case c {
     Red => 0,
     Green => 1,
@@ -23,7 +23,7 @@ def classify(c : Color) -> -F Integer {
 /// `Green`'s arm is written and its body is a hole: the arm that runs is
 /// decided, only its result is not.
 @[ checks ]
-def sketch(c : Color) -> -F Integer {
+def sketch(c : Color) -> Integer {
   case c {
     Red => 0,
     Green => ?,

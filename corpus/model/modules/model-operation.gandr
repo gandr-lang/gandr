@@ -25,15 +25,15 @@ module Counted : Model(Counting) {
   def zero = 0;
   /// One more.
   @[ checks ]
-  def next(n : Integer) -> -F Integer { n + 1 }
+  def next(n : Integer) -> Integer { n + 1 }
   /// The count itself.
   @[ checks ]
-  def read(n : Integer) -> -F Integer { n }
+  def read(n : Integer) -> Integer { n }
 }
 
 /// Two steps from the start, read out through the model's operations.
 @[ runs("2") ]
-def counted_two() -> -F Integer {
+def counted_two() -> Integer {
   run one <- Counted.next(Counted.zero) ;
   Counted.read(Counted.next(one))
 }
@@ -55,5 +55,5 @@ module Summed : Model(Summing) {
   def zero = 0;
   /// The sum.
   @[ checks ]
-  def add(x : Integer, y : Integer) -> -F Integer { x + y }
+  def add(x : Integer, y : Integer) -> Integer { x + y }
 }

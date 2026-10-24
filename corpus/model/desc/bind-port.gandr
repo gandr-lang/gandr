@@ -30,7 +30,7 @@ theory Receive {
 /// Structural recursion over a port chain: one per `Abstracted` link, none
 /// for a `Port` or a `Bound` one.
 @[ checks ]
-def rec abstracted(chain : Theory) -> -F Integer {
+def rec abstracted(chain : Theory) -> Integer {
   case chain {
     Abstracted(name, sort, indices, atoms, binders, rest) => {
       run r <- abstracted[<](rest);
@@ -45,7 +45,7 @@ def rec abstracted(chain : Theory) -> -F Integer {
 /// Structural recursion over an operation chain: the abstracting input ports
 /// of every operation.
 @[ checks ]
-def rec abstracting(chain : Theory) -> -F Integer {
+def rec abstracting(chain : Theory) -> Integer {
   case chain {
     Oper(name, inputs, outputs, rest) => {
       run here <- abstracted(inputs);
@@ -58,7 +58,7 @@ def rec abstracting(chain : Theory) -> -F Integer {
 
 /// Of the restriction signature's three operations, `nu` alone abstracts.
 @[ runs("1") ]
-def abstractions() -> -F Integer { case Restriction {
+def abstractions() -> Integer { case Restriction {
   Presents(sorts, opers, rules) => abstracting(opers),
   _ => 0
 } }

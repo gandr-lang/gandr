@@ -20,7 +20,7 @@ def renameRenameLift(
   a3 : Ren,
   h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(n, a3)),
   n : N
-) -> -F Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(n, RLift(a3))) {
+) -> Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(n, RLift(a3))) {
   case n {
     Z => here(Z),
     S(m) => cong(succOf, h(m))
@@ -36,7 +36,7 @@ def rec renameRename(
   a2 : Ren,
   a3 : Ren,
   h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(n, a3))
-) -> -F Path(Term, rename(rename(t, a1), a2), rename(t, a3)) {
+) -> Path(Term, rename(rename(t, a1), a2), rename(t, a3)) {
   case t {
     Ix(n) => cong(ixOf, h(n)),
     Lam(b) => cong(
@@ -78,7 +78,7 @@ def renameSquareLift(
   a4 : Ren,
   h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(rlook(n, a3), a4)),
   n : N
-) -> -F Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(rlook(n, RLift(a3)), RLift(a4))) {
+) -> Path(N, rlook(rlook(n, RLift(a1)), RLift(a2)), rlook(rlook(n, RLift(a3)), RLift(a4))) {
   case n {
     Z => here(Z),
     S(m) => cong(succOf, h(m))
@@ -95,7 +95,7 @@ def rec renameSquare(
   a3 : Ren,
   a4 : Ren,
   h : (n : N) => Path(N, rlook(rlook(n, a1), a2), rlook(rlook(n, a3), a4))
-) -> -F Path(Term, rename(rename(t, a1), a2), rename(rename(t, a3), a4)) {
+) -> Path(Term, rename(rename(t, a1), a2), rename(rename(t, a3), a4)) {
   case t {
     Ix(n) => cong(ixOf, h(n)),
     Lam(b) => cong(

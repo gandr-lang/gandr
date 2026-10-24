@@ -8,7 +8,7 @@ import "../../model/moves/file-base.gandr" ;
 /// The handle closed by its mover after it was moved into a closer: the send
 /// spent the mover's end, so the close acts on a spent slot.
 @[ refuses("UsedAfterClose") ]
-def closedAfterMove() -> -F Unit {
+def closedAfterMove() -> Unit {
   fork (owner : File.Handle) { close(owner) } as file;
   fork (closer : File.Closer) {
     recv(closer) as held;

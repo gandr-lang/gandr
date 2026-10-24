@@ -37,7 +37,7 @@ data Nat : Type {
 
 /// Addition by recursion on the second argument.
 @[ checks ]
-def rec plus(n : Nat, m : Nat) -> -F Nat {
+def rec plus(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))
@@ -60,7 +60,7 @@ data Bush : Type {
 
 /// A function mapped over a list.
 @[ checks ]
-def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
+def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
     Cons(x, rest) => (Cons(f(x), map[<](a, b, f, rest)) : List(b))
@@ -69,7 +69,7 @@ def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> -F List(b) {
 
 /// A list of numbers, summed.
 @[ checks ]
-def rec sum(xs : List(Nat)) -> -F Nat {
+def rec sum(xs : List(Nat)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => plus(x, sum[<](rest))
@@ -81,7 +81,7 @@ def rec sum(xs : List(Nat)) -> -F Nat {
 /// element is the node's plain type, and `forged[<]` takes only nodes below
 /// the node's stage (#393).
 @[ refuses("StageNotBelow") ]
-def rec forged(t : Bush) -> -F Nat {
+def rec forged(t : Bush) -> Nat {
   case t {
     Sprout(kids) => Succ(sum(map(Bush, Nat, forged[<], (Cons(t, (Nil : List(Bush))) : List(Bush)))))
   }

@@ -17,7 +17,7 @@ import "./loop-winding.gandr" ;
 /// successor is a loop and a predecessor an inverse. It recurses structurally
 /// and respects both rules as the winding number does.
 @[ checks ]
-def rec spinWords(n : Int) -> -F Words {
+def rec spinWords(n : Int) -> Words {
   case n {
     Z => Nil,
     S(x) => Loop(spinWords[<](x)),
@@ -27,7 +27,7 @@ def rec spinWords(n : Int) -> -F Words {
 
 /// Two successors spin twice around.
 @[ runs("Loop(Loop(Nil))") ]
-def spun() -> -F Words { become spinWords(S(S(Z))) }
+def spun() -> Words { become spinWords(S(S(Z))) }
 
 /// Conversion runs spinning at a closed word: two successors are two loops.
 @[ checks ]
@@ -72,7 +72,7 @@ def spun_wound_lost : Path(Words, spinWords(windWords(Loop(Nil))), Nil) = here(N
 /// One inverse loop more: the function the inverse letter applies, as
 /// `around` applies the loop.
 @[ checks ]
-def unaround(c : Words) -> -F Words {
+def unaround(c : Words) -> Words {
   Unloop(c)
 }
 
@@ -87,7 +87,7 @@ def unaround(c : Words) -> -F Words {
 /// compose to the identity under the rules, so the chain is `p` itself, the
 /// answer at `x`.
 @[ checks ]
-def rec sectWords(c : Words) -> -F Path(Words, spinWords(windWords(c)), c) {
+def rec sectWords(c : Words) -> Path(Words, spinWords(windWords(c)), c) {
   case c {
     Nil => here(Nil),
     Loop(x) => { run p <- sectWords[<](x); cong(around, p) },
@@ -99,7 +99,7 @@ def rec sectWords(c : Words) -> -F Path(Words, spinWords(windWords(c)), c) {
 /// induction over the presented integers, a successor carried along the
 /// model's `turn` and a predecessor along its `unturn`.
 @[ checks ]
-def rec retrWords(n : Int) -> -F Path(Int, windWords(spinWords(n)), n) {
+def rec retrWords(n : Int) -> Path(Int, windWords(spinWords(n)), n) {
   case n {
     Z => here(Z),
     S(x) => { run p <- retrWords[<](x); cong(Winding.turn, p) },

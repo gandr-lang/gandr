@@ -11,7 +11,7 @@ module Schema {
   type New = Integer * String * (Unit + Unit);
   /// The translator: the fields swapped and a flag added.
   @[ checks ]
-  def toNew(old : Old) -> -F New {
+  def toNew(old : Old) -> New {
     case old {
       #{name, age} => (age, name, +{.0 = unit})
     }
@@ -21,12 +21,12 @@ module Schema {
   def upgrade : Flow(Type, Old, New) = forward(toNew) ;
   /// One record ridden along the flow.
   @[ checks ]
-  def moved(old : Old) -> -F New {
+  def moved(old : Old) -> New {
     ride(\X. X, upgrade, old)
   }
   /// A list of records ridden along the flow in the family of lists.
   @[ checks ]
-  def everyone(olds : List(Old)) -> -F List(New) {
+  def everyone(olds : List(Old)) -> List(New) {
     ride(\X. List(X), upgrade, olds)
   }
   /// One old record migrated by a run.

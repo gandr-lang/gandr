@@ -6,7 +6,7 @@
 /// higher than where they were captured; the view still reads its cell, and
 /// the clause adds its hundred to the handled answer (#1183).
 @[ runs("112") ]
-def relocated() -> -F Integer {
+def relocated() -> Integer {
   hold x = 5;
   run r : Integer <- handle c : Proc {
     access x as v { c.exit(1); resume(v, v + 7) };

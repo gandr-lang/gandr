@@ -4,6 +4,6 @@
 /// A body answering an integer that ends in a statement: it answers the unit
 /// instead.
 @[ refuses("TypeMismatch") ]
-def unitAnswered() -> -F Integer {
+def unitAnswered() -> Integer {
   pure unit;
 }

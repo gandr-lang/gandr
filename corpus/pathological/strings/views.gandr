@@ -11,7 +11,7 @@ import "../../model/strings/string-base.gandr" ;
 /// A view captured by a thunk: the thunk may be forced after the access that
 /// lent the view has ended, so the view would outlive its access.
 @[ refuses("ViewEscaped") ]
-def escaped() -> -F Repr {
+def escaped() -> Repr {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { force thunk { resume(v, v) } };
   pure s
@@ -20,7 +20,7 @@ def escaped() -> -F Repr {
 /// A view ended twice: once written back, the view is spent, and the abort
 /// after it has nothing to end.
 @[ refuses("ViewSpent") ]
-def endedTwice() -> -F Unit {
+def endedTwice() -> Unit {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { resume(v, v); abort(v) }
 }
@@ -28,7 +28,7 @@ def endedTwice() -> -F Unit {
 /// A view its access never ends: the access would return with neither a
 /// write-back nor an unwind.
 @[ refuses("ViewUnended") ]
-def unended() -> -F Unit {
+def unended() -> Unit {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { pure unit }
 }
@@ -36,7 +36,7 @@ def unended() -> -F Unit {
 /// A view kept in the region of the scope around it, forced from a thunk kept
 /// in no region: the kept view would leave its region inside that thunk.
 @[ refuses("KeptEscaped") ]
-def keptPastRegion() -> -F Integer {
+def keptPastRegion() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
@@ -53,7 +53,7 @@ def keptPastRegion() -> -F Integer {
 /// The string written while the region around it keeps a view of it: the kept
 /// view would read the string while it is written.
 @[ refuses("HeldKept") ]
-def writtenWhileKept() -> -F Integer {
+def writtenWhileKept() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {

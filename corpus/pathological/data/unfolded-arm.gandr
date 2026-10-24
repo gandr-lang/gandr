@@ -11,12 +11,12 @@ import "../../model/data/unfolded-arm.gandr" ;
 /// The step with the recursive call dropped: `plusTwo(n)` is not
 /// `plusTwo(double(n))`.
 @[ refuses("EndpointMismatch") ]
-def callDropped(n : Nat) -> -F Path(Nat, double(Succ(n)), plusTwo(n)) {
+def callDropped(n : Nat) -> Path(Nat, double(Succ(n)), plusTwo(n)) {
   here(plusTwo(n))
 }
 
 /// The step with one successor too many over the call.
 @[ refuses("EndpointMismatch") ]
-def overshot(n : Nat) -> -F Path(Nat, double(Succ(n)), Succ(plusTwo(double(n)))) {
+def overshot(n : Nat) -> Path(Nat, double(Succ(n)), Succ(plusTwo(double(n)))) {
   here(Succ(plusTwo(double(n))))
 }

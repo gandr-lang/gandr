@@ -6,7 +6,7 @@ def comp(
   f : a => b,
   g : b => c,
   x : a
-) -> -F c {
+) -> c {
   g(f(x))
 }
 
@@ -18,6 +18,6 @@ def captured(
   d : Type,
   u : a => d,
   h : d => d
-) -> -F (a => d) {
+) -> a => d {
   thunk { comp(a, c, d, u, h) }
 }

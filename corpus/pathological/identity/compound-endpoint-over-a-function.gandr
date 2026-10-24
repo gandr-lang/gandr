@@ -4,6 +4,6 @@ def constantly(x: Integer) -> Integer -> -F Integer {
 }
 
 @[ refuses("CompoundEndpoint") ]
-def refuted(x: Integer) -> -F Path(Integer, constantly(x), x) {
+def refuted(x: Integer) -> Path(Integer, constantly(x), x) {
   here(x)
 }

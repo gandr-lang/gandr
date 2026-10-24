@@ -1,5 +1,5 @@
 @[ checks ]
-def absurd(x: Void) -> -F Integer {
+def absurd(x: Void) -> Integer {
   case x {}
 }
 

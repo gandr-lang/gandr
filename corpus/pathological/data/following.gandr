@@ -10,7 +10,7 @@ import "../../model/data/data-base.gandr" ;
 /// a sum, which can stand above `p`, so its result stands at no stage, which
 /// `halvedThroughPlus[<]` does not take (#392).
 @[ refuses("StageNotBelow") ]
-def rec halvedThroughPlus(n : Nat) -> -F Nat {
+def rec halvedThroughPlus(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(p) => { run q <- plus(Zero, p); Succ(halvedThroughPlus[<](q)) }

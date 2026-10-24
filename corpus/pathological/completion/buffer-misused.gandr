@@ -7,7 +7,7 @@
 
 /// A buffer allocated and never freed.
 @[ refuses("BufferUnreturned") ]
-def neverFreed() -> -F Unit {
+def neverFreed() -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     pure unit
@@ -20,7 +20,7 @@ def neverFreed() -> -F Unit {
 
 /// A buffer freed twice.
 @[ refuses("BufferReturnedTwice") ]
-def freedTwice() -> -F Unit {
+def freedTwice() -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     run first <- r.free(b);
@@ -34,7 +34,7 @@ def freedTwice() -> -F Unit {
 
 /// A buffer read as a value while it is held.
 @[ refuses("BufferRead") ]
-def readWhileHeld() -> -F Unit {
+def readWhileHeld() -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     run copied : Buf <- pure b;
@@ -49,7 +49,7 @@ def readWhileHeld() -> -F Unit {
 /// An `alloc` clause that drops the buffer its scope minted rather than
 /// resuming with it.
 @[ refuses("BufferUnreturned") ]
-def mintDropped() -> -F Unit {
+def mintDropped() -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     r.free(b)
@@ -63,7 +63,7 @@ def mintDropped() -> -F Unit {
 /// A mock kernel that receives a buffer and never hands it back: the receive
 /// placed it live, and the kernel's body ends holding it.
 @[ refuses("BufferUnreturned") ]
-def receivedKept() -> -F Unit {
+def receivedKept() -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     r.free(b)
@@ -83,7 +83,7 @@ def receivedKept() -> -F Unit {
 
 /// A mock kernel that hands the buffer it received back twice.
 @[ refuses("BufferReturnedTwice") ]
-def receivedReturnedTwice() -> -F Unit {
+def receivedReturnedTwice() -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     r.free(b)
@@ -109,7 +109,7 @@ def receivedReturnedTwice() -> -F Unit {
 /// A buffer freed in one arm of a case and kept in the other, refused at the
 /// arm that keeps it (#1792).
 @[ refuses("BufferUnreturned") ]
-def freedInOneArm(flag : Bool) -> -F Unit {
+def freedInOneArm(flag : Bool) -> Unit {
   handle r : Ring {
     run b <- r.alloc(4096);
     case flag {

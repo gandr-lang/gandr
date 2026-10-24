@@ -27,7 +27,7 @@ module SetoidCat : Model(CatShape) {
 
   /// The identity function at a type.
   @[ runs("fn (a) { fn (b) { b } }") ]
-  def ident(t : Type, x : t) -> -F t { x }
+  def ident(t : Type, x : t) -> t { x }
 
   /// Composition of two functions, applied.
   @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { e(d(f)) } } } } } }") ]
@@ -38,14 +38,14 @@ module SetoidCat : Model(CatShape) {
     f : t => u,
     g : u => v,
     x : t
-  ) -> -F v {
+  ) -> v {
     g(f(x))
   }
 
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) => a => a") ]
-  def id(t : Type) -> -F (t => t) { thunk { become ident(t) } }
+  def id(t : Type) -> t => t { thunk { become ident(t) } }
 
   /// Composition likewise runs through the hidden `compose`.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a => b, b => c) => a => c") ]
@@ -55,13 +55,13 @@ module SetoidCat : Model(CatShape) {
     v : Type,
     f : t => u,
     g : u => v
-  ) -> -F (t => v) {
+  ) -> t => v {
     thunk { become compose(t, u, v, f, g) }
   }
 
   /// The left unit law, by conversion.
   @[ checks ]
-  def unitL(p : Type, q : Type, f : p => q) -> -F Path(
+  def unitL(p : Type, q : Type, f : p => q) -> Path(
     (p => q),
     comp(p, p, q, id(p), f),
     f
@@ -71,7 +71,7 @@ module SetoidCat : Model(CatShape) {
 
   /// The right unit law, by conversion.
   @[ checks ]
-  def unitR(p : Type, q : Type, f : p => q) -> -F Path(
+  def unitR(p : Type, q : Type, f : p => q) -> Path(
     (p => q),
     comp(p, q, q, f, id(q)),
     f
@@ -89,7 +89,7 @@ module SetoidCat : Model(CatShape) {
     f : p => q,
     g : q => r,
     h : r => s
-  ) -> -F Path(
+  ) -> Path(
     (p => s),
     comp(p, r, s, comp(p, q, r, f, g), h),
     comp(p, q, s, f, comp(q, r, s, g, h))
@@ -107,7 +107,7 @@ module SetoidCat : Model(CatShape) {
 
   /// The left unit law by either law, chosen by a boolean.
   @[ checks ]
-  def unitLEither(p : Type, q : Type, f : p => q, b : Bool) -> -F Path(
+  def unitLEither(p : Type, q : Type, f : p => q, b : Bool) -> Path(
     (p => q),
     comp(p, p, q, id(p), f),
     f
@@ -123,12 +123,12 @@ module SetoidCat : Model(CatShape) {
 /// the operation at its type argument and calls the function it returns
 /// (#452).
 @[ runs("3") ]
-def identity_observed() -> -F Integer { run f <- SetoidCat.id(Integer) ; become f(3) }
+def identity_observed() -> Integer { run f <- SetoidCat.id(Integer) ; become f(3) }
 
 /// Composition observed through the interface: `n + 1` then `n + 2`, applied
 /// to `1` (#452).
 @[ runs("4") ]
-def composite_observed() -> -F Integer { run h <- SetoidCat.comp(
+def composite_observed() -> Integer { run h <- SetoidCat.comp(
   Integer,
   Integer,
   Integer,

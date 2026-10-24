@@ -12,7 +12,7 @@
 /// A quasi-inverse is bi-invertible: its map back is both the left and the
 /// right inverse (cubical's `isoToEquiv`).
 @[ checks ]
-def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> -F (a ≃ b) {
+def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
   case i {
     #{t, k, s, r} => (t, ((k, s), (k, r)))
   }
@@ -34,14 +34,14 @@ def leftRetraction(
   y : b,
   sh : Path(a, g(t(h(y))), h(y)),
   ry : Path(b, t(h(y)), y)
-) -> -F Path(b, t(g(y)), y) {
+) -> Path(b, t(g(y)), y) {
   back(cong(t, back(sh) then cong(g, ry))) then ry
 }
 
 /// A bi-invertible map is a quasi-inverse: the forward map, the left inverse
 /// and its round trip, and the other round trip through the right inverse.
 @[ checks ]
-def equivToIso(a : Type, b : Type, e : a ≃ b) -> -F (a ≅ b) {
+def equivToIso(a : Type, b : Type, e : a ≃ b) -> a ≅ b {
   case e {
     #{t, #{g, s}, #{h, r}} => (
       t,
@@ -54,6 +54,6 @@ def equivToIso(a : Type, b : Type, e : a ≃ b) -> -F (a ≅ b) {
 /// maps, by reflexivity: the point is checked against `a ≃ b` beneath `e`,
 /// which that type does not read, and the type reads back as written (#674).
 @[ checks ]
-def equivHere(a : Type, b : Type, e : a ≃ b) -> -F Path(a ≃ b, e, e) {
+def equivHere(a : Type, b : Type, e : a ≃ b) -> Path(a ≃ b, e, e) {
   here(e)
 }

@@ -16,7 +16,7 @@ import "./recursive-lists.gandr" ;
 
 /// The length of a list of naturals, returned, the run written at its read.
 @[ checks ]
-def rec length_nat(xs : List(Nat)) -> -F Nat {
+def rec length_nat(xs : List(Nat)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length_nat[<](rest))
@@ -26,7 +26,7 @@ def rec length_nat(xs : List(Nat)) -> -F Nat {
 /// The length of a list of naturals, the `return`s elided, the run written
 /// at its read.
 @[ checks ]
-def rec length_nat_elided(xs : List(Nat)) -> -F Nat {
+def rec length_nat_elided(xs : List(Nat)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length_nat_elided[<](rest))
@@ -35,7 +35,7 @@ def rec length_nat_elided(xs : List(Nat)) -> -F Nat {
 
 /// Appending lists of naturals, returned, the run written at its read.
 @[ checks ]
-def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
+def rec append_nat(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append_nat[<](ys, rest)) : List(Nat))
@@ -45,7 +45,7 @@ def rec append_nat(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
 /// Appending lists of naturals, the `return`s elided, the run written at its
 /// read.
 @[ checks ]
-def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
+def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => ys,
     Cons(x, rest) => (Cons(x, append_nat_elided[<](ys, rest)) : List(Nat))
@@ -54,7 +54,7 @@ def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> -F List(Nat) {
 
 /// Mapping over a list of naturals, returned, the runs written at their reads.
 @[ checks ]
-def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(f(x), map_nat[<](f, rest)) : List(Nat))
@@ -64,7 +64,7 @@ def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
 /// Mapping over a list of naturals, the `return`s elided, the runs written at
 /// their reads.
 @[ checks ]
-def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(f(x), map_nat_elided[<](f, rest)) : List(Nat))
@@ -73,7 +73,7 @@ def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
 
 /// Mapping over a list of naturals, both calls nested.
 @[ checks ]
-def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(f(x), map_nat_nested[<](f, rest)) : List(Nat))
@@ -82,7 +82,7 @@ def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
 
 /// Mapping over a list of naturals, both calls written `run` in the fields.
 @[ checks ]
-def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> -F List(Nat) {
+def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
     Cons(x, rest) => (Cons(run f(x), run map_nat_run[<](f, rest)) : List(Nat))
@@ -95,15 +95,15 @@ def small : List(Nat) = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) 
 
 /// The successor, returned.
 @[ runs("fn (a) { Succ(a) }") ]
-def bump(n : Nat) -> -F Nat { Succ(n) }
+def bump(n : Nat) -> Nat { Succ(n) }
 
 /// The successor, the `return` elided.
 @[ runs("fn (a) { Succ(a) }") ]
-def bump_elided(n : Nat) -> -F Nat { Succ(n) }
+def bump_elided(n : Nat) -> Nat { Succ(n) }
 
 /// The length of `small`.
 @[ runs("Succ(Succ(Zero))") ]
-def counted() -> -F Nat { become length_nat(small) }
+def counted() -> Nat { become length_nat(small) }
 
 /// The length of `small`, the `return`s elided.
 @[ runs("Succ(Succ(Zero))") ]
@@ -111,7 +111,7 @@ def counted_elided : () => Nat = length_nat_elided(small) ;
 
 /// `small` with three appended at its head.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
-def joined() -> -F List(Nat) {
+def joined() -> List(Nat) {
   become append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat)))
 }
 
@@ -124,7 +124,7 @@ def joined_elided : () => List(Nat) = append_nat_elided(
 
 /// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped() -> -F List(Nat) { map_nat(bump, small) }
+def bumped() -> List(Nat) { map_nat(bump, small) }
 
 /// The same map, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
@@ -140,7 +140,7 @@ def bumped_run : () => List(Nat) = map_nat_run(bump, small) ;
 
 /// The length of `small` at its element type, returned.
 @[ checks ]
-def lengthened() -> -F Nat { length(Nat, small) }
+def lengthened() -> Nat { length(Nat, small) }
 
 /// The same length, the `return`s elided.
 @[ checks ]

@@ -4,7 +4,7 @@
 
 /// Negation on the booleans, `+{Unit, Unit}`.
 @[ checks ]
-def not(b : Unit + Unit) -> -F (Unit + Unit) {
+def not(b : Unit + Unit) -> Unit + Unit {
   case b {
     +{.0 = u} => +{.1 = u},
     +{.1 = u} => +{.0 = u}
@@ -13,13 +13,13 @@ def not(b : Unit + Unit) -> -F (Unit + Unit) {
 
 /// Negation twice.
 @[ checks ]
-def not_not(b : Unit + Unit) -> -F (Unit + Unit) {
+def not_not(b : Unit + Unit) -> Unit + Unit {
   not(not(b))
 }
 
 /// The identity on the booleans.
 @[ checks ]
-def same(b : Unit + Unit) -> -F (Unit + Unit) {
+def same(b : Unit + Unit) -> Unit + Unit {
   b
 }
 

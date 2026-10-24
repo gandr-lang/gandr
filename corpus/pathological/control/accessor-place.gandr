@@ -5,7 +5,7 @@ def pair : List(Integer) = cons(1, cons(2, nil)) ;
 /// An access at a place of a held integer: an integer has no element at an
 /// index.
 @[ refuses("PlaceUnindexed") ]
-def unindexed() -> -F Integer {
+def unindexed() -> Integer {
   hold c = 0;
   access shared c[0] as w { pure w }
 }
@@ -13,7 +13,7 @@ def unindexed() -> -F Integer {
 /// An exclusive access of a held index inside the access at it: the index is
 /// lent shared with its place, so it is frozen for the access's body.
 @[ refuses("HeldLent") ]
-def index_frozen() -> -F Unit {
+def index_frozen() -> Unit {
   hold i = 0;
   hold xs = pair;
   access shared xs[i] as w { access i as v { resume(v, w) } }
@@ -22,7 +22,7 @@ def index_frozen() -> -F Unit {
 /// Two views at distinct indices of one list: the list is lent as a whole, so
 /// an exclusive view of one element excludes a view of another.
 @[ refuses("HeldLent") ]
-def two_places() -> -F Unit {
+def two_places() -> Unit {
   hold xs = pair;
   access xs[0] as v { access xs[1] as w { resume(w, v) }; resume(v, 0) }
 }

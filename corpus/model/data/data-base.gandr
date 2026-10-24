@@ -19,7 +19,7 @@ data Nat : Type {
 /// Addition by recursion on the second argument, the recursive call nested
 /// in the successor it returns.
 @[ checks ]
-def rec plus(n : Nat, m : Nat) -> -F Nat {
+def rec plus(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))

@@ -9,35 +9,35 @@
 
 /// The identity at a type passed explicitly.
 @[ checks ]
-def idAt(a : Type, y : a) -> -F a { y }
+def idAt(a : Type, y : a) -> a { y }
 
 /// `idAt` with its type left to the argument: `3` forces `_` to `Integer`.
 @[ runs("3") ]
-def forced() -> -F Integer { idAt(_, 3) }
+def forced() -> Integer { idAt(_, 3) }
 
 /// The first of two values, each of its own type, both types passed
 /// explicitly.
 @[ checks ]
-def firstAt(a : Type, b : Type, x : a, y : b) -> -F a { x }
+def firstAt(a : Type, b : Type, x : a, y : b) -> a { x }
 
 /// Both types left to the arguments, each forced by its own.
 @[ runs("5") ]
-def bothForced() -> -F Integer { become firstAt(_, _, 5, unit) }
+def bothForced() -> Integer { become firstAt(_, _, 5, unit) }
 
 /// The identity at a type supplied by name.
 @[ checks ]
-def same @[a : Type] (y : a) -> -F a { y }
+def same @[a : Type] (y : a) -> a { y }
 
 /// The implicit supplied by name as a wildcard: the slot asks the solver for
 /// what an omitted implicit would leave it.
 @[ runs("3") ]
-def slotForced() -> -F Integer { same[a = _](3) }
+def slotForced() -> Integer { same[a = _](3) }
 
 /// A path's right end left in an ascription's type: checking `here(3)`
 /// against it forces the end to `3`, and the path runs as its two maps, both
 /// the identity (#1979).
 @[ runs("(thunk { fn (a) { a } }, thunk { fn (a) { a } })") ]
-def endForced() -> -F Path(Integer, 3, 3) { (here(3) : Path(Integer, 3, _)) }
+def endForced() -> Path(Integer, 3, 3) { (here(3) : Path(Integer, 3, _)) }
 
 /// A definition its annotation signs, the path's right end left open: no
 /// other type meets the annotation's, so `here(3)`'s point alone forces the
@@ -49,6 +49,6 @@ def endSigned = (here(3) : Path(Integer, 3, _)) ;
 /// the value bridge meets that end against the path's own and forces it
 /// (#1979).
 @[ checks ]
-def endMet(q : Path(Integer, 3, 3)) -> -F Path(Integer, 3, 3) {
+def endMet(q : Path(Integer, 3, 3)) -> Path(Integer, 3, 3) {
   (q : Path(Integer, 3, _))
 }

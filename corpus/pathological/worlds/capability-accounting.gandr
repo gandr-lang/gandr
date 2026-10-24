@@ -10,7 +10,7 @@ import "../../model/worlds/seat-and-operator.gandr" ;
 /// the first spent the one the entry holds.
 @[ refuses("CapabilityMissing") ]
 @[ entry((operator, seat)) ]
-def twice() -> -F Seat.Report {
+def twice() -> Seat.Report {
   run first : Seat.Report <- migrate [seat] { pure Seat.progress };
   migrate [seat] { pure first }
 }
@@ -19,7 +19,7 @@ def twice() -> -F Seat.Report {
 /// the operator stands at its own world with nothing to spend.
 @[ refuses("CapabilityMissing") ]
 @[ entry(operator) ]
-def unheld() -> -F Seat.Report {
+def unheld() -> Seat.Report {
   migrate [seat] { pure Seat.progress }
 }
 
@@ -27,6 +27,6 @@ def unheld() -> -F Seat.Report {
 /// number of times, and a capability is spent once.
 @[ refuses("CapabilityCaptured") ]
 @[ entry((operator, seat)) ]
-def suspended() -> -F (() => Seat.Report) {
+def suspended() -> () => Seat.Report {
   pure thunk { migrate [seat] { pure Seat.progress } }
 }

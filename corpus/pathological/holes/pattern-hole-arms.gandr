@@ -21,7 +21,7 @@ data Chosen : Type {
 /// `Green` reaches the hole between `Red` and `Blue`: possibly covered, and
 /// refused (#391).
 @[ refuses("UndecidedCoverage") ]
-def classify(c : Color) -> -F Integer {
+def classify(c : Color) -> Integer {
   case c {
     Red => 0,
     ? => 1,
@@ -32,7 +32,7 @@ def classify(c : Color) -> -F Integer {
 /// A hole in a constructor's field leaves the arm for `Chose` undecided too
 /// (#391).
 @[ refuses("UndecidedCoverage") ]
-def unwrap(m : Chosen) -> -F Integer {
+def unwrap(m : Chosen) -> Integer {
   case m {
     Unchosen => 0,
     Chose(?) => 1

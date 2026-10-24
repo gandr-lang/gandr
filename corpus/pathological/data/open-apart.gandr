@@ -7,12 +7,12 @@ import "../../model/data/data-base.gandr" ;
 
 /// `Succ(n)` is `Succ(Zero)` once `n` is `Zero`.
 @[ refuses("NotApart") ]
-def belowTheHead(n : Nat, e : Path(Nat, Succ(n), Succ(Zero))) -> -F Nat {
+def belowTheHead(n : Nat, e : Path(Nat, Succ(n), Succ(Zero))) -> Nat {
   case e {}
 }
 
 /// A variable at the root may be any natural, `Succ(Zero)` among them.
 @[ refuses("NotApart") ]
-def atTheRoot(n : Nat, e : Path(Nat, n, Succ(Zero))) -> -F Nat {
+def atTheRoot(n : Nat, e : Path(Nat, n, Succ(Zero))) -> Nat {
   case e {}
 }

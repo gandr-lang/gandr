@@ -12,7 +12,7 @@ import "./lookup-weaken.gandr" ;
 
 /// An identity at every index holds of the lift.
 @[ checks ]
-def substIdLift(s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n)), n : N) -> -F Path(
+def substIdLift(s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n)), n : N) -> Path(
   Term,
   look(n, Lift(s), Z),
   Ix(n)
@@ -25,7 +25,7 @@ def substIdLift(s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n)), n : N)
 
 /// A substitution that is the identity at every index is the identity.
 @[ checks ]
-def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n))) -> -F Path(
+def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n))) -> Path(
   Term,
   subst(t, s),
   t
@@ -47,7 +47,7 @@ def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n
 
 /// The shift by zero is the identity at every index.
 @[ checks ]
-def shiftZeroIsId(n : N) -> -F Path(Term, look(n, Shift(Z), Z), Ix(n)) {
+def shiftZeroIsId(n : N) -> Path(Term, look(n, Shift(Z), Z), Ix(n)) {
   case n {
     Z => here(Ix(Z)),
     S(j) => here(Ix(S(j)))

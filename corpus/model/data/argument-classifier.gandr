@@ -9,7 +9,7 @@ import "./data-base.gandr" ;
 
 /// The length of a list of integers.
 @[ checks ]
-def rec listLength(xs : List(Integer)) -> -F Integer {
+def rec listLength(xs : List(Integer)) -> Integer {
   case xs {
     Nil => 0,
     Cons(_, rest) => {
@@ -22,20 +22,20 @@ def rec listLength(xs : List(Integer)) -> -F Integer {
 /// Two integers passed bare: the list is a `List(Integer)` by the parameter
 /// it is passed to, the inner one by its field (#1833).
 @[ runs("2") ]
-def pairLength() -> -F Integer { listLength(Cons(1, Cons(2, Nil))) }
+def pairLength() -> Integer { listLength(Cons(1, Cons(2, Nil))) }
 
 /// The empty list passed bare.
 @[ runs("0") ]
-def emptyLength() -> -F Integer { listLength(Nil) }
+def emptyLength() -> Integer { listLength(Nil) }
 
 /// The same pair under an annotation, as it was written before.
 @[ runs("2") ]
-def annotatedLength() -> -F Integer { listLength((Cons(1, Cons(2, Nil)) : List(Integer))) }
+def annotatedLength() -> Integer { listLength((Cons(1, Cons(2, Nil)) : List(Integer))) }
 
 /// A colour and a list of colours, each argument classified by its own
 /// parameter.
 @[ checks ]
-def rec tally(c : Color, cs : List(Color)) -> -F Integer {
+def rec tally(c : Color, cs : List(Color)) -> Integer {
   case cs {
     Nil => 0,
     Cons(_, rest) => {
@@ -47,11 +47,11 @@ def rec tally(c : Color, cs : List(Color)) -> -F Integer {
 
 /// The second argument classified by the second parameter (#1833).
 @[ runs("3") ]
-def colours() -> -F Integer { tally(Red, Cons(Red, Cons(Green, Cons(Blue, Nil)))) }
+def colours() -> Integer { tally(Red, Cons(Red, Cons(Green, Cons(Blue, Nil)))) }
 
 /// The length of a list of any type, the type given first.
 @[ checks ]
-def rec anyLength(a : Type, xs : List(a)) -> -F Integer {
+def rec anyLength(a : Type, xs : List(a)) -> Integer {
   case xs {
     Nil => 0,
     Cons(_, rest) => {
@@ -64,8 +64,8 @@ def rec anyLength(a : Type, xs : List(a)) -> -F Integer {
 /// A list passed where `xs : List(a)` takes it at `a = Integer`: its type
 /// reads the argument before it (#1876).
 @[ runs("1") ]
-def one() -> -F Integer { anyLength(Integer, Cons(1, Nil)) }
+def one() -> Integer { anyLength(Integer, Cons(1, Nil)) }
 
 /// The same parameter read at `a = Color`, the list empty.
 @[ runs("0") ]
-def noColours() -> -F Integer { anyLength(Color, Nil) }
+def noColours() -> Integer { anyLength(Color, Nil) }

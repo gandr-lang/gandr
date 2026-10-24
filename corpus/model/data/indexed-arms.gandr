@@ -5,7 +5,7 @@
 
 /// One for a value below 128 and two otherwise, cased on as the boolean.
 @[ checks ]
-def written(c : Integer) -> -F Integer {
+def written(c : Integer) -> Integer {
   run small <- c < 128;
   case small {
     true => 1,
@@ -16,7 +16,7 @@ def written(c : Integer) -> -F Integer {
 /// The same case as the printer writes it, each arm an index of the sum the
 /// boolean stands for.
 @[ checks ]
-def printed(c : Integer) -> -F Integer {
+def printed(c : Integer) -> Integer {
   run small <- c < 128;
   case small {
     +{.0 = u} => 1,

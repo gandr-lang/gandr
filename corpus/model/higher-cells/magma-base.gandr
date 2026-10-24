@@ -17,7 +17,7 @@ theory Magma {
 /// The swap of the booleans, its own inverse: the binary corolla's
 /// translator.
 @[ checks ]
-def exchange(b : Bool) -> -F Bool {
+def exchange(b : Bool) -> Bool {
   case b {
     true => +{.1 = unit},
     false => +{.0 = unit}
@@ -27,12 +27,12 @@ def exchange(b : Bool) -> -F Bool {
 /// The identity on the booleans, which is no inverse of the swap; named
 /// apart from the flow former `stay`.
 @[ checks ]
-def boolId(b : Bool) -> -F Bool {
+def boolId(b : Bool) -> Bool {
   b
 }
 
 /// The identity on the constant corolla's one element.
 @[ checks ]
-def keep(e : +{Unit}) -> -F +{Unit} {
+def keep(e : +{Unit}) -> +{Unit} {
   e
 }

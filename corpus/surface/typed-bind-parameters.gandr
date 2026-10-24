@@ -4,40 +4,40 @@
 
 /// A value handed back at the type it was given.
 @[ checks ]
-def same(a : Type, y : a) -> -F a {
+def same(a : Type, y : a) -> a {
   y
 }
 
 /// The annotation names the type parameter just outside the value (#662).
 @[ checks ]
-def kept(a : Type, y : a) -> -F a {
+def kept(a : Type, y : a) -> a {
   run x : a <- same(a, y) ;
   x
 }
 
 /// Another parameter stands between the binder and the one it names (#662).
 @[ checks ]
-def keptPast(a : Type, y : a, z : Integer) -> -F a {
+def keptPast(a : Type, y : a, z : Integer) -> a {
   run x : a <- same(a, y) ;
   x
 }
 
 /// A pair handed back at the product it was given.
 @[ checks ]
-def samePair(a : Type, b : Type, p : a * b) -> -F (a * b) {
+def samePair(a : Type, b : Type, p : a * b) -> a * b {
   p
 }
 
 /// The annotation names two parameters at once (#662).
 @[ checks ]
-def keptPair(a : Type, b : Type, p : a * b) -> -F (a * b) {
+def keptPair(a : Type, b : Type, p : a * b) -> a * b {
   run x : a * b <- samePair(a, b, p) ;
   x
 }
 
 /// A computation returning an `a` is not ascribed a `b`.
 @[ refuses("TypeMismatch") ]
-def misnamed(a : Type, b : Type, y : a) -> -F a {
+def misnamed(a : Type, b : Type, y : a) -> a {
   run x : b <- same(a, y) ;
   y
 }

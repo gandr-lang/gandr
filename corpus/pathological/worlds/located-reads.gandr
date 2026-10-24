@@ -10,7 +10,7 @@ import "../../model/worlds/seat-and-operator.gandr" ;
 /// there, refused at the use: what the handle holds is the seat's.
 @[ refuses("Elsewhere") ]
 @[ entry(operator) ]
-def readHere(report : Seat.Report at seat) -> -F Seat.Report {
+def readHere(report : Seat.Report at seat) -> Seat.Report {
   leta written = report;
   pure written
 }
@@ -34,14 +34,14 @@ def unplaced() -> -F (Seat.Report at seat) {
 /// declaration, and `collect` is the operator's turn.
 @[ refuses("UndeclaredWorld") ]
 @[ entry((operator, seat)) ]
-def toAValue() -> -F Seat.Report {
+def toAValue() -> Seat.Report {
   migrate [collect] { pure Seat.progress }
 }
 
 /// A value that is no handle opened as one, refused at the opening.
 @[ refuses("NotAHandle") ]
 @[ entry(seat) ]
-def unhandled() -> -F Seat.Report {
+def unhandled() -> Seat.Report {
   leta written = Seat.progress;
   pure written
 }
@@ -50,6 +50,6 @@ def unhandled() -> -F Seat.Report {
 /// the host's to grant, and a call would hand it on.
 @[ refuses("EntryNamed") ]
 @[ entry((operator, seat)) ]
-def relayed() -> -F Seat.Report {
+def relayed() -> Seat.Report {
   collect()
 }

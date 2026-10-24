@@ -10,7 +10,7 @@ data Color3 : Type {
 
 /// The green channel of a colour, bound by its position in the constructor.
 @[ checks ]
-def green_channel() -> -F Integer {
+def green_channel() -> Integer {
   case (RGB(10, 20, 30) : Color3) {
     RGB(r, g, b) => g
   }
@@ -19,13 +19,13 @@ def green_channel() -> -F Integer {
 /// The blue channel of a colour, read by the field's name: the match above,
 /// its one arm returning the field.
 @[ checks ]
-def blue_channel(color : Color3) -> -F Integer {
+def blue_channel(color : Color3) -> Integer {
   color.b
 }
 
 /// Whether a colour's red channel exceeds its green, each read by name where
 /// no answer is stated, so typed by the field's declaration.
 @[ checks ]
-def reddish(color : Color3) -> -F Bool {
+def reddish(color : Color3) -> Bool {
   color.r > color.g
 }

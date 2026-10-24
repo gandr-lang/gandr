@@ -11,7 +11,7 @@ import "./magma-base.gandr" ;
 
 /// The swap three times, which is the swap.
 @[ checks ]
-def flip(b : Bool) -> -F Bool {
+def flip(b : Bool) -> Bool {
   run c <- exchange(b);
   exchange(exchange(c))
 }

@@ -1,24 +1,24 @@
 @[ refuses("LinearResidue") ]
-def seat_left_open() -> -F Unit {
+def seat_left_open() -> Unit {
   fork (seat : end) { pure unit } as desk;
   close(desk)
 }
 
 @[ refuses("UsedAfterClose") ]
-def seat_closed_twice() -> -F Unit {
+def seat_closed_twice() -> Unit {
   fork (seat : end) { close(seat); close(seat) } as desk;
   close(desk)
 }
 
 @[ refuses("EndpointUsedTwice") ]
-def seat_sent_over_itself() -> -F Unit {
+def seat_sent_over_itself() -> Unit {
   fork (seat : !String. end) { send(seat, seat); close(seat) } as desk;
   recv(desk) as task;
   close(desk)
 }
 
 @[ refuses("CapturedEndpoint") ]
-def seat_closed_in_a_thunk() -> -F Unit {
+def seat_closed_in_a_thunk() -> Unit {
   fork (seat : end) { force thunk { close(seat) } } as desk;
   close(desk)
 }
@@ -26,7 +26,7 @@ def seat_closed_in_a_thunk() -> -F Unit {
 /// An end sent over a session leaves its sender, so closing it after the send
 /// acts on a spent slot (Honda, Vasconcelos and Kubo, doi:10.1007/BFb0053567).
 @[ refuses("UsedAfterClose") ]
-def seat_closed_after_delegating() -> -F Unit {
+def seat_closed_after_delegating() -> Unit {
   fork (seat : !end. end) {
     fork (inner : end) { close(inner) } as held;
     send(seat, held);
@@ -41,7 +41,7 @@ def seat_closed_after_delegating() -> -F Unit {
 /// A received end is the receiver's to close: the receive's body ends with it
 /// still open.
 @[ refuses("LinearResidue") ]
-def received_seat_left_open() -> -F Unit {
+def received_seat_left_open() -> Unit {
   fork (seat : !end. end) {
     fork (inner : end) { close(inner) } as held;
     send(seat, held);
@@ -52,13 +52,13 @@ def received_seat_left_open() -> -F Unit {
 }
 
 @[ refuses("EndpointAsValue") ]
-def seat_returned() -> -F Unit {
+def seat_returned() -> Unit {
   fork (seat : end) { pure seat } as desk;
   close(desk)
 }
 
 @[ refuses("ArmsDisagree") ]
-def seat_arms_leave_it_apart() -> -F Unit {
+def seat_arms_leave_it_apart() -> Unit {
   fork (seat : &{ next : end, retire : end }) {
     offer(seat) { next => close(seat), retire => pure unit }
   } as desk;

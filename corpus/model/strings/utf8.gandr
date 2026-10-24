@@ -10,7 +10,7 @@ import "./string-base.gandr" ;
 /// A code point's UTF-8 bytes: one byte below 128, two below 2048, three below
 /// 65536 and four up to the last code point.
 @[ checks ]
-def encode(c : Integer) -> -F List(Integer) {
+def encode(c : Integer) -> List(Integer) {
   run one <- c < 128;
   case one {
     true => Cons(c, Nil),
@@ -50,7 +50,7 @@ def encode(c : Integer) -> -F List(Integer) {
 
 /// A run of code points, each encoded in turn.
 @[ checks ]
-def rec encodeAll(cs : List(Integer)) -> -F List(Integer) {
+def rec encodeAll(cs : List(Integer)) -> List(Integer) {
   case cs {
     Nil => Nil,
     Cons(c, rest) => concat(encode(c), encodeAll[<](rest))
@@ -59,20 +59,20 @@ def rec encodeAll(cs : List(Integer)) -> -F List(Integer) {
 
 /// `$`, below 128: one byte, itself.
 @[ runs("Cons(36, Nil)") ]
-def dollar() -> -F List(Integer) { encode(36) }
+def dollar() -> List(Integer) { encode(36) }
 
 /// `é`, below 2048: two bytes.
 @[ runs("Cons(195, Cons(169, Nil))") ]
-def eAcute() -> -F List(Integer) { become encode(233) }
+def eAcute() -> List(Integer) { become encode(233) }
 
 /// `€`, below 65536: three bytes.
 @[ runs("Cons(226, Cons(130, Cons(172, Nil)))") ]
-def euro() -> -F List(Integer) { encode(8364) }
+def euro() -> List(Integer) { encode(8364) }
 
 /// `😀`, past 65536: four bytes.
 @[ runs("Cons(240, Cons(159, Cons(152, Cons(128, Nil))))") ]
-def grin() -> -F List(Integer) { encode(128512) }
+def grin() -> List(Integer) { encode(128512) }
 
 /// `hé`: one byte, then two.
 @[ runs("Cons(104, Cons(195, Cons(169, Nil)))") ]
-def he() -> -F List(Integer) { encodeAll((Cons(104, Cons(233, Nil)) : List(Integer))) }
+def he() -> List(Integer) { encodeAll((Cons(104, Cons(233, Nil)) : List(Integer))) }

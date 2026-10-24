@@ -8,23 +8,23 @@ def letter : Char = 'a' ;
 
 /// An escape stands for the scalar it names, decoded as in a string.
 @[ runs("'\\n'") ]
-def newline() -> -F Char { '\n' }
+def newline() -> Char { '\n' }
 
 /// A quote is escaped inside quotes of its own kind.
 @[ runs("'\\''") ]
-def quote() -> -F Char { '\'' }
+def quote() -> Char { '\'' }
 
 /// A multibyte scalar is still one character.
 @[ runs("'é'") ]
-def accented() -> -F Char { 'é' }
+def accented() -> Char { 'é' }
 
 /// The identity at `Char`.
 @[ checks ]
-def echo(c : Char) -> -F Char { c }
+def echo(c : Char) -> Char { c }
 
 /// A character passes through a function at `Char` unchanged.
 @[ runs("'z'") ]
-def echoed() -> -F Char { become echo('z') }
+def echoed() -> Char { become echo('z') }
 
 /// A character is not a string.
 @[ refuses("TypeMismatch") ]

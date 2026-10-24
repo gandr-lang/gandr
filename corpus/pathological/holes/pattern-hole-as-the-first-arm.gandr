@@ -12,7 +12,7 @@ data Color : Type {
 
 /// Every colour reaches the hole (#391).
 @[ refuses("UndecidedCoverage") ]
-def classify(c : Color) -> -F Integer {
+def classify(c : Color) -> Integer {
   case c {
     ?branch => 1
   }

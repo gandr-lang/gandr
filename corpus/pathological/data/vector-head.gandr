@@ -12,7 +12,7 @@ import "../../model/data/vectors.gandr" ;
 /// stands at zero and the vector at `n`, which may be zero, so the arm cannot
 /// be left out.
 @[ refuses("NotApart") ]
-def vheadAny(n : Nat, v : Vec(Integer, n)) -> -F Integer {
+def vheadAny(n : Nat, v : Vec(Integer, n)) -> Integer {
   case v {
     VCons(m, h, t) => h
   }

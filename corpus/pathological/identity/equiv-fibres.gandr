@@ -18,19 +18,19 @@ data One : Type {
 
 /// Both points to the one.
 @[ checks ]
-def collapse(x : Two) -> -F One {
+def collapse(x : Two) -> One {
   Only
 }
 
 /// The one point back to the first.
 @[ checks ]
-def pick(u : One) -> -F Two {
+def pick(u : One) -> Two {
   Yes
 }
 
 /// Every point of `One` is `Only`, by induction on it.
 @[ checks ]
-def single(u : One) -> -F Path(One, collapse(pick(u)), u) {
+def single(u : One) -> Path(One, collapse(pick(u)), u) {
   case u {
     Only => here(Only)
   }

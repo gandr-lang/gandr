@@ -9,7 +9,7 @@ import "./circle-base.gandr" ;
 /// Reflexivity at `q`, by transport along `q` in the family of each path's
 /// reflexivity.
 @[ checks ]
-def looped(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Path(Nat, a, b), q, q) {
+def looped(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Path(Nat, a, b), q, q) {
   transport(
     +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Path(Nat, a, y), z, z)),
     q,

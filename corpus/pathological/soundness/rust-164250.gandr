@@ -22,7 +22,7 @@
 /// it; keeping that view in the outer slot is refused at the write — the view
 /// would outlive the access that lent it.
 @[ refuses("ViewEscaped") ]
-def bypassed() -> -F Integer {
+def bypassed() -> Integer {
   handle outer : Proc {
     run q : (() => Integer) at outer <- pure thunk { pure 0 } ;
     run x : Integer <- handle inner : Proc {

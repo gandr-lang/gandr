@@ -1,21 +1,21 @@
 /// An exclusive access inside a shared one: the held value is frozen for the
 /// shared access's body, so it is not lent exclusively there.
 @[ refuses("HeldLent") ]
-def frozen() -> -F Unit {
+def frozen() -> Unit {
   hold c = 0;
   access shared c as w { access c as v { resume(v, w) } }
 }
 
 /// A resume through a shared view: a shared view is read-only.
 @[ refuses("ViewReadOnly") ]
-def written() -> -F Unit {
+def written() -> Unit {
   hold c = 0;
   access shared c as w { resume(w, 1) }
 }
 
 /// An abort through a shared view: a shared view ends with its body.
 @[ refuses("ViewReadOnly") ]
-def aborted() -> -F Unit {
+def aborted() -> Unit {
   hold c = 0;
   access shared c as w { abort(w) }
 }

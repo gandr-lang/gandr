@@ -24,12 +24,12 @@ theory MonadLeftUnit {
 
 /// The option monad's unit: the value, present.
 @[ checks ]
-def ret(A : Type, a : A) -> -F Maybe(A) { Some(a) }
+def ret(A : Type, a : A) -> Maybe(A) { Some(a) }
 
 /// The option monad's extension: run the computation once, first, then pass
 /// a present value to the continuation and stop at an absent one.
 @[ checks ]
-def ext(A : Type, B : Type, m : () => Maybe(A), k : A => Maybe(B)) -> -F Maybe(B) {
+def ext(A : Type, B : Type, m : () => Maybe(A), k : A => Maybe(B)) -> Maybe(B) {
   run r <- force m;
   case r {
     None => None,
@@ -39,7 +39,7 @@ def ext(A : Type, B : Type, m : () => Maybe(A), k : A => Maybe(B)) -> -F Maybe(B
 
 /// One, then its successor, through the extension: the value read back.
 @[ runs("2") ]
-def two() -> -F Integer {
+def two() -> Integer {
   run r <- ext(
     Integer,
     Integer,

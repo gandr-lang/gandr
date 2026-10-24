@@ -13,10 +13,10 @@ module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } {
   def zero = 0;
   /// One step on.
   @[ runs("fn (a) { a + 1 }") ]
-  def next(n : T) -> -F T { n + 1 }
+  def next(n : T) -> T { n + 1 }
   /// The count read as an integer.
   @[ runs("fn (a) { a }") ]
-  def read(n : T) -> -F Integer { n }
+  def read(n : T) -> Integer { n }
 }
 
 /// A functor from any counter to a sealed counter of its own: its seed,
@@ -40,8 +40,8 @@ module B = MkCounter(Seed) ;
 
 /// One step of the first application, at its own abstract type.
 @[ runs("1") ]
-def a_once() -> -F (A.T) { A.step(A.seed) }
+def a_once() -> A.T { A.step(A.seed) }
 
 /// Two steps of the second application, read back as an integer.
 @[ runs("2") ]
-def b_twice() -> -F Integer { run one <- B.step(B.seed) ; B.read(B.step(one)) }
+def b_twice() -> Integer { run one <- B.step(B.seed) ; B.read(B.step(one)) }

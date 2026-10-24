@@ -15,7 +15,7 @@ def moved_end : Path(
 /// A reflexive transport at a path-type motive returns its path, by a run: the
 /// path runs as its two maps, both the identity.
 @[ runs("(thunk { fn (a) { a } }, thunk { fn (a) { a } })") ]
-def moved_end_run() -> -F Path(Integer, 2, 2) {
+def moved_end_run() -> Path(Integer, 2, 2) {
   transport(\x. Path(Integer, x, x), here(2), here(2))
 }
 
@@ -33,7 +33,7 @@ def unit_end : Path(
 def along_returned(
   a : Type,
   x : a
-) -> -F Path(a, transport(\X. X, transport(\c. Path(Type, c, a), here(a), here(a)), x), x) {
+) -> Path(a, transport(\X. X, transport(\c. Path(Type, c, a), here(a), here(a)), x), x) {
   here(x)
 }
 
@@ -44,4 +44,4 @@ def along_here : Path(Integer, transport(\X. X, here(Integer), 2), 2) = here(2) 
 
 /// Transport along reflexivity in the universe keeps the value, by a run.
 @[ runs("2") ]
-def along_here_run() -> -F Integer { transport(\X. X, here(Integer), 2) }
+def along_here_run() -> Integer { transport(\X. X, here(Integer), 2) }

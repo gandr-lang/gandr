@@ -14,7 +14,7 @@ import "./model-ascription.gandr" ;
 
 /// Three states nested to the right, renested to the left.
 @[ checks ]
-def toLeft(c : Unit + (Unit + Unit)) -> -F ((Unit + Unit) + Unit) {
+def toLeft(c : Unit + (Unit + Unit)) -> (Unit + Unit) + Unit {
   case c {
     +{.0 = u} => +{.0 = +{.0 = u}},
     +{.1 = +{.0 = u}} => +{.0 = +{.1 = u}},
@@ -24,7 +24,7 @@ def toLeft(c : Unit + (Unit + Unit)) -> -F ((Unit + Unit) + Unit) {
 
 /// Three states nested to the left, renested to the right.
 @[ checks ]
-def toRight(c : (Unit + Unit) + Unit) -> -F (Unit + (Unit + Unit)) {
+def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) {
   case c {
     +{.0 = +{.0 = u}} => +{.0 = u},
     +{.0 = +{.1 = u}} => +{.1 = +{.0 = u}},
@@ -38,14 +38,14 @@ def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(to
 
 /// The counters whose carrier is `x`.
 @[ checks ]
-def countersOn(x : Type) -> -F Type {
+def countersOn(x : Type) -> Type {
   return type(Model(Counter) with sort C = x)
 }
 
 /// The counters over either nesting are one type: two sharings that differ
 /// by an equivalence are one.
 @[ checks ]
-def oneSharing() -> -F Path(
+def oneSharing() -> Path(
   Type,
   Model(Counter) with sort C = Unit + (Unit + Unit),
   Model(Counter) with sort C = (Unit + Unit) + Unit
@@ -53,7 +53,7 @@ def oneSharing() -> -F Path(
 
 /// One state on, modulo three, nested to the right.
 @[ checks ]
-def onward(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+def onward(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
   case c {
     +{.0 = u} => +{.1 = +{.0 = u}},
     +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
@@ -63,7 +63,7 @@ def onward(c : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
 
 /// The first state, nested to the right.
 @[ checks ]
-def first() -> -F (Unit + (Unit + Unit)) {
+def first() -> Unit + (Unit + Unit) {
   +{.0 = unit}
 }
 
@@ -85,7 +85,7 @@ def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = transport(
 
 /// A counter over the right nesting stepped once from its start.
 @[ checks ]
-def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
+def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
   case m {
     #{.start = s, .step = t} => t(s())
   }
@@ -93,11 +93,11 @@ def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F (Unit 
 
 /// Counting modulo three stepped once: the second state.
 @[ runs("+{.1 = +{.0 = unit}}") ]
-def second() -> -F (Unit + (Unit + Unit)) { stepOnce(rightward) }
+def second() -> Unit + (Unit + Unit) { stepOnce(rightward) }
 
 /// A counter over the left nesting stepped once from its start.
 @[ checks ]
-def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> -F ((Unit + Unit) + Unit) {
+def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> (Unit + Unit) + Unit {
   case m {
     #{.start = s, .step = t} => t(s())
   }
@@ -107,11 +107,11 @@ def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> -F ((
 /// state carried along: the transport moves the record field by field, each
 /// field a function moved along the path.
 @[ runs("+{.0 = +{.1 = unit}}") ]
-def secondLeft() -> -F ((Unit + Unit) + Unit) { stepOnceLeft(leftward) }
+def secondLeft() -> (Unit + Unit) + Unit { stepOnceLeft(leftward) }
 
 /// #2129: the same transport written as the call's argument, not bound by a
 /// definition first, runs to the same state.
 @[ runs("+{.0 = +{.1 = unit}}") ]
-def inlineLeft() -> -F ((Unit + Unit) + Unit) {
+def inlineLeft() -> (Unit + Unit) + Unit {
   stepOnceLeft(transport(\x. Model(Counter) with sort C = x, nestings, rightward))
 }

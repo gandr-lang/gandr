@@ -2007,7 +2007,7 @@ mod tests
         let written = std::fs::read_to_string(&path).expect("the corpus importer is read");
         let text = SourceText::from(written.as_str());
         let at = written
-            .find("Circle) -> -F Path")
+            .find("Circle) -> Path")
             .expect("a parameter's type names the circle");
         let index = LineIndex::new(written.as_str().into());
         let position =
