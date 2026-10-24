@@ -52,23 +52,6 @@
 //!
 //! The laws are untrusted, as the equality is: each is an ordinary declaration
 //! the checker judges and the kernel readmits.
-//!
-//! # Decision
-//!
-//! - Choice: a proof per declaration, one data case per constructor of each
-//!   argument and the conjunction rewritten comparison by comparison with
-//!   transport, the primitives' laws the host's own. It needs nothing past the
-//!   core the equality already uses: a data case with a motive over a
-//!   declaration, and paths over `Bool`.
-//! - Alternatives: a generic induction over a description's codes, as the
-//!   equality is generic over them, which would cover sums, tuples and
-//!   recursion at once but needs a case whose motive reads its scrutinee at
-//!   every code; admitting a derived law on the derivation's word, which would
-//!   leave a model's laws unchecked.
-//! - Reversal: once core's case carries a motive over a sum (#2374), a sum's
-//!   and a tuple's fields prove by the same congruence under that case, and
-//!   transitivity by inverting the conjunction; a recursive field then wants
-//!   the induction, not this per-declaration proof.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
