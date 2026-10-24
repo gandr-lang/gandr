@@ -79,7 +79,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`binary_expression.cmp.gt`](../corpus/ledger/syntax/binary_expression.cmp.gt.gandr) | `EXPRESSION > EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Operator |
 | [`binary_expression.cmp.ge`](../corpus/ledger/syntax/binary_expression.cmp.ge.gandr) | `EXPRESSION >= EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Operator |
 | [`binary_expression.then`](../corpus/ledger/syntax/binary_expression.then.gandr) | `EXPRESSION then EXPRESSION` | `expression.cmp` | `binary_expression` | admitted | Keyword |
-| [`binary_expression.cons`](../corpus/ledger/syntax/binary_expression.cons.gandr) | `EXPRESSION ∷ EXPRESSION` or `EXPRESSION :: EXPRESSION` | `expression.cons` | `binary_expression` | unadmitted | Operator |
+| [`binary_expression.cons`](../corpus/ledger/syntax/binary_expression.cons.gandr) | `EXPRESSION ∷ EXPRESSION` or `EXPRESSION :: EXPRESSION` | `expression.cons` | `binary_expression` | admitted | Operator |
 | [`binary_expression.add.concat`](../corpus/ledger/syntax/binary_expression.add.concat.gandr) | `EXPRESSION ++ EXPRESSION` | `expression.add` | `binary_expression` | unadmitted | Operator |
 | [`binary_expression.add.plus`](../corpus/ledger/syntax/binary_expression.add.plus.gandr) | `EXPRESSION + EXPRESSION` | `expression.add` | `binary_expression` | admitted | Operator |
 | [`binary_expression.add.minus`](../corpus/ledger/syntax/binary_expression.add.minus.gandr) | `EXPRESSION - EXPRESSION` | `expression.add` | `binary_expression` | admitted | Operator |
