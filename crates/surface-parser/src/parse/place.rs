@@ -44,8 +44,10 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 
 use super::ParseResult;
+use super::Repair;
 use super::molded;
 use super::ordered;
+use super::repair;
 use crate::closing::LeadingSlot;
 use crate::closing::push_closing;
 use crate::meld::Expected;
@@ -251,12 +253,8 @@ fn earlier<'source>(
     places.truncate(PLACES);
     places.insert(0, target.close);
     let place = places.into_iter().find(|&place| {
-        written(source, top, place, target.closer).is_some_and(|copy| {
-            let copy = SourceText::from(copy.as_str());
-            molded(pbg, copy)
-                .commit_with_obligations(copy)
-                .is_ok_and(|(_tree, obligations)| obligations.is_empty())
-        })
+        written(source, top, place, target.closer)
+            .is_some_and(|copy| repair(pbg, SourceText::from(copy.as_str())) == Repair::Unneeded)
     })?;
     let place = past(source, place, target.closer);
     let whole = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(text.len())).ok()?;
@@ -502,5 +500,49 @@ mod tests
                 parsed.obligations()
             );
         }
+    }
+
+    /// A try that stops molding at its first repair answers as the whole
+    /// molding and commit do, over every prefix of sources whole, missing a
+    /// closer and carrying one too many: each prefix leaves its forms open
+    /// at another point, so repairs stream early, late and only at the
+    /// close.
+    #[test]
+    fn a_try_stopped_at_its_first_repair_answers_as_a_whole_parse()
+    {
+        let pbg = built_in().unwrap();
+        let mut repaired = 0_usize;
+        let mut clean = 0_usize;
+        for source in [
+            "def once(n : Integer) -> -F Integer {\n  return n\n}\n",
+            "def once(n : Integer -> -F Integer {\n  return n\n}\n",
+            "def once(n : Integer)) -> -F Integer {\n  return n\n}\n",
+            "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n",
+            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  rule S(P(x) <=> x;\n}\n",
+            "def pair = f(x, [y, z], (w)) ;\n",
+        ] {
+            for end in (0 ..= source.len()).filter(|&end| source.is_char_boundary(end)) {
+                let prefix = SourceText::from(source.get(.. end).unwrap());
+                let whole = super::molded(&pbg, prefix)
+                    .commit_with_obligations(prefix)
+                    .is_ok_and(|(_tree, obligations)| obligations.is_empty());
+                assert_eq!(
+                    super::repair(&pbg, prefix) == super::Repair::Unneeded,
+                    whole,
+                    "{:?}: the stopped molding and the whole one disagree",
+                    <&str>::from(prefix)
+                );
+                if whole {
+                    clean = clean.saturating_add(1);
+                }
+                else {
+                    repaired = repaired.saturating_add(1);
+                }
+            }
+        }
+        assert!(
+            clean > 0 && repaired > 0,
+            "both answers are exercised: {clean} clean, {repaired} repaired"
+        );
     }
 }

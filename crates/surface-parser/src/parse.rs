@@ -185,6 +185,7 @@ use crate::UnitSeam;
 use crate::label::Labeling;
 use crate::label::Lexeme;
 use crate::label::label;
+use crate::mold::Molding;
 use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
 
@@ -620,6 +621,55 @@ fn molded<'pbg>(
     let tokens = label(SourceFragment::from(<&str>::from(source)));
     molder.mold_stream(&mut state, &tokens, source);
     state
+}
+
+/// Whether a parse needs a repair.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Repair
+{
+    /// The source parses with none.
+    Unneeded,
+    /// The source parses with at least one.
+    Needed,
+}
+
+/// Whether `source` parses with a repair, molded only as far as it takes to
+/// tell.
+///
+/// The molding stops at the first tile whose push leaves a repair
+/// ([`Molder::mold_stream_until_repair`]). A source that molds whole without
+/// one is closed, which may add the completion's. No tree is kept.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Repair::Unneeded`] exactly when [`molded`]'s state over
+///   `source` commits with no obligation.
+/// - provides: the test a closer's placement runs over each copy it tries
+///   ([`place::placed`]).
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Molder::mold_stream_until_repair`].
+/// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
+#[spec(ensures: |ret| (ret == Repair::Unneeded) == molded(pbg, source).commit_with_obligations(source).is_ok_and(|(_tree, obligations)| obligations.is_empty()))]
+fn repair(
+    pbg: &Pbg,
+    source: SourceText<'_>,
+) -> Repair
+{
+    let mut molder = Molder::new(pbg);
+    let mut state = MeldState::new(pbg);
+    let tokens = label(SourceFragment::from(<&str>::from(source)));
+    let unneeded = molder.mold_stream_until_repair(&mut state, &tokens, source) == Molding::Whole
+        && state
+            .commit_with_obligations(source)
+            .is_ok_and(|(_tree, obligations)| obligations.is_empty());
+    if unneeded {
+        Repair::Unneeded
+    }
+    else {
+        Repair::Needed
+    }
 }
 
 /// Commit a molded state over `source` as a parse result.
