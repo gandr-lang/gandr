@@ -208,6 +208,7 @@ use crate::origin::ClausePlace;
 use crate::origin::Label;
 use crate::origin::Labelled;
 use crate::origin::Origin;
+use crate::origin::WrittenModel;
 use crate::resolve::Frame;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
@@ -1990,6 +1991,10 @@ impl<'source> Lowerer<'_, 'source>
                 scope: site.at.node,
                 name: EffectName::from(handled.as_ref()),
                 operations,
+                manifest: manifest
+                    .iter()
+                    .map(|&(sort, ty)| (Name::from(self.name_at(sort).as_ref()), ty))
+                    .collect(),
             }))),
             Err((member, fault)) => Err(LoweringRefusal::UninterfacedMember {
                 span: written.span,
@@ -2515,8 +2520,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   body minted as a body a path runs through, at `origin`, with the
     ///   capability's written name recorded as the scope's binder and each
     ///   clause's binders — the result, and each operation clause's payload and
-    ///   continuation by its place — as the scope's clause binders; the first
-    ///   absence among the bodies.
+    ///   continuation by its place — as the scope's clause binders, and, for a
+    ///   scope over a theory, the theory and each sort its manifest fixes
+    ///   beside the type it fixes it to, in the order written, as the scope's
+    ///   theory; the first absence among the bodies.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2524,6 +2531,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::capability_scope`].
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `lower::capability::tests::a_scope_records_where_its_clauses_bind_1439`
+    /// - witness: `lower::capability::tests::a_scope_records_the_theory_and_sorts_it_handles_2382`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -2613,6 +2621,20 @@ impl<'source> Lowerer<'_, 'source>
                     {
                         sink.origins.place_clause_binder(id, binder, name);
                     }
+                }
+                if let Interface::Theory(ref theory) = scoped.interface {
+                    let sorts = theory
+                        .manifest
+                        .iter()
+                        .filter_map(|&(ref sort, ty)| match self.value_type_at(ty) {
+                            Maybe::Present(fixed) => Some((sort.clone(), fixed)),
+                            Maybe::Absent(_) => None,
+                        })
+                        .collect();
+                    sink.origins.record_scope_theory(id, WrittenModel {
+                        theory: Name::from(theory.name.as_ref()),
+                        sorts,
+                    });
                 }
                 scope
             })

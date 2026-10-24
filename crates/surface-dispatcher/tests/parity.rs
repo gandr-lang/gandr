@@ -13,6 +13,7 @@ use core::fmt;
 use std::path::Path;
 
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Crossing;
 use gandr_core_term::ValueId;
@@ -38,6 +39,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::WrittenModel;
 use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::Lexeme;
@@ -831,6 +833,23 @@ fn laid(
     (laid.text, laid.unit, laid.base)
 }
 
+/// The model type, or the capability scope's theory, `model` records, as the
+/// printer spells it: the theory and each sort beside its type.
+///
+/// # Specification
+/// trivial.
+fn modelled(model: &WrittenModel) -> Modelled<'_>
+{
+    Modelled {
+        theory: Name::from(model.theory.as_ref()),
+        sorts: model
+            .sorts
+            .iter()
+            .map(|&(ref sort, carrier)| (Name::from(sort.as_ref()), CoreNode::ValueType(carrier)))
+            .collect(),
+    }
+}
+
 /// What the body parity reads of a source: each declaration it spells
 /// whole, each it holds and why, and each the printer spells unfaithfully
 /// for a reason no issue holds.
@@ -903,26 +922,22 @@ fn read(
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
     let constructors = families.naming(&names);
-    // Each model type as the source writes it, which the record it lowers to
-    // does not hold.
+    // Each model type, and each capability scope over a theory, as the source
+    // writes it, which the record or the signature it lowers to does not hold.
     let mut models: Vec<(ValueTypeId, Modelled<'_>)> = module
         .origins()
         .models()
         .iter()
-        .map(|&(modelled, ref model)| {
-            (modelled, Modelled {
-                theory: Name::from(model.theory.as_ref()),
-                sorts: model
-                    .sorts
-                    .iter()
-                    .map(|&(ref sort, carrier)| {
-                        (Name::from(sort.as_ref()), CoreNode::ValueType(carrier))
-                    })
-                    .collect(),
-            })
-        })
+        .map(|&(ty, ref model)| (ty, modelled(model)))
         .collect();
-    models.sort_by_key(|&(modelled, _)| modelled);
+    models.sort_by_key(|&(ty, _)| ty);
+    let mut scopes: Vec<(ComputationId, Modelled<'_>)> = module
+        .origins()
+        .scope_theories()
+        .iter()
+        .map(|&(scope, ref model)| (scope, modelled(model)))
+        .collect();
+    scopes.sort_by_key(|&(scope, _)| scope);
     // Each forgetting map onto its own theory, whose written call the explicit
     // form writes as the map's form, as the formatter keeps it.
     let mut maps: Vec<(ConstantIndex, ForgetMap<'_>)> = module
@@ -949,6 +964,7 @@ fn read(
         .forgetting(&forgettings)
         .forgetting_maps(&maps)
         .modeling(&models)
+        .scoping(&scopes)
         .naming_implicits(&implicits)
         .flattening(&slots);
     // A body leaves each written reduct's or forgetting map's call to the

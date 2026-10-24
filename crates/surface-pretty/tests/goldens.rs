@@ -6092,6 +6092,57 @@ fn a_kept_value_names_the_scope_it_is_kept_in()
     );
 }
 
+/// A capability scope over a theory writes the sorts its manifest fixes after
+/// the theory's name, in the order written, as the lowering reads it back: its
+/// signature holds only the carriers substituted for them (#2382).
+#[test]
+fn a_scope_over_a_theory_spells_its_manifest_2382()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let string = core.value_type_base(BaseType::String);
+    let signature = EffectSig::new(EffectName::from("Labelled"), [EffectOp {
+        name: "label".into(),
+        payload: integer,
+        reply: string,
+    }])
+    .expect("one operation is a signature");
+    let capability = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let subject = core.computation_return(capability);
+    let answer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let on_return = core.computation_return(answer);
+    let scoped = core.computation_scope(signature, subject, on_return, Arc::from([]));
+    let scopes = [(scoped, Modelled {
+        theory: Name::from("Labelled"),
+        sorts: vec![
+            (Name::from("K"), CoreNode::ValueType(integer)),
+            (Name::from("L"), CoreNode::ValueType(string)),
+        ],
+    })];
+    let source = CoreSource::new(&core, &[]).scoping(&scopes);
+    for form in [Form::Sugared, Form::Explicit] {
+        let presented = presented_in(
+            &source,
+            Root::Computation(CoreNode::Computation(scoped)),
+            wide(),
+            form,
+        );
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            (
+                "handle a : Labelled with sort K = Integer with sort L = String { a } with { \
+                 pure(a) => a }",
+                Fidelity::Faithful
+            ),
+            "the manifest in the order written, {form:?}"
+        );
+    }
+}
+
 /// A value kept in the region of a hold the term opens names the hold by the
 /// name its binder takes, `A at a`.
 #[test]

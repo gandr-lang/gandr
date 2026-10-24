@@ -678,6 +678,11 @@ pub struct OriginTable
     /// Each model type written `Model(T)`, or `Model(T) with sort C = A …`,
     /// with the record it lowers to, in the order lowered.
     models: Vec<(ValueTypeId, WrittenModel)>,
+    /// Each capability scope over a theory, `handle c : T with sort C = A …
+    /// { … }`, with the theory and the sorts its manifest fixes as written,
+    /// in the order lowered. The scope's signature holds the carriers
+    /// substituted, not the sorts they stand for.
+    scope_theories: Vec<(ComputationId, WrittenModel)>,
     /// The implicit each hole a call nominated stands for, by the hole,
     /// ascending by id. The core carries no name; a refusal of the hole
     /// reads it here.
@@ -2244,6 +2249,45 @@ impl OriginTable
     pub fn models(&self) -> &[(ValueTypeId, WrittenModel)]
     {
         &self.models
+    }
+
+    /// Record that the capability scope `scope` handles the theory `model`
+    /// names, at the sorts its manifest fixes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::scope_theories`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over `State` fixed at `Integer` answers at
+    ///   the scope with the theory and its one sort as written.
+    /// - witness: `lower::capability::tests::a_scope_records_the_theory_and_sorts_it_handles_2382`
+    #[spec(
+        captures: before = self.scope_theories.len(),
+        ensures: self.scope_theories.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_scope_theory(
+        &mut self,
+        scope: ComputationId,
+        model: WrittenModel,
+    )
+    {
+        self.scope_theories.push((scope, model));
+    }
+
+    /// Each capability scope over a theory, with the theory and the sorts its
+    /// manifest fixes as written, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn scope_theories(&self) -> &[(ComputationId, WrittenModel)]
+    {
+        &self.scope_theories
     }
 }
 

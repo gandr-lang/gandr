@@ -1489,12 +1489,19 @@ where
             on_return,
             clauses: count,
         } => clauses(ends(subject, Binds::NONE), on_return, count),
+        // A manifest's carriers are written before the subject but stand
+        // after the clauses, so the subject stays the first child.
         Former::Scope {
             subject,
             on_return,
             clauses: count,
+            sorts,
             ..
-        } => clauses(ends(subject, Binds::ONE), on_return, count),
+        } => {
+            let mut slots = clauses(ends(subject, Binds::ONE), on_return, count);
+            slots.extend(sorts.iter().map(|&(_, carrier)| value_type(carrier)));
+            slots
+        },
         Former::Exercise {
             capability,
             payload,
@@ -9216,7 +9223,9 @@ impl Walk<'_, '_>
     ///   but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
     ///   constructor's applied to its field binders, its equations unwritten,
     ///   `?` for a constructor the source cannot name; `handle { c } with {
-    ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`;
+    ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`,
+    ///   over a theory `handle c : T with sort C = A …` with the sorts its
+    ///   manifest fixes, in the order written, its pieces the scope's last;
     ///   `c.op(v)`; `send(e, v)`, `recv(e)`, `select(e, l)`, `offer(e) { l => c
     ///   }`, `close(e)` and `fork (a : S) { t } as a ; u`, each endpoint named
     ///   by its binder; a resumption of a continuation binder with a returned
@@ -9789,6 +9798,7 @@ impl Walk<'_, '_>
             Former::Scope {
                 interface,
                 clauses: count,
+                sorts,
                 ..
             } => {
                 let interface = self.spelled(Some(interface), Unspelled::Missing);
@@ -9796,9 +9806,17 @@ impl Walk<'_, '_>
                     .text("handle ")
                     .part(Part::Binder(0_usize))
                     .text(" : ")
-                    .text(interface)
-                    .text(" {")
-                    .body();
+                    .text(interface);
+                for &(sort, _) in sorts {
+                    let _ = writes(
+                        Production("manifest_sort"),
+                        parts
+                            .part(Part::Space)
+                            .text(format!("with sort {} = ", sort.as_ref()))
+                            .part(Part::Last(Binding::Sum)),
+                    );
+                }
+                let _ = parts.text(" {").body();
                 clauses(self, &mut parts, count);
                 writes(Production("handle_expression"), Binding::Prefix)
             },
