@@ -3461,3 +3461,39 @@ fn an_eliminated_endpoint_reads_a_bind_through_its_stuck_call()
         );
     }
 }
+
+#[test]
+fn a_forced_applied_endpoint_converts_with_a_bind_over_its_call_2326()
+{
+    // `⟨force k s to f. force f s⟩` against `⟨force ⟨force k s⟩ s⟩`, under
+    // `k` (index 1) and `s` (index 0): `bound(k, s)` against `apply(k(s), s)`
+    // unfolded. The forced endpoint runs as `force k s to x. force x s`, the
+    // application moved under the binder with the force, so both sides are
+    // binds over one call. Before, the application stayed outside the bind
+    // and the two contradicted.
+    let mut arena = TermArena::new();
+    let k = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let s = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let forced = arena.computation_force(k);
+    let call = arena.computation_application(forced, s);
+    let bound = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let s_under = arena.value_variable(DeBruijnIndex::from(1_u32));
+    let forced_bound = arena.computation_force(bound);
+    let applied_bound = arena.computation_application(forced_bound, s_under);
+    let binds = arena.computation_bind(call, applied_bound);
+    let left = arena.value_returned(binds);
+    let returned = arena.value_returned(call);
+    let forced_returned = arena.computation_force(returned);
+    let applied_returned = arena.computation_application(forced_returned, s);
+    let right = arena.value_returned(applied_returned);
+    assert_eq!(
+        convert(
+            &mut arena,
+            &Unfoldings::default(),
+            ReplaySides::Values(left, right),
+            ReplayBudget::DEFAULT,
+        ),
+        KernelVerdict::Convertible,
+        "the forced, applied endpoint is the bind over its call"
+    );
+}

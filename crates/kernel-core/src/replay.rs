@@ -108,8 +108,11 @@
 //! goal between the endpoint's computation and the other side's: the other
 //! endpoint's computation, or the `return` of the other value. An elimination
 //! that meets a returned endpoint in weak head form runs its computation
-//! first, `E[c] ⇝ c to x. E[x]`. The shapes force both steps, so no decision
-//! names them and the vocabulary is unchanged.
+//! first, `E[c] ⇝ c to x. E[x]`, `E` the whole elimination context up to the
+//! nearest bind: the applications and projections past the elimination move
+//! under the binder with it, so a bind written over the same call compares
+//! with the elimination bind for bind. The shapes force both steps, so no
+//! decision names them and the vocabulary is unchanged.
 //!
 //! [`convert`] fires both steps unread and unfolds no constant: the forced loop
 //! stays δ-free. A returned endpoint a mode switch's structural type comparison
@@ -5823,7 +5826,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                             progress = Progress::Unchanged;
                             continue;
                         }
-                        focus = self.bind_returned(focus, returned)?;
+                        let bind = self.bind_returned(focus, returned)?;
+                        focus = self.absorbed(bind, &mut frames)?;
                         progress = Progress::Reduced;
                         continue;
                     }
@@ -6266,7 +6270,8 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                     progress = Progress::Unchanged;
                                     continue;
                                 }
-                                focus = self.bind_returned(applied, returned)?;
+                                let bind = self.bind_returned(applied, returned)?;
+                                focus = self.absorbed(bind, &mut frames)?;
                                 progress = Progress::Reduced;
                                 continue;
                             }
@@ -6474,8 +6479,9 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                 frames = Vec::new();
             }
             else {
-                focus = self.bind_returned(held.elimination, read)?;
+                let bind = self.bind_returned(held.elimination, read)?;
                 frames = held.frames;
+                focus = self.absorbed(bind, &mut frames)?;
             }
             reduction = Reduction::Plain;
             progress = Progress::Reduced;
@@ -6536,9 +6542,11 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Continuation::Eliminates`] exactly when `body` is a force,
-    ///   a projection, a case, a data case, a dependent split or a list fold
-    ///   inspecting the innermost variable, a fixpoint applied to it, or a
+    /// - ensures: [`Continuation::Eliminates`] exactly when `body`, under any
+    ///   applications whose head is no fixpoint and any projections of a lazy
+    ///   pairing — the context [`Self::absorbed`] moves under the bind — is a
+    ///   force, a projection, a case, a data case, a dependent split or a list
+    ///   fold inspecting the innermost variable, a fixpoint applied to it, or a
     ///   transport along it or of it — the continuation the transport rows
     ///   build when they run a returned path or operand;
     ///   [`Continuation::Returns`] exactly when `body` is `return` of the
@@ -6566,6 +6574,21 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
         body: ComputationId,
     ) -> Continuation
     {
+        let mut body = body;
+        loop {
+            match self.arena.computation(body) {
+                Some(&Computation::Application(head, _))
+                    if !matches!(
+                        self.arena.computation(head),
+                        Some(&Computation::Fixpoint { .. })
+                    ) =>
+                {
+                    body = head;
+                },
+                Some(&Computation::Project(_, inner)) => body = inner,
+                _ => break,
+            }
+        }
         let inspected = if let Some(
             &(Computation::DataCase {
                 scrutinee: inspected,
@@ -6718,6 +6741,65 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
             _ => return Err(unreadable()),
         };
         Ok(self.arena.computation_bind(returned, continuation))
+    }
+
+    /// `bind`, a bind [`Self::bind_returned`] built, with the applications and
+    /// projections innermost on `frames` moved under its binder after the
+    /// elimination: `E[c] ⇝ c to x. E[x]` over the whole elimination context,
+    /// up to the first bind frame.
+    ///
+    /// # Specification
+    /// - requires: `bind` is a bind.
+    /// - ensures: `bind` itself when no application or projection is innermost
+    ///   on `frames`; otherwise a bind over the same computation whose
+    ///   continuation is `bind`'s under those frames, each shifted past the
+    ///   binder, innermost first, and `frames` without them.
+    /// - provides: the elimination rule of a returned endpoint read whole, so a
+    ///   bind written over the same call compares with it as a bind.
+    /// - fails: [`ReplayRefusal::Unreadable`] when `bind` is no bind.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returned endpoint forced and applied converts with
+    ///   a bind written over its call whose continuation forces and applies the
+    ///   bound value.
+    /// - witness: `replay::tests::a_forced_applied_endpoint_converts_with_a_bind_over_its_call_2326`
+    #[spec(ensures: |ret| ret.is_err() || frames.last().is_none_or(|frame| matches!(frame, Frame::Bind(_))))]
+    fn absorbed(
+        &mut self,
+        bind: ComputationId,
+        frames: &mut Vec<Frame>,
+    ) -> Result<ComputationId, Stop>
+    {
+        let Some(&Computation::Bind(bound, mut continuation)) = self.arena.computation(bind)
+        else {
+            return Err(unreadable());
+        };
+        let mut moved = false;
+        while let Some(&frame) = frames.last() {
+            let shifted = match frame {
+                Frame::Apply(argument) => Frame::Apply(shift_value(
+                    self.arena,
+                    &mut self.table,
+                    &mut self.memo,
+                    argument,
+                    BinderDepth::NONE,
+                    BinderDepth::NONE.deeper(),
+                )),
+                Frame::Project(component) => Frame::Project(component),
+                Frame::Bind(_) => break,
+            };
+            let _popped = frames.pop();
+            continuation = self.wrap(continuation, shifted);
+            moved = true;
+        }
+        if !moved {
+            return Ok(bind);
+        }
+        Ok(self.arena.computation_bind(bound, continuation))
     }
 
     /// The normal form of `value` as an endpoint: a returned endpoint is what

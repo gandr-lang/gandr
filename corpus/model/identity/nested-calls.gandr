@@ -2,9 +2,10 @@
 // endpoint that applies a function to another call waits on the inner call
 // once the outer one unfolds, and conversion unfolds that call next; over a
 // presented type the inner call stands under a constructor the outer call
-// built, and the normal form reads it before the rules run. Conversion is
-// definitional equality by computation (Martin-Löf, _Intuitionistic Type
-// Theory_, Bibliopolis, 1984).
+// built, and the normal form reads it before the rules run. An endpoint that
+// applies the function a call returns is the bind over that call applying
+// what it binds. Conversion is definitional equality by computation
+// (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 // The free naturals, the presented integers and their steps `up` and `down`.
 import "./circle-base.gandr" ;
@@ -50,3 +51,58 @@ def turn_unturn(n : Int) -> Path(Int, up(down(n)), n) {
 /// Reading the inner call cancels a step; it does not add one.
 @[ refuses("EndpointMismatch") ]
 def overturned : Path(Int, up(down(Z)), S(Z)) = here(S(Z)) ;
+
+/// The function a call returns, bound and applied.
+@[ checks ]
+def bound(k : Integer => Integer => Integer, s : Integer) -> Integer {
+  run f <- k(s) ;
+  f(s)
+}
+
+/// A function applied.
+@[ checks ]
+def apply(f : Integer => Integer, x : Integer) -> Integer { f(x) }
+
+/// Applying the call's function as `apply` is binding the call and applying
+/// what it binds (#2326): the endpoint unfolds to the call's result applied,
+/// which conversion reads as a bind over the call.
+@[ checks ]
+def bound_is_applied(
+  k : Integer => Integer => Integer,
+  s : Integer
+) -> Path(Integer, bound(k, s), apply(k(s), s)) {
+  here(bound(k, s))
+}
+
+/// The call's function applied to `s` is not it applied to zero.
+@[ refuses("EndpointMismatch") ]
+def applied_elsewhere(
+  k : Integer => Integer => Integer,
+  s : Integer
+) -> Path(Integer, bound(k, s), apply(k(s), 0)) {
+  here(bound(k, s))
+}
+
+/// The call bound before a function that applies what it binds.
+@[ checks ]
+def bound_outside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
+  run v <- k(s) ;
+  return fn (_old) { v(s) }
+}
+
+/// The call bound inside the function.
+@[ checks ]
+def bound_inside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
+  return fn (_old) { run f <- k(s) ; f(s) }
+}
+
+/// Binding the call outside the function or inside it gives one function
+/// (#2326): under its binder the bound call's result applied meets the bind
+/// written there.
+@[ checks ]
+def outside_is_inside(
+  k : Integer => Integer => Integer,
+  s : Integer
+) -> Path(Integer => Integer, bound_outside(k, s), bound_inside(k, s)) {
+  here(bound_outside(k, s))
+}
