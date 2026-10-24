@@ -10,8 +10,12 @@
 #   primary   the clone's primary worktree;
 #   cwd       the caller's own worktree;
 #   merged    Worktrunk reads the branch integrated into the default branch
-#             and its head is off origin/main's first-parent line: a landed
-#             branch, never one cut from main and not yet committed to;
+#             and the head it read beside that reason is off origin/main's
+#             first-parent line: a landed branch, never one cut from main and
+#             not yet committed to. Both come from one `wt list` snapshot;
+#   moved     the worktree's head is no longer the one Worktrunk judged: a
+#             commit landed after the snapshot, so the judgement is stale
+#             (#2299);
 #   scratch   null, or a scratch worktree under a temporary directory:
 #             `{holder, alive, young}`, `holder` the pid named in a
 #             `gandr-scratch-<pid>.` directory (null for an unnamed one),
@@ -37,6 +41,7 @@ map(
       end
     elif .branch == null then {action: "keep", reason: "detached, not a scratch"}
     elif (.branch | startswith("wip/")) then {action: "keep", reason: "a wip/ branch"}
+    elif .merged and .moved then {action: "keep", reason: "its head moved after it was judged landed"}
     elif .merged then {action: "remove", reason: "landed in origin/main"}
     else {action: "keep", reason: "not landed"}
     end
