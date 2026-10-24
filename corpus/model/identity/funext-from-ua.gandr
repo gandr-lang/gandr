@@ -56,10 +56,10 @@ def diagSource(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> Path(
 @[ checks ]
 def diagEquiv(b : Type) -> b ≃ #{ x : b, y : b, p : Path(b, x, y) } {
   (
-    thunk { fn (v) { diag(b, v) } },
+    fn (v) { diag(b, v) },
     (
-      (thunk { fn (w) { source(b, w) } }, thunk { fn (v) { here(v) } }),
-      (thunk { fn (w) { source(b, w) } }, thunk { fn (w) { diagSource(b, w) } })
+      (fn (w) { source(b, w) }, fn (v) { here(v) }),
+      (fn (w) { source(b, w) }, fn (w) { diagSource(b, w) })
     )
   )
 }

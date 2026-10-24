@@ -38,10 +38,10 @@ def identified(x : Int) -> Path(Path(Int, S(P(S(x))), S(x)), atRoot(x), inside(x
 @[ checks ]
 def certificates(x : Int) -> Path(Type, Path(Int, S(P(S(x))), S(x)), Path(Int, S(x), S(x))) {
   ua((
-    thunk { fn (c) { c } },
+    fn (c) { c },
     (
-      (thunk { fn (c) { c } }, thunk { fn (c) { here(c) } }),
-      (thunk { fn (c) { c } }, thunk { fn (c) { here(c) } })
+      (fn (c) { c }, fn (c) { here(c) }),
+      (fn (c) { c }, fn (c) { here(c) })
     )
   ))
 }

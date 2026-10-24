@@ -4388,6 +4388,7 @@ fn step(
 /// - witness: `eval::tests::native_records_and_cases_compute`
 /// - witness: `eval::tests::normalizes_beta_redex`
 /// - witness: `eval::tests::normalization_preserves_a_stuck_application`
+/// - witness: `eval::tests::a_nested_lambda_forced_and_applied_reduces_2255`
 #[spec(
     requires: env.0 < machine.envs.len(),
     captures: [
@@ -4500,6 +4501,17 @@ fn step_value(
             machine.tasks.push(Task::Univalence { term });
             machine.tasks.push(Task::Value { term: forward, env });
             machine.tasks.push(Task::Value { term: record, env });
+            Ok(())
+        },
+        // A nested lambda returns nothing it could stand for: the checker can
+        // only suspend it, so it stands for the thunk it elaborates to, and a
+        // type after it that forces and applies it reduces.
+        Value::Nested(body) if matches!(core.computation(body), Some(&Computation::Lambda(_))) => {
+            let captured = machine.capture(env)?;
+            let closed = capture_keeps_source(&captured);
+            let closure = domain.comp_closure_node(body, captured);
+            let face = composite_face(closed, term);
+            machine.values.push(domain.value_thunk(closure, face));
             Ok(())
         },
         // A compound endpoint runs its computation and stands for what it
