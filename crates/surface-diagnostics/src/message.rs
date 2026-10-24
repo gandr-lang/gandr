@@ -619,9 +619,9 @@ fn lowered(
              so the block's rules are refused",
         ),
         LoweringRefusal::RulesOverlapSecondOrder { .. } => f.write_str(
-            "this rule and an earlier one rewrite overlapping terms, and one of them applies a \
-             variable a binding port binds: such a rule may overlap no rule, so the block's \
-             rules are refused",
+            "this rule and an earlier one rewrite overlapping terms, one of them applies a \
+             variable a binding port binds, and the overlap rewrites to two different normal \
+             forms, so the block's rules are refused",
         ),
         LoweringRefusal::RulesOverlapCondition { .. } => f.write_str(
             "this rule and another rewrite overlapping terms, and one of them fires only where its \

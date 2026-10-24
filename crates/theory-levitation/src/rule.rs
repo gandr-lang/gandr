@@ -1139,15 +1139,18 @@ impl RuleFace
 
     /// The first variable some occurrence of which stands under other
     /// abstractions than its first occurrence on the left side does: on
-    /// either side for [`Crossing::Moved`], on the left side alone for
-    /// [`Crossing::Split`].
+    /// either side for [`Crossing::Moved`] and [`Crossing::MovedAcrossAtoms`],
+    /// on the left side alone for [`Crossing::Split`], and counting atom
+    /// abstractions alone for [`Crossing::MovedAcrossAtoms`].
     ///
     /// # Specification
     /// - ensures: the first variable, in pre-order over the left side and then,
-    ///   for [`Crossing::Moved`], the right, an instantiated one included,
-    ///   whose list of enclosing abstractions' atoms, outermost first, differs
-    ///   from the list at its first occurrence on the left side, compared by
-    ///   written name and order; [`None`] when every occurrence read agrees.
+    ///   for [`Crossing::Moved`] and [`Crossing::MovedAcrossAtoms`], the right,
+    ///   an instantiated one included, whose list of enclosing abstractions'
+    ///   atoms, outermost first and binding fields left out for
+    ///   [`Crossing::MovedAcrossAtoms`], differs from the list at its first
+    ///   occurrence on the left side, compared by written name and order;
+    ///   [`None`] when every occurrence read agrees.
     /// - panics: none.
     /// - executable: none — the answer is the comparison of the sides' walks,
     ///   which a predicate would walk again.
@@ -1159,7 +1162,8 @@ impl RuleFace
     ///   crosses nothing; one moved under an abstraction and one under two
     ///   abstractions swapped are moved and not split; one standing under an
     ///   abstraction at one left-side occurrence and outside it at another is
-    ///   split.
+    ///   split; one moved across a binding field alone is moved, and not across
+    ///   an atom.
     /// - witness: `rule::tests::a_variable_moved_across_an_abstraction_and_one_split_by_it`
     #[inline]
     #[must_use]
@@ -1170,7 +1174,9 @@ impl RuleFace
     {
         let mut first: BTreeMap<&Name, Vec<&Name>> = BTreeMap::new();
         let sides: &[(&FreeTerm, bool)] = match crossing {
-            Crossing::Moved => &[(&self.lhs, true), (&self.rhs, false)],
+            Crossing::Moved | Crossing::MovedAcrossAtoms => {
+                &[(&self.lhs, true), (&self.rhs, false)]
+            },
             Crossing::Split => &[(&self.lhs, true)],
         };
         let mut scopes: Vec<(&Name, Option<usize>)> = Vec::new();
@@ -1182,6 +1188,10 @@ impl RuleFace
                 let (variable, args) = match node.view() {
                     TermView::Var(name) => (Some(name), None),
                     TermView::Inst { name, args } => (Some(name), Some(args)),
+                    TermView::Lam { args, .. } if crossing == Crossing::MovedAcrossAtoms => {
+                        pending.extend(args.map(|body| (body, scope)));
+                        continue;
+                    },
                     TermView::Abs { atom, args } | TermView::Lam { var: atom, args } => {
                         scopes.push((atom, scope));
                         let inner = Some(scopes.len().saturating_sub(1));
@@ -1220,23 +1230,34 @@ impl RuleFace
     /// Whether the rule states a freshness condition or moves a variable
     /// across an abstraction: where a port takes an atom, it then fires only
     /// where its instance names no atom it may not, and renumbers the atoms
-    /// a moved instance names.
+    /// a moved instance names. A rule that instantiates a variable is read
+    /// second-order, where a variable's instance names no binder its pattern
+    /// does not apply it to, so moving it across a binding field captures
+    /// nothing and only an atom abstraction counts.
     ///
     /// # Specification
     /// - ensures: positive exactly when `fresh` is not empty or
-    ///   [`Self::crossing`] at [`Crossing::Moved`] names a variable.
+    ///   [`Self::crossing`] names a variable, at [`Crossing::MovedAcrossAtoms`]
+    ///   when [`Self::instantiates`] and at [`Crossing::Moved`] otherwise.
     /// - panics: none.
     /// - executable: none — the body is the predicate.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::crossing`]: scope extrusion is
-    ///   conditioned, a law under one abstraction on both sides is not.
+    ///   conditioned, a law under one abstraction on both sides is not, and a
+    ///   field crossed is a condition of a first-order rule alone.
     /// - witness: `rule::tests::a_variable_moved_across_an_abstraction_and_one_split_by_it`
     #[inline]
     #[must_use]
     pub fn conditioned(&self) -> ConditionStatus
     {
-        ConditionStatus::from(!self.fresh.is_empty() || self.crossing(Crossing::Moved).is_some())
+        let crossing = if bool::from(self.instantiates()) {
+            Crossing::MovedAcrossAtoms
+        }
+        else {
+            Crossing::Moved
+        };
+        ConditionStatus::from(!self.fresh.is_empty() || self.crossing(crossing).is_some())
     }
 
     /// Whether either side instantiates a metavariable: a second-order rule,
@@ -1265,6 +1286,9 @@ pub enum Crossing
 {
     /// Every occurrence, on either side: a variable the rule moves.
     Moved,
+    /// Every occurrence, on either side, under its atom abstractions alone: a
+    /// variable the rule moves across an atom.
+    MovedAcrossAtoms,
     /// The left side's alone: a variable whose instances a match compares
     /// under different abstractions.
     Split,
@@ -1323,6 +1347,57 @@ mod tests
         let swapped = RuleFace::new(nu2("a", "b"), nu2("b", "a"), Vec::new(), span);
         assert_eq!(swapped.crossing(Crossing::Moved), Some(&Name::from("p")));
         assert_eq!(swapped.crossing(Crossing::Split), None);
+        // `ext(ext(m, k), l) ==> ext(m, bind x . ext(k(x), l))` moves `l`
+        // under a field: the rule instantiates `k`, so the field captures
+        // nothing and the rule is not conditioned.
+        let ext = |m: FreeTerm, k: FreeTerm| FreeTerm::op("ext", [m, k]);
+        let assoc = RuleFace::new(
+            ext(
+                ext(FreeTerm::var("m"), FreeTerm::var("k")),
+                FreeTerm::var("l"),
+            ),
+            ext(
+                FreeTerm::var("m"),
+                FreeTerm::lam(
+                    "x",
+                    ext(
+                        FreeTerm::inst("k", [FreeTerm::bound("x")]),
+                        FreeTerm::var("l"),
+                    ),
+                ),
+            ),
+            Vec::new(),
+            span,
+        );
+        assert_eq!(assoc.crossing(Crossing::Moved), Some(&Name::from("l")));
+        assert_eq!(assoc.crossing(Crossing::MovedAcrossAtoms), None);
+        assert!(!bool::from(assoc.conditioned()));
+        // `g(l) ==> h(bind x . l)` moves `l` under a field and instantiates
+        // nothing: a first-order rule, still conditioned.
+        let lifted = RuleFace::new(
+            FreeTerm::op("g", [FreeTerm::var("l")]),
+            FreeTerm::op("h", [FreeTerm::lam("x", FreeTerm::var("l"))]),
+            Vec::new(),
+            span,
+        );
+        assert_eq!(lifted.crossing(Crossing::MovedAcrossAtoms), None);
+        assert!(bool::from(lifted.conditioned()));
+        // `f(nu(bind a . k(b)), b) ==> nu(bind a . k(b))`, beside the
+        // instantiation, moves `b` under an atom: still conditioned.
+        let atom = RuleFace::new(
+            FreeTerm::op("f", [
+                restricted(FreeTerm::inst("k", [FreeTerm::var("b")])),
+                FreeTerm::var("b"),
+            ]),
+            restricted(FreeTerm::inst("k", [FreeTerm::var("b")])),
+            Vec::new(),
+            span,
+        );
+        assert_eq!(
+            atom.crossing(Crossing::MovedAcrossAtoms),
+            Some(&Name::from("b"))
+        );
+        assert!(bool::from(atom.conditioned()));
     }
 
     #[test]

@@ -870,10 +870,18 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
 }}"
         )
     };
+    let joins = theory("rule zetaZero : let(zero(), t) <=> t(zero());");
+    lowered(SourceText::from(joins.as_str()), |module| {
+        assert_eq!(
+            module.cells().diagnostics,
+            [],
+            "ζ and ζ at `zero()` overlap at the root and both reducts are `t(zero())`"
+        );
+    });
     for (rules, later) in [
         (
-            "rule zetaZero : let(zero(), t) <=> t(zero());",
-            "rule zetaZero : let(zero(), t) <=> t(zero())",
+            "rule toZero : let(zero(), t) <=> zero();",
+            "rule toZero : let(zero(), t) <=> zero()",
         ),
         (
             "rule under : f(let(u, t)) <=> f(u);",
@@ -890,7 +898,7 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
             let CellFault::Coherence(CoherenceFault::OverlapsSecondOrder { first }) =
                 diagnostic.fault
             else {
-                panic!("{later} overlaps ζ: {:?}", diagnostic.fault)
+                panic!("{later} parts from ζ: {:?}", diagnostic.fault)
             };
             assert_eq!(text(source, diagnostic.span).as_ref(), later);
             assert_eq!(
@@ -918,10 +926,10 @@ fn a_second_order_rule_overlapping_another_refuses_the_block()
 }
 
 /// #2115: a metavariable applied to the names its abstractions bind reads
-/// as a pattern, which unifies with every term the metavariable may stand
-/// for, so a get-get rule overlaps its own left side below the root.
+/// as a pattern, so a get-get rule overlaps its own left side below the
+/// root; in the second-order reading the pair joins.
 #[test]
-fn a_pattern_overlapping_its_own_rule_refuses_the_block_2115()
+fn a_pattern_overlapping_its_own_rule_joins_2115()
 {
     let theory = |rule: &str| {
         format!(
@@ -937,26 +945,12 @@ fn a_pattern_overlapping_its_own_rule_refuses_the_block_2115()
     };
     let get_get =
         theory("rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));");
-    let source = SourceText::from(get_get.as_str());
-    lowered(source, |module| {
-        let [ref diagnostic] = *module.cells().diagnostics.as_slice()
-        else {
-            panic!("one cell diagnostic: {:?}", module.cells().diagnostics)
-        };
-        let CellFault::Coherence(CoherenceFault::OverlapsSecondOrder { first }) = diagnostic.fault
-        else {
-            panic!("get-get overlaps itself: {:?}", diagnostic.fault)
-        };
+    lowered(SourceText::from(get_get.as_str()), |module| {
         assert_eq!(
-            (
-                text(source, diagnostic.span).as_ref(),
-                text(source, first).as_ref()
-            ),
-            (
-                "rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s))",
-                "rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s))"
-            ),
-            "the inner `get` is an instance of the rule's own left side"
+            module.cells().diagnostics,
+            [],
+            "the inner `get` is an instance of the rule's own left side, and both reducts \
+             normalize to `get(bind s . k(s, s, s))`"
         );
     });
     let right_unit = theory("rule unitR : ext(m, bind x . ret(x)) <=> m;");

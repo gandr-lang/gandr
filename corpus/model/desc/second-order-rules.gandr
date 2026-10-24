@@ -5,9 +5,10 @@
 // and survey_, TCS 121, 1993). The rules terminate by the higher-order
 // recursive path order (Jouannaud and Rubio, _The higher-order recursive path
 // ordering_, LICS 1999): the instantiation is below an application that holds
-// the variable and every argument directly. A second-order rule overlapping no
-// rule leaves confluence to the first-order rules' pairs (Mayr and Nipkow,
-// _Higher-order rewrite systems and their confluence_, TCS 192, 1998).
+// the variable and every argument directly. A pair a second-order rule takes
+// part in is found by pattern unification and joined in the second-order
+// reading (Mayr and Nipkow, _Higher-order rewrite systems and their
+// confluence_, TCS 192, 1998).
 
 /// ζ: `let` binds a term over its body, and its rule substitutes the bound
 /// term into the body.
@@ -39,6 +40,18 @@ theory LetBeside {
   rule zeta : let(u, t) <=> t(u);
   rule fZero : f(a) <=> zero();
   rule fOne : f(a) <=> one();
+}
+
+/// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap at
+/// the root, the pair is found by pattern unification, and both reducts are
+/// `t(zero())` (#2328).
+@[ checks ]
+theory LetOverlap {
+  sort Tm : Type+;
+  oper zero : () --> Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  rule zeta : let(u, t) <=> t(u);
+  rule zetaZero : let(zero(), t) <=> t(zero());
 }
 
 /// ζ's right side is the instantiation of `t`, which the presentation keeps

@@ -1,14 +1,14 @@
 // State as a theory: `get` passes the state to what runs after it, and `put`
 // replaces the state before what runs after it. The laws are the rules of
 // global state in Cooper, "The marriage of effects and rewrites" (2023),
-// § 2.1, oriented by the path order, one theory per law.
+// § 2.1, each oriented by the path order.
 //
 // A put stores a value: no operation returns the sort `S`, so only
 // constructors and variables build a term of it. A continuation instantiated
 // at the stored value selects one branch of the abstraction a `get` holds and
 // calls no operation, so put-get descends as Cooper's branch selection does.
-// Two of the laws in one theory overlap through a pattern, as get-get
-// overlaps itself; those are in the twin until #2116.
+// Two of the laws in one theory overlap, and get-get overlaps itself through
+// its pattern; each pair joins in the second-order reading.
 
 /// Storing a value and then reading the state is storing it and continuing
 /// at it.
@@ -29,4 +29,28 @@ theory StatePutPut {
   oper get : (k : pi+ (s : S) . C) --> C;
   oper put : (s : S, k : C) --> C;
   rule putPut : put(s, put(u, k)) <=> put(u, k);
+}
+
+/// Put-get and put-put together. Put-put's continuation can be a `get`, so
+/// its inner `put` is a put-get redex; both reducts store the second value
+/// and continue at it (#2116).
+@[ checks ]
+theory StatePutLaws {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putPut : put(s, put(u, k)) <=> put(u, k);
+}
+
+/// Reading twice is reading once at the same state. The inner `get` is an
+/// instance of the rule's own left side through its pattern, and both
+/// reducts read once and continue at that state three times (#2116).
+@[ checks ]
+theory StateGetGet {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
 }

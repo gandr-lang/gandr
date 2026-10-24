@@ -28,8 +28,10 @@
 //! 3. each derived rule is, up to its variables' names, the two normal forms
 //!    under the rules before it of the critical pair it names, so it is an
 //!    equation the rules before it prove;
-//! 4. no rule that instantiates a variable overlaps or is overlapped by a rule,
-//!    and every other critical pair of the rules joins.
+//! 4. no conditioned rule overlaps or is overlapped by a rule, and every
+//!    critical pair of the others joins: a pair one of whose rules instantiates
+//!    a variable in the second-order reading of [`higher`], every other first
+//!    order.
 //!
 //! By the critical pair lemma and Newman's lemma the rules are then confluent
 //! and terminating, and by step 3 they decide exactly the equations the
@@ -49,13 +51,16 @@
 //! constructor of one field and an occurrence as a constant; the order reads
 //! a binding field and its variable as the abstraction and bound-occurrence
 //! formers, and an atom's abstraction and its atom as ground symbols. A
-//! pattern instantiates its variable at bound variables alone. No
-//! substitution shifts that number in the decision. Where some
+//! pattern instantiates its variable at bound variables alone, and the
+//! first-order steps shift no occurrence's number. Where some
 //! operation's input port takes an atom, so a term can name one, a rule that
 //! states a freshness condition, or whose variable stands under other
 //! abstractions at one occurrence than at another, is conditioned: it fires
 //! only where its instance names no atom it may not, renumbering the atoms a
-//! moved instance names, which is a question about a ground instance. So a
+//! moved instance names, which is a question about a ground instance. For a
+//! rule that instantiates a variable only atom abstractions count: its
+//! second-order reading substitutes a variable's instance across a binding
+//! field without capture. So a
 //! conditioned rule takes part in no critical pair, its overlaps refused by
 //! name, and fires in no normal form the decision computes; the critical
 //! pairs of the other rules join without it, and so join in the whole system.
@@ -66,8 +71,11 @@
 //! critical pairs come from unification with an occurs check. A rule that
 //! instantiates a variable — a second-order rule, `let(u, t) ==> t(u)` —
 //! substitutes under a binder no first-order term marks, so it rewrites no
-//! term the decision normalizes; the orthogonality step 4 asks of it is what
-//! keeps the critical pair lemma in reach for patterns (Mayr and Nipkow).
+//! term the first-order pairs normalize; a pair either of whose rules
+//! instantiates a variable is found and normalized in the second-order
+//! reading, where the variable stands for a term over the names it is applied
+//! to and its instance substitutes for them, and the critical pair lemma for
+//! patterns (Mayr and Nipkow) decides it.
 //!
 //! # References
 //!
@@ -118,6 +126,8 @@ use crate::presented::RuleIndex;
 use crate::presented::RuleVariable;
 use crate::term::ConstantIndex;
 use crate::term::ConstructorTag;
+use crate::theory_rules::higher::Higher;
+use crate::theory_rules::higher::Pair;
 
 /// The nodes one presentation's decision may scan or copy, at every caller:
 /// a bound on a pathological presentation, far above the few million a
@@ -372,6 +382,41 @@ impl From<OperationRank> for u32
     }
 }
 
+/// The number of binders, of either kind, between an occurrence and the
+/// binder naming it: the occurrence's de Bruijn index.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct BinderDistance(usize);
+
+impl From<usize> for BinderDistance
+{
+    /// The distance `binders`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(binders: usize) -> Self
+    {
+        Self(binders)
+    }
+}
+
+impl From<BinderDistance> for usize
+{
+    /// The distance's binder count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(distance: BinderDistance) -> Self
+    {
+        distance.0
+    }
+}
+
 /// What a symbol applies, as the order reads it.
 ///
 /// # Specification
@@ -389,12 +434,12 @@ pub enum SymbolKind
     /// An atom named inside an abstraction of it, by the binders between it
     /// and the one binding it: a constant below every operation, as a
     /// constructor is.
-    Occurrence,
+    Occurrence(BinderDistance),
     /// A binding field over its body: the order's abstraction former.
     Field,
     /// A variable named inside a binding field of it, by the binders between
     /// it and the one binding it: the order's bound occurrence.
-    Bound,
+    Bound(BinderDistance),
 }
 
 /// One node of a rule side, in pre-order: a symbol applied to the next
@@ -432,7 +477,8 @@ pub struct TheoryRule
     /// The right side, in pre-order.
     right: Box<[TheoryNode]>,
     /// Whether a side instantiates a variable: a second-order rule, which
-    /// rewrites no term the decision normalizes and overlaps no rule.
+    /// rewrites no first-order term and whose critical pairs are decided in
+    /// the second-order reading.
     instantiates: bool,
     /// Whether the rule states a freshness condition or moves a variable
     /// across an abstraction where a term can name an atom: it fires only
@@ -586,7 +632,8 @@ pub enum TheoryRuleFault
     /// rank not in its one numeral spelling.
     Unreadable,
     /// A side is not one term, the left side is not headed by an operation,
-    /// numbers its variables out of order or instantiates a variable.
+    /// numbers its variables out of order or instantiates a variable other
+    /// than at distinct bound occurrences.
     Malformed,
     /// The right side names a variable the left side does not bind.
     Unbound,
@@ -600,8 +647,9 @@ pub enum TheoryRuleFault
     /// forms.
     Diverges(RuleIndex),
     /// The rule, overlapped by the one named, is one of two overlapping rules
-    /// at least one of which instantiates a variable: a second-order rule takes
-    /// part in no critical pair.
+    /// at least one of which instantiates a variable, and unifying their left
+    /// sides meets a variable applied to other than distinct bound names,
+    /// which pattern unification does not decide.
     Overlaps(RuleIndex),
     /// The decision's fuel ran out at the rule.
     Exhausted,
@@ -735,9 +783,9 @@ impl TheoryRules
     ///   occurrence on its left side, then on its right. Where some operation's
     ///   input port is at a sort the sort chain states an atom sort (`Atom`), a
     ///   rule followed by a condition, or whose variable stands under other
-    ///   binders at one occurrence than at another, is conditioned; where none
-    ///   is, no term names an atom, a condition holds of every instance, and no
-    ///   rule is.
+    ///   binders at one occurrence than at another — atom abstractions alone
+    ///   for a rule with an `Inst` — is conditioned; where none is, no term
+    ///   names an atom, a condition holds of every instance, and no rule is.
     /// - fails: [`TheoryRuleFault::Unreadable`] at the rule the chain stops
     ///   being readable at: a member out of that order, a condition before
     ///   every written rule, a term position holding no term, a field that is
@@ -787,18 +835,21 @@ impl TheoryRules
     /// - requires: nothing — the rules may be arbitrary producer bytes.
     /// - ensures: `Ok(())` exactly when, in order: every rule is well formed
     ///   (both sides one term over known symbols, the left side headed by an
-    ///   operation, instantiating nothing, and its variables numbered by first
-    ///   occurrence, every right variable bound on the left); the path order
-    ///   puts every left side above its right; each derived rule's peak names
-    ///   two rules before it and an operation position of the outer one's left
-    ///   side, other than the root of one rule overlapping itself, whose
-    ///   critical pair's two normal forms under the rules before it are the
-    ///   rule's two sides, up to renaming its variables; no rule instantiating
-    ///   a variable, and then no conditioned rule, overlaps or is overlapped by
-    ///   a rule; and every other critical pair normalizes to one term under the
-    ///   rules that instantiate nothing and are not conditioned. Otherwise the
-    ///   first failing rule in that order and its fault; a divergent,
-    ///   second-order or conditioned overlap is named at its outer rule.
+    ///   operation and instantiating a variable only at distinct bound
+    ///   occurrences, its variables numbered by first occurrence, every right
+    ///   variable bound on the left); the path order puts every left side above
+    ///   its right; each derived rule's peak names two rules before it and an
+    ///   operation position of the outer one's left side, other than the root
+    ///   of one rule overlapping itself, whose critical pair's two normal forms
+    ///   under the rules before it are the rule's two sides, up to renaming its
+    ///   variables; every critical pair one of whose rules instantiates a
+    ///   variable, neither conditioned, joins in the second-order reading
+    ///   ([`Self::second_order`]); no conditioned rule overlaps or is
+    ///   overlapped by a rule; and every other critical pair normalizes to one
+    ///   term under the rules that instantiate nothing and are not conditioned.
+    ///   Otherwise the first failing rule in that order and its fault; a
+    ///   divergent, undecided or conditioned overlap is named at its outer
+    ///   rule.
     /// - provides: the kernel's own decision that a presentation's rules are a
     ///   convergent rewriting system deciding the equations its written rules
     ///   generate, re-derived at every admission and replay.
@@ -818,8 +869,10 @@ impl TheoryRules
     ///   stating a side its peak does not reach, is refused at itself; a rule
     ///   the ranks do not decrease is unoriented and the same rule under a
     ///   higher rank for its head orients; each malformation is named; a `let`
-    ///   instantiating its own argument converges, β is unoriented, and a
-    ///   second-order rule overlapping another is refused at the overlap; scope
+    ///   instantiating its own argument converges, β is unoriented, a second
+    ///   `let` rule at a constant joins it and one rewriting the constant apart
+    ///   parts from it; get-get joins its own instance through its pattern; a
+    ///   relative monad's associativity joins itself and both unit laws; scope
     ///   extrusion and garbage collection where a port takes the channel each
     ///   converge alone and are refused together at their overlap.
     /// - witness: `theory_rules::tests::a_unit_law_converges_and_a_second_unit_parts_from_it`
@@ -827,6 +880,8 @@ impl TheoryRules
     /// - witness: `theory_rules::tests::a_rule_the_ranks_do_not_decrease_is_unoriented`
     /// - witness: `theory_rules::tests::a_malformed_rule_is_refused_by_its_fault`
     /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
+    /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
+    /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
     /// - witness: `theory_rules::tests::a_conditioned_rule_converges_alone_and_overlaps_nothing`
     #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules.len()))]
     #[inline]
@@ -863,6 +918,7 @@ impl TheoryRules
                 Err(Exhausted) => return Err(refuse(index, TheoryRuleFault::Exhausted)),
             }
         }
+        self.second_order(fuel)?;
         for (outer, rule) in self.rules.iter().enumerate() {
             for (position, &node) in rule.left().iter().enumerate() {
                 if !matches!(node, TheoryNode::Symbol(_)) {
@@ -878,24 +934,22 @@ impl TheoryRules
                         inner: RuleIndex::from(inner),
                     };
                     let other = self.rules.get(inner);
-                    let apart =
-                        if rule.instantiates || other.is_some_and(|other| other.instantiates) {
-                            Some(TheoryRuleFault::Overlaps(RuleIndex::from(inner)))
-                        }
-                        else if rule.conditioned || other.is_some_and(|other| other.conditioned) {
-                            Some(TheoryRuleFault::Conditioned(RuleIndex::from(inner)))
-                        }
-                        else {
-                            None
-                        };
-                    if let Some(fault) = apart {
+                    if rule.conditioned || other.is_some_and(|other| other.conditioned) {
                         match self.overlap(&self.rules, peak, &mut work, fuel) {
                             Ok(Verdict::Fails) => continue,
-                            Ok(Verdict::Holds) => return Err(refuse(outer, fault)),
+                            Ok(Verdict::Holds) => {
+                                return Err(refuse(
+                                    outer,
+                                    TheoryRuleFault::Conditioned(RuleIndex::from(inner)),
+                                ));
+                            },
                             Err(Exhausted) => {
                                 return Err(refuse(outer, TheoryRuleFault::Exhausted));
                             },
                         }
+                    }
+                    if rule.instantiates || other.is_some_and(|other| other.instantiates) {
+                        continue;
                     }
                     let joined = self
                         .pair(&self.rules, peak, &mut work, fuel)
@@ -927,6 +981,78 @@ impl TheoryRules
                         },
                         Err(Exhausted) => return Err(refuse(outer, TheoryRuleFault::Exhausted)),
                     }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Decide the critical pairs one of whose rules instantiates a variable,
+    /// neither of them conditioned, in the second-order reading: each found by
+    /// pattern unification and joined by normalizing both reducts under every
+    /// rule not conditioned.
+    ///
+    /// # Specification
+    /// - requires: the rules well formed, as [`Self::decide`] checks first.
+    /// - ensures: `Ok(())` exactly when every such pair, in order of the outer
+    ///   rule, a symbol position of its left side and the inner rule, other
+    ///   than the root of one rule overlapping itself, joins. Otherwise the
+    ///   first other one at its outer rule: [`TheoryRuleFault::Diverges`] where
+    ///   its reducts normalize apart, [`TheoryRuleFault::Overlaps`] where
+    ///   unification meets a variable applied to other than distinct bound
+    ///   names, [`TheoryRuleFault::Exhausted`] where `fuel` runs out.
+    /// - provides: the verdict on second-order pairs a producer reports before
+    ///   the kernel replays it in [`Self::decide`].
+    /// - fails: as `- ensures:`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::decide`]'s second-order cases.
+    /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
+    /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
+    /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
+    #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refusal| usize::from(refusal.rule) < self.rules.len()))]
+    #[inline]
+    pub fn second_order(
+        &self,
+        fuel: &mut RewriteFuel,
+    ) -> Result<(), TheoryRuleRefusal>
+    {
+        if !self.rules.iter().any(|rule| rule.instantiates) {
+            return Ok(());
+        }
+        let higher = Higher::new(self);
+        for (outer, rule) in self.rules.iter().enumerate() {
+            for (position, &node) in rule.left().iter().enumerate() {
+                if !matches!(node, TheoryNode::Symbol(_)) {
+                    continue;
+                }
+                for (inner, other) in self.rules.iter().enumerate() {
+                    let apart = (position == 0 && inner == outer)
+                        || rule.conditioned
+                        || other.conditioned
+                        || (!rule.instantiates && !other.instantiates);
+                    if apart {
+                        continue;
+                    }
+                    let fault = match higher.pair(
+                        RuleIndex::from(outer),
+                        Position(position),
+                        RuleIndex::from(inner),
+                        fuel,
+                    ) {
+                        Ok(Pair::Joins) => continue,
+                        Ok(Pair::Parts) => TheoryRuleFault::Diverges(RuleIndex::from(inner)),
+                        Ok(Pair::Undecided) => TheoryRuleFault::Overlaps(RuleIndex::from(inner)),
+                        Err(Exhausted) => TheoryRuleFault::Exhausted,
+                    };
+                    return Err(TheoryRuleRefusal {
+                        rule: RuleIndex::from(outer),
+                        fault,
+                    });
                 }
             }
         }
@@ -1070,7 +1196,7 @@ impl TheoryRules
                                     TheoryNode::Symbol(symbol)
                                         if matches!(
                                             self.symbols.get(symbol.0),
-                                            Some(&(SymbolKind::Bound, _))
+                                            Some(&(SymbolKind::Bound(_), _))
                                         ) =>
                                     {
                                         Some(symbol)
@@ -1501,8 +1627,9 @@ impl TheoryRules
     ///   a binder the first-order term does not mark. A conditioned rule fires
     ///   nowhere either: whether its instance names an atom it may not is a
     ///   question about the instance this reading does not ask.
-    ///   [`Self::decide`] has refused every overlap either takes part in, so no
-    ///   critical pair needs one to join.
+    ///   [`Self::decide`] refuses every overlap a conditioned rule takes part
+    ///   in and decides every pair a second-order rule takes part in by the
+    ///   second-order reading, so a first-order pair is decided without either.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — a normal form is what this computes; checking one
@@ -1945,12 +2072,12 @@ impl Term for RuleSide<'_>
         match self.side.get(usize::from(node)) {
             Some(&TheoryNode::Symbol(symbol)) => match self.rules.symbols.get(symbol.0) {
                 Some(&(SymbolKind::Field, _)) => Former::Abstraction,
-                Some(&(SymbolKind::Bound, _)) => Former::Bound(symbol),
+                Some(&(SymbolKind::Bound(_), _)) => Former::Bound(symbol),
                 Some(&(
                     SymbolKind::Operation(_)
                     | SymbolKind::Constructor
                     | SymbolKind::Abstraction
-                    | SymbolKind::Occurrence,
+                    | SymbolKind::Occurrence(_),
                     _,
                 ))
                 | None => Former::Symbol(symbol),
@@ -2025,9 +2152,9 @@ impl Precedence for StatedRanks<'_>
             Some(&(
                 SymbolKind::Constructor
                 | SymbolKind::Abstraction
-                | SymbolKind::Occurrence
+                | SymbolKind::Occurrence(_)
                 | SymbolKind::Field
-                | SymbolKind::Bound,
+                | SymbolKind::Bound(_),
                 _,
             ))
             | None => Place::Ground,
@@ -2591,9 +2718,9 @@ struct ReadBuffers<'arena>
     scopes: BTreeMap<&'arena StringLiteral, (usize, usize)>,
     /// The binders of every variable's first occurrence, end to end.
     above: Vec<(&'arena StringLiteral, Binds)>,
-    /// Whether some variable of the rule stands under other abstractions at
+    /// How far some variable of the rule stands under other abstractions at
     /// one occurrence than at another.
-    moved: bool,
+    moved: Moved,
     /// Whether some variable of the rule stands under other abstractions at
     /// one occurrence on the left side than at another there.
     split: bool,
@@ -2603,6 +2730,25 @@ struct ReadBuffers<'arena>
     valued: BTreeSet<RuleVariable>,
     /// The variables with an occurrence on the left side anywhere else.
     served: BTreeSet<RuleVariable>,
+}
+
+/// How far a rule moves a variable: whether some occurrence stands under
+/// other binders than its first, and whether an atom abstraction is among
+/// those that differ.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+enum Moved
+{
+    /// Every occurrence stands under the binders of its first.
+    #[default]
+    Stays,
+    /// Some occurrence stands under other binding fields, and the same atom
+    /// abstractions.
+    AcrossFields,
+    /// Some occurrence stands under other atom abstractions.
+    AcrossAtoms,
 }
 
 /// A reading of a presentation value's rule chain.
@@ -2772,9 +2918,13 @@ impl<'arena> Reader<'arena>
                         SymbolKind::Constructor
                     },
                     (Class::Abstraction, _) => SymbolKind::Abstraction,
-                    (Class::Occurrence(_), _) => SymbolKind::Occurrence,
+                    (Class::Occurrence(between), _) => {
+                        SymbolKind::Occurrence(BinderDistance(between))
+                    },
                     (Class::Field, _) => SymbolKind::Field,
-                    (Class::BoundVariable(_), _) => SymbolKind::Bound,
+                    (Class::BoundVariable(between), _) => {
+                        SymbolKind::Bound(BinderDistance(between))
+                    },
                 };
                 (kind, arity)
             })
@@ -3028,9 +3178,10 @@ impl<'arena> Reader<'arena>
     ///   every occurrence of which on `left` is an argument of an operation at
     ///   one of the value ports; where a term can name an atom, the rule
     ///   conditioned when a variable stands under other abstractions at one
-    ///   occurrence than at its first, and itself recorded as the first split
-    ///   rule unless one is when that occurrence is on `left`; [`None`] when
-    ///   either term is not one the code writes.
+    ///   occurrence than at its first, counting atom abstractions alone when
+    ///   the rule instantiates a variable, and itself recorded as the first
+    ///   split rule unless one is when that occurrence is on `left`; [`None`]
+    ///   when either term is not one the code writes.
     /// - panics: none.
     /// - executable: none — [`TheoryRules::read`] carries the predicate.
     ///
@@ -3048,7 +3199,7 @@ impl<'arena> Reader<'arena>
         buffers.variables.clear();
         buffers.scopes.clear();
         buffers.above.clear();
-        buffers.moved = false;
+        buffers.moved = Moved::Stays;
         buffers.split = false;
         buffers.valued.clear();
         buffers.served.clear();
@@ -3064,7 +3215,12 @@ impl<'arena> Reader<'arena>
             .collect();
         let mut rule = TheoryRule::new(sides.0.into(), sides.1.into()).valued(values);
         if self.naming == Naming::Named {
-            rule.conditioned = buffers.moved;
+            rule.conditioned = if rule.instantiates {
+                buffers.moved == Moved::AcrossAtoms
+            }
+            else {
+                buffers.moved != Moved::Stays
+            };
             if buffers.split {
                 let index = RuleIndex::from(self.rules.len());
                 let _first = self.split.get_or_insert(index);
@@ -3084,7 +3240,7 @@ impl<'arena> Reader<'arena>
     ///   variable, instantiated or not, takes its place among
     ///   `buffers.variables`, appended when new, and the binders above it,
     ///   outermost first, are kept at its first occurrence and compared at
-    ///   every other, `buffers.moved` set when they differ; an `Occ` is the
+    ///   every other, `buffers.moved` raised when they differ; an `Occ` is the
     ///   occurrence symbol and a `Bvar` the bound symbol of the number of
     ///   binders between it and the innermost of its kind naming it; on the
     ///   left side, a variable an `App` takes at one of the value ports is kept
@@ -3267,8 +3423,8 @@ fn variable<'arena>(
 }
 
 /// Keep the atoms in scope at `name`'s first occurrence, or compare them with
-/// those at a later one, setting `buffers.moved` when they differ, and
-/// `buffers.split` too when the later one is on the left side.
+/// those at a later one, raising `buffers.moved` to how far they differ, and
+/// setting `buffers.split` when the later one is on the left side.
 ///
 /// # Specification
 /// trivial.
@@ -3278,9 +3434,21 @@ fn scoped<'arena>(
 )
 {
     if let Some(&(start, end)) = buffers.scopes.get(name) {
-        if buffers.above.get(start .. end) != Some(buffers.atoms.as_slice()) {
-            buffers.moved = true;
+        let first = buffers.above.get(start .. end).unwrap_or_default();
+        if first != buffers.atoms.as_slice() {
             buffers.split |= buffers.left;
+            let atom = |binder: &&(&StringLiteral, Binds)| binder.1 == Binds::Atom;
+            let across = if first
+                .iter()
+                .filter(atom)
+                .eq(buffers.atoms.iter().filter(atom))
+            {
+                Moved::AcrossFields
+            }
+            else {
+                Moved::AcrossAtoms
+            };
+            buffers.moved = buffers.moved.max(across);
         }
         return;
     }
@@ -3288,6 +3456,8 @@ fn scoped<'arena>(
     buffers.above.extend_from_slice(&buffers.atoms);
     let _new = buffers.scopes.insert(name, (start, buffers.above.len()));
 }
+
+mod higher;
 
 #[cfg(test)]
 mod tests;

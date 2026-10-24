@@ -243,7 +243,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::RulesUnoriented { .. } => "a rule that may not end",
         LoweringRefusal::RulesNonLinear { .. } => "a rule matching one variable twice",
         LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
-        LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
+        LoweringRefusal::RulesOverlapSecondOrder { .. } => "parts from a rule that substitutes",
         LoweringRefusal::RulesOverlapCondition { .. } => {
             "overlaps a rule firing on a freshness condition"
         },
@@ -657,7 +657,7 @@ mod tests
             LoweringRefusal::RulesUnoriented { .. } => "a rule that may not end",
             LoweringRefusal::RulesNonLinear { .. } => "a rule matching one variable twice",
             LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
-            LoweringRefusal::RulesOverlapSecondOrder { .. } => "overlaps a rule that substitutes",
+            LoweringRefusal::RulesOverlapSecondOrder { .. } => "parts from a rule that substitutes",
             LoweringRefusal::RulesOverlapCondition { .. } => {
                 "overlaps a rule firing on a freshness condition"
             },

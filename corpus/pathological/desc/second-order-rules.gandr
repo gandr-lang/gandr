@@ -1,7 +1,7 @@
 // The twin of `model/desc/second-order-rules.gandr`: β, whose instantiated
 // variable stands under a binder the order cannot see past; β's first-order
 // shadow, which loses the binding; an instantiation at the wrong count; and ζ
-// beside a rule it overlaps.
+// beside a rule rewriting its redex apart.
 
 /// β substitutes `lam`'s body, which stands under `lam` rather than as an
 /// argument of `app`: the order does not put `t(u)` below the redex, so the
@@ -34,14 +34,13 @@ theory LetTwice {
   rule zeta : let(u, t) <=> t(u, u);
 }
 
-/// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap, and
-/// a second-order rule takes part in no critical pair, even one whose reducts
-/// agree (#2116).
+/// ζ beside a rule rewriting `let` at `zero()` to `zero()`: their left sides
+/// overlap at the root, and the reducts `t(zero())` and `zero()` part.
 @[ refuses("RulesOverlapSecondOrder") ]
-theory LetOverlap {
+theory LetToZero {
   sort Tm : Type+;
   oper zero : () --> Tm;
   oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u);
-  rule zetaZero : let(zero(), t) <=> t(zero());
+  rule toZero : let(zero(), t) <=> zero();
 }

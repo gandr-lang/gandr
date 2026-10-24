@@ -1,16 +1,15 @@
-// The twin of `model/desc/relative-monad.gandr`: associativity, whose left
-// side overlaps itself while its right side substitutes under a binder, so
-// it waits on critical pairs between second-order rules (#2116,
-// `second-order-rules.gandr`'s `LetOverlap`).
+// The twin of `model/desc/relative-monad.gandr`: an associativity that drops
+// the inner continuation, whose overlap with the left unit law parts.
 
-/// Associativity: extending an extension is extending by the composite
-/// continuation. The inner `ext(m, k)` is an instance of the rule's own left
-/// side, and the rule instantiates `k` under `bind x .`, so the overlap is
-/// refused until such a pair can join (#2116).
+/// Extending an extension by `l` is extending by `l` alone: the inner
+/// continuation `k` is lost. Against the left unit law at `ext(ext(ret(a), k),
+/// l)`, one rule leaves `l(a)` and the other `ext(k(a), l)`.
 @[ refuses("RulesOverlapSecondOrder") ]
-theory MonadAssoc {
+theory MonadLossy {
   sort V : Type+;
   sort C : Type;
+  oper ret : (a : V) --> C;
   oper ext : (m : C, k : pi+ (x : V) . C) --> C;
-  rule assoc : ext(ext(m, k), l) <=> ext(m, bind x . ext(k(x), l));
+  rule unitL : ext(ret(a), k) <=> k(a);
+  rule lossy : ext(ext(m, k), l) <=> ext(m, l);
 }
