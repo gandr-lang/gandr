@@ -1,7 +1,7 @@
 //! The crate is closed in its tier: its normal and build dependencies reach
-//! no other crate of the workspace, so every wrapper in its signatures is its
-//! own and no dependent can reach a crate through it that its own manifest
-//! never named.
+//! no other crate of the workspace but the path orders it decides termination
+//! by, whose types its signatures never name, so every wrapper in its
+//! signatures is its own.
 //!
 //! The rule is checked against the resolver's own answer rather than the
 //! manifest's text, so an edge arriving transitively fails it too.
@@ -14,8 +14,11 @@ const PACKAGE: &str = "gandr-theory-levitation";
 /// The prefix every package of the workspace carries.
 const WORKSPACE_PREFIX: &str = "gandr-";
 
+/// The one workspace crate the crate depends on.
+const PATH_ORDERS: &str = "gandr-theory-path-orders";
+
 #[test]
-fn the_crate_depends_on_no_other_workspace_crate()
+fn the_crate_depends_on_no_workspace_crate_but_the_path_orders()
 {
     let output = Command::new(env!("CARGO"))
         .arg("tree")
@@ -47,11 +50,11 @@ fn the_crate_depends_on_no_other_workspace_crate()
         "the tree is rooted at this crate, so the query found it"
     );
     let workspace_dependencies: Vec<&str> = packages
-        .filter(|name| name.starts_with(WORKSPACE_PREFIX))
+        .filter(|name| name.starts_with(WORKSPACE_PREFIX) && *name != PATH_ORDERS)
         .collect();
     assert!(
         workspace_dependencies.is_empty(),
-        "the crate reaches no other workspace crate through a normal or build edge, found: {}",
+        "the crate reaches no workspace crate but the path orders through a normal or build edge, found: {}",
         workspace_dependencies.join(", ")
     );
 }

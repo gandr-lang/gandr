@@ -67,13 +67,13 @@
 //!
 //! # Implementation shape
 //!
-//! Both commands are laid out in one node table each, every node's children at
-//! strictly smaller indices and the root last. The layout reads the producer
-//! and consumer tables in place, each in its own index order, which already
-//! puts every node after its children. The relation is then filled by two
-//! nested loops over `(left index, right index)` in increasing order, because
-//! the path order at one pair reads only pairs with a smaller left index, a
-//! smaller right index, or both. Nothing recurses.
+//! Both commands are laid out in one node table each, every node's children
+//! at strictly smaller indices and the root last. The layout reads the
+//! producer and consumer tables in place, each in its own index order, which
+//! already puts every node after its children. The tie-break is the
+//! lexicographic path order of `gandr_theory_path_orders::lpo`, reading each
+//! table from its root and ranking every head at its arity by the precedence
+//! above. Nothing recurses.
 //!
 //! # Reduction order
 //!
@@ -100,8 +100,21 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::convert::Infallible;
 
 use anodized::spec;
+use gandr_theory_path_orders::Former;
+use gandr_theory_path_orders::Node;
+use gandr_theory_path_orders::Place;
+use gandr_theory_path_orders::Precedence;
+use gandr_theory_path_orders::Rank;
+use gandr_theory_path_orders::Status;
+use gandr_theory_path_orders::Term;
+use gandr_theory_path_orders::Valuation;
+use gandr_theory_path_orders::Valued;
+use gandr_theory_path_orders::lpo;
+use gandr_theory_path_orders::lpo::Buffers;
+use gandr_theory_path_orders::lpo::Orientation;
 use gandr_theory_spec_combinators::Mark;
 use gandr_theory_spec_combinators::appended;
 use quenchant_shape::shape::Maybe;
@@ -640,21 +653,16 @@ fn precedence_cmp(
     )
 }
 
-/// Whether `left`'s root strictly exceeds `right`'s root in the path order.
-///
-/// The relation is filled by two nested loops over `(left index, right index)`
-/// in increasing order. That is sound because the path order at one pair
-/// reads only pairs with a strictly smaller left index (the subterm case), a
-/// strictly smaller right index (the "greater than every argument" side
-/// condition), or both (the lexicographic comparison of arguments), and every
-/// child's index is strictly smaller than its parent's.
+/// Whether `left`'s root strictly exceeds `right`'s root in the path order:
+/// the lexicographic path order of [`gandr_theory_path_orders::lpo`] over the
+/// two laid-out commands, every head at its arity ranked by
+/// [`precedence_cmp`].
 ///
 /// # Specification
 /// - ensures: positive exactly when the two roots stand in the strict
 ///   lexicographic path order induced by [`precedence_cmp`].
 /// - panics: none.
-/// - intension: no recursion; time is the product of the two node counts times
-///   the arity.
+/// - intension: no recursion; one table over the two node counts.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — identical, proper-subterm, precedence-separated and
@@ -671,217 +679,209 @@ fn strictly_greater(
     right: &FlatTerm<'_>,
 ) -> PathVerdict
 {
-    let right_count = right.nodes.len();
-    let mut equal = RelationTable::default();
-    let mut greater = RelationTable::default();
-    for left_node in &left.nodes {
-        let left_children = left.children_of(left_node);
-        let mut equal_row: Vec<PathVerdict> = Vec::with_capacity(right_count);
-        let mut greater_row: Vec<PathVerdict> = Vec::with_capacity(right_count);
-        for right_node in &right.nodes {
-            let right_children = right.children_of(right_node);
-            let same = left_node.head == right_node.head
-                && left_children.len() == right_children.len()
-                && left_children
-                    .iter()
-                    .zip(right_children)
-                    .all(|(&child, &other)| equal.at(child, other).0);
-            equal_row.push(PathVerdict(same));
-            let pair = NodePair {
-                left: left_node,
-                left_children,
-                right: right_node,
-                right_children,
-            };
-            greater_row.push(exceeds(pair, &equal, &greater, &greater_row));
-        }
-        equal.rows.push(equal_row);
-        greater.rows.push(greater_row);
+    let heads = Heads::of(left, right);
+    PathVerdict(matches!(
+        lpo::orient(&Side(left), &Side(right), &heads, &mut Buffers::default()),
+        Orientation::Oriented(_)
+    ))
+}
+
+/// A head at its arity: the symbol the path order compares.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Applied<'term>
+{
+    /// The head.
+    head: Head<'term>,
+    /// Its child count.
+    arity: ChildCount,
+}
+
+/// The order of two heads at their arities by [`precedence_cmp`], a
+/// metavariable beside everything.
+///
+/// # Specification
+/// trivial.
+fn ranked(
+    one: Applied<'_>,
+    two: Applied<'_>,
+) -> Ordering
+{
+    match precedence_cmp(one.head, one.arity, two.head, two.arity) {
+        Maybe::Present(order) => order,
+        Maybe::Absent(_) => Ordering::Equal,
     }
-    greater.roots()
 }
 
-/// One pair of nodes being compared, with their children.
-#[derive(Clone, Copy, Debug)]
-struct NodePair<'pair, 'term>
-{
-    /// The left node.
-    left: &'pair FlatNode<'term>,
-    /// The left node's children.
-    left_children: &'pair [FlatIndex],
-    /// The right node.
-    right: &'pair FlatNode<'term>,
-    /// The right node's children.
-    right_children: &'pair [FlatIndex],
-}
-
-/// A filled half of the path-order relation over one pair of laid-out
-/// terms: `rows[left index][right index]`.
+/// A laid-out command as the path order reads it: from its root, so the
+/// order's position `n` is the table's node `n` places from its end.
+///
+/// # Specification
+/// trivial.
 #[repr(transparent)]
-#[derive(Debug, Default)]
-struct RelationTable
-{
-    /// One row per left node, each holding one answer per right node.
-    rows: Vec<Vec<PathVerdict>>,
-}
+#[derive(Clone, Copy, Debug)]
+struct Side<'flat, 'term>(&'flat FlatTerm<'term>);
 
-impl RelationTable
+impl<'term> Side<'_, 'term>
 {
-    /// The answer at `(left, right)`, negative outside the filled region.
+    /// The table's node at the order's position `node`.
     ///
     /// # Specification
-    /// - ensures: the recorded answer when both indices are inside the filled
-    ///   region, and a negative answer otherwise — a default an increasing fill
-    ///   never reaches.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty, ragged and filled relations expose recorded
-    ///   true and false entries and negative out-of-range answers. Shifted
-    ///   indices and a positive missing-cell default change the result.
-    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
-    #[spec(ensures: |output| output.0 == self.rows.get(left.0).and_then(|row| row.get(right.0))
-        .is_some_and(|answer| answer.0))]
+    /// trivial.
     fn at(
         &self,
-        left: FlatIndex,
-        right: FlatIndex,
-    ) -> PathVerdict
+        node: Node,
+    ) -> Option<&FlatNode<'term>>
     {
-        self.rows
-            .get(left.0)
-            .and_then(|row| row.get(right.0))
-            .copied()
-            .unwrap_or_default()
+        let last = self.0.nodes.len().checked_sub(1)?;
+        self.0.nodes.get(last.checked_sub(usize::from(node))?)
     }
+}
 
-    /// The last entry of the last row: the two roots' answer once the fill is
-    /// complete.
+impl<'term> Term for Side<'_, 'term>
+{
+    type Bound = Infallible;
+    type Symbol = Applied<'term>;
+    type Variable = &'term MetaVar;
+
+    /// The command's node count.
     ///
     /// # Specification
-    /// - ensures: the root pair's answer for a filled table, and a negative
-    ///   answer for an empty one.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty rows and filled relations whose last entry is
-    ///   true or false expose opposite root answers. Using a first entry or a
-    ///   positive empty default changes the result.
-    /// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
-    #[spec(ensures: |output| output.0 == self.rows.last().is_some_and(|row| row.last().is_some_and(|answer| answer.0)))]
-    fn roots(&self) -> PathVerdict
+    /// trivial.
+    fn end(&self) -> Node
     {
-        self.rows
-            .last()
-            .and_then(|row| row.last())
-            .copied()
-            .unwrap_or_default()
+        Node::from(self.0.nodes.len())
     }
-}
 
-/// Whether the left node exceeds the right node, reading the filled rows.
-///
-/// `current_row` holds the greater-than answers for the left node against
-/// every right node already visited in this row, which is exactly the set the
-/// "and it exceeds each of the right's arguments" side condition reads.
-///
-/// # Specification
-/// - requires: `equal` and `greater` hold every row with a strictly smaller
-///   left index, and `current_row` every column with a strictly smaller right
-///   index.
-/// - ensures: the strict path-order answer for this pair.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — valid filled relation prefixes compare function heads,
-///   variable heads and a larger child against the other root. Exact path
-///   comparisons reject ranked variables, a lost subterm case and skipped
-///   argument domination.
-/// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
-#[spec(
-    requires: pair.left_children.iter().all(|child| equal.rows.get(child.0).is_some_and(|row| current_row.len() < row.len())
-        && greater.rows.get(child.0).is_some_and(|row| current_row.len() < row.len()))
-        && pair.right_children.iter().all(|child| child.0 < current_row.len()),
-    ensures: |output| !matches!(pair.left.head, Head::Var(_)) || !output.0,
-)]
-fn exceeds(
-    pair: NodePair<'_, '_>,
-    equal: &RelationTable,
-    greater: &RelationTable,
-    current_row: &[PathVerdict],
-) -> PathVerdict
-{
-    // A metavariable exceeds nothing.
-    if matches!(pair.left.head, Head::Var(_)) {
-        return PathVerdict(false);
-    }
-    let right_index = FlatIndex(current_row.len());
-    // The subterm case: some argument of the left already reaches the right.
-    let subterm = pair
-        .left_children
-        .iter()
-        .any(|&child| greater.at(child, right_index).0 || equal.at(child, right_index).0);
-    if subterm {
-        return PathVerdict(true);
-    }
-    // Both remaining cases need the left to exceed every argument of the
-    // right.
-    let over_arguments = pair
-        .right_children
-        .iter()
-        .all(|&arg| current_row.get(arg.0).copied().unwrap_or_default().0);
-    if !over_arguments {
-        return PathVerdict(false);
-    }
-    let precedence = precedence_cmp(
-        pair.left.head,
-        pair.left.child_count,
-        pair.right.head,
-        pair.right.child_count,
-    );
-    match precedence {
-        Maybe::Present(Ordering::Greater) => PathVerdict(true),
-        Maybe::Present(Ordering::Equal) => {
-            lexicographically_greater(pair.left_children, pair.right_children, equal, greater)
-        },
-        Maybe::Present(Ordering::Less) | Maybe::Absent(_) => PathVerdict(false),
-    }
-}
-
-/// Whether the left argument list exceeds the right one lexicographically.
-///
-/// # Specification
-/// - requires: `equal` and `greater` hold every row the two lists index.
-/// - ensures: positive when the first position at which the two are not equal
-///   has the left argument strictly greater; negative when the lists agree
-///   throughout or the first difference goes the other way.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — filled relations compare equal argument lists and first
-///   differences in either direction. Prefix equality is negative; skipping the
-///   first difference or choosing the wrong column changes the answer.
-/// - witness: `order::tests::precedence_and_relation_boundaries_preserve_strictness`
-#[spec(
-    requires: left.iter().zip(right).all(|(left, right)| equal.rows.get(left.0).is_some_and(|row| right.0 < row.len())
-        && greater.rows.get(left.0).is_some_and(|row| right.0 < row.len())),
-    ensures: |output| left.iter().zip(right).find(|&(left, right)| !equal.at(*left, *right).0)
-        .map_or(!output.0, |(left, right)| output == greater.at(*left, *right)),
-)]
-fn lexicographically_greater(
-    left: &[FlatIndex],
-    right: &[FlatIndex],
-    equal: &RelationTable,
-    greater: &RelationTable,
-) -> PathVerdict
-{
-    for (&left_arg, &right_arg) in left.iter().zip(right) {
-        if equal.at(left_arg, right_arg).0 {
-            continue;
+    /// A metavariable leaf as a variable, every other head at its arity as a
+    /// symbol; a position past the command reads as `★`, which is above
+    /// nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn former(
+        &self,
+        node: Node,
+    ) -> Former<Applied<'term>, &'term MetaVar, Infallible>
+    {
+        match self.at(node) {
+            Some(&FlatNode {
+                head: Head::Var(variable),
+                ..
+            }) => Former::Variable(variable),
+            Some(found) => Former::Symbol(Applied {
+                head: found.head,
+                arity: found.child_count,
+            }),
+            None => Former::Symbol(Applied {
+                head: Head::Top,
+                arity: ChildCount(0),
+            }),
         }
-        return greater.at(left_arg, right_arg);
     }
-    PathVerdict(false)
+
+    /// The node's children, left to right, at the order's positions.
+    ///
+    /// # Specification
+    /// trivial.
+    fn arguments(
+        &self,
+        node: Node,
+    ) -> impl Iterator<Item = Node> + Clone
+    {
+        let last = self.0.nodes.len().saturating_sub(1);
+        self.at(node)
+            .map_or(&[][..], |found| self.0.children_of(found))
+            .iter()
+            .map(move |&FlatIndex(child)| Node::from(last.saturating_sub(child)))
+    }
+}
+
+impl Valued for Side<'_, '_>
+{
+    /// No metavariable of a command pattern is a value.
+    ///
+    /// # Specification
+    /// trivial.
+    fn valuation(
+        &self,
+        _variable: &MetaVar,
+    ) -> Valuation
+    {
+        Valuation::Term
+    }
+}
+
+/// Every function head of two laid-out commands at its arity, once each, in
+/// [`precedence_cmp`] order: a head's place is its position.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Debug)]
+struct Heads<'term>(Vec<Applied<'term>>);
+
+impl<'term> Heads<'term>
+{
+    /// The function heads of `left` and `right`, ordered and without repeats.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(
+        left: &FlatTerm<'term>,
+        right: &FlatTerm<'term>,
+    ) -> Self
+    {
+        let mut heads: Vec<Applied<'term>> = left
+            .nodes
+            .iter()
+            .chain(&right.nodes)
+            .filter(|node| !matches!(node.head, Head::Var(_)))
+            .map(|node| Applied {
+                head: node.head,
+                arity: node.child_count,
+            })
+            .collect();
+        heads.sort_by(|&one, &two| ranked(one, two));
+        heads.dedup();
+        Self(heads)
+    }
+}
+
+impl<'term> Precedence for Heads<'term>
+{
+    type Symbol = Applied<'term>;
+
+    /// The head's position among the ordered heads; ground for a head neither
+    /// command holds.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        symbol: Applied<'term>,
+    ) -> Place
+    {
+        self.0
+            .binary_search_by(|&probe| ranked(probe, symbol))
+            .map_or(Place::Ground, |at| {
+                Place::Ranked(Rank::from(u64::try_from(at).unwrap_or(u64::MAX)))
+            })
+    }
+
+    /// Lexicographic, for every head.
+    ///
+    /// # Specification
+    /// trivial.
+    fn status(
+        &self,
+        _symbol: Applied<'term>,
+    ) -> Status
+    {
+        Status::Lexicographic
+    }
 }
 
 #[cfg(test)]
@@ -1046,80 +1046,6 @@ mod tests
             Ordering::Equal,
             path_order_cmp(&ground_term, &variable_term)
         );
-        let empty = RelationTable::default();
-        assert!(!empty.roots().0);
-        assert!(!empty.at(FlatIndex(0), FlatIndex(0)).0);
-        let table = RelationTable {
-            rows: alloc::vec![
-                alloc::vec![PathVerdict(false), PathVerdict(true)],
-                alloc::vec![],
-                alloc::vec![PathVerdict(true), PathVerdict(false)]
-            ],
-        };
-        for (left, right, expected) in [
-            (0, 0, false),
-            (0, 1, true),
-            (1, 0, false),
-            (2, 0, true),
-            (2, 1, false),
-            (2, 2, false),
-            (3, 0, false),
-            (usize::MAX, usize::MAX, false),
-        ] {
-            assert_eq!(expected, table.at(FlatIndex(left), FlatIndex(right)).0);
-        }
-        assert!(!table.roots().0);
-        assert!(
-            !RelationTable {
-                rows: alloc::vec![alloc::vec![]]
-            }
-            .roots()
-            .0
-        );
-        assert!(
-            RelationTable {
-                rows: alloc::vec![alloc::vec![PathVerdict(false), PathVerdict(true)]]
-            }
-            .roots()
-            .0
-        );
-        let equal = RelationTable {
-            rows: alloc::vec![
-                alloc::vec![PathVerdict(true), PathVerdict(false)],
-                alloc::vec![PathVerdict(false), PathVerdict(true)]
-            ],
-        };
-        let greater = RelationTable {
-            rows: alloc::vec![
-                alloc::vec![PathVerdict(false), PathVerdict(false)],
-                alloc::vec![PathVerdict(true), PathVerdict(false)]
-            ],
-        };
-        for (left, right, expected) in [
-            (alloc::vec![], alloc::vec![], false),
-            (alloc::vec![FlatIndex(1)], alloc::vec![FlatIndex(1)], false),
-            (alloc::vec![FlatIndex(1)], alloc::vec![FlatIndex(0)], true),
-            (
-                alloc::vec![FlatIndex(0), FlatIndex(1)],
-                alloc::vec![FlatIndex(1), FlatIndex(0)],
-                false,
-            ),
-            (
-                alloc::vec![FlatIndex(0), FlatIndex(1)],
-                alloc::vec![FlatIndex(0), FlatIndex(0)],
-                true,
-            ),
-            (
-                alloc::vec![FlatIndex(0)],
-                alloc::vec![FlatIndex(0), FlatIndex(1)],
-                false,
-            ),
-        ] {
-            assert_eq!(
-                expected,
-                lexicographically_greater(&left, &right, &equal, &greater).0
-            );
-        }
     }
 
     /// The worked fusion cell, left face: the intermediate `Succ` allocation

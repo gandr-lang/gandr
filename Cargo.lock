@@ -746,6 +746,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
+ "gandr-theory-path-orders",
  "proptest",
  "quenchant-anodized",
  "quenchant-shape",
@@ -1191,6 +1192,7 @@ dependencies = [
 name = "gandr-theory-cell-complexes"
 version = "0.0.0"
 dependencies = [
+ "gandr-theory-path-orders",
  "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
@@ -1304,6 +1306,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-kernel-core",
  "gandr-kernel-term",
+ "gandr-theory-path-orders",
  "gandr-theory-spec-combinators",
  "proptest",
  "quenchant-anodized",
@@ -1323,6 +1326,13 @@ name = "gandr-theory-order-maintenance"
 version = "0.0.0"
 dependencies = [
  "proptest",
+ "quenchant-anodized",
+]
+
+[[package]]
+name = "gandr-theory-path-orders"
+version = "0.0.0"
+dependencies = [
  "quenchant-anodized",
 ]
 

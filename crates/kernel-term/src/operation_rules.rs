@@ -18,10 +18,11 @@
 //! number of times.
 //!
 //! The decision has three parts. Termination is the lexicographic path order
-//! over each rule, with an operation above every operation admitted before it
-//! and above every constructor and results tuple; an operation calls only
-//! itself and operations admitted before it, so the precedence is the
-//! admission order. The critical pairs are every two rules whose left sides
+//! of [`gandr_theory_path_orders::lpo`] over each rule, its derivation
+//! replayed, with an operation above every operation admitted before it and
+//! above every constructor and results tuple; an operation calls only itself
+//! and operations admitted before it, so the precedence is the admission
+//! order. The critical pairs are every two rules whose left sides
 //! unify at the root, and every rule of a presented type that unifies with a
 //! constructor pattern below the root; the kernel enumerates them by
 //! unification of linear patterns. Both reducts of each pair normalize under
@@ -34,9 +35,23 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cmp::Ordering;
+use core::convert::Infallible;
 
 use anodized::spec;
+use gandr_theory_path_orders::Evidence;
+use gandr_theory_path_orders::Former;
+use gandr_theory_path_orders::Node;
+use gandr_theory_path_orders::Place;
+use gandr_theory_path_orders::Precedence;
+use gandr_theory_path_orders::Rank;
+use gandr_theory_path_orders::Status;
+use gandr_theory_path_orders::Term;
+use gandr_theory_path_orders::Valuation;
+use gandr_theory_path_orders::Valued;
+use gandr_theory_path_orders::lpo;
+use gandr_theory_path_orders::lpo::Buffers;
+use gandr_theory_path_orders::lpo::Orientation;
+use gandr_theory_path_orders::lpo::Replay;
 
 use crate::presented::Exhausted;
 use crate::presented::FieldCount;
@@ -397,8 +412,9 @@ impl OperationRules
                 .validate(rule)
                 .map_err(|fault| refusal(RuleIndex::from(index), fault))?;
         }
+        let mut order = Buffers::default();
         for (index, rule) in self.0.iter().enumerate() {
-            if reader.path_greater(&rule.left, &rule.right) == Placement::NotAbove {
+            if reader.path_greater(&rule.left, &rule.right, &mut order) == Placement::NotAbove {
                 return Err(refusal(
                     RuleIndex::from(index),
                     OperationRuleFault::Unoriented,
@@ -746,61 +762,21 @@ where
         Ok(())
     }
 
-    /// Whether `above` precedes `below` in the path order's precedence.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: an operation precedes every operation at a lower position,
-    ///   every constructor and every results tuple; nothing else precedes
-    ///   anything.
-    /// - panics: none.
-    /// - executable: none — closed classification.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — as [`OperationRules::converge`].
-    /// - witness: `operation_rules::tests::an_operation_over_an_earlier_one_converges`
-    fn precedes(
-        above: OperationNode,
-        below: OperationNode,
-    ) -> Placement
-    {
-        match (above, below) {
-            (
-                OperationNode::Operation { constant: high, .. },
-                OperationNode::Operation { constant: low, .. },
-            ) => match high.cmp(&low) {
-                Ordering::Greater => Placement::Above,
-                Ordering::Equal | Ordering::Less => Placement::NotAbove,
-            },
-            (
-                OperationNode::Operation { .. },
-                OperationNode::Constructor { .. } | OperationNode::Results(_),
-            ) => Placement::Above,
-            (OperationNode::Operation { .. }, OperationNode::Variable(_))
-            | (
-                OperationNode::Constructor { .. }
-                | OperationNode::Results(_)
-                | OperationNode::Variable(_),
-                _,
-            ) => Placement::NotAbove,
-        }
-    }
-
-    /// Whether `left` lies above `right` in the lexicographic path order.
+    /// Whether the path order of [`gandr_theory_path_orders::lpo`] over the
+    /// admission order ([`AdmissionOrder`]) puts `left` above `right`, its
+    /// derivation replayed.
     ///
     /// # Specification
     /// - requires: both sides are one term each by their arities.
-    /// - ensures: the lexicographic path order over [`Self::precedes`]: a
-    ///   variable lies below a term that holds it and differs from it; a term
-    ///   lies above another when one of its arguments equals or lies above it,
-    ///   or when it lies above every argument of the other and either its head
-    ///   precedes the other's or the heads agree and its arguments lie
-    ///   lexicographically above the other's.
+    /// - ensures: above exactly when the order orients the pair and its
+    ///   derivation replays: a variable lies below a term that holds it and
+    ///   differs from it; a term lies above another when one of its arguments
+    ///   equals or lies above it, or when it covers every argument of the other
+    ///   and either its head precedes the other's or the heads agree and its
+    ///   arguments lie lexicographically above the other's.
     /// - panics: none.
-    /// - measure: one comparison per pair of subterm positions, filled from the
-    ///   last positions to the first.
-    /// - executable: none — restating the order would recompute the table the
-    ///   body fills; the witnesses pin both answers.
+    /// - executable: none — restating the order would recompute the table it
+    ///   fills; the witnesses pin both answers.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — recursion on a descending argument is oriented, a
@@ -812,63 +788,29 @@ where
         &self,
         left: &[OperationNode],
         right: &[OperationNode],
+        buffers: &mut Buffers,
     ) -> Placement
     {
         let (Some(above), Some(below)) = (self.children(left), self.children(right))
         else {
             return Placement::NotAbove;
         };
-        let columns = right.len();
-        let mut table = alloc::vec![Compared::default(); left.len().saturating_mul(columns)];
-        let at =
-            |row: Position, column: Position| row.0.checked_mul(columns)?.checked_add(column.0);
-        let read = |table: &[Compared], row: Position, column: Position| {
-            at(row, column)
-                .and_then(|index| table.get(index))
-                .copied()
-                .unwrap_or_default()
+        let left = OperationSide {
+            side: left,
+            children: &above,
         };
-        for (row, &node) in left.iter().enumerate().rev() {
-            let row = Position(row);
-            let arguments = above.of(row);
-            for (column, &other) in right.iter().enumerate().rev() {
-                let column = Position(column);
-                let others = below.of(column);
-                let same = node == other;
-                let equal = same
-                    && arguments
-                        .iter()
-                        .zip(others)
-                        .all(|(&argument, &across)| read(&table, argument, across).equal);
-                let greater = !matches!(node, OperationNode::Variable(_))
-                    && (arguments.iter().any(|&argument| {
-                        let pair = read(&table, argument, column);
-                        pair.equal || pair.greater
-                    }) || (!matches!(other, OperationNode::Variable(_))
-                        && others
-                            .iter()
-                            .all(|&across| read(&table, row, across).greater)
-                        && if same {
-                            arguments
-                                .iter()
-                                .zip(others)
-                                .map(|(&argument, &across)| read(&table, argument, across))
-                                .find(|pair| !pair.equal)
-                                .is_some_and(|pair| pair.greater)
-                        }
-                        else {
-                            Self::precedes(node, other) == Placement::Above
-                        }));
-                if let Some(slot) = at(row, column).and_then(|index| table.get_mut(index)) {
-                    *slot = Compared { equal, greater };
-                }
-            }
-        }
-        if read(&table, Position(0), Position(0)).greater {
-            Placement::Above
-        }
-        else {
-            Placement::NotAbove
+        let right = OperationSide {
+            side: right,
+            children: &below,
+        };
+        match lpo::orient(&left, &right, &AdmissionOrder, buffers) {
+            Orientation::Oriented(Evidence::Path(derivation))
+                if lpo::check(&left, &right, &AdmissionOrder, &derivation, buffers)
+                    == Replay::Holds =>
+            {
+                Placement::Above
+            },
+            Orientation::Oriented(_) | Orientation::Unoriented => Placement::NotAbove,
         }
     }
 
@@ -1307,17 +1249,131 @@ where
     }
 }
 
-/// One comparison of the path order's table.
+/// One side of an operation rule as the path order reads it: each operation,
+/// constructor and results tuple a symbol, each pattern variable a variable.
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct Compared
+#[derive(Clone, Copy, Debug)]
+struct OperationSide<'side>
 {
-    /// The two subterms are one term.
-    equal: bool,
-    /// The row's subterm lies above the column's.
-    greater: bool,
+    /// The side, in pre-order.
+    side: &'side [OperationNode],
+    /// Each node's argument positions.
+    children: &'side Children,
+}
+
+impl Term for OperationSide<'_>
+{
+    type Bound = Infallible;
+    type Symbol = OperationNode;
+    type Variable = RuleVariable;
+
+    /// The side's node count.
+    ///
+    /// # Specification
+    /// trivial.
+    fn end(&self) -> Node
+    {
+        Node::from(self.side.len())
+    }
+
+    /// The node at `node`: an operation, a constructor or a results tuple as
+    /// a symbol, a pattern variable as a variable; a position past the side
+    /// reads as a variable no rule binds, which is above nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn former(
+        &self,
+        node: Node,
+    ) -> Former<OperationNode, RuleVariable, Infallible>
+    {
+        match self.side.get(usize::from(node)) {
+            Some(&OperationNode::Variable(variable)) => Former::Variable(variable),
+            Some(
+                &symbol @ (OperationNode::Operation { .. }
+                | OperationNode::Constructor { .. }
+                | OperationNode::Results(_)),
+            ) => Former::Symbol(symbol),
+            None => Former::Variable(RuleVariable::from(u32::MAX)),
+        }
+    }
+
+    /// The positions the node's arguments start at.
+    ///
+    /// # Specification
+    /// trivial.
+    fn arguments(
+        &self,
+        node: Node,
+    ) -> impl Iterator<Item = Node> + Clone
+    {
+        self.children
+            .of(Position(usize::from(node)))
+            .iter()
+            .map(|&Position(at)| Node::from(at))
+    }
+}
+
+impl Valued for OperationSide<'_>
+{
+    /// No variable of an operation rule is a value.
+    ///
+    /// # Specification
+    /// trivial.
+    fn valuation(
+        &self,
+        _variable: RuleVariable,
+    ) -> Valuation
+    {
+        Valuation::Term
+    }
+}
+
+/// The admission order as the path order's precedence: an operation ranked
+/// by its position, above every operation admitted before it; constructors
+/// and results tuples ground; every status lexicographic.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct AdmissionOrder;
+
+impl Precedence for AdmissionOrder
+{
+    type Symbol = OperationNode;
+
+    /// An operation's position as its rank; every other node ground.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        symbol: OperationNode,
+    ) -> Place
+    {
+        match symbol {
+            OperationNode::Operation { constant, .. } => Place::Ranked(Rank::from(
+                u64::try_from(usize::from(constant)).unwrap_or(u64::MAX),
+            )),
+            OperationNode::Constructor { .. }
+            | OperationNode::Results(_)
+            | OperationNode::Variable(_) => Place::Ground,
+        }
+    }
+
+    /// Lexicographic, for every symbol.
+    ///
+    /// # Specification
+    /// trivial.
+    fn status(
+        &self,
+        _symbol: OperationNode,
+    ) -> Status
+    {
+        Status::Lexicographic
+    }
 }
 
 /// The positions each node of one side's arguments start at, flattened.

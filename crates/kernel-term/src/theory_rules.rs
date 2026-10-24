@@ -15,9 +15,10 @@
 //!    instantiates a variable only at distinct bound occurrences — a pattern
 //!    (Miller) — its variables numbered by first occurrence, and every right
 //!    side names and instantiates only variables its left side binds;
-//! 2. the lexicographic path order over the stated ranks puts every left side
-//!    above its right: an operation stands above every operation of a lower
-//!    rank and above every constructor and results tuple, and the order is a
+//! 2. the lexicographic path order of [`gandr_theory_path_orders::lpo`] over
+//!    the stated ranks puts every left side above its right, its derivation
+//!    replayed: an operation stands above every operation of a lower rank and
+//!    above every constructor and results tuple, and the order is a
 //!    simplification order whatever the ranks, so the rules terminate. A
 //!    variable a right side instantiates is read at a function type, the order
 //!    then the higher-order recursive path order: a left side is above an
@@ -43,8 +44,9 @@
 //! agree. An abstraction is interned without the atom it names, and an
 //! occurrence by the number of abstractions between it and the one binding
 //! it, so both are the canonical re-minting the checker admits them under: a
-//! rule that renames the atom is the same rule. The order and matching read an
-//! abstraction as a constructor of one field and an occurrence as a constant.
+//! rule that renames the atom is the same rule. Matching reads an abstraction
+//! as a constructor of one field and an occurrence as a constant; the order
+//! reads them as the abstraction and bound-occurrence formers, both ground.
 //! No substitution shifts that number in the decision. Where some
 //! operation's input port takes an atom, so a term can name one, a rule that
 //! states a freshness condition, or whose variable stands under other
@@ -84,6 +86,19 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_theory_path_orders::Evidence;
+use gandr_theory_path_orders::Former;
+use gandr_theory_path_orders::Place;
+use gandr_theory_path_orders::Precedence;
+use gandr_theory_path_orders::Rank;
+use gandr_theory_path_orders::Status;
+use gandr_theory_path_orders::Term;
+use gandr_theory_path_orders::Valuation;
+use gandr_theory_path_orders::Valued;
+use gandr_theory_path_orders::lpo;
+use gandr_theory_path_orders::lpo::Buffers;
+use gandr_theory_path_orders::lpo::Orientation;
+use gandr_theory_path_orders::lpo::Replay;
 
 use crate::Literal;
 use crate::StringLiteral;
@@ -1090,15 +1105,16 @@ impl TheoryRules
         Some(Position(at))
     }
 
-    /// Whether the higher-order recursive path order over the stated ranks
-    /// puts `rule`'s left side above its right: the lexicographic path order,
-    /// with every variable the right side instantiates read at a function type.
+    /// Whether the path order of [`gandr_theory_path_orders::lpo`] over the
+    /// stated ranks puts `rule`'s left side above its right, its derivation
+    /// replayed: the lexicographic path order, with every variable the right
+    /// side instantiates read at a function type.
     ///
     /// # Specification
     /// - requires: both sides are well formed.
     /// - ensures: for `left` and `right` the rule's sides, negative when
     ///   `right` is a variable `right` instantiates somewhere. Otherwise
-    ///   positive exactly when `left` is an application some argument of which
+    ///   positive exactly when `left` applies a symbol some argument of which
     ///   is equal to or above `right`; or `right` is an application every
     ///   argument of which `left` covers, and either `left`'s symbol precedes
     ///   `right`'s — an operation above an operation of a lower rank, and above
@@ -1109,13 +1125,11 @@ impl TheoryRules
     ///   but the rule's values. An argument holds a variable it is, or one it
     ///   instantiates under abstractions, as `bind t . k(s, t)` holds `k` read
     ///   up to η. `left` covers a term it is above, or one of its own arguments
-    ///   is equal to or above. A variable is above nothing and no term above
-    ///   itself.
+    ///   is equal to or above. A variable and an instantiation are above
+    ///   nothing and no term above itself.
     /// - panics: none.
-    /// - executable: none — the order is the table this fills; a predicate
-    ///   restating it would be the function again.
-    /// - intension: one table of every pair of positions of the two sides,
-    ///   filled from the last positions up, so no comparison recurses.
+    /// - executable: none — the order is the table it fills and the derivation
+    ///   it replays; a predicate restating it would be the order again.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::decide`]: associativity, a unit law and an
@@ -1135,151 +1149,27 @@ impl TheoryRules
         buffers: &mut OrderBuffers,
     ) -> Verdict
     {
-        let (left, right) = (rule.left(), rule.right());
-        let columns = right.len();
-        self.ends(left, &mut buffers.left_ends);
-        self.ends(right, &mut buffers.right_ends);
-        buffers.higher.clear();
-        for &node in right {
-            if let TheoryNode::Instance(variable, _) = node {
-                let Ordinal(place) = ordinal(variable);
-                if buffers.higher.len() <= place {
-                    buffers.higher.resize(place.saturating_add(1), false);
-                }
-                if let Some(slot) = buffers.higher.get_mut(place) {
-                    *slot = true;
-                }
-            }
-        }
-        buffers.values.clear();
-        for &variable in &rule.values {
-            let Ordinal(place) = ordinal(variable);
-            if buffers.values.len() <= place {
-                buffers.values.resize(place.saturating_add(1), false);
-            }
-            if let Some(slot) = buffers.values.get_mut(place) {
-                *slot = true;
-            }
-        }
-        let higher = &buffers.higher;
-        let functional = |node: TheoryNode| matches!(node, TheoryNode::Variable(variable) if higher.get(ordinal(variable).0).copied().unwrap_or(false));
-        let values = &buffers.values;
-        // A value needs no cover: instantiating at it selects a branch of the
-        // abstraction the left side holds and calls no operation.
-        let value = |argument: Position| matches!(right.get(argument.0), Some(&TheoryNode::Variable(variable)) if values.get(ordinal(variable).0).copied().unwrap_or(false));
-        buffers.table.clear();
-        buffers
-            .table
-            .resize(left.len().saturating_mul(columns), Comparison::default());
-        let precedes = |above: TheoryNode, below: TheoryNode| match (above, below) {
-            (TheoryNode::Symbol(one), TheoryNode::Symbol(other)) => {
-                match (self.symbols.get(one.0), self.symbols.get(other.0)) {
-                    (
-                        Some(&(SymbolKind::Operation(high), _)),
-                        Some(&(SymbolKind::Operation(low), _)),
-                    ) => high > low,
-                    (
-                        Some(&(SymbolKind::Operation(_), _)),
-                        Some(&(
-                            SymbolKind::Constructor
-                            | SymbolKind::Abstraction
-                            | SymbolKind::Occurrence,
-                            _,
-                        )),
-                    ) => true,
-                    _ => false,
-                }
-            },
-            (TheoryNode::Symbol(_) | TheoryNode::Variable(_) | TheoryNode::Instance(..), _) => {
-                false
-            },
+        self.ends(rule.left(), &mut buffers.left_ends);
+        self.ends(rule.right(), &mut buffers.right_ends);
+        let left = RuleSide {
+            rules: self,
+            side: rule.left(),
+            ends: &buffers.left_ends,
+            values: &rule.values,
         };
-        // An argument holds a variable it is, or one it instantiates under the
-        // abstractions above it: each abstraction's body is the next node.
-        let holds = |own: Position, variable: RuleVariable| {
-            let mut at = own.0;
-            while let Some(&TheoryNode::Symbol(symbol)) = left.get(at)
-                && matches!(
-                    self.symbols.get(symbol.0),
-                    Some(&(SymbolKind::Abstraction, _))
-                )
-            {
-                at = at.saturating_add(1);
-            }
-            matches!(
-                left.get(at),
-                Some(&(TheoryNode::Variable(held) | TheoryNode::Instance(held, _))) if held == variable
-            )
+        let right = RuleSide {
+            rules: self,
+            side: rule.right(),
+            ends: &buffers.right_ends,
+            values: &[],
         };
-        for row in (0 .. left.len()).rev() {
-            for column in (0 .. columns).rev() {
-                let (Some(&node), Some(&other)) = (left.get(row), right.get(column))
-                else {
-                    continue;
-                };
-                let rows = self.arguments(left, Position(row), &buffers.left_ends);
-                let cols = self.arguments(right, Position(column), &buffers.right_ends);
-                let at = |table: &[Comparison], row: Position, column: Position| {
-                    row.0
-                        .checked_mul(columns)
-                        .and_then(|start| start.checked_add(column.0))
-                        .and_then(|index| table.get(index).copied())
-                        .unwrap_or_default()
-                };
-                let table = &buffers.table;
-                let same = node == other;
-                let equal = same
-                    && rows
-                        .clone()
-                        .zip(cols.clone())
-                        .all(|(one, two)| at(table, one, two).equal);
-                // `node` covers a right argument it is above, or one of its
-                // own arguments is equal to or above: the comparison a
-                // variable read at a function type takes.
-                let covers = |argument: Position| {
-                    at(table, Position(row), argument).greater
-                        || rows.clone().any(|own| {
-                            let pair = at(table, own, argument);
-                            pair.equal || pair.greater
-                        })
-                };
-                let greater = matches!(node, TheoryNode::Symbol(_))
-                    && !functional(other)
-                    && (rows.clone().any(|argument| {
-                        let pair = at(table, argument, Position(column));
-                        pair.equal || pair.greater
-                    }) || match other {
-                        TheoryNode::Variable(_) => false,
-                        TheoryNode::Instance(variable, _) => {
-                            rows.clone().any(|own| holds(own, variable))
-                                && cols
-                                    .clone()
-                                    .all(|argument| value(argument) || covers(argument))
-                        },
-                        TheoryNode::Symbol(_) => {
-                            cols.clone().all(covers)
-                                && if same {
-                                    rows.clone()
-                                        .zip(cols.clone())
-                                        .map(|(one, two)| at(table, one, two))
-                                        .find(|pair| !pair.equal)
-                                        .is_some_and(|pair| pair.greater)
-                                }
-                                else {
-                                    precedes(node, other)
-                                }
-                        },
-                    });
-                if let Some(cell) = row
-                    .checked_mul(columns)
-                    .and_then(|start| start.checked_add(column))
-                    .and_then(|index| buffers.table.get_mut(index))
-                {
-                    *cell = Comparison { equal, greater };
-                }
-            }
+        let ranks = StatedRanks(self);
+        match lpo::orient(&left, &right, &ranks, &mut buffers.order) {
+            Orientation::Oriented(Evidence::Path(derivation)) => Verdict::from(
+                lpo::check(&left, &right, &ranks, &derivation, &mut buffers.order) == Replay::Holds,
+            ),
+            Orientation::Unoriented => Verdict::Fails,
         }
-        Verdict::from(buffers.table.first().is_some_and(|pair| pair.greater))
     }
 
     /// The end of the subterm at every position of a well-formed `side`.
@@ -1971,20 +1861,6 @@ where
     Ordinal(seen.len().saturating_sub(1))
 }
 
-/// One entry of the path order's table: whether two subterms are equal, and
-/// whether the first is above the second.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Default)]
-struct Comparison
-{
-    /// The two subterms are one term.
-    equal: bool,
-    /// The first is above the second.
-    greater: bool,
-}
-
 /// The buffers the path order fills, reused across rules.
 ///
 /// # Specification
@@ -1996,12 +1872,148 @@ struct OrderBuffers
     left_ends: Vec<Position>,
     /// Each right position's subterm end.
     right_ends: Vec<Position>,
-    /// The comparison of every pair of positions, by row.
-    table: Vec<Comparison>,
-    /// Whether the right side instantiates each variable, by ordinal.
-    higher: Vec<bool>,
-    /// Whether each variable is one of the rule's values, by ordinal.
-    values: Vec<bool>,
+    /// The order's tables.
+    order: Buffers,
+}
+
+/// One side of a rule as the path order reads it: an operation, constructor
+/// or results tuple a symbol, an abstraction and an occurrence the binding
+/// formers, a variable bare or instantiated.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct RuleSide<'rules>
+{
+    /// The rules whose symbol table the side reads.
+    rules: &'rules TheoryRules,
+    /// The side, in pre-order.
+    side: &'rules [TheoryNode],
+    /// Each position's subterm end.
+    ends: &'rules [Position],
+    /// The rule's values.
+    values: &'rules [RuleVariable],
+}
+
+impl Term for RuleSide<'_>
+{
+    type Bound = TheorySymbol;
+    type Symbol = TheorySymbol;
+    type Variable = RuleVariable;
+
+    /// The side's node count.
+    ///
+    /// # Specification
+    /// trivial.
+    fn end(&self) -> gandr_theory_path_orders::Node
+    {
+        gandr_theory_path_orders::Node::from(self.side.len())
+    }
+
+    /// The node at `node` by its symbol's kind; a position past the side reads
+    /// as a variable no rule binds, which is above nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn former(
+        &self,
+        node: gandr_theory_path_orders::Node,
+    ) -> Former<TheorySymbol, RuleVariable, TheorySymbol>
+    {
+        match self.side.get(usize::from(node)) {
+            Some(&TheoryNode::Symbol(symbol)) => match self.rules.symbols.get(symbol.0) {
+                Some(&(SymbolKind::Abstraction, _)) => Former::Abstraction,
+                Some(&(SymbolKind::Occurrence, _)) => Former::Bound(symbol),
+                Some(&(SymbolKind::Operation(_) | SymbolKind::Constructor, _)) | None => {
+                    Former::Symbol(symbol)
+                },
+            },
+            Some(&TheoryNode::Variable(variable)) => Former::Variable(variable),
+            Some(&TheoryNode::Instance(variable, _)) => Former::Application(variable),
+            None => Former::Variable(RuleVariable::from(u32::MAX)),
+        }
+    }
+
+    /// The positions of the node's arguments, by the side's ends.
+    ///
+    /// # Specification
+    /// trivial.
+    fn arguments(
+        &self,
+        node: gandr_theory_path_orders::Node,
+    ) -> impl Iterator<Item = gandr_theory_path_orders::Node> + Clone
+    {
+        self.rules
+            .arguments(self.side, Position(usize::from(node)), self.ends)
+            .map(|Position(at)| gandr_theory_path_orders::Node::from(at))
+    }
+}
+
+impl Valued for RuleSide<'_>
+{
+    /// A value exactly when the rule lists the variable among its values.
+    ///
+    /// # Specification
+    /// trivial.
+    fn valuation(
+        &self,
+        variable: RuleVariable,
+    ) -> Valuation
+    {
+        if self.values.contains(&variable) {
+            Valuation::Value
+        }
+        else {
+            Valuation::Term
+        }
+    }
+}
+
+/// The stated ranks as the path order's precedence: an operation at its rank,
+/// every other symbol ground, every status lexicographic.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+struct StatedRanks<'rules>(&'rules TheoryRules);
+
+impl Precedence for StatedRanks<'_>
+{
+    type Symbol = TheorySymbol;
+
+    /// An operation's stated rank; every other symbol ground.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        symbol: TheorySymbol,
+    ) -> Place
+    {
+        match self.0.symbols.get(symbol.0) {
+            Some(&(SymbolKind::Operation(rank), _)) => {
+                Place::Ranked(Rank::from(u64::from(u32::from(rank))))
+            },
+            Some(&(
+                SymbolKind::Constructor | SymbolKind::Abstraction | SymbolKind::Occurrence,
+                _,
+            ))
+            | None => Place::Ground,
+        }
+    }
+
+    /// Lexicographic, for every symbol.
+    ///
+    /// # Specification
+    /// trivial.
+    fn status(
+        &self,
+        _symbol: TheorySymbol,
+    ) -> Status
+    {
+        Status::Lexicographic
+    }
 }
 
 /// The buffers [`TheoryRules::peak_of`] seeks a peak in, kept by its caller

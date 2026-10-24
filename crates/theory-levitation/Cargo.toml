@@ -19,9 +19,10 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled.
+# logic/BigInt stays disabled. The path orders decide termination.
 [dependencies]
 anodized.workspace = true
+gandr-theory-path-orders.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
