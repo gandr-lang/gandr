@@ -10080,15 +10080,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   normaliser's conversion with every definition admitted so far
     ///   unfolding, returned endpoints held and an unread call of a binder
     ///   whose calls return ([`crate::divergence::returning`]) discarded
-    ///   ([`crate::code::CodeDefinitions::relate_terms`]), with the trace it
-    ///   recorded. On success the context records the two dialogues at `at`. A
-    ///   side the normaliser cannot run — a native primitive, which only the
-    ///   runtime computes — converts by syntax alone.
+    ///   ([`crate::code::CodeDefinitions::relation`]), with the trace it
+    ///   recorded. A conversion that waits for a fill
+    ///   ([`CheckingContext::awaits_fill`]) holds with the empty dialogue: the
+    ///   run that judges the filled body meets the pair again. On success the
+    ///   context records the two dialogues at `at`.
     /// - provides: the endpoint condition of reflexivity's rule, and the
     ///   dialogues the kernel replays for it.
     /// - fails: [`CheckRefusal::EndpointMismatch`] naming `at` and both
-    ///   endpoints when either conversion is refuted, declined or undecided; a
-    ///   dangling node or a machine invariant as the conversion raises it.
+    ///   endpoints when either conversion is refuted, declined without waiting
+    ///   for a fill, or undecided; a dangling node or a machine invariant as
+    ///   the conversion raises it.
     /// - panics: none.
     ///
     /// # Errors
@@ -10099,10 +10101,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   applied to a variable against what it unfolds to, and at an arithmetic
     ///   redex over a variable against the variable separate the syntactic, the
     ///   normalising and the refuting outcomes; the recorded dialogues cross to
-    ///   the kernel and replay there.
+    ///   the kernel and replay there. Endpoints calling a definition over an
+    ///   omitted model are met once the model is resolved, and refused when the
+    ///   filled endpoints are apart.
     /// - witness: `judgement::tests::reflexivity_checks_by_endpoint_conversion`
     /// - witness: `bridge::tests::a_reflexivity_crosses_with_the_dialogues_relating_its_endpoints`
     /// - witness: `judgement::tests::reflexivity_at_a_stuck_native_point_meets_it_by_syntax`
+    /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
     #[spec(ensures: |ret| match ret {
         | Err(CheckRefusal::EndpointMismatch { at: site, left: named_left, right: named_right }) => site == at && named_left == left && named_right == right,
         | Ok(()) => self.context.reflexivities().contains_key(&at),
@@ -10140,14 +10145,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
             if returning.is_none() {
                 returning = Some(crate::divergence::returning(self.context)?);
             }
-            match self.context.definitions().relate_terms(
+            match self.context.definitions().relation(
                 self.context.arena(),
                 point,
                 endpoint,
                 returning.as_deref().unwrap_or_default(),
             ) {
-                Ok(Maybe::Present(decisions)) => *dialogue = decisions,
-                Ok(Maybe::Absent(_)) | Err(CheckRefusal::Undecided { .. }) => {
+                Ok((gandr_core_nbe::MachineVerdict::Convertible, decisions)) => {
+                    *dialogue = decisions;
+                },
+                // A side standing on a hole a later solution fills is the
+                // fill's to decide: the run that judges the filled body meets
+                // the pair again.
+                Ok((verdict, _))
+                    if self.context.awaits_fill(verdict) == crate::elaboration::Deferred::Yes => {},
+                Ok((
+                    gandr_core_nbe::MachineVerdict::NotConvertible
+                    | gandr_core_nbe::MachineVerdict::Declined(_),
+                    _,
+                ))
+                | Err(CheckRefusal::Undecided { .. }) => {
                     return Err(CheckRefusal::EndpointMismatch { at, left, right });
                 },
                 Err(fault) => return Err(fault),

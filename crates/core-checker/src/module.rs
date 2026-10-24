@@ -1029,18 +1029,19 @@ struct Decision
 /// - ensures: the verdict [`check_declaration`] gives, with the same effect on
 ///   `context`; beside it, when a run of the body refused, the failure of that
 ///   run, whose refusal is the verdict's; when the body's calls omit implicits,
-///   the verdict of the run over the body filled with their solutions
-///   ([`implicits`]); when the first run accepted a body holding a computation
-///   written where a value is read, a value the bridge carried by a reduct, or
-///   a record update, what elaborating it did, the verdict then being the
-///   second run's over the elaborated body; and, when `run` is [`Run::Typed`]
-///   and the body was run, what [`type_value`] keeps for the body as written,
-///   each type read with the solutions of the holes its calls nominated, read
-///   before the declaration's own type entered the table. An accepted value
-///   keeps, under its position, the path endpoint pairs the run its verdict is
-///   from related, and nothing an earlier declaration or another run related. A
-///   suspended verdict carries the residue its verdict's run left; every other
-///   verdict an empty one.
+///   the verdict of the run over the body and the declared type both filled
+///   with their solutions ([`implicits`]); when the first run accepted a body
+///   holding a computation written where a value is read, a value the bridge
+///   carried by a reduct, or a record update, what elaborating it did, the
+///   verdict then being the second run's over the elaborated body at the
+///   declared type so filled; and, when `run` is [`Run::Typed`] and the body
+///   was run, what [`type_value`] keeps for the body as written, each type read
+///   with the solutions of the holes its calls nominated, read before the
+///   declaration's own type entered the table. An accepted value keeps, under
+///   its position, the path endpoint pairs the run its verdict is from related,
+///   and nothing an earlier declaration or another run related. A suspended
+///   verdict carries the residue its verdict's run left; every other verdict an
+///   empty one.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
 /// - panics: none.
 ///
@@ -1257,7 +1258,7 @@ fn decide(
             let first = judge(context, body, (direction, reading)).and_then(|verdict| {
                 crate::handler::lawful(context, declaration.handler_laws()).map(|()| verdict)
             });
-            let (solved, first, solutions) = implicits(
+            let (solved, filled, first, solutions) = implicits(
                 context,
                 body,
                 (
@@ -1295,7 +1296,7 @@ fn decide(
                             crate::quantified::mint(context.stages_mut(), declaration.stages());
                             context.deferrals_mut().open(Collecting::On);
                             context.own_body(elaborated);
-                            let second = judge(context, elaborated, (direction, reading));
+                            let second = judge(context, elaborated, (filled, reading));
                             let _second = context.take_crossings();
                             second
                         },
@@ -1700,20 +1701,23 @@ type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_te
 
 /// Judge `body` again with each hole its calls nominated for an omitted
 /// implicit filled by the solution the run `first` bound it to, each model
-/// slot of `models` the run met first resolved to its one candidate.
+/// slot of `models` the run met first resolved to its one candidate, against
+/// the declared type filled alike.
 ///
 /// # Specification
 /// - requires: `first` is the run over `body` in `direction`, read as
 ///   `reading`, that left the collector as it stands; `models` are the slots
 ///   the declaration's calls omit.
-/// - ensures: `body`, `first` and no solution when the run refused or met no
-///   nominated hole; the resolution's refusal,
+/// - ensures: `body`, `direction`, `first` and no solution when the run refused
+///   or met no nominated hole; the resolution's refusal,
 ///   [`CheckRefusal::ModelUnanswered`] or [`CheckRefusal::ModelAmbiguous`], at
 ///   the first hole of the first slot it refuses; the run's failure as
 ///   [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver left
-///   unbound; otherwise the filled body, minted after `body`, a fresh run over
-///   it, the pairs, stages and residue `first` left dropped as the nesting
-///   elaboration's second run drops them, and the solutions it was filled with.
+///   unbound; otherwise the filled body, minted after `body`, the direction
+///   with its declared type filled ([`filled_direction`]), a fresh run of the
+///   one against the other, the pairs, stages and residue `first` left dropped
+///   as the nesting elaboration's second run drops them, and the solutions both
+///   were filled with.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1726,7 +1730,7 @@ type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_te
 /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
 #[spec(
     captures: refused = first.is_err(),
-    ensures: |ret| ret.0 >= body && (!refused || (ret.0 == body && ret.2.is_empty())),
+    ensures: |ret| ret.0 >= body && (!refused || (ret.0 == body && ret.3.is_empty())),
 )]
 fn implicits(
     context: &mut CheckingContext<'_>,
@@ -1738,22 +1742,38 @@ fn implicits(
         &[gandr_core_term::model::ModelSlot],
     ),
     first: Result<Verdict, Failure>,
-) -> (ValueId, Result<Verdict, Failure>, Solutions)
+) -> (
+    ValueId,
+    Direction<FormedValueType>,
+    Result<Verdict, Failure>,
+    Solutions,
+)
 {
     if first.is_err() {
-        return (body, first, Solutions::new());
+        return (body, direction, first, Solutions::new());
     }
     if let Err((at, refusal)) = context.resolve_models(models) {
-        return (body, Err(call_failure(refusal, at)), Solutions::new());
+        return (
+            body,
+            direction,
+            Err(call_failure(refusal, at)),
+            Solutions::new(),
+        );
     }
     let solutions = match context.deferrals().solutions(context.arena()) {
-        Ok(solutions) if solutions.is_empty() => return (body, first, solutions),
+        Ok(solutions) if solutions.is_empty() => return (body, direction, first, solutions),
         Ok(solutions) => solutions,
         Err((at, reason)) => {
-            return (body, Err(unsolved_failure(at, reason)), Solutions::new());
+            return (
+                body,
+                direction,
+                Err(unsolved_failure(at, reason)),
+                Solutions::new(),
+            );
         },
     };
     let filled = fill(context.arena_mut(), body, &solutions);
+    let direction = filled_direction(context.arena_mut(), direction, &solutions);
     let _first = context.take_relating();
     let _stale = context.take_nesting();
     let _stale_updates = context.take_updates();
@@ -1763,7 +1783,50 @@ fn implicits(
     context.deferrals_mut().open(Collecting::On);
     context.own_body(filled);
     let judged = judge(context, filled, (direction, reading));
-    (filled, judged, solutions)
+    (filled, direction, judged, solutions)
+}
+
+/// `direction` with the type it checks against read with every solution in
+/// `solutions`, as [`fill`] reads a body.
+///
+/// # Specification
+/// - requires: as [`fill`]; the declared type stands under no binder.
+/// - ensures: [`Direction::Check`] of the declared type with each hole
+///   `solutions` names filled, a rewrite of a formed type and so formed, or of
+///   the declared type itself when it holds none; [`Direction::Synthesise`]
+///   unchanged.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path type whose endpoints call a definition over an
+///   omitted model is met by a point calling it alike once the models are
+///   resolved, and a path returned at a path type over calls of their own
+///   converts; judging the filled body against the type as written leaves the
+///   endpoints on their unfilled holes, and both are refused.
+/// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+/// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+#[spec(ensures: |ret| matches!(ret, Direction::Synthesise) == matches!(direction, Direction::Synthesise))]
+fn filled_direction(
+    arena: &mut gandr_core_term::CoreArena,
+    direction: Direction<FormedValueType>,
+    solutions: &Solutions,
+) -> Direction<FormedValueType>
+{
+    let Direction::Check(declared) = direction
+    else {
+        return direction;
+    };
+    match solved_type(
+        arena,
+        (
+            TypeNode::Value(declared.id()),
+            gandr_core_term::BinderDepth::default(),
+        ),
+        solutions,
+    ) {
+        TypeNode::Value(filled) => Direction::Check(FormedValueType::derived(filled)),
+        TypeNode::Computation(_) => direction,
+    }
 }
 
 /// `body` with each hole `solutions` names filled by its solution, read

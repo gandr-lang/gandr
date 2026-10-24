@@ -419,6 +419,39 @@ impl Deferrals
         }
     }
 
+    /// Whether a comparison standing on a hole waits for its fill: a hole the
+    /// running judgement nominated is still unbound, and a solution the
+    /// solver, or a model slot's resolution, may yet bind it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Deferred::Yes`] exactly when some nominated node is a hole
+    ///   declared a metavariable that has no solution in the store.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reflexivity and an ascription whose path endpoints
+    ///   call a definition over an omitted model wait for the model to be
+    ///   resolved, and are judged once it is filled in; reading the nominated
+    ///   hole as bound refuses both before the resolution.
+    /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+    /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+    #[spec(ensures: |ret| ret == Deferred::No || !self.nominated.is_empty())]
+    pub fn awaits(
+        &self,
+        arena: &CoreArena,
+    ) -> Deferred
+    {
+        let unbound = self.nominated.iter().any(|&at| match arena.value(at) {
+            Some(&Value::Hole(hole)) => match self.metas.meta(hole) {
+                Maybe::Present(meta) => matches!(self.metas.solution(meta), Maybe::Absent(_)),
+                Maybe::Absent(_) => false,
+            },
+            _ => false,
+        });
+        if unbound { Deferred::Yes } else { Deferred::No }
+    }
+
     /// The metavariable `side` is, or is the decode of, when the running
     /// judgement declared one.
     ///

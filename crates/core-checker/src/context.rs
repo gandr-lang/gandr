@@ -2589,6 +2589,43 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         &mut self.deferrals
     }
 
+    /// Whether the machine's `verdict` on a pair waits for a fill: it declined
+    /// because a side stands on a hole or a mark, and a hole the running
+    /// judgement nominated is still unbound, so the run that judges the
+    /// filled body meets the pair again.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`crate::elaboration::Deferred::Yes`] exactly when `verdict`
+    ///   is the machine's indeterminate decline and
+    ///   [`crate::elaboration::Deferrals::awaits`] answers it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reflexivity and an ascription whose path endpoints
+    ///   call a definition over an omitted model are met once the model is
+    ///   resolved, and refused when the filled endpoints are apart; reading the
+    ///   decline as apart refuses the first before the resolution.
+    /// - witness: `bridge::tests::an_endpoint_over_an_omitted_model_waits_for_its_resolution_2391`
+    /// - witness: `bridge::tests::a_path_type_over_an_omitted_model_converts_once_resolved_2391`
+    #[spec(ensures: |ret| ret == crate::elaboration::Deferred::No || verdict == gandr_core_nbe::MachineVerdict::Declined(gandr_core_nbe::DeclineReason::Indeterminate))]
+    pub(crate) fn awaits_fill(
+        &self,
+        verdict: gandr_core_nbe::MachineVerdict,
+    ) -> crate::elaboration::Deferred
+    {
+        if verdict
+            == gandr_core_nbe::MachineVerdict::Declined(
+                gandr_core_nbe::DeclineReason::Indeterminate,
+            )
+        {
+            self.deferrals.awaits(self.arena())
+        }
+        else {
+            crate::elaboration::Deferred::No
+        }
+    }
+
     /// Record a permitted residual, or retain ordinary rigid conversion.
     ///
     /// # Specification
