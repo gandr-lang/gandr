@@ -51,11 +51,12 @@ use gandr_surface_grammar::Sym;
 use gandr_surface_grammar::TileLabel;
 use gandr_surface_parser::CandidateLabel;
 use gandr_surface_parser::Lexeme;
+use gandr_surface_parser::MeldState;
+use gandr_surface_parser::Molder;
 use gandr_surface_parser::TileSpelling;
 use gandr_surface_parser::TokenText;
 use gandr_surface_parser::candidate_labels;
 use gandr_surface_parser::label;
-use gandr_surface_parser::parse;
 use gandr_surface_parser::tile_spelling;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
@@ -886,7 +887,9 @@ fn reading(
     )
 }
 
-/// Whether `text` parses to a tree holding a tile molded by `rule`.
+/// Whether the molder reads `text` to a tree holding a tile molded by `rule`:
+/// the reading before recovery places a left-out tile, since what the ledger
+/// asks is how the grammar molds a probe, not how a source is repaired.
 ///
 /// # Specification
 /// trivial.
@@ -896,11 +899,16 @@ fn molds(
     text: SourceText<'_>,
 ) -> Probed
 {
-    let Ok(parsed) = parse(pbg, text)
+    let mut state = MeldState::new(pbg);
+    Molder::new(pbg).mold_stream(
+        &mut state,
+        &label(SourceFragment::from(<&str>::from(text))),
+        text,
+    );
+    let Ok((tree, _repairs)) = state.commit_with_obligations(text)
     else {
         return Probed::Unmolded;
     };
-    let tree = parsed.tree();
     let molded = tree.positions().any(|position| {
         tree.node(position).is_some_and(|node| match node.label() {
             NodeLabel::Tile(mold) => pbg

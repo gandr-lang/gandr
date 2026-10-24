@@ -24496,6 +24496,23 @@ mod tests
             "a projection missing its field names no one tile, since a label or an index may \
              end it"
         );
+        let tree = repaired(
+            &pbg,
+            SourceText::from(
+                "data Color : Type {\n  Red : Color;\n  Green : Color\n  Blue : Color;\n}\n",
+            ),
+        );
+        assert_eq!(
+            refusal_in(&pbg, &tree),
+            LoweringRefusal::MalformedForm {
+                span: at(50_usize, 50_usize),
+                form: FormName::from(NamedKind("data_declaration")),
+                fault: FormFault::Repaired(Repair::Unended(crate::form::Ending::Unnamed)),
+            },
+            "#2259: a member missing the separator before the next is pointed at its end, not \
+             past the next member's name, and names no one tile, since a `;` or a `,` may stand \
+             there"
+        );
     }
 
     /// #1829: a form the parser closed at its end is marked where its written

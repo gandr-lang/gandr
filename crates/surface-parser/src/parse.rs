@@ -644,8 +644,8 @@ enum Repair
 /// - requires: nothing.
 /// - ensures: [`Repair::Unneeded`] exactly when [`molded`]'s state over
 ///   `source` commits with no obligation.
-/// - provides: the test a closer's placement runs over each copy it tries
-///   ([`place::placed`]).
+/// - provides: the test a left-out tile's placement runs over each copy it
+///   tries ([`place::placed`]).
 /// - panics: none.
 ///
 /// # Adequacy

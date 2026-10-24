@@ -1704,8 +1704,8 @@ impl<'pbg> Molder<'pbg>
     ///   empty, every token then molded as [`mold_stream`](Self::mold_stream)
     ///   molds it; [`Molding::Halted`] with the stream molded up to and
     ///   including the first tile whose push left an obligation.
-    /// - provides: the cheap test the closer placement in `parse::place` runs
-    ///   over each copy of a form it tries.
+    /// - provides: the cheap test the placement in `parse::place` runs over
+    ///   each copy of a form it tries.
     /// - panics: none.
     ///
     /// # Adequacy

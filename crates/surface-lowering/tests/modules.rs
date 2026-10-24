@@ -3366,13 +3366,19 @@ fn an_unread_module_body_is_refused_not_emptied()
     assert!(
         matches!(
             found.as_slice(),
-            [(module, Role::Held, Amounts::Refused(LoweringRefusal::MalformedForm {
-                span,
-                form: FormName::MODULE,
-                fault: FormFault::MisplacedTile,
-            }))] if module == "M" && span.start() == span_of(source, "def", 0_usize).start()
+            [
+                (module, Role::Held, Amounts::Refused(LoweringRefusal::MalformedForm {
+                    span,
+                    form: FormName::MODULE,
+                    fault: FormFault::MisplacedTile,
+                })),
+                (after, Role::Declared, Amounts::Bodied),
+            ] if module == "M"
+                && span.start() == span_of(source, "def", 0_usize).start()
+                && after == "after"
         ),
-        "the module is refused where its signature stops being read, got {found:?}"
+        "the module is refused where its signature stops being read, and the declaration \
+         after it is read on its own, got {found:?}"
     );
     assert_eq!(
         strata(&lowered),
