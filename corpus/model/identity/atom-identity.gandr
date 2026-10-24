@@ -48,7 +48,7 @@ def originOther : Path(Point.T, Point.origin, Point.other) = unit ;
 def carriedAlong : Path(
   Unit,
   transport(
-    +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Unit),
+    (y : Point.T, Path(Point.T, Point.origin, y)) => Unit,
     originOther,
     here(Point.origin),
     here(originOther),
@@ -66,7 +66,7 @@ def backToOrigin(
   q : Path(Point.T, Point.origin, b)
 ) -> Path(Point.T, b, Point.origin) {
   become transport(
-    +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Path(Point.T, y, Point.origin)),
+    (y : Point.T, Path(Point.T, Point.origin, y)) => Path(Point.T, y, Point.origin),
     q,
     here(Point.origin),
     here(q),
@@ -81,7 +81,7 @@ def backToOrigin(
 def backAlong : Path(
   Path(Point.T, Point.other, Point.origin),
   transport(
-    +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Path(Point.T, y, Point.origin)),
+    (y : Point.T, Path(Point.T, Point.origin, y)) => Path(Point.T, y, Point.origin),
     originOther,
     here(Point.origin),
     here(originOther),
@@ -97,11 +97,11 @@ def backAlong : Path(
 def overAlong : Path(
   Path(Path(Point.T, Point.origin, Point.other), originOther, originOther),
   transport(
-    +U ((y : Point.T) -> (z : Path(Point.T, Point.origin, y)) -> -F Path(
+    (y : Point.T, z : Path(Point.T, Point.origin, y)) => Path(
       Path(Point.T, Point.origin, y),
       z,
       z
-    )),
+    ),
     originOther,
     here(Point.origin),
     here(originOther),
@@ -157,11 +157,11 @@ def pathOriginOther : Path(PathPoint.T, PathPoint.origin, PathPoint.other) = uni
 def pathBack : Path(
   Path(PathPoint.T, PathPoint.other, PathPoint.origin),
   transport(
-    +U ((y : PathPoint.T) -> (z : Path(PathPoint.T, PathPoint.origin, y)) -> -F Path(
+    (y : PathPoint.T, Path(PathPoint.T, PathPoint.origin, y)) => Path(
       PathPoint.T,
       y,
       PathPoint.origin
-    )),
+    ),
     pathOriginOther,
     here(PathPoint.origin),
     here(pathOriginOther),

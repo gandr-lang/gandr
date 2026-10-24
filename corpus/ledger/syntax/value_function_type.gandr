@@ -1,4 +1,7 @@
-/// `value_function_type`: a value function type.
+/// `value_function_type`: a value function type, here written where a value
+/// is read: a group closing before `=>` is its domain list, the binder a
+/// later domain reads named, and it stands as a transport's family.
 @[ checks ]
-def bump : Integer => Integer ;
-def bump = fn (x : Integer) { return x + 1 } ;
+def back(a : Integer, b : Integer, q : Path(Integer, a, b)) -> Path(Integer, b, a) {
+  transport((y : Integer, Path(Integer, a, y)) => Path(Integer, y, a), q, here(a), here(q), here(a))
+}

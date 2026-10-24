@@ -129,9 +129,9 @@
 //! reason ([`Withdrawn`]), and `gandr fmt` prints one line for each. A
 //! rewrite never applies where its other spelling reads otherwise: a
 //! parenthesised list after a rule's `<=>` is the rule's outputs, not a
-//! tuple, and the value-function alias is written where the printer writes
-//! it: in a type, a static abstraction's body among them, and `A => B` over
-//! one bare domain in a value, never as a call's argument.
+//! tuple, and the value-function alias is written where the parser reads
+//! it: in a type, a static abstraction's body among them, and where a value
+//! is read every spelling but `() => A`, which reads as an expression there.
 //! The value-function alias names a domain's binder where a later domain or
 //! the result reads it and writes it bare otherwise, as the printer does. A
 //! declaration the lowering refuses in the source has no meaning to compare,

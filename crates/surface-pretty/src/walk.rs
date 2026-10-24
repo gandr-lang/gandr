@@ -591,6 +591,9 @@ pub enum Admits
     ValueType,
     /// A computation type.
     CompType,
+    /// A computation type standing as the thunk type over it, which no node
+    /// holds: a telescope transport's motive, written as that thunk type is.
+    Thunked,
     /// A value.
     Value,
     /// A value whose type its position states: a family's argument, typed by
@@ -683,7 +686,7 @@ enum Reach
     let deep = valued && depth.0 >= DEPTH_LIMIT.0;
     let admitted = matches!((admits, kind), (_, Kind::Unknown)
         | (Admits::Type, Kind::ValueType | Kind::CompType)
-        | (Admits::ValueType, Kind::ValueType) | (Admits::CompType, Kind::CompType)
+        | (Admits::ValueType, Kind::ValueType) | (Admits::CompType | Admits::Thunked, Kind::CompType)
         | (Admits::Value | Admits::Stated | Admits::Operand, Kind::Value) | (Admits::Computation(_), Kind::Computation));
     (ret == Reach::Deep) == deep && (ret == Reach::Spell) == (!deep && admitted)
         && (ret == Reach::Misplaced) == (!deep && !admitted)
@@ -701,12 +704,12 @@ fn reach(
         (_, Kind::Unknown)
         | (Admits::Type, Kind::ValueType | Kind::CompType)
         | (Admits::ValueType, Kind::ValueType)
-        | (Admits::CompType, Kind::CompType)
+        | (Admits::CompType | Admits::Thunked, Kind::CompType)
         | (Admits::Value | Admits::Stated | Admits::Operand, Kind::Value)
         | (Admits::Computation(_), Kind::Computation) => Reach::Spell,
         (Admits::Type, Kind::Value | Kind::Computation)
         | (Admits::ValueType, Kind::CompType | Kind::Value | Kind::Computation)
-        | (Admits::CompType, Kind::ValueType | Kind::Value | Kind::Computation)
+        | (Admits::CompType | Admits::Thunked, Kind::ValueType | Kind::Value | Kind::Computation)
         | (
             Admits::Value | Admits::Stated | Admits::Operand,
             Kind::ValueType | Kind::CompType | Kind::Computation,
@@ -1349,6 +1352,7 @@ where
                 | Admits::Type
                 | Admits::ValueType
                 | Admits::CompType
+                | Admits::Thunked
                 | Admits::Value
                 | Admits::Operand
                 | Admits::Stated => ends(body, Binds::ONE),
@@ -1361,6 +1365,7 @@ where
             | Admits::Type
             | Admits::ValueType
             | Admits::CompType
+            | Admits::Thunked
             | Admits::Value
             | Admits::Operand
             | Admits::Stated => ends(body, Binds::ONE),
@@ -1414,7 +1419,7 @@ where
             over,
             value: transported,
         } => Vec::from([
-            comp_type(motive),
+            Slot::of(motive, Admits::Thunked, Binds::NONE),
             operand(path),
             operand(start),
             operand(over),
@@ -6006,6 +6011,49 @@ impl Walk<'_, '_>
         None
     }
 
+    /// Push the tasks that write `chain`, the arrows and the codomain
+    /// [`Walk::alias`] read, as the value-function alias `(A1, …, An) => C`:
+    /// the join, an unbind for each dependent arrow, the codomain, then each
+    /// domain under the binders before it, so the domains are visited first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn aliased<N>(
+        (links, dependent, codomain): AliasChain<N>,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<N>>,
+    )
+    {
+        tasks.push(Task::Join(writes(
+            Production("value_function_type"),
+            writes(
+                Production("parenthesized_type"),
+                Join::ValueFunction(Arity(links.len()), dependent),
+            ),
+        )));
+        for _ in 0_u32 .. dependent.0.count_ones() {
+            tasks.push(Task::Unbind);
+        }
+        tasks.push(match codomain {
+            Codomain::Result(node) => Task::Visit {
+                node,
+                admits: Admits::ValueType,
+                depth,
+            },
+            Codomain::Reduct(node) => Task::Returned { node, depth },
+        });
+        for link in links.into_iter().rev() {
+            if link.opener.is_some() {
+                tasks.push(Task::Bind(Binds::ONE.zone, link.opener));
+            }
+            tasks.push(Task::Visit {
+                node: link.domain,
+                admits: Admits::ValueType,
+                depth,
+            });
+        }
+    }
+
     /// The dependent value-function alias, `(a : A, B) => C`, over its spelled
     /// domains and codomain: the spelling of an alias chain where an
     /// occurrence named a dependent arrow's binder, the grammar's sugar for
@@ -6776,6 +6824,21 @@ impl Walk<'_, '_>
         // place of its child table's.
         let mut shaped = None;
         let join = match former {
+            // A telescope transport's motive stands where an expression is
+            // read, written as the thunk type over it: the alias over one
+            // domain or more, and over none the thunk itself, `+U (-F C)`, as
+            // a quoted thunk type is.
+            _ if admits == Admits::Thunked => {
+                if self.form == Form::Sugared
+                    && let Some(chain) = self.alias(source, node)
+                    && !chain.0.is_empty()
+                {
+                    Self::aliased(chain, depth, tasks);
+                    return Ok(());
+                }
+                shaped = Some(Vec::from([Slot::of(node, Admits::CompType, Binds::NONE)]));
+                Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
+            },
             Former::BaseType(BaseType::Integer) => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Integer")));
             },
@@ -7389,36 +7452,9 @@ impl Walk<'_, '_>
             )),
             Former::ThunkType(body) => {
                 if self.form == Form::Sugared
-                    && let Some((links, dependent, codomain)) = self.alias(source, body)
+                    && let Some(chain) = self.alias(source, body)
                 {
-                    tasks.push(Task::Join(writes(
-                        Production("value_function_type"),
-                        writes(
-                            Production("parenthesized_type"),
-                            Join::ValueFunction(Arity(links.len()), dependent),
-                        ),
-                    )));
-                    for _ in 0_u32 .. dependent.0.count_ones() {
-                        tasks.push(Task::Unbind);
-                    }
-                    tasks.push(match codomain {
-                        Codomain::Result(node) => Task::Visit {
-                            node,
-                            admits: Admits::ValueType,
-                            depth,
-                        },
-                        Codomain::Reduct(node) => Task::Returned { node, depth },
-                    });
-                    for link in links.into_iter().rev() {
-                        if link.opener.is_some() {
-                            tasks.push(Task::Bind(Binds::ONE.zone, link.opener));
-                        }
-                        tasks.push(Task::Visit {
-                            node: link.domain,
-                            admits: Admits::ValueType,
-                            depth,
-                        });
-                    }
+                    Self::aliased(chain, depth, tasks);
                     return Ok(());
                 }
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
@@ -7537,6 +7573,7 @@ impl Walk<'_, '_>
                 | Admits::Type
                 | Admits::ValueType
                 | Admits::CompType
+                | Admits::Thunked
                 | Admits::Value
                 | Admits::Stated
                 | Admits::Operand => Some(writes(
@@ -7644,18 +7681,16 @@ impl Walk<'_, '_>
                 ))
             },
             // A quoted type stands where an expression is read, which takes
-            // the alias only over one bare domain, `A => C`: a parenthesized
-            // domain list there, `(c : U) => el(c)` or `() => C`, reads as a
-            // parenthesized expression. Any other alias is written as the
-            // thunk it stands for, `+U ((c : U) -> -F el(c))`.
+            // every alias but the one over no domain: a group followed by
+            // `=>` reads as the alias's domain list, `(c : U) => el(c)`, and
+            // `() => C` as an expression. That one is written as the thunk it
+            // stands for, `+U (-F C)`.
             Former::Quote(quoted)
                 if self.form == Form::Sugared
                     && let Former::ThunkType(body) = source.read(quoted)
-                    && !self
+                    && self
                         .alias(source, body)
-                        .is_some_and(|(links, dependent, _)| {
-                            links.len() == 1_usize && dependent.0 == 0_u64
-                        }) =>
+                        .is_none_or(|(links, ..)| links.is_empty()) =>
             {
                 shaped = Some(Vec::from([Slot::of(body, Admits::CompType, Binds::NONE)]));
                 Some(writes(Production("u_type"), Join::Prefix(Prefix::Thunk)))
@@ -9257,8 +9292,8 @@ impl Walk<'_, '_>
             },
             Former::TelescopeTransport { .. } => {
                 let _ = parts
-                    .text("transport(+U ")
-                    .piece(Binding::Atom)
+                    .text("transport(")
+                    .piece(Binding::Sequence)
                     .rest(Arity(4_usize));
                 writes(Production("call_expression"), Binding::Atom)
             },
@@ -10501,9 +10536,11 @@ where
         remaining: VISIT_BUDGET,
         surface: match admits {
             Admits::Type | Admits::ValueType | Admits::CompType => Surface::Type,
-            Admits::Value | Admits::Stated | Admits::Operand | Admits::Computation(_) => {
-                Surface::Expression
-            },
+            Admits::Thunked
+            | Admits::Value
+            | Admits::Stated
+            | Admits::Operand
+            | Admits::Computation(_) => Surface::Expression,
         },
     };
     // A definition's body checked against its signature's thunk type is the
@@ -10513,6 +10550,7 @@ where
         Admits::Type
         | Admits::ValueType
         | Admits::CompType
+        | Admits::Thunked
         | Admits::Value
         | Admits::Operand
         | Admits::Computation(_) => None,
@@ -10692,6 +10730,7 @@ where
         Admits::Type
         | Admits::ValueType
         | Admits::CompType
+        | Admits::Thunked
         | Admits::Value
         | Admits::Stated
         | Admits::Operand => root.doc,
