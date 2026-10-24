@@ -392,6 +392,11 @@ impl<'source> Lowerer<'_, 'source>
                         derived.body(),
                         Origin::new(request.call.node, request.call.span),
                     );
+                    // Each case names the declaration it eliminates, so its
+                    // branches read as that declaration's constructors.
+                    for &(case, family) in derived.cases() {
+                        sink.origins.record_elimination(case, family);
+                    }
                     let _first = self.generics.insert(slot, (declared, derived.body()));
                 },
                 Err(fault) => {

@@ -208,7 +208,10 @@ fn a_point_derives_a_closed_equality_of_two_points()
     else {
         panic!("the first field compares with a primitive");
     };
-    assert_eq!(primitive.name().as_ref(), "eq");
+    // The primitive a source calls by name, `int.eq`, so the comparison
+    // prints as a call that reads back as itself; `==` reads as the
+    // prelude's `eq` through the `Eq` model (#2363).
+    assert_eq!(primitive.name().as_ref(), "int.eq");
     let crate::primitive::Arguments::Binary([left, right]) = *arguments
     else {
         panic!("integer equality is binary");

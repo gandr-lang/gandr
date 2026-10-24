@@ -90,6 +90,33 @@ def same() -> Bool { Succ(Zero) == Succ(Zero) }
     assert_checked(&module, &mut arena);
 }
 
+/// Each data case a derived equality holds names the declaration it
+/// eliminates, as a written `case` does, so a printer reads its branches as
+/// that declaration's constructors (#2363): naturals case on the first side,
+/// then on the second under each of its two constructors.
+#[test]
+fn a_generic_equality_names_the_declaration_each_case_eliminates_2363()
+{
+    let (text, unit) = laid(SourceText::from("def eqNat = Eq.generic(Nat) ;\n"));
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    let nat = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("Nat"))
+        .map(crate::module::LoweredDeclaration::constant)
+        .expect("the naturals are declared");
+    assert_eq!(
+        module
+            .origins()
+            .eliminations()
+            .filter(|&(_, family)| family == nat)
+            .count(),
+        3,
+        "every case of the derived equality names the naturals"
+    );
+}
+
 #[test]
 fn a_source_s_own_eq_module_is_no_derivation_2302()
 {
