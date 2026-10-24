@@ -24,10 +24,10 @@
 //!   it when the only entry there is its holder's — as written, without the
 //!   body a rule fills.
 //! - **A use of a declaration the document writes that no entry types** — the
-//!   theory an `include` or a `Model(…)` names — as that declaration's name
-//!   answers, about the use; an `include`'s keyword likewise, about the
-//!   `include`, and an `include` of a theory the document does not write as
-//!   written.
+//!   theory an `include`, a `Model(…)` or a `handle` scope names — as that
+//!   declaration's name answers, about the use; an `include`'s keyword
+//!   likewise, about the `include`, and an `include` of a theory the document
+//!   does not write as written.
 //! - **The innermost typed node holding the cursor**, about its span: a term
 //!   with its type, and, when an outer judgement checked it against a type
 //!   spelled otherwise, that type after it; a binder with its name and the type
@@ -564,32 +564,33 @@ impl Style
 ///   that declares nothing — a run target, a stray — has no name to hover here.
 ///   On a member's name with no entry inside the member, the member as written,
 ///   about the name. Else, on a use of a declaration the text writes with no
-///   entry inside the use — the theory an `include` or a `Model(…)` names — as
-///   on that declaration's name, about the use; in a run a theory or a `data`
-///   declaration writes that declares nothing — an `include`, a rule — with no
-///   entry inside it and no orientation noted at the position, the same for the
-///   first such use in the run, about the run, and else the run as written,
-///   about it. Else, on the innermost typed node holding the position: inside a
-///   member whose entries are none of them there, the member as written, about
-///   the member; when the node spans a whole declaration — its body's term
-///   written over the declaration, or a module's instantiation written over the
-///   module (#405) — or a root form that declares nothing, as on that
-///   declaration's name, about its head when the position is there and the
-///   node's range otherwise; else a block of its type — a binder's name, a
-///   written type's text or a term written as one name before ` : ` — and, for
-///   a term checked against a type spelled otherwise, that type in a second
-///   block; for a model standing where a model of a theory its own includes is
-///   asked, the reduct the checker applies there, and for a model whose sorts
-///   are manifest standing where a model of its theory is asked, the forgetting
-///   map the checker applies there with the carriers it puts back, each applied
-///   to the model, in a block after; for a parameter's binder or a use of it,
-///   the `///` run written before the parameter after a blank line; about the
-///   node's range. Else, in the head of a declaration — from its form's start
-///   to the brace opening its own body, a member's keyword to its name — as on
-///   its name, about the head, and in the attributes before the head, about
-///   them. Else, on a tile, [`stubbed`]'s answer, about what it is about.
-///   Absent in layout and comments. Every type is spelled in `style`'s form,
-///   and every block is written as [`Code`] writes it in `style`'s markup.
+///   entry inside the use — the theory an `include`, a `Model(…)` or a `handle`
+///   scope names — as on that declaration's name, about the use; in a run a
+///   theory or a `data` declaration writes that declares nothing — an
+///   `include`, a rule — with no entry inside it and no orientation noted at
+///   the position, the same for the first such use in the run, about the run,
+///   and else the run as written, about it. Else, on the innermost typed node
+///   holding the position: inside a member whose entries are none of them
+///   there, the member as written, about the member; when the node spans a
+///   whole declaration — its body's term written over the declaration, or a
+///   module's instantiation written over the module (#405) — or a root form
+///   that declares nothing, as on that declaration's name, about its head when
+///   the position is there and the node's range otherwise; else a block of its
+///   type — a binder's name, a written type's text or a term written as one
+///   name before ` : ` — and, for a term checked against a type spelled
+///   otherwise, that type in a second block; for a model standing where a model
+///   of a theory its own includes is asked, the reduct the checker applies
+///   there, and for a model whose sorts are manifest standing where a model of
+///   its theory is asked, the forgetting map the checker applies there with the
+///   carriers it puts back, each applied to the model, in a block after; for a
+///   parameter's binder or a use of it, the `///` run written before the
+///   parameter after a blank line; about the node's range. Else, in the head of
+///   a declaration — from its form's start to the brace opening its own body, a
+///   member's keyword to its name — as on its name, about the head, and in the
+///   attributes before the head, about them. Else, on a tile, [`stubbed`]'s
+///   answer, about what it is about. Absent in layout and comments. Every type
+///   is spelled in `style`'s form, and every block is written as [`Code`]
+///   writes it in `style`'s markup.
 /// - provides: the answer to `textDocument/hover`.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -2557,6 +2558,26 @@ mod tests
                 "```gandr\nrefl : +U ((a : Carrier) -> -F Path(Bool, alike(a, a), true))\n```"
             )),
             "the theory's law"
+        );
+    }
+
+    /// #2407: the theory a `handle` scope names hovers that theory, as an
+    /// `include` or a `Model(…)` naming it does, not the scope's type.
+    #[test]
+    fn a_handled_theory_hovers_the_theory_it_names_2407()
+    {
+        let text = SourceText::from(
+            "theory State {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s : \
+             S) . C) --> C;\n}\ndef read() -> Integer {\n  handle st : State with sort S = \
+             Integer {\n    st.get()\n  } with {\n    pure(x) => pure x,\n    oper get(k) => \
+             k(4)\n  }\n}\n",
+        );
+        assert_eq!(
+            shown(text, (6.into(), 14.into())),
+            Ok(String::from(
+                "```gandr\ntheory State {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : \
+                 pi+ (s : S) . C) --> C;\n}\n```"
+            ))
         );
     }
 
