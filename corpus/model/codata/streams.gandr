@@ -110,3 +110,25 @@ def tailOfCall() -> -F Integer { first(upward(3).1) }
 /// Whether the head off a call is positive, read in an operand.
 @[ runs("+{.0 = unit}") ]
 def headAbove() -> -F Bool { upward(3).head >= 1 }
+
+/// The head of a stream's tail, read as one chain: the tail is a stream, so
+/// it is observed in turn.
+@[ checks ]
+def secondInline(s : +U Stream(Integer)) -> -F Integer {
+  s.tail.head
+}
+
+/// The integers from three, two further: a chain of observations off a
+/// call, each link observed off what the one before it returns.
+@[ runs("5") ]
+def chained() -> -F Integer { upward(3).tail.tail.head }
+
+/// The same chain, its links by position.
+@[ runs("5") ]
+def chainedByPosition() -> -F Integer { upward(3).1.tail.0 }
+
+/// The ones added to the sevens, observed one further through the chain.
+@[ runs("8") ]
+def eight() -> -F Integer {
+  secondInline(zipWith(add, ones(), always(7)))
+}
