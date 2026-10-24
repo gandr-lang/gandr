@@ -407,10 +407,10 @@ fn n_ary_tuples_injections_and_cases_check_at_their_arity()
         check_value(&mut context, beyond, three).map(|evidence| evidence.conversions()),
         Err(CheckRefusal::ShapeMismatch {
             at: TermNode::Value(beyond),
-            wanted: ExpectedShape::Sum,
+            wanted: ExpectedShape::Summand,
             found: TypeNode::Value(three.id()),
         }),
-        "an injection past the last summand is a shape mismatch"
+        "an injection past the last summand names a summand the sum lacks"
     );
     let returns_integer = form_comp_type(&mut context, returns_integer).unwrap();
     for (case, scrutinised, checked) in [

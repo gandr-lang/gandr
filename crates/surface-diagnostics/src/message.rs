@@ -40,6 +40,7 @@ use core::fmt;
 
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
+use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::LinearityDefect;
@@ -949,6 +950,14 @@ fn checked(
             f.write_str("this boundary flow runs against the variance of its position")
         },
         CheckRefusal::TypeMismatch(_) => f.write_str("mismatched types"),
+        CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::EmptySum,
+            ..
+        } => f.write_str("the empty sum `+{}` has no summand for this injection to name"),
+        CheckRefusal::ShapeMismatch {
+            wanted: ExpectedShape::Summand,
+            ..
+        } => f.write_str("this injection names a summand its sum does not have"),
         CheckRefusal::ShapeMismatch { wanted, .. } => write!(f, "expected {}", Shape(wanted)),
         CheckRefusal::NotSynthesisable { form } => write!(
             f,

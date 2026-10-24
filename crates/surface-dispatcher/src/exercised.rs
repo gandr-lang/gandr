@@ -586,6 +586,8 @@ fn checking_row(
                 | ExpectedShape::Stack
                 | ExpectedShape::With
                 | ExpectedShape::Sum
+                | ExpectedShape::Summand
+                | ExpectedShape::EmptySum
                 | ExpectedShape::List
                 | ExpectedShape::Thunk
                 | ExpectedShape::Arrow

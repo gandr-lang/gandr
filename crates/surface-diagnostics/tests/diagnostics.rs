@@ -447,6 +447,36 @@ fn a_type_mismatch_is_located_at_its_term()
     );
 }
 
+/// #2340: an injection the sum it is checked against has no summand for is
+/// headed by what the sum lacks, not as a sum the type is not; the empty sum
+/// is named as such.
+#[test]
+fn an_injection_past_the_summands_names_what_the_sum_lacks_2340()
+{
+    for (text, message, label) in [
+        (
+            "def none() -> -F +{} {\n  return +{.0 = 1}\n}\n",
+            "the empty sum `+{}` has no summand for this injection to name",
+            "the type met, where a sum with a summand is required",
+        ),
+        (
+            "def past() -> -F +{Integer} {\n  return +{.1 = 1}\n}\n",
+            "this injection names a summand its sum does not have",
+            "the type met, where a sum with the summand this injection names is required",
+        ),
+    ] {
+        let diagnostic = only(Path::new("summand.gandr"), SourceText::from(text));
+        assert_eq!(diagnostic.message.text, message, "{text}");
+        assert!(
+            diagnostic
+                .annotations
+                .iter()
+                .any(|annotation| annotation.label == label),
+            "the sum met is labelled with what it lacks: {diagnostic:?}"
+        );
+    }
+}
+
 #[test]
 fn a_mismatch_label_spells_both_types()
 {
