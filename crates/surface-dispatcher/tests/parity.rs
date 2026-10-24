@@ -45,7 +45,9 @@ use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Elided;
 use gandr_surface_pretty::Fidelity;
+use gandr_surface_pretty::ForgetMap;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
@@ -909,10 +911,50 @@ fn read(
     let names: Vec<Name<'_>> = owned.iter().map(|name| Name::from(name.as_str())).collect();
     let families = Families::of(&module);
     let constructors = families.naming(&names);
+    // Each model type as the source writes it, which the record it lowers to
+    // does not hold.
+    let mut models: Vec<(ValueTypeId, Modelled<'_>)> = module
+        .origins()
+        .models()
+        .iter()
+        .map(|&(modelled, ref model)| {
+            (modelled, Modelled {
+                theory: Name::from(model.theory.as_ref()),
+                sorts: model
+                    .sorts
+                    .iter()
+                    .map(|&(ref sort, carrier)| {
+                        (Name::from(sort.as_ref()), CoreNode::ValueType(carrier))
+                    })
+                    .collect(),
+            })
+        })
+        .collect();
+    models.sort_by_key(|&(modelled, _)| modelled);
+    // Each forgetting map onto its own theory, whose written call the explicit
+    // form writes as the map's form, as the formatter keeps it.
+    let mut maps: Vec<(ConstantIndex, ForgetMap<'_>)> = module
+        .forgettings()
+        .iter()
+        .filter(|forgetting| forgetting.onto == forgetting.theory)
+        .map(|forgetting| {
+            (forgetting.map, ForgetMap {
+                theory: forgetting.theory,
+                sorts: forgetting
+                    .sorts
+                    .iter()
+                    .map(|sort| Name::from(sort.as_ref()))
+                    .collect(),
+            })
+        })
+        .collect();
+    maps.sort_by_key(|&(map, _)| map);
     let source = CoreSource::new(&arena, &names)
         .naming(&constructors)
         .crossing(&crossings)
-        .forgetting(&forgettings);
+        .forgetting(&forgettings)
+        .forgetting_maps(&maps)
+        .modeling(&models);
     // A body leaves each written reduct's or forgetting map's call to the
     // checker, which applies the map where the call stands; a type, read by
     // its value, keeps it.

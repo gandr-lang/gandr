@@ -9,9 +9,11 @@
 // sorts takes the map putting back those alone, every other sort staying the
 // field it is (#2132). A model type may fix a sort to another model's carrier,
 // `with sort C = a.C`, the two then sharing it (#2131), and so may one fixing
-// another of its sorts, reading a sort the other leaves a field (#2158).
-// An ascription `(m : Model(Counter))` states the crossing, and the explicit
-// twin writes the map out (#2130).
+// another of its sorts, reading a sort the other leaves a field (#2158). An
+// operation is read off a model's binder as a sort is, `a.incr` the step
+// `a`'s record holds at `a`'s carrier, whether the carrier is a field or
+// manifest (#2246). An ascription `(m : Model(Counter))` states the crossing,
+// and the explicit twin writes the map out (#2130).
 
 // The counter, counting up and down modulo three, the negation between the
 // counts, and `observe`, which reads any counter.
@@ -140,6 +142,53 @@ def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> -
 /// The twin read as any counter, its carrier solved as counting up's.
 @[ runs("1") ]
 def observedSharedUp() -> -F Integer { observeShared(upModel, upManifest) }
+
+/// A count of a counter stepped and read by the counter's own operations,
+/// read off its binder: `a.incr` steps a count of `a` (#2246).
+@[ checks ]
+def stepOwn(a : Model(Counter), c : a.C) -> -F Integer {
+  run i <- a.incr ;
+  run r <- a.read ;
+  r(i(c))
+}
+
+/// Counting up's zero, stepped and read by counting up's own operations.
+@[ runs("1") ]
+def ownUp() -> -F Integer { stepOwn(upModel, Up.zero) }
+
+/// A counter stepped once from its zero and read, by the operations read off
+/// its binder (#2246).
+@[ checks ]
+def stepZero(a : Model(Counter)) -> -F Integer {
+  run z <- a.zero ;
+  run i <- a.incr ;
+  run r <- a.read ;
+  r(i(z))
+}
+
+/// Counting up and counting down read alike through the operations each
+/// selects, along the path between the models: a selection is a function of
+/// the model, so `cong` carries the path to the readings.
+@[ checks ]
+def selectedAlike() -> -F Path(Integer, stepZero(upModel), stepZero(downModel)) {
+  cong(stepZero, oneCounter)
+}
+
+/// A manifest counter's zero, stepped and read by its own operations: its
+/// carrier is no field, so the record is keyed by the operations, and
+/// `a.zero` is the zero it holds (#2246).
+@[ checks ]
+def stepManifest(a : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F Integer {
+  run z <- a.zero ;
+  run i <- a.incr ;
+  run r <- a.read ;
+  r(i(z))
+}
+
+/// Counting up, its carrier manifest, stepped once from its zero by its own
+/// operations.
+@[ runs("1") ]
+def manifestUp() -> -F Integer { stepManifest(upManifest) }
 
 /// A count of a counter whose counts are manifest at the integers is an
 /// integer: the carrier its type fixes is the type it names.
