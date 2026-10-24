@@ -1,10 +1,13 @@
 //! The second-order reading of a presentation's rules, under which a rule
-//! instantiating a variable rewrites terms and takes part in critical pairs.
-//! A binding field and an atom's abstraction each bind over their argument,
+//! instantiating a variable, or one stating a condition on the atoms an
+//! instance names, rewrites terms and takes part in critical pairs. A
+//! binding field and an atom's abstraction each bind over their argument,
 //! and an occurrence counts the binders of either kind between it and its
 //! own. A rule's variable is a metavariable standing for a term abstracted
-//! over the variables its left side applies it to, naming no other variable
-//! the rule binds.
+//! over the variables its left side applies it to, and over the atoms
+//! [`TheoryRule::scoped`] reads it naming, naming no other variable or atom
+//! the rule binds: a freshness condition is a metavariable not applied to
+//! the atom, stated over the hole it stands for.
 //!
 //! Matching `get(bind s . k(s))` binds `k` to the field's body with `s`
 //! abstracted, and fails where that body names a binder of the rule `k` is
@@ -15,14 +18,17 @@
 //! `k` are one term, and a rule's binding field matches a metavariable by
 //! expanding it once.
 //!
-//! A critical pair of two rules, one of which instantiates a variable, is
-//! found by pattern unification: the inner rule's left side, each of its
-//! metavariables applied to the binders above the position it overlaps at,
-//! is unified with the outer rule's left side there, a metavariable's
-//! argument naming a binder the other side may not reach pruned away. The
-//! pair's two reducts are normalized under every rule that is not
-//! conditioned and compared: the critical pair lemma for pattern rewrite
-//! systems.
+//! A critical pair of two rules, one of which instantiates a variable or is
+//! conditioned, is found by pattern unification: the inner rule's left
+//! side, each of its metavariables applied to the binders above the position
+//! it overlaps at, is unified with the outer rule's left side there, a
+//! metavariable's argument naming a binder the other side may not reach
+//! pruned away. Pruning shifts each rule's freshness conditions to the
+//! overlap and conjoins them, an overlap no instance satisfies has no
+//! unifier and owes no join, and an instance carries a moved variable's
+//! atoms to their places by substitution. The pair's two reducts are
+//! normalized under every rule and compared: the critical pair lemma for
+//! pattern rewrite systems.
 //!
 //! # References
 //! - Dale Miller, _A logic programming language with lambda-abstraction,
@@ -31,6 +37,10 @@
 //! - Richard Mayr and Tobias Nipkow, _Higher-order rewrite systems and their
 //!   confluence_, Theoretical Computer Science 192(1), 1998: the critical pair
 //!   lemma for pattern rewrite systems.
+//! - Nicolas Behr and Jean Krivine, _Compositionality of rewriting rules with
+//!   conditions_, Compositionality 3(2), 2021: a condition shifted along a
+//!   match to an overlap and transported along a rule, and the composite of two
+//!   rules carrying both.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
@@ -38,6 +48,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::slice;
 
+use super::Occurrence;
 use super::Position;
 use super::SymbolKind;
 use super::TheoryNode;
@@ -195,21 +206,6 @@ struct Rule
     /// Each left position of an operation, a constructor or a results tuple
     /// in the rule's own reading, by its position in this one.
     places: BTreeMap<Position, Position>,
-    /// Whether the rule rewrites terms: every rule but a conditioned one.
-    fires: Fires,
-}
-
-/// Whether a rule rewrites the terms a pair's reducts normalize.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Fires
-{
-    /// It does.
-    Always,
-    /// It is conditioned and fires on no term the decision normalizes.
-    Never,
 }
 
 /// A presentation's rules read second-order.
@@ -259,10 +255,10 @@ impl Higher
     ///   to the binders above `at`, or their most general unifier's two reducts
     ///   — `outer`'s right side, and `outer`'s left side with `inner`'s right
     ///   side grafted at `at`, both instantiated — normalize to one η-short
-    ///   term under every rule not conditioned; [`Pair::Parts`] when they
-    ///   normalize to two; [`Pair::Undecided`] when unification meets a
-    ///   metavariable applied to other than distinct occurrences, or either
-    ///   rule names a symbol outside the table.
+    ///   term under every rule; [`Pair::Parts`] when they normalize to two;
+    ///   [`Pair::Undecided`] when unification meets a metavariable applied to
+    ///   other than distinct occurrences, or either rule names a symbol outside
+    ///   the table.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — the verdict is a comparison of two normal forms,
@@ -343,14 +339,14 @@ impl Higher
         })
     }
 
-    /// `term`'s normal form under every rule that fires, rewriting the last
+    /// `term`'s normal form under every rule, rewriting the last
     /// redex in pre-order first; [`None`] where a rule's instance is ill
     /// formed.
     ///
     /// # Specification
     /// - requires: `term` η-short.
-    /// - ensures: on [`Some`], an η-short term no rule that fires matches at
-    ///   any position, reached from `term` by rewriting.
+    /// - ensures: on [`Some`], an η-short term no rule matches at any position,
+    ///   reached from `term` by rewriting.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — a normal form is what this computes; checking one
@@ -380,7 +376,7 @@ impl Higher
                     return Ok(None);
                 };
                 for rule in self.rules.iter().flatten() {
-                    if rule.fires == Fires::Never || rule.left.first() != Some(&head) {
+                    if rule.left.first() != Some(&head) {
                         continue;
                     }
                     fuel.charge()?;
@@ -416,8 +412,13 @@ fn reading(
     rule: &TheoryRule,
 ) -> Option<Rule>
 {
-    let left = side(rules, rule.left())?;
-    let right = side(rules, rule.right())?;
+    let lefts = rule
+        .left()
+        .iter()
+        .filter(|node| !matches!(**node, TheoryNode::Symbol(_)))
+        .count();
+    let left = side(rules, rule, rule.left(), Occurrence(0))?;
+    let right = side(rules, rule, rule.right(), Occurrence(lefts))?;
     let metas = left
         .iter()
         .chain(&right)
@@ -451,31 +452,30 @@ fn reading(
         right,
         metas: Count(metas),
         places,
-        fires: if rule.conditioned {
-            Fires::Never
-        }
-        else {
-            Fires::Always
-        },
     })
 }
 
-/// A rule side read second-order, before contraction.
+/// A rule side read second-order, before contraction: each variable
+/// occurrence, the side's first at `first` among the rule's, applied first to
+/// the atom abstractions [`TheoryRule::scoped`] read for it.
 ///
 /// # Specification
 /// trivial.
 fn side(
     rules: &TheoryRules,
+    rule: &TheoryRule,
     nodes: &[TheoryNode],
+    Occurrence(first): Occurrence,
 ) -> Option<Term>
 {
-    nodes
-        .iter()
-        .map(|&node| match node {
+    let mut term = Vec::with_capacity(nodes.len());
+    let mut occurrence = first;
+    for &node in nodes {
+        let (variable, written) = match node {
             TheoryNode::Symbol(symbol) => {
                 let &(kind, arity) = rules.symbols.get(symbol.0)?;
                 let arity = Count(usize::from(arity));
-                Some(match kind {
+                term.push(match kind {
                     SymbolKind::Operation(_) | SymbolKind::Constructor => {
                         Node::Symbol(symbol, arity, Binds::Nothing)
                     },
@@ -487,15 +487,25 @@ fn side(
                     SymbolKind::Bound(distance) => {
                         Node::Index(Binds::Variable, Count(usize::from(distance)))
                     },
-                })
+                });
+                continue;
             },
-            TheoryNode::Variable(variable) => Some(Node::Meta(Meta(ordinal(variable).0), Count(0))),
-            TheoryNode::Instance(variable, count) => Some(Node::Meta(
-                Meta(ordinal(variable).0),
-                Count(usize::from(count)),
-            )),
-        })
-        .collect()
+            TheoryNode::Variable(variable) => (variable, 0),
+            TheoryNode::Instance(variable, count) => (variable, usize::from(count)),
+        };
+        let atoms = rule.holes(Occurrence(occurrence));
+        occurrence = occurrence.saturating_add(1);
+        term.push(Node::Meta(
+            Meta(ordinal(variable).0),
+            Count(atoms.len().saturating_add(written)),
+        ));
+        term.extend(
+            atoms
+                .iter()
+                .map(|&distance| Node::Index(Binds::Atom, Count(usize::from(distance)))),
+        );
+    }
+    Some(term)
 }
 
 /// The subterms `node` applies.

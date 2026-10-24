@@ -60,12 +60,12 @@ fn certified(
     let written: Vec<TheoryRule> = cells
         .oriented
         .iter()
-        .map(|face| symbols.rule(&face.lhs, &face.rhs))
+        .map(|face| symbols.face(face, Nameable(false)))
         .collect();
     let faces: Vec<TheoryRule> = certificate
         .derived
         .iter()
-        .map(|face| symbols.rule(&face.left, &face.right))
+        .map(|face| symbols.rule(&face.left, &face.right, &[], Nameable(false)))
         .collect();
     let mut rules = TheoryRules::new(symbols.table(), written);
     for (face, rule) in certificate.derived.iter().zip(faces) {

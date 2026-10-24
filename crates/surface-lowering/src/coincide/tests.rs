@@ -963,10 +963,13 @@ fn a_pattern_overlapping_its_own_rule_joins_2115()
     });
 }
 
+/// #2448: where a port takes the channel, a conditioned rule's overlap is
+/// decided in the second-order reading under the freshness it composes: a pair
+/// joins there, parts there, or has no instance the conditions admit.
 #[test]
-fn a_conditioned_rule_overlapping_another_refuses_the_block()
+fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
 {
-    let theory = |channel: &str| {
+    let theory = |channel: &str, rules: &str| {
         format!(
             "theory Pi {{
     sort Name : Atom;
@@ -975,13 +978,40 @@ fn a_conditioned_rule_overlapping_another_refuses_the_block()
     oper par : (p : Proc, q : Proc) --> Proc;
     oper out : (c : {channel}, p : Proc) --> Proc;
     oper nu : (p : bind (a : Name) . Proc) --> Proc;
-    rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
-    rule gc : nu(bind a . p) <=> p where a # p;
+    {rules}
 }}"
         )
     };
-    let named = theory("Name");
-    let source = SourceText::from(named.as_str());
+    let scope = "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;";
+    let gc = "rule gc : nu(bind a . p) <=> p where a # p;";
+    for channel in ["Name", "Proc"] {
+        let collecting = theory(channel, &format!("{scope}\n    {gc}"));
+        lowered(SourceText::from(collecting.as_str()), |module| {
+            assert_eq!(
+                module.cells().diagnostics,
+                [],
+                "collection below extrusion joins under `a # q, a # p` where `out` takes a \
+                 {channel}"
+            );
+        });
+    }
+    let quiet = theory(
+        "Name",
+        &format!("{gc}\n    rule quiet : nu(bind a . out(a, nil())) <=> nil();"),
+    );
+    lowered(SourceText::from(quiet.as_str()), |module| {
+        assert_eq!(
+            module.cells().diagnostics,
+            [],
+            "collection's instance may not name the channel `quiet` sends on: no instance \
+             overlaps"
+        );
+    });
+    let vacant = theory(
+        "Name",
+        &format!("{scope}\n    rule vacant : nu(bind a . nil()) <=> nil();"),
+    );
+    let source = SourceText::from(vacant.as_str());
     lowered(source, |module| {
         let [ref diagnostic] = *module.cells().diagnostics.as_slice()
         else {
@@ -989,16 +1019,19 @@ fn a_conditioned_rule_overlapping_another_refuses_the_block()
         };
         let CellFault::Coherence(CoherenceFault::OverlapsCondition { first }) = diagnostic.fault
         else {
-            panic!("collection overlaps extrusion: {:?}", diagnostic.fault)
+            panic!(
+                "a vacant restriction parts from extrusion: {:?}",
+                diagnostic.fault
+            )
         };
         assert_eq!(
             text(source, diagnostic.span).as_ref(),
-            "rule gc : nu(bind a . p) <=> p where a # p"
+            "rule vacant : nu(bind a . nil()) <=> nil()"
         );
         assert_eq!(
             text(source, first).as_ref(),
             "rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q",
-            "collection names extrusion"
+            "the vacant restriction names extrusion"
         );
         assert_eq!(
             module.declarations()[0].outcome(),
@@ -1006,14 +1039,6 @@ fn a_conditioned_rule_overlapping_another_refuses_the_block()
                 span: diagnostic.span,
                 first
             })
-        );
-    });
-    let unnamed = theory("Proc");
-    lowered(SourceText::from(unnamed.as_str()), |module| {
-        assert_eq!(
-            module.cells().diagnostics,
-            [],
-            "where no port takes a channel no term names one, and the pair joins"
         );
     });
 }

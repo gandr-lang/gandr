@@ -182,7 +182,6 @@ impl LoweringRefusal<'_>
                 kind: crate::WfKind::UndecidedCondition,
                 ..
             }
-            | Self::RulesOverlapCondition { .. }
             | Self::GenericUncovered {
                 fault: Uncovered::Applied(_)
                     | Uncovered::Nested(..)
@@ -271,6 +270,7 @@ impl LoweringRefusal<'_>
             | Self::RulesNonLinear { .. }
             | Self::RulesDiverge { .. }
             | Self::RulesOverlapSecondOrder { .. }
+            | Self::RulesOverlapCondition { .. }
             | Self::RulesUncompleted { .. }
             | Self::RulesNeverComplete { .. }
             | Self::UnderivedRule { .. }
@@ -289,10 +289,7 @@ impl LoweringRefusal<'_>
             Self::IllFormedDescription {
                 kind: crate::WfKind::UndecidedCondition,
                 ..
-            }
-            | Self::RulesOverlapCondition { .. } => {
-                FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION)
-            },
+            } => FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
             Self::UnresolvedName { .. }
             | Self::UnresolvedDocLink { .. }
             | Self::UnresolvedTypeHead { .. }
@@ -342,6 +339,7 @@ impl LoweringRefusal<'_>
             | Self::RulesNonLinear { .. }
             | Self::RulesDiverge { .. }
             | Self::RulesOverlapSecondOrder { .. }
+            | Self::RulesOverlapCondition { .. }
             | Self::RulesUncompleted { .. }
             | Self::RulesNeverComplete { .. }
             | Self::AcrossHandler { .. }
@@ -1126,7 +1124,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unimplemented(TrackingIssue::UNDECIDED_CONDITION),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

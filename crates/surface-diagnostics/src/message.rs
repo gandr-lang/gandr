@@ -664,9 +664,9 @@ fn lowered(
              forms, so the block's rules are refused",
         ),
         LoweringRefusal::RulesOverlapCondition { .. } => f.write_str(
-            "this rule and another rewrite overlapping terms, and one of them fires only where its \
-             instance names no atom it may not: no critical pair decides that yet, so the block's \
-             rules are refused",
+            "this rule and an earlier one rewrite overlapping terms, one of them fires only where \
+             its instance names no atom it may not, and under the condition the overlap composes \
+             it rewrites to two different normal forms, so the block's rules are refused",
         ),
         LoweringRefusal::RulesUncompleted { .. } => f.write_str(
             "this rule and an earlier one rewrite one term to two normal forms, and no rule the \

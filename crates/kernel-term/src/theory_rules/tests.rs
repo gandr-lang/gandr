@@ -1101,7 +1101,81 @@ fn an_occurrence_counts_to_its_abstraction()
 }
 
 #[test]
-fn a_conditioned_rule_converges_alone_and_overlaps_nothing()
+fn a_variables_atoms_are_read_off_its_abstractions_2448()
+{
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let (rule_tag, fresh_tag) = (
+        ConstructorTag::from(super::tag::RULE),
+        ConstructorTag::from(super::tag::FRESH),
+    );
+    let mut code = Code::new();
+    let (p, q) = (code.var(literal("p")), code.var(literal("q")));
+    let restricted = |code: &mut Code, atom: &str, body: ValueId| {
+        let over = code.abs(literal(atom), body);
+        code.app(literal("nu"), &[over])
+    };
+    let par =
+        |code: &mut Code, left: ValueId, right: ValueId| code.app(literal("par"), &[left, right]);
+    let hidden = restricted(&mut code, "a", p);
+    let scoped = par(&mut code, hidden, q);
+    let joined = par(&mut code, p, q);
+    let extruded = restricted(&mut code, "a", joined);
+    let tagged = code.app(literal("tag"), &[p]);
+    let kept = restricted(&mut code, "a", tagged);
+    let inner = restricted(&mut code, "b", p);
+    let swapped_from = restricted(&mut code, "a", inner);
+    let inner = restricted(&mut code, "a", p);
+    let swapped_to = restricted(&mut code, "b", inner);
+    let [scope, gc, keep, swap, a, p_name, q_name] =
+        ["scope", "gc", "keep", "swap", "a", "p", "q"].map(|name| code.text(literal(name)));
+    let (sorts, operations) = code.channels(super::Naming::Named);
+    let presentation = code.presenting(sorts, operations, vec![
+        (rule_tag, vec![scope, scoped, extruded]),
+        (fresh_tag, vec![a, q_name]),
+        (rule_tag, vec![gc, hidden, p]),
+        (fresh_tag, vec![a, p_name]),
+        (rule_tag, vec![keep, kept, hidden]),
+        (rule_tag, vec![swap, swapped_from, swapped_to]),
+    ]);
+    let read = TheoryRules::read(&code.arena, presentation).expect("the chain reads");
+    let holes = |rule: usize, occurrences: usize| {
+        read.rules().get(rule).map(|rule| {
+            (0 .. occurrences)
+                .map(|at| rule.holes(super::Occurrence(at)).to_vec())
+                .collect::<Vec<_>>()
+        })
+    };
+    let at = |distances: &[usize]| {
+        distances
+            .iter()
+            .map(|&distance| BinderDistance::from(distance))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        holes(0, 4),
+        Some(vec![at(&[0]), at(&[]), at(&[0]), at(&[])]),
+        "scope extrusion keeps `p` naming its restriction's atom and moves `q`, fresh for it, \
+         in naming none"
+    );
+    assert_eq!(
+        holes(1, 2),
+        Some(vec![at(&[]), at(&[])]),
+        "garbage collection's `p`, fresh for `a`, names no atom"
+    );
+    assert_eq!(
+        holes(2, 2),
+        Some(vec![at(&[0]), at(&[0])]),
+        "a law under one abstraction on both sides names its atom on both"
+    );
+    assert_eq!(
+        holes(3, 2),
+        Some(vec![at(&[1, 0]), at(&[0, 1])]),
+        "swapping two abstractions swaps the distances the variable names them at"
+    );
+}
+
+#[test]
+fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
 {
     let literal = |text: &str| StringLiteral::new(String::from(text));
     let tag = ConstructorTag::from;
@@ -1112,14 +1186,36 @@ fn a_conditioned_rule_converges_alone_and_overlaps_nothing()
     );
     let mut code = Code::new();
     let (p, q) = (code.var(literal("p")), code.var(literal("q")));
+    let nil = code.app(literal("nil"), &[]);
     let hidden = code.abs(literal("a"), p);
     let restricted = code.app(literal("nu"), &[hidden]);
     let scoped = code.app(literal("par"), &[restricted, q]);
     let joined = code.app(literal("par"), &[p, q]);
     let enclosed = code.abs(literal("a"), joined);
     let extruded = code.app(literal("nu"), &[enclosed]);
-    let [scope, gc, a, p_name, q_name, par, nu, one, two] =
-        ["scope", "gc", "a", "p", "q", "par", "nu", "1", "2"].map(|name| code.text(literal(name)));
+    let nothing = code.abs(literal("a"), nil);
+    let empty = code.app(literal("nu"), &[nothing]);
+    let named = code.occ(literal("a"));
+    let sends = code.app(literal("out"), &[named, nil]);
+    let sending = code.abs(literal("a"), sends);
+    let unheard = code.app(literal("nu"), &[sending]);
+    let [
+        scope,
+        gc,
+        drop,
+        quiet,
+        a,
+        p_name,
+        q_name,
+        par,
+        nu,
+        out,
+        one,
+        two,
+    ] = [
+        "scope", "gc", "drop", "quiet", "a", "p", "q", "par", "nu", "out", "1", "2",
+    ]
+    .map(|name| code.text(literal(name)));
     let extrusion = [
         (rule_tag, vec![scope, scoped, extruded]),
         (fresh_tag, vec![a, q_name]),
@@ -1128,7 +1224,13 @@ fn a_conditioned_rule_converges_alone_and_overlaps_nothing()
         (rule_tag, vec![gc, restricted, p]),
         (fresh_tag, vec![a, p_name]),
     ];
-    let ranks = [(rank, vec![par, two]), (rank, vec![nu, one])];
+    let dropping = [(rule_tag, vec![drop, empty, nil])];
+    let silenced = [(rule_tag, vec![quiet, unheard, nil])];
+    let ranks = [
+        (rank, vec![par, two]),
+        (rank, vec![nu, one]),
+        (rank, vec![out, one]),
+    ];
     let decided = |code: &mut Code,
                    naming: super::Naming,
                    rules: &[&[(ConstructorTag, Vec<ValueId>)]]|
@@ -1153,19 +1255,23 @@ fn a_conditioned_rule_converges_alone_and_overlaps_nothing()
             Ok(()),
             "garbage collection converges alone"
         );
+        assert_eq!(
+            decided(&mut code, naming, &[&extrusion, &collection]),
+            Ok(()),
+            "collection overlaps extrusion where the restricted process names no `a`, and \
+             there the two join"
+        );
     }
     assert_eq!(
-        decided(&mut code, super::Naming::Named, &[&extrusion, &collection]),
-        refused!(0, TheoryRuleFault::Conditioned(RuleIndex::from(1_usize))),
-        "where `out` takes a channel, collection overlaps extrusion under conditions no pair \
-         decides"
+        decided(&mut code, super::Naming::Named, &[&extrusion, &dropping]),
+        refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "a restriction of nothing extruded keeps its restriction, which dropping it does not \
+         rewrite"
     );
     assert_eq!(
-        decided(&mut code, super::Naming::Unnamed, &[
-            &extrusion,
-            &collection
-        ]),
+        decided(&mut code, super::Naming::Named, &[&collection, &silenced]),
         Ok(()),
-        "where no term names a channel the two join"
+        "collection fires only where the restricted process names no `a`, and a process \
+         sending on `a` names it: the overlap is vacuous and owes no join"
     );
 }
