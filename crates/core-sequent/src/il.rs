@@ -141,7 +141,6 @@
 //! second time.
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
@@ -154,8 +153,10 @@ use gandr_core_term::support::Union;
 use gandr_core_term::support::WordArena;
 use gandr_core_term::support::WordMark;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Family;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Summand;
 use gandr_theory_cell_complexes::Polarity;
@@ -1276,20 +1277,21 @@ struct Row<Node>
 
 /// The append-only arena owning every IL node of one translation or run.
 ///
-/// The three families are append-only vectors and a node's children are
-/// addresses into the same arena, so cloning or dropping an arena is a flat
-/// vector operation on any term depth. Each node's scope sits beside it, in
-/// its family's row at the node's address, and the word arena holds the
-/// codes wider than a slot.
+/// The three families are append-only and a node's children are addresses
+/// into the same arena, so cloning or dropping an arena is a flat operation
+/// on any term depth. Each node's scope sits beside it, in its family's row
+/// at the node's address, and the word arena holds the codes wider than a
+/// slot. Rows [`Self::freeze`] froze are shared by every clone made after,
+/// so such a clone copies, and its drop releases, only the rows minted since.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CommandArena
 {
     /// The producer nodes and their scopes, in minting order.
-    producers: Vec<Row<ProducerNode>>,
+    producers: Family<Row<ProducerNode>>,
     /// The consumer nodes and their scopes, in minting order.
-    consumers: Vec<Row<ConsumerNode>>,
+    consumers: Family<Row<ConsumerNode>>,
     /// The command nodes and their scopes, in minting order.
-    commands: Vec<Row<CommandNode>>,
+    commands: Family<Row<CommandNode>>,
     /// The words of every scope wider than a slot.
     words: WordArena,
     /// Portable type annotations; runtime transitions do not inspect them.
@@ -1332,6 +1334,40 @@ impl CommandArena
         Self::default()
     }
 
+    /// Share every row minted so far with every clone of the arena made
+    /// after: such a clone copies, and its drop releases, only the rows
+    /// minted after the freeze, and the annotations' nodes likewise
+    /// ([`gandr_core_term::CoreArena::freeze`]).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the watermark is unchanged and every address resolves to the
+    ///   node and the scope it did; minting, truncation and comparison answer
+    ///   as they would have unfrozen.
+    /// - provides: the focused program of an import closure judged once, which
+    ///   each revision of a document judged after it copies at the cost of the
+    ///   document's rows.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arena frozen, cloned, minted into on both sides
+    ///   and truncated past and into its frozen rows, each read against an
+    ///   arena built alike and never frozen.
+    /// - witness: `il::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
+    #[spec(
+        captures: entry = self.watermark(),
+        ensures: self.watermark() == entry,
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        self.producers.freeze();
+        self.consumers.freeze();
+        self.commands.freeze();
+        self.annotations.freeze();
+    }
+
     /// The current watermark: the three family lengths and the word arena's.
     ///
     /// # Specification
@@ -1341,9 +1377,9 @@ impl CommandArena
     pub fn watermark(&self) -> SequentWatermark
     {
         SequentWatermark {
-            producers: NodeCount::from(self.producers.len()),
-            consumers: NodeCount::from(self.consumers.len()),
-            commands: NodeCount::from(self.commands.len()),
+            producers: NodeCount::from(usize::from(self.producers.len())),
+            consumers: NodeCount::from(usize::from(self.consumers.len())),
+            commands: NodeCount::from(usize::from(self.commands.len())),
             words: self.words.mark(),
             annotations: self.annotations.watermark(),
         }
@@ -1383,9 +1419,12 @@ impl CommandArena
         watermark: SequentWatermark,
     )
     {
-        self.producers.truncate(usize::from(watermark.producers));
-        self.consumers.truncate(usize::from(watermark.consumers));
-        self.commands.truncate(usize::from(watermark.commands));
+        self.producers
+            .truncate(ArenaLength::from(usize::from(watermark.producers)));
+        self.consumers
+            .truncate(ArenaLength::from(usize::from(watermark.consumers)));
+        self.commands
+            .truncate(ArenaLength::from(usize::from(watermark.commands)));
         self.words.truncate(watermark.words);
         self.annotations.truncate_to(watermark.annotations);
     }
@@ -1409,10 +1448,10 @@ impl CommandArena
     #[must_use]
     #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
-            .and_then(|offset| self.producers.get(offset))
+            .and_then(|offset| self.producers.get(ArenaLength::from(offset)))
             .is_some_and(|held| core::ptr::eq(&raw const held.node, core::ptr::from_ref(node))),
         | None => usize::try_from(u32::from(id))
-            .map_or(true, |offset| offset >= self.producers.len()),
+            .map_or(true, |offset| offset >= usize::from(self.producers.len())),
     })]
     pub fn producer(
         &self,
@@ -1440,10 +1479,10 @@ impl CommandArena
     #[must_use]
     #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
-            .and_then(|offset| self.consumers.get(offset))
+            .and_then(|offset| self.consumers.get(ArenaLength::from(offset)))
             .is_some_and(|held| core::ptr::eq(&raw const held.node, core::ptr::from_ref(node))),
         | None => usize::try_from(u32::from(id))
-            .map_or(true, |offset| offset >= self.consumers.len()),
+            .map_or(true, |offset| offset >= usize::from(self.consumers.len())),
     })]
     pub fn consumer(
         &self,
@@ -1471,10 +1510,10 @@ impl CommandArena
     #[must_use]
     #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
-            .and_then(|offset| self.commands.get(offset))
+            .and_then(|offset| self.commands.get(ArenaLength::from(offset)))
             .is_some_and(|held| core::ptr::eq(&raw const held.node, core::ptr::from_ref(node))),
         | None => usize::try_from(u32::from(id))
-            .map_or(true, |offset| offset >= self.commands.len()),
+            .map_or(true, |offset| offset >= usize::from(self.commands.len())),
     })]
     pub fn command(
         &self,
@@ -1492,7 +1531,7 @@ impl CommandArena
     #[must_use]
     pub fn producer_count(&self) -> NodeCount
     {
-        NodeCount::from(self.producers.len())
+        NodeCount::from(usize::from(self.producers.len()))
     }
 
     /// The number of consumer nodes.
@@ -1503,7 +1542,7 @@ impl CommandArena
     #[must_use]
     pub fn consumer_count(&self) -> NodeCount
     {
-        NodeCount::from(self.consumers.len())
+        NodeCount::from(usize::from(self.consumers.len()))
     }
 
     /// The number of command nodes.
@@ -1514,7 +1553,7 @@ impl CommandArena
     #[must_use]
     pub fn command_count(&self) -> NodeCount
     {
-        NodeCount::from(self.commands.len())
+        NodeCount::from(usize::from(self.commands.len()))
     }
 
     /// Mint a producer node over children the arena holds.
@@ -1553,7 +1592,7 @@ impl CommandArena
         captures: [entry = self.watermark()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.producers))
-                && usize::from(entry.producers).checked_add(1) == Some(self.producers.len())
+                && usize::from(entry.producers).checked_add(1) == Some(usize::from(self.producers.len()))
                 && self.consumer_count() == entry.consumers
                 && self.command_count() == entry.commands
                 && self.producer(id).is_some_and(|node| match *node {
@@ -1618,7 +1657,7 @@ impl CommandArena
         captures: [entry = self.watermark()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.consumers))
-                && usize::from(entry.consumers).checked_add(1) == Some(self.consumers.len())
+                && usize::from(entry.consumers).checked_add(1) == Some(usize::from(self.consumers.len()))
                 && self.producer_count() == entry.producers
                 && self.command_count() == entry.commands
                 && self.consumer(id).is_some_and(|node| match *node {
@@ -1685,7 +1724,7 @@ impl CommandArena
         captures: [entry = self.watermark()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.commands))
-                && usize::from(entry.commands).checked_add(1) == Some(self.commands.len())
+                && usize::from(entry.commands).checked_add(1) == Some(usize::from(self.commands.len()))
                 && self.producer_count() == entry.producers
                 && self.consumer_count() == entry.consumers
                 && self.command(id).is_some_and(|node| {

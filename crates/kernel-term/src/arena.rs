@@ -657,6 +657,22 @@ impl<Node> Default for Family<Node>
     }
 }
 
+impl<Node> From<Vec<Node>> for Family<Node>
+{
+    /// The family holding `nodes` as its own, in order, nothing frozen.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(nodes: Vec<Node>) -> Self
+    {
+        Self {
+            frozen: None,
+            own: nodes,
+        }
+    }
+}
+
 impl<Node: PartialEq> PartialEq for Family<Node>
 {
     /// Two families hold the same nodes in the same order, wherever each node

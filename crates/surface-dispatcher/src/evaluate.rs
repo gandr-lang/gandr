@@ -356,6 +356,37 @@ pub struct Focused<'source>
     sealed: BTreeMap<(ConstantIndex, Spelling), String>,
 }
 
+impl Focused<'_>
+{
+    /// Share the focused rows with every copy made after
+    /// ([`CommandArena::freeze`]): a program continuing a copy
+    /// ([`Program::after`]) copies only the rows it focuses itself.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the arena's watermark, every definition and every declaration
+    ///   are unchanged, and a program continuing it answers as one continuing
+    ///   it unfrozen.
+    /// - provides: the closure's focused program, which each document judged
+    ///   after it continues at the cost of the document's own rows.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Program::after`]: a closure judged once, its
+    ///   program frozen, judges each document as a whole judgement does.
+    /// - witness: `compose::tests::a_closure_judged_once_judges_each_document_alike_776`
+    #[spec(
+        captures: entry = self.arena.watermark(),
+        ensures: self.arena.watermark() == entry,
+    )]
+    #[inline]
+    pub(crate) fn freeze(&mut self)
+    {
+        self.arena.freeze();
+    }
+}
+
 /// One declaration of a program: its name and how it stands for a run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Declared<'source>

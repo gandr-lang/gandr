@@ -1873,8 +1873,10 @@ fn judge_closure<'held>(
         checkpoint.clone(),
     ));
     let mut program = Program::new(&closing, &module, &verdicts);
-    // A run reads the program; the document continues it as focused.
-    let focused = program.clone().into_focused();
+    // A run reads the program; the document continues it as focused, its
+    // rows frozen so each revision copies only its own.
+    let mut focused = program.clone().into_focused();
+    focused.freeze();
     let settled = settle(root, &closing, &module, &verdicts, &mut program);
     let first = ConstantIndex::from(0_usize);
     let minted = elaborated(&verdicts, first);

@@ -1,4 +1,5 @@
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use gandr_core_term::support::Thinning;
 use gandr_kernel_term::IntegerLiteral;
@@ -290,6 +291,92 @@ fn truncation_drops_exactly_the_later_nodes()
         arena.consumer(kept),
         "the earlier node is kept"
     );
+}
+
+/// An arena frozen part way answers every read, mint, truncation and
+/// comparison as one built alike and never frozen does; a clone of it shares
+/// the frozen rows and owns only those minted after, and a truncation into the
+/// frozen rows leaves a clone taken before untouched.
+#[test]
+fn a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone()
+{
+    // Each round mints its own constant, so a read off by one across the
+    // frozen boundary finds another node.
+    let round = |arena: &mut CommandArena, constant: usize| {
+        let producer = arena
+            .mint_producer(ProducerNode::Constant(constant.into()))
+            .expect("a leaf mints");
+        let consumer = arena
+            .mint_consumer(ConsumerNode::Top)
+            .expect("a leaf mints");
+        let command = arena
+            .mint_cut(Polarity::Positive, producer, consumer)
+            .expect("children resolve");
+        (producer, consumer, command)
+    };
+    let shares = |left: &CommandArena, right: &CommandArena| {
+        !left.producers.frozen().is_empty()
+            && core::ptr::eq(
+                &raw const *left.producers.frozen(),
+                &raw const *right.producers.frozen(),
+            )
+    };
+    let constant = |index: usize| ProducerNode::Constant(index.into());
+    let mut plain = CommandArena::new();
+    let mut frozen = CommandArena::new();
+    let first = round(&mut plain, 0);
+    assert_eq!(first, round(&mut frozen, 0));
+    let mark = frozen.watermark();
+    frozen.freeze();
+    assert_eq!(mark, frozen.watermark(), "a freeze keeps the watermark");
+    assert_eq!(plain, frozen, "and every row");
+    assert!(frozen.producers.own().is_empty(), "every row is frozen");
+
+    let mut copy = frozen.clone();
+    assert!(shares(&copy, &frozen), "a clone shares the frozen rows");
+    let second = round(&mut plain, 1);
+    assert_eq!(
+        second,
+        round(&mut copy, 1),
+        "addresses continue past the frozen rows"
+    );
+    assert_eq!(
+        copy.producers.own().len(),
+        1,
+        "the clone owns only what it minted"
+    );
+    assert_eq!(plain, copy);
+    assert_eq!(Some(&constant(0)), copy.producer(first.0));
+    assert_eq!(Some(&constant(1)), copy.producer(second.0));
+    assert_eq!(plain.command(second.2), copy.command(second.2));
+    assert_eq!(
+        None,
+        frozen.producer(second.0),
+        "the frozen arena never sees the clone's rows"
+    );
+
+    let before = copy.clone();
+    plain.truncate_to(mark);
+    copy.truncate_to(mark);
+    assert_eq!(plain, copy, "a truncation to the frozen rows' end");
+    assert_eq!(None, copy.producer(second.0));
+    let empty = CommandArena::new().watermark();
+    plain.truncate_to(empty);
+    copy.truncate_to(empty);
+    assert_eq!(plain, copy, "a truncation into them");
+    assert_eq!(None, copy.producer(first.0));
+    assert_eq!(
+        Some(&constant(0)),
+        before.producer(first.0),
+        "and a clone taken before keeps its rows"
+    );
+    let again = round(&mut plain, 2);
+    assert_eq!(
+        again,
+        round(&mut copy, 2),
+        "a truncated address is minted again"
+    );
+    assert_eq!(plain, copy);
 }
 
 /// Each family's offsets select its own exact nodes, including empty and

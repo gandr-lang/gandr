@@ -9,6 +9,8 @@
 use core::fmt;
 
 use anodized::spec;
+use gandr_kernel_term::ArenaLength;
+use gandr_kernel_term::Family;
 
 /// Defines a transparent copyable newtype over one `usize`, with `From`
 /// conversions both ways and `Display` passthrough.
@@ -143,24 +145,24 @@ pub trait FamilyAddress: Copy + From<u32> + Into<u32>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — empty and ordinary slices expose reused or shifted
-    ///   addresses; zero-sized slices immediately below and at `u32::MAX`
-    ///   expose an inclusive ceiling without allocating node storage. The
-    ///   observer is the exact optional address; arbitrary implementations with
-    ///   lossy conversions are excluded.
+    /// - hypothesis: L3 — empty and ordinary families expose reused or shifted
+    ///   addresses; families of zero-sized nodes immediately below and at
+    ///   `u32::MAX` expose an inclusive ceiling without allocating node
+    ///   storage. The observer is the exact optional address; arbitrary
+    ///   implementations with lossy conversions are excluded.
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
     #[spec(ensures: |ret| match ret {
         | Some(address) => {
             let offset: u32 = address.into();
-            usize::try_from(offset) == Ok(family.len()) && offset < u32::MAX
+            usize::try_from(offset) == Ok(usize::from(family.len())) && offset < u32::MAX
         },
-        | None => u32::try_from(family.len()).is_err()
-            || u32::try_from(family.len()) == Ok(u32::MAX),
+        | None => u32::try_from(usize::from(family.len())).is_err()
+            || u32::try_from(usize::from(family.len())) == Ok(u32::MAX),
     })]
-    fn next_in<Node>(family: &[Node]) -> Option<Self>
+    fn next_in<Node>(family: &Family<Node>) -> Option<Self>
     {
-        u32::try_from(family.len())
+        u32::try_from(usize::from(family.len()))
             .ok()
             .filter(|&address| address < u32::MAX)
             .map(Self::from)
@@ -180,26 +182,28 @@ pub trait FamilyAddress: Copy + From<u32> + Into<u32>
     /// # Adequacy
     /// - hypothesis: L3 — distinct first and last nodes, the exact end and a
     ///   truncated address distinguish shifted reads, an inclusive endpoint and
-    ///   retained stale nodes. The observer is the exact borrowed node or
-    ///   absence; arbitrary implementations with lossy conversions are
-    ///   excluded.
+    ///   retained stale nodes, in a family with nothing frozen and in one
+    ///   frozen part way. The observer is the exact borrowed node or absence;
+    ///   arbitrary implementations with lossy conversions are excluded.
     /// - witness: `boundary::tests::address_reads_distinguish_end_and_truncation`
     #[inline]
     #[spec(
         captures: [offset = Into::<u32>::into(self)],
         ensures: |ret| match ret {
             | Some(node) => usize::try_from(offset).ok()
-                .and_then(|index| family.get(index))
+                .and_then(|index| family.get(ArenaLength::from(index)))
                 .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
-            | None => usize::try_from(offset).map_or(true, |index| index >= family.len()),
+            | None => usize::try_from(offset).map_or(true, |index| index >= usize::from(family.len())),
         },
     )]
     fn read_in<Node>(
         self,
-        family: &[Node],
+        family: &Family<Node>,
     ) -> Option<&Node>
     {
-        family.get(usize::try_from(Into::<u32>::into(self)).ok()?)
+        family.get(ArenaLength::from(
+            usize::try_from(Into::<u32>::into(self)).ok()?,
+        ))
     }
 }
 
