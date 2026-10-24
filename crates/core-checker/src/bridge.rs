@@ -364,9 +364,12 @@
 //! ever. Which declarations are the same is the caller's to establish, by
 //! content — the session compares the closure's text and its declarations'
 //! checkpoints pointwise — because a report keys nothing by content. The
-//! bridge checks what it can read: the arena's native signatures are the ones
-//! the record seeded, and each leading declaration stands at the recorded
-//! position under a verdict of the kind its outcome crossed. The core bodies a
+//! bridge checks what it can read: each leading declaration stands at the
+//! recorded position under a verdict of the kind its outcome crossed. A
+//! native operation's signature is seeded at the first declaration that reads
+//! it, so the record holds the ones its leading declarations read at the
+//! positions every readmission leading with them gives them, whatever native
+//! operations the declarations after the boundary read. The core bodies a
 //! later declaration unfolds name nodes of the arena the record was made over,
 //! so the record keeps none and the resumption defines them again from its own
 //! report, in the order crossing them did. A record is made only at a boundary
@@ -1390,8 +1393,7 @@ quenchant_shape::reason_enum! {
             /// The readmission crossed none of the leading declarations: it
             /// resumed them all, or there are none.
             Unchanged,
-            /// A leading declaration was neither admitted nor static, or the
-            /// arena's native signatures did not seed.
+            /// A leading declaration was neither admitted nor static.
             Unadmitted,
             /// The boundary falls inside a mutual block, under an open seal,
             /// or past the report's last declaration.
@@ -1520,8 +1522,7 @@ impl Crossed
     /// when it holds one.
     ///
     /// # Specification
-    /// - requires: `built` is a readmission's state between two declarations,
-    ///   over native signatures that seeded.
+    /// - requires: `built` is a readmission's state between two declarations.
     /// - ensures: absent as [`crossed::Absent::Unchanged`] when no entry
     ///   follows the `from` resumed; as [`crossed::Absent::Unadmitted`] when an
     ///   entry is neither admitted nor static; as
@@ -1581,14 +1582,13 @@ impl Crossed
         })
     }
 
-    /// The environment, positions and entries a readmission of `report` over
-    /// `arena` resumes from the record, when the record agrees with it.
+    /// The environment, positions and entries a readmission of `report`
+    /// resumes from the record, when the record agrees with it.
     ///
     /// # Specification
     /// - requires: the record's declarations were judged as `report`'s leading
     ///   ones were ([`readmit_resuming`]).
-    /// - ensures: `None` unless the record seeded exactly the native signatures
-    ///   `arena` holds, and `report` has at least [`Crossed::boundary`]
+    /// - ensures: `None` unless `report` has at least [`Crossed::boundary`]
     ///   declarations, each at the position of the record's entry at its index
     ///   under a verdict of the kind that entry's outcome crossed: a body for
     ///   [`Outcome::Defined`], a body or a world for [`Outcome::Static`], a
@@ -1596,28 +1596,27 @@ impl Crossed
     ///   [`Outcome::Assumed`]. Then the record's environment, its positions
     ///   with each core body defined and each data signature presented again
     ///   from `report` in order, as crossing them did, and its entries with
-    ///   `report`'s origins.
+    ///   `report`'s origins. The native signatures the record holds are the
+    ///   ones its declarations read, each seeded at its first reader, so the
+    ///   native operations of the arena past them do not enter the agreement.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a record resumes a readmission over another arena to
-    ///   a whole readmission's answer, and one whose verdicts disagree with the
-    ///   report is not resumed.
+    ///   a whole readmission's answer, whatever native operations follow its
+    ///   leading declarations, and one whose verdicts disagree with the report
+    ///   is not resumed.
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
+    /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|resumed| resumed.2.len() == usize::from(self.boundary())
         && resumed.2.iter().zip(report.judged()).all(|(entry, judged)|
             entry.constant == judged.constant() && entry.origin == judged.origin())))]
     fn resume(
         &self,
-        arena: &CoreArena,
         report: &ModuleReport,
     ) -> Option<(Environment, Positions, Vec<Readmitted>)>
     {
-        let natives: BTreeSet<_> = arena.native_primitives().collect();
-        if !natives.iter().eq(self.positions.native.keys()) {
-            return None;
-        }
         let leading = report.judged().get(.. self.boundary().0)?;
         let mut definitions = CodeDefinitions::new();
         let mut readmitted = Vec::with_capacity(report.judged().len());
@@ -1682,9 +1681,10 @@ impl Crossed
 ///   application at a saturated instance of a static definition or at a static
 ///   lambda is erased as its reduct, minted into `arena`, until none remains —
 ///   each step certified and replayed once per distinct instance.
-/// - provides: the declarations that crossed, the native signatures present in
-///   the arena, and an audit exposing every source-hole or native assumption on
-///   which an admitted source declaration depends.
+/// - provides: the declarations that crossed, the signature of each native
+///   operation they read, seeded at its first reader, and an audit exposing
+///   every source-hole or native assumption on which an admitted source
+///   declaration depends.
 /// - fails: never; every declaration gets an outcome.
 /// - panics: none.
 ///
@@ -1746,15 +1746,15 @@ pub fn readmit(
 ///   judgement judged alike — the same content, consulting the same answers —
 ///   which the caller compares: a report keys nothing by content.
 /// - ensures: as [`readmit`]. The entries `crossed` holds are resumed rather
-///   than crossed again when the native signatures it seeded are the arena's
-///   and each names the position the report's declaration at its index carries,
-///   under a verdict of the kind its outcome crossed: its outcome and
-///   certificates as recorded, its origin the report's, and the core bodies a
-///   later declaration unfolds read from the report; [`Readmission::resumed`]
-///   counts them, none when `crossed` is absent or disagrees. The record is
-///   present when this readmission crossed at least one of the first `boundary`
-///   declarations, every one of them was admitted or static, and no mutual
-///   block or open seal spans the boundary; absent otherwise.
+///   than crossed again when each names the position the report's declaration
+///   at its index carries, under a verdict of the kind its outcome crossed: its
+///   outcome and certificates as recorded, its origin the report's, and the
+///   core bodies a later declaration unfolds read from the report;
+///   [`Readmission::resumed`] counts them, none when `crossed` is absent or
+///   disagrees. The record is present when this readmission crossed at least
+///   one of the first `boundary` declarations, every one of them was admitted
+///   or static, and no mutual block or open seal spans the boundary; absent
+///   otherwise.
 /// - provides: the language server's recheck of a document laid out after its
 ///   import closure: the closure's declarations cross once, and each later
 ///   revision of the document resumes them.
@@ -1949,23 +1949,15 @@ where
             Maybe::Absent(_) => None,
         }),
     };
-    let (mut environment, mut positions, mut readmitted, seeded) =
-        if let Some((environment, positions, readmitted)) =
-            offered.and_then(|crossed| crossed.resume(arena, report))
-        {
-            (environment, positions, readmitted, Ok(()))
-        }
-        else {
-            let mut environment = Environment::new();
-            let mut positions = Positions::default();
-            let seeded = positions.seed_native(&mut environment, arena);
+    let (mut environment, mut positions, mut readmitted) = offered
+        .and_then(|crossed| crossed.resume(report))
+        .unwrap_or_else(|| {
             (
-                environment,
-                positions,
+                Environment::new(),
+                Positions::default(),
                 Vec::with_capacity(judged_all.len()),
-                seeded,
             )
-        };
+        });
     let from = readmitted.len();
     let mut recorded = Maybe::Absent(if boundary.is_some() {
         crossed::Absent::Unaligned
@@ -1976,8 +1968,7 @@ where
     let mut index = from;
     loop {
         if boundary == Some(index) {
-            recorded = record_after(
-                &seeded,
+            recorded = Crossed::record(
                 (&environment, &positions, readmitted.as_slice()),
                 LeadingCount(from),
             );
@@ -1989,23 +1980,13 @@ where
         if let Demand::Retired(retired) = retirement.demand() {
             return Polled::Retired(
                 retired,
-                record_after(
-                    &seeded,
+                Crossed::record(
                     (&environment, &positions, readmitted.as_slice()),
                     LeadingCount(from),
                 ),
             );
         }
         index = index.saturating_add(1);
-        if let Err(ref error) = seeded {
-            readmitted.push(Readmitted {
-                constant: judged.constant(),
-                origin: judged.origin(),
-                outcome: Outcome::Rejected(error.clone()),
-                certificates: Vec::new(),
-            });
-            continue;
-        }
         let constant = judged.constant();
         // The positions between the last judged declaration and this one
         // were skipped and cross nothing, so a seal ending among them closes
@@ -2213,36 +2194,6 @@ where
         },
         recorded,
     ))
-}
-
-/// The record of `built`, a readmission's state between two declarations
-/// once it resumed `from` of them, when the native signatures `seeded`.
-///
-/// # Specification
-/// - requires: as [`Crossed::record`].
-/// - ensures: [`Crossed::record`]'s answer when the signatures seeded; absent
-///   as [`crossed::Absent::Unadmitted`] otherwise, since no declaration was
-///   admitted.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`readmit_resuming`] and [`readmit_retiring`].
-/// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
-/// - witness: `bridge::tests::a_retired_readmission_resumes_from_its_record_1547`
-#[spec(ensures: |ret| seeded.is_ok() || matches!(ret, Maybe::Absent(crossed::Absent::Unadmitted)))]
-fn record_after(
-    seeded: &Result<(), KernelError>,
-    built: (&Environment, &Positions, &[Readmitted]),
-    from: LeadingCount,
-) -> Maybe<Crossed, crossed::Absent>
-{
-    if seeded.is_ok() {
-        Crossed::record(built, from)
-    }
-    else {
-        Maybe::Absent(crossed::Absent::Unadmitted)
-    }
 }
 
 /// The offers of the mutual block the first of `run`, the judged declarations
@@ -2589,10 +2540,12 @@ enum Erased
 ///   `positions` with its staged declaration appended to the exports. A refused
 ///   erasure or a declined certificate discards the session and a rejection is
 ///   truncated by the kernel, so the environment is as it was on every outcome
-///   but an admission, save the assumptions admitted first for the values its
-///   receives read and the choices its offers take, each an axiom the audit of
-///   whatever reads it names. The replayed verdicts are returned beside the
-///   outcome.
+///   but an admission, save what is admitted first: the assumptions for the
+///   values its receives read and the choices its offers take, and the
+///   signature of each native operation it is the first declaration to read,
+///   each an axiom the audit of whatever reads it names. The replayed verdicts
+///   are returned beside the outcome; a native signature the kernel rejects is
+///   the declaration's [`Outcome::Rejected`].
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -2602,26 +2555,28 @@ enum Erased
 ///   certificates expose exact outcomes, receipts and environment contents;
 ///   partial publication or confusing an axiom with a definition changes them.
 /// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
 /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
 #[spec(
-    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), assumed = positions.assumed.len()],
+    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len())],
     ensures: |ret| match ret.0 {
         | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
-            environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed).and_then(|fresh| fresh.checked_add(1))
-            && positions.exports.len().checked_sub(exports) == positions.assumed.len().checked_sub(assumed).and_then(|fresh| fresh.checked_add(1))
+            environment.entries().len().checked_sub(entries) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
+            && positions.exports.len().checked_sub(exports) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
             && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
         | Outcome::Refused(_) | Outcome::Rejected(_) =>
-            environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed)
-            && positions.exports.len().checked_sub(exports) == positions.assumed.len().checked_sub(assumed)
+            environment.entries().len().checked_sub(entries) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
+            && positions.exports.len().checked_sub(exports) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
             && positions.admitted.len() == crossed,
         | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
     },
 )]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn cross<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -2651,11 +2606,16 @@ where
             (crossing, base),
         ) {
             Ok(staged) => break staged,
-            Err(refused) => {
+            Err(Unstaged::Unseeded(primitive)) => {
+                if let Err(error) = positions.seed(environment, primitive) {
+                    return (Outcome::Rejected(error), Vec::new());
+                }
+            },
+            Err(Unstaged::Refused(outcome, replayed)) => {
                 if let Maybe::Absent(_) =
-                    assumed_for(environment, arena, source, positions, &refused.0, vouch)
+                    assumed_for(environment, arena, source, positions, &outcome, vouch)
                 {
-                    return refused;
+                    return (outcome, replayed);
                 }
             },
         }
@@ -2698,6 +2658,21 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// Why an offer did not stage.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+enum Unstaged
+{
+    /// The erasure or a certificate refused it: the refused outcome and the
+    /// verdicts replayed before it.
+    Refused(Outcome, Vec<Replayed>),
+    /// It reads a native operation whose signature the environment does not
+    /// hold yet: seeded, the offer stages again.
+    Unseeded(gandr_core_term::primitive::Primitive),
+}
+
 /// Erase `offer`, the declaration at `constant`, into a staging session of
 /// `environment` and replay its certificates, beside the members of
 /// `crossing`, numbering static operators from `base`.
@@ -2708,19 +2683,27 @@ quenchant_shape::reason_enum! {
 ///   them.
 /// - ensures: the staged declaration, its body's image and the replayed
 ///   verdicts when the erasure and every certificate succeed; otherwise the
-///   session discarded and the refusal with the verdicts replayed so far.
+///   session discarded and, when the erasure stopped at a native operation
+///   whose signature the environment does not hold yet, that operation; else
+///   the refusal with the verdicts replayed so far.
 /// - fails: never; a refusal is returned as its outcome.
 /// - panics: none.
 ///
 /// # Errors
-/// The refused outcome, with the verdicts replayed before it.
+/// [`Unstaged::Unseeded`] with the native operation to seed, or
+/// [`Unstaged::Refused`] with the refused outcome and the verdicts replayed
+/// before it.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`cross`] and [`cross_block`].
 /// - witness: `bridge::tests::a_lowered_value_definition_admits`
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|refused| matches!(refused.0, Outcome::Refused(_))))]
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|unstaged| match *unstaged {
+    Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
+    Unstaged::Unseeded(primitive) => !positions.native.contains_key(&primitive),
+}))]
 fn stage<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -2728,28 +2711,33 @@ fn stage<Vouch>(
     offer: Offer<'_>,
     vouch: &Vouch,
     (crossing, base): (&[(ConstantIndex, ConstantIndex)], ConstantIndex),
-) -> Result<Staged, (Outcome, Vec<Replayed>)>
+) -> Result<Staged, Unstaged>
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
     let next = ConstantIndex::from(environment.entries().len());
     let mut staging = environment.stage();
-    let erased = {
+    let (erased, unseeded) = {
         let mut erasure = Erasure::new(arena, source, positions, base).crossing_block(crossing);
-        erasure
+        let erased = erasure
             .offer(staging.arena(), offer)
             .map_err(|refusal| (refusal, Vec::new()))
             .and_then(|erased| {
                 erasure
                     .replay_certificates(staging.arena(), vouch)
                     .map(|replayed| (erased, replayed))
-            })
+            });
+        (erased, erasure.unseeded)
     };
-    let (erased, replayed) = match erased {
-        Ok(crossing) => crossing,
-        Err((refusal, replayed)) => {
+    let (erased, replayed) = match (erased, unseeded) {
+        (Ok(crossing), _) => crossing,
+        (Err(_), Some(primitive)) => {
             staging.discard();
-            return Err((Outcome::Refused(refusal), replayed));
+            return Err(Unstaged::Unseeded(primitive));
+        },
+        (Err((refusal, replayed)), None) => {
+            staging.discard();
+            return Err(Unstaged::Refused(Outcome::Refused(refusal), replayed));
         },
     };
     let image = match erased {
@@ -2771,7 +2759,7 @@ where
             Ok(rules) => rules,
             Err(constant) => {
                 staging.discard();
-                return Err((
+                return Err(Unstaged::Refused(
                     Outcome::Refused(Refusal::Withheld {
                         at: offered,
                         constant,
@@ -3019,8 +3007,8 @@ fn settle(
 /// - ensures: one outcome per member, in order: each admitted as [`cross`]
 ///   records an admission when the kernel admits the block, and otherwise every
 ///   member sharing the refusal or rejection of the member that failed, the
-///   environment as it was but for the assumptions admitted as [`cross`] admits
-///   them.
+///   environment as it was but for the assumptions and the native signatures
+///   admitted as [`cross`] admits them.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -3029,9 +3017,9 @@ fn settle(
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-#[spec(captures: [entries = environment.entries().len(), assumed = positions.assumed.len()], ensures: |ret| ret.len() == members.len()
+#[spec(captures: [entries = environment.entries().len(), axioms = positions.assumed.len().saturating_add(positions.native.len())], ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
-        || environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed)))]
+        || environment.entries().len().checked_sub(entries) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)))]
 fn cross_block<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -3064,19 +3052,31 @@ where
                 (&crossing, base),
             ) {
                 Ok(member) => staged.push(member),
-                Err((outcome, replayed)) => {
+                Err(unstaged) => {
                     // The block crosses whole or not at all: what staged is
                     // abandoned, latest first, and every member shares the
-                    // refusal, unless an assumption it waited on is admitted
-                    // and the block staged again past it.
+                    // refusal, unless a native signature or an assumption it
+                    // waited on is admitted and the block staged again past
+                    // it.
                     for member in staged.into_iter().rev() {
                         environment.abandon(member.declaration);
                     }
-                    if let Maybe::Present(_) =
-                        assumed_for(environment, arena, source, positions, &outcome, vouch)
-                    {
-                        continue 'block;
-                    }
+                    let (outcome, replayed) = match unstaged {
+                        Unstaged::Unseeded(primitive) => {
+                            match positions.seed(environment, primitive) {
+                                Ok(()) => continue 'block,
+                                Err(error) => (Outcome::Rejected(error), Vec::new()),
+                            }
+                        },
+                        Unstaged::Refused(outcome, replayed) => {
+                            if let Maybe::Present(_) =
+                                assumed_for(environment, arena, source, positions, &outcome, vouch)
+                            {
+                                continue 'block;
+                            }
+                            (outcome, replayed)
+                        },
+                    };
                     return members
                         .iter()
                         .map(|&(member, _)| {
@@ -3331,66 +3331,72 @@ struct Positions
 
 impl Positions
 {
-    /// Admit the used native signatures without adding an evaluator to the
-    /// kernel.
+    /// Admit the signature of the native operation `primitive`, which the
+    /// declaration about to cross is the first to read, without adding an
+    /// evaluator to the kernel.
     ///
     /// # Specification
-    /// - ensures: each distinct row has one checked axiom of its table
-    ///   signature.
+    /// - requires: the environment holds no signature of `primitive` yet.
+    /// - ensures: one checked axiom of `primitive`'s table signature, named
+    ///   after it, at the next kernel position and appended to the exports.
+    ///   Seeded at its first reader, a native signature's position depends on
+    ///   the declarations before that reader alone, so a readmission resumed
+    ///   past a prefix holds the prefix's positions whatever native operations
+    ///   follow it.
     /// - fails: propagates a kernel rejection; no unchecked admission is used.
     /// - panics: none.
     ///
     /// # Errors
-    /// A kernel rejection of a native signature.
+    /// A kernel rejection of the native signature.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — native operations cross and retain their named
-    ///   assumptions in a decoded artifact.
+    ///   assumptions in a decoded artifact, and a resumed readmission seeds the
+    ///   ones its prefix never read as a whole readmission does.
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
-    #[spec(ensures: |ret| ret.is_err() || core.native_primitives().all(|primitive| self.native.contains_key(&primitive)))]
-    fn seed_native(
+    /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
+    #[spec(ensures: |ret| ret.is_err() || self.native.contains_key(&primitive))]
+    fn seed(
         &mut self,
         environment: &mut Environment,
-        core: &CoreArena,
+        primitive: gandr_core_term::primitive::Primitive,
     ) -> Result<(), KernelError>
     {
         use gandr_core_term::primitive::PrimitiveType;
-        let primitives: BTreeSet<_> = core.native_primitives().collect();
-        for primitive in primitives {
-            let mut staging = environment.stage();
-            let arena = staging.arena();
-            let classifier = |arena: &mut TermArena, ty: PrimitiveType| match ty {
-                PrimitiveType::Integer => arena.value_type_base(BaseType::Integer),
-                PrimitiveType::Boolean => {
-                    let unit = arena.value_type_unit();
-                    arena.value_type_sum(&[unit, unit])
-                },
-                PrimitiveType::Text => arena.value_type_base(BaseType::String),
-                PrimitiveType::Float64 => arena.value_type_base(BaseType::Float64),
-            };
-            let result = classifier(arena, primitive.result());
-            let mut computation = arena.comp_type_returner(result);
-            for &argument in primitive.arguments().iter().rev() {
-                let domain = classifier(arena, argument);
-                computation = arena.comp_type_arrow(domain, computation);
-            }
-            let declared = arena.value_type_thunk(computation);
-            let staged = staging.axiom(LevelSignature::monomorphic(), declared);
-            let name = StructuredName::from(
-                primitive
-                    .name()
-                    .as_ref()
-                    .split('.')
-                    .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
-                    .collect::<Vec<_>>(),
-            );
-            let declaration = staged.declaration().clone().named(name);
-            let admitted = environment.add_decl(staged)?;
-            self.native.insert(primitive, admitted.position());
-            self.exports.push(declaration);
+        let mut staging = environment.stage();
+        let arena = staging.arena();
+        let classifier = |arena: &mut TermArena, ty: PrimitiveType| match ty {
+            PrimitiveType::Integer => arena.value_type_base(BaseType::Integer),
+            PrimitiveType::Boolean => {
+                let unit = arena.value_type_unit();
+                arena.value_type_sum(&[unit, unit])
+            },
+            PrimitiveType::Text => arena.value_type_base(BaseType::String),
+            PrimitiveType::Float64 => arena.value_type_base(BaseType::Float64),
+        };
+        let result = classifier(arena, primitive.result());
+        let mut computation = arena.comp_type_returner(result);
+        for &argument in primitive.arguments().iter().rev() {
+            let domain = classifier(arena, argument);
+            computation = arena.comp_type_arrow(domain, computation);
         }
+        let declared = arena.value_type_thunk(computation);
+        let staged = staging.axiom(LevelSignature::monomorphic(), declared);
+        let name = StructuredName::from(
+            primitive
+                .name()
+                .as_ref()
+                .split('.')
+                .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+                .collect::<Vec<_>>(),
+        );
+        let declaration = staged.declaration().clone().named(name);
+        let admitted = environment.add_decl(staged)?;
+        self.native.insert(primitive, admitted.position());
+        self.exports.push(declaration);
         Ok(())
     }
+
     /// Record that the module definition at `constant`, of core body `body`,
     /// crossed as `admitted` with kernel body `image`.
     ///
@@ -4459,6 +4465,9 @@ struct Erasure<'source, 'positions>
     /// declaration holds yet — a data declaration's own, or every member of
     /// its mutual block.
     crossing: &'positions [(ConstantIndex, ConstantIndex)],
+    /// The native operation the erasure met whose signature the environment
+    /// does not hold yet, which stops it.
+    unseeded: Option<gandr_core_term::primitive::Primitive>,
 }
 
 impl<'source, 'positions> Erasure<'source, 'positions>
@@ -4490,6 +4499,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             pending: Vec::new(),
             bodies: BTreeMap::new(),
             crossing: &[],
+            unseeded: None,
         }
     }
 
@@ -4506,6 +4516,40 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     {
         self.crossing = crossing;
         self
+    }
+
+    /// The kernel position of the signature of the native operation
+    /// `primitive`.
+    ///
+    /// # Specification
+    /// - ensures: the position the environment's signature of `primitive` took.
+    /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
+    ///   signature of `primitive` yet; the erasure then names `primitive` as
+    ///   the one it stopped at, which [`stage`] reports so the crossing seeds
+    ///   it and stages again.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a native operation crosses as its audited assumption,
+    ///   seeded the first time a declaration reads it, and a readmission
+    ///   resumed past a prefix that read none answers as a whole one.
+    /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+    /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
+    #[spec(ensures: |ret| ret.is_ok() || self.unseeded == Some(primitive))]
+    fn native(
+        &mut self,
+        primitive: gandr_core_term::primitive::Primitive,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        let Some(&position) = self.positions.native.get(&primitive)
+        else {
+            self.unseeded = Some(primitive);
+            return Err(Refusal::MachineInvariant);
+        };
+        Ok(position)
     }
 
     /// The images the current mode minted.
@@ -5438,12 +5482,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 CoreNode::Term(TermNode::Value(head)),
             ),
             Value::Primitive { primitive, .. } => {
-                let position = self
-                    .positions
-                    .native
-                    .get(&primitive)
-                    .copied()
-                    .ok_or(Refusal::MachineInvariant)?;
+                let position = self.native(primitive)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             Value::PathRefl(code) => (
@@ -6263,12 +6302,7 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 arguments,
             } => {
                 use gandr_core_term::primitive::Arguments;
-                let position = self
-                    .positions
-                    .native
-                    .get(&primitive)
-                    .copied()
-                    .ok_or(Refusal::MachineInvariant)?;
+                let position = self.native(primitive)?;
                 let value = target.value_constant(position);
                 let head = target.computation_force(value);
                 match arguments {

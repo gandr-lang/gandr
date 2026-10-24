@@ -286,10 +286,10 @@ struct Exported
     classes: Vec<(ConstantIndex, Class)>,
     /// Each withheld declaration's position beside the position it names.
     withheld: Vec<(ConstantIndex, ConstantIndex)>,
-    /// The structured name of each native operation the source uses, which
-    /// crosses as an audited assumption before any declaration, in primitive
-    /// order.
-    natives: Vec<StructuredName>,
+    /// The structured name of each native operation the source uses; each one
+    /// a crossing declaration reads crosses as an audited assumption just
+    /// before the first such declaration.
+    natives: BTreeSet<StructuredName>,
     /// The structured name of each declaration that crossed, in admission
     /// order.
     crossed_names: Vec<StructuredName>,
@@ -632,10 +632,8 @@ fn export(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
         &declarations(&module),
     );
-    let natives: Vec<StructuredName> = arena
+    let natives: BTreeSet<StructuredName> = arena
         .native_primitives()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .map(|primitive| {
             StructuredName::from(
                 primitive
@@ -925,6 +923,7 @@ mod kernel_export_gate
 mod kernel_corpus_partition
 {
     use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
     use alloc::vec::Vec;
 
     use anodized::spec;
@@ -969,11 +968,11 @@ mod kernel_corpus_partition
     /// # Specification
     /// - requires: `shard` is below `SHARDS`.
     /// - ensures: no withheld declaration names one that crossed; each manifest
-    ///   counts its header, every native the source uses, every session
-    ///   assumption and every declaration that crossed; each session assumption
-    ///   is numbered in admission order; and each artifact holds exactly those
-    ///   natives and declarations besides the assumptions, in admission order,
-    ///   under their names.
+    ///   counts its header, every native signature, session assumption and
+    ///   declaration that crossed; each session assumption is numbered in
+    ///   admission order; and besides the assumptions each artifact holds the
+    ///   declarations that crossed, in admission order, under their names, and
+    ///   between them only distinct natives the source uses.
     /// - panics: when any of those fails.
     ///
     /// # Adequacy
@@ -985,9 +984,11 @@ mod kernel_corpus_partition
     fn partition(shard: Shard)
     {
         let mut classes = BTreeMap::new();
+        let mut seeded: BTreeSet<StructuredName> = BTreeSet::new();
         for exported in corpus(shard) {
             let path = exported.path.display();
             classes.clear();
+            seeded.clear();
             classes.extend(exported.classes.iter().copied());
             for &(declaration, named) in &exported.withheld {
                 assert!(
@@ -1030,6 +1031,28 @@ mod kernel_corpus_partition
                     "{path}: the session assumptions are numbered in admission order: {assumed:?}"
                 );
             }
+            // Every other record is a declaration that crossed, in admission
+            // order, or the signature of a native the source uses, seeded
+            // just before the first declaration that reads it.
+            let mut crossed_names = exported.crossed_names.iter().peekable();
+            for &name in &held {
+                if crossed_names.next_if(|&crossed| crossed == name).is_some() {
+                    continue;
+                }
+                assert!(
+                    exported.natives.contains(name) && seeded.insert(name.clone()),
+                    "{path}: besides the session assumptions and the declarations that crossed, \
+                     in admission order under their names, the artifact holds only distinct \
+                     natives the source uses: {name:?} in {held:?} against {:?}",
+                    exported.crossed_names,
+                );
+            }
+            assert!(
+                crossed_names.next().is_none(),
+                "{path}: the artifact holds every declaration that crossed, in admission order: \
+                 {:?} against {held:?}",
+                exported.crossed_names,
+            );
             let crossed = exported
                 .classes
                 .iter()
@@ -1037,23 +1060,15 @@ mod kernel_corpus_partition
                     matches!(class, Class::Defined | Class::Assumed | Class::Data)
                 })
                 .count()
-                .saturating_add(exported.natives.len())
+                .saturating_add(seeded.len())
                 .saturating_add(assumed.len());
             assert_eq!(
                 RecordCount(
                     u64::try_from(crossed.saturating_add(1)).expect("a count fits sixty-four bits")
                 ),
                 manifest.record_count(),
-                "{path}: the manifest counts the header, every native the source uses, every \
-                 session assumption and every declaration that crossed"
-            );
-            let expected = exported.natives.iter().chain(&exported.crossed_names);
-            assert!(
-                expected.clone().eq(held.iter().copied()),
-                "{path}: besides the session assumptions, the artifact holds exactly the natives \
-                 the source uses and the declarations that crossed, in admission order, under \
-                 their names: {:?} against {held:?}",
-                expected.collect::<Vec<_>>(),
+                "{path}: the manifest counts the header, every native signature, every session \
+                 assumption and every declaration that crossed"
             );
         }
     }

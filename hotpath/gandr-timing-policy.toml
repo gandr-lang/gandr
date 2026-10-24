@@ -41,6 +41,16 @@ match = "gandr_surface_dispatcher::compose::judge_closure"
 calls = { min = 1, max = 6 }
 message = "the prelude is judged once per walk, never per component (#2331)"
 
+# A readmission resumes the prelude's crossing from the record of the walk's
+# or session's first one, whatever native operations a component reads, so
+# each declaration crosses into the kernel once per readmission that cannot
+# resume it: 623 in the series. Re-crossing the prelude in each component
+# whose native operations differ from the first one's makes 1028.
+[[functions.budgets]]
+match = "gandr_core_checker::bridge::cross"
+calls = { min = 1, max = 650 }
+message = "a component resumes the prelude's crossing, never crosses it again (#2395)"
+
 [[functions.budgets]]
 match = "gandr_surface_lowering::lower::model::flattened::Lowerer::model_candidates"
 message = "a model slot's candidates are collected in the prelude resolve workload"

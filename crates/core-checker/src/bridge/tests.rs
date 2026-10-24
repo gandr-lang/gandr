@@ -977,6 +977,129 @@ fn a_resumed_readmission_answers_as_a_whole_one_776()
     assert_eq!(refused.readmitted(), whole.readmitted());
 }
 
+/// The native the second declaration of [`native_readers`] applies.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Second
+{
+    /// `sub`, which the first declaration reads too.
+    Sub,
+    /// `add`, which the first declaration never reads.
+    Add,
+}
+
+/// The module `def minus : Integer → Integer → Integer = sub ; def zero :
+/// Integer = second 0 0 ;`, judged: the native `sub` read by the first
+/// declaration, the native `second` names by the second.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the arena and its report, one verdict per declaration.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the modules whose leading declaration a record holds
+///   whatever native the declaration after it reads.
+/// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
+#[spec(ensures: |ret| ret.1.judged().len() == 2)]
+fn native_readers(second: Second) -> (CoreArena, ModuleReport)
+{
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    let native = |name: &str| {
+        PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == name)
+            .unwrap()
+    };
+    let second = native(match second {
+        Second::Sub => "sub",
+        Second::Add => "add",
+    });
+    let mut arena = CoreArena::new();
+    let sub = native("sub");
+    let function = sub.thunk(&mut arena);
+    let function_type = sub.declared_type(&mut arena);
+    let function_type = arena.value_type_thunk(function_type);
+    let zero = arena.value_literal(integer_literal());
+    let saturated = arena.computation_primitive(second, Arguments::Binary([zero, zero]));
+    let result = arena.value_thunk(saturated);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let returns = arena.comp_type_returner(integer);
+    let result_type = arena.value_type_thunk(returns);
+    let module = [
+        declaration(
+            At(0),
+            Maybe::Present(function_type),
+            Maybe::Present(function),
+        ),
+        declaration(At(1), Maybe::Present(result_type), Maybe::Present(result)),
+    ];
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &module)
+    };
+    (arena, report)
+}
+
+/// A record of a leading declaration resumes a readmission whose later
+/// declaration reads a native operation the leading one never read: the
+/// native's signature is seeded at its first reader, past the record, and the
+/// resumed readmission answers what a whole one answers, byte for byte.
+#[test]
+fn a_resumed_readmission_seeds_a_native_its_prefix_never_read()
+{
+    let (mut first, first_report) = native_readers(Second::Sub);
+    let (_, recorded) = readmit_resuming(
+        &mut first,
+        &first_report,
+        LeadingCount::from(1_usize),
+        Maybe::Absent(crossed::Absent::Unasked),
+    );
+    let Maybe::Present(recorded) = recorded
+    else {
+        panic!("the leading declaration is recorded: {recorded:?}");
+    };
+    assert_eq!(
+        recorded.kernel_end(),
+        ConstantIndex::from(2_usize),
+        "the record holds `sub`'s signature and the declaration reading it"
+    );
+
+    let (mut whole_arena, whole_report) = native_readers(Second::Add);
+    let whole = readmit(&mut whole_arena, &whole_report);
+    let (mut resumed_arena, resumed_report) = native_readers(Second::Add);
+    let (resumed, _) = readmit_resuming(
+        &mut resumed_arena,
+        &resumed_report,
+        LeadingCount::from(1_usize),
+        Maybe::Present(&recorded),
+    );
+    assert_eq!(
+        resumed.resumed(),
+        LeadingCount::from(1_usize),
+        "the leading declaration is resumed though the arena holds `add` besides"
+    );
+    assert!(
+        resumed
+            .readmitted()
+            .iter()
+            .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. }))
+    );
+    assert_eq!(
+        crossed_at(&resumed, At(1)),
+        ConstantIndex::from(3_usize),
+        "`add`'s signature is seeded just before its reader"
+    );
+    assert_eq!(resumed.readmitted(), whole.readmitted());
+    assert_eq!(resumed.audit(), whole.audit());
+    assert_eq!(
+        resumed.export(BTreeMap::new()),
+        whole.export(BTreeMap::new()),
+        "the resumed artifact is the whole one, byte for byte"
+    );
+}
+
 /// #2102: an export resumed from a record that keeps its encoding, recording
 /// declarations past it, keeps the further record's own encoding — so the
 /// export after it resumes that record without encoding its declarations again
