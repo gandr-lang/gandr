@@ -4,11 +4,16 @@
 // refused by that name; a member a module writes under a name an include
 // also lends is a second definition of it.
 
-/// An equality at the integers that holds of every pair.
+/// An equality at the integers that holds of every pair, each law a
+/// reflexivity.
 module EqLoose : Model(Eq) with sort Carrier = Integer {
   /// Every pair is equal.
   @[ checks ]
   def eq(a : Integer, b : Integer) -> Bool { true }
+  @[ checks ]
+  def refl(a : Integer) -> Path(Bool, eq(a, a), true) { here(true) }
+  @[ checks ]
+  def sym(a : Integer, b : Integer) -> Path(Bool, eq(a, b), eq(b, a)) { here(true) }
 }
 
 /// `EqInteger` and `EqLoose` both answer, and their `eq` differ.

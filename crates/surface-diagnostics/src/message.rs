@@ -452,24 +452,9 @@ fn lowered(
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
-        LoweringRefusal::UnprovenLaw {
-            module,
-            law,
-            why: gandr_surface_lowering::LawProof::Missing,
-            ..
-        } => write!(
+        LoweringRefusal::UnprovenLaw { module, law, .. } => write!(
             f,
             "the module `{module}` neither proves nor admits its model's law `{law}`"
-        ),
-        LoweringRefusal::UnprovenLaw {
-            module,
-            law,
-            why: gandr_surface_lowering::LawProof::Admitted,
-            ..
-        } => write!(
-            f,
-            "the module `{module}` admits the law `{law}` at a carrier the host does not \
-             provide; only a primitive carrier's law is admitted, and any other is proved"
         ),
         LoweringRefusal::PartialField {
             field, constructor, ..
@@ -931,6 +916,10 @@ fn checked(
         CheckRefusal::OpenSessionPayload { .. } => f.write_str(
             "a session type's payload names a variable bound outside it, which only a run's \
              protocol may",
+        ),
+        CheckRefusal::UnassertedLaw { .. } => f.write_str(
+            "the host asserts no law with this statement: a law is admitted only as one the host \
+             asserts of its primitive, and any other is proved",
         ),
         CheckRefusal::NonCovariantMotive { .. } => f.write_str(
             "a flow runs one way: `ride` may use the moving endpoint only where a run of it \
@@ -1527,13 +1516,6 @@ mod tests
                 span,
                 module: name,
                 law: name,
-                why: gandr_surface_lowering::LawProof::Missing,
-            },
-            LoweringRefusal::UnprovenLaw {
-                span,
-                module: name,
-                law: name,
-                why: gandr_surface_lowering::LawProof::Admitted,
             },
             LoweringRefusal::PartialField {
                 span,
@@ -2147,6 +2129,7 @@ mod tests
             CheckRefusal::SessionNotSubtype { at: value },
             CheckRefusal::SessionCodeExpected { at: value },
             CheckRefusal::OpenSessionPayload { at: value_type },
+            CheckRefusal::UnassertedLaw { at: value_type },
             CheckRefusal::NonCovariantMotive { at: computation },
             CheckRefusal::RideUnsupported { at: computation },
             CheckRefusal::RunNotAdmitted {

@@ -2543,7 +2543,7 @@ mod tests
             "theory Lawful {\n  sort Carrier : Type;\n  oper alike : (a : Carrier, b : Carrier) \
              --> Bool;\n  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);\n}\nmodule \
              Host : Model(Lawful) with sort Carrier = Integer {\n  def alike(a : Integer, b : \
-             Integer) -> Bool { true }\n  law refl admitted;\n}\n",
+             Integer) -> Bool { int.eq(a, b) }\n  law refl admitted;\n}\n",
         );
         assert_eq!(
             shown(text, (7.into(), 7.into())),

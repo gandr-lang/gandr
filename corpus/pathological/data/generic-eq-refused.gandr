@@ -1,7 +1,9 @@
 // `Eq.generic` where it derives nothing (#2302): a field with no equality, a
 // type the derivation does not yet cover (#2345), the derivation read
 // anywhere but as a definition's whole body, and a stated type the derived
-// equality does not meet.
+// equality does not meet. Its laws refuse a field of a sum, whose proof cases
+// on the field under a motive (#2374), and a recursion, whose proof is an
+// induction.
 
 /// A shape holding a function, which has no equality the program decides.
 @[ checks ]
@@ -19,6 +21,19 @@ data Box(a : Type) : Type {
 @[ checks ]
 data Point : Type {
   Point : (x : Integer, y : Integer) --> Point;
+}
+
+/// A point with a flag.
+@[ checks ]
+data Flagged : Type {
+  Flagged : (x : Integer, shown : Bool) --> Flagged;
+}
+
+/// Unary naturals.
+@[ checks ]
+data Peano : Type {
+  Nought : Peano;
+  Next : (n : Peano) --> Peano;
 }
 
 /// No equality for a function field.
@@ -44,3 +59,15 @@ def bare = Eq.generic ;
 /// A stated type the derived equality does not meet.
 @[ refuses("TypeMismatch") ]
 def eqWrong : (Point, Point) => Integer = Eq.generic(Point) ;
+
+/// No reflexivity over a flag: its proof cases on the flag.
+@[ refuses("GenericUncovered.Dependent") ]
+def reflFlagged = Eq.generic.refl(Flagged) ;
+
+/// No symmetry over a flag, alike.
+@[ refuses("GenericUncovered.Dependent") ]
+def symFlagged = Eq.generic.sym(Flagged) ;
+
+/// No reflexivity over a recursion: its proof is an induction.
+@[ refuses("GenericUncovered") ]
+def reflPeano = Eq.generic.refl(Peano) ;

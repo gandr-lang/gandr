@@ -108,6 +108,7 @@ use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use gandr_kernel_term::StringLiteral;
+use gandr_kernel_term::Summand;
 use num_bigint::BigInt;
 
 use crate::CompTypeId;
@@ -255,6 +256,33 @@ enum Operation
     /// A floating-point number rounded to the nearest integer, ties to even.
     Round,
 }
+
+/// A law the host asserts of a primitive.
+///
+/// A model at the primitive's carrier admits it rather than proves it. The
+/// statement of each, over the primitive `op` at its carrier, is a path type
+/// in the shape a theory writes its laws.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Law
+{
+    /// `(a) => Path(Bool, op(a, a), true)`.
+    Reflexive,
+    /// `(a, b) => Path(Bool, op(a, b), op(b, a))`.
+    Symmetric,
+    /// `(a, b, c, p : Path(Bool, op(a, b), true), q : Path(Bool, op(b, c),
+    /// true)) => Path(Bool, op(a, c), true)`.
+    Transitive,
+}
+
+/// The laws of an equivalence: equality at the integers and at the strings.
+const EQUIVALENCE: &[Law] = &[Law::Reflexive, Law::Symmetric, Law::Transitive];
+
+/// The laws of a partial equivalence: IEEE 754 equality, under which a NaN
+/// equals nothing, itself included.
+const PARTIAL_EQUIVALENCE: &[Law] = &[Law::Symmetric, Law::Transitive];
 
 /// A table-owned native primitive. Callers cannot manufacture a mismatched row.
 #[repr(transparent)]
@@ -717,6 +745,117 @@ impl Primitive
             body = arena.computation_lambda(body);
         }
         arena.value_primitive(self, body)
+    }
+
+    /// The host's law table: the laws it asserts of this row, and the carrier
+    /// they quantify over.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly for the equality rows — an equivalence at
+    ///   [`PrimitiveType::Integer`] and [`PrimitiveType::Text`], a partial
+    ///   equivalence at [`PrimitiveType::Float64`] — with that carrier; absent
+    ///   for every other row, which asserts no law.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the table is the predicate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the integers' and strings' equalities assert all
+    ///   three laws, the floats' symmetry and transitivity only, and an
+    ///   ordering none.
+    /// - witness: `primitive::tests::the_host_asserts_the_laws_of_its_equalities_2302`
+    #[inline]
+    #[must_use]
+    pub fn laws(self) -> Option<(PrimitiveType, &'static [Law])>
+    {
+        match (self.0.operation, self.0.arguments) {
+            (Operation::Eq, &[PrimitiveType::Integer, PrimitiveType::Integer]) => {
+                Some((PrimitiveType::Integer, EQUIVALENCE))
+            },
+            (Operation::Eq, &[PrimitiveType::Text, PrimitiveType::Text]) => {
+                Some((PrimitiveType::Text, EQUIVALENCE))
+            },
+            (Operation::Eq, &[PrimitiveType::Float64, PrimitiveType::Float64]) => {
+                Some((PrimitiveType::Float64, PARTIAL_EQUIVALENCE))
+            },
+            _ => None,
+        }
+    }
+
+    /// The statement of `law` over this row, closed: the type a law of a
+    /// model at the row's carrier converts with when the host asserts it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: present exactly when [`Self::laws`] lists `law`: the thunk of
+    ///   a Π over the carrier per variable — then, for [`Law::Transitive`], a Π
+    ///   per hypothesis — returning the path [`Law`]'s alternative states, each
+    ///   `op(x, y)` the value this row returns at `x` and `y`; absent
+    ///   otherwise.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every prelude row states exactly the laws it lists,
+    ///   each a thunked chain.
+    /// - witness: `primitive::tests::the_host_asserts_the_laws_of_its_equalities_2302`
+    #[spec(ensures: |ret| ret.is_some() == self.laws().is_some_and(|(_, laws)| laws.contains(&law)))]
+    #[inline]
+    #[must_use]
+    pub fn law_statement(
+        self,
+        law: Law,
+        arena: &mut CoreArena,
+    ) -> Option<ValueTypeId>
+    {
+        let (carrier, laws) = self.laws()?;
+        if !laws.contains(&law) {
+            return None;
+        }
+        let carrier = carrier.mint(arena);
+        let boolean = PrimitiveType::Boolean.mint(arena);
+        let unit = arena.value_unit();
+        let truth = arena.value_injection(Summand::from(0_usize), unit);
+        // `op(x, y)` read by the de Bruijn indices of `x` and `y`.
+        let decided = |arena: &mut CoreArena, left: u32, right: u32| {
+            let left = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(left));
+            let right = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(right));
+            let decision = arena.computation_primitive(self, Arguments::Binary([left, right]));
+            arena.value_returned(decision)
+        };
+        let held = |arena: &mut CoreArena, left: u32, right: u32| {
+            let decision = decided(arena, left, right);
+            arena.value_type_path(boolean, decision, truth)
+        };
+        let (stated, hypotheses, variables) = match law {
+            Law::Reflexive => (held(arena, 0, 0), alloc::vec::Vec::new(), 1_usize),
+            Law::Symmetric => {
+                let forward = decided(arena, 1, 0);
+                let backward = decided(arena, 0, 1);
+                (
+                    arena.value_type_path(boolean, forward, backward),
+                    alloc::vec::Vec::new(),
+                    2,
+                )
+            },
+            // Under `a b c`: `p` reads `a` and `b` at two and one; under `a
+            // b c p`, `q` reads `b` and `c` at two and one; under all five,
+            // the conclusion reads `a` and `c` at four and two.
+            Law::Transitive => {
+                let first = held(arena, 2, 1);
+                let second = held(arena, 2, 1);
+                (held(arena, 4, 2), alloc::vec::Vec::from([first, second]), 3)
+            },
+        };
+        let mut chain = arena.comp_type_returner(stated);
+        for &hypothesis in hypotheses.iter().rev() {
+            chain = arena.comp_type_pi(hypothesis, chain);
+        }
+        for _variable in 0 .. variables {
+            chain = arena.comp_type_pi(carrier, chain);
+        }
+        Some(arena.value_type_thunk(chain))
     }
 
     /// Evaluate a saturated application on canonical native scalars.

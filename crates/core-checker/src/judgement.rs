@@ -9509,6 +9509,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::SessionNotSubtype { .. }
                     | CheckRefusal::SessionCodeExpected { .. }
                     | CheckRefusal::OpenSessionPayload { .. }
+                    | CheckRefusal::UnassertedLaw { .. }
                     | CheckRefusal::NonCovariantMotive { .. }
                     | CheckRefusal::RideUnsupported { .. }
                     | CheckRefusal::RunNotAdmitted { .. }

@@ -71,6 +71,19 @@
 //! the hole rule makes; a refusal cannot be spelled as an obligation, and the
 //! classifier leaves its absence class empty.
 //!
+//! **A law is admitted on the host's word only where the host gives it.** A
+//! declaration whose body is [`body::Absent::Hosted`] — a model's `law x
+//! admitted` — is owed as a hole is, and admitted only when its declared type
+//! converts with a law the host asserts of one of its primitives
+//! ([`gandr_core_term::primitive::Primitive::laws`]): integer and string
+//! equality are equivalences, float equality symmetric and transitive alone,
+//! NaN equal to nothing. Any other admission is refused
+//! [`CheckRefusal::UnassertedLaw`]. The match is by conversion, so a model
+//! stating its equality through its own component, `a == b`, is admitted as
+//! the primitive it unfolds to; a syntactic match at the lowering would refuse
+//! it. A primitive whose laws the host comes to assert takes a row of the
+//! table, and nothing else changes.
+//!
 //! **A judgement waiting on a hole is suspended, not refused.** A comparison
 //! between the decode of an owed code and a constructor-headed type waits on
 //! that code: the declaration that made it is [`Verdict::Suspended`], typed

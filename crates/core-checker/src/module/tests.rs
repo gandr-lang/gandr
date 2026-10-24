@@ -2968,3 +2968,115 @@ fn a_nested_argument_binds_the_implicit_it_is_read_at()
         "the argument runs, never suspended at the hole's decode"
     );
 }
+
+#[test]
+fn a_hosted_law_is_admitted_only_where_the_host_asserts_it_2302()
+{
+    use gandr_core_term::primitive::PRELUDE;
+    use gandr_core_term::primitive::PrimitiveType;
+
+    let mut arena = CoreArena::new();
+    let boolean = PrimitiveType::Boolean.mint(&mut arena);
+    let unit = arena.value_unit();
+    let truth = arena.value_injection(gandr_kernel_term::Summand::from(0_usize), unit);
+    let named = |name: &str| {
+        PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == name)
+            .expect("the prelude holds the row")
+    };
+    // A component deciding two values of `carrier`, defined as the primitive.
+    let component = |arena: &mut CoreArena, name: &str, carrier: BaseType| {
+        let carrier = arena.value_type_base(carrier);
+        let answer = arena.comp_type_returner(boolean);
+        let second = arena.comp_type_arrow(carrier, answer);
+        let first = arena.comp_type_arrow(carrier, second);
+        let declared = arena.value_type_thunk(first);
+        (declared, named(name).thunk(arena), carrier)
+    };
+    // `component(x, y)` at de Bruijn indices `x` and `y`.
+    let applied = |arena: &mut CoreArena, at: usize, left: u32, right: u32| {
+        let head = arena.value_constant(ConstantIndex::from(at));
+        let forced = arena.computation_force(head);
+        let left = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(left),
+        );
+        let right = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(right),
+        );
+        let once = arena.computation_application(forced, left);
+        let twice = arena.computation_application(once, right);
+        arena.value_returned(twice)
+    };
+    let quantified =
+        |arena: &mut CoreArena, path: ValueTypeId, carrier: ValueTypeId, over: usize| {
+            let mut chain = arena.comp_type_returner(path);
+            for _ in 0 .. over {
+                chain = arena.comp_type_pi(carrier, chain);
+            }
+            arena.value_type_thunk(chain)
+        };
+    let refl = |arena: &mut CoreArena, at: usize, carrier: ValueTypeId| {
+        let decided = applied(arena, at, 0, 0);
+        let path = arena.value_type_path(boolean, decided, truth);
+        quantified(arena, path, carrier, 1)
+    };
+    let sym = |arena: &mut CoreArena, at: usize, carrier: ValueTypeId| {
+        let forward = applied(arena, at, 1, 0);
+        let backward = applied(arena, at, 0, 1);
+        let path = arena.value_type_path(boolean, forward, backward);
+        quantified(arena, path, carrier, 2)
+    };
+    let (integers, integers_body, integer) = component(&mut arena, "int.eq", BaseType::Integer);
+    let (floats, floats_body, float) = component(&mut arena, "float64.eq", BaseType::Float64);
+    let (below, below_body, _) = component(&mut arena, "int.lt", BaseType::Integer);
+    let integer_refl = refl(&mut arena, 0, integer);
+    let float_refl = refl(&mut arena, 1, float);
+    let float_sym = sym(&mut arena, 1, float);
+    let below_refl = refl(&mut arena, 2, integer);
+    let hosted = Maybe::Absent(body::Absent::Hosted);
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(
+                At(0),
+                Maybe::Present(integers),
+                Maybe::Present(integers_body),
+            ),
+            declaration(At(1), Maybe::Present(floats), Maybe::Present(floats_body)),
+            declaration(At(2), Maybe::Present(below), Maybe::Present(below_body)),
+            declaration(At(3), Maybe::Present(integer_refl), hosted),
+            declaration(At(4), Maybe::Present(float_refl), hosted),
+            declaration(At(5), Maybe::Present(float_sym), hosted),
+            declaration(At(6), Maybe::Present(below_refl), hosted),
+            declaration(At(7), Maybe::Present(float_refl), HOLE),
+        ])
+    };
+    let verdicts: Vec<_> = report.judged().iter().map(super::Judged::verdict).collect();
+    for (at, owed, what) in [
+        (3, true, "the integers' equality is reflexive"),
+        (4, false, "a NaN is not equal to itself"),
+        (5, true, "the floats' equality is symmetric"),
+        (6, false, "the host asserts no law of an ordering"),
+        (7, true, "a hole owes its type whatever it states"),
+    ] {
+        let verdict = verdicts.get(at).copied();
+        assert_eq!(
+            matches!(verdict, Some(Verdict::Owed(_))),
+            owed,
+            "{what}: {verdict:?}"
+        );
+    }
+    for (at, declared) in [(4, float_refl), (6, below_refl)] {
+        assert_eq!(
+            verdicts.get(at).copied(),
+            Some(Verdict::Refused(CheckRefusal::UnassertedLaw {
+                at: declared
+            })),
+            "an unasserted law is refused at its statement"
+        );
+    }
+}

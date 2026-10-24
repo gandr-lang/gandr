@@ -1253,6 +1253,14 @@ pub enum CheckRefusal
         /// The session type.
         at: ValueTypeId,
     },
+    /// A law admitted on the host's word whose statement converts with none
+    /// the host's law table holds: the host does not assert it, so the model
+    /// owes its proof.
+    UnassertedLaw
+    {
+        /// The law's declared type.
+        at: ValueTypeId,
+    },
     /// A ride whose motive reads its code variable anywhere but a covariant
     /// position: a flow moves forward only, so no ride derives its reverse.
     NonCovariantMotive
@@ -1399,7 +1407,7 @@ impl CheckRefusal
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. } | Self::ModelUnanswered { .. } | Self::ModelAmbiguous { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
-        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
     })]
     #[inline]
     #[must_use]
@@ -1475,6 +1483,7 @@ impl CheckRefusal
             | Self::SessionNotSubtype { .. }
             | Self::SessionCodeExpected { .. }
             | Self::OpenSessionPayload { .. }
+            | Self::UnassertedLaw { .. }
             | Self::NonCovariantMotive { .. }
             | Self::RunNotAdmitted { .. }
             | Self::DialogueUnmatched { .. }
@@ -1510,10 +1519,11 @@ impl CheckRefusal
     ///   dependent bind or stack and a compound endpoint the type its body
     ///   synthesised, a static Pi over no classifier of codes the child it
     ///   stands over, a session action and a leftover endpoint the endpoint's
-    ///   session type, and a capability refusal the capability type it met,
-    ///   each expecting a former the refusal names rather than a type; a forged
-    ///   capability expects the capability type it stood at and found nothing;
-    ///   every other refusal compares no types.
+    ///   session type, a capability refusal the capability type it met, and an
+    ///   unasserted law the statement it would admit, each expecting a former
+    ///   the refusal names rather than a type; a forged capability expects the
+    ///   capability type it stood at and found nothing; every other refusal
+    ///   compares no types.
     /// - provides: the type nodes a face spells beside the refusal's locus.
     /// - fails: never; a side the refusal sets no type on is the
     ///   [`compared::Absent::Unnamed`] absence.
@@ -1543,7 +1553,7 @@ impl CheckRefusal
         | Self::StaticClassifierExpected { found, .. } | Self::FunextUnsupported { classifier: found, .. }
         | Self::CapabilityOutsideAuthority { capability: found, .. } | Self::CapabilityConsumable(found) | Self::CapabilityUngranted { declared: found, .. }
         | Self::EquivUnsupported { classifier: found, .. } | Self::UncertifiedStratum { code: found, .. }
-        | Self::SessionMismatch { state: found, .. }
+        | Self::SessionMismatch { state: found, .. } | Self::UnassertedLaw { at: found }
         | Self::Linearity { defect: crate::session::LinearityDefect::Residue { state: found, .. }, .. } =>
             ret.found == Maybe::Present(TypeNode::Value(found)) && ret.expected == UNNAMED,
         | _ => ret == Compared { expected: UNNAMED, found: UNNAMED },
@@ -1626,6 +1636,7 @@ impl CheckRefusal
             }
             | Self::UncertifiedStratum { code: found, .. }
             | Self::SessionMismatch { state: found, .. }
+            | Self::UnassertedLaw { at: found }
             | Self::Linearity {
                 defect: crate::session::LinearityDefect::Residue { state: found, .. },
                 ..

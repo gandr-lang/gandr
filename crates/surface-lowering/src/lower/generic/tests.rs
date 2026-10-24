@@ -59,14 +59,13 @@ fn declared(
 fn a_generic_equality_lowers_to_the_derived_declaration_2302()
 {
     // Unsigned, the derived type stands; signed, the written one, which is
-    // the same type. A model's member derives too, and `==` reaches it. The
+    // the same type. A recursive declaration's equality derives too. The
     // prelude's `Eq.generic` yields no declaration of its own.
     let (text, unit) = laid(SourceText::from(
         "\
 def eqPoint = Eq.generic(Point) ;
 def stated : (Point, Point) => Bool = Eq.generic(Point) ;
-module EqNat : Model(Eq) with sort Carrier = Nat { def eq = Eq.generic(Nat) ; }
-def same() -> Bool { Succ(Zero) == Succ(Zero) }
+def eqNat = Eq.generic(Nat) ;
 ",
     ));
     let mut arena = CoreArena::new();
@@ -87,6 +86,32 @@ def same() -> Bool { Succ(Zero) == Succ(Zero) }
         CertificateEquality::Equal,
         "the derived type is the written one"
     );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_derived_law_lowers_to_its_proof_2302()
+{
+    // A point's laws, alone and as a model's members: each proof checks
+    // against its own derived statement, and the model's against `Eq`'s, so
+    // `==` reaches points through it.
+    let (text, unit) = laid(SourceText::from(
+        "\
+def reflPoint = Eq.generic.refl(Point) ;
+def symPoint = Eq.generic.sym(Point) ;
+module EqPoint : Model(Eq) with sort Carrier = Point {
+  def eq = Eq.generic(Point) ;
+  def refl = Eq.generic.refl(Point) ;
+  def sym = Eq.generic.sym(Point) ;
+}
+def same() -> Bool { Point(1, 2) == Point(1, 2) }
+",
+    ));
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    for name in ["reflPoint", "symPoint"] {
+        let _stated = declared(&module, SurfaceName::from(name));
+    }
     assert_checked(&module, &mut arena);
 }
 
@@ -140,6 +165,7 @@ fn a_misplaced_generic_is_refused_at_the_call_2302()
 def inside() -> Bool { Eq.generic(Point)(Point(1, 2), Point(1, 2)) }
 def integers = Eq.generic(Integer) ;
 def bare = Eq.generic ;
+def reflIntegers = Eq.generic.refl(Integer) ;
 ",
     ));
     let mut arena = CoreArena::new();
@@ -148,6 +174,7 @@ def bare = Eq.generic ;
         ("inside", "Eq.generic(Point)"),
         ("integers", "Eq.generic(Integer)"),
         ("bare", "Eq.generic ;"),
+        ("reflIntegers", "Eq.generic.refl(Integer)"),
     ] {
         let refusal = refusal_of(&module, SurfaceName::from(name));
         let LoweringRefusal::GenericMisplaced { span } = refusal
@@ -168,16 +195,22 @@ def bare = Eq.generic ;
 fn an_uncovered_declaration_is_refused_at_its_name_2302()
 {
     // A function field has no equality; a declaration with parameters is
-    // not yet covered. Each is refused at the name of the type.
+    // not yet covered; the naturals' reflexivity is an induction. Each is
+    // refused at the name of the type.
     let (text, unit) = laid(SourceText::from(
         "\
 def shapes = Eq.generic(Shape) ;
 def boxes = Eq.generic(Box) ;
+def reflNats = Eq.generic.refl(Nat) ;
 ",
     ));
     let mut arena = CoreArena::new();
     let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
-    for (name, data, written) in [("shapes", "Shape", "(Shape)"), ("boxes", "Box", "(Box)")] {
+    for (name, data, written) in [
+        ("shapes", "Shape", "(Shape)"),
+        ("boxes", "Box", "(Box)"),
+        ("reflNats", "Nat", "(Nat)"),
+    ] {
         let refusal = refusal_of(&module, SurfaceName::from(name));
         let LoweringRefusal::GenericUncovered {
             span,
@@ -195,7 +228,8 @@ def boxes = Eq.generic(Box) ;
         );
         match name {
             "shapes" => assert!(matches!(fault, Uncovered::Field(..)), "{fault:?}"),
-            _ => assert!(matches!(fault, Uncovered::Applied(_)), "{fault:?}"),
+            "boxes" => assert!(matches!(fault, Uncovered::Applied(_)), "{fault:?}"),
+            _ => assert!(matches!(fault, Uncovered::Inductive(..)), "{fault:?}"),
         }
     }
 }

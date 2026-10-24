@@ -446,6 +446,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::CapabilityEscaped { .. } => "a capability outliving its scope",
         CheckRefusal::CapabilityConsumable(_) => "a consumable capability",
         CheckRefusal::OpenSessionPayload { .. } => "a session payload open over a binder",
+        CheckRefusal::UnassertedLaw { .. } => "a law the host does not assert",
         CheckRefusal::CapabilityUngranted { .. } => "authority the host did not grant",
         CheckRefusal::SessionNotEquivalent { .. } => "protocols that are not bisimilar",
         CheckRefusal::SessionNotSubtype { .. } => "a protocol that does not simulate the target",

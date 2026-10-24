@@ -5153,6 +5153,7 @@ where
                     write_index(writer, root)?;
                 },
                 Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
+                Maybe::Absent(body::Absent::Hosted) => writer.tag(Tag(2)),
             }
             let supplied = !supplies.is_empty() || !models.is_empty();
             let staged = !stages.is_empty() || supplied;
@@ -5428,6 +5429,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
             let body = match reader.tag()?.0 {
                 0 => Maybe::Absent(body::Absent::Hole),
                 1 => Maybe::Present(read_index(reader)?),
+                2 => Maybe::Absent(body::Absent::Hosted),
                 _ => return Err(CodecError::Corrupt),
             };
             let mut laws = Vec::new();
@@ -7197,6 +7199,10 @@ where
             writer.tag(Tag(84));
             write_site(writer, at)?;
         },
+        Refusal::UnassertedLaw(at) => {
+            writer.tag(Tag(92));
+            write_site(writer, at)?;
+        },
         Refusal::NonCovariantMotive(at) => {
             writer.tag(Tag(67));
             write_site(writer, at)?;
@@ -7433,6 +7439,7 @@ where
                     | Refusal::SessionNotSubtype(_) => 65,
                     | Refusal::SessionCodeExpected(_) => 66,
                     | Refusal::OpenSessionPayload(_) => 84,
+                    | Refusal::UnassertedLaw(_) => 92,
                     | Refusal::NonCovariantMotive(_) => 67,
                     | Refusal::RideUnsupported(_) => 68,
                     | Refusal::RunNotAdmitted { .. } => 69,
@@ -7768,6 +7775,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         65 => Refusal::SessionNotSubtype(read_site(reader)?),
         66 => Refusal::SessionCodeExpected(read_site(reader)?),
         84 => Refusal::OpenSessionPayload(read_site(reader)?),
+        92 => Refusal::UnassertedLaw(read_site(reader)?),
         67 => Refusal::NonCovariantMotive(read_site(reader)?),
         68 => Refusal::RideUnsupported(read_site(reader)?),
         70 => Refusal::ForwardUnsupported(read_site(reader)?),
@@ -8512,6 +8520,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::SessionNotSubtype(_)
             | Refusal::SessionCodeExpected(_)
             | Refusal::OpenSessionPayload(_)
+            | Refusal::UnassertedLaw(_)
             | Refusal::NonCovariantMotive(_)
             | Refusal::RideUnsupported(_)
             | Refusal::RunNotAdmitted { .. }

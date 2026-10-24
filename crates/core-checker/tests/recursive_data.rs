@@ -2421,3 +2421,128 @@ fn a_case_over_a_held_native_call_meets_the_derived_equality_binding_it_2378()
         crossed.readmitted()
     );
 }
+
+#[test]
+fn derived_laws_are_admitted_and_readmitted_2302()
+{
+    // Point(Integer, Integer) and Shape = Dot | Seg(Point, (), String), the
+    // host's reflexivity and symmetry of integer and string equality as
+    // axioms, each declaration's derived equality, and the reflexivity and
+    // symmetry `gandr_core_term::generic::law` derives of it: Shape's write
+    // Point's in place, prove a unit by `here(true)`, and answer the cases
+    // across two constructors by `here(false)`. Each proof checks against its
+    // statement and crosses, resting on the host's axioms alone.
+    use gandr_core_term::generic::law::Statement;
+    use gandr_core_term::primitive::Law;
+    use gandr_core_term::primitive::PRELUDE;
+    use gandr_kernel_term::BaseType;
+
+    let mut arena = CoreArena::new();
+    let kind = kind(&mut arena);
+    let integer = arena.value_type_base(BaseType::Integer);
+    let text = arena.value_type_base(BaseType::String);
+    let unit = arena.value_type_product(&[]);
+    let [point_at, shape_at] = [0_usize, 1].map(ConstantIndex::from);
+    let point = arena.value_type_data(point_at, vec![]);
+    let signatures = BTreeMap::from([
+        (
+            point_at,
+            DataSignature::new(vec![], vec![vec![integer, integer]], kind),
+        ),
+        (
+            shape_at,
+            DataSignature::new(vec![], vec![vec![], vec![point, unit, text]], kind),
+        ),
+    ]);
+    let mut declarations: Vec<Declaration> = signatures
+        .iter()
+        .map(|(&constant, signature)| data(constant, signature.clone()))
+        .collect();
+    // The host's laws, 2 to 5, each an axiom of the statement the host
+    // asserts.
+    let mut hosted = Vec::new();
+    for (name, base) in [
+        ("int.eq", BaseType::Integer),
+        ("string.eq", BaseType::String),
+    ] {
+        let primitive = PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == name)
+            .expect("the prelude holds the row");
+        for (law, statement) in [
+            (Law::Reflexive, Statement::Reflexive),
+            (Law::Symmetric, Statement::Symmetric),
+        ] {
+            let at = ConstantIndex::from(declarations.len());
+            let stated = primitive
+                .law_statement(law, &mut arena)
+                .expect("the host asserts the law");
+            declarations.push(Declaration::new(
+                at,
+                Maybe::Present(stated),
+                Maybe::Absent(gandr_core_checker::body::Absent::Hole),
+                origin(at),
+            ));
+            let constant = arena.value_constant(at);
+            hosted.push((base, statement, constant));
+        }
+    }
+    // The equalities, 6 and 7, then the laws.
+    for &family in signatures.keys() {
+        let derived =
+            gandr_core_term::generic::equality(&mut arena, family, &|at| signatures.get(&at))
+                .expect("each declaration derives its equality");
+        let at = ConstantIndex::from(declarations.len());
+        declarations.push(definition(at, derived.declared(), derived.body()));
+    }
+    for &family in signatures.keys() {
+        for statement in [Statement::Reflexive, Statement::Symmetric] {
+            let derived = gandr_core_term::generic::law::law(
+                &mut arena,
+                family,
+                &|at| signatures.get(&at),
+                statement,
+                &|base, statement| {
+                    hosted
+                        .iter()
+                        .find(|&&(at, stated, _)| at == base && stated == statement)
+                        .map(|&(_, _, constant)| constant)
+                },
+            )
+            .expect("each declaration derives its laws");
+            let at = ConstantIndex::from(declarations.len());
+            declarations.push(definition(at, derived.declared(), derived.body()));
+        }
+    }
+    let (report, crossed) = run(&mut arena, &declarations);
+    for (position, (judged, readmitted)) in
+        report.judged().iter().zip(crossed.readmitted()).enumerate()
+    {
+        match position {
+            0 | 1 => assert_eq!(judged.verdict(), Verdict::Data, "{position}"),
+            2 ..= 5 => assert!(
+                matches!(judged.verdict(), Verdict::Owed(_)),
+                "{position}: the host's law is an axiom: {:?}",
+                judged.verdict()
+            ),
+            _ => {
+                assert!(
+                    matches!(judged.verdict(), Verdict::Checked { .. }),
+                    "{position}: {:?}",
+                    judged.verdict()
+                );
+                assert!(
+                    matches!(readmitted.outcome(), Outcome::Defined { .. }),
+                    "{position}: {:?}",
+                    readmitted.outcome()
+                );
+            },
+        }
+    }
+    assert_eq!(
+        report.judged().len(),
+        12_usize,
+        "four laws past the equalities"
+    );
+}

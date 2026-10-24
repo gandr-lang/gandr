@@ -62,7 +62,7 @@ fn named(key: &ItemKey) -> Reference
 #[spec(ensures: |ret| ret.opacity == Opacity::Transparent
         && ret.type_reads.is_subset(&ret.reads)
         && ret.hole == match body {
-            Maybe::Absent(body::Absent::Hole) => HoleMark::Hole,
+            Maybe::Absent(_) => HoleMark::Hole,
             Maybe::Present(_) => HoleMark::Filled,
         })]
 fn last_footprint(

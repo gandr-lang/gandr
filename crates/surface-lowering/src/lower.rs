@@ -3413,10 +3413,17 @@ struct Lowerer<'run, 'source>
     derivations: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The prelude's `Eq.generic`, once the prelude is declared.
     generic: Option<SlotIndex>,
-    /// Each definition written `Eq.generic(T)`, by its slot, with the data
-    /// declaration `T` names.
+    /// The laws the prelude admits of the host's equalities, by base type and
+    /// law, once the prelude is declared.
+    hosted: alloc::vec::Vec<(
+        gandr_kernel_term::BaseType,
+        gandr_core_term::generic::law::Statement,
+        ConstantIndex,
+    )>,
+    /// Each definition written `Eq.generic(T)` or one of its laws, by its
+    /// slot, with the data declaration `T` names.
     requested: BTreeMap<SlotIndex, generic::Requested<'source>>,
-    /// Each derived equality's minted type and body, by slot.
+    /// Each derived equality's or law's minted type and body, by slot.
     generics: BTreeMap<SlotIndex, (ValueTypeId, ValueId)>,
     /// The sorts each minted forgetting map puts back, in signature order, by
     /// its slot.
@@ -5015,6 +5022,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),
             generic: None,
+            hosted: alloc::vec::Vec::new(),
             requested: BTreeMap::new(),
             generics: BTreeMap::new(),
             forgotten: BTreeMap::new(),
@@ -10268,10 +10276,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.ua_call(site, stratum, cursor);
         }
         if let Run::One(head) = cursor.clone().operands()
-            && let Maybe::Present(_generic) = self.generic_head(site, head)?
+            && let Maybe::Present(derivation) = self.generic_head(site, head)?
         {
             let _head = cursor.operands();
-            return self.generic_call(site, cursor);
+            return self.generic_call(site, derivation, cursor);
         }
         if let Reading::Value(_) = site.reading
             && let Run::One(head) = cursor.clone().operands()

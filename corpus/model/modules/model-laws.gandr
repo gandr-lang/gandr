@@ -5,8 +5,10 @@
 // orientation and reflexivity's left side reads its variable twice. A model at
 // a type of its own proves each law by a definition at the law's path; a
 // model at a host primitive admits each, `law refl admitted ;`, and the
-// report's audit lists the admission in place of an obligation. The refusals
-// are beside `../../pathological/modules/model-laws.gandr`.
+// report's audit lists the admission in place of an obligation. A theory
+// including a lawful one restricts its models to the included theory's, the
+// laws carried by name. The refusals are beside
+// `../../pathological/modules/model-laws.gandr`.
 
 /// A decision and the laws that make it an equivalence.
 @[ checks ]
@@ -64,3 +66,26 @@ module LawfulInteger : Model(Lawful) with sort Carrier = Integer {
 /// The admitted model decides by the host: three is three.
 @[ runs("+{.0 = unit}") ]
 def threeIsThree() -> Bool { LawfulInteger.alike(3, 3) }
+
+/// A decision with an order beside it: its models restrict to `Lawful`'s,
+/// the laws carried through the include.
+@[ checks ]
+theory LawfulOrder {
+  include Lawful;
+  oper below : (a : Carrier, b : Carrier) --> Bool;
+}
+
+/// The integers' order over their lawful decision.
+@[ checks ]
+module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer {
+  include LawfulInteger;
+  def below(a : Integer, b : Integer) -> Bool { a < b }
+}
+
+/// A decision through any lawful model.
+def decide @[l : Model(Lawful)] (a : l.Carrier, b : l.Carrier) -> Bool { l.alike(a, b) }
+
+/// The order's model stands where a lawful one is asked, restricted by the
+/// reduct: two is not three.
+@[ runs("+{.1 = unit}") ]
+def twoIsNotThree() -> Bool { decide[l = LawfulOrderInteger](2, 3) }

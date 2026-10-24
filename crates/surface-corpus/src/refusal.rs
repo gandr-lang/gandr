@@ -88,10 +88,10 @@ use gandr_core_checker::ua::StratumDefect;
 use gandr_core_checker::ua::UaDefect;
 use gandr_core_checker::worlds::LocatedDefect;
 use gandr_core_term::FailureClass;
+use gandr_core_term::generic::Uncovered;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
-use gandr_surface_lowering::LawProof;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::Unbuilt;
@@ -371,6 +371,79 @@ impl fmt::Display for RefusalSpelling
     }
 }
 
+/// Why a law of a module's model stands unproven, the qualifier of
+/// [`RefusalName::UnprovenLaw`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a law no member answers is missing, the lowering's
+///   [`LoweringRefusal::UnprovenLaw`]; a law admitted on the host's word that
+///   the host does not assert is admitted where a proof was owed, the checker's
+///   [`CheckRefusal::UnassertedLaw`].
+/// - provides: one family for both, since both say the model has not proven the
+///   law; the qualifier says why.
+/// - panics: none.
+/// - executable: none — the reason holds neither the law nor its statement.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a model without a law and a model admitting a law the
+///   host does not assert settle the fixtures naming each.
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LawProof
+{
+    /// No member of the module answers the law.
+    Missing,
+    /// A member admits the law, and the host asserts no law its statement
+    /// converts with: the law is the author's to prove.
+    Admitted,
+}
+
+/// What a derivation `Eq.generic` writes does not cover, the qualifier of
+/// [`RefusalName::GenericUncovered`].
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a law whose proof cases on a field under a motive is dependent,
+///   the derivation's [`Uncovered::DependentCase`]; every other fault is the
+///   declaration's.
+/// - provides: one family for an equality's and a law's gaps, the qualifier
+///   naming the gap core's `case` leaves: a motive reading its scrutinee.
+/// - panics: none.
+/// - executable: none — the qualifier holds neither the declaration nor its
+///   field.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a law over a flag and an equality over a function field
+///   settle the fixtures naming each.
+/// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GenericCoverage
+{
+    /// The declaration, or a field of it, has no derivation: bare.
+    Declaration,
+    /// A law's proof cases on a field of a sum or a tuple under a motive.
+    Dependent,
+}
+
+impl GenericCoverage
+{
+    /// The gap `fault` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub const fn of(fault: Uncovered) -> Self
+    {
+        if let Uncovered::DependentCase(..) = fault {
+            Self::Dependent
+        }
+        else {
+            Self::Declaration
+        }
+    }
+}
+
 /// One name of the closed refusal vocabulary: every refusal the lowering, the
 /// checker and this crate raise, named by its variant.
 ///
@@ -595,7 +668,7 @@ pub enum RefusalName
     /// A selection or a signature component a module does not supply.
     UnknownMember,
     /// A law of a module's model the module does not prove: missing, bare;
-    /// admitted at a carrier the host does not provide, qualified `Admitted`.
+    /// admitted where the host asserts no such law, qualified `Admitted`.
     UnprovenLaw(LawProof),
     /// A field read by name off a data value some constructor declares none of.
     PartialField,
@@ -711,8 +784,9 @@ pub enum RefusalName
     /// `Eq.generic` read anywhere but as a definition's whole body, applied
     /// to one data type.
     GenericMisplaced,
-    /// A data type `Eq.generic` derives no equality for.
-    GenericUncovered,
+    /// A data type `Eq.generic` derives no equality or law for: the
+    /// declaration's gap, bare; a law's dependent case, qualified `Dependent`.
+    GenericUncovered(GenericCoverage),
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -1031,7 +1105,7 @@ impl RefusalName
         Self::RulesUndecided,
         Self::UnderivedRule,
         Self::GenericMisplaced,
-        Self::GenericUncovered,
+        Self::GenericUncovered(GenericCoverage::Declaration),
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -1144,7 +1218,10 @@ impl RefusalName
             )
             .chain(MODEL_FAULTS.map(|fault| Self::UnstatedComponent(model_tag(fault))))
             .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
-            .chain([Self::UnprovenLaw(LawProof::Admitted)])
+            .chain([
+                Self::UnprovenLaw(LawProof::Admitted),
+                Self::GenericUncovered(GenericCoverage::Dependent),
+            ])
             .collect()
     }
 
@@ -1232,7 +1309,7 @@ impl RefusalName
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::UnderivedRule, b"UnderivedRule") |
         (Self::GenericMisplaced, b"GenericMisplaced") |
-        (Self::GenericUncovered, b"GenericUncovered") |
+        (Self::GenericUncovered(_), b"GenericUncovered") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
@@ -1367,7 +1444,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::UnprovenLaw(LawProof::Admitted))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent))
         == ret.qualifier.is_some()
 },
     )]
@@ -1571,7 +1648,7 @@ impl RefusalName
             Self::RulesUndecided => "RulesUndecided",
             Self::UnderivedRule => "UnderivedRule",
             Self::GenericMisplaced => "GenericMisplaced",
-            Self::GenericUncovered => "GenericUncovered",
+            Self::GenericUncovered(_) => "GenericUncovered",
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
             Self::UnknownMold => "UnknownMold",
@@ -1603,6 +1680,9 @@ impl RefusalName
         else if matches!(self, Self::UnprovenLaw(LawProof::Admitted)) {
             Some(Qualifier::Named(ADMITTED))
         }
+        else if matches!(self, Self::GenericUncovered(GenericCoverage::Dependent)) {
+            Some(Qualifier::Named(DEPENDENT))
+        }
         else {
             None
         };
@@ -1618,7 +1698,7 @@ impl RefusalName
     ///   read only with a qualifier some refusal carries: an unbuilt feature's
     ///   spelling; a boundary other than reserved and unadmitted; the run
     ///   target; a checker former; a model component's or a member's fault; a
-    ///   law's admission.
+    ///   law's admission; a law's dependent case.
     /// - provides: the reading of a `refuses` payload.
     /// - fails: never; text naming nothing is the [`refusal_name::Absent`]
     ///   absence, which the expectation reader turns into a fixture failure.
@@ -1670,6 +1750,8 @@ impl RefusalName
                 "UnprovenLaw" => {
                     (rest == ADMITTED.0).then_some(Self::UnprovenLaw(LawProof::Admitted))
                 },
+                "GenericUncovered" => (rest == DEPENDENT.0)
+                    .then_some(Self::GenericUncovered(GenericCoverage::Dependent)),
                 _ => None,
             }
         };
@@ -1687,6 +1769,9 @@ const STRAY: Tag = Tag("WrongSort.declaration");
 /// The tag a law admitted where a proof was owed is qualified by: the
 /// carrier is not the host's, so the admission is the author's.
 const ADMITTED: Tag = Tag("Admitted");
+
+/// The tag a law whose proof cases on a field under a motive is qualified by.
+const DEPENDENT: Tag = Tag("Dependent");
 
 /// Every former the checker's judgement has no rule for.
 const FORMERS: [UnadmittedFormer; 24_usize] = [
@@ -2113,7 +2198,7 @@ impl Refusal<'_>
         RefusalName::PhaseDependence) |
         (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
         RefusalName::UnknownMember) |
-        (Self::Lowering(LoweringRefusal::UnprovenLaw { .. }), RefusalName::UnprovenLaw(_)) |
+        (Self::Lowering(LoweringRefusal::UnprovenLaw { .. }), RefusalName::UnprovenLaw(LawProof::Missing)) |
         (Self::Lowering(LoweringRefusal::PartialField { .. }),
         RefusalName::PartialField) | (Self::Lowering(LoweringRefusal::NotAFunctor { .. }),
         RefusalName::NotAFunctor) |
@@ -2200,7 +2285,7 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::GenericMisplaced { .. }),
         RefusalName::GenericMisplaced) |
         (Self::Lowering(LoweringRefusal::GenericUncovered { .. }),
-        RefusalName::GenericUncovered) |
+        RefusalName::GenericUncovered(_)) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
@@ -2292,6 +2377,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::SessionNotSubtype { .. }), RefusalName::SessionNotSubtype)
         | (Self::Checking(CheckRefusal::SessionCodeExpected { .. }), RefusalName::SessionCodeExpected)
         | (Self::Checking(CheckRefusal::OpenSessionPayload { .. }), RefusalName::OpenSessionPayload)
+        | (Self::Checking(CheckRefusal::UnassertedLaw { .. }), RefusalName::UnprovenLaw(LawProof::Admitted))
         | (Self::Checking(CheckRefusal::NonCovariantMotive { .. }), RefusalName::NonCovariantMotive)
         | (Self::Checking(CheckRefusal::RideUnsupported { .. }), RefusalName::RideUnsupported)
         | (Self::Checking(CheckRefusal::RunNotAdmitted { .. }), RefusalName::RunNotAdmitted)
@@ -2439,7 +2525,7 @@ impl Refusal<'_>
         RefusalName::RulesUndecided) | (LoweringRefusal::UnderivedRule { .. },
         RefusalName::UnderivedRule) | (LoweringRefusal::GenericMisplaced { .. },
         RefusalName::GenericMisplaced) | (LoweringRefusal::GenericUncovered { .. },
-        RefusalName::GenericUncovered) | (LoweringRefusal::BudgetExceeded { .. },
+        RefusalName::GenericUncovered(_)) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
         RefusalName::UnknownMold) | (LoweringRefusal::Unminted { .. },
@@ -2450,8 +2536,10 @@ impl Refusal<'_>
         ret == RefusalName::UnstatedComponent(model_tag(fault))
     } else if let LoweringRefusal::UndescribedMember { fault, .. } = refusal {
         ret == RefusalName::UndescribedMember(member_tag(fault))
-    } else if let LoweringRefusal::UnprovenLaw { why, .. } = refusal {
-        ret == RefusalName::UnprovenLaw(why)
+    } else if let LoweringRefusal::UnprovenLaw { .. } = refusal {
+        ret == RefusalName::UnprovenLaw(LawProof::Missing)
+    } else if let LoweringRefusal::GenericUncovered { fault, .. } = refusal {
+        ret == RefusalName::GenericUncovered(GenericCoverage::of(fault))
     } else {
         true
     }
@@ -2490,7 +2578,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
         LoweringRefusal::PhaseDependence { .. } => RefusalName::PhaseDependence,
         LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
-        LoweringRefusal::UnprovenLaw { why, .. } => RefusalName::UnprovenLaw(why),
+        LoweringRefusal::UnprovenLaw { .. } => RefusalName::UnprovenLaw(LawProof::Missing),
         LoweringRefusal::PartialField { .. } => RefusalName::PartialField,
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,
@@ -2540,7 +2628,9 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         LoweringRefusal::UnderivedRule { .. } => RefusalName::UnderivedRule,
         LoweringRefusal::GenericMisplaced { .. } => RefusalName::GenericMisplaced,
-        LoweringRefusal::GenericUncovered { .. } => RefusalName::GenericUncovered,
+        LoweringRefusal::GenericUncovered { fault, .. } => {
+            RefusalName::GenericUncovered(GenericCoverage::of(fault))
+        },
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,
@@ -2701,6 +2791,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::SessionNotSubtype { .. }, RefusalName::SessionNotSubtype)
         | (CheckRefusal::SessionCodeExpected { .. }, RefusalName::SessionCodeExpected)
         | (CheckRefusal::OpenSessionPayload { .. }, RefusalName::OpenSessionPayload)
+        | (CheckRefusal::UnassertedLaw { .. }, RefusalName::UnprovenLaw(LawProof::Admitted))
         | (CheckRefusal::NonCovariantMotive { .. }, RefusalName::NonCovariantMotive)
         | (CheckRefusal::RideUnsupported { .. }, RefusalName::RideUnsupported)
         | (CheckRefusal::RunNotAdmitted { .. }, RefusalName::RunNotAdmitted)
@@ -2842,6 +2933,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::SessionNotSubtype { .. } => RefusalName::SessionNotSubtype,
         CheckRefusal::SessionCodeExpected { .. } => RefusalName::SessionCodeExpected,
         CheckRefusal::OpenSessionPayload { .. } => RefusalName::OpenSessionPayload,
+        CheckRefusal::UnassertedLaw { .. } => RefusalName::UnprovenLaw(LawProof::Admitted),
         CheckRefusal::NonCovariantMotive { .. } => RefusalName::NonCovariantMotive,
         CheckRefusal::RideUnsupported { .. } => RefusalName::RideUnsupported,
         CheckRefusal::RunNotAdmitted { .. } => RefusalName::RunNotAdmitted,

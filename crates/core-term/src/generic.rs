@@ -34,6 +34,9 @@
 //! structural equality does not respect; a field reading an earlier field, a
 //! cycle through two declarations and a recursive occurrence under a product
 //! or a sum each need a recursion the one structural fixpoint does not give.
+//!
+//! The equality's reflexivity and symmetry are [`law`]'s, the bodies of
+//! `Eq.generic.refl(T)` and `Eq.generic.sym(T)`.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -97,26 +100,34 @@ pub enum Uncovered
     Cycle(ConstantIndex, OccurrenceSite),
     /// The declaration occurs in itself under a product or a sum.
     Nested(ConstantIndex, OccurrenceSite),
+    /// A law over a field of a sum or a tuple: its proof cases or splits on
+    /// the field under a motive reading the field, which core's `case` does
+    /// not carry.
+    DependentCase(ConstantIndex, OccurrenceSite),
+    /// A law over a declaration that occurs in itself: its proof is an
+    /// induction, a recursive proof the derivation does not write.
+    Inductive(ConstantIndex, OccurrenceSite),
     /// A binder count passes the representable ceiling.
     BinderCeiling,
 }
 
-/// A derived equality: the declaration the derivation writes.
+/// A derived declaration: an equality, or a law [`law::law`] proves of one.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Equality
+pub struct Derived
 {
-    /// Its declared type, `U (T → T → F Bool)`.
+    /// Its declared type: `U (T → T → F Bool)` for an equality, the law's
+    /// path type for a law.
     declared: ValueTypeId,
-    /// Its body, a thunk of the fixpoint.
+    /// Its body, a thunk.
     body: ValueId,
     /// Each data case the body holds, with the declaration it eliminates.
     cases: Vec<(ComputationId, ConstantIndex)>,
 }
 
-impl Equality
+impl Derived
 {
     /// The declared type.
     ///
@@ -189,46 +200,16 @@ pub fn equality(
     arena: &mut CoreArena,
     position: ConstantIndex,
     signatures: &Signatures<'_>,
-) -> Result<Equality, Uncovered>
+) -> Result<Derived, Uncovered>
 {
-    let named = |name| {
-        PRELUDE
-            .iter()
-            .copied()
-            .find(|primitive| primitive.name().as_ref() == name)
-    };
-    let boolean = PrimitiveType::Boolean.mint(arena);
-    let answer = arena.comp_type_returner(boolean);
-    let unit = arena.value_unit();
-    let truth = arena.value_injection(Summand::from(0_usize), unit);
-    let falsity = arena.value_injection(Summand::from(1_usize), unit);
-    let mut deriving = Deriving {
-        arena,
-        signatures,
-        rows: BTreeMap::new(),
-        derived: BTreeMap::new(),
-        cases: Vec::new(),
-        own: position,
-        answer,
-        truth,
-        falsity,
-        integer: named("int.eq"),
-        text: named("string.eq"),
-    };
-    // Each declaration a field reaches is derived before the declarations
-    // reaching it, so its equality is written in place by the time it is
-    // compared.
-    for declaration in deriving.order(position)? {
-        let body = deriving.derive(declaration)?;
-        let _first = deriving.derived.insert(declaration, body);
-    }
+    let (mut deriving, _order) = Deriving::start(arena, signatures, position)?;
     let body = deriving
         .derived
         .get(&position)
         .copied()
         .ok_or(Uncovered::Unknown(position))?;
     let declared = deriving.predicate(position);
-    Ok(Equality {
+    Ok(Derived {
         declared,
         body,
         cases: deriving.cases,
@@ -252,6 +233,8 @@ struct Deriving<'run, 'lookup>
     cases: Vec<(ComputationId, ConstantIndex)>,
     /// The declaration whose equality is being written.
     own: ConstantIndex,
+    /// `Bool`.
+    boolean: ValueTypeId,
     /// `F Bool`.
     answer: CompTypeId,
     /// `true`, the left injection of the unit.
@@ -373,6 +356,65 @@ fn count<T>(items: &[T]) -> Result<Binders, Uncovered>
     u32::try_from(items.len())
         .map(Binders::from)
         .map_err(|_cause| Uncovered::BinderCeiling)
+}
+
+impl<'run, 'lookup> Deriving<'run, 'lookup>
+{
+    /// The derivation of `position`'s equality over `signatures`, with every
+    /// declaration it reaches derived, and the order they were derived in.
+    ///
+    /// # Specification
+    /// - requires: as [`equality`].
+    /// - ensures: each declaration in the order is derived after every one its
+    ///   fields reach, `position` last.
+    /// - fails: as [`equality`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`equality`].
+    /// - witness: `generic::tests::a_declaration_s_field_of_another_derives_it_in_place`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(ref deriving, ref order)| order.iter().all(|at| deriving.derived.contains_key(at))))]
+    fn start(
+        arena: &'run mut CoreArena,
+        signatures: &'run Signatures<'lookup>,
+        position: ConstantIndex,
+    ) -> Result<(Self, Vec<ConstantIndex>), Uncovered>
+    {
+        let named = |name| {
+            PRELUDE
+                .iter()
+                .copied()
+                .find(|primitive| primitive.name().as_ref() == name)
+        };
+        let boolean = PrimitiveType::Boolean.mint(arena);
+        let answer = arena.comp_type_returner(boolean);
+        let unit = arena.value_unit();
+        let truth = arena.value_injection(Summand::from(0_usize), unit);
+        let falsity = arena.value_injection(Summand::from(1_usize), unit);
+        let mut deriving = Deriving {
+            arena,
+            signatures,
+            rows: BTreeMap::new(),
+            derived: BTreeMap::new(),
+            cases: Vec::new(),
+            own: position,
+            boolean,
+            answer,
+            truth,
+            falsity,
+            integer: named("int.eq"),
+            text: named("string.eq"),
+        };
+        // Each declaration a field reaches is derived before the declarations
+        // reaching it, so its equality is written in place by the time it is
+        // compared.
+        let order = deriving.order(position)?;
+        for &declaration in &order {
+            let body = deriving.derive(declaration)?;
+            let _first = deriving.derived.insert(declaration, body);
+        }
+        Ok((deriving, order))
+    }
 }
 
 impl Deriving<'_, '_>
@@ -1062,6 +1104,8 @@ impl Deriving<'_, '_>
         Ok(())
     }
 }
+
+pub mod law;
 
 #[cfg(test)]
 mod tests;
