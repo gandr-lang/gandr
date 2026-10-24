@@ -1401,13 +1401,6 @@ mod sweeps
     /// [`SCRIPTS_SEED`] so every run generates the same eight.
     const SAMPLED_CASES: Cases = Cases(8);
 
-    /// The scripts two editors on one buffer replay under every pull-request
-    /// profile, drawn as [`SAMPLED_CASES`] are, short of the third: its edits
-    /// leave a head that opens no declaration, and every keystroke on that
-    /// buffer costs about half a second in each editor (#2411), so the script
-    /// alone passed the 30 seconds a test runs in on a loaded host (#2394).
-    const SHARED_SAMPLED_CASES: Cases = Cases(2);
-
     /// A count of random scripts a scenario generates.
     #[repr(transparent)]
     #[derive(Clone, Copy)]
@@ -1963,7 +1956,7 @@ mod sweeps
     }
 
     proptest! {
-        #![proptest_config(scripts(SHARED_SAMPLED_CASES))]
+        #![proptest_config(scripts(SAMPLED_CASES))]
         #[test]
         fn two_editors_on_one_buffer_each_keep_their_answers(
             seed in select(SEEDS.as_slice()),
