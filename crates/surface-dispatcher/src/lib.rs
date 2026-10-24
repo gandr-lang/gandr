@@ -200,6 +200,8 @@ pub use crate::compose::JudgedClosure;
 pub use crate::compose::Lowered;
 pub use crate::compose::Lowering;
 pub use crate::compose::LoweringCount;
+pub use crate::compose::Recorded;
+pub use crate::compose::Recording;
 pub use crate::compose::Resumption;
 pub use crate::compose::SpellingCount;
 pub use crate::compose::Unheld;
