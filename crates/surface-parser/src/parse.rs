@@ -188,6 +188,8 @@ use crate::label::label;
 use crate::mold::lookahead_reach;
 use crate::oblig::ObligationInstance;
 
+mod place;
+
 /// What a form run's molding depends on, spelled out.
 ///
 /// The spelling is whether the run starts the source, its length in tokens,
@@ -593,19 +595,41 @@ pub fn parse<'source>(
     source: SourceText<'source>,
 ) -> Result<ParseResult<'source>, MeldError>
 {
+    commit(pbg, molded(pbg, source), source)
+}
+
+/// A fresh state with every token of `source` molded into it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the state [`parse`](fn@crate::parse) commits: `source` labeled
+///   and each token molded in order.
+/// - panics: none.
+/// - executable: none — the clause restates the fold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`parse`](fn@crate::parse).
+/// - witness: `parse::tests::corpus_parses_totally`
+fn molded<'pbg>(
+    pbg: &'pbg Pbg,
+    source: SourceText<'_>,
+) -> MeldState<'pbg>
+{
     let mut molder = Molder::new(pbg);
     let mut state = MeldState::new(pbg);
     let tokens = label(SourceFragment::from(<&str>::from(source)));
     molder.mold_stream(&mut state, &tokens, source);
-    commit(state, source)
+    state
 }
 
 /// Commit a molded state over `source` as a parse result.
 ///
 /// # Specification
-/// - requires: `state` holds exactly `source`'s tokens, molded.
+/// - requires: `state` holds exactly `source`'s tokens, molded under `pbg`.
 /// - ensures: the committed tree beside the completion's obligations,
-///   severity-ordered (highest first) then by span.
+///   severity-ordered (highest first) then by span; a tree whose one repair is
+///   a closer left out has it minted where the rest of the source parses
+///   ([`place::placed`]).
 /// - fails: [`MeldError`] when the state's source is not `source` or the arena
 ///   cannot be built.
 /// - panics: none.
@@ -620,8 +644,10 @@ pub fn parse<'source>(
 /// - witness: `parse::tests::obligations_are_reported_in_severity_then_source_order`
 /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
 /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+/// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|parsed| parsed.tree.source() == source && parsed.obligations.iter().zip(parsed.obligations.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end()))))]
 fn commit<'source>(
+    pbg: &Pbg,
     state: MeldState<'_>,
     source: SourceText<'source>,
 ) -> Result<ParseResult<'source>, MeldError>
@@ -630,8 +656,17 @@ fn commit<'source>(
     // and missing-operand obligations flagged while closing the input), which a
     // bare `commit` would drop.
     let (tree, mut obligations) = state.commit_with_obligations(source)?;
-    // Severity-ordered (highest first) then by span, so consumers render the
-    // most serious repair first.
+    ordered(&mut obligations);
+    Ok(place::placed(pbg, ParseResult { tree, obligations }))
+}
+
+/// Order `obligations` severity-first (highest first), then by span, so
+/// consumers render the most serious repair first.
+///
+/// # Specification
+/// trivial.
+fn ordered(obligations: &mut [ObligationInstance])
+{
     obligations.sort_by(|left, right| {
         right
             .class
@@ -639,7 +674,6 @@ fn commit<'source>(
             .then_with(|| left.span.start().cmp(&right.span.start()))
             .then_with(|| left.span.end().cmp(&right.span.end()))
     });
-    Ok(ParseResult { tree, obligations })
 }
 
 /// One source split at its predicted top-level form boundaries, so its forms
@@ -913,7 +947,7 @@ impl<'source> FormSplit<'source>
         for unit in units {
             seams.push(molder.join_unit(&mut whole, unit, self.labeling.tokens(), self.source));
         }
-        let result = commit(whole, self.source)?;
+        let result = commit(molder.pbg(), whole, self.source)?;
         Ok(FormJoin { result, seams })
     }
 }
