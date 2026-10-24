@@ -48,6 +48,7 @@ use gandr_surface_syntax::MoldId;
 use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
+use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_graphs::Bound;
@@ -57,12 +58,20 @@ use super::Repair;
 use super::molded;
 use super::ordered;
 use super::repair;
+use crate::MeldState;
+use crate::Molder;
+use crate::TokenIndex;
+use crate::TokenRun;
 use crate::closing::LeadingSlot;
 use crate::closing::push_closing;
+use crate::label::Token;
+use crate::label::label;
 use crate::meld::Expected;
 use crate::meld::Splice;
 use crate::meld::declaration_head;
 use crate::meld::primitive_copy_wrapper;
+use crate::mold::Molding;
+use crate::mold::lookahead_reach;
 use crate::oblig::Oblig;
 use crate::oblig::ObligationInstance;
 
@@ -278,6 +287,150 @@ fn earlier<'source>(
         .find_map(|target| settled(pbg, tree, target))
 }
 
+/// What a copy's molding shows before the whole of it is read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Resumed
+{
+    /// A push leaves a repair, which stays: the copy needs one.
+    Repaired,
+    /// No push leaves one: whether the copy needs one is its whole parse's.
+    Unrepaired,
+}
+
+/// A top-level form's own molding, which every copy of it the search tries
+/// shares up to where the copy's tokens part from the form's.
+///
+/// A molding of a run reads the stream only up to its
+/// [`lookahead_reach`], so a copy's tokens before the latest position whose
+/// reach stops short of the first token the copy changes mold as the form's
+/// own. The form is molded once, as far as the copies need it, and a copy
+/// molds only from there, its pushes rolled back after it.
+///
+/// # Specification
+/// - requires: `state` holds `tokens` up to `molded`, molded from a fresh state
+///   over `text`, which `tokens` labels.
+/// - ensures: as [`Shared::copy`].
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — this carrier has no call boundary; [`Shared::copy`]
+///   carries the clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Shared::copy`].
+/// - witness: `parse::place::tests::a_resumed_copy_answers_as_a_fresh_one`
+struct Shared<'pbg, 'text>
+{
+    /// The molder every molding here runs.
+    molder: Molder<'pbg>,
+    /// The form's own molding, `molded` tokens in.
+    state: MeldState<'pbg>,
+    /// The form's text.
+    text: SourceText<'text>,
+    /// The form's tokens.
+    tokens: Vec<Token>,
+    /// How many of `tokens` `state` holds.
+    molded: TokenIndex,
+    /// Whether the last token molded left a repair.
+    halted: Molding,
+}
+
+impl<'pbg, 'text> Shared<'pbg, 'text>
+{
+    /// The form `text`, none of it molded yet.
+    ///
+    /// # Specification
+    /// trivial.
+    fn new(
+        pbg: &'pbg Pbg,
+        text: SourceText<'text>,
+    ) -> Self
+    {
+        Self {
+            molder: Molder::new(pbg),
+            state: MeldState::new(pbg),
+            text,
+            tokens: label(SourceFragment::from(<&str>::from(text))),
+            molded: TokenIndex::from(0_usize),
+            halted: Molding::Whole,
+        }
+    }
+
+    /// Whether molding `copy`, the form with one tile written in, leaves a
+    /// repair, read from the form's own molding as far as the copy shares it.
+    ///
+    /// # Specification
+    /// - requires: `copy` is the form's text with a tile written in.
+    /// - ensures: [`Resumed::Repaired`] exactly when
+    ///   [`Molder::mold_stream_until_repair`] over `copy` from a fresh state
+    ///   halts.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates a fresh molding of `copy`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every copy the search tries over the sources the
+    ///   placement's witnesses read, and over every one-token drop of a corpus
+    ///   source, answers as its fresh molding.
+    /// - witness: `parse::place::tests::a_resumed_copy_answers_as_a_fresh_one`
+    fn copy(
+        &mut self,
+        copy: SourceText<'_>,
+    ) -> Resumed
+    {
+        let copied = label(SourceFragment::from(<&str>::from(copy)));
+        let form = <&str>::from(self.text).as_bytes();
+        let same = form
+            .iter()
+            .zip(<&str>::from(copy).as_bytes())
+            .take_while(|&(left, right)| left == right)
+            .count();
+        // The first token the copy changes: one the form's differs from, or
+        // one that reaches past the bytes the two share.
+        let parted = copied
+            .iter()
+            .zip(&self.tokens)
+            .position(|(left, right)| {
+                left != right || usize::try_from(left.end).map_or(true, |end| end > same)
+            })
+            .unwrap_or_else(|| copied.len().min(self.tokens.len()));
+        let mut resume = parted;
+        while resume > 0 && usize::from(lookahead_reach(&copied, TokenIndex::from(resume))) > parted
+        {
+            resume = resume.saturating_sub(1);
+        }
+        if resume < usize::from(self.molded) {
+            self.state = MeldState::new(self.molder.pbg());
+            self.molded = TokenIndex::from(0_usize);
+            self.halted = Molding::Whole;
+        }
+        while self.halted == Molding::Whole && usize::from(self.molded) < resume {
+            let next = TokenIndex::from(usize::from(self.molded).saturating_add(1));
+            self.halted = self.molder.mold_run_until_repair(
+                &mut self.state,
+                &self.tokens,
+                TokenRun::new(self.molded, next),
+                self.text,
+            );
+            self.molded = next;
+        }
+        if self.halted == Molding::Halted {
+            return Resumed::Repaired;
+        }
+        let mark = self.state.mark();
+        let molding = self.molder.mold_run_until_repair(
+            &mut self.state,
+            &copied,
+            TokenRun::new(self.molded, TokenIndex::from(copied.len())),
+            copy,
+        );
+        self.state.rollback_to(&mark);
+        match molding {
+            Molding::Halted => Resumed::Repaired,
+            Molding::Whole => Resumed::Unrepaired,
+        }
+    }
+}
+
 /// The parse with `target`'s tile minted where the rest of its top-level form
 /// parses, if a place tried does: for a closer, the melder's close and the
 /// first [`PLACES`] tile ends; for another tile, the first [`COPIES`] copies.
@@ -370,6 +523,10 @@ fn settled<'source>(
     else {
         target.adjacent.as_slice()
     };
+    let mut shared = Shared::new(
+        pbg,
+        SourceText::from(text.get(usize::from(top.start()) .. usize::from(top.end()))?),
+    );
     let (place, closer) = adjacent
         .iter()
         .map(|&closer| (target.end, closer))
@@ -388,7 +545,8 @@ fn settled<'source>(
             });
             written(source, top, place, closer).is_some_and(|copy| {
                 let copy = SourceText::from(copy.as_str());
-                repair(pbg, copy) == Repair::Unneeded
+                shared.copy(copy) == Resumed::Unrepaired
+                    && repair(pbg, copy) == Repair::Unneeded
                     && molded(pbg, copy).commit_with_obligations(copy).is_ok_and(
                         |(copied, _repairs)| {
                             tile.is_some_and(|(at, end)| bool::from(tiled(&copied, at, end)))
@@ -749,8 +907,13 @@ mod tests
     use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GroutShape;
     use gandr_surface_syntax::NodeLabel;
+    use gandr_surface_syntax::SourceFragment;
     use gandr_surface_syntax::SourceText;
 
+    use crate::MeldState;
+    use crate::Molder;
+    use crate::label::label;
+    use crate::mold::Molding;
     use crate::oblig::Oblig;
     use crate::parse;
     use crate::testing::reconstruct;
@@ -955,6 +1118,64 @@ mod tests
         assert!(
             clean > 0 && repaired > 0,
             "both answers are exercised: {clean} clean, {repaired} repaired"
+        );
+    }
+
+    /// A copy read from its form's shared molding answers as a fresh molding
+    /// of it does: a closer, a member's `;`, an arm's `=>` and an `else`
+    /// written at every token end of sources whole and missing a tile, tried
+    /// in source order and then backwards, so the shared molding both
+    /// resumes and starts again.
+    #[test]
+    fn a_resumed_copy_answers_as_a_fresh_one()
+    {
+        let pbg = built_in().unwrap();
+        let mut answers = [0_usize; 2];
+        for source in [
+            "def once(n : Integer) -> -F Integer {\n  return n\n}\n",
+            "def once(n : Integer -> -F Integer {\n  return n\n}\n",
+            "def head(xs : List(Integer) -> -F Integer {\n  return 0\n}\n",
+            "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n",
+            "data Int : Type {\n  Z : Int;\n  S : (x : Int) --> Int;\n  rule S(P(x) <=> x;\n}\n",
+            "data Circle : Type {\n  Base : Circle\n  loop : Base <-> Base;\n}\n",
+            "def classify(n : Integer) -> -F Integer {\n  case n {\n    ?branch  return 1\n  }\n}\n",
+            "def pick(b : Bool) -> -F Integer {\n  if b { return 1 }  { return 2 }\n}\n",
+        ] {
+            let text = SourceText::from(source);
+            let mut shared = super::Shared::new(&pbg, text);
+            let ends: Vec<usize> = label(SourceFragment::from(source))
+                .iter()
+                .filter_map(|token| usize::try_from(token.end).ok())
+                .collect();
+            for &end in ends.iter().chain(ends.iter().rev()) {
+                for tile in [")", ";", "=>", "else"] {
+                    let copy = [
+                        source.get(.. end).unwrap(),
+                        tile,
+                        source.get(end ..).unwrap(),
+                    ]
+                    .concat();
+                    let copy = SourceText::from(copy.as_str());
+                    let mut state = MeldState::new(&pbg);
+                    let tokens = label(SourceFragment::from(<&str>::from(copy)));
+                    let fresh =
+                        Molder::new(&pbg).mold_stream_until_repair(&mut state, &tokens, copy);
+                    let resumed = shared.copy(copy);
+                    assert_eq!(
+                        resumed == super::Resumed::Repaired,
+                        fresh == Molding::Halted,
+                        "{:?}: the resumed molding and the fresh one disagree",
+                        <&str>::from(copy)
+                    );
+                    if let Some(count) = answers.get_mut(usize::from(fresh == Molding::Halted)) {
+                        *count = count.saturating_add(1);
+                    }
+                }
+            }
+        }
+        assert!(
+            answers.iter().all(|&count| count > 0),
+            "both answers are exercised: {answers:?}"
         );
     }
 

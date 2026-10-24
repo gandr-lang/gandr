@@ -1810,6 +1810,42 @@ impl<'pbg> Molder<'pbg>
     }
 
     /// Mold and push the tokens of `run` as [`mold_run`](Self::mold_run)
+    /// does, stopping after the first push that leaves a repair.
+    ///
+    /// # Specification
+    /// - requires: as [`mold_run`](Self::mold_run), and `state` holds no
+    ///   obligation yet.
+    /// - ensures: [`Molding::Whole`] exactly when `state`'s obligations are
+    ///   empty, every token of `run` then molded as
+    ///   [`mold_run`](Self::mold_run) molds it; [`Molding::Halted`] with `run`
+    ///   molded up to and including the first tile whose push left an
+    ///   obligation.
+    /// - provides: the resumed test the placement in `parse::place` runs over
+    ///   the part of a copy that parts from its form.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as
+    ///   [`mold_stream_until_repair`](Self::mold_stream_until_repair) and
+    ///   [`mold_run`](Self::mold_run).
+    /// - witness: `parse::place::tests::a_resumed_copy_answers_as_a_fresh_one`
+    #[inline]
+    #[spec(
+        requires: state.obligations().is_empty() && tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()),
+        ensures: |ret| (ret == Molding::Whole) == state.obligations().is_empty(),
+    )]
+    pub(crate) fn mold_run_until_repair(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        run: TokenRun,
+        src: SourceText<'_>,
+    ) -> Molding
+    {
+        self.mold_until(state, tokens, run, src, Halt::AtRepair)
+    }
+
+    /// Mold and push the tokens of `run` as [`mold_run`](Self::mold_run)
     /// does, until `halt` stops it.
     ///
     /// # Specification
