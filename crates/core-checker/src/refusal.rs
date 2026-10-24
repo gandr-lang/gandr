@@ -120,6 +120,12 @@ pub enum ExpectedShape
     Path,
     /// A sum classifier.
     Sum,
+    /// A sum with the summand an injection names: what an injection past a
+    /// sum's last summand meets.
+    Summand,
+    /// A sum with any summand: what an injection into the empty sum `+{}`,
+    /// which has none, meets.
+    EmptySum,
     /// A thunk type `U C`: what a thunk is checked against and what a forced
     /// value must synthesise.
     Thunk,

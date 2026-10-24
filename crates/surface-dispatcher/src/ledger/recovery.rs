@@ -14,7 +14,13 @@
 //! or the start of what comes after. A mutant whose first error marks other
 //! bytes, or marks none, is a finding. A mutant the checker accepts is counted
 //! and not a finding: a deleted optional tile, or a near miss that spells
-//! another form, is no mistake.
+//! another form, is no mistake. Nor is a deletion that leaves a well-formed
+//! source, one the lowering reads with no refusal, though the checker refuses
+//! it (#2340): `-> -F +{Integer}` less `Integer` is the empty sum, a type the
+//! corpus writes on purpose, and the first ill-typed term is then the body's
+//! injection. With no mistake of form left, the checker's first refusal is
+//! where the source goes wrong by construction, so it is counted well formed
+//! beside the accepted, not filed.
 //!
 //! A tile's near miss is derived, never listed: the first of its text with the
 //! last character dropped, its last two characters swapped, and its last
@@ -39,10 +45,13 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::convert::Infallible;
 use core::ops::ControlFlow;
+use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::Ordering;
 use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_surface_corpus::Refusal;
 use gandr_surface_diagnostics::Severity;
 use gandr_surface_grammar::Ascii;
 use gandr_surface_grammar::LabelText;
@@ -60,6 +69,7 @@ use quenchant_shape::shape::Maybe;
 
 use super::LedgerFault;
 use super::exemplars::listed;
+use crate::compose::Composed;
 use crate::entry::entries;
 use crate::pool::Pool;
 use crate::report::Goals;
@@ -73,6 +83,11 @@ const SYNTAX: &str = "syntax";
 
 /// The extension every exemplar carries.
 const EXTENSION: &str = "gandr";
+
+/// The sweeps begun in this process: each names its own scratch directory, so
+/// two sweeps in one process, as the tests run them, never write over each
+/// other's mutants.
+static SWEEPS: AtomicUsize = AtomicUsize::new(0);
 
 /// How a mutant writes its tile wrong.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -155,6 +170,9 @@ struct Reported
     message: String,
     /// Its primary span, measured in the mutant's own text, when it has one.
     span: Option<Site>,
+    /// Whether the mutant was well formed: the lowering read every
+    /// declaration and refused none, so the first error is the checker's.
+    formed: bool,
 }
 
 /// Whether a cause's mutants deleted their tile or missed it.
@@ -297,6 +315,10 @@ pub struct RecoveryReport
     swept: usize,
     /// How many the checker accepted.
     accepted: usize,
+    /// How many deletions left a well-formed source the checker refused: no
+    /// mistake of form is left to mark, so the checker's first refusal is
+    /// where the source now goes wrong.
+    formed: usize,
     /// The mutants whose first error does not mark their mutation, in
     /// exemplar and byte order.
     findings: Vec<RecoveryFinding>,
@@ -321,8 +343,8 @@ impl core::fmt::Display for RecoveryReport
     /// Writes the near-miss table, one ``near miss: `<tile>` → `<miss>` `` line
     /// per tile (`—` for a tile with none), then each finding, then one
     /// ``cause: `<name>` <kind>`` line per cause with its count and families,
-    /// the largest first, then the count swept, marked where made, accepted
-    /// and marked elsewhere.
+    /// the largest first, then the count swept, marked where made, accepted,
+    /// well formed and marked elsewhere.
     ///
     /// # Specification
     /// trivial.
@@ -366,12 +388,14 @@ impl core::fmt::Display for RecoveryReport
         let found = self.findings.len();
         write!(
             f,
-            "{} mutants swept: {} marked where they were made, {} accepted, {found} marked elsewhere",
+            "{} mutants swept: {} marked where they were made, {} accepted, {} well formed, {found} marked elsewhere",
             self.swept,
             self.swept
                 .saturating_sub(self.accepted)
+                .saturating_sub(self.formed)
                 .saturating_sub(found),
             self.accepted,
+            self.formed,
         )
     }
 }
@@ -567,10 +591,11 @@ fn mutants(
 /// - requires: nothing.
 /// - ensures: one mutant per tile and mutation as [`mutants`] makes them, each
 ///   checked as `check` checks a source under a `ledger` directory; a mutant is
-///   accepted when the check reports no error, and a finding when its first
-///   error's primary span neither overlaps nor touches the mutation's site, or
-///   the error has none. The scratch directory the mutants are written under is
-///   removed.
+///   accepted when the check reports no error, counted well formed when it is a
+///   deletion the lowering read whole and its first error, the checker's, does
+///   not mark the site, and a finding otherwise when its first error's primary
+///   span neither overlaps nor touches the mutation's site, or the error has
+///   none. The scratch directory the mutants are written under is removed.
 /// - fails: the exemplars cannot be listed or read, or the mutants cannot be
 ///   written.
 /// - panics: none.
@@ -582,9 +607,12 @@ fn mutants(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a definition's exemplar is swept tile by tile, every
-///   mutant counted and each first error read against its site.
+///   mutant counted and each first error read against its site; a deletion
+///   leaving another well-formed declaration whose body the checker refuses is
+///   counted well formed, not filed.
 /// - witness: `ledger::recovery::tests::a_definition_is_swept_tile_by_tile`
-#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.findings.len()) <= report.swept))]
+/// - witness: `ledger::recovery::tests::a_deletion_leaving_a_well_formed_source_is_no_finding_2340`
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |report| report.accepted.saturating_add(report.formed).saturating_add(report.findings.len()) <= report.swept))]
 pub(super) fn sweep(
     pbg: &Pbg,
     directory: &Path,
@@ -608,7 +636,11 @@ pub(super) fn sweep(
             &mut report.near_misses,
         ));
     }
-    let scratch = std::env::temp_dir().join(format!("gandr-recovery-{}", std::process::id()));
+    let scratch = std::env::temp_dir().join(format!(
+        "gandr-recovery-{}-{}",
+        std::process::id(),
+        SWEEPS.fetch_add(1, Ordering::Relaxed)
+    ));
     let folder = scratch.join("ledger");
     let unwritable = |error| LedgerFault::Unwritable {
         path: folder.clone(),
@@ -623,7 +655,23 @@ pub(super) fn sweep(
     let ControlFlow::Continue(_run) = Walk::new(vec![folder.clone()]).visit(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
-            if let Step::Source { path, .. } = step {
+            if let Step::Source {
+                path, ref composed, ..
+            } = step
+            {
+                // Well formed: the lowering read the source and refused no
+                // declaration of it, so what the check reports is semantic.
+                let formed = matches!(
+                    *composed,
+                    Composed::Settled {
+                        ref report,
+                        ref unstatable,
+                        ..
+                    } if unstatable.is_empty()
+                        && report.declarations().iter().all(|declaration| {
+                            !matches!(declaration.produced().refusal(), Maybe::Present(Refusal::Lowering(_)))
+                        })
+                );
                 let index = path
                     .file_stem()
                     .and_then(std::ffi::OsStr::to_str)
@@ -648,6 +696,7 @@ pub(super) fn sweep(
                             }),
                             Maybe::Absent(_) => None,
                         },
+                        formed,
                     });
                 }
             }
@@ -665,7 +714,10 @@ pub(super) fn sweep(
         let marked = first
             .span
             .is_some_and(|span| span.start <= mutant.site.end && mutant.site.start <= span.end);
-        if !marked {
+        if !marked && mutant.mutation == Mutation::Deleted && first.formed {
+            report.formed = report.formed.saturating_add(1);
+        }
+        else if !marked {
             report.findings.push(RecoveryFinding {
                 exemplar: mutant.exemplar,
                 tile: mutant.tile,
@@ -785,6 +837,7 @@ mod tests
                 name: name.map(str::to_owned),
                 message: "a message".to_owned(),
                 span: Some(Site { start: 9, end: 9 }),
+                formed: false,
             },
         };
         let report = RecoveryReport {
@@ -854,5 +907,42 @@ mod tests
             "each tile, written once, is deleted, and missed where it has a miss: {report}"
         );
         assert!(report.findings.is_empty(), "{report}");
+    }
+
+    /// #2340: `Integer` deleted from `-> -F +{Integer}` leaves the empty sum,
+    /// a well-formed type, and the checker's first refusal is the body's
+    /// injection at a summand the empty sum lacks. No mistake of form is left
+    /// to mark, so the mutant is counted well formed and not filed.
+    #[test]
+    fn a_deletion_leaving_a_well_formed_source_is_no_finding_2340()
+    {
+        let scratch =
+            std::env::temp_dir().join(format!("gandr-recovery-test-{}-formed", std::process::id()));
+        let folder = scratch.join("syntax");
+        std::fs::create_dir_all(&folder).expect("the scratch folder");
+        std::fs::write(
+            folder.join("labelled_sum_expression.gandr"),
+            "/// `labelled_sum_expression`: a labelled sum injection.\n@[ checks ]\ndef one() -> \
+             -F +{Integer} {\n  return +{.0 = 1}\n}\n",
+        )
+        .expect("the exemplar is written");
+        let pbg = built_in().expect("the built-in grammar builds");
+        let report = sweep(&pbg, &scratch).expect("the sweep runs");
+        std::fs::remove_dir_all(&scratch).expect("the scratch directory is removed");
+        assert!(
+            report.findings.iter().all(
+                |finding| !(finding.tile == "Integer" && finding.mutation == Mutation::Deleted)
+            ),
+            "the empty sum the deletion leaves is well formed: {report}"
+        );
+        assert_eq!(report.formed, 1_usize, "{report}");
+        assert!(
+            report.findings.len()
+                < report
+                    .swept
+                    .saturating_sub(report.accepted)
+                    .saturating_sub(report.formed),
+            "the rest is still read against its site: {report}"
+        );
     }
 }

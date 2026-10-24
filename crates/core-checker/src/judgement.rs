@@ -5333,7 +5333,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                             .get(usize::from(summand))
                             .ok_or(CheckRefusal::ShapeMismatch {
                                 at: TermNode::Value(term),
-                                wanted: ExpectedShape::Sum,
+                                // The sum is met, so what it lacks is the
+                                // summand the injection names: any, when it
+                                // is the empty sum (#2340).
+                                wanted: if parts.is_empty() {
+                                    ExpectedShape::EmptySum
+                                }
+                                else {
+                                    ExpectedShape::Summand
+                                },
                                 found: TypeNode::Value(expected),
                             })?
                     },
