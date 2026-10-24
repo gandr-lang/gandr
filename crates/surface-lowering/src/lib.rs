@@ -453,6 +453,7 @@ pub use crate::module::Container;
 pub use crate::module::DataIndex;
 pub use crate::module::DeclarationCount;
 pub use crate::module::DeclarationOutcome;
+pub use crate::module::FlattenedSlot;
 pub use crate::module::Forgetting;
 pub use crate::module::FunctorIndex;
 pub use crate::module::HalfAt;

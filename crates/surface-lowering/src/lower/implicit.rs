@@ -278,10 +278,18 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(frame);
         };
         let entries = entries.to_vec();
+        let owner = self.collected.owner_of(site.at.node);
         let mut frame = frame;
-        for entry in entries {
+        for (written, entry) in entries.into_iter().enumerate() {
             if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
                 frame = self.flatten_implicit(entry, declared, &slot, frame)?;
+                if let Maybe::Present(owner) = owner {
+                    let spelled = self.written_slot(entry, &slot);
+                    let held = self.written_slots.entry(owner).or_default();
+                    if !held.iter().any(|&(at, _)| at == written) {
+                        held.push((written, spelled));
+                    }
+                }
                 continue;
             }
             let declared = match entry.declared {

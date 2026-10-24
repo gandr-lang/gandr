@@ -329,6 +329,7 @@ pub use crate::former::Elided;
 pub use crate::former::ForgetCall;
 pub use crate::former::Forgotten;
 pub use crate::former::Former;
+pub use crate::former::ModelSlot;
 pub use crate::former::Name;
 pub use crate::former::Notation;
 pub use crate::former::Placement;
@@ -1258,6 +1259,22 @@ pub fn present_whole(
     else {
         &[]
     };
+    // A model implicit is written whole, `@[s : Model(S)]`, and each of its
+    // components under the path a body reads it by, `s.x`.
+    let slots: Vec<&ModelSlot<'_, CoreNode>> = source
+        .slots(constant)
+        .iter()
+        .filter(|slot| slot.at.saturating_add(slot.components.len()) <= arrows.len())
+        .collect();
+    let paths: Vec<Option<String>> = (0_usize .. arrows.len())
+        .map(|at| {
+            slots.iter().find_map(|slot| {
+                let &(component, _) = slot.components.get(at.checked_sub(slot.at)?)?;
+                Some(format!("{}.{}", slot.name.as_ref(), component.as_ref()))
+            })
+        })
+        .collect();
+    let slotted = |at: usize| paths.get(at).is_some_and(Option::is_some);
     let preferred: Vec<Option<Name<'_>>> = wanted
         .iter()
         .map(|region| Some(Name::from(region.as_str())))
@@ -1271,19 +1288,26 @@ pub fn present_whole(
                         .map(Some)
                         .chain(core::iter::repeat(None)),
                 )
-                .map(|(&(arrow, _, dependent), resident)| {
-                    resident.flatten().or_else(|| {
-                        if dependent {
-                            source.written_binder(arrow)
-                        }
-                        else {
-                            None
-                        }
-                    })
+                .zip(&paths)
+                .map(|((&(arrow, _, dependent), resident), path)| {
+                    path.as_deref()
+                        .map(Name::from)
+                        .or_else(|| resident.flatten())
+                        .or_else(|| {
+                            if dependent {
+                                source.written_binder(arrow)
+                            }
+                            else {
+                                None
+                            }
+                        })
                 }),
         )
         .collect();
-    let Some(mut binders) = walk::parameters(source, &roots, &[name], &preferred)
+    let taken: Vec<Name<'_>> = core::iter::once(name)
+        .chain(slots.iter().map(|slot| slot.name))
+        .collect();
+    let Some(mut binders) = walk::parameters(source, &roots, &taken, &preferred)
     else {
         return Ok(Maybe::Absent(whole::Absent::Unnamed));
     };
@@ -1298,8 +1322,19 @@ pub fn present_whole(
     // where it recurses, after the uniform ones.
     let mut bound: Vec<Option<Name<'_>>> = Vec::new();
     let mut parts: Vec<Presentation> = Vec::with_capacity(arrows.len().saturating_add(2_usize));
-    for (&(_, domain, dependent), parameter) in arrows.iter().zip(&names) {
-        let typed = present_type(&source.within(&bound), domain, page, style)?;
+    // Each sort a slot's type fixes is read under the parameters before the
+    // slot.
+    let mut fixed: Vec<Vec<(Name<'_>, Presentation)>> = Vec::with_capacity(slots.len());
+    for (at, (&(_, domain, dependent), parameter)) in arrows.iter().zip(&names).enumerate() {
+        let within = source.within(&bound);
+        for slot in slots.iter().filter(|slot| slot.at == at) {
+            let mut sorts = Vec::with_capacity(slot.fixed.len());
+            for &(sort, ty) in &slot.fixed {
+                sorts.push((sort, present_type(&within, ty, page, style)?));
+            }
+            fixed.push(sorts);
+        }
+        let typed = present_type(&within, domain, page, style)?;
         parts.push(typed);
         if dependent {
             bound.push(Some(Name::from(parameter.as_str())));
@@ -1349,9 +1384,11 @@ pub fn present_whole(
     let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
     let spelled = present_computation(&under, inner, narrower, style)?;
     let resident = |at: usize| implicit.get(at).is_some_and(Option::is_some);
+    let starts = |at: usize| slots.iter().position(|slot| slot.at == at);
     let mut text = format!("{opener} {}", name.as_ref());
     let mut written = Vec::new();
-    if !binders.is_empty() || (0_usize .. names.len()).any(resident) {
+    let prefixed = |at: usize| resident(at) || starts(at).is_some();
+    if !binders.is_empty() || (0_usize .. names.len()).any(prefixed) {
         text.push_str(" @[");
         for (entry, region) in binders.iter().enumerate() {
             if entry > 0_usize {
@@ -1360,16 +1397,29 @@ pub fn present_whole(
             text.push_str(region);
             text.push_str(" : Region");
         }
-        for (entry, (parameter, typed)) in names
-            .iter()
-            .zip(&parts)
-            .enumerate()
-            .filter(|&(at, _)| resident(at))
-            .map(|(_, written_parameter)| written_parameter)
-            .enumerate()
-        {
-            if entry > 0_usize || !binders.is_empty() {
+        let mut entry = binders.len();
+        for (at, (parameter, typed)) in names.iter().zip(&parts).enumerate() {
+            let started = starts(at);
+            if !resident(at) && started.is_none() {
+                continue;
+            }
+            if entry > 0_usize {
                 text.push_str(", ");
+            }
+            entry = entry.saturating_add(1_usize);
+            if let Some(index) = started
+                && let (Some(slot), Some(sorts)) = (slots.get(index), fixed.get(index))
+            {
+                for part in [slot.name.as_ref(), " : Model(", slot.theory.as_ref(), ")"] {
+                    text.push_str(part);
+                }
+                for &(sort, ref typed) in sorts {
+                    for part in [" with sort ", sort.as_ref(), " = "] {
+                        text.push_str(part);
+                    }
+                    appended(&mut text, &mut written, typed);
+                }
+                continue;
             }
             text.push_str(parameter);
             text.push_str(" : ");
@@ -1382,7 +1432,7 @@ pub fn present_whole(
         .iter()
         .zip(&parts)
         .enumerate()
-        .filter(|&(at, _)| !resident(at))
+        .filter(|&(at, _)| !resident(at) && !slotted(at))
         .map(|(_, written_parameter)| written_parameter)
         .enumerate()
     {

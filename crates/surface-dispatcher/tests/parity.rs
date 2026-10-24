@@ -22,6 +22,7 @@ use gandr_core_term::equal_type_syntax;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
+use gandr_surface_diagnostics::model_slots;
 use gandr_surface_diagnostics::telescopes;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::TypeTable;
@@ -941,13 +942,15 @@ fn read(
         .collect();
     maps.sort_by_key(|&(map, _)| map);
     let implicits = telescopes(&module);
+    let slots = model_slots(&module);
     let source = CoreSource::new(&arena, &names)
         .naming(&constructors)
         .crossing(&crossings)
         .forgetting(&forgettings)
         .forgetting_maps(&maps)
         .modeling(&models)
-        .naming_implicits(&implicits);
+        .naming_implicits(&implicits)
+        .flattening(&slots);
     // A body leaves each written reduct's or forgetting map's call to the
     // checker, which applies the map where the call stands; a type, read by
     // its value, keeps it.

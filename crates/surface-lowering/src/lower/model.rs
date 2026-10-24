@@ -3938,3 +3938,4 @@ pub(super) use self::flattened::Flattened;
 pub(super) use self::flattened::ModelSlot;
 pub(super) use self::flattened::PlannedModel;
 pub(super) use self::flattened::Supplied;
+pub(super) use self::flattened::WrittenSlot;

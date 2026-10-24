@@ -35,6 +35,7 @@ use crate::former::Component;
 use crate::former::ForgetCall;
 use crate::former::Forgotten;
 use crate::former::Former;
+use crate::former::ModelSlot;
 use crate::former::Name;
 use crate::former::Recursion;
 use crate::former::Recursive;
@@ -512,6 +513,9 @@ pub struct CoreSource<'arena>
     /// in the order the core applies them, an implicit's name and none for
     /// an explicit one, ascending by the function's constant.
     telescopes: &'arena [(ConstantIndex, Vec<Option<Name<'arena>>>)],
+    /// The model implicits of each function whose telescope writes one, in
+    /// telescope order, ascending by the function's constant.
+    slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -546,6 +550,7 @@ impl<'arena> CoreSource<'arena>
             maps: &[],
             implied: &[],
             telescopes: &[],
+            slots: &[],
         }
     }
 
@@ -837,6 +842,39 @@ impl<'arena> CoreSource<'arena>
             .ok()
             .and_then(|at| self.telescopes.get(at))
             .map_or(&[], |&(_, ref names)| names.as_slice())
+    }
+
+    /// This source, writing the model implicits of each function `slots`
+    /// records, ascending by the function's constant, each whole: a call's
+    /// as one resident and a definition's as one implicit.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn flattening(
+        self,
+        slots: &'arena [(ConstantIndex, Vec<ModelSlot<'arena, CoreNode>>)],
+    ) -> Self
+    {
+        Self { slots, ..self }
+    }
+
+    /// The model implicits this source records for the function `constant`,
+    /// in telescope order; the empty slice for a function that writes none.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn slots(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [ModelSlot<'arena, CoreNode>]
+    {
+        self.slots
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.slots.get(at))
+            .map_or(&[], |&(_, ref slots)| slots.as_slice())
     }
 
     /// The name at admission position `constant`.
@@ -2938,6 +2976,24 @@ impl Source for CoreSource<'_>
         };
         match self.arena.value(id) {
             Some(&Value::Constant(constant)) => self.telescope(constant),
+            Some(_) | None => &[],
+        }
+    }
+
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn model_slots(
+        &self,
+        head: CoreNode,
+    ) -> &[ModelSlot<'_, CoreNode>]
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return &[];
+        };
+        match self.arena.value(id) {
+            Some(&Value::Constant(constant)) => self.slots(constant),
             Some(_) | None => &[],
         }
     }

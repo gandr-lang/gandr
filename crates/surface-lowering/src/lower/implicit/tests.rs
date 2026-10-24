@@ -634,6 +634,72 @@ fn a_manifest_model_implicit_binds_no_fixed_sort_739()
 }
 
 #[test]
+fn a_telescope_writes_its_model_implicit_as_one_slot_2364()
+{
+    // `stepped`'s slot binds the sort, the zero, the step and the reading, so
+    // its telescope leaves five parameters unnamed, `c` the last; `fixed`'s
+    // binds no parameter for `C`, which it fixes at `Integer`, and keeps the
+    // type it fixes.
+    let source = format!(
+        "{STEPPED}def fixed @[s : Model(Counter) with sort C = Integer] (c : Integer) -> -F \
+         Integer {{ s.read(s.incr(c + s.zero)) }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let constant = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map_or_else(
+                || panic!("`{name}` is declared"),
+                crate::module::LoweredDeclaration::constant,
+            )
+    };
+    let components = |slot: &crate::module::FlattenedSlot<'_>| {
+        slot.components
+            .iter()
+            .map(|&(ref name, sort)| (String::from(name.as_ref()), sort))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(module.implicits(constant("stepped")), [None; 5]);
+    let [ref stepped] = *module.model_slots(constant("stepped"))
+    else {
+        panic!("`stepped` writes one slot");
+    };
+    assert_eq!(
+        (stepped.at, stepped.name, stepped.theory),
+        (0, SurfaceName::from("s"), SurfaceName::from("Counter"))
+    );
+    assert_eq!(components(stepped), [
+        (String::from("C"), true),
+        (String::from("zero"), false),
+        (String::from("incr"), false),
+        (String::from("read"), false),
+    ]);
+    assert!(stepped.fixed.is_empty(), "`stepped`'s type fixes no sort");
+    assert_eq!(module.implicits(constant("fixed")), [None; 4]);
+    let [ref fixed] = *module.model_slots(constant("fixed"))
+    else {
+        panic!("`fixed` writes one slot");
+    };
+    assert_eq!(components(fixed), [
+        (String::from("zero"), false),
+        (String::from("incr"), false),
+        (String::from("read"), false),
+    ]);
+    let [(ref sort, ty)] = *fixed.fixed
+    else {
+        panic!("`fixed` fixes one sort");
+    };
+    assert_eq!(sort.as_ref(), "C");
+    assert!(
+        matches!(arena.value_type(ty), Some(&ValueType::Base(_))),
+        "`C` is fixed at `Integer`"
+    );
+}
+
+#[test]
 fn a_module_supplied_for_a_model_implicit_passes_its_members_739()
 {
     // `stepped[s = Up](4)` passes `Up`'s carrier's code and its three members

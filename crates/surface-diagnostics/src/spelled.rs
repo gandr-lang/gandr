@@ -91,6 +91,7 @@ use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::ModelSlot;
 use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Presentation;
@@ -584,13 +585,15 @@ fn spell<'failure>(
         .collect();
     models.sort_by_key(|&(modelled, _)| modelled);
     let implicits = telescopes(module);
+    let slots = model_slots(module);
     let source = CoreSource::new(arena, &names)
         .naming(&constructors)
         .naming_arrows(&arrows)
         .naming_pairs(&pairs, &seconds)
         .relating(&relations)
         .modeling(&models)
-        .naming_implicits(&implicits);
+        .naming_implicits(&implicits)
+        .flattening(&slots);
     for (
         node,
         Scoped {
@@ -811,6 +814,59 @@ pub fn telescopes<'module>(
     telescopes.sort_by_key(|&(constant, _)| constant);
     telescopes.dedup_by_key(|&mut (constant, _)| constant);
     telescopes
+}
+
+/// The model implicits of each function of `module` whose telescope writes
+/// one.
+///
+/// Ascending by its constant, as [`CoreSource::flattening`] reads them: each
+/// slot in telescope order, its components and its fixed sorts by name.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn model_slots<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<ModelSlot<'module, CoreNode>>)>
+{
+    let mut slots: Vec<(ConstantIndex, Vec<ModelSlot<'module, CoreNode>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let held = module.model_slots(constant);
+            (!held.is_empty()).then(|| {
+                (
+                    constant,
+                    held.iter()
+                        .map(|slot| ModelSlot {
+                            at: slot.at,
+                            name: Name::from(slot.name.as_ref()),
+                            theory: Name::from(slot.theory.as_ref()),
+                            components: slot
+                                .components
+                                .iter()
+                                .map(|&(ref component, sort)| {
+                                    (Name::from(component.as_ref()), sort)
+                                })
+                                .collect(),
+                            fixed: slot
+                                .fixed
+                                .iter()
+                                .map(|&(ref sort, ty)| {
+                                    (Name::from(sort.as_ref()), CoreNode::ValueType(ty))
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                )
+            })
+        })
+        .collect();
+    slots.sort_by_key(|&(constant, _)| constant);
+    slots.dedup_by_key(|&mut (constant, _)| constant);
+    slots
 }
 
 quenchant_shape::reason_enum! {

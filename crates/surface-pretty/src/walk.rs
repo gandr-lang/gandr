@@ -231,6 +231,7 @@ use crate::former::Component;
 use crate::former::Elided;
 use crate::former::Forgotten;
 use crate::former::Former;
+use crate::former::ModelSlot;
 use crate::former::Name;
 use crate::former::Notation;
 use crate::former::Placement;
@@ -3928,6 +3929,20 @@ enum PassEnd
     Unwritten,
 }
 
+/// What a call writes for an implicit it supplies by name: the argument,
+/// walked, or the path a model implicit's components are supplied by.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+enum Resident<Node>
+{
+    /// The argument, walked where it stands.
+    Node(Node),
+    /// The path, written as it reads: `M` in `f[s = M]`.
+    Path(String),
+}
+
 /// One unit of the walk's pending work.
 #[derive(Clone, Copy, Debug)]
 enum Task<Node>
@@ -5422,6 +5437,88 @@ impl Walk<'_, '_>
             binding: Binding::Atom,
         });
         Ok(())
+    }
+
+    /// The name the variable `index` binders out in `zone` reads as where
+    /// the walk stands, when it has one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn written_variable(
+        &self,
+        zone: Zone,
+        index: DeBruijnIndex,
+    ) -> Option<String>
+    {
+        if let Some(position) = self.opened_at(zone, index) {
+            return self
+                .names
+                .get(position.0)?
+                .as_ref()
+                .map(|name| name.0.clone());
+        }
+        let position = self.context_position(zone, index)?;
+        self.context
+            .get(position.0)
+            .copied()
+            .flatten()
+            .map(|name| String::from(name.as_ref()))
+    }
+
+    /// The path a call supplies the model implicit `slot` by, given the
+    /// arguments it passes for its components.
+    ///
+    /// # Specification
+    /// - requires: `supplied` holds one argument per component of `slot`, in
+    ///   signature order.
+    /// - ensures: the path `P` when the argument for each component `x` that is
+    ///   no sort reads as `P.x`, a constant of that name or a variable the walk
+    ///   names so, every one under the same `P` and at least one such
+    ///   component; nothing otherwise. A sort's argument is the type the model
+    ///   defines it as, which no path names, and is not read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module's members and a model implicit's own
+    ///   components each read as their path; a member of another module among
+    ///   them reads as none.
+    /// - witness: `tests::goldens::a_call_supplies_a_model_implicit_by_its_path_2364`
+    #[spec(requires: supplied.len() == slot.components.len())]
+    fn supply_path<S>(
+        &self,
+        source: &S,
+        slot: &ModelSlot<'_, S::Node>,
+        supplied: &[S::Node],
+    ) -> Option<String>
+    where
+        S: Source + ?Sized,
+    {
+        let mut path: Option<String> = None;
+        for (&(component, sort), &node) in slot.components.iter().zip(supplied) {
+            if sort {
+                continue;
+            }
+            let read = source.read(node);
+            let written = if let Former::Constant(name) = read {
+                String::from(name.as_ref())
+            }
+            else if let Former::Variable { zone, index } = read {
+                self.written_variable(zone, index)?
+            }
+            else {
+                return None;
+            };
+            let prefix = written
+                .strip_suffix(component.as_ref())?
+                .strip_suffix('.')?;
+            match path {
+                None => path = Some(String::from(prefix)),
+                Some(ref held) if held == prefix => {},
+                Some(_) => return None,
+            }
+        }
+        path
     }
 
     /// The position among the open binders of the one of `zone` that `index`
@@ -8347,37 +8444,72 @@ impl Walk<'_, '_>
         // A callee whose telescope names an implicit at an argument's place
         // takes that argument by name, `f[x = a](b)`, where the spine is read
         // whole: the core applies every argument in place, and the
-        // parentheses admit only the explicit ones.
+        // parentheses admit only the explicit ones. A model implicit's
+        // components are supplied by the one path each reads under, `f[s =
+        // M]`.
         let whole = !matches!(source.read(head), Former::Application(..));
-        let telescope = if uniform == 0_usize
+        let (telescope, slots) = if uniform == 0_usize
             && whole
             && let Former::Force(thunk) = source.read(head)
         {
-            source.implicits(thunk)
+            (source.implicits(thunk), source.model_slots(thunk))
         }
         else {
-            &[]
+            (&[][..], &[][..])
         };
-        let mut residents = Vec::new();
-        if !telescope.is_empty() {
-            // `arguments` holds the spine's last argument first.
-            let mut placed = Vec::with_capacity(arguments.len());
-            for (position, &node) in arguments.iter().rev().enumerate() {
-                match telescope.get(position).copied().flatten() {
-                    Some(name) => residents.push((name, node)),
-                    None => placed.push(node),
-                }
-            }
-            placed.reverse();
-            arguments = placed;
-        }
         // A hole the call nominated for an implicit it omits is what the
         // source left out: the call writes nothing there. A wildcard is what
         // the source wrote, and stays among the arguments as its `_`.
         let omitted =
             |node: S::Node| matches!(source.read(node), Former::Unreadable(Unreadable::Omitted));
+        let mut residents: Vec<(Name<'_>, Resident<S::Node>)> = Vec::new();
+        if !telescope.is_empty() || !slots.is_empty() {
+            // `arguments` holds the spine's last argument first.
+            let spine: Vec<S::Node> = arguments.iter().rev().copied().collect();
+            let mut placed = Vec::with_capacity(spine.len());
+            let starting: BTreeMap<usize, &ModelSlot<'_, S::Node>> =
+                slots.iter().map(|slot| (slot.at, slot)).collect();
+            let mut position = 0_usize;
+            while let Some(&node) = spine.get(position) {
+                let supplied = starting.get(&position).and_then(|&slot| {
+                    let past = position.checked_add(slot.components.len())?;
+                    Some((slot, spine.get(position .. past)?, past))
+                });
+                if let Some((slot, supplied, past)) = supplied {
+                    if !supplied.iter().all(|&held| omitted(held)) {
+                        if let Some(path) = self.supply_path(source, slot, supplied) {
+                            residents.push((slot.name, Resident::Path(path)));
+                        }
+                        else {
+                            #[cfg_attr(
+                                dylint_lib = "quenchant_dylints",
+                                expect(
+                                    answer_totality,
+                                    reason = "components no one path names: the call writes them \
+                                              in place, which re-lowers as no supply"
+                                )
+                            )]
+                            self.note(Unspelled::Notation(Notation::Supply));
+                            placed.extend_from_slice(supplied);
+                        }
+                    }
+                    position = past;
+                    continue;
+                }
+                match telescope.get(position).copied().flatten() {
+                    Some(name) => residents.push((name, Resident::Node(node))),
+                    None => placed.push(node),
+                }
+                position = position.saturating_add(1_usize);
+            }
+            placed.reverse();
+            arguments = placed;
+        }
         arguments.retain(|&node| !omitted(node));
-        residents.retain(|&(_, node)| !omitted(node));
+        residents.retain(|&(_, ref resident)| match *resident {
+            Resident::Node(node) => !omitted(node),
+            Resident::Path(_) => true,
+        });
         // A call reads its head and its arguments as expressions wherever it
         // stands: where a type is read, the walk reads them as expressions
         // and returns to the type past the call's join.
@@ -8393,13 +8525,20 @@ impl Walk<'_, '_>
         else {
             let mut parts = Parts::default();
             let _ = parts.piece(Binding::Atom).text("[");
-            for (index, &(name, _)) in residents.iter().enumerate() {
+            for (index, &(name, ref resident)) in residents.iter().enumerate() {
                 if index > 0_usize {
                     let _ = parts.text(",").part(Part::Space);
                 }
-                let _ = parts
-                    .text(format!("{} = ", name.as_ref()))
-                    .piece(Binding::Sequence);
+                match *resident {
+                    Resident::Node(_) => {
+                        let _ = parts
+                            .text(format!("{} = ", name.as_ref()))
+                            .piece(Binding::Sequence);
+                    },
+                    Resident::Path(ref path) => {
+                        let _ = parts.text(format!("{} = {path}", name.as_ref()));
+                    },
+                }
             }
             let _ = parts.text("](");
             for index in 0_usize .. arguments.len() {
@@ -8433,12 +8572,14 @@ impl Walk<'_, '_>
                 },
             ));
         }
-        for &(_, node) in residents.iter().rev() {
-            tasks.push(Task::Visit {
-                node,
-                admits: Admits::Value,
-                depth,
-            });
+        for &(_, ref resident) in residents.iter().rev() {
+            if let Resident::Node(node) = *resident {
+                tasks.push(Task::Visit {
+                    node,
+                    admits: Admits::Value,
+                    depth,
+                });
+            }
         }
         for position in (0_usize .. uniform).rev() {
             tasks.push(Task::Context(ContextPosition(position)));

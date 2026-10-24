@@ -1183,6 +1183,10 @@ pub enum Notation
     /// A row as a term, written `[I, … | t]`: the surface reads a bracket of
     /// names where a term stands as a list.
     Row,
+    /// A model implicit's components a call supplies by no one path, each
+    /// written in place, `f(A, a, g)`: the surface supplies a model by a
+    /// module or a model implicit, `f[s = M]`, never by its components.
+    Supply,
 }
 
 /// A part of a node the presentation leaves out: the text stands for the
@@ -1795,6 +1799,58 @@ pub trait Source
         let _ = head;
         &[]
     }
+
+    /// The model implicits the telescope of the function `head` names writes,
+    /// in telescope order, when `head` is a constant whose telescope writes
+    /// one: each a slot of parameters, one per component, that a printed call
+    /// supplies by one path and a printed definition writes as one implicit.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slots the source records for `head`'s constant, or the
+    ///   empty slice; the default records none, so every component is written
+    ///   as a parameter of its own.
+    /// - provides: the resident `f[s = M]` a printed call supplies a model by,
+    ///   and a printed definition's `@[s : Model(S)]`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call supplying a module's members for a slot writes
+    ///   the module, and one passing the caller's own model writes its name.
+    /// - witness: `tests::goldens::a_call_supplies_a_model_implicit_by_its_path_2364`
+    #[inline]
+    fn model_slots(
+        &self,
+        head: Self::Node,
+    ) -> &[ModelSlot<'_, Self::Node>]
+    {
+        let _ = head;
+        &[]
+    }
+}
+
+/// A model implicit a function's telescope writes, `@[s : Model(S) with sort
+/// x = A]`: the parameters from `at` on, one per component, bind its
+/// components, and a sort the type fixes binds none.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelSlot<'source, Node>
+{
+    /// The position of the first component's parameter in the telescope.
+    pub at: usize,
+    /// The implicit's name, `s`.
+    pub name: Name<'source>,
+    /// The theory its model type names, `S`.
+    pub theory: Name<'source>,
+    /// Each component's name in signature order, beside whether it is a
+    /// sort.
+    pub components: Vec<(Name<'source>, bool)>,
+    /// Each sort the model type fixes, beside the type node it fixes it to,
+    /// read under the parameters before the slot.
+    pub fixed: Vec<(Name<'source>, Node)>,
 }
 
 /// A forgetting map a source records at a value: the theory whose model it
