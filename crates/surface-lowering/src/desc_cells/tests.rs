@@ -143,6 +143,38 @@ fn a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed()
     );
 }
 
+/// #2375: a rule applying an operation the signature does not declare, once
+/// on each side, is refused once by the description check, and its block is
+/// not decided as one system.
+#[test]
+fn an_ill_formed_rule_is_refused_once_and_left_unexamined_2375()
+{
+    let report = descriptions(
+        "theory Undeclared { sort S : Type+; sort C : Type; oper get : (k : pi+ (s : S) . C) --> C; oper put : (s : S, k : C) --> C; rule putPut : put(s, put(f(s), k)) <=> put(f(s), k); }",
+    );
+    let [ref refusal] = *report.diagnostics.as_slice()
+    else {
+        panic!("the rule is refused once: {:?}", report.diagnostics)
+    };
+    assert!(
+        matches!(refusal.fault, crate::description::DescriptionFault::IllFormed(ref ill)
+            if ill.kind == gandr_theory_levitation::WfKind::OutOfSignatureRule
+                && ill.subjects.iter().map(AsRef::<str>::as_ref).eq(["f"])),
+        "the refusal names the undeclared operation: {refusal:?}"
+    );
+    assert!(
+        report.declarations[0].ill_formed,
+        "the declaration is marked as refused"
+    );
+    let cells = elaborate_desc_cells(&report.declarations, &mut Decisions::none());
+    assert_eq!(
+        cells.diagnostics,
+        [],
+        "the overlap check runs over no rule the description check refused"
+    );
+    assert_eq!(cells.declarations[0].coincidence, Coincidence::Unexamined);
+}
+
 /// #1450: a rule whose left side copies a variable, in a data block, a theory
 /// law or a circuit, is refused by name at the copy's second occurrence.
 #[test]

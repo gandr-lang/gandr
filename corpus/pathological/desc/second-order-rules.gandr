@@ -1,7 +1,8 @@
 // The twin of `model/desc/second-order-rules.gandr`: β, whose instantiated
 // variable stands under a binder the order cannot see past; β's first-order
-// shadow, which loses the binding; an instantiation at the wrong count; and ζ
-// beside a rule rewriting its redex apart.
+// shadow, which loses the binding; an instantiation at the wrong count; a rule
+// applying an operation the signature does not declare; and ζ beside a rule
+// rewriting its redex apart.
 
 /// β substitutes `lam`'s body, which stands under `lam` rather than as an
 /// argument of `app`: the order does not put `t(u)` below the redex, so the
@@ -32,6 +33,18 @@ theory LetTwice {
   sort Tm : Type+;
   oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u, u);
+}
+
+/// `putPut` applies `f`, which no operation declares, once on each side: the
+/// description check refuses the rule once, and its refusal is the theory's
+/// alone, with no overlap check run over the rule it refused (#2375).
+@[ refuses("IllFormedDescription") ]
+theory Undeclared {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putPut : put(s, put(f(s), k)) <=> put(f(s), k);
 }
 
 /// ζ beside a rule rewriting `let` at `zero()` to `zero()`: their left sides

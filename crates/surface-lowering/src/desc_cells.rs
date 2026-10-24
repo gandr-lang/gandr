@@ -286,16 +286,18 @@ pub struct CellReport
 ///   many-out member, a refused rule and an untouched sibling, and two
 ///   declarations in swapped order separate store order from source order; a
 ///   declaration with a declined rule or a declined circuit is unexamined, and
-///   two rules rewriting one term apart refuse their declaration.
+///   so is one the description check refused; two rules rewriting one term
+///   apart refuse their declaration.
 /// - witness: `desc_cells::tests::a_many_out_operation_rule_becomes_a_cell_with_a_continuation_per_output`
 /// - witness: `desc_cells::tests::a_rule_returning_fewer_results_than_outputs_is_refused_rather_than_narrowed`
+/// - witness: `desc_cells::tests::an_ill_formed_rule_is_refused_once_and_left_unexamined_2375`
 /// - witness: `desc_cells::tests::a_two_redex_body_declines_with_both_occurrences`
 /// - witness: `desc_cells::tests::declaration_order_is_the_cell_order`
 /// - witness: `desc_cells::tests::ordinary_lowering_executes_the_cell_gate_and_preserves_later_values`
 /// - witness: `coincide::tests::two_rules_rewriting_one_term_apart_refuse_the_block`
 #[spec(ensures: |report| report.declarations.len() == declarations.len()
     && report.declarations.iter().zip(declarations).all(|(cells, declaration)| cells.at == declaration.at
-        && (cells.declined_faces.is_empty() || cells.coincidence == Coincidence::Unexamined)))]
+        && ((cells.declined_faces.is_empty() && !declaration.ill_formed) || cells.coincidence == Coincidence::Unexamined)))]
 #[inline]
 #[must_use]
 pub fn elaborate_desc_cells(
@@ -334,7 +336,8 @@ pub fn elaborate_desc_cells(
             Maybe::Present(_) => elaborate_theory_desc(reading),
             Maybe::Absent(_) => elaborate_data_desc(reading),
         };
-        let examined = declined_opers.is_empty()
+        let examined = !declaration.ill_formed
+            && declined_opers.is_empty()
             && declined_faces.is_empty()
             && circuits
                 .iter()
