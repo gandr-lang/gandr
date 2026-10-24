@@ -1,0 +1,59 @@
+// A source's own constructor named like one of `Theory`'s keeps its name
+// beside a `theory` block (#2348). The block's code is minted all the same,
+// and each constructor of `Theory` the source does not name reads as it does
+// anywhere: `App` is declared before the block, `Sort` after it, and a generic
+// program still reads the block by `Oper` and `Presents`.
+
+/// λ-terms with de Bruijn indices, whose application is named as `Theory`'s
+/// is.
+@[ checks ]
+data Bruijn : Type {
+  Ix : (n : Integer) --> Bruijn;
+  Abst : (t : Bruijn) --> Bruijn;
+  App : (t : Bruijn, u : Bruijn) --> Bruijn;
+}
+
+/// A monoid's signature presented as data, in a source that already declares
+/// `App`.
+@[ checks ]
+theory Mon {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+/// One kind, named as `Theory`'s sort link is, declared after the block.
+@[ checks ]
+data Kind : Type {
+  Sort : Kind;
+}
+
+/// One per `Oper` link of a presentation's operation chain, zero at its end.
+@[ checks ]
+def rec opsOf(chain : Theory) -> Integer {
+  case chain {
+    Oper(name, inputs, outputs, rest) => { run r <- opsOf[<](rest); r + 1 },
+    _ => 0
+  }
+}
+
+/// The block read by `Presents`: two operations, `mul` and `one`.
+@[ runs("2") ]
+def presentedOps() -> Integer {
+  case Mon {
+    Presents(sorts, opers, rules) => opsOf(opers),
+    _ => 0
+  }
+}
+
+/// `App` builds a `Bruijn`.
+@[ runs("App(Ix(0), Ix(1))") ]
+def applied() -> Bruijn { App(Ix(0), Ix(1)) }
+
+/// `Sort` matches a `Kind`.
+@[ runs("1") ]
+def sorted() -> Integer {
+  case Sort {
+    Sort => 1
+  }
+}

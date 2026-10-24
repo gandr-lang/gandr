@@ -683,9 +683,10 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `form`'s slot is live.
     /// - ensures: the data tail at the form's position when every constructor's
-    ///   name is fresh, each entered with its family, tag and arity; otherwise
-    ///   the refusal of the first constructor this or an earlier declaration
-    ///   already named, and nothing entered.
+    ///   name is fresh, each entered with its family, tag and arity, in place
+    ///   of a constructor of `Theory`'s of that name; otherwise the refusal of
+    ///   the first constructor this or an earlier declaration already named,
+    ///   and nothing entered.
     /// - fails: never; a second name is a refused tail.
     /// - panics: none.
     ///
@@ -720,6 +721,7 @@ impl<'source> Collector<'_, 'source>
                     self.collected.unit.source_at(generator.named.span.start()),
                     name,
                 ))
+                .filter(|entry| entry.form != Generators::Presentation)
                 .map(|entry| entry.named.span);
             if let Some(first) = entered.or(earlier) {
                 return Tail::Refused(LoweringRefusal::DuplicateDefinition {
