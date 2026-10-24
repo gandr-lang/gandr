@@ -2501,46 +2501,18 @@ const fn writes<T>(
     produced
 }
 
-/// Whether a row writes any interface.
+/// Whether a row writes any interface, and any instance by its label.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Listed
 {
     /// It writes none: an open row is its tail alone.
     None,
-    /// It writes at least one, which a bar sets apart from its tail.
+    /// It writes at least one, each by its name, which a bar sets apart from
+    /// its tail.
     Some,
-}
-
-/// Append the interfaces `effects` holds to `text`, comma-separated in row
-/// order, as a row writes them.
-///
-/// # Specification
-/// - ensures: [`Listed::Some`] exactly when `effects` holds an interface.
-/// - panics: none.
-/// - executable: none — a clause would restate the loop.
-///
-/// # Adequacy
-/// - hypothesis: L3 — an open row writing one interface and one writing none
-///   distinguish the bar after the interfaces from its absence.
-/// - witness: `tests::goldens::an_open_row_writes_its_tail_after_its_interfaces_2270`
-fn list_interfaces(
-    effects: &dyn Authority,
-    text: &mut String,
-) -> Listed
-{
-    let interfaces = effects.interfaces();
-    for (index, interface) in interfaces.iter().enumerate() {
-        if index != 0 {
-            text.push_str(", ");
-        }
-        text.push_str(interface.as_ref());
-    }
-    if interfaces.is_empty() {
-        Listed::None
-    }
-    else {
-        Listed::Some
-    }
+    /// It writes at least one instance by its label, `a : I`, and is the
+    /// labelled row form's.
+    Labelled,
 }
 
 /// The bound call and the rest of `node` when it is a run binding a call, `x
@@ -4295,10 +4267,10 @@ where
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: the binders at ordinals zero through the greatest ordinal of a
-///   region binder that a kept type's or a capability's region is, under any
-///   root scanned at its [`Admits`] with its thunks spelled, in order; none
-///   where no region is a binder. Absent when a scan takes more than the visit
-///   budget.
+///   region binder that a kept type's, a capability's or a row's instance's
+///   region is, under any root scanned at its [`Admits`] with its thunks
+///   spelled, in order; none where no region is a binder. Absent when a scan
+///   takes more than the visit budget.
 /// - provides: the region binders a definition's header writes, every ordinal
 ///   below the greatest included, so the header reads back at the ordinals the
 ///   type uses.
@@ -4307,9 +4279,11 @@ where
 /// - intension: the scan of [`scanned`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a definition kept at its one region binder writes it, and
-///   one kept at none writes none.
+/// - hypothesis: L3 — a definition kept at its one region binder writes it, one
+///   kept at none writes none, and one whose row names an instance at a binder
+///   writes that binder.
 /// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
+/// - witness: `tests::goldens::a_row_writes_each_instance_by_its_label_2271`
 #[spec(ensures: |ref ret| match *ret {
     Maybe::Present(ref binders) => binders.last().is_none_or(|&last| usize::try_from(u32::from(last)).ok().and_then(|ordinal| ordinal.checked_add(1_usize)) == Some(binders.len())),
     Maybe::Absent(scan::Absent::OverBudget) => true,
@@ -4334,6 +4308,15 @@ where
             } = former
             {
                 greatest = greatest.max(Some(binder));
+            }
+            else if let Former::Row { effects, .. } | Former::EffectfulReturner { effects, .. } =
+                former
+            {
+                for (_, region) in effects.interfaces() {
+                    if let Region::Bound(binder) = region {
+                        greatest = greatest.max(Some(binder));
+                    }
+                }
             }
         });
         if let Maybe::Absent(absent) = visited {
@@ -7052,12 +7035,12 @@ impl Walk<'_, '_>
                 )]
                 self.note(Unspelled::Notation(Notation::Row));
                 let mut written = String::from("[");
-                let listed = list_interfaces(effects, &mut written);
+                let listed = self.list_interfaces(source, effects, &mut written);
                 if tail.is_none() {
                     written.push(']');
                     return writes(Production("list_expression"), self.atom(Glyphs(&written)));
                 }
-                if listed == Listed::Some {
+                if listed != Listed::None {
                     written.push_str(" | ");
                 }
                 let head = self.leaf(Glyphs(&written))?;
@@ -7668,21 +7651,25 @@ impl Walk<'_, '_>
             },
             // An open row sets its tail apart from the interfaces it writes,
             // `-F [I | t] A`, and one writing none is its tail alone,
-            // `-F [t] A`.
+            // `-F [t] A`; a row naming an instance by its label is the
+            // labelled form's.
             Former::EffectfulReturner { effects, tail, .. } => {
                 let mut annotation = String::from("-F [");
-                let listed = list_interfaces(effects, &mut annotation);
+                let listed = self.list_interfaces(source, effects, &mut annotation);
                 match (tail, listed) {
-                    (None, Listed::Some | Listed::None) => annotation.push_str("] "),
-                    (Some(_), Listed::Some) => annotation.push_str(" | "),
+                    (None, Listed::Some | Listed::Labelled | Listed::None) => {
+                        annotation.push_str("] ");
+                    },
+                    (Some(_), Listed::Some | Listed::Labelled) => annotation.push_str(" | "),
                     (Some(_), Listed::None) => {},
                 }
                 let head = self.leaf(Glyphs(&annotation))?;
                 let close = tail.map(|_| self.leaf(Glyphs("] "))).transpose()?;
-                Some(writes(Production("f_type.row"), Join::EffectReturner {
-                    head,
-                    close,
-                }))
+                let join = Join::EffectReturner { head, close };
+                Some(match listed {
+                    Listed::Labelled => writes(Production("f_type.row.labelled"), join),
+                    Listed::None | Listed::Some => writes(Production("f_type.row"), join),
+                })
             },
             Former::Arrow { .. } | Former::StaticPi { .. } => {
                 Some(writes(Production("function_type"), Join::Arrow))
@@ -9096,6 +9083,72 @@ impl Walk<'_, '_>
         }
         let position = *self.scopes.get(at.checked_sub(ambient.len())?)?;
         self.names.get(position)?.clone()
+    }
+
+    /// Append the interfaces `effects` holds to `text`, comma-separated in
+    /// row order, as a row writes them: an interface's default by its name,
+    /// `I`, and an instance by its label, `a : I`.
+    ///
+    /// # Specification
+    /// - ensures: [`Listed::Labelled`] exactly when `effects` holds an instance
+    ///   apart from its interface's default, else [`Listed::Some`] exactly when
+    ///   it holds an interface; an instance whose region has no name to write
+    ///   is labelled `?`, the presentation approximate.
+    /// - panics: none.
+    /// - executable: none — a clause would restate the loop.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open row writing one interface and one writing
+    ///   none distinguish the bar after the interfaces from its absence; a row
+    ///   of two instances of one interface writes both labels.
+    /// - witness: `tests::goldens::an_open_row_writes_its_tail_after_its_interfaces_2270`
+    /// - witness: `tests::goldens::a_row_writes_each_instance_by_its_label_2271`
+    fn list_interfaces<S>(
+        &mut self,
+        source: &S,
+        effects: &dyn Authority,
+        text: &mut String,
+    ) -> Listed
+    where
+        S: Source + ?Sized,
+    {
+        let interfaces = effects.interfaces();
+        let mut listed = if interfaces.is_empty() {
+            Listed::None
+        }
+        else {
+            Listed::Some
+        };
+        for (index, &(ref interface, region)) in interfaces.iter().enumerate() {
+            if index != 0 {
+                text.push_str(", ");
+            }
+            if region != Region::Held {
+                listed = Listed::Labelled;
+                let named = self
+                    .region(source, region)
+                    .filter(|name| !name.0.is_empty() && !name.0.contains(char::is_whitespace));
+                #[cfg_attr(
+                    dylint_lib = "quenchant_dylints",
+                    expect(
+                        answer_totality,
+                        reason = "an instance at a region past the scopes the source names has no \
+                                  label to write before its interface"
+                    )
+                )]
+                let label = named.map_or_else(
+                    || {
+                        self.note(Unspelled::Elided(Elided::Region));
+                        String::from("?")
+                    },
+                    |name| name.0,
+                );
+                text.push_str(&label);
+                text.push_str(" : ");
+            }
+            text.push_str(interface.as_ref());
+        }
+        listed
     }
 
     /// `name` as a part's text, or `?` for a name a line or the walk's

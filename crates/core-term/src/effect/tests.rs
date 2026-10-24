@@ -17,6 +17,15 @@ fn signature(
     .unwrap()
 }
 
+/// The default label of the interface named `name`.
+///
+/// # Specification
+/// trivial.
+fn label(name: Label) -> EffectLabel
+{
+    EffectLabel::Interface(name)
+}
+
 #[test]
 fn empty_is_the_bottom()
 {
@@ -105,7 +114,7 @@ fn a_tail_rides_every_traversal_of_a_row()
             .union(&io, &arena)
             .expect("apart")
             .with_tail(Some(tail))
-            .without(&Label::from("IO")),
+            .without(&label("IO".into())),
         "removing an instance keeps the tail"
     );
 }
@@ -129,7 +138,7 @@ fn subset_is_a_preorder_with_union_as_join()
         state.is_subset(&conflicting, &arena)
     );
     assert_eq!(
-        Err(EffectConflict::Signature(Label::from("State"))),
+        Err(EffectConflict::Signature(label("State".into()))),
         state.union(&conflicting, &arena)
     );
 }
@@ -148,9 +157,9 @@ fn union_is_a_canonical_set_and_without_subtracts()
         state
             .union(&io, &arena)
             .unwrap()
-            .without(&Label::from("IO"))
+            .without(&label("IO".into()))
     );
-    assert_eq!(state, state.without(&Label::from("Absent")));
+    assert_eq!(state, state.without(&label("Absent".into())));
 }
 
 #[test]
@@ -176,7 +185,7 @@ fn a_join_by_identity_refuses_equal_types_minted_twice()
     assert_eq!(
         (
             Ok(state.clone()),
-            Err(EffectConflict::Signature(Label::from("State")))
+            Err(EffectConflict::Signature(label("State".into())))
         ),
         (
             state.union(&restated, &arena),
@@ -267,7 +276,7 @@ fn signature_inclusion_ignores_allocation_identity()
     );
     assert_eq!(RowInclusion::Excluded, first.is_subset(&changed, &arena));
     assert_eq!(
-        Err(EffectConflict::Signature(Label::from("ListOp"))),
+        Err(EffectConflict::Signature(label("ListOp".into()))),
         first.union(&changed, &arena)
     );
 }
@@ -452,7 +461,7 @@ fn relocation_keeps_names_and_refuses_duplicate_interfaces()
     let io = signature(EffectName::from("IO"), unit);
     assert_eq!(
         EffectRow::from_signatures([state.clone(), state.clone()]),
-        Err(EffectConflict::Signature(Label::from("State")))
+        Err(EffectConflict::Signature(label("State".into())))
     );
     assert_eq!(
         EffectRow::from_signatures([io.clone(), state]),
@@ -504,7 +513,7 @@ fn the_row_operations_are_the_set_arithmetic_of_their_names()
     let disagreeing = EffectRow::singleton(signature(apart.clone(), integer));
     for (left_names, left) in rows.iter().map(|held| (&held.0, &held.1)) {
         for name in &names {
-            let removed = left.without(&Label::from(name));
+            let removed = left.without(&label(name.as_ref().into()));
             assert!(
                 named(&removed)
                     .iter()
@@ -518,7 +527,7 @@ fn the_row_operations_are_the_set_arithmetic_of_their_names()
                 EffectPresence::Absent
             };
             assert_eq!(
-                left.contains(&Label::from(name)),
+                left.contains(&label(name.as_ref().into())),
                 present,
                 "{name:?} in {left:?}"
             );
@@ -543,7 +552,7 @@ fn the_row_operations_are_the_set_arithmetic_of_their_names()
             );
         }
         let refused = if left_names.contains(&apart) {
-            Err(EffectConflict::Signature(Label::from(&apart)))
+            Err(EffectConflict::Signature(label(apart.as_ref().into())))
         }
         else {
             Ok(())
@@ -565,4 +574,132 @@ fn the_row_operations_are_the_set_arithmetic_of_their_names()
             "{left:?} in a `B` of another signature"
         );
     }
+}
+
+#[test]
+fn an_instance_is_apart_from_its_interface_and_from_another_region()
+{
+    use crate::effect::capability::RegionBinder;
+    use crate::effect::capability::RegionDepth;
+    let mut arena = crate::CoreArena::new();
+    let unit = arena.value_type_unit();
+    let name = EffectName::from("Console");
+    let console = signature(name.clone(), unit);
+    let scope = Region::Scoped(RegionDepth::from(1_u32));
+    let bound = Region::Bound(RegionBinder::from(0_u32));
+    assert_eq!(
+        label("Console".into()),
+        EffectLabel::at(&name, Region::Held)
+    );
+    assert_eq!(scope, EffectLabel::at(&name, scope).region());
+    assert_eq!(Region::Held, label("Console".into()).region());
+    let default = EffectRow::singleton(console.clone());
+    assert_eq!(
+        default,
+        EffectRow::instance(console.clone(), Region::Held),
+        "the held instance is the interface's default"
+    );
+    let scoped = EffectRow::instance(console.clone(), scope);
+    let abstracted = EffectRow::instance(console.clone(), bound);
+    assert_eq!(RowInclusion::Excluded, scoped.is_subset(&default, &arena));
+    assert_eq!(RowInclusion::Excluded, default.is_subset(&scoped, &arena));
+    assert_eq!(
+        RowInclusion::Excluded,
+        scoped.is_subset(&abstracted, &arena)
+    );
+    let all = default
+        .union(&scoped, &arena)
+        .and_then(|row| row.union(&abstracted, &arena))
+        .expect("three instances apart");
+    assert_eq!(3, all.instances().len());
+    assert_eq!(
+        alloc::vec![scope, bound],
+        all.regions().collect::<alloc::vec::Vec<_>>()
+    );
+    assert_eq!(RowInclusion::Included, scoped.is_subset(&all, &arena));
+    assert_eq!(
+        default.union(&abstracted, &arena).expect("apart"),
+        all.without(&EffectLabel::at(&name, scope)),
+        "discharging one instance keeps the others"
+    );
+    assert_eq!(
+        default.union(&scoped, &arena),
+        EffectRow::from_placed([(console.clone(), Region::Held), (console.clone(), scope)])
+    );
+    assert_eq!(
+        Err(EffectConflict::Signature(EffectLabel::at(&name, scope))),
+        EffectRow::from_placed([(console.clone(), scope), (console, scope)])
+    );
+}
+
+#[test]
+fn renaming_an_instance_region_moves_its_label()
+{
+    use crate::effect::capability::RegionBinder;
+    use crate::effect::capability::RegionDepth;
+    let mut arena = crate::CoreArena::new();
+    let unit = arena.value_type_unit();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let name = EffectName::from("Console");
+    let console = signature(name.clone(), unit);
+    let first = Region::Bound(RegionBinder::from(0_u32));
+    let second = Region::Bound(RegionBinder::from(1_u32));
+    let outer = Region::Scoped(RegionDepth::from(1_u32));
+    let inner = Region::Scoped(RegionDepth::from(2_u32));
+    let row = EffectRow::from_placed([
+        (console.clone(), Region::Held),
+        (console.clone(), first),
+        (console.clone(), second),
+    ])
+    .expect("three instances apart");
+    let placing = |to_first: Region, to_second: Region| {
+        move |region: Region| {
+            if region == first {
+                to_first
+            }
+            else if region == second {
+                to_second
+            }
+            else {
+                region
+            }
+        }
+    };
+    assert_eq!(
+        EffectRow::from_placed([
+            (console.clone(), Region::Held),
+            (console.clone(), outer),
+            (console.clone(), inner),
+        ]),
+        row.try_map_regions(placing(outer, inner)),
+        "each bound instance moves to its scope"
+    );
+    assert_eq!(
+        EffectRow::from_placed([(console.clone(), Region::Held), (console.clone(), inner)]),
+        row.try_map_regions(placing(Region::Held, inner)),
+        "an instance placed at the held region is the default"
+    );
+    assert_eq!(
+        EffectRow::from_placed([(console.clone(), Region::Held), (console.clone(), outer)]),
+        row.try_map_regions(placing(outer, outer)),
+        "two instances placed at one region are one"
+    );
+    assert_eq!(Ok(row.clone()), row.try_map_regions(|region| region));
+    let variable = arena.value_variable(crate::Zone::Intuitionistic, 0_u32.into());
+    let tail = arena.value_type_row_tail(variable);
+    assert_eq!(
+        Ok(Some(tail)),
+        row.with_tail(Some(tail))
+            .try_map_regions(placing(outer, inner))
+            .map(|moved| moved.tail()),
+        "the tail rides the renaming"
+    );
+    let other =
+        EffectRow::from_placed([(console, first), (signature(name.clone(), integer), second)])
+            .expect("two instances apart");
+    assert_eq!(
+        Err(EffectConflict::Signature(EffectLabel::at(&name, outer))),
+        other.try_map_regions(placing(outer, outer)),
+        "two signatures cannot meet at one instance"
+    );
 }

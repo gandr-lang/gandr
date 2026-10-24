@@ -531,6 +531,31 @@ fn lowered(
             "`{function}`'s implicit `{implicit}` is supplied by name, \
              `{function}[{implicit} = …](…)`, not among the parentheses"
         ),
+        LoweringRefusal::InstanceUnanswered {
+            function,
+            instance,
+            interface,
+            ..
+        } => write!(
+            f,
+            "`{function}` performs `{interface}` through its instance `{instance}`, and no \
+             instance of `{interface}` is handled where this call stands: handle one around the \
+             call, `handle c : {interface} {{ … }}`, or supply one by name, \
+             `{function}[{instance} = c](…)`"
+        ),
+        LoweringRefusal::InstanceAmbiguous {
+            function,
+            instance,
+            interface,
+            first,
+            second,
+            ..
+        } => write!(
+            f,
+            "`{function}`'s instance `{instance}` could be `{first}` or `{second}`, each an \
+             instance of `{interface}` handled where this call stands: name the one it means, \
+             `{function}[{instance} = {first}](…)`"
+        ),
         LoweringRefusal::ModelImplicitValue { implicit, .. } => write!(
             f,
             "the model implicit `{implicit}` is its components, never a value; read them as \
@@ -1551,6 +1576,20 @@ mod tests
                 span,
                 function: name,
                 implicit: name,
+            },
+            LoweringRefusal::InstanceUnanswered {
+                span,
+                function: name,
+                instance: name,
+                interface: name,
+            },
+            LoweringRefusal::InstanceAmbiguous {
+                span,
+                function: name,
+                instance: name,
+                interface: name,
+                first: name,
+                second: name,
             },
             LoweringRefusal::ModelImplicitValue {
                 span,

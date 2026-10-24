@@ -981,3 +981,128 @@ fn a_model_implicit_supplied_by_a_value_is_refused_739()
         "a value supplies no model implicit"
     );
 }
+
+/// A line printed through the instance `out` its row names.
+const SAY: &str = "def say() -> -F [out : Console] Unit { out.print(\"x\") }\n";
+
+/// A handler of `Console` answering 1, around `body`.
+///
+/// # Specification
+/// trivial.
+fn handled(
+    binder: SurfaceName<'_>,
+    body: SourceText<'_>,
+) -> String
+{
+    format!(
+        "handle {binder} : Console {{ {body} }} with {{ pure(v) => pure v, oper print(line, k) => pure 1 }}"
+    )
+}
+
+#[test]
+fn a_row_label_is_an_instance_after_every_parameter_2271()
+{
+    // `both` takes `r` and `s`, then a capability of `Console` per label of
+    // its row, each at a region binder of its own: the type its explicit twin
+    // writes. Its row's tail reads `r` past both instances, which no type
+    // names, as the twin's reads it past `x` and `y`.
+    let source = "def both @[r : Row] (s : String) -> -F [x : Console, y : Console | r] Unit { y.print(s) }\ndef twin @[r : Row, q : Region, q1 : Region] (s : String, x : Cap {print} at q, y : Cap {print} at q1) -> -F [q : Console, q1 : Console | r] Unit { y.print(s) }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert_eq!(
+        equal_type_syntax(
+            &arena,
+            declared_type_of(&module, SurfaceName::from("both")),
+            declared_type_of(&module, SurfaceName::from("twin")),
+        ),
+        CertificateEquality::Equal,
+        "each label binds the capability of its instance, after `s`, and the tail reads `r`"
+    );
+    let both = declaration_named(&module, SurfaceName::from("both")).constant();
+    assert_eq!(module.implicits(both), [
+        Some(SurfaceName::from("r")),
+        None,
+        Some(SurfaceName::from("x")),
+        Some(SurfaceName::from("y"))
+    ]);
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn a_row_label_naming_a_region_binder_is_its_instance_2271()
+{
+    // `twin`'s labels name its region binders: they bind no parameter, and
+    // every parameter it takes is written.
+    let source = "def twin @[r : Region] (x : Cap {print} at r) -> -F [r : Console] Unit { x.print(\"x\") }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let twin = declaration_named(&module, SurfaceName::from("twin")).constant();
+    assert!(
+        module.implicits(twin).is_empty(),
+        "a label naming a region binder adds no instance"
+    );
+    assert_eq!(
+        parameters_of(&arena, declared_type_of(&module, SurfaceName::from("twin"))).len(),
+        1_usize,
+        "the capability written is the one parameter"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn an_omitted_instance_is_the_one_handled_in_scope_2271()
+{
+    // `say()` inside one scope passes its capability, as `say[out = a]()`
+    // does; inside a function whose row labels an instance, it passes that.
+    let source = format!(
+        "{SAY}def resolved() -> -F Integer {{ {} }}\ndef named() -> -F Integer {{ {} }}\ndef relayed() -> -F [o : Console] Unit {{ say() }}\ndef relayedNamed() -> -F [o : Console] Unit {{ say[out = o]() }}\n",
+        handled("a".into(), SourceText::from("say(); pure 0")),
+        handled("a".into(), SourceText::from("say[out = a](); pure 0")),
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    for (omitted, supplied) in [("resolved", "named"), ("relayed", "relayedNamed")] {
+        assert_eq!(
+            equal_certificate_syntax(
+                &arena,
+                body_named(&module, SurfaceName::from(omitted)),
+                body_named(&module, SurfaceName::from(supplied)),
+            ),
+            CertificateEquality::Equal,
+            "{omitted}: the omitted instance is the one in scope"
+        );
+    }
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
+fn an_omitted_instance_is_refused_when_none_or_several_stand_2271()
+{
+    let inner = handled("b".into(), SourceText::from("say(); pure 0"));
+    let source = format!(
+        "{SAY}def none() -> -F [Console] Unit {{ say() }}\ndef several() -> -F Integer {{ {} }}\n",
+        handled("a".into(), SourceText::from(inner.as_str())),
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("none")),
+            LoweringRefusal::InstanceUnanswered { function, instance, interface, .. }
+                if function == SurfaceName::from("say")
+                    && instance == SurfaceName::from("out")
+                    && interface == SurfaceName::from("Console")
+        ),
+        "the row's default is no instance a call may pass"
+    );
+    assert!(
+        matches!(
+            refusal_of(&module, SurfaceName::from("several")),
+            LoweringRefusal::InstanceAmbiguous { instance, first, second, .. }
+                if instance == SurfaceName::from("out")
+                    && first == SurfaceName::from("b")
+                    && second == SurfaceName::from("a")
+        ),
+        "two scopes of `Console`, named innermost first"
+    );
+}

@@ -251,6 +251,8 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
+            | Self::InstanceUnanswered { .. }
+            | Self::InstanceAmbiguous { .. }
             | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
             | Self::EntryType { .. }
@@ -320,6 +322,8 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { .. }
             | Self::ImplicitUnsupplied { .. }
             | Self::ImplicitInParentheses { .. }
+            | Self::InstanceUnanswered { .. }
+            | Self::InstanceAmbiguous { .. }
             | Self::ModelImplicitValue { .. }
             | Self::RegionAsValue { .. }
             | Self::EntryType { .. }

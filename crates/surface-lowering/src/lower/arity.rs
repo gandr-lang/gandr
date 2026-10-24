@@ -1099,8 +1099,10 @@ impl<'source> Lowerer<'_, 'source>
             match self.resolve_name(named, frame, self.name_at(scrutinee))? {
                 Maybe::Present(Resolved::Binder(bound)) => match bound.declared {
                     Maybe::Absent(binder_type::Absent::Untyped) => self.ran_type(bound.binder)?,
-                    declared
-                    @ (Maybe::Present(_) | Maybe::Absent(binder_type::Absent::Operand)) => declared,
+                    declared @ (Maybe::Present(_)
+                    | Maybe::Absent(
+                        binder_type::Absent::Operand | binder_type::Absent::Instance,
+                    )) => declared,
                 },
                 Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
                 Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),

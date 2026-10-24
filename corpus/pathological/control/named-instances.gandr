@@ -1,0 +1,58 @@
+// What `../../model/control/named-instances.gandr` proves, refused: a call
+// omitting an instance passes the one instance of its interface in scope,
+// never a guess among several or a default; a row holds each label once;
+// an instance is apart from its interface's default; and a label names an
+// instance in scope or nothing (#2271).
+
+// `say` prints through its instance `out`.
+import "../../model/control/named-instances.gandr" ;
+
+/// Two instances of `Console` handled around a call naming neither: the
+/// call is refused naming both, never routed to the innermost.
+@[ refuses("InstanceAmbiguous") ]
+def ambiguous() -> Integer {
+  handle a : Console {
+    handle b : Console {
+      say();
+      pure 0
+    } with {
+      pure(x) => pure x,
+      oper print(line, k) => pure 2
+    }
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}
+
+/// No instance of `Console` stands where `say` is called: the row's
+/// default is not an instance the call may pass.
+@[ refuses("InstanceUnanswered") ]
+def unanswered() -> [Console] Unit { say() }
+
+/// One label written twice in a row.
+@[ refuses("DuplicateDefinition") ]
+def twice() -> [o : Console, o : Console] Unit { o.print("twice") }
+
+/// The default `Console` performed under a row whose only `Console` is the
+/// instance `o`: the two are apart.
+@[ refuses("TypeMismatch") ]
+def defaulted() -> [o : Console] Unit { Console.print("defaulted") }
+
+/// An instance of `Proc` supplied where `say` takes an instance of
+/// `Console`: its capability grants none of `Console`'s operations.
+@[ refuses("CapabilityAmplified") ]
+def misplaced() -> Integer {
+  handle p : Proc {
+    say[out = p]();
+    pure 0
+  } with {
+    pure(x) => pure x,
+    oper exit(code, k) => pure 1
+  }
+}
+
+/// A label in a parameter's row naming no instance: the function's own row
+/// binds none.
+@[ refuses("UnresolvedName") ]
+def lost(body : +U (-F [z : Console] Unit)) -> Unit { pure unit }

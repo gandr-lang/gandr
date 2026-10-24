@@ -545,6 +545,89 @@ fn a_row_names_each_interface_once()
 }
 
 #[test]
+fn a_row_names_two_instances_of_one_interface_apart_2271()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def both() -> -F [x : Console, y : Console] Unit { x.print(\"x\") }\n",
+            "def twice() -> -F [o : Console, o : Console] Unit { pure unit }\n",
+            "def lost(k : +U (-F [z : Console] Unit)) -> -F Unit { pure unit }\n",
+        )),
+        &mut arena,
+    );
+    let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, "both".into())
+    else {
+        panic!("both: the function lowers");
+    };
+    let Some(&ValueType::Thunk(mut at)) = arena.value_type(declared_type)
+    else {
+        panic!("both: a function's type is a thunk");
+    };
+    let mut domains = Vec::new();
+    let effects = loop {
+        match arena.comp_type(at) {
+            Some(&(CompType::Pi { domain, codomain } | CompType::Arrow { domain, codomain })) => {
+                domains.push(domain);
+                at = codomain;
+            },
+            Some(&CompType::Returner { ref effects, .. }) => break effects.clone(),
+            other => panic!("both: a returner ends the type, not {other:?}"),
+        }
+    };
+    let [first, second] = [0_u32, 1].map(|ordinal| {
+        Region::Bound(gandr_core_term::effect::capability::RegionBinder::from(
+            ordinal,
+        ))
+    });
+    let placed: Vec<(Region, &str)> = effects
+        .instances()
+        .map(|(label, signature)| (label.region(), signature.name().as_ref()))
+        .collect();
+    assert_eq!(
+        placed,
+        [(first, "Console"), (second, "Console")],
+        "each label is an instance of `Console` at its own region binder"
+    );
+    let regions: Vec<Region> = domains
+        .iter()
+        .map(|&domain| match arena.value_type(domain) {
+            Some(&ValueType::Capability { region, .. }) => region,
+            other => panic!("both: each label binds a capability, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        regions,
+        [first, second],
+        "each label's capability lives where its instance does"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "twice".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { name, .. })
+                if name == SurfaceName::from("o")
+        ),
+        "a row holds each label once"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "lost".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                if name == SurfaceName::from("z")
+        ),
+        "a label naming no instance in scope"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "both".into()),
+            Verdict::Checked { .. }
+        ),
+        "both: the instance it exercises is in its row"
+    );
+}
+
+#[test]
 fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
 {
     let mut arena = CoreArena::new();

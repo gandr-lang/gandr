@@ -385,16 +385,21 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// A returner's row, `[I, …]`, `[I, … | t]` or `[t]`, as the classification
-/// read it.
+/// A returner's row, `[I, …]`, `[a : I, …]`, `[I, … | t]` or `[t]`, as the
+/// classification read it.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct WrittenRow
 {
-    /// The interfaces the row names, whole.
+    /// The interfaces the row names whole, each its default instance.
     interfaces: BTreeSet<EffectName>,
+    /// Each label `a : I` the row writes, its tile beside its interface.
+    labels: Vec<(Placed, EffectName)>,
+    /// Each label's instance, its interface at the region its name resolves
+    /// to, once the row is planned under its frame.
+    placed: Vec<(EffectName, Region)>,
     /// The operand the row stays open through, read as a row value.
     tail: Maybe<NodeIndex, tail::Absent>,
 }
@@ -531,7 +536,7 @@ impl Sink<'_>
         | Maybe::Present(ref signature) => signature.name() == interface,
         | Maybe::Absent(_) => true,
     })]
-    fn signature(
+    pub(super) fn signature(
         &mut self,
         interface: &EffectName,
         origin: Origin,
@@ -684,31 +689,16 @@ impl<'source> Lowerer<'_, 'source>
             span: written.span,
             name,
         };
-        let region = match self.resolve_name(site, frame, name) {
-            Ok(Maybe::Present(Resolved::Binder(bound)))
-                if self.capabilities.contains(&bound.binder)
-                    || self.held.contains(&bound.binder) =>
-            {
-                let depth = self
-                    .scope
-                    .chain(Frame::Inner(bound.binder))
-                    .filter(|binder| {
-                        self.capabilities.contains(binder) || self.held.contains(binder)
-                    })
-                    .count();
-                Region::Scoped(RegionDepth::from(
-                    u32::try_from(depth).map_err(|_overflow| unbound())?,
-                ))
-            },
-            resolved => match (self.region_binder(site.at.node, name), resolved) {
-                (Some(binder), _) => Region::Bound(binder),
-                (None, Ok(Maybe::Present(Resolved::Declaration { constant, .. }))) => {
-                    return self.located_type(site, operand, constant);
+        let Some(region) = self.region_named(site, frame, name)
+        else {
+            return match self.resolve_name(site, frame, name) {
+                Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => {
+                    self.located_type(site, operand, constant)
                 },
-                (None, Ok(Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_)) | Err(_)) => {
-                    return Err(unbound());
+                Ok(Maybe::Present(Resolved::Binder(_)) | Maybe::Absent(_)) | Err(_) => {
+                    Err(unbound())
                 },
-            },
+            };
         };
         self.read(operand.node, site.reading);
         if let Some((_, Former::CapabilityType)) = self.form_at(operand)? {
@@ -720,6 +710,194 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// The region the name `name` names where `frame` stands, read at `site`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a capability scope's binder or a hold, [`Region::Scoped`]
+    ///   at the count of scopes and holds from the binder outward; otherwise,
+    ///   for a region binder of the declaration owning `site` — one its
+    ///   telescope binds, or an instance's a label of its row binds —
+    ///   [`Region::Bound`] at it; none for any other name, and for a count past
+    ///   the region's width.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::at_type`], and a row's label naming its
+    ///   function's instance, and one naming nothing.
+    /// - witness: `lower::capability::tests::a_capability_at_a_scope_lives_in_its_region`
+    /// - witness: `lower::capability::tests::a_kept_type_at_a_region_binder_is_bound_to_it_1221`
+    /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    #[spec(ensures: |ret| ret.is_none_or(|region| region != Region::Held))]
+    fn region_named(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        name: SurfaceName<'source>,
+    ) -> Option<Region>
+    {
+        if let Ok(Maybe::Present(Resolved::Binder(bound))) = self.resolve_name(site, frame, name)
+            && (self.capabilities.contains(&bound.binder) || self.held.contains(&bound.binder))
+        {
+            let depth = self
+                .scope
+                .chain(Frame::Inner(bound.binder))
+                .filter(|binder| self.capabilities.contains(binder) || self.held.contains(binder))
+                .count();
+            return u32::try_from(depth)
+                .ok()
+                .map(|depth| Region::Scoped(RegionDepth::from(depth)));
+        }
+        self.region_binder(site.at.node, name).map(Region::Bound)
+    }
+
+    /// Bind the instance `entry`, a label of the result row of the function
+    /// `site` declares, as a parameter under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `entry` is an [`Plicity::Instance`](crate::module::Plicity)
+    ///   entry of the function's merged telescope.
+    /// - ensures: the label bound in a frame extending `frame`, recorded as an
+    ///   instance of its interface living at a region binder of the
+    ///   declaration's own, named as the label and numbered after every one the
+    ///   declaration binds before it, and pushed as a parameter whose type is
+    ///   that instance's capability; the frame it bound is returned.
+    /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] for an interface the
+    ///   host does not declare, at the name; a binder's own refusal; a fault at
+    ///   the label when the declaration has no owner or its region binders
+    ///   overflow their width.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function whose row labels two instances of one
+    ///   interface takes them as two capability parameters at two region
+    ///   binders, after its explicit parameter.
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    #[spec(
+        captures: before = self.parameters.len(),
+        ensures: |ret| ret.is_err() || self.parameters.len() == before.saturating_add(1),
+    )]
+    pub(super) fn instance_parameter(
+        &mut self,
+        site: Site,
+        entry: crate::module::TelescopeEntry<'source>,
+        frame: Frame,
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        let misplaced = site.fault(entry.binder.span, FormFault::MisplacedTile);
+        let Maybe::Present(written) = entry.declared
+        else {
+            return Err(misplaced);
+        };
+        let named = self.name_at(written);
+        let table = host(site)?;
+        let Maybe::Present(interface) = table.named(&EffectName::from(named.as_ref()))
+        else {
+            return Err(LoweringRefusal::UnresolvedTypeHead {
+                span: written.span,
+                name: named,
+                arity: HeadArity::Nullary,
+            });
+        };
+        let interface = interface.name().clone();
+        let Maybe::Present(slot) = self.collected.owner_of(site.at.node)
+        else {
+            return Err(misplaced);
+        };
+        let binders = self.region_binders.entry(slot).or_default();
+        let ordinal = u32::try_from(binders.len()).map_err(|_wide| misplaced)?;
+        let region = gandr_core_term::effect::capability::RegionBinder::from(ordinal);
+        let _shadowed = binders.insert(entry.name, region);
+        self.note_binder(entry.binder, entry.name)?;
+        let bound =
+            self.scope
+                .extend_instance(frame, entry.name, Maybe::Present(entry.binder.span));
+        let _first = self.labelled.insert(bound, (interface.clone(), region));
+        let _first = self
+            .instance_parameters
+            .insert(entry.binder.node, (interface, region));
+        self.parameters.push(super::Parameter {
+            binder: entry.binder.node,
+            frame: bound,
+            declared: Maybe::Absent(super::stated::Absent::Instance),
+            component: None,
+        });
+
+        Ok(Frame::Inner(bound))
+    }
+
+    /// The variable a call at `site`, read under `frame`, passes for the
+    /// instance `entry` of `function` it omits: the one instance of the
+    /// entry's interface standing in scope.
+    ///
+    /// # Specification
+    /// - requires: `entry` is an instance of `function`'s merged telescope.
+    /// - ensures: the index, where `frame` stands, of the one binder in scope
+    ///   holding an instance of the entry's interface — a capability scope's
+    ///   capability, or an instance a label of the caller's own row binds.
+    /// - fails: [`LoweringRefusal::InstanceUnanswered`] when none stands;
+    ///   [`LoweringRefusal::InstanceAmbiguous`] naming the innermost two when
+    ///   several do; a fault at the call for an entry naming no interface.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one scope of the interface resolves the call to its
+    ///   capability beneath a binder of each zone, none refuses the call as
+    ///   unanswered and two as ambiguous, naming both.
+    /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
+    /// - witness: `lower::implicit::tests::an_omitted_instance_is_refused_when_none_or_several_stand_2271`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::InstanceUnanswered { .. } | LoweringRefusal::InstanceAmbiguous { .. } | LoweringRefusal::MalformedForm { .. })))]
+    pub(super) fn resolved_instance(
+        &self,
+        site: Site,
+        frame: Frame,
+        function: SurfaceName<'source>,
+        entry: crate::module::TelescopeEntry<'source>,
+    ) -> Result<DeBruijnIndex, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(written) = entry.declared
+        else {
+            return Err(site.fault(site.at.span, FormFault::MisplacedTile));
+        };
+        let named = self.name_at(written);
+        let wanted = EffectName::from(named.as_ref());
+        let mut standing = self.scope.bindings(frame).filter(|&(_, bound)| {
+            self.answered.get(&bound.binder) == Some(&wanted)
+                || self
+                    .labelled
+                    .get(&bound.binder)
+                    .is_some_and(|&(ref interface, _)| *interface == wanted)
+        });
+        let Some((first, only)) = standing.next()
+        else {
+            return Err(LoweringRefusal::InstanceUnanswered {
+                span: site.at.span,
+                function,
+                instance: entry.name,
+                interface: named,
+            });
+        };
+        if let Some((second, _)) = standing.next() {
+            return Err(LoweringRefusal::InstanceAmbiguous {
+                span: site.at.span,
+                function,
+                instance: entry.name,
+                interface: named,
+                first,
+                second,
+            });
+        }
+
+        Ok(only.index)
     }
 
     /// Read a capability's grade, `[r]`, past its `[`.
@@ -776,18 +954,21 @@ impl<'source> Lowerer<'_, 'source>
         Ok(grade)
     }
 
-    /// Read a returner's row, `[I, …]`, `[I, … | t]` or `[t]`, past its `[`.
+    /// Read a returner's row, `[I, …]`, `[a : I, …]`, `[I, … | t]` or `[t]`,
+    /// past its `[`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the row's `[`.
-    /// - ensures: the interfaces the row names, in host order, and the operand
-    ///   it stays open through when one is written, the cursor past the `]`; a
-    ///   row names an interface or a tail.
+    /// - ensures: the interfaces the row names whole, in host order, each label
+    ///   it writes beside its interface, in written order, and the operand it
+    ///   stays open through when one is written, the cursor past the `]`; a row
+    ///   names an interface, a label or a tail.
     /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] for an interface the
     ///   host does not declare, at the name;
-    ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named again,
-    ///   at the second name, since a row holds each label once; a
-    ///   misplaced-tile fault for a row out of shape.
+    ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named whole
+    ///   again, or a label written again, at the second, since a row holds each
+    ///   label once; a misplaced-tile fault for a row out of shape or a label
+    ///   that is not one name.
     /// - panics: none.
     ///
     /// # Errors
@@ -795,30 +976,53 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a row of two interfaces and an undeclared one, each
-    ///   asserted as the minted returner or the exact refusal, and a row open
-    ///   through a tail after its interfaces and alone, each minted over it.
+    ///   asserted as the minted returner or the exact refusal, a row open
+    ///   through a tail after its interfaces and alone, each minted over it,
+    ///   and a row naming two instances of one interface apart.
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
     /// - witness: `lower::capability::tests::a_row_names_each_interface_once`
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| !row.interfaces.is_empty() || matches!(row.tail, Maybe::Present(_))))]
+    /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| !row.interfaces.is_empty() || !row.labels.is_empty() || matches!(row.tail, Maybe::Present(_))))]
     pub(super) fn returner_row(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
     ) -> Result<WrittenRow, LoweringRefusal<'source>>
     {
-        if let Maybe::Present(Piece::Operand(tail)) = cursor.peek() {
-            let _tail = cursor.read();
-            closed(site, cursor, TileName::BRACKET_CLOSE)?;
-            return Ok(WrittenRow {
-                interfaces: BTreeSet::new(),
-                tail: Maybe::Present(tail.node),
-            });
+        // An operand first is the row's tail written alone, `[r]`, or its
+        // first label, `[a : I]`, as the tile after it says.
+        let mut first = None;
+        if let Maybe::Present(Piece::Operand(written)) = cursor.peek() {
+            let _written = cursor.read();
+            if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+                closed(site, cursor, TileName::BRACKET_CLOSE)?;
+                return Ok(WrittenRow {
+                    interfaces: BTreeSet::new(),
+                    labels: Vec::new(),
+                    placed: Vec::new(),
+                    tail: Maybe::Present(written.node),
+                });
+            }
+            first = Some(self.label_of(site, written)?);
         }
         let table = host(site)?;
         let mut row = BTreeMap::new();
+        let mut labels: Vec<(Placed, EffectName)> = Vec::new();
+        let mut labelled_at = BTreeMap::new();
         loop {
+            let label = match first.take() {
+                Some(label) => Some(label),
+                None => match cursor.peek() {
+                    Maybe::Present(Piece::Operand(written)) => {
+                        let _written = cursor.read();
+                        closed(site, cursor, TileName::COLON)?;
+                        Some(self.label_of(site, written)?)
+                    },
+                    Maybe::Present(Piece::Tile { .. }) | Maybe::Absent(_) => None,
+                },
+            };
             let Maybe::Present(written) = cursor.tile(TileName::TYPE_IDENTIFIER)
             else {
                 return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
@@ -832,14 +1036,28 @@ impl<'source> Lowerer<'_, 'source>
                     arity: HeadArity::Nullary,
                 });
             };
-            if let Some(&first) = row.get(interface.name()) {
-                return Err(LoweringRefusal::DuplicateDefinition {
-                    span: written.span,
-                    name,
-                    first,
-                });
+            if let Some(label) = label {
+                let named = self.name_at(label);
+                if let Some(&first) = labelled_at.get(&named) {
+                    return Err(LoweringRefusal::DuplicateDefinition {
+                        span: label.span,
+                        name: named,
+                        first,
+                    });
+                }
+                let _first = labelled_at.insert(named, label.span);
+                labels.push((label, interface.name().clone()));
             }
-            let _first = row.insert(interface.name().clone(), written.span);
+            else {
+                if let Some(&first) = row.get(interface.name()) {
+                    return Err(LoweringRefusal::DuplicateDefinition {
+                        span: written.span,
+                        name,
+                        first,
+                    });
+                }
+                let _first = row.insert(interface.name().clone(), written.span);
+            }
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;
             }
@@ -858,18 +1076,56 @@ impl<'source> Lowerer<'_, 'source>
 
         Ok(WrittenRow {
             interfaces: row.into_keys().collect(),
+            labels,
+            placed: Vec::new(),
             tail,
         })
+    }
+
+    /// The name tile of the row label `written`, the operand before a `:`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the operand's one tile, when it is an identifier or a type
+    ///   variable.
+    /// - fails: a misplaced-tile fault at the operand for any other operand; a
+    ///   form fault reading its pieces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::returner_row`].
+    /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|at| written.span.start() <= at.span.start() && at.span.end() <= written.span.end()))]
+    fn label_of(
+        &self,
+        site: Site,
+        written: Placed,
+    ) -> Result<Placed, LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, written.node, &mut pieces)?;
+        match *pieces.pieces.as_slice() {
+            [Piece::Tile { label, at }]
+                if label == TileName::IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                Ok(at)
+            },
+            _ => Err(site.fault(written.span, FormFault::MisplacedTile)),
+        }
     }
 
     /// Plan the returner over `argument` whose row is `row`.
     ///
     /// # Specification
-    /// - requires: `argument` is the returner's one operand.
     /// - ensures: the returner stands as a computation type, its row's tail
-    ///   read as a value and its argument as a value type under its frame,
-    ///   planned over both.
-    /// - fails: the wrong-sort refusal where no computation type is read.
+    ///   read as a value and its argument as a value type under its frame, each
+    ///   label of its row placed at the region its name names there
+    ///   ([`Self::region_named`]), planned over both.
+    /// - fails: the wrong-sort refusal where no computation type is read;
+    ///   [`LoweringRefusal::UnresolvedName`] at a label naming no region.
     /// - panics: none.
     ///
     /// # Errors
@@ -879,15 +1135,27 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::returner_row`].
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
+    /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument))]
     pub(super) fn effectful(
         &mut self,
         site: Site,
-        row: WrittenRow,
+        mut row: WrittenRow,
         argument: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::CompType)?;
+        for &(label, ref interface) in &row.labels {
+            let name = self.name_at(label);
+            let Some(region) = self.region_named(site, frame, name)
+            else {
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: label.span,
+                    name,
+                });
+            };
+            row.placed.push((interface.clone(), region));
+        }
         if let Maybe::Present(tail) = row.tail {
             self.read(tail, Reading::Value(frame));
         }
@@ -1114,7 +1382,8 @@ impl<'source> Lowerer<'_, 'source>
         let resolved = self.resolve_name(site, frame, written);
         let holder = match resolved {
             Ok(Maybe::Present(Resolved::Binder(bound)))
-                if self.capabilities.contains(&bound.binder) =>
+                if self.capabilities.contains(&bound.binder)
+                    || self.labelled.contains_key(&bound.binder) =>
             {
                 let theory = self.theory_capabilities.get(&bound.binder).cloned();
                 return Ok(Some((Performer::Capability(target.node, theory), selected)));
@@ -1403,10 +1672,10 @@ impl<'source> Lowerer<'_, 'source>
     ///   body a path runs through; `x` is bound over `N`, and `p` then `k` over
     ///   each `N_op`, `k` alone over an unnamed payload for `oper op(k)`, every
     ///   clause read as a computation body under the scope's own frame; `k` is
-    ///   recorded as a continuation and `c` as a capability, beside the theory
-    ///   it handles for a theory's scope; the scope is planned over the
-    ///   interface, [`Self::handled`], the subject and the clauses in written
-    ///   order.
+    ///   recorded as a continuation and `c` as a capability answering the
+    ///   interface's name ([`Self::answered`]), beside the theory it handles
+    ///   for a theory's scope; the scope is planned over the interface,
+    ///   [`Self::handled`], the subject and the clauses in written order.
     /// - fails: the wrong-sort refusal where no computation is read; the
     ///   refusals of [`Self::handled`];
     ///   [`LoweringRefusal::DuplicateDefinition`] for a second return clause; a
@@ -1477,8 +1746,14 @@ impl<'source> Lowerer<'_, 'source>
         let interface = self.handled(site, written, &manifest)?;
         let held = self.bind(binder, frame)?;
         let _first = self.capabilities.insert(held);
-        if let Interface::Theory(ref theory) = interface {
-            let _first = self.theory_capabilities.insert(held, Arc::clone(theory));
+        match interface {
+            Interface::Host(ref name) => {
+                let _first = self.answered.insert(held, name.clone());
+            },
+            Interface::Theory(ref theory) => {
+                let _first = self.answered.insert(held, theory.name.clone());
+                let _first = self.theory_capabilities.insert(held, Arc::clone(theory));
+            },
         }
         let subject = self.block(site, &mut cursor, Frame::Inner(held))?;
         self.open_subject(site, subject)?;
@@ -1857,13 +2132,16 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint the returner over `argument` whose row holds the interfaces of
-    /// `row`, whole, open through its tail when one is written.
+    /// `row`, whole, and its labels' instances, open through its tail when
+    /// one is written.
     ///
     /// # Specification
     /// - requires: `argument` and the row's tail are already minted or absent.
-    /// - ensures: `F^⟨row⟩ A` at `origin`, its tail standing for the row the
-    ///   tail's value denotes; the argument's or the tail's absence when it did
-    ///   not lower.
+    /// - ensures: `F^⟨row⟩ A` at `origin`, each interface named whole at its
+    ///   default label and each label's instance at its region, its tail
+    ///   standing for the row the tail's value denotes; the argument's or the
+    ///   tail's absence when it did not lower, and the unminted absence when
+    ///   two labels name one instance.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1871,6 +2149,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — as [`Self::returner_row`].
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
+    /// - witness: `lower::capability::tests::a_row_names_two_instances_of_one_interface_apart_2271`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::CompType(id)) => sink.origins.comp_type(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -1899,14 +2178,22 @@ impl<'source> Lowerer<'_, 'source>
             },
             Maybe::Absent(_) => None,
         };
-        let mut signatures = Vec::with_capacity(row.interfaces.len());
-        for interface in &row.interfaces {
+        let mut placed = Vec::with_capacity(row.interfaces.len().saturating_add(row.placed.len()));
+        let interfaces = row
+            .interfaces
+            .iter()
+            .map(|interface| (interface, Region::Held));
+        let labels = row
+            .placed
+            .iter()
+            .map(|&(ref interface, region)| (interface, region));
+        for (interface, region) in interfaces.chain(labels) {
             match sink.signature(interface, origin) {
-                Maybe::Present(signature) => signatures.push(signature),
+                Maybe::Present(signature) => placed.push((signature, region)),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
             }
         }
-        let Ok(effects) = EffectRow::from_signatures(signatures)
+        let Ok(effects) = EffectRow::from_placed(placed)
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };

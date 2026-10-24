@@ -1,0 +1,7 @@
+/// `f_type.result.labelled`: a definition's result written as a row naming an
+/// instance by its label, `-F [out : Console] Unit`, the capability the label
+/// binds performing the operation.
+@[ checks ]
+def say() -> [out : Console] Unit {
+  out.print("said")
+}

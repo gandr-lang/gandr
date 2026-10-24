@@ -1759,7 +1759,7 @@ fn check_mode_bind_subsumes_the_accumulated_row()
     };
     assert_eq!((at, found), (bind, pure));
     assert!(
-        matches!(context.arena().comp_type(synthesised), Some(gandr_core_term::CompType::Returner { effects, .. }) if effects.contains(&"IO".into()) == gandr_core_term::effect::EffectPresence::Present)
+        matches!(context.arena().comp_type(synthesised), Some(gandr_core_term::CompType::Returner { effects, .. }) if effects.contains(&gandr_core_term::effect::EffectLabel::Interface("IO".into())) == gandr_core_term::effect::EffectPresence::Present)
     );
     assert_eq!(
         context.binders().depth(Zone::Intuitionistic),

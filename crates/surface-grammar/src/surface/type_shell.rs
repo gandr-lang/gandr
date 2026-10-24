@@ -262,7 +262,8 @@ fn add_type_rules(
     // The row form is pushed first so its mold numbers first, which is what
     // keeps `-F [Fs] A` a row: a `[` may also open an expression list in the
     // operand's hole, a reading the bare form keeps open, and an exact tie
-    // keeps the smaller mold.
+    // keeps the smaller mold. A row naming an instance by a label, `-F [a :
+    // Console] A`, is the labelled form's ([`labelled_rows`]).
     rules.push(Rule::with_provenance(
         RuleName("f_type.row"),
         Provenance("f_type"),
@@ -1341,6 +1342,102 @@ fn entry_shape(sort: Sort) -> Regex
         Regex::sort(sort),
         Regex::optional(Regex::seq([tile(TileLabel(":")), Regex::sort(sort)])),
     ])
+}
+
+/// A labelled row's entry: an interface's name, standing for its default
+/// instance, or `a : I`, the instance of `I` named `a`. The label is an
+/// operand, as a telescope's binder is.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: optionally a hole of the supplied sort and a colon, then an
+///   interface's name.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in labelled rows, L3 grammar identity and corpus
+///   roles catch a changed label, colon or name. The predicate observes the
+///   stated shape; source programs outside the finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Optional(labelled) if matches!(labelled.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|label| matches!(label.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == ty)) && sequence.get(1).is_some_and(|colon| matches!(colon.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":"))))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "type_identifier"))))]
+fn row_entry(ty: Sort) -> Regex
+{
+    Regex::seq([
+        Regex::optional(Regex::seq([Regex::sort(ty), tile(TileLabel(":"))])),
+        tile(TileLabel("type_identifier")),
+    ])
+}
+
+/// Builds the labelled rows: the returner's row and a definition's result row
+/// as `f_type.row` and `f_type.result` write them, `-F [Div, d : Console | r]
+/// A` and `-> [d : Console] B`, with an entry that names an instance by a
+/// label, `a : I`, beside the interfaces named whole. A row naming no label is
+/// the unlabelled forms' own, and a row open through a tail alone, `[r]`,
+/// only theirs.
+///
+/// The forms come after every other rule. A label and its `:` read like a
+/// binder group's entry, a parameter or a record's field, `x : A`, so a form
+/// placed among the others would win the ties a stray `x : A` leaves in
+/// recovery, and renumber every mold after it; placed last, the labelled forms
+/// lose every exact tie, and a written label still continues them alone.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `f_type.row.labelled` then `f_type.result.labelled`, of the type
+///   sort at `type.application`, each with the provenance `f_type`.
+/// - fails: the band `precs` does not hold.
+/// - panics: none.
+///
+/// # Errors
+/// [`PbgError::MissingPrec`] naming the band.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in band table, L3 grammar identity and corpus
+///   role observations catch a lost form, changed provenance and a misplaced
+///   band; the parser's recovery sweep catches a placement that moves another
+///   form's ties.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `surface::tests::the_frozen_tables_are_the_built_ones`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if name == "type.application" && precs.get(PrecName(name)).is_none()), |rules| rules.len() == 2 && rules.iter().zip(["f_type.row.labelled", "f_type.result.labelled"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Type && rule.provenance().0 == "f_type" && precs.get(PrecName("type.application")) == Some(rule.prec()))))]
+pub(super) fn labelled_rows(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
+{
+    let ty = Sort::Type;
+    let type_application = precs.prec(PrecName("type.application"))?;
+    let entries = || {
+        Regex::seq([
+            comma1(row_entry(ty)),
+            Regex::optional(Regex::seq([tile(TileLabel("|")), Regex::sort(ty)])),
+        ])
+    };
+    Ok(Vec::from([
+        Rule::with_provenance(
+            RuleName("f_type.row.labelled"),
+            Provenance("f_type"),
+            ty,
+            type_application,
+            Regex::seq([
+                tile(TileLabel("-F")),
+                tile(TileLabel("[")),
+                entries(),
+                tile(TileLabel("]")),
+                Regex::sort(ty),
+            ]),
+        ),
+        Rule::with_provenance(
+            RuleName("f_type.result.labelled"),
+            Provenance("f_type"),
+            ty,
+            type_application,
+            Regex::seq([
+                tile(TileLabel("[")),
+                entries(),
+                tile(TileLabel("]")),
+                Regex::sort(ty),
+            ]),
+        ),
+    ]))
 }
 
 #[cfg(test)]

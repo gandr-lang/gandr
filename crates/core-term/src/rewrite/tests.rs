@@ -3690,7 +3690,24 @@ fn a_renaming_places_each_named_bound_region_wherever_it_stands()
     let parts = arena.value_type_product(&[kept_named, kept_unnamed, kept_scoped, capability]);
     let inner = arena.comp_type_returner(parts);
     let suspended = arena.value_type_thunk(inner);
-    let answer = arena.comp_type_returner(suspended);
+    let console =
+        crate::effect::EffectSig::new(crate::effect::EffectName::from("Console"), alloc::vec![
+            crate::effect::EffectOp {
+                name: crate::effect::OperationName::from("print"),
+                payload: integer,
+                reply: integer,
+            }
+        ])
+        .expect("one operation");
+    let instances = |at: Region| {
+        EffectRow::from_placed([
+            (console.clone(), Region::Held),
+            (console.clone(), at),
+            (console.clone(), unnamed),
+        ])
+        .expect("three instances apart")
+    };
+    let answer = arena.comp_type_returner_with_effects(suspended, instances(named));
     let arrow = arena.comp_type_arrow(kept_named, answer);
     let function = arena.value_type_thunk(arrow);
     let mut renaming = Renaming::new();
@@ -3713,10 +3730,18 @@ fn a_renaming_places_each_named_bound_region_wherever_it_stands()
         }),
         "the domain keeps its value at the region the binder is placed at"
     );
-    let Some(&CompType::Returner { result, .. }) = arena.comp_type(codomain)
+    let Some(&CompType::Returner {
+        result,
+        ref effects,
+    }) = arena.comp_type(codomain)
     else {
         panic!("a renamed returner");
     };
+    assert_eq!(
+        effects,
+        &instances(placed),
+        "the row's instance at the binder is placed with it; the default and the unnamed stand"
+    );
     let Some(&ValueType::Thunk(suspended_body)) = arena.value_type(result)
     else {
         panic!("a renamed suspension");

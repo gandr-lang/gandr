@@ -5524,6 +5524,67 @@ fn an_open_row_writes_its_tail_after_its_interfaces_2270()
     );
 }
 
+/// A row naming two instances of one interface writes each by its label, the
+/// name of the region binder it lives at, and a definition over them writes
+/// both binders in its telescope so the labels read back; where no binder is
+/// named the label is `?` and the presentation approximate (#2271).
+#[test]
+fn a_row_writes_each_instance_by_its_label_2271()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::capability::CapabilityGrade;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionBinder;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let console = EffectSig::new(EffectName::from("Console"), [EffectOp {
+        name: "print".into(),
+        payload: unit,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    let [first, second] = [0_u32, 1].map(|ordinal| Region::Bound(RegionBinder::from(ordinal)));
+    let row = EffectRow::from_placed([(console.clone(), first), (console.clone(), second)])
+        .expect("two instances at two regions are apart");
+    let returner = core.comp_type_returner_with_effects(unit, row);
+    let [held, outer] = [first, second].map(|region| {
+        core.value_type_capability(
+            EffectRow::singleton(console.clone()),
+            CapabilityGrade::Durable,
+            region,
+        )
+    });
+    let inner = core.comp_type_arrow(outer, returner);
+    let function = core.comp_type_arrow(held, inner);
+    let ty = core.value_type_thunk(function);
+    let done = core.value_unit();
+    let returned = core.computation_return(done);
+    let lambda = core.computation_lambda(returned);
+    let lambda = core.computation_lambda(lambda);
+    let body = core.value_thunk(lambda);
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        declared_whole(&source, (ty, body), PageWidth::from(120_u32)),
+        Maybe::Present((
+            String::from(
+                "def down @[r : Region, r1 : Region] (a : Cap {print} at r, b : Cap {print} at \
+                 r1) -> [r : Console, r1 : Console] Unit {\n  unit\n}"
+            ),
+            Fidelity::Faithful
+        )),
+        "each instance is written by its binder's name, and both binders are bound"
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::CompType(returner))),
+        approximate(Written("-F [? : Console, ? : Console] Unit")),
+        "a row spelled alone names no binder"
+    );
+}
+
 /// Where the spelling is source a reader reads back, a parameterised
 /// constructor is written against its family, except as a family's
 /// argument, whose parameter states its type; a value presented alone is

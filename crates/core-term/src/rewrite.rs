@@ -2677,6 +2677,33 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
         }
     }
 
+    /// Place the instances of `row` at the regions the renaming names for
+    /// their bound regions.
+    ///
+    /// # Specification
+    /// - ensures: `row` with each instance at a bound region the renaming names
+    ///   moved to the region it names for it, as
+    ///   [`EffectRow::try_map_regions`](crate::effect::EffectRow::try_map_regions)
+    ///   moves it; `row` itself when two placed instances meet with different
+    ///   signatures, or when the renaming names none of its regions.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a returner whose row names an instance at a bound
+    ///   region renamed at a scope names it at the scope.
+    /// - witness: `rewrite::tests::a_renaming_places_each_named_bound_region_wherever_it_stands`
+    #[spec(captures: tail = row.tail(), ensures: |ret| ret.tail() == tail)]
+    fn place_instances(
+        &self,
+        row: crate::effect::EffectRow,
+    ) -> crate::effect::EffectRow
+    {
+        match row.try_map_regions(|region| self.renaming.placed(region)) {
+            Ok(placed) => placed,
+            Err(_conflict) => row,
+        }
+    }
+
     /// Pop a computation-type child's result.
     ///
     /// # Specification
@@ -2856,7 +2883,7 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 let rewritten = match row.try_map_types(crate::effect::TypeOrder::Reverse, |ty| {
                     Ok::<_, core::convert::Infallible>(Self::value_type(&mut self.results, ty))
                 }) {
-                    Ok(row) => row,
+                    Ok(row) => self.place_instances(row),
                     Err(never) => match never {},
                 };
                 if rewritten == *row {
@@ -4274,7 +4301,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                     match effects.try_map_types(crate::effect::TypeOrder::Reverse, |ty| {
                         Ok::<_, core::convert::Infallible>(Self::value_type(&mut self.results, ty))
                     }) {
-                        Ok(row) => row,
+                        Ok(row) => self.place_instances(row),
                         Err(never) => match never {},
                     };
                 let rewritten = Self::value_type(&mut self.results, result);
@@ -6758,8 +6785,8 @@ pub fn rename_value_traced(
 /// - requires: as [`rename_value_traced`].
 /// - ensures: as [`rename_value_traced`], for a value type: an atom the
 ///   renaming names standing as the whole subject is the type it names for it,
-///   and a kept type or a capability at a bound region it names stands at the
-///   region it names for it.
+///   and a kept type, a capability or a row's instance at a bound region it
+///   names stands at the region it names for it.
 /// - provides: instantiating a declared type, a kind or a representation, and a
 ///   signature abstracted over regions at one call's.
 /// - fails: never.

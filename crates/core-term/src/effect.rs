@@ -2,10 +2,11 @@
 //!
 //! A signature names an interface whose payload and reply types belong to the
 //! same core arena as its uses. Signatures are shared, not recursively owned.
-//! A row holds each signature under a [`Label`], the instance's name, which
-//! is the interface's name until an instance is named apart; its tail is a
-//! type handle like its operations' types, so every traversal of the row's
-//! types carries it.
+//! A row holds each signature under an [`EffectLabel`]: the interface's name
+//! for its default instance, the one an operation performed by name reaches,
+//! or the region of the capability an instance named apart is exercised
+//! through; its tail is a type handle like its operations' types, so every
+//! traversal of the row's types carries it.
 
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
@@ -14,6 +15,7 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::ValueTypeId;
+use crate::effect::capability::Region;
 use crate::row::Label;
 use crate::row::LabelTwice;
 use crate::row::Row;
@@ -66,6 +68,105 @@ impl From<&EffectName> for Label
     fn from(name: &EffectName) -> Self
     {
         Self::from(Arc::clone(&name.0))
+    }
+}
+
+/// What an effect row's entry is keyed by: which instance of an interface a
+/// returner may perform.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum EffectLabel
+{
+    /// An interface's default instance, by the interface's name: the one an
+    /// operation performed by name reaches, and the one a capability the host
+    /// holds answers for.
+    Interface(Label),
+    /// An instance named apart, by the region of the capability it is
+    /// exercised through — a capability scope's, or a region a definition
+    /// abstracts — and the interface's name; never [`Region::Held`].
+    Instance
+    {
+        /// The region of the instance's capability.
+        region: Region,
+        /// The interface's name.
+        interface: Label,
+    },
+}
+
+impl EffectLabel
+{
+    /// The label of `name`'s instance whose capability lives at `region`: its
+    /// default label when the host holds it, an instance label otherwise.
+    ///
+    /// # Specification
+    /// - ensures: [`Region::Held`] gives [`EffectLabel::Interface`]; every
+    ///   other region gives [`EffectLabel::Instance`] at that region; either
+    ///   carries `name`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the held, a scoped and a bound region distinguish the
+    ///   default label from an instance and two instances apart.
+    /// - witness: `effect::tests::an_instance_is_apart_from_its_interface_and_from_another_region`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| match ret { Self::Interface(ref label) => region == Region::Held && label.as_ref() == name.as_ref(), Self::Instance { region: at, ref interface } => at == region && region != Region::Held && interface.as_ref() == name.as_ref() })]
+    pub fn at(
+        name: &EffectName,
+        region: Region,
+    ) -> Self
+    {
+        match region {
+            Region::Held => Self::Interface(Label::from(name)),
+            Region::Scoped(_) | Region::Bound(_) => Self::Instance {
+                region,
+                interface: Label::from(name),
+            },
+        }
+    }
+
+    /// The region of the instance's capability, the held region for an
+    /// interface's default instance.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn region(&self) -> Region
+    {
+        match *self {
+            Self::Interface(_) => Region::Held,
+            Self::Instance { region, .. } => region,
+        }
+    }
+}
+
+impl core::fmt::Display for EffectLabel
+{
+    /// Spell the interface's name, an instance's followed by `@` and its
+    /// region: `held`, `scope` and its depth, or `binder` and its ordinal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        match *self {
+            Self::Interface(ref label) => f.write_str(label.as_ref()),
+            Self::Instance {
+                region,
+                ref interface,
+            } => {
+                f.write_str(interface.as_ref())?;
+                match region {
+                    Region::Held => f.write_str("@held"),
+                    Region::Scoped(depth) => write!(f, "@scope{}", u32::from(depth)),
+                    Region::Bound(binder) => write!(f, "@binder{}", u32::from(binder)),
+                }
+            },
+        }
     }
 }
 
@@ -134,7 +235,7 @@ pub enum EffectConflict
     /// Two operations in one interface have the same name.
     DuplicateOperation(OperationName),
     /// Two distinct definitions claim one label.
-    Signature(Label),
+    Signature(EffectLabel),
     /// Two rows open through different tails: a row has one.
     Tails,
 }
@@ -155,7 +256,7 @@ impl core::fmt::Display for EffectConflict
             Self::DuplicateOperation(ref name) => {
                 write!(f, "duplicate operation {}", name.as_ref())
             },
-            Self::Signature(ref label) => write!(f, "conflicting effect {}", label.as_ref()),
+            Self::Signature(ref label) => write!(f, "conflicting effect {label}"),
             Self::Tails => f.write_str("two row variables in one row"),
         }
     }
@@ -446,7 +547,7 @@ impl EffectSig
 /// row shares its immutable map.
 #[repr(transparent)]
 #[derive(Clone, Eq, Hash, PartialEq)]
-pub struct EffectRow<Id = ValueTypeId>(Row<Label, EffectSig<Id>, Id>);
+pub struct EffectRow<Id = ValueTypeId>(Row<EffectLabel, EffectSig<Id>, Id>);
 
 impl<Id: Copy + Eq + 'static> core::fmt::Debug for EffectRow<Id>
 {
@@ -466,7 +567,7 @@ impl<Id: Copy + Eq + 'static> core::fmt::Debug for EffectRow<Id>
             if index != 0 {
                 f.write_str(", ")?;
             }
-            f.write_str(label.as_ref())?;
+            write!(f, "{label}")?;
         }
         if self.tail().is_some() {
             f.write_str(if self.entries().is_empty() {
@@ -523,7 +624,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     /// # Specification
     /// trivial.
     #[inline]
-    fn entries(&self) -> &BTreeMap<Label, EffectSig<Id>>
+    fn entries(&self) -> &BTreeMap<EffectLabel, EffectSig<Id>>
     {
         self.0.entries()
     }
@@ -537,7 +638,35 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn singleton(signature: EffectSig<Id>) -> Self
     {
-        Self(Row::singleton(Label::from(signature.name()), signature))
+        Self(Row::singleton(
+            EffectLabel::Interface(Label::from(signature.name())),
+            signature,
+        ))
+    }
+
+    /// The closed row permitting exactly the instance of `signature`'s
+    /// interface whose capability lives at `region`.
+    ///
+    /// # Specification
+    /// - ensures: the one label is [`EffectLabel::at`] the interface's name and
+    ///   `region`, so the held region gives [`Self::singleton`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`EffectLabel::at`].
+    /// - witness: `effect::tests::an_instance_is_apart_from_its_interface_and_from_another_region`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.entries().len() == 1 && ret.tail().is_none())]
+    pub fn instance(
+        signature: EffectSig<Id>,
+        region: Region,
+    ) -> Self
+    {
+        Self(Row::singleton(
+            EffectLabel::at(signature.name(), region),
+            signature,
+        ))
     }
 
     /// The tail the row is open through, none for a closed row.
@@ -719,7 +848,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[spec(ensures: |ret| ret.contains(label) == EffectPresence::Absent && ret.tail() == self.tail() && ret.entries().len() == self.entries().len().saturating_sub(usize::from(self.entries().contains_key(label))))]
     pub fn without(
         &self,
-        label: &Label,
+        label: &EffectLabel,
     ) -> Self
     {
         Self(self.0.without(label))
@@ -734,7 +863,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn contains(
         &self,
-        label: &Label,
+        label: &EffectLabel,
     ) -> EffectPresence
     {
         if self.entries().contains_key(label) {
@@ -753,7 +882,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn get(
         &self,
-        label: &Label,
+        label: &EffectLabel,
     ) -> Option<&EffectSig<Id>>
     {
         self.0.get(label)
@@ -765,9 +894,83 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn instances(&self) -> impl ExactSizeIterator<Item = (&Label, &EffectSig<Id>)>
+    pub fn instances(&self) -> impl ExactSizeIterator<Item = (&EffectLabel, &EffectSig<Id>)>
     {
         self.entries().iter()
+    }
+
+    /// The regions of the instances the row names apart, in label order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn regions(&self) -> impl Iterator<Item = Region> + '_
+    {
+        self.entries().keys().filter_map(|label| match *label {
+            EffectLabel::Interface(_) => None,
+            EffectLabel::Instance { region, .. } => Some(region),
+        })
+    }
+
+    /// This row with each instance's region replaced by its image under
+    /// `map`: the row a call reads once it places the regions its callee
+    /// abstracts.
+    ///
+    /// # Specification
+    /// - ensures: a default label is kept; an instance's becomes
+    ///   [`EffectLabel::at`] its interface and its region's image, so one sent
+    ///   to the held region becomes its interface's default; two labels sent to
+    ///   one keep one entry; the tail is this row's, and a row no image changes
+    ///   is shared.
+    /// - fails: two labels sent to one with different signatures.
+    ///
+    /// # Errors
+    /// Returns `Signature` for the first label two different signatures meet
+    /// at.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bound instance sent to a scope, one sent to the
+    ///   held region and two sent to one region distinguish the renaming from
+    ///   identity, from a dropped entry and from a duplicated one.
+    /// - witness: `effect::tests::renaming_an_instance_region_moves_its_label`
+    #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| row.tail() == self.tail() && row.entries().len() <= self.entries().len()))]
+    pub fn try_map_regions<Map>(
+        &self,
+        mut map: Map,
+    ) -> Result<Self, EffectConflict>
+    where
+        Map: FnMut(Region) -> Region,
+    {
+        if self.regions().all(|region| map(region) == region) {
+            return Ok(self.clone());
+        }
+        let mut entries: BTreeMap<EffectLabel, EffectSig<Id>> = BTreeMap::new();
+        for (label, signature) in self.entries() {
+            let moved = match *label {
+                EffectLabel::Interface(_) => label.clone(),
+                EffectLabel::Instance { region, .. } => {
+                    let image = map(region);
+                    if image == region {
+                        label.clone()
+                    }
+                    else {
+                        EffectLabel::at(signature.name(), image)
+                    }
+                },
+            };
+            match entries.entry(moved) {
+                alloc::collections::btree_map::Entry::Vacant(vacant) => {
+                    vacant.insert(signature.clone());
+                },
+                alloc::collections::btree_map::Entry::Occupied(occupied) => {
+                    if occupied.get() != signature {
+                        return Err(EffectConflict::Signature(occupied.key().clone()));
+                    }
+                },
+            }
+        }
+        Ok(Self(Row::from_map(entries, self.tail())))
     }
 }
 
@@ -971,10 +1174,38 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     where
         Signatures: IntoIterator<Item = EffectSig<Id>>,
     {
-        Row::from_entries(
+        Self::from_placed(
             signatures
                 .into_iter()
-                .map(|signature| (Label::from(signature.name()), signature)),
+                .map(|signature| (signature, Region::Held)),
+        )
+    }
+
+    /// Construct a closed canonical row, each interface under the label of its
+    /// instance at the region beside it, while refusing a label twice.
+    ///
+    /// # Specification
+    /// - ensures: each entry is keyed [`EffectLabel::at`] its interface's name
+    ///   and its region.
+    /// - fails: a repeated label is refused, never overwritten.
+    ///
+    /// # Errors
+    /// Returns `Signature` for the first duplicate label.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one interface at the held region and at a scope
+    ///   builds two entries, at one region twice is refused.
+    /// - witness: `effect::tests::an_instance_is_apart_from_its_interface_and_from_another_region`
+    #[inline]
+    #[spec(ensures: |ret| !matches!(ret, Err(EffectConflict::DuplicateOperation(_))))]
+    pub fn from_placed<Placed>(placed: Placed) -> Result<Self, EffectConflict>
+    where
+        Placed: IntoIterator<Item = (EffectSig<Id>, Region)>,
+    {
+        Row::from_entries(
+            placed
+                .into_iter()
+                .map(|(signature, region)| (EffectLabel::at(signature.name(), region), signature)),
         )
         .map(Self)
         .map_err(|LabelTwice(label)| EffectConflict::Signature(label))

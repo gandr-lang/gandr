@@ -481,8 +481,9 @@ pub struct CoreArena
     comp_types: Family<CompType>,
     /// The words of every support wider than a slot.
     words: WordArena,
-    /// The watermark just before the arena's first value type naming a region
-    /// binder, a capability or kept type at a [`Region::Bound`]: a type below
+    /// The watermark just before the arena's first node naming a region
+    /// binder — a capability or kept type at a [`Region::Bound`], or a
+    /// returner or row value whose row names an instance there: a type below
     /// it in its family was minted earlier, so neither it nor any node it
     /// reaches names one.
     region_binders_from: Option<ArenaWatermark>,
@@ -769,10 +770,11 @@ impl CoreArena
             .truncate(ArenaLength(watermark.value_types));
         self.comp_types.truncate(ArenaLength(watermark.comp_types));
         self.words.truncate(watermark.words);
-        if self
-            .region_binders_from
-            .is_some_and(|from| self.value_types.len().0 <= from.value_types)
-        {
+        if self.region_binders_from.is_some_and(|from| {
+            self.values.len().0 <= from.values
+                && self.value_types.len().0 <= from.value_types
+                && self.comp_types.len().0 <= from.comp_types
+        }) {
             self.region_binders_from = None;
         }
     }
@@ -1132,6 +1134,11 @@ impl CoreArena
     ) -> ValueId
     {
         let id = ValueId(id_index(self.values.len()).0);
+        if self.region_binders_from.is_none()
+            && matches!(value, Value::Row(ref row) if row.regions().any(|region| matches!(region, Region::Bound(_))))
+        {
+            self.region_binders_from = Some(self.watermark());
+        }
         let support = self.value_carried(&value);
         self.values.push(Row {
             node: value,
@@ -1292,6 +1299,11 @@ impl CoreArena
     ) -> CompTypeId
     {
         let id = CompTypeId(id_index(self.comp_types.len()).0);
+        if self.region_binders_from.is_none()
+            && matches!(comp_type, CompType::Returner { ref effects, .. } if effects.regions().any(|region| matches!(region, Region::Bound(_))))
+        {
+            self.region_binders_from = Some(self.watermark());
+        }
         let support = self.comp_type_carried(&comp_type);
         self.comp_types.push(Row {
             node: comp_type,
