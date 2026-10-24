@@ -1303,6 +1303,26 @@ enum WindowRun
     Exposed,
 }
 
+/// When a molding stops short of its run's end.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Halt
+{
+    /// Never: every token of the run is molded.
+    Never,
+    /// After the first push that leaves a repair.
+    AtRepair,
+}
+
+/// How a molding that halts at its first repair ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Molding
+{
+    /// Every token was molded.
+    Whole,
+    /// A push left a repair, and the tokens after it were not molded.
+    Halted,
+}
+
 /// The obligation-minimizing mold selector over a checked PBG.
 ///
 /// The molder owns a reusable candidate buffer so the per-token dry-run loop
@@ -1665,6 +1685,78 @@ impl<'pbg> Molder<'pbg>
         src: SourceText<'_>,
     )
     {
+        let _molding = self.mold_until(state, tokens, run, src, Halt::Never);
+    }
+
+    /// Mold and push a whole labeled token stream as
+    /// [`mold_stream`](Self::mold_stream) does, stopping after the first push
+    /// that leaves a repair.
+    ///
+    /// A repair, once pushed, stays: only a dry run's rollback drops one, and a
+    /// dry run never reaches behind the tile it weighs. So the first push that
+    /// leaves one settles whether the stream molds with none, and a caller
+    /// that wants only that answer skips molding the rest.
+    ///
+    /// # Specification
+    /// - requires: as [`mold_stream`](Self::mold_stream), and `state` holds no
+    ///   obligation yet.
+    /// - ensures: [`Molding::Whole`] exactly when `state`'s obligations are
+    ///   empty, every token then molded as [`mold_stream`](Self::mold_stream)
+    ///   molds it; [`Molding::Halted`] with the stream molded up to and
+    ///   including the first tile whose push left an obligation.
+    /// - provides: the cheap test the closer placement in `parse::place` runs
+    ///   over each copy of a form it tries.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over every prefix of sources that mold whole, with a
+    ///   closer left out and with one too many, the answer is whether the whole
+    ///   molding leaves no obligation; a check that stopped early on a repair a
+    ///   later tile withdrew, or ran past one, changes it.
+    /// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
+    #[inline]
+    #[spec(
+        requires: state.obligations().is_empty() && tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()),
+        ensures: |ret| (ret == Molding::Whole) == state.obligations().is_empty(),
+    )]
+    pub(crate) fn mold_stream_until_repair(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        src: SourceText<'_>,
+    ) -> Molding
+    {
+        let whole = TokenRun::new(TokenIndex::from(0_usize), TokenIndex::from(tokens.len()));
+        self.mold_until(state, tokens, whole, src, Halt::AtRepair)
+    }
+
+    /// Mold and push the tokens of `run` as [`mold_run`](Self::mold_run)
+    /// does, until `halt` stops it.
+    ///
+    /// # Specification
+    /// - requires: as [`mold_run`](Self::mold_run).
+    /// - ensures: as [`mold_run`](Self::mold_run) under [`Halt::Never`], then
+    ///   [`Molding::Whole`]; under [`Halt::AtRepair`], the same tokens molded
+    ///   up to and including the first whose push left an obligation, then
+    ///   [`Molding::Halted`], or every token with none, then
+    ///   [`Molding::Whole`].
+    /// - panics: none.
+    /// - executable: none — the clause restates the loop's exit.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`mold_run`](Self::mold_run) and
+    ///   [`mold_stream_until_repair`](Self::mold_stream_until_repair).
+    /// - witness: `mold::tests::runs_mold_as_the_whole_stream`
+    /// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
+    fn mold_until(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        run: TokenRun,
+        src: SourceText<'_>,
+        halt: Halt,
+    ) -> Molding
+    {
         let source = source_slice(src);
         let end = usize::from(run.end()).min(tokens.len());
         let mut index = usize::from(run.start());
@@ -1691,9 +1783,13 @@ impl<'pbg> Molder<'pbg>
                 state.settle_declaration_boundary(&self.candidates);
                 let best = self.choose_stream(state, tokens, TokenIndex::from(index), &source);
                 Self::push_choice(state, best, text);
+                if halt == Halt::AtRepair && !state.obligations().is_empty() {
+                    return Molding::Halted;
+                }
             }
             index = index.saturating_add(1);
         }
+        Molding::Whole
     }
 
     /// Split a labeled stream into form runs at its predicted top-level
