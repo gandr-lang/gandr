@@ -1313,16 +1313,18 @@ impl CheckRefusal
     ///   forged, amplified, escaping, consumable or ungranted capability or one
     ///   exercised outside its authority, sessions that are not bisimilar or
     ///   not related by subtyping, an operand that is no session code, a ride
-    ///   whose motive is not covariant, a run its session does not admit and a
-    ///   function flow's boundary against its variance are malformed source; a
+    ///   whose motive is not covariant, a run its session does not admit, a
+    ///   function flow's boundary against its variance, a claim the machine
+    ///   leaves undecided and a loop whose respect it leaves undecided are
+    ///   malformed source, since the author can state either another way; a
     ///   case on an indexed family, a function extensionality or a universe
     ///   equivalence or a `forward` the rule does not decide, a list round trip
     ///   reading its tail, univalence at a stratum the checker does not certify
     ///   and a ride the checker does not move are unimplemented, each naming
     ///   the issue tracking it; an unbound index, an exhausted allowance, a
-    ///   dangling id, an admission out of order, a repeated sealing site, a
-    ///   machine invariant and an undecided unfolding are engine faults;
-    ///   nothing is a user absence.
+    ///   dangling id, an admission out of order, a repeated sealing site and a
+    ///   machine invariant are engine faults, which only the engine's own
+    ///   bounds and invariants produce; nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -1340,9 +1342,8 @@ impl CheckRefusal
         | Self::DanglingNode { .. }
         | Self::AdmissionOrder { .. }
         | Self::SealSiteRepeated(_)
-        | Self::MachineInvariant
-        | Self::Undecided { .. }
-        | Self::LoopUndecided { .. } => matches!(ret, FailureClass::EngineFault),
+        | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
+        | Self::Undecided { .. } | Self::LoopUndecided { .. }
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
@@ -1439,7 +1440,9 @@ impl CheckRefusal
             | Self::RunNotAdmitted { .. }
             | Self::DialogueUnmatched { .. }
             | Self::DialogueInverted { .. }
-            | Self::Boundary { .. } => FailureClass::MalformedSource,
+            | Self::Boundary { .. }
+            | Self::Undecided { .. }
+            | Self::LoopUndecided { .. } => FailureClass::MalformedSource,
             Self::OutOfFragment { former, .. } => former.judged(),
             Self::FunextUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::FUNEXT),
             Self::EquivUnsupported { .. } => FailureClass::Unimplemented(TrackingIssue::EQUIV),
@@ -1454,9 +1457,7 @@ impl CheckRefusal
             | Self::DanglingNode { .. }
             | Self::AdmissionOrder { .. }
             | Self::SealSiteRepeated(_)
-            | Self::MachineInvariant
-            | Self::Undecided { .. }
-            | Self::LoopUndecided { .. } => FailureClass::EngineFault,
+            | Self::MachineInvariant => FailureClass::EngineFault,
         }
     }
 

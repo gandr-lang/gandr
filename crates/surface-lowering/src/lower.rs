@@ -11333,7 +11333,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the universe former of the fragment.
     /// - fails: yields the wrong-sort refusal where its position reads no value
     ///   type, a misplaced-tile fault for a bracket out of shape, and the
-    ///   unadmitted refusal for a level beyond the core's level width.
+    ///   unadmitted refusal for a level the core's level width holds without
+    ///   its successor.
     /// - panics: none.
     ///
     /// # Errors
@@ -11375,7 +11376,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the one reading of a universe's spelling, shared by the
     ///   universe former and the decode that reads a binder's written type.
     /// - fails: a misplaced-tile fault for a bracket out of shape; the
-    ///   unadmitted refusal for a level numeral wider than a level constant.
+    ///   unadmitted refusal for a level numeral wider than a level constant or
+    ///   spelling the greatest one, whose universe no universe stands above.
     /// - panics: none.
     ///
     /// # Errors
@@ -11430,10 +11432,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::universe_of`], and a path type at a
-    ///   levelled universe; a level past the constants, refused at its numeral.
+    ///   levelled universe; a level past the constants or at the greatest,
+    ///   refused at its numeral.
     /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
     /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
-    /// - witness: `lower::tests::a_universe_level_past_the_constants_is_refused_at_its_numeral`
+    /// - witness: `lower::tests::a_universe_level_at_or_past_the_greatest_is_refused_at_its_numeral`
     fn universe_tiles(
         &self,
         site: Site,
@@ -11459,7 +11462,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 };
                 let text = self.text_at(numeral);
                 let spelled: &str = text.as_ref();
-                let Ok(level) = spelled.parse::<u64>()
+                let Some(level) = spelled
+                    .parse::<u64>()
+                    .ok()
+                    .map(LevelConstant::from)
+                    .filter(|level| level.succ().is_ok())
                 else {
                     let level = Site {
                         at: numeral,
@@ -11467,7 +11474,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     };
                     return Err(level.out(FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel)));
                 };
-                LevelConstant::from(level)
+                level
             },
             Maybe::Absent(_) => LevelConstant::ZERO,
         };
@@ -25880,7 +25887,7 @@ mod tests
     }
 
     #[test]
-    fn a_universe_level_past_the_constants_is_refused_at_its_numeral()
+    fn a_universe_level_at_or_past_the_greatest_is_refused_at_its_numeral()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         assert_eq!(
@@ -25894,6 +25901,16 @@ mod tests
                 boundary: FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel),
             },
             "the refusal stands at the level, not the whole universe"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def d : Type[+, 18446744073709551615] ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(16_usize, 36_usize),
+                form: FormName::from(NamedKind("universe_type")),
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel),
+            },
+            "the greatest level has no universe above it, so the lowering refuses it too"
         );
     }
 
