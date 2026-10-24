@@ -2730,6 +2730,42 @@ fn a_called_function_literal_prints_as_what_it_returns_675()
     );
 }
 
+/// #2325: a bare function literal, a computation nested where a value is
+/// read, called prints as the value it returns, alone and nested in
+/// another call, as a thunk literal does; one whose body calls a name
+/// prints as that call on the argument.
+#[test]
+fn a_called_nested_literal_prints_as_what_it_returns_2325()
+{
+    let names = [Name::from("t")];
+    let mut core = CoreArena::new();
+    let t = core.value_constant(ConstantIndex::from(0_usize));
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returns = core.computation_return(bound);
+    let identity = core.computation_lambda(returns);
+    let identity = core.value_nested(identity);
+    let identity = core.computation_force(identity);
+    let called = core.computation_application(identity, t);
+    let called = core.value_nested(called);
+    let twice = core.computation_application(identity, called);
+    let twice = core.value_nested(twice);
+    let head = core.computation_force(t);
+    let calls = core.computation_application(head, bound);
+    let calls = core.computation_lambda(calls);
+    let calls = core.value_nested(calls);
+    let calls = core.computation_force(calls);
+    let calls = core.computation_application(calls, t);
+    let calls = core.value_nested(calls);
+    let source = CoreSource::new(&core, &names);
+    for (root, spelling) in [(called, "t"), (twice, "t"), (calls, "t(t)")] {
+        assert_eq!(
+            spelled(&source, Root::Value(CoreNode::Value(root))),
+            faithful(Written(spelling)),
+            "{root:?} spells as what it returns"
+        );
+    }
+}
+
 /// #676: a run the lowering binds a nested call by, `a ← t(u); t(a)`,
 /// prints as the nested call, `t(t(u))`, and two runs, the second's call
 /// naming the first's binder, as `t(t(t(u)))`.

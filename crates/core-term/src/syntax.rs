@@ -1474,15 +1474,19 @@ pub fn equal_comp_type_syntax(
 ///   static abstraction applied to no more arguments than its chain has binders
 ///   is read as the decode of the abstraction's body instantiated at the
 ///   arguments, at most [`StaticSteps::ALLOWED`] times along one comparison; a
-///   call of a function literal on no more arguments than the literal has
-///   abstractions, whose body returns, is read as the value it returns, on the
-///   same steps, and a decode of such a call as the decode of what it returns
-///   (#736), the runs its code binds calls by read as the calls first (#768); a
-///   call kept unelaborated is read as the value it returns; a dependent arrow
-///   is read as the plain arrow where its codomain reads as the arrow's
-///   codomain under the binder, which then names no binder; and a dependent
-///   pair as the product of two where its second factor reads as the product's
-///   second component under the binder (#771).
+///   call of a function literal — a thunk, or a lambda nested where a value is
+///   read — on no more arguments than the literal has abstractions, whose body
+///   returns, is read as the value it returns, and one whose body calls a
+///   forced head as that call, on the same steps; a computation calling a
+///   literal, forced or applied in place, is read as the instantiated body, and
+///   a forced thunk or nested lambda as the computation it holds; a decode of
+///   such a call reads as the decode of what it returns (#736), the runs its
+///   code binds calls by read as the calls first (#768); a call kept
+///   unelaborated is read as the value it returns; a dependent arrow is read as
+///   the plain arrow where its codomain reads as the arrow's codomain under the
+///   binder, which then names no binder; and a dependent pair as the product of
+///   two where its second factor reads as the product's second component under
+///   the binder (#771).
 /// - provides: the comparison a printed type's reading back is held to: a type
 ///   of words has no name the surface writes, and is spelled as the path type
 ///   it reads as; a session type at a state is spelled as the protocol from
@@ -1567,33 +1571,44 @@ fn unstaged(
     }
 }
 
-/// The computation `id` forces when it forces the value a computation
-/// returns, `id` itself otherwise: `force (returned c)` is the head the
-/// checker writes where a type applies a component of a dependent pair, and
-/// `c` the one a call on the selection lowers to; both print as the selection
-/// called.
+/// The computation `id` forces when it forces a value that holds its
+/// computation in place, `id` itself otherwise: `force (returned c)` is the
+/// head the checker writes where a type applies a component of a dependent
+/// pair, and `c` the one a call on the selection lowers to; both print as the
+/// selection called. A forced thunk literal is its body, and so is a forced
+/// lambda nested where a value is read, which the force decides as a thunk;
+/// the printer writes each as the computation.
 ///
 /// # Specification
 /// - requires: nothing; an unreadable id is returned as it is.
-/// - ensures: `c` for `force (returned c)`; `id` for any other.
+/// - ensures: `c` for `force (returned c)` and `force (thunk c)`, and for
+///   `force (nested c)` when `c` is a lambda; `id` for any other.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`equal_type_reading`].
 /// - witness: `syntax::tests::a_forced_returned_head_reads_as_its_computation_935`
-#[spec(ensures: |ret| ret == id || matches!(arena.computation(id), Some(&Computation::Force(forced)) if matches!(arena.value(forced), Some(&Value::Returned(c)) if c == ret)))]
-fn forced_returned(
+/// - witness: `syntax::tests::a_forced_literal_reads_as_its_computation_2325`
+#[spec(ensures: |ret| ret == id || matches!(arena.computation(id), Some(&Computation::Force(forced)) if matches!(arena.value(forced), Some(&(Value::Returned(c) | Value::Thunk(c) | Value::Nested(c))) if c == ret)))]
+fn forced_computation(
     arena: &crate::CoreArena,
     id: ComputationId,
 ) -> ComputationId
 {
-    if let Some(&Computation::Force(forced)) = arena.computation(id)
-        && let Some(&Value::Returned(returned)) = arena.value(forced)
-    {
-        return returned;
+    let Some(&Computation::Force(forced)) = arena.computation(id)
+    else {
+        return id;
+    };
+    match arena.value(forced) {
+        Some(&(Value::Returned(body) | Value::Thunk(body))) => body,
+        Some(&Value::Nested(body))
+            if matches!(arena.computation(body), Some(&Computation::Lambda(_))) =>
+        {
+            body
+        },
+        Some(_) | None => id,
     }
-    id
 }
 
 /// The static steps one [`equal_type_reading`] has left: a code the steps do
@@ -1876,15 +1891,19 @@ pub fn decoded_comp_reading(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: for a call standing as a value, nested or returned, whose head
-///   forces a thunk literal of at least as many abstractions as the call has
-///   arguments, the value the instantiated body returns, the first argument
-///   instantiating the outermost abstraction, taken again while it reduces and
-///   `steps` lasts, one step spent per reduction; `value` itself for every
-///   other value, and for a body that does more than return. The arena is
-///   copied the first time it is written.
+///   forces a function literal — a thunk, or a computation nested where a value
+///   is read, which a force decides as a thunk — of at least as many
+///   abstractions as the call has arguments, the value the instantiated body
+///   returns, the first argument instantiating the outermost abstraction, or,
+///   for a body that is itself a call of a forced head, that call nested as the
+///   value it returns; taken again while it reduces and `steps` lasts, one step
+///   spent per reduction; `value` itself for every other value, and for a body
+///   that does more than return or call. The arena is copied the first time it
+///   is written.
 /// - provides: the dynamic β [`equal_type_reading`] reads through: a type
 ///   instantiated at a function literal holds its call, which the surface
-///   cannot spell, and is printed as the value the call returns (#675).
+///   cannot spell, and is printed as the value the call returns (#675), or as
+///   the call its body makes.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1895,10 +1914,13 @@ pub fn decoded_comp_reading(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a call of a literal identity and one of a literal
-///   projection on two arguments read as the argument they return; a call of a
-///   named function and a literal whose body does more than return stay as
-///   written.
+///   projection on two arguments read as the argument they return, and so does
+///   a call of a nested literal identity, alone and nested in another; a call
+///   of a nested literal whose body calls a name reads as that call on the
+///   argument; a call of a named function and a literal whose body does more
+///   than return or call stay as written.
 /// - witness: `syntax::tests::a_called_function_literal_reads_as_what_it_returns_675`
+/// - witness: `syntax::tests::a_called_nested_literal_reads_as_what_it_returns_2325`
 #[spec(ensures: |ret| ret == value || arena.value(ret).is_some())]
 fn called_reduct(
     arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
@@ -1920,7 +1942,7 @@ fn called_reduct(
         else {
             break;
         };
-        let Some(&Value::Thunk(mut body)) = arena.value(thunk)
+        let Some(&(Value::Thunk(mut body) | Value::Nested(mut body))) = arena.value(thunk)
         else {
             break;
         };
@@ -1940,9 +1962,18 @@ fn called_reduct(
                 &mut carried,
             );
         }
-        let Some(&Computation::Return(result)) = arena.computation(body)
-        else {
-            break;
+        let result = match arena.computation(body) {
+            Some(&Computation::Return(result)) => result,
+            Some(&Computation::Application(mut callee, _)) => {
+                while let Some(&Computation::Application(inner, _)) = arena.computation(callee) {
+                    callee = inner;
+                }
+                if !matches!(arena.computation(callee), Some(&Computation::Force(_))) {
+                    break;
+                }
+                arena.to_mut().value_nested(body)
+            },
+            Some(_) | None => break,
         };
         if steps.spend() == Spend::Exhausted {
             break;
@@ -1950,6 +1981,87 @@ fn called_reduct(
         value = result;
     }
     value
+}
+
+/// The computation `id` reads as once a call of a function literal it is
+/// reduced, while `steps` lasts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a call whose head is a function literal — a lambda, or one
+///   forced from a thunk or from a computation nested where a value is read —
+///   of at least as many abstractions as the call has arguments, the
+///   instantiated body, the first argument instantiating the outermost
+///   abstraction, taken again while it reduces and `steps` lasts, one step
+///   spent per reduction; `id` itself for every other computation. The arena is
+///   copied the first time it is written.
+/// - provides: the β [`equal_type_reading`] reads a computation through where
+///   the printer writes a called literal as the call its body makes, and where
+///   the lowering applies a lambda the printer wrote as the literal called,
+///   alike on both sides; [`called_reduct`] gives the same reading of a call
+///   standing as a value.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Termination
+/// - reason: every turn of the outer loop spends one of `steps`; the inner
+///   loops run over the call's spine and its arguments.
+/// - measure: `steps`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a lambda body calling a literal that calls a name reads
+///   as the name's call, and a call of a literal with more arguments than
+///   abstractions as the call of what it returns; a lambda applied in place
+///   reads as the literal forced and applied.
+/// - witness: `syntax::tests::a_forced_literal_reads_as_its_computation_2325`
+/// - witness: `syntax::tests::a_called_nested_literal_reads_as_what_it_returns_2325`
+#[spec(ensures: |ret| ret == id || arena.computation(ret).is_some())]
+fn called_computation(
+    arena: &mut alloc::borrow::Cow<'_, crate::CoreArena>,
+    steps: &mut StaticSteps,
+    id: ComputationId,
+) -> ComputationId
+{
+    let mut id = id;
+    let mut arguments = Vec::new();
+    let mut carried = Vec::new();
+    'reduce: loop {
+        arguments.clear();
+        let mut head = id;
+        while let Some(&Computation::Application(function, argument)) = arena.computation(head) {
+            arguments.push(argument);
+            head = function;
+        }
+        if arguments.is_empty() {
+            break;
+        }
+        let mut body = match arena.computation(head) {
+            Some(&Computation::Lambda(_)) => head,
+            Some(&Computation::Force(thunk)) => match arena.value(thunk) {
+                Some(&(Value::Thunk(body) | Value::Nested(body))) => body,
+                Some(_) | None => break,
+            },
+            Some(_) | None => break,
+        };
+        while let Some(argument) = arguments.pop() {
+            let Some(&Computation::Lambda(inner)) = arena.computation(body)
+            else {
+                break 'reduce;
+            };
+            carried.clear();
+            body = crate::rewrite::instantiate_computation_traced(
+                arena.to_mut(),
+                inner,
+                argument,
+                &mut carried,
+            );
+        }
+        if steps.spend() == Spend::Exhausted {
+            break;
+        }
+        id = body;
+    }
+    id
 }
 
 /// The value `value` reads as once every run its computation binds a call by
@@ -2604,7 +2716,9 @@ fn equal_syntax(
                 )
             },
             (Reading::Printed(_), C(a, b)) => {
-                C(forced_returned(&arena, a), forced_returned(&arena, b))
+                let a = called_computation(&mut arena, &mut steps, a);
+                let b = called_computation(&mut arena, &mut steps, b);
+                C(forced_computation(&arena, a), forced_computation(&arena, b))
             },
             (Reading::Syntax, _) => goal,
         };
@@ -4269,6 +4383,63 @@ mod tests
         );
     }
 
+    /// #2325: a call whose head forces a function literal, a thunk or a
+    /// lambda nested where a value is read, reads as the call of the lambda
+    /// the printer writes, even where the literal's body neither returns nor
+    /// calls; a forced nested computation that is no lambda stays different.
+    #[test]
+    fn a_forced_literal_reads_as_its_computation_2325()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let nat = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        // `fn (b) { force b }`: its body forces, so no call of it reduces.
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let forces = arena.computation_force(bound);
+        let literal = arena.computation_lambda(forces);
+        // `Path(Nat, head(x), x)`.
+        let called = |arena: &mut crate::CoreArena, head: ComputationId| {
+            let call = arena.computation_application(head, point);
+            let value = arena.value_returned(call);
+            arena.value_type_path(nat, value, point)
+        };
+        let thunked = arena.value_thunk(literal);
+        let thunked = arena.computation_force(thunked);
+        let thunked = called(&mut arena, thunked);
+        let nested = arena.value_nested(literal);
+        let nested = arena.computation_force(nested);
+        let nested = called(&mut arena, nested);
+        let written = called(&mut arena, literal);
+        let other = arena.value_nested(forces);
+        let other = arena.computation_force(other);
+        let other = called(&mut arena, other);
+        let forcing = called(&mut arena, forces);
+        for (left, right, what) in [
+            (
+                thunked,
+                written,
+                "a forced thunk literal against its lambda",
+            ),
+            (written, thunked, "in either order"),
+            (nested, written, "a forced nested lambda against the lambda"),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, other, forcing),
+            CertificateEquality::Different,
+            "a forced nested computation that is no lambda stays itself"
+        );
+    }
+
     #[test]
     fn a_staged_type_reads_as_its_base_465()
     {
@@ -4609,6 +4780,126 @@ mod tests
                 "{what}"
             );
         }
+    }
+
+    /// #2325: a bare function literal is a computation nested where a value
+    /// is read, which a force decides as a thunk; a type instantiated at it
+    /// holds its call, which reads as what it returns, alone and nested in
+    /// another call, and a literal whose body calls a name reads as that call
+    /// on the argument, in a lambda's body too and given more arguments than
+    /// it abstracts, while a forced nested computation that is no literal
+    /// stays a call.
+    #[test]
+    fn a_called_nested_literal_reads_as_what_it_returns_2325()
+    {
+        let mut arena = crate::CoreArena::new();
+        let signatures = BTreeMap::new();
+        let int = arena.value_type_data(ConstantIndex::from(0_usize), alloc::vec![]);
+        let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        // `(fn (a) { a })(x)`, the literal nested where its call reads it.
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returns = arena.computation_return(bound);
+        let identity = arena.computation_lambda(returns);
+        let identity = arena.value_nested(identity);
+        let forced = arena.computation_force(identity);
+        let called = arena.computation_application(forced, x);
+        let called = arena.value_nested(called);
+        // `(fn (a) { a })((fn (a) { a })(x))`.
+        let twice = arena.computation_application(forced, called);
+        let twice = arena.value_nested(twice);
+        // `(fn (a) { y(a) })(x)` and `y(x)`; under the literal's binder `y`
+        // is the third variable out.
+        let inner_y = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let inner_y = arena.computation_force(inner_y);
+        let calls = arena.computation_application(inner_y, bound);
+        let calls = arena.computation_lambda(calls);
+        let calls = arena.value_nested(calls);
+        let calls = arena.computation_force(calls);
+        let calls = arena.computation_application(calls, x);
+        let calls = arena.value_nested(calls);
+        let direct = arena.computation_force(y);
+        let direct = arena.computation_application(direct, x);
+        let direct = arena.value_nested(direct);
+        // A forced nested call of a name, `(y(x))(x)`, is no literal.
+        let named = arena.computation_force(y);
+        let named = arena.computation_application(named, x);
+        let named = arena.value_nested(named);
+        let named = arena.computation_force(named);
+        let named = arena.computation_application(named, x);
+        let named = arena.value_nested(named);
+        // `thunk { fn (d) { (fn (w) { y(w) })(d) } }` and `thunk { fn (d) {
+        // y(d) } }`: under `d` and `w`, `y` is the fourth variable out, and
+        // under `d` alone the third.
+        let d = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let y_under_two = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+        let y_under_one = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let inner_call = arena.computation_force(y_under_two);
+        let inner_call = arena.computation_application(inner_call, d);
+        let inner = arena.computation_lambda(inner_call);
+        let inner = arena.value_nested(inner);
+        let inner = arena.computation_force(inner);
+        let in_body = arena.computation_application(inner, d);
+        let in_body = arena.computation_lambda(in_body);
+        let in_body = arena.value_thunk(in_body);
+        let flat = arena.computation_force(y_under_one);
+        let flat_call = arena.computation_application(flat, d);
+        let flat_body = arena.computation_lambda(flat_call);
+        let flat_body = arena.value_thunk(flat_body);
+        // `thunk { fn (d) { (fn (w) { y(w) })(d)(d) } }` and `thunk { fn (d)
+        // { y(d)(d) } }`: the inner application reduces on its own.
+        let over = arena.computation_application(inner, d);
+        let over = arena.computation_application(over, d);
+        let over = arena.computation_lambda(over);
+        let over = arena.value_thunk(over);
+        let flat_over = arena.computation_application(flat_call, d);
+        let flat_over = arena.computation_lambda(flat_over);
+        let flat_over = arena.value_thunk(flat_over);
+        let at = |arena: &mut crate::CoreArena, end: ValueId| arena.value_type_path(int, end, x);
+        let (called, twice, calls, direct, named, plain) = (
+            at(&mut arena, called),
+            at(&mut arena, twice),
+            at(&mut arena, calls),
+            at(&mut arena, direct),
+            at(&mut arena, named),
+            at(&mut arena, x),
+        );
+        let (in_body, flat_body, over, flat_over) = (
+            at(&mut arena, in_body),
+            at(&mut arena, flat_body),
+            at(&mut arena, over),
+            at(&mut arena, flat_over),
+        );
+        for (left, right, what) in [
+            (
+                called,
+                plain,
+                "a called nested identity against its argument",
+            ),
+            (plain, called, "in either order"),
+            (twice, plain, "a call of it nested in another"),
+            (calls, direct, "a literal calling a name against that call"),
+            (in_body, flat_body, "a literal called in a lambda's body"),
+            (
+                over,
+                flat_over,
+                "a literal given more arguments than it abstracts",
+            ),
+        ] {
+            assert_eq!(
+                (
+                    equal_type_reading(&arena, &signatures, left, right),
+                    equal_type_syntax(&arena, left, right),
+                ),
+                (CertificateEquality::Equal, CertificateEquality::Different),
+                "{what} reads as one type, which its syntax is not"
+            );
+        }
+        assert_eq!(
+            equal_type_reading(&arena, &signatures, named, plain),
+            CertificateEquality::Different,
+            "a forced nested call of a name stays a call"
+        );
     }
 
     /// #676: the lowering commutes a nested call in a type into a run,
