@@ -105,13 +105,15 @@ pub enum Uncovered
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Equality
 {
     /// Its declared type, `U (T → T → F Bool)`.
     declared: ValueTypeId,
     /// Its body, a thunk of the fixpoint.
     body: ValueId,
+    /// Each data case the body holds, with the declaration it eliminates.
+    cases: Vec<(ComputationId, ConstantIndex)>,
 }
 
 impl Equality
@@ -136,6 +138,18 @@ impl Equality
     pub const fn body(&self) -> ValueId
     {
         self.body
+    }
+
+    /// Each data case the body holds, with the declaration whose
+    /// constructors its branches are, in the order they were minted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn cases(&self) -> &[(ComputationId, ConstantIndex)]
+    {
+        &self.cases
     }
 }
 
@@ -193,11 +207,12 @@ pub fn equality(
         signatures,
         rows: BTreeMap::new(),
         derived: BTreeMap::new(),
+        cases: Vec::new(),
         own: position,
         answer,
         truth,
         falsity,
-        integer: named("eq"),
+        integer: named("int.eq"),
         text: named("string.eq"),
     };
     // Each declaration a field reaches is derived before the declarations
@@ -213,7 +228,11 @@ pub fn equality(
         .copied()
         .ok_or(Uncovered::Unknown(position))?;
     let declared = deriving.predicate(position);
-    Ok(Equality { declared, body })
+    Ok(Equality {
+        declared,
+        body,
+        cases: deriving.cases,
+    })
 }
 
 /// One derivation's state: the arena it mints into, the signatures it reads,
@@ -229,6 +248,8 @@ struct Deriving<'run, 'lookup>
     rows: BTreeMap<ConstantIndex, Vec<Vec<ValueTypeId>>>,
     /// Each declaration's derived equality, once derived.
     derived: BTreeMap<ConstantIndex, ValueId>,
+    /// Each data case minted so far, with the declaration it eliminates.
+    cases: Vec<(ComputationId, ConstantIndex)>,
     /// The declaration whose equality is being written.
     own: ConstantIndex,
     /// `F Bool`.
@@ -237,7 +258,8 @@ struct Deriving<'run, 'lookup>
     truth: ValueId,
     /// `false`, the right injection of the unit.
     falsity: ValueId,
-    /// Integer equality, which the native table declares.
+    /// Integer equality, which the native table declares by the name a source
+    /// calls it by, `int.eq`.
     integer: Option<Primitive>,
     /// String equality, which the native table declares.
     text: Option<Primitive>,
@@ -676,12 +698,14 @@ impl Deriving<'_, '_>
             let case =
                 self.arena
                     .computation_data_case(scrutinee, self.answer, inner, arities.clone());
+            self.cases.push((case, position));
             outer.push(self.abstracted(case, width));
         }
         let scrutinee = self.at(opened, first)?;
         let case = self
             .arena
             .computation_data_case(scrutinee, self.answer, outer, arities);
+        self.cases.push((case, position));
         let over = self.abstracted(case, Binders::from(2_u32));
         let fixpoint = self
             .arena
