@@ -2537,6 +2537,52 @@ fn a_call_writes_the_wildcards_it_holds_528()
     );
 }
 
+/// A call of a function whose telescope writes an implicit supplies it by
+/// name after the head and the explicit argument in place: the core applies
+/// `chosen`'s `t` and then its `x`, whose type names `t`, and the
+/// parentheses admit only `t`. A call omitting the implicit writes no
+/// resident, and a function with no telescope keeps every argument in place
+/// (#2267).
+#[test]
+fn a_call_supplies_its_callee_s_implicits_by_name_2267()
+{
+    let names = [Name::from("chosen"), Name::from("twin")];
+    let mut core = CoreArena::new();
+    let omitted =
+        core.value_hole(HoleId::nominated(NominationIndex::from(0_u32)).expect("a nominated name"));
+    let [three, seven] =
+        [Written("3"), Written("7")].map(|written| integer(&mut core, Sign::NonNegative, written));
+    let call = |core: &mut CoreArena, constant: usize, arguments: &[ValueId]| {
+        let head = core.value_constant(ConstantIndex::from(constant));
+        let mut applied = core.computation_force(head);
+        for &argument in arguments {
+            applied = core.computation_application(applied, argument);
+        }
+        core.computation_lambda(applied)
+    };
+    let supplied = call(&mut core, 0, &[three, seven]);
+    let left_out = call(&mut core, 0, &[three, omitted]);
+    let plain = call(&mut core, 1, &[three, seven]);
+    let telescopes = [(ConstantIndex::from(0_usize), vec![
+        None,
+        Some(Name::from("x")),
+    ])];
+    let source = CoreSource::new(&core, &names).naming_implicits(&telescopes);
+    let body = |id| Root::Computation(CoreNode::Computation(id));
+    assert_eq!(
+        spelled(&source, body(supplied)),
+        faithful(Written("fn (a) { chosen[x = 7](3) }"))
+    );
+    assert_eq!(
+        spelled(&source, body(left_out)),
+        faithful(Written("fn (a) { chosen(3) }"))
+    );
+    assert_eq!(
+        spelled(&source, body(plain)),
+        faithful(Written("fn (a) { twin(3, 7) }"))
+    );
+}
+
 /// A body in braces holds a sequence bare: the braces a block writes are
 /// the sequence's own, never doubled.
 #[test]
@@ -4372,7 +4418,7 @@ fn declared_whole(
 {
     match present_whole(
         source,
-        Name::from("down"),
+        (Name::from("down"), ConstantIndex::from(1_usize)),
         defined,
         page,
         Form::Explicit.into(),
@@ -4635,6 +4681,39 @@ fn a_function_definition_spells_whole_941()
         declared_whole(&source, (ty_one, unabstracted), wide),
         Maybe::Absent(whole::Absent::NotAbstracted),
         "a body abstracting no parameter is written in halves"
+    );
+}
+
+/// A function whose telescope writes an implicit spells whole with the
+/// implicit in its telescope under the name the telescope records, and only
+/// the explicit parameter in the parentheses, though the core abstracts the
+/// explicit one first (#2267).
+#[test]
+fn a_definition_writes_its_implicits_in_its_telescope_2267()
+{
+    let names = [Name::from("Nat")];
+    let mut core = CoreArena::new();
+    let nat = core.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let returns_nat = core.comp_type_returner(nat);
+    let function = core.comp_type_arrow(nat, returns_nat);
+    let curried = core.comp_type_arrow(nat, function);
+    let ty = core.value_type_thunk(curried);
+    let read = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = core.computation_return(read);
+    let inner = core.computation_lambda(returned);
+    let outer = core.computation_lambda(inner);
+    let defined = core.value_thunk(outer);
+    let telescopes = [(ConstantIndex::from(1_usize), vec![
+        None,
+        Some(Name::from("x")),
+    ])];
+    let source = CoreSource::new(&core, &names).naming_implicits(&telescopes);
+    assert_eq!(
+        declared_whole(&source, (ty, defined), PageWidth::from(100_u32)),
+        Maybe::Present((
+            String::from("def down @[x : Nat] (a : Nat) -> -F Nat {\n  x\n}"),
+            Fidelity::Faithful
+        ))
     );
 }
 

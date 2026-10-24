@@ -1740,6 +1740,40 @@ pub trait Source
         let _ = node;
         None
     }
+
+    /// The parameters of the function `head` names, when `head` is a constant
+    /// whose telescope writes an implicit: one entry per parameter in the
+    /// order the core applies them, an implicit's name and none for an
+    /// explicit one. The core applies every argument in place; a source that
+    /// keeps the telescope beside the constant answers it here.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the telescope the source records for `head`'s constant, or
+    ///   the empty slice; the default records none, so every argument is
+    ///   written in place.
+    /// - provides: the residents `f[x = v](…)` a printed call supplies its
+    ///   callee's implicits by, and a printed definition's `@[x : T]`.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call of a function whose implicit's type names the
+    ///   explicit parameter before it writes the implicit as a resident after
+    ///   the head and the explicit one in the parentheses.
+    /// - witness: `tests::goldens::a_call_supplies_its_callee_s_implicits_by_name_2267`
+    #[inline]
+    fn implicits(
+        &self,
+        head: Self::Node,
+    ) -> &[Option<Name<'_>>]
+    {
+        let _ = head;
+        &[]
+    }
 }
 
 /// A forgetting map a source records at a value: the theory whose model it

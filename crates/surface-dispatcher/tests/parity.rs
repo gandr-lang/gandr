@@ -22,6 +22,7 @@ use gandr_core_term::equal_type_syntax;
 use gandr_kernel_term::ConstantIndex;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
+use gandr_surface_diagnostics::telescopes;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::classify;
@@ -741,7 +742,7 @@ enum Spelt
 /// trivial.
 fn spelt(
     (typed, bodied): (&CoreSource<'_>, &CoreSource<'_>),
-    name: Name<'_>,
+    whole: (Name<'_>, ConstantIndex),
     (ty, body): (ValueTypeId, ValueId),
     form: Form,
 ) -> Spelt
@@ -754,7 +755,7 @@ fn spelt(
     let faithful = |printed: &Presentation| {
         printed.fidelity() == Fidelity::Faithful && printed.unspelled().is_empty()
     };
-    if let Ok(Maybe::Present(whole)) = present_whole(bodied, name, (ty, body), page, style) {
+    if let Ok(Maybe::Present(whole)) = present_whole(bodied, whole, (ty, body), page, style) {
         if faithful(&whole) {
             return Spelt::Declared(String::from(whole.as_ref()));
         }
@@ -949,12 +950,14 @@ fn read(
         })
         .collect();
     maps.sort_by_key(|&(map, _)| map);
+    let implicits = telescopes(&module);
     let source = CoreSource::new(&arena, &names)
         .naming(&constructors)
         .crossing(&crossings)
         .forgetting(&forgettings)
         .forgetting_maps(&maps)
-        .modeling(&models);
+        .modeling(&models)
+        .naming_implicits(&implicits);
     // A body leaves each written reduct's or forgetting map's call to the
     // checker, which applies the map where the call stands; a type, read by
     // its value, keeps it.
@@ -1021,13 +1024,13 @@ fn read(
         match (
             spelt(
                 (&source, &bodied),
-                Name::from(name.as_str()),
+                (Name::from(name.as_str()), declaration.constant()),
                 node,
                 Form::Sugared,
             ),
             spelt(
                 (&source, &bodied),
-                Name::from(name.as_str()),
+                (Name::from(name.as_str()), declaration.constant()),
                 node,
                 Form::Explicit,
             ),

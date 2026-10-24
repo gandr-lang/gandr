@@ -7983,12 +7983,17 @@ impl Walk<'_, '_>
     ///   has the walk's surface set to an expression over its head and its
     ///   arguments and restored past its join, since a call reads them as
     ///   expressions wherever it stands: a type argument there is quoted
-    ///   (#1102). A forced thunk literal of at least as many abstractions as
-    ///   the call has arguments, whose body then returns, is scheduled instead
-    ///   as the value it returns, under one binder per argument standing for
-    ///   the argument, the first outermost: the type grammar has no call of a
-    ///   literal, and the reading back compares such a call as what it returns
-    ///   (#675).
+    ///   (#1102). Where the head forces a constant whose telescope
+    ///   ([`Source::implicits`]) names an implicit at the place of an argument
+    ///   the call writes, and the spine is read whole, the join is instead the
+    ///   form `f[x = a, …](b, …)`: the head, then each such argument after its
+    ///   implicit's name in the telescope's order, then the rest in place, each
+    ///   visited in that order. A forced thunk literal of at least as many
+    ///   abstractions as the call has arguments, whose body then returns, is
+    ///   scheduled instead as the value it returns, under one binder per
+    ///   argument standing for the argument, the first outermost: the type
+    ///   grammar has no call of a literal, and the reading back compares such a
+    ///   call as what it returns (#675).
     /// - provides: the one spelling the surface writes a call in.
     /// - fails: never.
     /// - panics: none.
@@ -8007,7 +8012,9 @@ impl Walk<'_, '_>
     ///   uniform parameters observes them passed first, in order; a call
     ///   omitting an implicit, and one omitting its every argument, write only
     ///   what the source wrote, and a call holding a wildcard writes its `_`; a
-    ///   call a path type's endpoint writes quotes its type argument.
+    ///   call a path type's endpoint writes quotes its type argument; a call of
+    ///   a function whose implicit's type names the explicit parameter before
+    ///   it writes the implicit as a resident and the explicit one in place.
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
     /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
@@ -8015,6 +8022,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_call_leaves_out_the_implicits_it_omits_1216`
     /// - witness: `tests::goldens::a_call_writes_the_wildcards_it_holds_528`
     /// - witness: `tests::goldens::a_type_argument_in_a_thunk_a_type_writes_is_quoted_1102`
+    /// - witness: `tests::goldens::a_call_supplies_its_callee_s_implicits_by_name_2267`
     #[spec(
         captures: [entry = tasks.len(), surface = self.surface],
         ensures: |()| tasks.get(entry..).is_some_and(|all| {
@@ -8034,9 +8042,16 @@ impl Walk<'_, '_>
             } else {
                 return false;
             };
-            let Some((&Task::Join(Join::Apply(Arity(arity))), visits)) = scheduled.split_first()
+            let Some((&Task::Join(join), visits)) = scheduled.split_first()
             else { return false; };
-            arity.checked_add(1_usize) == Some(visits.len())
+            let joined = if let Join::Apply(Arity(arity)) = join {
+                arity.checked_add(1_usize)
+            } else if let Join::Form { pieces: Arity(pieces), binding: Binding::Atom } = join {
+                Some(pieces)
+            } else {
+                None
+            };
+            joined == Some(visits.len())
                 && visits.split_last().is_some_and(|(head, arguments)| {
                     let passed = arguments.iter().filter(|task| matches!(**task, Task::Visit { .. })).count();
                     matches!(*head, Task::Visit { admits: Admits::Value | Admits::Computation(Tail::Continues), depth: at, .. } if at == depth)
@@ -8047,7 +8062,7 @@ impl Walk<'_, '_>
         }),
     )]
     fn call<S>(
-        &self,
+        &mut self,
         source: &S,
         function: S::Node,
         argument: S::Node,
@@ -8103,14 +8118,43 @@ impl Walk<'_, '_>
                 return;
             }
         }
-        // A hole the call nominated for an implicit it omits is what the
-        // source left out: the call writes nothing there. A wildcard is what
-        // the source wrote, and stays among the arguments as its `_`.
-        arguments
-            .retain(|&node| !matches!(source.read(node), Former::Unreadable(Unreadable::Omitted)));
         // A recursive definition's call of itself passes each uniform
         // parameter as itself, ahead of the arguments its fixpoint takes.
         let Arity(uniform) = self.uniform(source, head);
+        // A callee whose telescope names an implicit at an argument's place
+        // takes that argument by name, `f[x = a](b)`, where the spine is read
+        // whole: the core applies every argument in place, and the
+        // parentheses admit only the explicit ones.
+        let whole = !matches!(source.read(head), Former::Application(..));
+        let telescope = if uniform == 0_usize
+            && whole
+            && let Former::Force(thunk) = source.read(head)
+        {
+            source.implicits(thunk)
+        }
+        else {
+            &[]
+        };
+        let mut residents = Vec::new();
+        if !telescope.is_empty() {
+            // `arguments` holds the spine's last argument first.
+            let mut placed = Vec::with_capacity(arguments.len());
+            for (position, &node) in arguments.iter().rev().enumerate() {
+                match telescope.get(position).copied().flatten() {
+                    Some(name) => residents.push((name, node)),
+                    None => placed.push(node),
+                }
+            }
+            placed.reverse();
+            arguments = placed;
+        }
+        // A hole the call nominated for an implicit it omits is what the
+        // source left out: the call writes nothing there. A wildcard is what
+        // the source wrote, and stays among the arguments as its `_`.
+        let omitted =
+            |node: S::Node| matches!(source.read(node), Former::Unreadable(Unreadable::Omitted));
+        arguments.retain(|&node| !omitted(node));
+        residents.retain(|&(_, node)| !omitted(node));
         // A call reads its head and its arguments as expressions wherever it
         // stands: where a type is read, the walk reads them as expressions
         // and returns to the type past the call's join.
@@ -8118,9 +8162,40 @@ impl Walk<'_, '_>
         if switched {
             tasks.push(Task::Surface(self.surface));
         }
-        tasks.push(Task::Join(Join::Apply(Arity(
-            arguments.len().saturating_add(uniform),
-        ))));
+        if residents.is_empty() {
+            tasks.push(Task::Join(Join::Apply(Arity(
+                arguments.len().saturating_add(uniform),
+            ))));
+        }
+        else {
+            let mut parts = Parts::default();
+            let _ = parts.piece(Binding::Atom).text("[");
+            for (index, &(name, _)) in residents.iter().enumerate() {
+                if index > 0_usize {
+                    let _ = parts.text(",").part(Part::Space);
+                }
+                let _ = parts
+                    .text(format!("{} = ", name.as_ref()))
+                    .piece(Binding::Sequence);
+            }
+            let _ = parts.text("](");
+            for index in 0_usize .. arguments.len() {
+                if index > 0_usize {
+                    let _ = parts.text(",").part(Part::Space);
+                }
+                let _ = parts.piece(Binding::Sequence);
+            }
+            let _ = parts.text(")");
+            let pieces = Arity(parts.pieces);
+            self.forms.push(parts.parts);
+            tasks.push(Task::Join(writes(
+                Production("instantiation_expression"),
+                Join::Form {
+                    pieces,
+                    binding: Binding::Atom,
+                },
+            )));
+        }
         for node in arguments {
             tasks.push(self.inserted(source, node).map_or(
                 Task::Visit {
@@ -8134,6 +8209,13 @@ impl Walk<'_, '_>
                     depth,
                 },
             ));
+        }
+        for &(_, node) in residents.iter().rev() {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth,
+            });
         }
         for position in (0_usize .. uniform).rev() {
             tasks.push(Task::Context(ContextPosition(position)));

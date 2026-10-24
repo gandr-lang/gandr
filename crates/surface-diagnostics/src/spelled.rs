@@ -583,12 +583,14 @@ fn spell<'failure>(
         })
         .collect();
     models.sort_by_key(|&(modelled, _)| modelled);
+    let implicits = telescopes(module);
     let source = CoreSource::new(arena, &names)
         .naming(&constructors)
         .naming_arrows(&arrows)
         .naming_pairs(&pairs, &seconds)
         .relating(&relations)
-        .modeling(&models);
+        .modeling(&models)
+        .naming_implicits(&implicits);
     for (
         node,
         Scoped {
@@ -774,6 +776,41 @@ pub fn constant_names(module: &LoweredModule<'_>) -> Vec<String>
         }
     }
     paths
+}
+
+/// The telescope of each function of `module` that writes an implicit.
+///
+/// Ascending by its constant, as [`CoreSource::naming_implicits`] reads it:
+/// one entry per parameter in the merged order, an implicit's name and none
+/// for an explicit one.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn telescopes<'module>(
+    module: &'module LoweredModule<'_>
+) -> Vec<(ConstantIndex, Vec<Option<Name<'module>>>)>
+{
+    let mut telescopes: Vec<(ConstantIndex, Vec<Option<Name<'module>>>)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let constant = declaration.constant();
+            let held = module.implicits(constant);
+            (!held.is_empty()).then(|| {
+                (
+                    constant,
+                    held.iter()
+                        .map(|name| name.as_ref().map(|name| Name::from(name.as_ref())))
+                        .collect(),
+                )
+            })
+        })
+        .collect();
+    telescopes.sort_by_key(|&(constant, _)| constant);
+    telescopes.dedup_by_key(|&mut (constant, _)| constant);
+    telescopes
 }
 
 quenchant_shape::reason_enum! {

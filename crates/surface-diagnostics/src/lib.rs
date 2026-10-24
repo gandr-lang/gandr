@@ -169,4 +169,5 @@ pub use crate::spelled::TypeSpellings;
 pub use crate::spelled::constant_names;
 pub use crate::spelled::kept;
 pub use crate::spelled::spelling;
+pub use crate::spelled::telescopes;
 pub use crate::verbosity::Verbosity;
