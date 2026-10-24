@@ -405,8 +405,9 @@ impl fmt::Display for FragmentBoundary
 /// # Specification
 /// - requires: a producer reports the fault observed in the form's children.
 /// - ensures: parser repair, missing operand, extra operand, misplaced tile,
-///   extra closer, extra opener and missing opener reports retain distinct
-///   meanings; a repair retains its shape, and a bracket fault its family.
+///   extra closer, extra opener, missing opener and misspelt keyword reports
+///   retain distinct meanings; a repair retains its shape, a bracket fault its
+///   family, and a misspelling the keyword it nearly spells.
 /// - provides: the structural reason a form could not be read.
 /// - fails: not applicable to the report itself.
 /// - panics: none.
@@ -424,6 +425,7 @@ impl fmt::Display for FragmentBoundary
 /// - witness: `lower::tests::a_tile_out_of_place_is_refused`
 /// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
 /// - witness: `lower::tests::a_bracket_the_layout_misplaces_is_refused_where_it_was_written_2242`
+/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
 /// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FormFault
@@ -446,6 +448,9 @@ pub enum FormFault
     /// The opener a closer of this family answers, left out: the closer begins
     /// a line indented past every opener still waiting for one.
     MissingOpen(ClosingClass),
+    /// A word one edit from this keyword, standing where the form then holds
+    /// an operand it does not take: the keyword misspelt, read as a name.
+    Misspelt(crate::form::TileName),
 }
 
 impl fmt::Display for FormFault
@@ -479,6 +484,7 @@ impl fmt::Display for FormFault
                     Closer(close)
                 )
             },
+            Self::Misspelt(keyword) => write!(f, "misspells `{}`", keyword.as_ref()),
         }
     }
 }
@@ -2948,6 +2954,7 @@ mod tests
             &FormFault::MissingOpen(ClosingClass::Paren),
             &FormFault::MissingOpen(ClosingClass::Bracket),
             &FormFault::MissingOpen(ClosingClass::Brace),
+            &FormFault::Misspelt(crate::form::TileName::SEMICOLON),
         ]));
         assert_apart(&render(&[
             &FragmentBoundary::Reserved(Unbuilt::Dup),

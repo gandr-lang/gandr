@@ -2835,6 +2835,111 @@ fn holes(regex: RegexView<'_>) -> Holes
     read.pop().unwrap_or(Holes::NOTHING)
 }
 
+/// The keyword the word right before `extra` nearly spells, with the word's
+/// bytes, when `extra` is an operand its form does not take and the word is a
+/// name no rule spells.
+///
+/// A keyword written wrong, `retur x` for `return x`, reads as a name, and
+/// the form then holds the name and the operand after it in a hole that takes
+/// one: the refusal lands on the operand, past the mistake. A word one edit
+/// from a keyword is that keyword misspelt, and the refusal belongs at the
+/// word (#2259). The edits are tried in the order a hand makes them, the
+/// first that spells a keyword winning: a last letter left off, two letters
+/// swapped, one letter too many, one letter wrong, one letter left out
+/// inside. Alternatives: an edit distance over every keyword, which needs the
+/// grammar's label inventory and orders ties no better; respelling in the
+/// parser, which reads the source as written with no repair to start from.
+///
+/// # Specification
+/// - requires: `within` holds `extra`, both spans of `tree`.
+/// - ensures: the last tile of `tree` inside `within` ending at or before
+///   `extra`'s start, with the first keyword one edit from its bytes in the
+///   order above, when those bytes are two or more lowercase ASCII letters and
+///   underscores that `pbg` spells as no tile and the keyword is such a word
+///   `pbg` spells as a tile; `None` otherwise.
+/// - provides: what moves an extra-operand refusal onto the misspelt keyword
+///   before it.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `retur x` in a body is refused at `retur` naming
+///   `return`; a word that is no near miss of a keyword leaves the refusal at
+///   the operand.
+/// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+pub fn misspelt_keyword(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    within: ByteSpan,
+    extra: ByteSpan,
+) -> Option<(ByteSpan, TileName)>
+{
+    let word = tree
+        .positions()
+        .filter(|&position| {
+            tree.node(position).is_some_and(|node| {
+                matches!(node.label(), NodeLabel::Tile(_))
+                    && within.start() <= node.span().start()
+                    && node.span().end() <= extra.start()
+            })
+        })
+        .max_by_key(|&position| tree.node(position).map(|node| node.span().end()))?;
+    let span = tree.node(word)?.span();
+    let written: &str = tree.fragment(word).map_or("", <&str>::from);
+    let lettered = |text: &str| {
+        text.len() >= 2
+            && text
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+    };
+    if !lettered(written) || pbg.tile_label(LabelText(written)).is_some() {
+        return None;
+    }
+    let letters = b"abcdefghijklmnopqrstuvwxyz_";
+    let bytes = written.as_bytes();
+    let mut edits: Vec<Vec<u8>> = Vec::new();
+    for &letter in letters {
+        let mut appended = bytes.to_vec();
+        appended.push(letter);
+        edits.push(appended);
+    }
+    for at in (0 .. bytes.len().saturating_sub(1)).rev() {
+        let mut swapped = bytes.to_vec();
+        swapped.swap(at, at.saturating_add(1));
+        edits.push(swapped);
+    }
+    for at in (0 .. bytes.len()).rev() {
+        let mut shorter = bytes.to_vec();
+        let _dropped = shorter.remove(at);
+        edits.push(shorter);
+    }
+    for at in 0 .. bytes.len() {
+        for &letter in letters {
+            let mut changed = bytes.to_vec();
+            if let Some(byte) = changed.get_mut(at) {
+                *byte = letter;
+            }
+            edits.push(changed);
+        }
+    }
+    for at in 0 .. bytes.len() {
+        for &letter in letters {
+            let mut longer = bytes.to_vec();
+            longer.insert(at, letter);
+            edits.push(longer);
+        }
+    }
+    edits.iter().find_map(|edit| {
+        let candidate = core::str::from_utf8(edit).ok()?;
+        if candidate == written || !lettered(candidate) {
+            return None;
+        }
+        pbg.tile_label(LabelText(candidate))
+            .map(|label| (span, TileName(label.0)))
+    })
+}
+
 /// The repair a grout child `grout` of shape `shape` reads as: a
 /// [`Repair::Keyword`] when it is convex and stands over a lowercase word the
 /// grammar spells as a tile of its own, plain grout otherwise.

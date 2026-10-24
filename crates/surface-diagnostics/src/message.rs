@@ -403,6 +403,12 @@ fn lowered(
                         ClosingClass::Brace => "{",
                     })
                 },
+                FormFault::Misspelt(keyword) => write!(
+                    f,
+                    "this word reads as a name, and this {form} then holds an operand it does not \
+                     take; did you mean `{}`?",
+                    keyword.as_ref()
+                ),
                 FormFault::MissingOpen(close) => {
                     write!(f, "this {form} is missing the `{}` its `{}` closes", match close {
                         ClosingClass::Paren => "(",
