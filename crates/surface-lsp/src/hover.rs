@@ -2179,6 +2179,37 @@ mod tests
         );
     }
 
+    /// #2254: a declaration at a model type hovers the type as written,
+    /// `Model(T) with sort C = A`, not the record it lowers to.
+    #[test]
+    fn a_model_type_hovers_as_written_2254()
+    {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/identity/model-counter-manifest.gandr");
+        let written = std::fs::read_to_string(&path).expect("the corpus source is read");
+        let text = SourceText::from(written.as_str());
+        let index = LineIndex::new(written.as_str().into());
+        let session = checked(text);
+        let reading = Reading::of(text);
+        let hovering = hovering(text, &path, &session, &gandr_surface_dispatcher::Unshadowed);
+        let offset = written
+            .find("def upManifest")
+            .expect("the source declares the counter")
+            .saturating_add("def up".len());
+        let position = Position::of_byte(&index, RenderOffset::from(offset))
+            .expect("the offset is on a boundary");
+        let shown = match hover(text, &session, &reading, &hovering, position, PLAIN) {
+            Maybe::Present(shown) => shown.contents.value,
+            Maybe::Absent(reason) => panic!("the name hovers nothing: {reason:?}"),
+        };
+        assert!(
+            shown.starts_with(&fenced(SourceText::from(
+                "upManifest : Model(Counter) with sort C = +{Unit, Bool}"
+            ))),
+            "the name hovers its model type as written: {shown}"
+        );
+    }
+
     #[test]
     fn each_marked_position_hovers_its_answer()
     {
