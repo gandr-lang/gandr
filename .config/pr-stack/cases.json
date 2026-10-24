@@ -838,6 +838,22 @@
     "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"remove\",\"reason\":\"landed in origin/main\"}]"
   },
   {
+    "name": "a branch judged landed whose head moved since keeps its worktree (#2299)",
+    "program": "sweep.jq",
+    "input": [
+      {
+        "path": "/w/unit",
+        "branch": "unit",
+        "primary": false,
+        "cwd": false,
+        "merged": true,
+        "moved": true,
+        "scratch": null
+      }
+    ],
+    "output": "[{\"path\":\"/w/unit\",\"branch\":\"unit\",\"action\":\"keep\",\"reason\":\"its head moved after it was judged landed\"}]"
+  },
+  {
     "name": "a branch not landed keeps its worktree",
     "program": "sweep.jq",
     "input": [

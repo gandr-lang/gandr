@@ -1154,13 +1154,18 @@ done < "$report"
 # `check:pr-stack`; this task reads the facts and acts. A branch has landed
 # when Worktrunk reads it integrated into the default branch (`wt list`: the
 # same commit, an ancestor, or its changes already there, which holds a
-# branch whose server copy a restack moved) and its head is off origin/main's
-# first-parent line: the merge queue lands a branch as a merge's second
-# parent, while a branch cut from main and not yet committed to sits on that
-# line. A landed branch's worktree goes by `wt remove --foreground`, which
-# deletes the branch as merged and refuses a dirty or otherwise unsafe tree;
-# the sweep makes no safety check of its own, prints a refusal and keeps that
-# tree. The primary worktree, the caller's own and `wip/` branches stay. A
+# branch whose server copy a restack moved) and the head Worktrunk read beside
+# that reason is off origin/main's first-parent line: the merge queue lands a
+# branch as a merge's second parent, while a branch cut from main and not yet
+# committed to sits on that line. Both halves come from the one `wt list`
+# snapshot (#2299): judged across two reads, a branch whose first commit fell
+# between them read integrated at main's tip and off the line at its commit,
+# and its live worktree went. A worktree whose head is no longer the judged
+# one is kept, and the head is read once more just before `wt remove`. A
+# landed branch's worktree goes by `wt remove --foreground`, which deletes the
+# branch as merged and refuses a dirty or otherwise unsafe tree; the sweep
+# makes no safety check of its own, prints a refusal and keeps that tree. The
+# primary worktree, the caller's own and `wip/` branches stay. A
 # scratch worktree (`restack`'s and the mutation lanes', named
 # `gandr-scratch-<pid>.`) goes once its process is gone, and an unnamed
 # detached one under a temporary directory once unchanged for 4 hours. Then
@@ -1187,10 +1192,15 @@ trunk_ref=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD) || trunk_
 git fetch --quiet origin "${trunk_ref#origin/}" || echo "wt:sweep: fetching $trunk_ref failed; sweeping against the last fetch" >&2
 declare -A first_parent=()
 while IFS= read -r commit; do first_parent[$commit]=1; done < <(git rev-list --first-parent "$trunk_ref")
-declare -A integrated=()
-while IFS=$'\t' read -r tree_path reason; do
-  integrated[$(realpath "$tree_path" 2> /dev/null || printf '%s' "$tree_path")]=$reason
-done < <(wt list --format=json | jq -r '.items[] | select(.worktree != null and .worktree.path != null) | [.worktree.path, (.default_branch.integration.reason // "")] | @tsv')
+# The integration reason and the head it was judged at, from one snapshot; the
+# head leads its line, as it is never empty and a tab-separated read
+# collapses an empty field in the middle.
+declare -A integrated=() judged=()
+while IFS=$'\t' read -r tree_path sha reason; do
+  key=$(realpath "$tree_path" 2> /dev/null || printf '%s' "$tree_path")
+  integrated[$key]=$reason
+  judged[$key]=$sha
+done < <(wt list --format=json | jq -r '.items[] | select(.worktree != null and .worktree.path != null) | [.worktree.path, .head.sha, (.default_branch.integration.reason // "")] | @tsv')
 tmp_roots=()
 for root in "${TMPDIR:-/tmp}" /tmp /var/folders; do
   [[ -d "$root" ]] || continue
@@ -1207,11 +1217,13 @@ facts=()
 kept=()
 pruned=()
 tree() {
-  local merged=false scratch=null holder=null alive=false young=false gitdir
+  local merged=false moved=false scratch=null holder=null alive=false young=false gitdir key
   [[ -n "$path" ]] || return 0
   if [[ "$flag" == prunable ]]; then pruned+=("pruned $path${branch:+ ($branch)}: its directory is gone"); return 0; fi
   if [[ -n "$flag" ]]; then kept+=("kept $path${branch:+ ($branch)}: $flag"); return 0; fi
-  if [[ -n "$branch" && -z "${first_parent[$head]:-}" && -n "${integrated[$(realpath "$path")]:-}" ]]; then merged=true; fi
+  key=$(realpath "$path")
+  if [[ -n "$branch" && -n "${integrated[$key]:-}" && -z "${first_parent[${judged[$key]:-none}]:-}" ]]; then merged=true; fi
+  if [[ -n "${judged[$key]:-}" && "$head" != "${judged[$key]}" ]]; then moved=true; fi
   if [[ "$path" =~ /gandr-scratch-([0-9]+)\. ]] || { [[ -z "$branch" ]] && under_tmp "$path"; }; then
     if [[ "$path" =~ /gandr-scratch-([0-9]+)\. ]]; then
       holder=${BASH_REMATCH[1]}
@@ -1222,9 +1234,9 @@ tree() {
     scratch=$(jq -nc --argjson holder "$holder" --argjson alive "$alive" --argjson young "$young" '{holder: $holder, alive: $alive, young: $young}')
   fi
   facts+=("$(jq -nc --arg path "$path" --arg branch "$branch" --argjson primary "$primary" \
-    --argjson cwd "$([[ $(realpath "$path") == "$here" ]] && echo true || echo false)" \
-    --argjson merged "$merged" --argjson scratch "$scratch" \
-    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, scratch: $scratch}')")
+    --argjson cwd "$([[ $key == "$here" ]] && echo true || echo false)" \
+    --argjson merged "$merged" --argjson moved "$moved" --argjson scratch "$scratch" \
+    '{path: $path, branch: (if $branch == "" then null else $branch end), primary: $primary, cwd: $cwd, merged: $merged, moved: $moved, scratch: $scratch}')")
 }
 path= head= branch= flag= primary=true
 while IFS= read -r line; do
@@ -1250,7 +1262,10 @@ while IFS=$'\t' read -r action path branch reason; do
   if [[ "$dry_run" == true ]]; then printf '%s %s: %s\n' "$action" "$label" "$reason"; continue; fi
   case "$action" in
     remove)
-      if out=$(wt remove --foreground --yes "$path" 2>&1); then
+      judged_head=${judged[$(realpath "$path")]:-}
+      if now=$(git -C "$path" rev-parse HEAD 2> /dev/null) && [[ "$now" != "$judged_head" ]]; then
+        kept+=("kept $label: $reason, but its head moved to ${now:0:9} after it was judged at ${judged_head:0:9}")
+      elif out=$(wt remove --foreground --yes "$path" 2>&1); then
         echo "removed $label: $reason"
         removed=$((removed + 1))
       else
