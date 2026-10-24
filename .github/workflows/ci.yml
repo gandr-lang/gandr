@@ -1904,6 +1904,8 @@ jobs:
         run: mise run check:lockfile
       - name: keep workflow tools outside the package graph
         run: mise run check:publish
+      - name: check the crate map
+        run: mise run check:crate-map
       # One commitlint run per non-merge commit, so the agent-commit rules see
       # that commit's own author: the config resolves it from
       # COMMITLINT_COMMIT. A root commit has no parent to range from; its
