@@ -1224,6 +1224,68 @@ fn a_linear_run_follows_the_checker_s_elaborations()
     );
 }
 
+/// #2255: a tail's `return` of a call follows the checker as a linear run
+/// does: written away where the checker elaborates both spellings to one
+/// body, withdrawn and reported where it elaborates them otherwise, and kept
+/// with nothing reported where it refuses the source as written or no checker
+/// is beside the formatter.
+#[test]
+fn a_tail_return_of_a_call_follows_the_checker_s_elaborations_2255()
+{
+    let grammar = grammar();
+    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
+                  \n\
+                  def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
+                  \n\
+                  def again(n : Nat) -> Nat { return twice(n) }\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let options = FormatOptions {
+        form: Form::Sugared,
+        ..FormatOptions::default()
+    };
+    let format = |answer: Option<Answer>| {
+        let oracle = answer.map(|answer| Oracle {
+            answer,
+            asked: Cell::new(0),
+        });
+        let checker: Option<&dyn Elaborate> = oracle.as_ref().map(|oracle| {
+            let checker: &dyn Elaborate = oracle;
+            checker
+        });
+        let formatted = format_beside(&grammar, &parsed, options, (Beside::Alone, checker))
+            .expect("the source formats");
+        let withdrawn: Vec<(String, Withdrawn)> = formatted
+            .withdrawn()
+            .iter()
+            .map(|withdrawal| (withdrawal.declaration.clone(), withdrawal.reason.clone()))
+            .collect();
+        (formatted.into_text(), withdrawn)
+    };
+    assert_eq!(
+        format(Some(Answer::Alike)),
+        (source.replace("return twice(n)", "twice(n)"), Vec::new()),
+        "elaborated alike, the tail is the call"
+    );
+    assert_eq!(
+        format(Some(Answer::Apart)),
+        (
+            String::from(source),
+            Vec::from([(String::from("again"), Withdrawn::Lowered)])
+        ),
+        "elaborated otherwise, the declaration keeps its spelling, reported"
+    );
+    assert_eq!(
+        format(Some(Answer::Refused)),
+        (String::from(source), Vec::new()),
+        "refused as written, the return stays and nothing is withdrawn"
+    );
+    assert_eq!(
+        format(None),
+        (String::from(source), Vec::new()),
+        "with no checker, the return stays and nothing is withdrawn"
+    );
+}
+
 /// The runs ending a block are written away together, last first, each at
 /// its read, a comment between two of them kept; a run whose binder is read
 /// twice stops them, and the runs before it stay.

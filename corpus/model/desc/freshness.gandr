@@ -33,7 +33,7 @@ def rec conditions(chain : Theory) -> Integer {
     Turned(name, lhs, rhs, rest) => become conditions[<](rest),
     Fresh(atom, term, rest) => {
       run r <- conditions[<](rest);
-      return r + 1
+      r + 1
     },
     _ => 0
   }

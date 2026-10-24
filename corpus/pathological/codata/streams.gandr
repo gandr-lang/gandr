@@ -70,7 +70,7 @@ def rec sums(s : +U Stream, t : +U Stream) -> Stream {
     .head => {
       run x <- peek(s);
       run y <- peek(t);
-      return x + y
+      x + y
     },
     .tail => sums[>](s.tail, t.tail)
   }

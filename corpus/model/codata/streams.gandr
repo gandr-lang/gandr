@@ -63,7 +63,7 @@ def rec zipWith(
 /// Addition, as the function `zipWith` combines with.
 @[ checks ]
 def add(x : Integer, y : Integer) -> Integer {
-  return x + y
+  x + y
 }
 
 /// The integers from three, observed at the head.

@@ -28,7 +28,7 @@ def tag() -> Integer { tag_of(tagged) }
 /// The first component of a dependent pair, selected by its label.
 @[ checks ]
 def index_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
-  return p.n
+  p.n
 }
 
 /// The index of `tagged`.
@@ -42,14 +42,14 @@ def ring : #{n : Integer, v : Path(Integer, n, n)} = (2, here(2)) ;
 /// The second projection's type reads the first.
 @[ checks ]
 def lap(p : #{n : Integer, v : Path(Integer, n, n)}) -> Path(Integer, p.n, p.n) {
-  return p.v
+  p.v
 }
 
 /// A selection by position names the same entry: `.0` the first, `.1` the
 /// second.
 @[ checks ]
 def lap_by_position(p : #{n : Integer, v : Path(Integer, n, n)}) -> Path(Integer, p.0, p.0) {
-  return p.1
+  p.1
 }
 
 /// A pair has two positions, so a third names nothing.

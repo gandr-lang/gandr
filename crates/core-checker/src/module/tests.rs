@@ -1055,7 +1055,7 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
 {
     let mut arena = CoreArena::new();
     let (function, identity) = integer_function(&mut arena);
-    let [inner_x, expected_x, expected_inner_r, expected_r] = [(); 4].map(|()| {
+    let [inner_x, expected_x, expected_inner_r] = [(); 3].map(|()| {
         arena.value_variable(
             gandr_core_term::Zone::Intuitionistic,
             DeBruijnIndex::from(0_u32),
@@ -1072,9 +1072,7 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
         let first = call(&mut arena, ConstantIndex::from(0_usize), expected_x);
         let second = call(&mut arena, ConstantIndex::from(0_usize), expected_inner_r);
         let ran = arena.computation_bind(first, second);
-        let returned = arena.computation_return(expected_r);
-        let bound = arena.computation_bind(ran, returned);
-        let lambda = arena.computation_lambda(bound);
+        let lambda = arena.computation_lambda(ran);
         arena.value_thunk(lambda)
     };
     let report = {
@@ -1092,7 +1090,8 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
     assert_eq!(
         gandr_core_term::equal_certificate_syntax(&arena, body, expected),
         gandr_core_term::CertificateEquality::Equal,
-        "the inner call runs inside the outer one's computation, and the outer before the return"
+        "the inner call runs inside the outer one's computation, and the outer, which the \
+         return only returns, is the body"
     );
     assert_eq!(
         report.definitions().get(&ConstantIndex::from(1_usize)),
@@ -1118,8 +1117,9 @@ fn a_nested_run_elaborates_into_a_bind_before_its_region()
             .iter()
             .map(|&(run, _)| run)
             .collect::<Vec<_>>(),
-        [inner, outer],
-        "each run is reported beside the bind minted for it, the inner first"
+        [inner],
+        "the inner run is reported beside the bind minted for it; the outer, which its region \
+         only returns, mints none"
     );
     assert!(
         elaboration

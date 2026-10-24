@@ -18,7 +18,7 @@ theory Monoid {
 @[ checks ]
 def rec operations(chain : Theory) -> Integer {
   case chain {
-    Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); return r + 1 },
+    Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); r + 1 },
     _ => 0
   }
 }

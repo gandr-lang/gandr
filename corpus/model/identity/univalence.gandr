@@ -208,7 +208,7 @@ def univalenceIso(a : Type, b : Type) -> Path(Type, a, b) ≅ (a ≃ b) {
     thunk { fn (p) { idtoequiv(a, b, p) } },
     (
       thunk { fn (e) { ua(e) } },
-      (thunk { fn (p) { return uaEta(a, b, p) } }, thunk { fn (e) { return idtoequivUa(a, b, e) } })
+      (thunk { fn (p) { uaEta(a, b, p) } }, thunk { fn (e) { idtoequivUa(a, b, e) } })
     )
   )
 }
@@ -222,8 +222,8 @@ def univalence(a : Type, b : Type) -> Path(Type, a, b) ≃ (a ≃ b) {
   (
     thunk { fn (p) { idtoequiv(a, b, p) } },
     (
-      (thunk { fn (e) { ua(e) } }, thunk { fn (p) { return uaEta(a, b, p) } }),
-      (thunk { fn (e) { ua(e) } }, thunk { fn (e) { return idtoequivUa(a, b, e) } })
+      (thunk { fn (e) { ua(e) } }, thunk { fn (p) { uaEta(a, b, p) } }),
+      (thunk { fn (e) { ua(e) } }, thunk { fn (e) { idtoequivUa(a, b, e) } })
     )
   )
 }

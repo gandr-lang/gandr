@@ -4,7 +4,7 @@
 /// One more than its argument.
 @[ checks ]
 def inc(x: Integer) -> Integer {
-  return (x + 1)
+  x + 1
 }
 
 /// `inc` twice: the first call runs, the second is the tail call.

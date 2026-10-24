@@ -32,7 +32,7 @@ module Successor : Model(PointedMonoid) {
   def ident(x : Integer) -> Integer { x }
 
   /// The successor.
-  def succ(x : Integer) -> Integer { return x + 1 }
+  def succ(x : Integer) -> Integer { x + 1 }
 
   def mul(
     f : Integer => Integer,

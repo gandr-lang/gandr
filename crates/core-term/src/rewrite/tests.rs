@@ -3262,8 +3262,9 @@ fn an_elaboration_never_hoists_out_of_a_thunk_or_an_arm()
     };
     assert_eq!(
         term_text(&arena, elaborated),
-        "thunk(lambda(case(v0,bind(apply(force(#1),v0),return(v0)),return(thunk(bind(apply(force(#2),v0),return(v0)))))))",
-        "an arm's run binds inside the arm and a thunk's inside the thunk; the case stands as written",
+        "thunk(lambda(case(v0,apply(force(#1),v0),return(thunk(apply(force(#2),v0))))))",
+        "an arm's run stands inside the arm and a thunk's inside the thunk, each its region's \
+         whole computation where that region only returns it; the case stands as written",
     );
 }
 
@@ -4517,7 +4518,7 @@ fn every_former_is_kept_when_nothing_beneath_it_changes_and_carries_what_does()
 /// With nothing decided, elaboration keeps every former that holds no run,
 /// reporting nothing rebuilt. The run former standing alone is in no
 /// computation's values and is refused by name; returned from a computation,
-/// it runs as one bind.
+/// it is the computation it runs, which mints no bind.
 #[test]
 fn an_undecided_elaboration_keeps_every_former_but_the_run()
 {
@@ -4536,8 +4537,8 @@ fn an_undecided_elaboration_keeps_every_former_but_the_run()
             let ran =
                 elaborate_nested_traced(&mut arena, held, &undecided, &mut carried, &mut binds);
             assert!(
-                matches!(ran, Ok(rebuilt) if rebuilt != held) && binds.len() == 1,
-                "{what}: a returned run is bound once"
+                matches!(ran, Ok(rebuilt) if rebuilt != held) && binds.is_empty(),
+                "{what}: a returned run is the computation it runs"
             );
         }
         else {

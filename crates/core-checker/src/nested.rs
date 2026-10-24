@@ -35,19 +35,21 @@
 //! **Where: the checker's elaboration.** The judgement records each decision
 //! where it makes it; once the body is accepted, [`elaborate`] rebuilds it
 //! with every suspension a thunk and every run a bind wrapped around its
-//! region, the run's place taken by the bind's variable, and the judgement
-//! runs again over the rebuilt body. The second run gives the explicit
-//! spelling's verdict exactly — the bind's effect row joins its region's, and
-//! a body type that would mention the bound value is a dependent bind — and
-//! the verdict carries the rebuilt body, which is what the context defines,
-//! the evaluator runs and the kernel re-derives: neither ever meets a nested
-//! computation. A run with no computation around it — in a definition's own
-//! value, or under static content — has nowhere to run and is refused as
-//! [`CheckRefusal::UnenclosedRun`]. Each minted bind is reported beside the
-//! run it was minted for, and every rebuilt node beside the node it was
-//! rebuilt from, so a consumer publishes a refusal of the second run at the
-//! written node that elaborated — the nested call's own span at its bind —
-//! and no diagnostic names the minted variable.
+//! region, the run's place taken by the bind's variable, but where the region
+//! only returns that variable: there the run's computation is the region,
+//! `x ← c ; return x` being `c`, so a tail's `return f(x)` elaborates as the
+//! tail `f(x)`. The judgement runs again over the rebuilt body. The second run
+//! gives the explicit spelling's verdict exactly — the bind's effect row joins
+//! its region's, and a body type that would mention the bound value is a
+//! dependent bind — and the verdict carries the rebuilt body, which is what
+//! the context defines, the evaluator runs and the kernel re-derives: neither
+//! ever meets a nested computation. A run with no computation around it — in
+//! a definition's own value, or under static content — has nowhere to run and
+//! is refused as [`CheckRefusal::UnenclosedRun`]. Each minted bind is reported
+//! beside the run it was minted for, and every rebuilt node beside the node
+//! it was rebuilt from, so a consumer publishes a refusal of the second run at
+//! the written node that elaborated — the nested call's own span at its bind
+//! — and no diagnostic names the minted variable.
 //!
 //! **A reduct the bridge crossed by runs where it crossed.** A model the value
 //! bridge carried to a model of a theory its own includes stands, before the

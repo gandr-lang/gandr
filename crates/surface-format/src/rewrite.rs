@@ -90,7 +90,9 @@ pub enum RewriteName
     PathAction,
     /// A tail's exit: `return v` where a path through a body ends, over a
     /// value, and `v`; only the sugared form moves it, leaving out the
-    /// keyword the lowering infers.
+    /// keyword the lowering infers. Over a call or an operator, the checker
+    /// runs and returns it as it runs the bare tail, so it moves only beside
+    /// a checker that elaborates both.
     TailReturn,
     /// A definition's result: `-> -F B` and `-> B`, `B` a value type, which
     /// the lowering reads with the returner inserted; only the sugared form

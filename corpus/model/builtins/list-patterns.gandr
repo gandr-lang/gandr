@@ -80,7 +80,7 @@ def headed(xs : List(Integer)) -> Integer {
   case xs {
     [a, .._] as all => {
       run counted <- shortLength(all);
-      return a + counted
+      a + counted
     },
     [] => 0
   }

@@ -272,13 +272,16 @@ pub struct InferredExit
 /// form's tail, written as its value.
 ///
 /// The `return` stands where a path through a body ends and is no statement
-/// before the closing brace; its operand is a value, through any grouping, so
-/// the exit the bare value's polarity names is the `return` written; it does
-/// not cross a handler's frame; and its declaration lowered, under no
-/// `explicit_exits` attribute. Leaving the keyword out therefore mints the
-/// same term. An early exit — one in a statement whose rest it distributes —
-/// is no tail and is never listed, nor is a `become`, which a sugared tail
-/// keeps.
+/// before the closing brace; it does not cross a handler's frame; and its
+/// declaration lowered, under no `explicit_exits` attribute. Its operand is a
+/// value, through any grouping, so the exit the bare value's polarity names is
+/// the `return` written and leaving the keyword out mints the same term
+/// ([`Returned::Value`]); or it is a computation written where the value is
+/// read, through any grouping, which the bare tail runs as the computation it
+/// is: another term, which the checker elaborates as it does the `return`
+/// where it runs the computation there ([`Returned::Run`]). An early exit —
+/// one in a statement whose rest it distributes — is no tail and is never
+/// listed, nor is a `become`, which a sugared tail keeps.
 ///
 /// # Specification
 /// - requires: nothing to construct this data; the lowering produces it over
@@ -292,10 +295,10 @@ pub struct InferredExit
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a tail `return` of a value, in a body, a match arm and a
-///   grouping, is listed; one of a computation, one of a grouped type, one
-///   written as a statement, an early one, one an attribute asks for and one in
-///   a refused declaration are not; each listed one lowers as its tail written
-///   bare does.
+///   grouping, is listed, and so is one of a call and of an operator, bare and
+///   grouped; one of a grouped type, one written as a statement, an early one,
+///   one an attribute asks for and one in a refused declaration are not; each
+///   listed value lowers as its tail written bare does.
 /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ElidableExit
@@ -304,6 +307,20 @@ pub struct ElidableExit
     pub span: ByteSpan,
     /// The bytes of the value it returns: the tail left without the keyword.
     pub value: ByteSpan,
+    /// What the operand is, which decides what the bare tail lowers to.
+    pub returned: Returned,
+}
+
+/// What an elidable `return` returns.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Returned
+{
+    /// A value: the bare tail lowers to the same term.
+    Value,
+    /// A computation written where the value is read: the bare tail lowers to
+    /// the computation, and the `return` to the computation run there, which
+    /// the checker elaborates to the same body where it runs it.
+    Run,
 }
 
 quenchant_shape::reason_enum! {
@@ -1332,8 +1349,9 @@ impl<'source> Lowerer<'_, 'source>
         found
     }
 
-    /// The operand of the `return` at `position`, when the lowering would
-    /// infer that `return` were it left out.
+    /// The operand of the `return` at `position`, and what it is, when the
+    /// lowering would infer that `return` were it left out, or the checker
+    /// would elaborate it so.
     ///
     /// # Specification
     /// - requires: the classification has read the body `position` stands in
@@ -1343,7 +1361,9 @@ impl<'source> Lowerer<'_, 'source>
     ///   none, crossing no handler's frame, over an operand bridged bare as a
     ///   value, as is every form a grouping of it holds: a grouped type is
     ///   quoted, and a type bare at a tail takes no exit; and the form held is
-    ///   no hole, which a tail would read as a computation's.
+    ///   no hole, which a tail would read as a computation's. That is
+    ///   [`Returned::Value`]; an operand or a form a grouping of it holds that
+    ///   is a computation nested where the value is read is [`Returned::Run`].
     /// - provides: what the mint sweep records of a written exit for
     ///   [`Self::elidable_exits`].
     /// - fails: never.
@@ -1352,14 +1372,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`ElidableExit`].
     /// - witness: `lower::exits::tests::a_tail_return_of_a_value_is_listed_as_elidable_1327`
-    #[spec(ensures: |ret| ret.is_none_or(|operand| self.exits.contains(&position)
+    #[spec(ensures: |ret| ret.is_none_or(|(operand, _)| self.exits.contains(&position)
         && !self.stated.contains_key(&position)
         && !self.stated_tails.contains(&position)
         && matches!(self.plans.get(position), Some(&super::Plan::Return(written)) if written == operand)))]
     pub(super) fn elidable_at(
         &self,
         position: NodeIndex,
-    ) -> Option<NodeIndex>
+    ) -> Option<(NodeIndex, Returned)>
     {
         let tail = self.exits.contains(&position)
             && !self.inferred.contains(&position)
@@ -1375,15 +1395,19 @@ impl<'source> Lowerer<'_, 'source>
         }
         let mut held = operand;
         loop {
-            if self.bridges.get(usize::from(held)) != Some(&super::Bridge::Bare) {
-                return None;
+            match self.bridges.get(usize::from(held)) {
+                Some(&super::Bridge::Bare) => {},
+                Some(&super::Bridge::Inserted(super::Insertion::Nested)) => {
+                    return Some((operand, Returned::Run));
+                },
+                _ => return None,
             }
             match self.plans.get(held) {
                 Some(&super::Plan::Transparent(inner)) if !self.stand_ins.contains(&held) => {
                     held = inner;
                 },
                 Some(&super::Plan::ValueHole(_)) => return None,
-                _ => return Some(operand),
+                _ => return Some((operand, Returned::Value)),
             }
         }
     }
@@ -1410,17 +1434,18 @@ impl<'source> Lowerer<'_, 'source>
         let mut found: Vec<ElidableExit> = self
             .elidable
             .iter()
-            .filter(|&&(position, _)| {
+            .filter(|&&(position, ..)| {
                 !self.collected.refused(position).0
                     && !matches!(
                         self.collected.owner_of(position),
                         Maybe::Present(slot) if self.asked.contains(&slot)
                     )
             })
-            .filter_map(|&(position, operand)| {
+            .filter_map(|&(position, operand, returned)| {
                 Some(ElidableExit {
                     span: self.tree.node(position)?.span(),
                     value: self.tree.node(operand)?.span(),
+                    returned,
                 })
             })
             .collect();
