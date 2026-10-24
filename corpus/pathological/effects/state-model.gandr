@@ -1,0 +1,39 @@
+// The twin of `model/effects/state-model.gandr`: where a module is not a
+// model of a theory of state.
+
+// The theories `State` and `StatePutGet`.
+import "../../model/effects/state.gandr" ;
+
+/// `get` read first-order, its continuation at the carrier: the model's `get`
+/// takes the function from the state, so the module's is refused at its type.
+module FirstOrder : Model(State) with sort S = Integer {
+  /// The carrier.
+  type C = Integer;
+  /// A continuation at the carrier, not a function of the state.
+  @[ refuses("TypeMismatch") ]
+  def get(k : Integer) -> Integer { k }
+  /// Storing is forgotten.
+  @[ checks ]
+  def put(_s : Integer, k : Integer) -> Integer { k }
+}
+
+/// Put-get relates terms at `get`'s port, a path between host functions the
+/// model signature does not state (#1324): refused by the law's name at the
+/// module, even admitted.
+@[ refuses("UnstatedComponent.Binding") ]
+module PutGet : Model(StatePutGet) with sort S = Integer {
+  /// A computation awaiting the current state.
+  type C = +U (Integer -> -F Integer);
+  /// Reading hands the current state on.
+  @[ checks ]
+  def get(k : +U (Integer -> -F +U (Integer -> -F Integer))) -> +U (Integer -> -F Integer) {
+    thunk { fn (s) { run after <- k(s); after(s) } }
+  }
+  /// Storing runs what comes after at the stored value.
+  @[ checks ]
+  def put(s : Integer, k : +U (Integer -> -F Integer)) -> +U (Integer -> -F Integer) {
+    thunk { fn (_old) { k(s) } }
+  }
+  /// The law the signature cannot state.
+  law putGet admitted;
+}

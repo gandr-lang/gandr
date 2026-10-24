@@ -100,7 +100,7 @@ impl TrackingIssue
     pub const MODEL_MANY_OUT: Self = Self(1322);
     /// A model signature's circuit rule.
     pub const MODEL_CIRCUIT: Self = Self(1323);
-    /// A model signature's binding operation.
+    /// A model signature's law relating a term at a binding port.
     pub const MODEL_BINDING: Self = Self(1324);
     /// An index `xs[i]` outside a view-answering method's body.
     pub const INDEX: Self = Self(1536);

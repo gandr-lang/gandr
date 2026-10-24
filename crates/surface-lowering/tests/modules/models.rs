@@ -1202,6 +1202,26 @@ fn a_family_over_an_applied_index_runs_the_call_first()
     );
 }
 
+/// A port that binds a variable is the thunked function from it: `get`'s
+/// continuation takes the state, read as the manifest sort, and `lam`'s body
+/// takes a value whose type names the field `a` only that variable's sort
+/// names, so `a` binds.
+#[test]
+fn a_binding_port_is_the_function_from_its_variables_765()
+{
+    states_the_written_types(
+        "theory State {\n  sort S : Type+;\n  sort C : Type;\n  oper get : (k : pi+ (s : S) . C) \
+         --> C;\n  oper put : (s : S, k : C) --> C;\n}\ntheory Typed {\n  sort VTy : Type;\n  sort \
+         CTy : Type;\n  sort VTm(a : VTy) : Type+;\n  sort CTm(b : CTy) : Type;\n  oper lam : (t : \
+         pi+ (x : VTm(a)) . CTm(b)) --> CTm(b);\n}\ndef state : Model(State) with sort S = Integer \
+         ;\ndef stated : #{c : Type, get : +U (Integer -> -F c) => c, put : (s : Integer, k : c) \
+         => c} ;\ndef typed : Model(Typed) ;\ndef written : #{vty : Type, cty : Type, vtm : (a : \
+         vty) => Type, ctm : (b : cty) => Type, lam : (a : vty, b : cty, t : +U (vtm(a) -> -F \
+         ctm(b))) => ctm(b)} ;\n",
+        &[("state", "stated"), ("typed", "written")],
+    );
+}
+
 /// A theory's `oper x : Model(T)` is a field holding `Model(T)`'s own record.
 #[test]
 fn a_nesting_model_type_bundles_the_inner_one()

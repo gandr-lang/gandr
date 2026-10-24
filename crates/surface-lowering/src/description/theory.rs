@@ -58,8 +58,9 @@
 //! binder over an ordinary sort is the description check's
 //! `NonRepresentableBinder`; a sort's index is a plain variable and is refused
 //! as malformed under a binder; a binder's domain and a result do not parse
-//! under one. `Model(S)` refuses an operation that binds by name: its models
-//! are those of its first-order translation.
+//! under one. `Model(S)` states such an operation's port as the thunked
+//! function from its variables, `+U ((x : S) -> -F T)`, and refuses a law
+//! relating a term at the port by name.
 //!
 //! **Choice.** The binder is a form of the input port, not a type former: `pi+`
 //! is a marked tile, read only where a parameter list writes a named port. The
@@ -1713,7 +1714,11 @@ impl Reader<'_, '_>
                 },
                 Maybe::Absent(_) if hypotheses.is_empty() => {
                     let (sort, written) = self.sort_term(typed)?;
-                    binders.push(Binder { name, sort });
+                    binders.push(Binder {
+                        name,
+                        over: Vec::new(),
+                        sort,
+                    });
                     written_binders.push(WrittenPort {
                         named: Maybe::Present(key.span),
                         binders: Vec::new(),

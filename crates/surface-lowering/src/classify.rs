@@ -541,10 +541,11 @@ impl FragmentFeature
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a component relating a many-out operation's results, a circuit
-///   rule, a binding operation and an abstracting operation are unimplemented,
-///   each naming its issue; an unknown head, a wrong arity, an ill-sorted term,
-///   an unsorted variable, a constructor term, a component inheriting another's
-///   failure and a stated law's unbound variable are malformed source.
+///   rule, a law at a binding port and an abstracting operation are
+///   unimplemented, each naming its issue; an unknown head, a wrong arity, an
+///   ill-sorted term, an unsorted variable, a constructor term, a component
+///   inheriting another's failure and a stated law's unbound variable are
+///   malformed source.
 /// - provides: the lowering classifier's arm for `UnstatedComponent`.
 /// - fails: never.
 /// - panics: none.
@@ -1556,7 +1557,7 @@ mod tests
         assert_eq!(
             second.classify(),
             FailureClass::Unimplemented(TrackingIssue::MODEL_BINDING),
-            "a binding operation names its issue"
+            "a law at a binding port names its issue"
         );
     }
 
