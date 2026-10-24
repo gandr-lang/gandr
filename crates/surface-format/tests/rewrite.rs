@@ -1799,6 +1799,90 @@ fn an_adjacent_pair_joins_into_one_definition_2228()
     .assert_eq(&laid(Form::Explicit));
 }
 
+/// A module member's signature and the definition directly after it are
+/// written as one form as a top-level pair is, in a nested module too, a
+/// thunk's into its function form; a comment between them keeps the two; the
+/// explicit form writes each joined member apart (#2255).
+#[test]
+fn a_module_member_pair_joins_as_a_top_level_one_2255()
+{
+    let grammar = grammar();
+    let source = "module Outer {\n\
+                  \x20 /// The one.\n\
+                  \x20 def one : Integer ;\n\
+                  \x20 def one = 1 ;\n\
+                  \n\
+                  \x20 def two : Integer = 2 ;\n\
+                  \n\
+                  \x20 def three : Integer ;\n\
+                  \x20 // parts them\n\
+                  \x20 def three = 3 ;\n\
+                  \n\
+                  \x20 def four : () => Integer ;\n\
+                  \x20 def four = thunk { 4 } ;\n\
+                  \n\
+                  \x20 module Inner {\n\
+                  \x20   def five : Integer ;\n\
+                  \x20   def five = 5 ;\n\
+                  \x20 }\n\
+                  }\n";
+    let parsed = parse(&grammar, SourceText::from(source)).expect("the source parses");
+    let laid = |form: Form| {
+        let options = FormatOptions {
+            form,
+            ..FormatOptions::default()
+        };
+        let formatted = format(&grammar, &parsed, options).expect("the source formats");
+        assert_eq!(
+            formatted.withdrawn(),
+            &[],
+            "nothing is withdrawn in {form:?}"
+        );
+        formatted.into_text()
+    };
+    expect![[r#"
+        module Outer {
+          /// The one.
+          def one : Integer = 1 ;
+
+          def two : Integer = 2 ;
+
+          def three : Integer ;
+          // parts them
+          def three = 3 ;
+
+          def four() -> -F Integer { 4 }
+
+          module Inner {
+            def five : Integer = 5 ;
+          }
+        }
+    "#]]
+    .assert_eq(&laid(Form::Sugared));
+    expect![[r#"
+        module Outer {
+          /// The one.
+          def one : Integer ;
+          def one = 1 ;
+
+          def two : Integer ;
+          def two = 2 ;
+
+          def three : Integer ;
+          // parts them
+          def three = 3 ;
+
+          def four() -> -F Integer { 4 }
+
+          module Inner {
+            def five : Integer ;
+            def five = 5 ;
+          }
+        }
+    "#]]
+    .assert_eq(&laid(Form::Explicit));
+}
+
 /// A lambda the checker thunks, written bare after its signature, merges
 /// into the function form as the thunk holding it does, beside a checker
 /// that elaborates both alike; without one the two lower apart and the pair

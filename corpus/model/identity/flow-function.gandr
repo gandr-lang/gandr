@@ -18,12 +18,10 @@ module ReaderSchema {
   }
   /// The flow from the old schema to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) ;
-  def upgrade = forward(toNew) ;
+  def upgrade : Flow(Type, Old, New) = forward(toNew) ;
   /// The flow on readers: a reader of the new schema becomes one of the old.
   @[ checks ]
-  def reader : Flow(Type, New => Integer, Old => Integer) ;
-  def reader = arrow(upgrade, stay(Integer)) ;
+  def reader : Flow(Type, New => Integer, Old => Integer) = arrow(upgrade, stay(Integer)) ;
   /// The new schema's reader of ages.
   @[ checks ]
   def age(record : New) -> -F Integer {
@@ -39,6 +37,5 @@ module ReaderSchema {
   }
   /// An old record's age, read through the ridden reader.
   @[ runs("30") ]
-  def aged : () => Integer ;
-  def aged = legacy(("ada", 30)) ;
+  def aged : () => Integer = legacy(("ada", 30)) ;
 }

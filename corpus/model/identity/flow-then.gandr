@@ -24,16 +24,13 @@ module Versions {
   }
   /// The flow from the first version to the second.
   @[ checks ]
-  def first : Flow(Type, V1, V2) ;
-  def first = forward(toV2) ;
+  def first : Flow(Type, V1, V2) = forward(toV2) ;
   /// The flow from the second version to the third.
   @[ checks ]
-  def second : Flow(Type, V2, V3) ;
-  def second = forward(toV3) ;
+  def second : Flow(Type, V2, V3) = forward(toV3) ;
   /// The stationary flow at the first version.
   @[ checks ]
-  def kept : Flow(Type, V1, V1) ;
-  def kept = stay(V1) ;
+  def kept : Flow(Type, V1, V1) = stay(V1) ;
   /// The stationary flow, then the first.
   @[ checks ]
   def early() -> -F Flow(Type, V1, V2) {
@@ -53,6 +50,5 @@ module Versions {
   }
   /// A first-version record migrated to the third by a run.
   @[ runs("(+{.1 = unit}, 30, \"ada\")") ]
-  def latest : () => V3 ;
-  def latest = moved(("ada", 30)) ;
+  def latest : () => V3 = moved(("ada", 30)) ;
 }

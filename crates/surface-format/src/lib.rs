@@ -1342,6 +1342,41 @@ fn write<'source>(
                 let (changed, kept) = respelled_form(grammar, tree, form, unit.leaves, rewrites);
                 unspelled.extend(kept.0);
                 let own = changed.as_deref().unwrap_or(unit.leaves);
+                // A module's member pairs, written as one form or apart as a
+                // top-level pair would be; a module whose one forms elaborate
+                // otherwise is held whole.
+                let membered = rewrites.and_then(|chosen| {
+                    let whole = tree.node(form)?.span();
+                    if chosen.withdrawn.contains(&whole) {
+                        return None;
+                    }
+                    let pairing = if chosen.chosen.pairing() == merge::Pairing::Merged {
+                        apart.pairing(whole, merge::OneForm::Function)
+                    }
+                    else {
+                        merge::Pairing::Apart
+                    };
+                    let joining =
+                        if apart.pairing(whole, merge::OneForm::Joined) == merge::Pairing::Apart {
+                            merge::Joining::Keep
+                        }
+                        else {
+                            chosen.chosen.joining()
+                        };
+                    merge::members(tree, form, (unit.leaves, own), (pairing, joining))
+                        .map(|(leaves, ones)| (leaves, ones, whole))
+                });
+                if let Some((_, ref ones, whole)) = membered {
+                    for &one in ones {
+                        match one {
+                            merge::OneForm::Function => merged.push(whole),
+                            merge::OneForm::Joined => joined.push(whole),
+                        }
+                    }
+                }
+                let own = membered
+                    .as_ref()
+                    .map_or(own, |&(ref leaves, ..)| leaves.as_slice());
                 let paired = rewrites
                     .filter(|chosen| {
                         chosen.chosen.pairing() == merge::Pairing::Merged
@@ -1428,7 +1463,7 @@ fn write<'source>(
                     written.extend_from_slice(&defined);
                 }
                 else {
-                    if changed.is_some() {
+                    if changed.is_some() || membered.is_some() {
                         respelled.push(form);
                     }
                     text.push_str(&layout::lay_out(own, layout, ending.spelling())?);

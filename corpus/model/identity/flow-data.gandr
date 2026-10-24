@@ -42,8 +42,7 @@ module Rename {
   }
   /// The flow from the old type to the new, by its translator.
   @[ checks ]
-  def renamed : Flow(Type, Old, Other) ;
-  def renamed = forward(toOther) ;
+  def renamed : Flow(Type, Old, Other) = forward(toOther) ;
   /// One value ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> -F Other {
@@ -51,8 +50,7 @@ module Rename {
   }
   /// A value migrated by a run.
   @[ runs("Make(3)") ]
-  def one : () => Other ;
-  def one = moved(Mk(3)) ;
+  def one : () => Other = moved(Mk(3)) ;
 }
 
 /// Each constructor moved to its twin, a constructor's fields swapped.
@@ -67,8 +65,7 @@ module Shapes {
   }
   /// The flow from the old shapes to the new.
   @[ checks ]
-  def redrawn : Flow(Type, Shape, Figure) ;
-  def redrawn = forward(toFigure) ;
+  def redrawn : Flow(Type, Shape, Figure) = forward(toFigure) ;
   /// A list of shapes ridden along the flow in the family of lists.
   @[ checks ]
   def all(shapes : List(Shape)) -> -F List(Figure) {
@@ -76,6 +73,5 @@ module Shapes {
   }
   /// Two shapes migrated by a run.
   @[ runs("cons(Round(1), cons(Box(3, 2), nil))") ]
-  def two : () => List(Figure) ;
-  def two = all(cons(Circle(1), cons(Rect(2, 3), nil))) ;
+  def two : () => List(Figure) = all(cons(Circle(1), cons(Rect(2, 3), nil))) ;
 }

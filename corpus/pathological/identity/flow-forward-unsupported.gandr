@@ -17,6 +17,5 @@ module Schema {
   }
   /// A literal is no image of a source leaf, so no flow forwards by it.
   @[ refuses("ForwardUnsupported") ]
-  def scrub : Flow(Type, Old, New) ;
-  def scrub = forward(anonymise) ;
+  def scrub : Flow(Type, Old, New) = forward(anonymise) ;
 }

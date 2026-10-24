@@ -18,8 +18,7 @@ module Schema {
   }
   /// The flow from the old schema to the new, by its translator.
   @[ checks ]
-  def upgrade : Flow(Type, Old, New) ;
-  def upgrade = forward(toNew) ;
+  def upgrade : Flow(Type, Old, New) = forward(toNew) ;
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> -F New {
@@ -32,10 +31,8 @@ module Schema {
   }
   /// One old record migrated by a run.
   @[ runs("(30, \"ada\", +{.0 = unit})") ]
-  def one : () => New ;
-  def one = moved(("ada", 30)) ;
+  def one : () => New = moved(("ada", 30)) ;
   /// Two old records migrated by a run.
   @[ runs("cons((30, \"ada\", +{.0 = unit}), cons((41, \"grace\", +{.0 = unit}), nil))") ]
-  def many : () => List(New) ;
-  def many = everyone(cons(("ada", 30), cons(("grace", 41), nil))) ;
+  def many : () => List(New) = everyone(cons(("ada", 30), cons(("grace", 41), nil))) ;
 }

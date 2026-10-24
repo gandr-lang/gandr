@@ -9,6 +9,5 @@ module Evolution {
     pause : !String. turn
   };
   @[ refuses("SessionNotEquivalent") ]
-  def same : Path(Type, SeatEnd, SeatEnd′) ;
-  def same = bisim(SeatEnd, SeatEnd′) ;
+  def same : Path(Type, SeatEnd, SeatEnd′) = bisim(SeatEnd, SeatEnd′) ;
 }
