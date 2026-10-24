@@ -900,7 +900,7 @@ fn source_slice(src: SourceText<'_>) -> SourceFragment<'_>
 /// `inf`, the ASCII spelling of the grade `ω`, is reserved: a grade slot
 /// admits a name as well as `ω`, and an unreserved `inf` would tie its glyph's
 /// tile against `identifier` there.
-const KEYWORDS: &[&str] = &[
+pub const KEYWORDS: &[&str] = &[
     "def", "val", "run", "leta", "as", "extern", "from", "type", "fn", "pure", "return", "become",
     "thunk", "force", "case", "if", "else", "co", "hold", "dup", "drop", "send", "recv", "close",
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",

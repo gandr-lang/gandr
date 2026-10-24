@@ -32,12 +32,22 @@
 //! must read the tiles before it as the source does, keep every top-level form
 //! a declaration and nest the form no deeper. A `}` left out is not read here:
 //! a block's closer is placed by the layout, which the lowering reads.
+//!
+//! A top-level form whose declaration keyword is left out or misspelled,
+//! `def1 f(x : T) -> …`, reads its head as an expression: the name is an
+//! admissible operand and the bracket after it a call's, so the first token
+//! that shows the declaration, the parameter's `:`, is a fault no reading of
+//! it recovers. Such a form is read first with each keyword its first tile can
+//! follow written before it, and the first that makes it a declaration with no
+//! repair is the parse, the keyword minted at its head as an empty prefix
+//! grout and owed alone; the search above then runs over that parse.
 
 use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::TileLabel;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -66,10 +76,12 @@ use crate::closing::LeadingSlot;
 use crate::closing::push_closing;
 use crate::label::Token;
 use crate::label::label;
+use crate::meld::BOUNDARY_SORT;
 use crate::meld::Expected;
 use crate::meld::Splice;
 use crate::meld::declaration_head;
 use crate::meld::primitive_copy_wrapper;
+use crate::mold::KEYWORDS;
 use crate::mold::Molding;
 use crate::mold::lookahead_reach;
 use crate::oblig::Oblig;
@@ -213,7 +225,9 @@ impl Target
 ///   minted, empty, at the first such place in that order — past a run of the
 ///   same tile written there — a minted close for a bracket and an empty
 ///   postfix grout otherwise, and the obligations are that repair and the
-///   copy's others, shifted back over the tile; otherwise `parsed`.
+///   copy's others, shifted back over the tile; otherwise `parsed`. A
+///   declaration's keyword left out at the head of a top-level form is placed
+///   first ([`headed`]), and the search above runs over that parse.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause restates the search.
@@ -231,11 +245,13 @@ impl Target
 ///   body.
 /// - witness: `parse::place::tests::a_closer_left_out_is_minted_where_the_rest_parses_2242`
 /// - witness: `parse::place::tests::a_tile_left_out_is_minted_where_the_rest_parses_2259`
+/// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
 pub(super) fn placed<'source>(
     pbg: &Pbg,
     parsed: ParseResult<'source>,
 ) -> ParseResult<'source>
 {
+    let parsed = headed(pbg, &parsed).unwrap_or(parsed);
     earlier(pbg, &parsed).unwrap_or(parsed)
 }
 
@@ -285,6 +301,189 @@ fn earlier<'source>(
         .chain(deepest.and_then(|at| others.get(at)).copied())
         .chain(first.copied())
         .find_map(|target| settled(pbg, tree, target))
+}
+
+/// `parsed` with a declaration's keyword minted at the head of a top-level form
+/// that reads as no declaration, when written there it parses.
+///
+/// A form whose keyword is left out or misspelled, as `def1 f(x : T) -> …`,
+/// reads its head as an expression: the name a declaration takes after its
+/// keyword is an admissible operand, and the bracket after it a call's, so
+/// the misreading is committed before any token shows the declaration, and
+/// the first token that does — a parameter's `:` — is a fault no reading of it
+/// recovers. Of the top-level forms that hold a repair and read as no
+/// declaration, the first whose first tile a declaration keyword takes next is
+/// tried with each such keyword written before that tile, a space after it,
+/// in mold order, the first [`COPIES`] of them.
+///
+/// # Specification
+/// - requires: `parsed` is a parse under `pbg`.
+/// - ensures: the first such copy whose form molds as a declaration with no
+///   repair is the parse: the source's tree read from the whole copy, the
+///   keyword an empty prefix grout at its first tile and its space empty there,
+///   with one [`Oblig::MissingTile`] over that tile beside the copy's other
+///   obligations, shifted back over the keyword; `None` where no copy tried
+///   parses.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the search.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a definition whose `def` is misspelled, or left out at
+///   the start of the source, reads as one declaration owing its keyword alone;
+///   a call at the top level with a repair of its own that no keyword makes a
+///   declaration keeps its reading.
+/// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+fn headed<'source>(
+    pbg: &Pbg,
+    parsed: &ParseResult<'source>,
+) -> Option<ParseResult<'source>>
+{
+    let tree = &parsed.tree;
+    let source = tree.source();
+    let whole = ByteSpan::new(
+        ByteOffset::from(0_usize),
+        ByteOffset::from(<&str>::from(source).len()),
+    )
+    .ok()?;
+    let (form, lead, keywords) = tree.children(tree.root()).find_map(|position| {
+        let node = tree.node(position)?;
+        let (NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = node.label()
+        else {
+            return None;
+        };
+        let span = node.span();
+        let repaired = parsed.obligations.iter().any(|obligation| {
+            span.start() <= obligation.span.start() && obligation.span.end() <= span.end()
+        });
+        if bool::from(declaration_head(pbg, mold)) || !repaired {
+            return None;
+        }
+        let (lead, lead_span) = first_tile(tree, position)?;
+        let keywords = heads(pbg, lead);
+        (!keywords.is_empty()).then_some((span, lead_span, keywords))
+    })?;
+    let place = lead.start();
+    let mut written_keyword = String::new();
+    keywords.iter().take(COPIES).find_map(|&keyword| {
+        written_keyword.clear();
+        written_keyword.push_str(<&str>::from(keyword));
+        written_keyword.push(' ');
+        let tile = SourceText::from(written_keyword.as_str());
+        let copied = written(source, form, place, tile)?;
+        let copied = SourceText::from(copied.as_str());
+        if repair(pbg, copied) != Repair::Unneeded {
+            return None;
+        }
+        let (declaration, _none) = molded(pbg, copied).commit_with_obligations(copied).ok()?;
+        if !bool::from(declared(pbg, &declaration)) {
+            return None;
+        }
+        let copy = written(source, whole, place, tile)?;
+        let splice = Splice::new(place, tile, NodeLabel::Grout {
+            sort: BOUNDARY_SORT.grout_sort(),
+            shape: GroutShape::Prefix,
+        })?;
+        let (tree, copied) = molded(pbg, SourceText::from(copy.as_str()))
+            .commit_spliced(source, splice)
+            .ok()?;
+        let mut obligations: Vec<ObligationInstance> = copied
+            .into_iter()
+            .map(|obligation| splice.obligation(obligation))
+            .collect();
+        obligations.push(ObligationInstance::new(Oblig::MissingTile, lead));
+        ordered(&mut obligations);
+        Some(ParseResult { tree, obligations })
+    })
+}
+
+/// The first tile of the form at `position`, read down its first children.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the mold and span of the tile reached from `position` through
+///   each node's first significant child; `None` where that walk meets anything
+///   but a form or a tile.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the walk.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`headed`].
+/// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+fn first_tile(
+    tree: &SyntaxTree<'_>,
+    position: NodeIndex,
+) -> Option<(MoldId, ByteSpan)>
+{
+    let mut at = position;
+    loop {
+        let node = tree.node(at)?;
+        match node.label() {
+            NodeLabel::Tile(mold) => return Some((mold, node.span())),
+            NodeLabel::Meld(_) => {
+                at = tree.children(at).find(|&child| {
+                    tree.node(child)
+                        .is_some_and(|child| bool::from(child.label().significance()))
+                })?;
+            },
+            NodeLabel::Wald
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => return None,
+        }
+    }
+}
+
+/// The declaration keywords whose next tile `lead`'s label spells, in mold
+/// order, each once.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the reserved spellings of the molds [`declaration_head`] accepts
+///   that a `≐`-successor with `lead`'s label follows, first occurrence kept.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the scan.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`headed`].
+/// - witness: `parse::place::tests::a_declaration_keyword_left_out_is_minted_at_its_head_2440`
+fn heads(
+    pbg: &Pbg,
+    lead: MoldId,
+) -> Vec<SourceText<'static>>
+{
+    let Ok(lead) = pbg.mold(lead).map(|def| def.label)
+    else {
+        return Vec::new();
+    };
+    let adjacencies = pbg.adjacencies();
+    let named = |mold: MoldId| {
+        let from = adjacencies.partition_point(|&(left, _right)| left < mold);
+        adjacencies
+            .get(from ..)
+            .unwrap_or_default()
+            .iter()
+            .take_while(|&&(left, _right)| left == mold)
+            .any(|&(_left, right)| pbg.mold(right).is_ok_and(|next| next.label == lead))
+    };
+    let mut keywords: Vec<(MoldId, SourceText<'static>)> = KEYWORDS
+        .iter()
+        .filter_map(|&keyword| {
+            pbg.candidates(TileLabel(keyword))
+                .iter()
+                .copied()
+                .find(|&mold| bool::from(declaration_head(pbg, mold)) && named(mold))
+                .map(|mold| (mold, SourceText::from(keyword)))
+        })
+        .collect();
+    keywords.sort_unstable_by_key(|&(mold, _keyword)| mold);
+    keywords
+        .into_iter()
+        .map(|(_mold, keyword)| keyword)
+        .collect()
 }
 
 /// What a copy's molding shows before the whole of it is read.
@@ -1074,6 +1273,83 @@ mod tests
             !minted(parsed.tree()).contains(&ByteOffset::from(after(last, "= loop"))),
             "a definition's last `;` left out is never minted inside its body, where \
              `(def twice = loop;) then loop` would read"
+        );
+    }
+
+    /// #2440: a definition whose `def` is misspelled, or left out at the start
+    /// of the source, reads as one declaration owing its keyword alone, the
+    /// keyword minted at its head; a call at the top level with a repair of
+    /// its own that no keyword makes a declaration keeps its reading.
+    #[test]
+    fn a_declaration_keyword_left_out_is_minted_at_its_head_2440()
+    {
+        let pbg = built_in().unwrap();
+        let body = "f(x : Integer) -> -F Integer {\n  return x\n}\n";
+        let misspelled = "def1 f(x : Integer) -> -F Integer {\n  return x\n}\n";
+        for (source, why) in [
+            (
+                misspelled,
+                "a misspelled `def` is a word of its own, and the definition after it owes \
+                 its keyword",
+            ),
+            (
+                body,
+                "a definition with its `def` left out owes its keyword",
+            ),
+        ] {
+            let head = source.find("f(").unwrap();
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let tree = parsed.tree();
+            assert_eq!(
+                reconstruct(tree),
+                source,
+                "{why}: the tree reconstructs the source"
+            );
+            assert!(
+                matches!(
+                    parsed.obligations(),
+                    [repair] if repair.class == Oblig::MissingTile
+                        && usize::from(repair.span.start()) == head
+                        && usize::from(repair.span.end()) == head.saturating_add(1)
+                ),
+                "{why}: one repair stands, over the name: {:?}",
+                parsed.obligations()
+            );
+            let ghosts: Vec<ByteOffset> = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| {
+                    matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Prefix,
+                        ..
+                    }) && node.span().start() == node.span().end()
+                })
+                .map(|node| node.span().start())
+                .collect();
+            assert_eq!(
+                ghosts,
+                [ByteOffset::from(head)],
+                "{why}: the keyword is minted, empty, at the name"
+            );
+        }
+        let call = "f(x\n";
+        let parsed = parse(&pbg, SourceText::from(call)).unwrap();
+        assert!(
+            !parsed
+                .tree()
+                .positions()
+                .any(
+                    |position| parsed.tree().node(position).is_some_and(|node| matches!(
+                        node.label(),
+                        NodeLabel::Grout {
+                            shape: GroutShape::Prefix,
+                            ..
+                        }
+                    ))
+                ),
+            "a call left open at the top level, which no keyword makes a declaration, keeps its \
+             reading: {:?}",
+            parsed.obligations()
         );
     }
 

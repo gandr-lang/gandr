@@ -603,8 +603,8 @@ impl Splice
     }
 
     /// The source leaf the copy's leaf `label` over `span` reads as: the tile
-    /// itself is the minted close, empty at `at`; any other leaf is itself,
-    /// shifted.
+    /// the splice begins with is the minted tile, empty at `at`; any other leaf
+    /// is itself, shifted.
     ///
     /// # Specification
     /// trivial.
@@ -615,7 +615,7 @@ impl Splice
     ) -> (NodeLabel, SourceSpan)
     {
         if span.start.0 == self.at.0
-            && span.end.0 == self.after.0
+            && span.end.0 <= self.after.0
             && matches!(label, NodeLabel::Tile(_))
         {
             (self.ghost, SourceSpan::point(self.at))
@@ -623,6 +623,25 @@ impl Splice
         else {
             (label, self.span(span))
         }
+    }
+
+    /// Whether the copy's leaf `label` over `span` is layout the copy wrote
+    /// with its tile — the space after a keyword — which the source never had.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn written_layout(
+        self,
+        label: NodeLabel,
+        span: SourceSpan,
+    ) -> WrittenLayout
+    {
+        WrittenLayout(
+            matches!(label, NodeLabel::Space)
+                && self.at.0 < span.start.0
+                && span.start.0 < span.end.0
+                && span.end.0 <= self.after.0,
+        )
     }
 
     /// The source obligation of the copy's `obligation`: its span read back as
@@ -697,6 +716,11 @@ impl Splice
     }
 }
 
+primitive_copy_wrapper!(
+    /// Whether a leaf of a splice's copy is layout the copy wrote with its
+    /// tile, which the source never had.
+    struct WrittenLayout(bool);
+);
 primitive_copy_wrapper!(
     /// Index into the melder slope stack.
     struct StackIndex(usize);
@@ -6193,9 +6217,19 @@ impl<'pbg> MeldState<'pbg>
     {
         let mut builder = TreeBuilder::new(source, self.pbg.fingerprint())?;
         let mut mapping: Vec<Option<StagedId>> = alloc::vec![None; self.emit.len()];
-        for (op, slot) in self.emit.iter().zip(mapping.iter_mut()) {
+        let mut written = alloc::vec![false; self.emit.len()];
+        for ((op, slot), dropped) in self
+            .emit
+            .iter()
+            .zip(mapping.iter_mut())
+            .zip(written.iter_mut())
+        {
             if let EmitOp::Token { label, start, end } = *op {
                 let span = SourceSpan::new(SourceOffset::from(start), SourceOffset::from(end));
+                if splice.is_some_and(|splice| bool::from(splice.written_layout(label, span))) {
+                    *dropped = true;
+                    continue;
+                }
                 let (label, span) = splice.map_or((label, span), |splice| splice.leaf(label, span));
                 *slot = Some(builder.node(label, span.byte_span()?, &[])?);
             }
@@ -6224,6 +6258,9 @@ impl<'pbg> MeldState<'pbg>
                 child_nodes.clear();
                 for child in children {
                     let index = usize::try_from(child.0).map_err(|_error| MeldError::Corrupt)?;
+                    if written.get(index).copied().unwrap_or(false) {
+                        continue;
+                    }
                     let mapped = mapping
                         .get(index)
                         .copied()
