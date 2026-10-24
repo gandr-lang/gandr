@@ -1,0 +1,107 @@
+// What a domhringr stage performs besides its session's moves, each effect a
+// theory of its operations with its first-order laws. A session's protocol
+// stays a session type: the ordered, linear channel is not an effect.
+//
+// Each theory's documentation states what it commutes with. The commutation
+// table decides which rows are sets: a row whose effects all commute with
+// one another may be read in any order. A commutation past an operation that
+// answers a value is a law over continuations, an abstraction at a port that
+// no rule writes yet (#2115); the twin `pathological/effects/domhringr.gandr`
+// holds those laws. An effect commuting with nothing has no law to write.
+//
+// The instance an effect is performed at (a store, a task's journal, a
+// sink) is the label a row names it by, not a second theory.
+
+/// The record plane's content-addressed values: a put answers the value's
+/// digest, and the digest gets the value back. A put is idempotent, so the
+/// store commutes with every effect. One instance.
+@[ checks ]
+theory Store {
+  sort Value : Type;
+  sort Digest : Type;
+  oper put : (v : Value) --> Digest;
+  oper get : (d : Digest) --> Value;
+  rule getPut : get(put(v)) ==> v;
+}
+
+/// A fold's entries, appended in order: an append answers the entry's
+/// index, and the index reads the entry back. Two appends do not commute,
+/// so a journal commutes with nothing of its own kind. One instance per
+/// task.
+@[ checks ]
+theory Journal {
+  sort Entry : Type;
+  sort Index : Type;
+  oper append : (e : Entry) --> Index;
+  oper read : (i : Index) --> Entry;
+  rule readAppend : read(append(e)) ==> e;
+}
+
+/// An outside oracle asked a question, answering a readout. No law holds of
+/// an outside endpoint: an answer repeats only under a pinned seed and
+/// model. A judge commutes with `Store` and `Trace`, not with `Clock`. One
+/// instance per endpoint.
+@[ checks ]
+theory Judge {
+  sort Question : Type;
+  sort Readout : Type;
+  oper ask : (q : Question) --> Readout;
+}
+
+/// A read-only lookup of a name's claim, such as a host's address or a
+/// tree's identity. Reading twice is reading once, and a witness commutes
+/// with every effect but `Clock`. One instance.
+@[ checks ]
+theory Witness {
+  sort Name : Type;
+  sort Claim : Type;
+  oper lookup : (n : Name) --> Claim;
+}
+
+/// The time now, and a token that expires after a duration. `now` does not
+/// commute with any operation that takes time, so a clock commutes with
+/// nothing. One instance.
+@[ checks ]
+theory Clock {
+  sort Instant : Type;
+  sort Duration : Type;
+  sort Token : Type;
+  oper now : () --> Instant;
+  oper deadline : (d : Duration) --> Token;
+}
+
+/// A draw from a distribution. No law holds of a draw; an instance under a
+/// fixed seed is deterministic, as a `Store` is. A draw commutes with every
+/// effect. One instance per seed.
+@[ checks ]
+theory Random {
+  sort Distribution : Type;
+  sort Draw : Type;
+  oper sample : (d : Distribution) --> Draw;
+}
+
+/// A write-only sink of events. An emit commutes with every read, and two
+/// emits to one sink do not commute. One instance per sink.
+@[ checks ]
+theory Trace {
+  sort Event : Type;
+  oper emit : (e : Event) --> Unit;
+}
+
+/// A refused dispatch or a dead seat: a raise answers nothing, so nothing
+/// after it runs, and under linearity whatever unwinds releases its holds.
+/// A raise commutes with nothing. One instance per protocol.
+@[ checks ]
+theory Fail {
+  sort Reason : Type;
+  oper raise : (r : Reason) --> Empty;
+}
+
+/// An asynchronous interruption of the work a token names: the response is
+/// decoupled from the call, so an interrupt commutes with nothing. One
+/// instance per dispatch.
+@[ checks ]
+theory Cancel {
+  sort Token : Type;
+  oper interrupt : (t : Token) --> Unit;
+}
