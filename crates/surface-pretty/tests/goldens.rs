@@ -5337,6 +5337,42 @@ fn a_returner_lists_each_interface_of_its_row_between_commas()
     );
 }
 
+/// A returner over a row open through a row variable writes the variable
+/// after a bar, and one writing no interface writes the variable alone.
+#[test]
+fn an_open_row_writes_its_tail_after_its_interfaces_2270()
+{
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+
+    let mut core = CoreArena::new();
+    let unit = core.value_type_product(&[]);
+    let proc = EffectSig::new(EffectName::from("Proc"), [EffectOp {
+        name: "go".into(),
+        payload: unit,
+        reply: unit,
+    }])
+    .expect("one operation is a signature");
+    let kind = core.value_type_row();
+    let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let tail = core.value_type_row_tail(bound);
+    let after = core
+        .comp_type_returner_with_effects(unit, EffectRow::singleton(proc).with_tail(Some(tail)));
+    let alone = core.comp_type_returner_with_effects(unit, EffectRow::EMPTY.with_tail(Some(tail)));
+    let [after, alone] = [after, alone].map(|codomain| core.comp_type_pi(kind, codomain));
+    let source = CoreSource::new(&core, &[]);
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::CompType(after))),
+        faithful(Written("(a : Row) -> -F [Proc | a] Unit"))
+    );
+    assert_eq!(
+        spelled(&source, Root::Type(CoreNode::CompType(alone))),
+        faithful(Written("(a : Row) -> -F [a] Unit"))
+    );
+}
+
 /// Where the spelling is source a reader reads back, a parameterised
 /// constructor is written against its family, except as a family's
 /// argument, whose parameter states its type; a value presented alone is

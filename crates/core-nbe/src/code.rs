@@ -692,7 +692,7 @@ Value::Lift { .. } => ret == Ok(Atom::Lift(code, place)),
 Value::StaticLambda(_) => ret == Ok(Atom::Operator(code, place)),
 Value::StaticApplication(head, argument) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
 Value::Constructor { .. } | Value::Record(_) | Value::Tuple(_) | Value::ListNil | Value::ListCons(..) | Value::Literal(_) | Value::Injection(..) => ret == Ok(Atom::FirstOrder(node)),
-Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Ok(Atom::Other(node)),
+Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Variable { .. } | Value::Thunk(_) | Value::Ascribe { .. } | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => ret == Ok(Atom::Other(node)),
 }),
         Node::Held(value) => self.domain.value(value).map_or_else(|| ret == Err(ConversionFault::Domain(DomainFault::Dangling)), |matched_native_node| match *matched_native_node {
 DomainValue::Neutral { neutral, .. } => self.domain.neutral(neutral).map_or_else(
@@ -794,7 +794,8 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | Value::Thunk(_)
                     | Value::Ascribe { .. }
                     | Value::Hole(_)
-                    | Value::Mark { .. } => return Ok(Atom::Other(node)),
+                    | Value::Mark { .. }
+                    | Value::Row(_) => return Ok(Atom::Other(node)),
                 }
             },
             Node::Held(value) => value,
@@ -867,7 +868,8 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                         | Value::StaticLambda(_)
                         | Value::StaticApplication(..)
                         | Value::Hole(_)
-                        | Value::Mark { .. } => Ok(Atom::Other(stood)),
+                        | Value::Mark { .. }
+                        | Value::Row(_) => Ok(Atom::Other(stood)),
                     },
                 }
             },
@@ -1204,7 +1206,9 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     | ValueType::Dialogue(_)
                     | ValueType::Staged { .. }
                     | ValueType::Kept { .. }
-                    | ValueType::World(_) => return Ok(node),
+                    | ValueType::World(_)
+                    | ValueType::Row
+                    | ValueType::RowTail(_) => return Ok(node),
                 },
                 Node::CompType(at, place) => match *self
                     .core
@@ -1742,6 +1746,19 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         );
                         Ok(Alike::Same)
                     }
+                    else if let ValueType::RowTail(a) = *matched_left_value
+                        && let ValueType::RowTail(b) = *matched_right_value
+                    {
+                        // Two tails are one row when their codes are.
+                        pending.push((Node::Code(a, here), Node::Code(b, there)));
+                        Ok(Alike::Same)
+                    }
+                    else if matches!(
+                        (matched_left_value, matched_right_value),
+                        (&ValueType::Row, &ValueType::Row)
+                    ) {
+                        Ok(Alike::Same)
+                    }
                     else {
                         {
                             match *matched_left_value {
@@ -1772,7 +1789,9 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                                 | ValueType::Dialogue(_)
                                 | ValueType::Staged { .. }
                                 | ValueType::Kept { .. }
-                                | ValueType::World(_) => Ok(Alike::Different),
+                                | ValueType::World(_)
+                                | ValueType::Row
+                                | ValueType::RowTail(_) => Ok(Alike::Different),
                             }
                         }
                     }
@@ -2076,7 +2095,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                 | Value::StaticApplication(..)
                 | Value::Hole(_)
                 | Value::Mark { .. }
-                | Value::Reify(_) => Err(malformed),
+                | Value::Reify(_)
+                | Value::Row(_) => Err(malformed),
             },
             Node::Held(value) => match *self.domain.value(value).ok_or(dangling)? {
                 DomainValue::ListNil { .. } => Ok(FirstOrder::ListNil),
@@ -2480,7 +2500,8 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)
                         | ValueType::Buffer
-                        | ValueType::Web => {},
+                        | ValueType::Web
+                        | ValueType::Row => {},
                         ValueType::Capability { ref authority, .. } => {
                             types.extend(authority.types().map(|ty| Node::ValueType(ty, place)));
                         },
@@ -2506,7 +2527,7 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
                         ValueType::Lift { inner, .. } => {
                             types.push(Node::ValueType(inner, place));
                         },
-                        ValueType::Element { code, .. } => {
+                        ValueType::Element { code, .. } | ValueType::RowTail(code) => {
                             atoms.push(self.atom(Node::Code(code, place))?);
                         },
                         ValueType::Session(ref session) => types.extend(
@@ -2564,35 +2585,39 @@ if a.protocol() == b.protocol() && a.state() == b.state() { children_correct = p
     }
 }
 
-/// Match interface and operation names before comparing their scoped types.
+/// Match instances, interface and operation names, and openness before
+/// comparing their scoped types, a tail among them.
 ///
 /// # Specification
-/// - ensures: [`Alike::Same`] exactly when the rows have the same interface and
-///   operation coverage.
-/// - provides: only the rigid row shape, never equality of operation types.
+/// - ensures: [`Alike::Same`] exactly when the rows have the same instances
+///   over the same interface and operation coverage, and both are open or both
+///   closed.
+/// - provides: only the rigid row shape, never equality of operation types or
+///   of tails.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — changing names or an operation type separates distinct
 ///   code comparisons; separately allocated equal rows still compare equal.
 /// - witness: `code::tests::effect_rows_compare_names_and_scoped_operation_types`
-#[spec(ensures: |ret| ret == Alike::Different || first.signatures().len() == second.signatures().len())]
+#[spec(ensures: |ret| ret == Alike::Different || (first.signatures().len() == second.signatures().len() && first.tail().is_some() == second.tail().is_some()))]
 fn matching_effect_shapes(
     first: &gandr_core_term::effect::EffectRow,
     second: &gandr_core_term::effect::EffectRow,
 ) -> Alike
 {
-    let same = first.signatures().len() == second.signatures().len()
-        && first
-            .signatures()
-            .zip(second.signatures())
-            .all(|(left, right)| {
-                left.name() == right.name()
+    let same = first.tail().is_some() == second.tail().is_some()
+        && first.signatures().len() == second.signatures().len()
+        && first.instances().zip(second.instances()).all(
+            |((left_label, left), (right_label, right))| {
+                left_label == right_label
+                    && left.name() == right.name()
                     && left.operations().len() == right.operations().len()
                     && left
                         .operations()
                         .zip(right.operations())
                         .all(|(left, right)| left.name == right.name)
-            });
+            },
+        );
     if same { Alike::Same } else { Alike::Different }
 }
 

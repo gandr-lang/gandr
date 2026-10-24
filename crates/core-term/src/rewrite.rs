@@ -1915,6 +1915,7 @@ impl<'arena> Engine<'arena>
 Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
+Value::Row(ref row) => row.types().count(),
 Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
@@ -1944,13 +1945,13 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
-ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web => 0_usize,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::RowTail(_) | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
 }),
         | Node::CompType(id) => match self.arena.comp_type(id) {
             | None | Some(&CompType::Unknown) => 0_usize,
@@ -1994,6 +1995,9 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         .rev()
                         .map(|&field| open(Node::Value(field), depth)),
                 ),
+                Some(&Value::Row(ref row)) => self
+                    .tasks
+                    .extend(row.types().rev().map(|ty| open(Node::ValueType(ty), depth))),
                 Some(&Value::Reify(ref frames)) => {
                     for frame in frames.iter().rev() {
                         match *frame {
@@ -2447,7 +2451,8 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         | ValueType::Abstract(_)
                         | ValueType::Unknown
                         | ValueType::Buffer
-                        | ValueType::Web => {},
+                        | ValueType::Web
+                        | ValueType::Row => {},
                         ValueType::Capability { ref authority, .. } => self.tasks.extend(
                             authority
                                 .types()
@@ -2489,7 +2494,8 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                         },
                         ValueType::Run(session)
                         | ValueType::Prefix(session)
-                        | ValueType::Dialogue(session) => {
+                        | ValueType::Dialogue(session)
+                        | ValueType::RowTail(session) => {
                             self.tasks.push(open(Node::Value(session), depth));
                         },
                         ValueType::Thunk(body) => {
@@ -2780,6 +2786,7 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
 Value::Reify(ref frames) => frames.iter().filter(|frame| !matches!(frame, crate::control::StackFrame::Project(_))).count(),
 Value::Constructor { ref fields, .. } => fields.len().saturating_add(1),
 Value::Record(ref fields) => fields.len(),
+Value::Row(ref row) => row.types().count(),
 Value::Tuple(ref components) => components.len(),
 Value::Recorded(ref moves) => moves.iter().filter(|movement| matches!(movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
 Value::Dialogue(ref moves) => moves.iter().filter(|turn| matches!(turn.movement.payload(), quenchant_shape::shape::Maybe::Present(_))).count(),
@@ -2843,6 +2850,20 @@ Value::Injection(..) | Value::Thunk(_) | Value::Lift { .. } | Value::Quote(_) | 
                 match changed {
                     Some(fields) => self.arena.value_record(fields),
                     None => id,
+                }
+            },
+            Value::Row(ref row) => {
+                let rewritten = match row.try_map_types(crate::effect::TypeOrder::Reverse, |ty| {
+                    Ok::<_, core::convert::Infallible>(Self::value_type(&mut self.results, ty))
+                }) {
+                    Ok(row) => row,
+                    Err(never) => match never {},
+                };
+                if rewritten == *row {
+                    id
+                }
+                else {
+                    self.arena.value_row(rewritten)
                 }
             },
             Value::Reify(ref frames) => {
@@ -3881,13 +3902,13 @@ Computation::World(ref form) => form.values().count().saturating_add(form.comput
 ValueType::Data { ref arguments, .. } => arguments.len(),
 ValueType::Record(ref fields) => fields.len(),
 ValueType::Product(ref components) | ValueType::Sum(ref components) => components.len(),
-ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web => 0_usize,
+ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row => 0_usize,
 ValueType::Session(ref session) => session.payloads().len(),
 ValueType::Capability { ref authority, .. } => authority.types().count(),
 ValueType::World(ref ty) => ty.types().count(),
 ValueType::Stack { .. } | ValueType::StaticPi { .. } | ValueType::Sigma { .. } | ValueType::PathUniverse(..) => 2,
 ValueType::Path { .. } | ValueType::Flow { .. } => 3,
-ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
+ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::RowTail(_) | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Staged { .. } | ValueType::Kept { .. } => 1,
 })],
         ensures: |ret| self.results.len() == ready.saturating_sub(children)
             && (ret == id || self.arena.value_type(id).is_some_and(|original| self.arena.value_type(ret).is_some_and(|rewritten|
@@ -4057,7 +4078,8 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
             | ValueType::Abstract(_)
             | ValueType::Unknown
             | ValueType::Buffer
-            | ValueType::Web => id,
+            | ValueType::Web
+            | ValueType::Row => id,
             ValueType::Capability {
                 ref authority,
                 grade,
@@ -4121,6 +4143,15 @@ ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::E
                 }
                 else {
                     self.arena.value_type_element(rewritten, target.clone())
+                }
+            },
+            ValueType::RowTail(row) => {
+                let rewritten = Self::value(&mut self.results, row);
+                if rewritten == row {
+                    id
+                }
+                else {
+                    self.arena.value_type_row_tail(rewritten)
                 }
             },
             ValueType::StaticPi { domain, codomain } => {
@@ -6166,6 +6197,7 @@ fn survey_value(
         | Value::Quote(_)
         | Value::QuoteComputation(_)
         | Value::Hole(_)
+        | Value::Row(_)
         | Value::Web(_) => {},
     }
     Ok(())

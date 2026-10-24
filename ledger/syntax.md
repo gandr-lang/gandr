@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x44a95a6f1b60168f`
+- Grammar fingerprint: `0x7316ad3808ae3af7`
 - Rules: 160 — 159 committed, 1 internal
-- Molds: 3137
+- Molds: 3138
 - Attributes: 14
 
 ## Reading a form
@@ -169,7 +169,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`manifest_sort`](../corpus/ledger/syntax/manifest_sort.gandr) | `sort ‹type_identifier› = TYPE` | `type.union` | `manifest_sort` * | admitted | Keyword, Type, Other |
 | [`sum_type`](../corpus/ledger/syntax/sum_type.gandr) | `TYPE + TYPE` | `type.sum` | `sum_type` | admitted | Operator |
 | [`product_type`](../corpus/ledger/syntax/product_type.gandr) | `TYPE * TYPE` | `type.product` | `product_type` | admitted | Operator |
-| [`f_type.row`](../corpus/ledger/syntax/f_type.row.gandr) | `-F [ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type |
+| [`f_type.row`](../corpus/ledger/syntax/f_type.row.gandr) | `-F [ ⦅ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ‖ TYPE ⦆ ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Operator |
 | [`f_type`](../corpus/ledger/syntax/f_type.gandr) | `-F TYPE` | `type.application` | `f_type` | admitted | Keyword |
 | [`u_type`](../corpus/ledger/syntax/u_type.gandr) | `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? TYPE` or `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? TYPE` | `type.application` | `u_type` | admitted | Keyword, Other, Number |
 | [`universe_type`](../corpus/ledger/syntax/universe_type.gandr) | `Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆?` | `type.atom` | `universe_type` * | admitted | TypeBuiltin, Other, Keyword, Number |

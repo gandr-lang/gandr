@@ -71,7 +71,7 @@ pub enum Trees
             (Some(a), Some(b)) => match *a {
                 Value::Variable { .. } | Value::Constant(_) | Value::Literal(_) => (ret == Trees::Same) == (a == b),
                 Value::Tuple(ref components) if components.is_empty() => (ret == Trees::Same) == (a == b),
-                Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) |
+                Value::Dialogue(_) | Value::Web(_) | Value::Univalence(..) | Value::Row(_) |
                 Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
             },
             _ => ret == Trees::Different,
@@ -83,7 +83,7 @@ pub enum Trees
         (Term::ValueType(left), Term::ValueType(right)) => match (left_arena.value_type(left), right_arena.value_type(right)) {
             (Some(a), Some(b)) => match *a {
                 ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Buffer | ValueType::Web => (ret == Trees::Same) == (a == b),
-                ValueType::Dialogue(_) |
+                ValueType::Dialogue(_) | ValueType::Row | ValueType::RowTail(_) |
                 ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Capability { .. } | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => ret == Trees::Different || core::mem::discriminant(a) == core::mem::discriminant(b),
             },
             _ => ret == Trees::Different,
@@ -369,6 +369,13 @@ pub fn same_tree(
                                     (Term::ValueType(left.reply), Term::ValueType(right.reply)),
                                 ]);
                             }
+                        }
+                        match (left.tail(), right.tail()) {
+                            (None, None) => {},
+                            (Some(left), Some(right)) => {
+                                pending.push((Term::ValueType(left), Term::ValueType(right)));
+                            },
+                            (Some(_), None) | (None, Some(_)) => return Trees::Different,
                         }
                         pending.push((Term::ValueType(value), Term::ValueType(other_value)));
                     },

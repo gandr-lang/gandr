@@ -664,6 +664,11 @@ enum Task
     PrefixType,
     /// Assemble a dialogue type over the session code on the stack.
     DialogueType,
+    /// Assemble a row tail over the row code on the stack.
+    RowTailType,
+    /// Assemble the row the source row literal writes from its types on the
+    /// stack, read back in the order its types run.
+    RowValue(ValueId),
     /// Assemble a tuple from its components, this many on the stack.
     Tuple(usize),
     /// Assemble a native list cell.
@@ -2096,10 +2101,15 @@ fn run(
             && machine.value_types.len() == entry_value_types
             && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
             && machine.comps.len() == entry_comps && machine.comp_types.len() == entry_comp_types,
-        | Task::RunType | Task::PrefixType | Task::DialogueType => machine.tasks.len() == entry_tasks
+        | Task::RunType | Task::PrefixType | Task::DialogueType | Task::RowTailType => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1) == Some(machine.values.len())
             && machine.value_types.len() == entry_value_types.saturating_add(1)
             && machine.value_types.last().is_some_and(|&id| core.value_type(id).is_some())
+            && machine.comps.len() == entry_comps && machine.comp_types.len() == entry_comp_types,
+        | Task::RowValue(source) => machine.tasks.len() == entry_tasks
+            && matches!(core.value(source), Some(Value::Row(row)) if entry_value_types.checked_sub(row.types().count()) == Some(machine.value_types.len()))
+            && machine.values.len() == entry_values.saturating_add(1)
+            && machine.values.last().is_some_and(|&id| matches!(core.value(id), Some(Value::Row(_))))
             && machine.comps.len() == entry_comps && machine.comp_types.len() == entry_comp_types,
         | Task::Return | Task::Force => machine.tasks.len() == entry_tasks
             && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
@@ -2214,7 +2224,7 @@ fn run(
             && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
         | Task::CapabilityType { source } => machine.tasks.len() == entry_tasks
             && machine.values.len() == entry_values && machine.comps.len() == entry_comps
-            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Web | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) => false })
+            && core.value_type(source).is_some_and(|node| match *node { ValueType::Capability { ref authority, .. } => entry_value_types.checked_sub(authority.types().count()).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len()), ValueType::Data { .. } | ValueType::Record(_) | ValueType::PathUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Run(_) | ValueType::Prefix(_) | ValueType::Dialogue(_) | ValueType::Web | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Unknown | ValueType::Buffer | ValueType::Stack { .. } | ValueType::Session(_) | ValueType::Staged { .. } | ValueType::Kept { .. } | ValueType::World(_) | ValueType::Row | ValueType::RowTail(_) => false })
             && machine.comp_types.len() == entry_comp_types
             && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some()),
         | Task::Arrow | Task::Pi => machine.tasks.len() == entry_tasks
@@ -2685,6 +2695,22 @@ fn step(
         Task::PrefixType => {
             let session = machine.pop_value()?;
             machine.value_types.push(core.value_type_prefix(session));
+            Ok(())
+        },
+        Task::RowTailType => {
+            let row = machine.pop_value()?;
+            machine.value_types.push(core.value_type_row_tail(row));
+            Ok(())
+        },
+        Task::RowValue(source) => {
+            let Some(&Value::Row(ref row)) = core.value(source)
+            else {
+                return Err(ReadbackFault::MachineInvariant);
+            };
+            let row = row.try_map_types(gandr_core_term::effect::TypeOrder::Reverse, |_| {
+                machine.pop_value_type()
+            })?;
+            machine.values.push(core.value_row(row));
             Ok(())
         },
         Task::Tuple(count) => {
@@ -3196,7 +3222,7 @@ fn held_level(
         ValueType::Staged { base, stage } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StagedType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == stage && *child == base && *child_frame == frame && *child_binders == binders),
         ValueType::Kept { value, region } => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::KeptType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == region && *child == value && *child_frame == frame && *child_binders == binders),
         ValueType::World(gandr_core_term::world::WorldType::At { inner, world }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LocatedType(held), Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *held == world && *child == inner && *child_frame == frame && *child_binders == binders),
-ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+ValueType::PathUniverse(..) | ValueType::Base(_) | ValueType::Universe { .. } | ValueType::Abstract(_) | ValueType::Unknown | ValueType::Buffer | ValueType::Web | ValueType::Row | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
 ValueType::Capability { ref authority, .. } => machine.value_types.len() == entry_results
             && new_tasks.first() == Some(&Task::CapabilityType { source: quoted })
             && new_tasks.len() == authority.types().count().saturating_add(1)
@@ -3235,6 +3261,8 @@ ValueType::Prefix(session) => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::PrefixType, Task::QuotedCode { code: child, .. }] if *child == session),
 ValueType::Dialogue(session) => machine.value_types.len() == entry_results
             && matches!(new_tasks, [Task::DialogueType, Task::QuotedCode { code: child, .. }] if *child == session),
+ValueType::RowTail(row) => machine.value_types.len() == entry_results
+            && matches!(new_tasks, [Task::RowTailType, Task::QuotedCode { code: child, .. }] if *child == row),
 },
 None => false,
 })) },
@@ -3348,6 +3376,14 @@ fn step_quoted_value_type(
                 binders,
             });
         },
+        ValueType::RowTail(row) => {
+            machine.tasks.push(Task::RowTailType);
+            machine.tasks.push(Task::QuotedCode {
+                code: row,
+                frame,
+                binders,
+            });
+        },
         ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Universe { .. }
@@ -3355,6 +3391,7 @@ fn step_quoted_value_type(
         | ValueType::Unknown
         | ValueType::Buffer
         | ValueType::Web
+        | ValueType::Row
         | ValueType::World(gandr_core_term::world::WorldType::Capability(_)) => {
             machine.value_types.push(quoted);
         },
@@ -3933,6 +3970,16 @@ fn step_value(
                             frame,
                             binders,
                         });
+                    },
+                    Some(&Value::Row(ref row)) => {
+                        machine.tasks.push(Task::RowValue(body));
+                        machine.tasks.extend(row.types().rev().map(|quoted| {
+                            Task::QuotedValueType {
+                                quoted,
+                                frame,
+                                binders,
+                            }
+                        }));
                     },
                     Some(_) | None => return Err(ReadbackFault::MachineInvariant),
                 },

@@ -1,0 +1,47 @@
+// A returner's row may stay open through a row variable, an implicit of the
+// kind `Row` (#2270): `log` prints through `Console` and leaves the rest of
+// its row to its caller, so one definition is used under every row holding
+// `Console`, the variable solved at each call by the row equation, and a
+// handler of `Console` takes `[Console | r]` to `[r]`, forwarding the rest
+// (Hillerström and Lindley, "Liberating Effects with Rows and Handlers",
+// Type-Driven Development 2016, § 2.5 and § 3.3, T-HANDLER). What refuses is
+// in `../../pathological/control/row-variable.gandr`.
+
+/// A line printed through `Console`, the rest of the row left open: `r`
+/// lacks `Console`, which the row writes beside it.
+@[ checks ]
+def log @[r : Row] (s : String) -> -F [Console | r] Unit { Console.print(s) }
+
+/// `log` where the row is `Console` alone: the call's `r` is the empty row.
+@[ checks ]
+def logAlone() -> -F [Console] Unit { log("alone") }
+
+/// `log` beside `Div`: the call's `r` is `[Div]`.
+@[ checks ]
+def logBeside() -> -F [Console, Div] Unit { log("beside") }
+
+/// `logBeside`'s row listed the other way round is the same row, so the
+/// call's `r` is solved as the same `[Div]`: one solution, not two that
+/// convert.
+@[ checks ]
+def logSwapped() -> -F [Div, Console] Unit { log("swapped") }
+
+/// A handler of `Console` around `log`: the handled body's row is
+/// `[Console | r]`, and what the handler leaves is `r`.
+@[ checks ]
+def quiet @[r : Row] (s : String) -> -F [r] Unit {
+  handle c : Console {
+    log(s)
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => k(unit)
+  }
+}
+
+/// `quiet` where nothing is left: it runs, the line handled.
+@[ runs("unit") ]
+def quietRun() -> Unit { quiet("handled") }
+
+/// `quiet` beside `Div`: the variable carries `Div` through the handler.
+@[ checks ]
+def quietBeside() -> -F [Div] Unit { quiet("forwarded") }

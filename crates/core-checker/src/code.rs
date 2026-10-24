@@ -1024,7 +1024,8 @@ impl CodeDefinitions
             | Value::QuoteComputation(_)
             | Value::StaticApplication(..)
             | Value::Hole(_)
-            | Value::Mark { .. } => return rigid,
+            | Value::Mark { .. }
+            | Value::Row(_) => return rigid,
         };
         let mut consumed = 0_usize;
         while let Value::StaticLambda(inner) = read(core, reduct)? {
@@ -2212,6 +2213,10 @@ pub fn loose_reach(
                             .values()
                             .map(|&field| (CoreNode::Term(TermNode::Value(field)), depth)),
                     ),
+                    Value::Row(ref row) => work.extend(
+                        row.types()
+                            .map(|ty| (CoreNode::Type(TypeNode::Value(ty)), depth)),
+                    ),
                     Value::Reify(ref frames) => {
                         for frame in frames.iter() {
                             match *frame {
@@ -2652,7 +2657,8 @@ pub fn loose_reach(
                     ]),
                     ValueType::Run(session)
                     | ValueType::Prefix(session)
-                    | ValueType::Dialogue(session) => {
+                    | ValueType::Dialogue(session)
+                    | ValueType::RowTail(session) => {
                         work.push((CoreNode::Term(TermNode::Value(session)), depth));
                     },
                     ValueType::Staged { base, .. } | ValueType::Kept { value: base, .. } => {
@@ -2683,7 +2689,8 @@ pub fn loose_reach(
                     | ValueType::Abstract(_)
                     | ValueType::Unknown
                     | ValueType::Buffer
-                    | ValueType::Web => {},
+                    | ValueType::Web
+                    | ValueType::Row => {},
                     ValueType::Capability { ref authority, .. } => work.extend(
                         authority
                             .types()

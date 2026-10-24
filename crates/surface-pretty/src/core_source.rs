@@ -910,6 +910,8 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Web
             | ValueType::Base(_)
             | ValueType::Buffer
+            | ValueType::Row
+            | ValueType::RowTail(_)
             | ValueType::Product(_)
             | ValueType::Sum(_)
             | ValueType::List(_)
@@ -1127,6 +1129,7 @@ impl<'arena> CoreSource<'arena>
             usize::from(summand) == usize::from(actual_summand) && actual_body == CoreNode::Value(body),
         | (Some(&Value::Quote(quoted)), Former::Quote(actual)) => actual == CoreNode::ValueType(quoted),
         | (Some(&Value::QuoteComputation(quoted)), Former::QuoteComputation(actual)) => actual == CoreNode::CompType(quoted),
+        | (Some(&Value::Row(ref row)), Former::Row { tail, .. }) => tail == row.tail().map(CoreNode::ValueType),
         | (Some(&Value::StaticLambda(body)), Former::StaticLambda(actual)) => actual == CoreNode::Value(body),
         | (Some(&Value::StaticApplication(operator, argument)), Former::StaticApplication(actual_operator, actual_argument)) =>
             actual_operator == CoreNode::Value(operator) && actual_argument == CoreNode::Value(argument),
@@ -1345,6 +1348,10 @@ impl<'arena> CoreSource<'arena>
             Value::Lift { .. } => Former::Unreadable(Unreadable::Lift),
             Value::Quote(quoted) => Former::Quote(CoreNode::ValueType(quoted)),
             Value::QuoteComputation(quoted) => Former::QuoteComputation(CoreNode::CompType(quoted)),
+            Value::Row(ref row) => Former::Row {
+                effects: row,
+                tail: row.tail().map(CoreNode::ValueType),
+            },
             Value::StaticLambda(body) => Former::StaticLambda(CoreNode::Value(body)),
             Value::StaticApplication(operator, argument) => {
                 Former::StaticApplication(CoreNode::Value(operator), CoreNode::Value(argument))
@@ -1388,6 +1395,7 @@ impl<'arena> CoreSource<'arena>
             | (Some(&ValueType::World(WorldType::Capability(_))), Former::Unreadable(Unreadable::WorldCapability))
             | (None, Former::Unreadable(Unreadable::Dangling))
             | (Some(&ValueType::Buffer), Former::BufferType)
+            | (Some(&ValueType::Row), Former::RowType)
             | (Some(&ValueType::Web), Former::WebType) => true,
         | (Some(&ValueType::Record(ref fields)), Former::Product(arity)) => fields.is_empty() && usize::from(arity) == 0_usize,
         | (Some(&ValueType::Record(ref fields)), Former::RecordType(arity)) => !fields.is_empty() && usize::from(arity) == fields.len(),
@@ -1398,7 +1406,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&ValueType::Thunk(body)), Former::ThunkType(actual)) => actual == CoreNode::CompType(body),
         | (Some(&ValueType::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && core::ptr::eq(core::ptr::from_ref(level), core::ptr::from_ref(actual_level)),
-        | (Some(&ValueType::Element { code, .. }), Former::Element(actual))
+        | (Some(&ValueType::Element { code, .. } | &ValueType::RowTail(code)), Former::Element(actual))
         | (Some(&ValueType::Run(code)), Former::RunType(actual))
         | (Some(&ValueType::Prefix(code)), Former::PrefixType(actual))
         | (Some(&ValueType::Dialogue(code)), Former::DialogueType(actual)) => actual == CoreNode::Value(code),
@@ -1497,6 +1505,7 @@ impl<'arena> CoreSource<'arena>
             },
             ValueType::Base(base) => Former::BaseType(base),
             ValueType::Buffer => Former::BufferType,
+            ValueType::Row => Former::RowType,
             ValueType::List(element) => Former::List(CoreNode::ValueType(element)),
             ValueType::Thunk(body) => Former::ThunkType(CoreNode::CompType(body)),
             ValueType::Universe { sort, ref level } => Former::Universe { sort, level },
@@ -1509,7 +1518,11 @@ impl<'arena> CoreSource<'arena>
                 )
             )]
             ValueType::Lift { .. } => Former::Unreadable(Unreadable::Lift),
-            ValueType::Element { code, .. } => Former::Element(CoreNode::Value(code)),
+            // A row's tail reads as the row term it stands for, as a decode
+            // reads as its code.
+            ValueType::Element { code, .. } | ValueType::RowTail(code) => {
+                Former::Element(CoreNode::Value(code))
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(
@@ -1604,7 +1617,7 @@ impl<'arena> CoreSource<'arena>
         | (Some(&CompType::Codata { declaration, ref arguments }), Former::Codata { name, arity }) =>
             usize::from(arity) == arguments.len() && self.name(declaration) == name,
         | (Some(&CompType::Returner { result, ref effects }), Former::Returner(actual)) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Pure,
-        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful,
+        | (Some(&CompType::Returner { result, ref effects }), Former::EffectfulReturner { result: actual, tail, .. }) => actual == CoreNode::ValueType(result) && effects.purity() == gandr_core_term::effect::Purity::Effectful && tail == effects.tail().map(CoreNode::ValueType),
         | (Some(&CompType::Arrow { domain, codomain }), Former::Arrow { domain: actual_domain, codomain: actual_codomain })
         | (Some(&CompType::Pi { domain, codomain }), Former::Pi { domain: actual_domain, codomain: actual_codomain }) =>
             actual_domain == CoreNode::ValueType(domain) && actual_codomain == CoreNode::CompType(codomain),
@@ -1650,6 +1663,7 @@ impl<'arena> CoreSource<'arena>
                     Former::EffectfulReturner {
                         result: CoreNode::ValueType(result),
                         effects,
+                        tail: effects.tail().map(CoreNode::ValueType),
                     }
                 }
             },
@@ -2249,6 +2263,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Web
                 | ValueType::Base(_)
                 | ValueType::Buffer
+                | ValueType::Row
+                | ValueType::RowTail(_)
                 | ValueType::List(_)
                 | ValueType::Thunk(_)
                 | ValueType::Universe { .. }
@@ -2330,7 +2346,8 @@ impl Source for CoreSource<'_>
                 | Value::StaticApplication(..)
                 | Value::Hole(_)
                 | Value::Mark { .. }
-                | Value::Reify(_) => None,
+                | Value::Reify(_)
+                | Value::Row(_) => None,
             },
             CoreNode::Computation(id) => match *self.arena.computation(id)? {
                 Computation::Primitive { ref arguments, .. } => {
@@ -2466,6 +2483,8 @@ impl Source for CoreSource<'_>
                 | ValueType::Web
                 | ValueType::Base(_)
                 | ValueType::Buffer
+                | ValueType::Row
+                | ValueType::RowTail(_)
                 | ValueType::Product(_)
                 | ValueType::Sum(_)
                 | ValueType::List(_)
@@ -2532,7 +2551,8 @@ impl Source for CoreSource<'_>
                 | Value::Then(..)
                 | Value::FlowProduct(..)
                 | Value::Forward(_)
-                | Value::FunctionFlow(..) => None,
+                | Value::FunctionFlow(..)
+                | Value::Row(_) => None,
             },
             CoreNode::Computation(id) => match *self.arena.computation(id)? {
                 Computation::Handle { ref clauses, .. }

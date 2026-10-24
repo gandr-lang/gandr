@@ -975,10 +975,11 @@ fn formers(
                 ) => {
                     worklist.push(Node::Computation(computation));
                 },
-                // A quote carries a type, and a static operator and its
-                // application build one, whose codes are values that hold no
-                // computation former, so they mark no row. A hole holds
-                // nothing, and a mark's body is not judged, so neither does.
+                // A quote carries a type, and so does a row, and a static
+                // operator and its application build one, whose codes are
+                // values that hold no computation former, so they mark no row.
+                // A hole holds nothing, and a mark's body is not judged, so
+                // neither does.
                 Some(
                     &Value::Primitive { .. }
                     | &(Value::Variable { .. }
@@ -986,6 +987,7 @@ fn formers(
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Quote(_)
+                    | Value::Row(_)
                     | Value::QuoteComputation(_)
                     | Value::StaticLambda(_)
                     | Value::StaticApplication(..)

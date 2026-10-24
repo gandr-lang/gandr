@@ -353,6 +353,32 @@ pub(super) struct Exercised
     payload: Stretch,
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a returner's row stands open through no tail.
+    pub mod tail {
+        /// The row is closed: it names its interfaces alone.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source wrote no `| t` after the interfaces.
+            Closed,
+        }
+    }
+}
+
+/// A returner's row, `[I, …]`, `[I, … | t]` or `[t]`, as the classification
+/// read it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct WrittenRow
+{
+    /// The interfaces the row names, whole.
+    interfaces: BTreeSet<EffectName>,
+    /// The operand the row stays open through, read as a row value.
+    tail: Maybe<NodeIndex, tail::Absent>,
+}
+
 /// A capability scope, as the classification read it.
 ///
 /// # Specification
@@ -730,12 +756,13 @@ impl<'source> Lowerer<'_, 'source>
         Ok(grade)
     }
 
-    /// Read a returner's row, `[I, …]`, past its `[`.
+    /// Read a returner's row, `[I, …]`, `[I, … | t]` or `[t]`, past its `[`.
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the row's `[`.
-    /// - ensures: the interfaces the row names, in host order, the cursor past
-    ///   the `]`.
+    /// - ensures: the interfaces the row names, in host order, and the operand
+    ///   it stays open through when one is written, the cursor past the `]`; a
+    ///   row names an interface or a tail.
     /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] for an interface the
     ///   host does not declare, at the name;
     ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named again,
@@ -748,17 +775,27 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a row of two interfaces and an undeclared one, each
-    ///   asserted as the minted returner or the exact refusal.
+    ///   asserted as the minted returner or the exact refusal, and a row open
+    ///   through a tail after its interfaces and alone, each minted over it.
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
     /// - witness: `lower::capability::tests::a_row_names_each_interface_once`
-    #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| !row.is_empty()))]
+    /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| !row.interfaces.is_empty() || matches!(row.tail, Maybe::Present(_))))]
     pub(super) fn returner_row(
         &self,
         site: Site,
         cursor: &mut Cursor<'_>,
-    ) -> Result<BTreeSet<EffectName>, LoweringRefusal<'source>>
+    ) -> Result<WrittenRow, LoweringRefusal<'source>>
     {
+        if let Maybe::Present(Piece::Operand(tail)) = cursor.peek() {
+            let _tail = cursor.read();
+            closed(site, cursor, TileName::BRACKET_CLOSE)?;
+            return Ok(WrittenRow {
+                interfaces: BTreeSet::new(),
+                tail: Maybe::Present(tail.node),
+            });
+        }
         let table = host(site)?;
         let mut row = BTreeMap::new();
         loop {
@@ -787,17 +824,31 @@ impl<'source> Lowerer<'_, 'source>
                 break;
             }
         }
+        let tail = if let Maybe::Present(_) = cursor.tile(TileName::BAR) {
+            let Maybe::Present(Piece::Operand(tail)) = cursor.read()
+            else {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            Maybe::Present(tail.node)
+        }
+        else {
+            Maybe::Absent(tail::Absent::Closed)
+        };
         closed(site, cursor, TileName::BRACKET_CLOSE)?;
 
-        Ok(row.into_keys().collect())
+        Ok(WrittenRow {
+            interfaces: row.into_keys().collect(),
+            tail,
+        })
     }
 
-    /// Plan the returner over `argument` whose row holds `row`.
+    /// Plan the returner over `argument` whose row is `row`.
     ///
     /// # Specification
     /// - requires: `argument` is the returner's one operand.
-    /// - ensures: the returner stands as a computation type, its argument read
-    ///   as a value type under its frame, planned over both.
+    /// - ensures: the returner stands as a computation type, its row's tail
+    ///   read as a value and its argument as a value type under its frame,
+    ///   planned over both.
     /// - fails: the wrong-sort refusal where no computation type is read.
     /// - panics: none.
     ///
@@ -807,15 +858,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::returner_row`].
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
+    /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Effectful(_, child)) if child == argument))]
     pub(super) fn effectful(
         &mut self,
         site: Site,
-        row: BTreeSet<EffectName>,
+        row: WrittenRow,
         argument: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::CompType)?;
+        if let Maybe::Present(tail) = row.tail {
+            self.read(tail, Reading::Value(frame));
+        }
         self.read(argument, Reading::ValueType(frame));
         self.plan(site, super::Plan::Effectful(row, argument));
 
@@ -1638,11 +1693,12 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Mint the returner over `argument` whose row holds the interfaces of
-    /// `row`, whole.
+    /// `row`, whole, open through its tail when one is written.
     ///
     /// # Specification
-    /// - requires: `argument` is already minted or absent.
-    /// - ensures: `F^⟨row⟩ A` at `origin`; the argument's absence when it did
+    /// - requires: `argument` and the row's tail are already minted or absent.
+    /// - ensures: `F^⟨row⟩ A` at `origin`, its tail standing for the row the
+    ///   tail's value denotes; the argument's or the tail's absence when it did
     ///   not lower.
     /// - fails: never.
     /// - panics: none.
@@ -1650,6 +1706,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::returner_row`].
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
+    /// - witness: `lower::capability::tests::a_row_stays_open_through_its_tail_2270`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::CompType(id)) => sink.origins.comp_type(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -1657,7 +1714,7 @@ impl<'source> Lowerer<'_, 'source>
     })]
     pub(super) fn mint_effectful(
         &self,
-        row: &BTreeSet<EffectName>,
+        row: &WrittenRow,
         argument: NodeIndex,
         sink: &mut Sink<'_>,
         origin: Origin,
@@ -1667,8 +1724,19 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(result) => result,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut signatures = Vec::with_capacity(row.len());
-        for interface in row {
+        let tail = match row.tail {
+            Maybe::Present(written) => match self.value_at(written) {
+                Maybe::Present(value) => {
+                    let tail = sink.arena.value_type_row_tail(value);
+                    sink.origins.record_value_type(tail, origin);
+                    Some(tail)
+                },
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Maybe::Absent(_) => None,
+        };
+        let mut signatures = Vec::with_capacity(row.interfaces.len());
+        for interface in &row.interfaces {
             match sink.signature(interface, origin) {
                 Maybe::Present(signature) => signatures.push(signature),
                 Maybe::Absent(reason) => return Maybe::Absent(reason),
@@ -1678,7 +1746,9 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Maybe::Absent(lowered::Absent::Unminted);
         };
-        let id = sink.arena.comp_type_returner_with_effects(result, effects);
+        let id = sink
+            .arena
+            .comp_type_returner_with_effects(result, effects.with_tail(tail));
         sink.origins.record_comp_type(id, origin);
 
         Maybe::Present(Lowered::CompType(id))

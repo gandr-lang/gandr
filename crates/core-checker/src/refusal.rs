@@ -540,6 +540,9 @@ pub enum Unsolved
     Dangling,
     /// The solver spent its steps before deciding it.
     Budget,
+    /// It waits on two rows open through different tails, each holding an
+    /// instance the other lacks.
+    Rows,
 }
 
 impl From<gandr_core_unify::Reason> for Unsolved
@@ -566,6 +569,7 @@ impl From<gandr_core_unify::Reason> for Unsolved
             gandr_core_unify::Reason::Linear => Self::Linear,
             gandr_core_unify::Reason::Dangling => Self::Dangling,
             gandr_core_unify::Reason::Budget => Self::Budget,
+            gandr_core_unify::Reason::Rows => Self::Rows,
         }
     }
 }

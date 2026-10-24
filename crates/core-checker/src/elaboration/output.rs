@@ -299,7 +299,8 @@ fn children(
             | Value::Record(_)
             | Value::Hole(_)
             | Value::Mark { .. }
-            | Value::Reify(_) => {},
+            | Value::Reify(_)
+            | Value::Row(_) => {},
         },
         TermNode::Computation(id) => match *arena.computation(id).ok_or(dangling)? {
             Computation::Lambda(body) | Computation::Ascribe { body, .. } => {
@@ -586,7 +587,8 @@ fn rebuild(
                 | Value::Record(_)
                 | Value::Hole(_)
                 | Value::Mark { .. }
-                | Value::Reify(_) => None,
+                | Value::Reify(_)
+                | Value::Row(_) => None,
             };
             Ok(TermNode::Value(rebuilt.unwrap_or(id)))
         },

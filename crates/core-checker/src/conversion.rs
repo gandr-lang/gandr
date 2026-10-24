@@ -898,6 +898,8 @@ pub fn decode_bridge(
         | ValueTypeView::Stack { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Character
@@ -1032,6 +1034,10 @@ fn endpoints_agree(
 ///   rigid disagreement still answers `Apart`. A pair not deferred whose side
 ///   is the decode of a metavariable a call nominated is posed to the solver: a
 ///   solved or postponed equation agrees, and a refuted one answers `Apart`.
+///   Two returners' rows, either open through a tail over a metavariable, are
+///   posed to the solver as one row equation by the same rule; rigid rows are
+///   compared interface by interface, a closed row included in an open one
+///   under subtyping and an open row only in one open through the same tail.
 ///   Two staged types agree invariantly at one stage and agreeing bases; under
 ///   subtyping a found staged type agrees with a wanted one whose stage its own
 ///   fits within, and with an unstaged type as its base, while an unstaged type
@@ -1313,7 +1319,8 @@ fn convert(
                     // no prefix: the formers do not convert.
                     (ValueTypeView::Run(left), ValueTypeView::Run(right))
                     | (ValueTypeView::Prefix(left), ValueTypeView::Prefix(right))
-                    | (ValueTypeView::Dialogue(left), ValueTypeView::Dialogue(right)) => {
+                    | (ValueTypeView::Dialogue(left), ValueTypeView::Dialogue(right))
+                    | (ValueTypeView::RowTail(left), ValueTypeView::RowTail(right)) => {
                         pending.push(Pairing::Codes(left, right));
                         true
                     },
@@ -1329,7 +1336,8 @@ fn convert(
                     | (ValueTypeView::Float64, ValueTypeView::Float64)
                     | (ValueTypeView::Unit, ValueTypeView::Unit)
                     | (ValueTypeView::Buffer, ValueTypeView::Buffer)
-                    | (ValueTypeView::Web, ValueTypeView::Web) => true,
+                    | (ValueTypeView::Web, ValueTypeView::Web)
+                    | (ValueTypeView::Row, ValueTypeView::Row) => true,
                     (ValueTypeView::Fixed(left_width), ValueTypeView::Fixed(right_width)) => {
                         left_width == right_width
                     },
@@ -1580,7 +1588,9 @@ fn convert(
                         | ValueTypeView::Buffer
                         | ValueTypeView::Staged { .. }
                         | ValueTypeView::Kept { .. }
-                        | ValueTypeView::World(_),
+                        | ValueTypeView::World(_)
+                        | ValueTypeView::Row
+                        | ValueTypeView::RowTail(_),
                         _,
                     ) => false,
                 }
@@ -1629,27 +1639,45 @@ fn convert(
                             effects: second,
                         },
                     ) => {
-                        let mut same_shape =
-                            subtyping || first.signatures().len() == second.signatures().len();
-                        let mut candidates = second.signatures().peekable();
-                        for signature in first.signatures() {
-                            while candidates
-                                .peek()
-                                .is_some_and(|candidate| candidate.name() < signature.name())
-                            {
-                                candidates.next();
-                            }
-                            let Some(candidate) = candidates
-                                .next()
-                                .filter(|candidate| candidate.name() == signature.name())
+                        // A row open through a metavariable meets the other
+                        // by the row equation, whichever way the conversion
+                        // runs; rigid rows are compared instance by
+                        // instance, a closed row included in an open one and
+                        // an open row only in one open through the same tail.
+                        let (first, second) = (first.clone(), second.clone());
+                        match context.unify_rows((&first, &second))? {
+                            crate::elaboration::Unified::Agreed => {
+                                pending.push(values(left, right));
+                                continue;
+                            },
+                            crate::elaboration::Unified::Refuted => {
+                                return Ok(Agreement::Apart);
+                            },
+                            crate::elaboration::Unified::Rigid => {},
+                        }
+                        let mut same_shape = (subtyping
+                            || first.signatures().len() == second.signatures().len())
+                            && match (first.tail(), second.tail()) {
+                                (None, None) => true,
+                                (None, Some(_)) => subtyping,
+                                (Some(_), None) => false,
+                                (Some(found), Some(wanted)) => {
+                                    pending.push(Pairing::Values(
+                                        Relocated::from(found),
+                                        Relocated::from(wanted),
+                                    ));
+                                    true
+                                },
+                            };
+                        for (label, signature) in first.instances() {
+                            let Some(candidate) = second.get(label).filter(|candidate| {
+                                candidate.name() == signature.name()
+                                    && candidate.operations().len() == signature.operations().len()
+                            })
                             else {
                                 same_shape = false;
                                 break;
                             };
-                            if signature.operations().len() != candidate.operations().len() {
-                                same_shape = false;
-                                break;
-                            }
                             for (a, b) in signature.operations().zip(candidate.operations()) {
                                 if a.name != b.name {
                                     same_shape = false;
@@ -1965,6 +1993,38 @@ fn convert(
                                 }
                                 same
                             }
+                            // Two rows are one row when they hold the same
+                            // instances over the same operations, both open
+                            // or both closed, and their types convert.
+                            else if let Value::Row(ref left_row) = *matched_left_value
+                                && let Value::Row(ref right_row) = *matched_right_value
+                            {
+                                let same = left_row.tail().is_some() == right_row.tail().is_some()
+                                    && left_row.instances().len() == right_row.instances().len()
+                                    && left_row.instances().zip(right_row.instances()).all(
+                                        |((left_label, left), (right_label, right))| {
+                                            left_label == right_label
+                                                && left.name() == right.name()
+                                                && left
+                                                    .operations()
+                                                    .map(|operation| &operation.name)
+                                                    .eq(right
+                                                        .operations()
+                                                        .map(|operation| &operation.name))
+                                        },
+                                    );
+                                if same {
+                                    pending.extend(left_row.types().zip(right_row.types()).map(
+                                        |(left, right)| {
+                                            Pairing::Values(
+                                                Relocated::from(left),
+                                                Relocated::from(right),
+                                            )
+                                        },
+                                    ));
+                                }
+                                same
+                            }
                             else if let Value::Web(ref left_pieces) = *matched_left_value
                                 && let Value::Web(ref right_pieces) = *matched_right_value
                             {
@@ -2013,7 +2073,8 @@ fn convert(
                                         | Value::ListNil
                                         | Value::ListCons(..)
                                         | Value::Hole(_)
-                                        | Value::Mark { .. } => false,
+                                        | Value::Mark { .. }
+                                        | Value::Row(_) => false,
                                     }
                                 }
                             }
@@ -2090,6 +2151,8 @@ fn value_head(
         | ValueTypeView::Sigma { .. }
         | ValueTypeView::Capability { .. }
         | ValueTypeView::Buffer
+        | ValueTypeView::Row
+        | ValueTypeView::RowTail(_)
         | ValueTypeView::Session(_)
         | ValueTypeView::Staged { .. }
         | ValueTypeView::Kept { .. }
@@ -2357,7 +2420,9 @@ fn relocated_values(
             | ValueTypeView::Session(_)
             | ValueTypeView::Staged { .. }
             | ValueTypeView::Kept { .. }
-            | ValueTypeView::World(_),
+            | ValueTypeView::World(_)
+            | ValueTypeView::Row
+            | ValueTypeView::RowTail(_),
             _,
         ) => return Ok(Maybe::Absent(through::Absent::Unread)),
     };
@@ -2429,8 +2494,10 @@ fn relocated_comps(
                     result: right_result,
                     effects: right_effects,
                 },
-            ) if left_effects.signatures().len() == 0 => {
-                if variance == Variance::Subtyping || right_effects.signatures().len() == 0 {
+            ) if left_effects.purity() == gandr_core_term::effect::Purity::Pure => {
+                if variance == Variance::Subtyping
+                    || right_effects.purity() == gandr_core_term::effect::Purity::Pure
+                {
                     pending.push(variance.values(
                         arena.place_value_type(left_result, at_left),
                         arena.place_value_type(right_result, at_right),

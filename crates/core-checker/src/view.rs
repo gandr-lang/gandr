@@ -273,6 +273,11 @@ pub enum ValueTypeView<'arena>
     /// A type that names a world: `A at w`, a handle to a value meaningful at
     /// `w`, or `cap_w`, the one-shot authority to migrate to `w`.
     World(gandr_core_term::world::WorldType),
+    /// `Row`, the kind of row descriptions: the type a row variable is bound
+    /// at.
+    Row,
+    /// The tail of a row: the row the code, of type `Row`, denotes.
+    RowTail(ValueId),
     /// The unknown type: a hole's or a mark's, or the decode of one.
     Unknown,
 }
@@ -399,6 +404,8 @@ pub enum CompTypeView<'arena>
     | Ok(ValueTypeView::Staged { base, stage }) => matches!(arena.value_type(value_type), Some(&ValueType::Staged { base: found, stage: found_stage }) if found == base && found_stage == stage),
     | Ok(ValueTypeView::Kept { value, region }) => matches!(arena.value_type(value_type), Some(&ValueType::Kept { value: found, region: found_region }) if found == value && found_region == region),
     | Ok(ValueTypeView::World(ty)) => matches!(arena.value_type(value_type), Some(&ValueType::World(found)) if found == ty),
+    | Ok(ValueTypeView::Row) => matches!(arena.value_type(value_type), Some(&ValueType::Row)),
+    | Ok(ValueTypeView::RowTail(code)) => matches!(arena.value_type(value_type), Some(&ValueType::RowTail(found)) if found == code),
     | Ok(ValueTypeView::Buffer) => matches!(arena.value_type(value_type), Some(&ValueType::Buffer)),
     | Ok(ValueTypeView::Unknown) => value_type_knowledge(arena, value_type) == Knowledge::Unknown,
     | Err(FragmentRefusal::DanglingNode { node }) => arena.value_type(value_type).is_none() && node == CoreNode::Type(TypeNode::Value(value_type)),
@@ -496,6 +503,8 @@ pub fn value_type_view(
         ValueType::Staged { base, stage } => Ok(ValueTypeView::Staged { base, stage }),
         ValueType::Kept { value, region } => Ok(ValueTypeView::Kept { value, region }),
         ValueType::World(ty) => Ok(ValueTypeView::World(ty)),
+        ValueType::Row => Ok(ValueTypeView::Row),
+        ValueType::RowTail(code) => Ok(ValueTypeView::RowTail(code)),
         ValueType::Unknown => Ok(ValueTypeView::Unknown),
     }
 }

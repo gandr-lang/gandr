@@ -402,6 +402,8 @@ pub enum TypeAtom
     Buffer,
     /// `Web`, the causal webs `decompose` returns.
     Web,
+    /// `Row`, the kind of effect rows a row variable ranges over.
+    Row,
 }
 
 /// A unary type head: a type former of the fragment.
@@ -441,7 +443,7 @@ pub enum TypeFormer
 ///   near spellings separating the absent branch.
 /// - witness: `lower::tests::native_boolean_results_have_the_written_classifier`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
-const TYPE_ATOMS: [(&str, TypeAtom); 13_usize] = [
+const TYPE_ATOMS: [(&str, TypeAtom); 14_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Void", TypeAtom::Void),
     ("Bool", TypeAtom::Boolean),
@@ -455,6 +457,7 @@ const TYPE_ATOMS: [(&str, TypeAtom); 13_usize] = [
     ("i64", TypeAtom::Fixed(gandr_kernel_term::IntegerWidth::I64)),
     ("Buf", TypeAtom::Buffer),
     ("Web", TypeAtom::Web),
+    ("Row", TypeAtom::Row),
 ];
 
 /// The unary type heads, with the spellings the surface writes them as.

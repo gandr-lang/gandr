@@ -670,6 +670,8 @@ fn first_order(
             | ValueTypeView::Kept { .. }
             | ValueTypeView::Capability { .. }
             | ValueTypeView::Buffer
+            | ValueTypeView::Row
+            | ValueTypeView::RowTail(_)
             | ValueTypeView::Session(_)
             | ValueTypeView::World(_)
             | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),
@@ -838,6 +840,8 @@ fn coverage(
                     | ValueTypeView::Kept { .. }
                     | ValueTypeView::Capability { .. }
                     | ValueTypeView::Buffer
+                    | ValueTypeView::Row
+                    | ValueTypeView::RowTail(_)
                     | ValueTypeView::Session(_)
                     | ValueTypeView::World(_)
                     | ValueTypeView::Unknown => return Ok(Maybe::Absent(outside::Absent::Former)),

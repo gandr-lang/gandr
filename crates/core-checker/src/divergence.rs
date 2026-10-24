@@ -42,12 +42,12 @@ use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::EffectPresence;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::Purity;
 use gandr_core_term::effect::host::DIV;
 use gandr_core_term::effect::host::divergence;
+use gandr_core_term::row::Label;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -189,7 +189,7 @@ pub fn stated(
         }
     }
     let entry = EffectRow::singleton(divergence());
-    let name = EffectName::from(DIV);
+    let name = Label::from(DIV);
     let mut rebuilt: BTreeMap<CompTypeId, CompTypeId> = BTreeMap::new();
     for &(shape, head) in order.iter().rev() {
         let arena = context.arena();

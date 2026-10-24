@@ -226,6 +226,7 @@ use crate::compose::Compose;
 use crate::compose::Doc;
 use crate::compose::Glyphs;
 use crate::error::PresentationError;
+use crate::former::Authority;
 use crate::former::Component;
 use crate::former::Elided;
 use crate::former::Forgotten;
@@ -422,7 +423,7 @@ enum Kind
 /// - witness: `tests::goldens::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `tests::goldens::native_paths_preserve_ordered_endpoints_and_maps`
 #[spec(ensures: |ret| match ret {
-    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::WebType | Former::Product(_) | Former::RecordType(_)
+    | Kind::ValueType => matches!(*former, Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Product(_) | Former::RecordType(_)
         | Former::Stack(..) | Former::List(_)
         | Former::Sum(_) | Former::ThunkType(_) | Former::Universe { .. }
         | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Sigma { .. } | Former::Capability { .. } | Former::PathUniverse(..) | Former::Session { .. }
@@ -432,7 +433,7 @@ enum Kind
     | Kind::Value => matches!(*former, Former::Variable { .. } | Former::Constant(_) | Former::Unit
         | Former::Literal(_) | Former::Tuple(_) | Former::Record(_) | Former::RecordUpdate(..) | Former::Injection(..) | Former::Thunk(_)
         | Former::Reify | Former::ListNil | Former::ListCons(..)
-        | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
+        | Former::Quote(_) | Former::QuoteComputation(_) | Former::Row { .. } | Former::StaticLambda(_) | Former::StaticApplication(..)
         | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Here(_) | Former::Funext(..) | Former::Equiv(..) | Former::Univalence(_)
         | Former::Ua { .. } | Former::Nested(_) | Former::Run(_) | Former::Constructor { .. } | Former::Returned(_)
         | Former::SessionRelated(..) | Former::Stay(_) | Former::Then(..) | Former::Back(_) | Former::Cong(..) | Former::FlowProduct(..) | Former::Forward(_) | Former::FunctionFlow(..) | Former::Recorded { .. } | Former::Dialogue { .. } | Former::Web(_) | Former::Annotated { .. }),
@@ -454,6 +455,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::PathUniverse(..)
         | Former::BaseType(_)
         | Former::BufferType
+        | Former::RowType
         | Former::WebType
         | Former::Product(_)
         | Former::RecordType(_)
@@ -501,6 +503,7 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Reify
         | Former::Quote(_)
         | Former::QuoteComputation(_)
+        | Former::Row { .. }
         | Former::StaticLambda(_)
         | Former::StaticApplication(..)
         | Former::Here(_)
@@ -1113,7 +1116,11 @@ where
     },
     | Former::Model { sorts, .. } => ret.len() == sorts.len()
         && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
-    | Former::BaseType(_) | Former::BufferType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
+    | Former::EffectfulReturner { tail, .. } => ret.len() == usize::from(tail.is_some()).saturating_add(1_usize)
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::Row { tail, .. } => ret.len() == usize::from(tail.is_some())
+        && ret.iter().all(|slot| slot.admits == Admits::ValueType && slot.binds == Binds::NONE),
+    | Former::BaseType(_) | Former::BufferType | Former::RowType | Former::WebType | Former::Web(_) | Former::Universe { .. } | Former::Abstract(_) | Former::Capability { .. }
         | Former::Variable { .. } | Former::Constant(_) | Former::Unit | Former::ListNil | Former::Literal(_)
         | Former::Reify | Former::Select { .. } | Former::Close(_) | Former::AbortView(_) | Former::ConsumeHeld(_) | Former::Unreadable(_) => ret.is_empty(),
     | _ => !ret.is_empty(),
@@ -1272,9 +1279,13 @@ where
             .map(|&(_, carrier)| value_type(carrier))
             .collect(),
         Former::ThunkType(child) | Former::QuoteComputation(child) => Vec::from([comp_type(child)]),
+        // An open row's tail is visited before what follows it: `-F [I | t] A`.
+        Former::EffectfulReturner { result, tail, .. } => {
+            tail.into_iter().chain([result]).map(value_type).collect()
+        },
+        Former::Row { tail, .. } => tail.into_iter().map(value_type).collect(),
         Former::List(child)
         | Former::Returner(child)
-        | Former::EffectfulReturner { result: child, .. }
         | Former::Quote(child)
         | Former::Located { inner: child, .. }
         | Former::Kept { inner: child, .. } => Vec::from([value_type(child)]),
@@ -1575,6 +1586,7 @@ where
         },
         Former::BaseType(_)
         | Former::BufferType
+        | Former::RowType
         | Former::WebType
         | Former::Web(_)
         | Former::Universe { .. }
@@ -2363,8 +2375,25 @@ enum Join
 {
     /// A bridge over one operand.
     Prefix(Prefix),
-    /// A returner prefixed by its row of interfaces, `-F [I, …] `.
-    EffectReturner(Doc),
+    /// A returner prefixed by its row of interfaces, `-F [I, …] `, the result
+    /// finished just below; over a row open through its tail, `-F [I, … | `,
+    /// the tail below the result, then the close `] `.
+    EffectReturner
+    {
+        /// The row's opening, up to its tail or its closing bracket.
+        head: Doc,
+        /// What follows an open row's tail; none for a closed row.
+        close: Option<Doc>,
+    },
+    /// A row as a term open through its tail, `[I, … | `, the tail finished
+    /// just below, then the close `]`.
+    OpenRow
+    {
+        /// The row's opening, up to its tail.
+        head: Doc,
+        /// The closing bracket.
+        close: Doc,
+    },
     /// A braced former over this many entries.
     Braced
     {
@@ -2469,6 +2498,48 @@ const fn writes<T>(
 {
     let _ = rule;
     produced
+}
+
+/// Whether a row writes any interface.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Listed
+{
+    /// It writes none: an open row is its tail alone.
+    None,
+    /// It writes at least one, which a bar sets apart from its tail.
+    Some,
+}
+
+/// Append the interfaces `effects` holds to `text`, comma-separated in row
+/// order, as a row writes them.
+///
+/// # Specification
+/// - ensures: [`Listed::Some`] exactly when `effects` holds an interface.
+/// - panics: none.
+/// - executable: none — a clause would restate the loop.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an open row writing one interface and one writing none
+///   distinguish the bar after the interfaces from its absence.
+/// - witness: `tests::goldens::an_open_row_writes_its_tail_after_its_interfaces_2270`
+fn list_interfaces(
+    effects: &dyn Authority,
+    text: &mut String,
+) -> Listed
+{
+    let interfaces = effects.interfaces();
+    for (index, interface) in interfaces.iter().enumerate() {
+        if index != 0 {
+            text.push_str(", ");
+        }
+        text.push_str(interface.as_ref());
+    }
+    if interfaces.is_empty() {
+        Listed::None
+    }
+    else {
+        Listed::Some
+    }
 }
 
 /// The bound call and the rest of `node` when it is a run binding a call, `x
@@ -5903,6 +5974,8 @@ impl Walk<'_, '_>
                 | Former::PathProduct(..)
                 | Former::BaseType(_)
                 | Former::BufferType
+                | Former::RowType
+                | Former::Row { .. }
                 | Former::Product(_)
                 | Former::Sum(_)
                 | Former::RecordType(_)
@@ -6720,7 +6793,9 @@ impl Walk<'_, '_>
     ///   variable naming a context binder is the observation `a.i`, the
     ///   binder's name its one piece; a decode of a positional projection,
     ///   which the type grammar writes no spelling of, is noted as the
-    ///   printer's notation.
+    ///   printer's notation, and so is a row as a term, written as the bracket
+    ///   of its interfaces that the surface reads as a list where a term
+    ///   stands, its tail after a bar when it is open.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
@@ -6862,6 +6937,38 @@ impl Walk<'_, '_>
             },
             Former::WebType => {
                 return writes(Production("type_identifier"), self.atom(Glyphs("Web")));
+            },
+            Former::RowType => {
+                return writes(Production("type_identifier"), self.atom(Glyphs("Row")));
+            },
+            // A row as a term has no syntax of its own: it is written as the
+            // bracket of names the surface reads as a list, its tail after a
+            // bar when it is open.
+            Former::Row { effects, tail } => {
+                #[cfg_attr(
+                    dylint_lib = "quenchant_dylints",
+                    expect(
+                        answer_totality,
+                        reason = "a row as a term: the surface reads the bracket of names as a \
+                                  list where a term stands, and as a row only after `-F`"
+                    )
+                )]
+                self.note(Unspelled::Notation(Notation::Row));
+                let mut written = String::from("[");
+                let listed = list_interfaces(effects, &mut written);
+                if tail.is_none() {
+                    written.push(']');
+                    return writes(Production("list_expression"), self.atom(Glyphs(&written)));
+                }
+                if listed == Listed::Some {
+                    written.push_str(" | ");
+                }
+                let head = self.leaf(Glyphs(&written))?;
+                let close = self.leaf(Glyphs("]"))?;
+                Some(writes(Production("list_expression"), Join::OpenRow {
+                    head,
+                    close,
+                }))
             },
             Former::Product(arity) if usize::from(arity) == 0 => {
                 return writes(Production("primitive_type"), self.atom(Glyphs("Unit")));
@@ -7462,17 +7569,23 @@ impl Walk<'_, '_>
             Former::Returner(_) => {
                 Some(writes(Production("f_type"), Join::Prefix(Prefix::Returner)))
             },
-            Former::EffectfulReturner { effects, .. } => {
+            // An open row sets its tail apart from the interfaces it writes,
+            // `-F [I | t] A`, and one writing none is its tail alone,
+            // `-F [t] A`.
+            Former::EffectfulReturner { effects, tail, .. } => {
                 let mut annotation = String::from("-F [");
-                for (index, interface) in effects.interfaces().iter().enumerate() {
-                    if index != 0 {
-                        annotation.push_str(", ");
-                    }
-                    annotation.push_str(interface.as_ref());
+                let listed = list_interfaces(effects, &mut annotation);
+                match (tail, listed) {
+                    (None, Listed::Some | Listed::None) => annotation.push_str("] "),
+                    (Some(_), Listed::Some) => annotation.push_str(" | "),
+                    (Some(_), Listed::None) => {},
                 }
-                annotation.push_str("] ");
                 let head = self.leaf(Glyphs(&annotation))?;
-                Some(writes(Production("f_type.row"), Join::EffectReturner(head)))
+                let close = tail.map(|_| self.leaf(Glyphs("] "))).transpose()?;
+                Some(writes(Production("f_type.row"), Join::EffectReturner {
+                    head,
+                    close,
+                }))
             },
             Former::Arrow { .. } | Former::StaticPi { .. } => {
                 Some(writes(Production("function_type"), Join::Arrow))
@@ -9737,6 +9850,8 @@ impl Walk<'_, '_>
             | Former::PathProduct(..)
             | Former::BaseType(_)
             | Former::BufferType
+            | Former::RowType
+            | Former::Row { .. }
             | Former::Product(_)
             | Former::Sum(_)
             | Former::RecordType(_)
@@ -9951,7 +10066,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::a_dependent_pair_ignoring_its_binder_spells_as_the_product_771`
     #[spec(
         captures: [entry = self.pieces.len(), taken = match join {
-            Join::Prefix(_) | Join::EffectReturner(_) | Join::StaticLambda | Join::Lambda | Join::Thunk
+            Join::Prefix(_) | Join::EffectReturner { close: None, .. } | Join::OpenRow { .. } | Join::StaticLambda | Join::Lambda | Join::Thunk
                 | Join::Bracket(Bracket::PathRefl | Bracket::Here | Bracket::Univalence | Bracket::List | Bracket::Stay | Bracket::Back | Bracket::Forward | Bracket::Run | Bracket::Prefix | Bracket::Dialogue | Bracket::Decompose | Bracket::TypeQuote | Bracket::Break) => Some(1_usize),
             Join::Braced { arity: Arity(count), entries: Entries::Positional, .. } | Join::Session { payloads: Arity(count), .. }
                 | Join::Form { pieces: Arity(count), .. } | Join::Infix { arity: Arity(count), .. } | Join::Tuple(Arity(count)) => Some(count),
@@ -9961,21 +10076,21 @@ impl Walk<'_, '_>
                 let taken = count.checked_mul(2_usize)?;
                 taken.checked_add(1_usize)
             },
-            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
+            Join::Arrow | Join::Pi | Join::Sigma | Join::Sequence | Join::Ua(_) | Join::EffectReturner { close: Some(_), .. } | Join::Bracket(Bracket::Stack | Bracket::ListCons | Bracket::PathUniverse | Bracket::PathEquiv | Bracket::PathProduct | Bracket::Funext | Bracket::Equiv | Bracket::Bisim | Bracket::Sim | Bracket::FlowProduct | Bracket::Cong | Bracket::Arrow) => Some(2_usize),
             Join::TypedSequence | Join::Bracket(Bracket::BisimPaid) => Some(3_usize),
             Join::Apply(Arity(arguments)) => arguments.checked_add(1_usize),
         }],
         ensures: |ref ret| match *ret {
             | Ok(()) => taken.and_then(|count| entry.checked_sub(count)).and_then(|rest| rest.checked_add(1_usize)) == Some(self.pieces.len())
                 && self.pieces.last().is_some_and(|piece| piece.binding == match join {
-                    Join::Prefix(_) | Join::EffectReturner(_) | Join::Lambda | Join::Thunk => Binding::Prefix,
+                    Join::Prefix(_) | Join::EffectReturner { .. } | Join::Lambda | Join::Thunk => Binding::Prefix,
                     Join::Arrow | Join::Pi | Join::StaticLambda | Join::ValueFunction(..) => Binding::Arrow,
                     // A dependent pair naming no binder is the product it
                     // reads as.
                     Join::Sigma if piece.binding == Binding::Product => Binding::Product,
                     Join::Sequence | Join::TypedSequence => Binding::Sequence,
                     Join::Infix { infix, .. } => infix.binding(),
-                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Tuple(_) => Binding::Atom,
+                    Join::Apply(_) | Join::Bracket(_) | Join::Braced { .. } | Join::Update(_) | Join::Sigma | Join::Ua(_) | Join::Tuple(_) | Join::OpenRow { .. } => Binding::Atom,
                     Join::Session { binding, .. } | Join::Form { binding, .. } => binding,
                 }),
             | Err(PresentationError::Build(_) | PresentationError::Unbalanced) => self.pieces.len() <= entry,
@@ -9988,10 +10103,26 @@ impl Walk<'_, '_>
     ) -> Result<(), PresentationError>
     {
         let (doc, binding) = match join {
-            Join::EffectReturner(head) => {
+            Join::EffectReturner { head, close } => {
                 let operand = self.pop()?;
                 let operand = self.bare_up_to(operand, Binding::Atom)?;
-                (self.builder.concat(head, operand)?, Binding::Prefix)
+                let doc = match close {
+                    None => self.builder.concat(head, operand)?,
+                    Some(close) => {
+                        let tail = self.pop()?;
+                        let tail = self.bare_up_to(tail, Binding::Atom)?;
+                        self.builder.concat_all(&[head, tail, close, operand])?
+                    },
+                };
+                (doc, Binding::Prefix)
+            },
+            Join::OpenRow { head, close } => {
+                let tail = self.pop()?;
+                let tail = self.bare_up_to(tail, Binding::Atom)?;
+                (
+                    self.builder.concat_all(&[head, tail, close])?,
+                    Binding::Atom,
+                )
             },
             Join::Session {
                 payloads: Arity(count),

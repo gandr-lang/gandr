@@ -1220,6 +1220,60 @@ fn an_implicit_solved_past_its_scope_escapes_1216()
     assert_eq!(deferrals.solutions(&arena), Err((at, Unsolved::Escape)));
 }
 
+#[test]
+fn a_row_open_through_an_implicit_is_solved_by_the_row_equation_2270()
+{
+    // `log("a")` where `[Console, Div]` is asked: `log`'s row `[Console | r]`,
+    // `r` omitted, against the closed row binds `r` to `[Div]`. Two closed
+    // rows are conversion's; against `[Div]`, which lacks `Console`, the open
+    // row is apart.
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectRow;
+    use gandr_core_term::effect::EffectSig;
+
+    let row = |names: &[&str]| {
+        names.iter().fold(EffectRow::EMPTY, |row, &name| {
+            let signature = EffectSig::new(EffectName::from(name), Vec::<EffectOp>::new())
+                .expect("an interface without operations has no duplicate");
+            row.union(&EffectRow::singleton(signature), &CoreArena::new())
+                .expect("each interface once")
+        })
+    };
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (hole, at, _) = nominated(&mut arena, &mut deferrals);
+    let tail = arena.value_type_row_tail(at);
+    let open = row(&["Console"]).with_tail(Some(tail));
+    let (asked, lacking) = (row(&["Console", "Div"]), row(&["Div"]));
+    assert_eq!(
+        deferrals.unify_rows(&mut arena, Binders::NONE, (&asked, &lacking)),
+        super::Unified::Rigid,
+        "two closed rows are conversion's"
+    );
+    assert_eq!(
+        deferrals.unify_rows(&mut arena, Binders::NONE, (&open, &asked)),
+        super::Unified::Agreed,
+        "the open row meets the asked one"
+    );
+    let solutions = deferrals.solutions(&arena);
+    assert!(
+        solutions
+            .as_ref()
+            .is_ok_and(|solved| solved.get(&hole).is_some_and(|&(code, _)| {
+                matches!(arena.value(code), Some(Value::Row(solved))
+                if solved.tail().is_none()
+                    && solved.signatures().map(|signature| signature.name().as_ref()).eq(["Div"]))
+            })),
+        "`r` is solved as `[Div]`, closed: {solutions:?}"
+    );
+    assert_eq!(
+        deferrals.unify_rows(&mut arena, Binders::NONE, (&open, &lacking)),
+        super::Unified::Refuted,
+        "a row lacking `Console` is apart from `log`'s"
+    );
+}
+
 /// A collector open for a value declaration over a counter's model slot: its
 /// sort's hole and its step's, both declared at no binder, the sort's forced
 /// to the integers as `stepped(4)`'s argument forces it. The holes, the sort

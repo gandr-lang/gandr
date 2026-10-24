@@ -538,6 +538,7 @@ impl CoreArena
                 | Value::StaticApplication(..)
                 | Value::Constructor { .. }
                 | Value::Record(_)
+                | Value::Row(_)
                 | Value::Hole(_)
                 | Value::Mark { .. }
                 | Value::Reify(_) => None,
@@ -2202,6 +2203,105 @@ impl CoreArena
         self.alloc_value_type(ValueType::StaticPi { domain, codomain })
     }
 
+    /// Mint `Row`, the kind of row descriptions.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_row(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Row)
+    }
+
+    /// Mint the tail standing for the row the value `row` denotes.
+    ///
+    /// # Specification
+    /// - requires: `row` names a value node already allocated in this arena;
+    ///   that it inhabits `Row` is a typing fact this constructor does not
+    ///   decide.
+    /// - ensures: appends the tail and returns a fresh id strictly above `row`.
+    /// - provides: the only way to mint this former; a row carrying the tail
+    ///   merges a literal's instances when it is minted.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail over a variable stands, and a returner over a
+    ///   tail over a literal is minted as the joined row.
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[inline]
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::RowTail(row)))]
+    pub fn value_type_row_tail(
+        &mut self,
+        row: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::RowTail(row))
+    }
+
+    /// Read `row` through a tail standing over a row literal: its instances
+    /// joined with the literal's by identity, open through the literal's
+    /// tail. A join the literal's instances refuse, a label defined apart,
+    /// leaves the row as it stands for its judgement to refuse.
+    ///
+    /// # Specification
+    /// - ensures: the result's tail, when there is one, stands over no row
+    ///   literal unless the join was refused; a row whose tail stands over
+    ///   anything else is returned unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed row, a tail over a variable and a tail over
+    ///   a literal separate merging from identity.
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[must_use]
+    #[inline]
+    #[spec(captures: written = row.tail(), ensures: |ret| ret.tail() == written || ret.tail().is_none_or(|tail| !matches!(self.value_type(tail), Some(&ValueType::RowTail(value)) if matches!(self.value(value), Some(Value::Row(_))))))]
+    pub fn settled_row(
+        &self,
+        row: crate::effect::EffectRow,
+    ) -> crate::effect::EffectRow
+    {
+        let mut settled = row;
+        while let Some(tail) = settled.tail()
+            && let Some(&ValueType::RowTail(value)) = self.value_type(tail)
+            && let Some(&Value::Row(ref literal)) = self.value(value)
+        {
+            match settled.with_tail(None).union_by_identity(literal) {
+                Ok(joined) => settled = joined,
+                Err(_apart) => break,
+            }
+        }
+        settled
+    }
+
+    /// Mint a row value, a tail over a row literal merged.
+    ///
+    /// # Specification
+    /// - requires: every type of `row` belongs to this arena.
+    /// - ensures: the value is the row [`Self::settled_row`] reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row value over a tail over a literal is minted as
+    ///   the joined row.
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[inline]
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body settles the row once; the check settles it once more"
+        )
+    )]
+    #[spec(captures: expected = self.settled_row(row.clone()), ensures: |ret| self.value(ret) == Some(&Value::Row(expected.clone())))]
+    pub fn value_row(
+        &mut self,
+        row: crate::effect::EffectRow,
+    ) -> ValueId
+    {
+        let settled = self.settled_row(row);
+        self.alloc_value(Value::Row(settled))
+    }
+
     // Computation-type constructors.
 
     /// Mint a returner type over an already-allocated value type.
@@ -2230,17 +2330,28 @@ impl CoreArena
         self.comp_type_returner_with_effects(result, crate::effect::EffectRow::EMPTY)
     }
 
-    /// Mint a returner with its closed set of permitted effect interfaces.
+    /// Mint a returner with the row of effect interfaces it may perform, a
+    /// tail over a row literal merged.
     ///
     /// # Specification
     /// - requires: the result and every operation type belong to this arena.
-    /// - ensures: preserves the result type and the complete effect row.
+    /// - ensures: preserves the result type and the row [`Self::settled_row`]
+    ///   reads.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — nested thunk signatures retain row types
-    ///   independently of the ids at which their equal children were allocated.
+    ///   independently of the ids at which their equal children were allocated,
+    ///   and a tail over a literal is merged.
     /// - witness: `effect::tests::signature_inclusion_ignores_allocation_identity`
-    #[spec(captures: expected = effects.clone(), ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner { result, effects: expected.clone() }))]
+    /// - witness: `arena::tests::a_tail_over_a_row_literal_is_merged_at_mint`
+    #[cfg_attr(
+        dylint_lib = "quenchant_dylints",
+        expect(
+            spec_clause_traversal,
+            reason = "parity: the body settles the row once; the check settles it once more"
+        )
+    )]
+    #[spec(captures: expected = self.settled_row(effects.clone()), ensures: |ret| self.comp_type(ret) == Some(&CompType::Returner { result, effects: expected.clone() }))]
     #[inline]
     pub fn comp_type_returner_with_effects(
         &mut self,
@@ -2248,6 +2359,7 @@ impl CoreArena
         effects: crate::effect::EffectRow,
     ) -> CompTypeId
     {
+        let effects = self.settled_row(effects);
         self.alloc_comp_type(CompType::Returner { result, effects })
     }
 

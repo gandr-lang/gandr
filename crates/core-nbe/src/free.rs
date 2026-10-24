@@ -460,7 +460,7 @@ impl FreeIndices
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
             Value::Constant(_) | Value::Literal(_) =>
                 free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
-            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) => true,
+            Value::Primitive { .. } | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Here(_) | Value::Univalence(..) | Value::Funext(..) | Value::Equiv(..) | Value::Ua { .. } | Value::SessionRelated { .. } | Value::Stay(_) | Value::Then(..) | Value::FlowProduct(..) | Value::Forward(_) | Value::FunctionFlow(..) | Value::Recorded(_) | Value::Dialogue(_) | Value::Web(_) | Value::Returned(_) | Value::Nested(_) | Value::Run(_) | Value::RecordUpdate { .. } | Value::Tuple(_) | Value::Injection(..) | Value::ListNil | Value::ListCons(..) | Value::Thunk(_) | Value::Ascribe { .. } | Value::Lift { .. } | Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..) | Value::Constructor { .. } | Value::Record(_) | Value::Hole(_) | Value::Mark { .. } | Value::Reify(_) | Value::Row(_) => true,
         }),
         CoreTerm::Computation(id) => core.computation(id).is_some(),
     }))]
@@ -1115,6 +1115,10 @@ Err(_) => false,
                     | Value::ListNil
                     | Value::Literal(_)
                     | Value::Hole(_) => [None, None, None, None, None],
+                    Value::Row(ref row) => {
+                        effects = Some(row);
+                        [None, None, None, None, None]
+                    },
                     Value::Mark { body, .. } => one(value(body), Lowering::NONE),
                     Value::PathEquiv {
                         path_type,
@@ -1488,7 +1492,8 @@ Err(_) => false,
                     ],
                     ValueType::Run(session)
                     | ValueType::Prefix(session)
-                    | ValueType::Dialogue(session) => one(value(session), Lowering::NONE),
+                    | ValueType::Dialogue(session)
+                    | ValueType::RowTail(session) => one(value(session), Lowering::NONE),
                     ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                         extra = ExtraChildren::Types(components.iter());
                         [None, None, None, None, None]
@@ -1502,7 +1507,8 @@ Err(_) => false,
                     | ValueType::Abstract(_)
                     | ValueType::Unknown
                     | ValueType::Buffer
-                    | ValueType::Web => [None, None, None, None, None],
+                    | ValueType::Web
+                    | ValueType::Row => [None, None, None, None, None],
                     ValueType::Capability { ref authority, .. } => {
                         effects = Some(authority);
                         [None, None, None, None, None]

@@ -266,6 +266,11 @@ impl CoreArena
                     self.value_into(&mut union, field, at);
                 }
             },
+            Value::Row(ref row) => {
+                for ty in row.types() {
+                    self.value_type_into(&mut union, ty, at);
+                }
+            },
             Value::Reify(ref frames) => {
                 for frame in frames.iter() {
                     match *frame {
@@ -594,7 +599,8 @@ impl CoreArena
             | ValueType::Abstract(_)
             | ValueType::Unknown
             | ValueType::Buffer
-            | ValueType::Web => {},
+            | ValueType::Web
+            | ValueType::Row => {},
             ValueType::Product(ref components) | ValueType::Sum(ref components) => {
                 for &component in components {
                     self.value_type_into(&mut union, component, at);
@@ -611,7 +617,9 @@ impl CoreArena
                 self.value_type_into(&mut union, inner, at);
             },
             ValueType::Thunk(body) => self.comp_type_into(&mut union, body, at),
-            ValueType::Element { code, .. } => self.value_into(&mut union, code, at),
+            ValueType::Element { code, .. } | ValueType::RowTail(code) => {
+                self.value_into(&mut union, code, at);
+            },
             ValueType::StaticPi { domain, codomain } => {
                 self.value_type_into(&mut union, domain, at);
                 self.value_type_into(&mut union, codomain, at);

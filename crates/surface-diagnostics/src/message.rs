@@ -1249,6 +1249,9 @@ pub const fn unsolved(reason: gandr_core_checker::Unsolved) -> Maybe<Undetermine
         Unsolved::Linear => "it is compared with a linear variable",
         Unsolved::Dangling => "internal error: it is compared with a node the arena does not hold",
         Unsolved::Budget => "the solver spent its steps before deciding it",
+        Unsolved::Rows => {
+            "its row is compared with another open row, each holding an interface the other lacks"
+        },
     }))
 }
 

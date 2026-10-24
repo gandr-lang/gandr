@@ -246,6 +246,7 @@ fn motive_heads_read_apart()
         MotiveHead::Buffer,
         MotiveHead::Kept,
         MotiveHead::World,
+        MotiveHead::Row,
         MotiveHead::Telescope,
     ]);
 }

@@ -386,6 +386,79 @@ fn a_returner_row_names_whole_interfaces()
 }
 
 #[test]
+fn a_row_stays_open_through_its_tail_2270()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def log @[r : Row] (s : String) -> -F [Console | r] Unit { Console.print(s) }\n",
+            "def alone @[r : Row] () -> -F [r] Unit { pure unit }\n",
+        )),
+        &mut arena,
+    );
+    for (name, written) in [("log", ["Console"].as_slice()), ("alone", [].as_slice())] {
+        let DeclarationOutcome::Completed { declared_type, .. } = outcome_of(&module, name.into())
+        else {
+            panic!("{name}: the function lowers");
+        };
+        let Some(&ValueType::Thunk(mut at)) = arena.value_type(declared_type)
+        else {
+            panic!("{name}: a function's type is a thunk");
+        };
+        let mut domains = Vec::new();
+        let (result, effects) = loop {
+            match arena.comp_type(at) {
+                Some(
+                    &(CompType::Pi { domain, codomain } | CompType::Arrow { domain, codomain }),
+                ) => {
+                    domains.push(domain);
+                    at = codomain;
+                },
+                Some(&CompType::Returner {
+                    result,
+                    ref effects,
+                }) => break (result, effects.clone()),
+                other => panic!("{name}: a returner ends the type, not {other:?}"),
+            }
+        };
+        assert_eq!(
+            domains.first().and_then(|&kind| arena.value_type(kind)),
+            Some(&ValueType::Row),
+            "{name}: the implicit ranges over rows"
+        );
+        assert_eq!(
+            arena.value_type(result),
+            Some(&ValueType::unit()),
+            "{name}: the result"
+        );
+        let names: Vec<&str> = effects
+            .signatures()
+            .map(|signature| signature.name().as_ref())
+            .collect();
+        assert_eq!(names, written, "{name}: the interfaces the row writes");
+        let tail = effects.tail().expect("the row stays open");
+        let Some(&ValueType::RowTail(code)) = arena.value_type(tail)
+        else {
+            panic!("{name}: the tail stands for a row");
+        };
+        assert!(
+            matches!(arena.value(code), Some(&Value::Variable { .. })),
+            "{name}: the tail is the implicit, not a row written out"
+        );
+    }
+    let report = judged(&module, &mut arena);
+    for name in ["log", "alone"] {
+        assert!(
+            matches!(
+                verdict_of(&module, &report, name.into()),
+                Verdict::Checked { .. }
+            ),
+            "{name}: the open row checks"
+        );
+    }
+}
+
+#[test]
 fn an_unknown_operation_or_interface_is_refused_by_name()
 {
     let mut arena = CoreArena::new();

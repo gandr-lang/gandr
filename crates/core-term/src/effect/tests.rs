@@ -36,6 +36,81 @@ fn empty_is_the_bottom()
 }
 
 #[test]
+fn a_tail_rides_every_traversal_of_a_row()
+{
+    let mut arena = crate::CoreArena::new();
+    let unit = arena.value_type_unit();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let variable = arena.value_variable(crate::Zone::Intuitionistic, 0_u32.into());
+    let tail = arena.value_type_row_tail(variable);
+    let other_variable = arena.value_variable(crate::Zone::Intuitionistic, 1_u32.into());
+    let other_tail = arena.value_type_row_tail(other_variable);
+    let state = EffectRow::singleton(signature(EffectName::from("State"), unit));
+    let open = state.with_tail(Some(tail));
+    assert_eq!(Some(tail), open.tail());
+    assert_eq!(None, open.with_tail(None).tail(), "closing drops the tail");
+    assert_eq!(
+        Purity::Effectful,
+        EffectRow::EMPTY.with_tail(Some(tail)).purity(),
+        "a bare tail may stand for an interface"
+    );
+    assert_eq!(
+        alloc::vec![unit, unit, tail],
+        open.types().collect::<alloc::vec::Vec<_>>(),
+        "the tail comes after the operations' types"
+    );
+    let mut forward = alloc::vec::Vec::new();
+    let _unchanged = open.try_map_types(TypeOrder::Forward, |ty| {
+        forward.push(ty);
+        Ok::<_, ()>(ty)
+    });
+    assert_eq!(forward, open.types().collect::<alloc::vec::Vec<_>>());
+    let mut reverse = alloc::vec::Vec::new();
+    let _unchanged = open.try_map_types(TypeOrder::Reverse, |ty| {
+        reverse.push(ty);
+        Ok::<_, ()>(ty)
+    });
+    assert_eq!(
+        reverse,
+        open.types().rev().collect::<alloc::vec::Vec<_>>(),
+        "reverse order maps the tail first"
+    );
+    let retailed = open.try_map_types(TypeOrder::Forward, |ty| {
+        Ok::<_, ()>(if ty == tail { other_tail } else { ty })
+    });
+    assert_eq!(Ok(state.with_tail(Some(other_tail))), retailed);
+    let relocated = open.try_relocate(|ty| Ok::<_, ()>(if ty == tail { integer } else { ty }));
+    assert_eq!(
+        Ok(Some(integer)),
+        relocated.map(|row| row.tail()),
+        "relocation carries the tail's image"
+    );
+    let io = EffectRow::singleton(signature(EffectName::from("IO"), unit));
+    assert_eq!(
+        Ok(state
+            .union(&io, &arena)
+            .expect("apart")
+            .with_tail(Some(tail))),
+        open.union(&io, &arena),
+        "a join keeps the one tail"
+    );
+    assert_eq!(
+        Err(EffectConflict::Tails),
+        open.union(&io.with_tail(Some(other_tail)), &arena),
+        "two different tails are refused"
+    );
+    assert_eq!(
+        state.with_tail(Some(tail)),
+        state
+            .union(&io, &arena)
+            .expect("apart")
+            .with_tail(Some(tail))
+            .without(&Label::from("IO")),
+        "removing an instance keeps the tail"
+    );
+}
+
+#[test]
 fn subset_is_a_preorder_with_union_as_join()
 {
     let mut arena = crate::CoreArena::new();
@@ -54,7 +129,7 @@ fn subset_is_a_preorder_with_union_as_join()
         state.is_subset(&conflicting, &arena)
     );
     assert_eq!(
-        Err(EffectConflict::Signature(EffectName::from("State"))),
+        Err(EffectConflict::Signature(Label::from("State"))),
         state.union(&conflicting, &arena)
     );
 }
@@ -73,9 +148,56 @@ fn union_is_a_canonical_set_and_without_subtracts()
         state
             .union(&io, &arena)
             .unwrap()
-            .without(&EffectName::from("IO"))
+            .without(&Label::from("IO"))
     );
-    assert_eq!(state, state.without(&EffectName::from("Absent")));
+    assert_eq!(state, state.without(&Label::from("Absent")));
+}
+
+#[test]
+fn a_join_by_identity_refuses_equal_types_minted_twice()
+{
+    let mut arena = crate::CoreArena::new();
+    let unit = arena.value_type_unit();
+    let again = arena.value_type_unit();
+    let row = arena.value_type_row();
+    let state = EffectRow::singleton(signature(EffectName::from("State"), unit));
+    let restated = EffectRow::singleton(signature(EffectName::from("State"), again));
+    let io = EffectRow::singleton(signature(EffectName::from("IO"), unit));
+    assert_eq!(
+        state.union(&io, &arena),
+        state.union_by_identity(&io),
+        "apart rows join to their union"
+    );
+    assert_eq!(
+        Ok(state.clone()),
+        state.union_by_identity(&state),
+        "a label shared at the same ids joins once"
+    );
+    assert_eq!(
+        (
+            Ok(state.clone()),
+            Err(EffectConflict::Signature(Label::from("State")))
+        ),
+        (
+            state.union(&restated, &arena),
+            state.union_by_identity(&restated)
+        ),
+        "equal types minted twice agree structurally and not by identity"
+    );
+    assert_eq!(
+        state
+            .union(&io, &arena)
+            .map(|both| both.with_tail(Some(unit))),
+        state.with_tail(Some(unit)).union_by_identity(&io),
+        "the join is open through the one tail"
+    );
+    assert_eq!(
+        Err(EffectConflict::Tails),
+        state
+            .with_tail(Some(unit))
+            .union_by_identity(&io.with_tail(Some(row))),
+        "two different tails are refused"
+    );
 }
 
 #[test]
@@ -145,7 +267,7 @@ fn signature_inclusion_ignores_allocation_identity()
     );
     assert_eq!(RowInclusion::Excluded, first.is_subset(&changed, &arena));
     assert_eq!(
-        Err(EffectConflict::Signature(EffectName::from("ListOp"))),
+        Err(EffectConflict::Signature(Label::from("ListOp"))),
         first.union(&changed, &arena)
     );
 }
@@ -330,7 +452,7 @@ fn relocation_keeps_names_and_refuses_duplicate_interfaces()
     let io = signature(EffectName::from("IO"), unit);
     assert_eq!(
         EffectRow::from_signatures([state.clone(), state.clone()]),
-        Err(EffectConflict::Signature(EffectName::from("State")))
+        Err(EffectConflict::Signature(Label::from("State")))
     );
     assert_eq!(
         EffectRow::from_signatures([io.clone(), state]),
@@ -382,7 +504,7 @@ fn the_row_operations_are_the_set_arithmetic_of_their_names()
     let disagreeing = EffectRow::singleton(signature(apart.clone(), integer));
     for (left_names, left) in rows.iter().map(|held| (&held.0, &held.1)) {
         for name in &names {
-            let removed = left.without(name);
+            let removed = left.without(&Label::from(name));
             assert!(
                 named(&removed)
                     .iter()
@@ -395,7 +517,11 @@ fn the_row_operations_are_the_set_arithmetic_of_their_names()
             else {
                 EffectPresence::Absent
             };
-            assert_eq!(left.contains(name), present, "{name:?} in {left:?}");
+            assert_eq!(
+                left.contains(&Label::from(name)),
+                present,
+                "{name:?} in {left:?}"
+            );
         }
         for (right_names, right) in rows.iter().map(|held| (&held.0, &held.1)) {
             let joined = left.union(right, &arena).unwrap();
@@ -417,7 +543,7 @@ fn the_row_operations_are_the_set_arithmetic_of_their_names()
             );
         }
         let refused = if left_names.contains(&apart) {
-            Err(EffectConflict::Signature(apart.clone()))
+            Err(EffectConflict::Signature(Label::from(&apart)))
         }
         else {
             Ok(())

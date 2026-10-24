@@ -250,17 +250,19 @@ fn add_type_rules(
     //
     // The returner takes an optional effect row, `-F [Fs, Proc] A`: the
     // interfaces its computation may request, each a host interface's name.
-    // The bracket follows the compound tile as the thunk's grade does. The
-    // row form is a rule of its own, `f_type.row`, realising the kind
-    // `f_type`, rather than an optional bracket in `f_type`: an optional
-    // bracket leaves the bare returner's only mold awaiting a `[`, so a
-    // returner missing its operand recovers as the thunk does, with three
-    // obligations where it had one. The two rules give `-F` two molds, and the
-    // molder settles their tie at the next token: a `[` continues only the
-    // row form, and anything else only the bare one. The row form is pushed
-    // first so its mold numbers first, which is what keeps `-F [Fs] A` a row:
-    // a `[` may also open an expression list in the operand's hole, a reading
-    // the bare form keeps open, and an exact tie keeps the smaller mold.
+    // A row may stay open through a tail, a row-valued operand written after
+    // a `|`, `-F [Fs | r] A`, or alone, `-F [r] A`. The bracket follows the
+    // compound tile as the thunk's grade does. The row form is a rule of its
+    // own, `f_type.row`, realising the kind `f_type`, rather than an optional
+    // bracket in `f_type`: an optional bracket leaves the bare returner's only
+    // mold awaiting a `[`, so a returner missing its operand recovers as the
+    // thunk does, with three obligations where it had one. The two rules give
+    // `-F` two molds, and the molder settles their tie at the next token: a
+    // `[` continues only the row form, and anything else only the bare one.
+    // The row form is pushed first so its mold numbers first, which is what
+    // keeps `-F [Fs] A` a row: a `[` may also open an expression list in the
+    // operand's hole, a reading the bare form keeps open, and an exact tie
+    // keeps the smaller mold.
     rules.push(Rule::with_provenance(
         RuleName("f_type.row"),
         Provenance("f_type"),
@@ -269,7 +271,13 @@ fn add_type_rules(
         Regex::seq([
             tile(TileLabel("-F")),
             tile(TileLabel("[")),
-            comma1(tile(TileLabel("type_identifier"))),
+            Regex::alt([
+                Regex::seq([
+                    comma1(tile(TileLabel("type_identifier"))),
+                    Regex::optional(Regex::seq([tile(TileLabel("|")), Regex::sort(ty)])),
+                ]),
+                Regex::sort(ty),
+            ]),
             tile(TileLabel("]")),
             Regex::sort(ty),
         ]),

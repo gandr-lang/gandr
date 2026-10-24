@@ -578,7 +578,9 @@ impl Machine<'_, '_>
             | ValueTypeView::World(_)
             | ValueTypeView::Stack { .. }
             | ValueTypeView::Capability { .. }
-            | ValueTypeView::Buffer => {
+            | ValueTypeView::Buffer
+            | ValueTypeView::Row
+            | ValueTypeView::RowTail(_) => {
                 return Err(CheckRefusal::Access {
                     at: node,
                     defect: AccessDefect::Unindexed,
@@ -764,7 +766,8 @@ impl Machine<'_, '_>
                 | Value::StaticApplication { .. }
                 | Value::Hole { .. }
                 | Value::Mark { .. }
-                | Value::Reify { .. }),
+                | Value::Reify { .. }
+                | Value::Row { .. }),
             )
             | None => Err(CheckRefusal::Access {
                 at: CoreNode::Term(TermNode::Value(value)),
@@ -1110,7 +1113,8 @@ impl Machine<'_, '_>
     /// - requires: both types are formed.
     /// - ensures: [`RowInclusion::Excluded`] exactly when both are returners at
     ///   their weak heads and the first row names an interface the second does
-    ///   not grant; [`RowInclusion::Included`] otherwise.
+    ///   not grant, or stands open through a tail the second is not open
+    ///   through; [`RowInclusion::Included`] otherwise.
     /// - fails: the weak-head reading's refusal.
     /// - panics: none.
     /// - executable: none — the clause is the weak-head reading the body

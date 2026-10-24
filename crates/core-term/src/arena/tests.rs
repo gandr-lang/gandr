@@ -145,6 +145,104 @@ fn a_decoded_quote_is_the_quoted_type()
 }
 
 #[test]
+fn a_tail_over_a_row_literal_is_merged_at_mint()
+{
+    use crate::effect::EffectName;
+    use crate::effect::EffectOp;
+    use crate::effect::EffectRow;
+    use crate::effect::EffectSig;
+    use crate::effect::OperationName;
+
+    let mut arena = CoreArena::new();
+    let unit = arena.value_type_unit();
+    let interface = |name: &str| {
+        EffectRow::singleton(
+            EffectSig::new(EffectName::from(name), [EffectOp {
+                name: OperationName::from("run"),
+                payload: unit,
+                reply: unit,
+            }])
+            .expect("one operation"),
+        )
+    };
+    let console = interface("Console");
+    let div = interface("Div");
+    let both = console.union(&div, &arena).expect("apart");
+    let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let open = arena.value_type_row_tail(variable);
+    let standing = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(open)));
+    assert_eq!(
+        Some(&CompType::Returner {
+            result: unit,
+            effects: console.with_tail(Some(open)),
+        }),
+        arena.comp_type(standing),
+        "a tail over a variable stands"
+    );
+    let closed = arena.value_row(div.clone());
+    let over_closed = arena.value_type_row_tail(closed);
+    let merged = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(over_closed)));
+    assert_eq!(
+        Some(&CompType::Returner {
+            result: unit,
+            effects: both.clone(),
+        }),
+        arena.comp_type(merged),
+        "a tail over a closed literal is its instances"
+    );
+    let still_open = arena.value_row(div.with_tail(Some(open)));
+    let over_open = arena.value_type_row_tail(still_open);
+    let opened = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(over_open)));
+    assert_eq!(
+        Some(&CompType::Returner {
+            result: unit,
+            effects: both.with_tail(Some(open)),
+        }),
+        arena.comp_type(opened),
+        "a tail over an open literal is its instances and its tail"
+    );
+    let nested = arena.value_row(console.with_tail(Some(over_closed)));
+    assert_eq!(
+        Some(&Value::Row(both)),
+        arena.value(nested),
+        "a row value merges a tail over a literal too"
+    );
+    let agreeing = arena.value_row(interface("Console"));
+    let over_agreeing = arena.value_type_row_tail(agreeing);
+    let rejoined =
+        arena.comp_type_returner_with_effects(unit, console.with_tail(Some(over_agreeing)));
+    assert_eq!(
+        Some(&CompType::Returner {
+            result: unit,
+            effects: console.clone(),
+        }),
+        arena.comp_type(rejoined),
+        "a label at the same ids joins once"
+    );
+    let again = arena.value_type_unit();
+    let restated = EffectRow::singleton(
+        EffectSig::new(EffectName::from("Console"), [EffectOp {
+            name: OperationName::from("run"),
+            payload: again,
+            reply: again,
+        }])
+        .expect("one operation"),
+    );
+    let clashing = arena.value_row(restated);
+    let over_clash = arena.value_type_row_tail(clashing);
+    let shared = console.with_tail(Some(over_clash));
+    let kept = arena.comp_type_returner_with_effects(unit, shared.clone());
+    assert_eq!(
+        Some(&CompType::Returner {
+            result: unit,
+            effects: shared,
+        }),
+        arena.comp_type(kept),
+        "a label defined at other ids leaves the row as it stands"
+    );
+}
+
+#[test]
 fn a_child_id_is_strictly_below_its_parent()
 {
     let mut arena = CoreArena::new();

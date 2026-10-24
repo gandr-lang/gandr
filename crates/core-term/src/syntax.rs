@@ -579,6 +579,9 @@ pub enum Value
     },
     /// A structural record, in exact UTF-8 label order.
     Record(BTreeMap<FieldLabel, ValueId>),
+    /// A row of effect instances, closed or open through a tail: the value a
+    /// row variable is supplied or solved to, inhabiting [`ValueType::Row`].
+    Row(crate::effect::EffectRow),
     /// A typed hole: a value the author has not written yet, named so a fill
     /// can find it. It synthesises [`ValueType::Unknown`] and checks against
     /// any type.
@@ -630,7 +633,7 @@ impl Value
     /// - hypothesis: L3 — a tuple of two components, the empty tuple and an
     ///   injection separate the tuple reading from every other former.
     /// - witness: `syntax::tests::the_unit_is_the_empty_tuple`
-    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
+    #[spec(ensures: |ret| match *self { Self::Tuple(ref components) => ret == Some(&**components), Self::Primitive { .. } | Self::PathRefl(_) | Self::PathProduct(..) | Self::PathEquiv { .. } | Self::Here(_) | Self::Univalence(..) | Self::Funext(..) | Self::Equiv(..) | Self::Ua { .. } | Self::SessionRelated { .. } | Self::Stay(_) | Self::Then(..) | Self::FlowProduct(..) | Self::Forward(_) | Self::FunctionFlow(..) | Self::Recorded(_) | Self::Dialogue(_) | Self::Web(_) | Self::Returned(_) | Self::Nested(_) | Self::Run(_) | Self::RecordUpdate { .. } | Self::Variable { .. } | Self::Constant(_) | Self::Literal(_) | Self::Injection(..) | Self::ListNil | Self::ListCons(..) | Self::Thunk(_) | Self::Ascribe { .. } | Self::Lift { .. } | Self::Quote(_) | Self::QuoteComputation(_) | Self::StaticLambda(_) | Self::StaticApplication(..) | Self::Constructor { .. } | Self::Record(_) | Self::Row(_) | Self::Hole(_) | Self::Mark { .. } | Self::Reify(_) => ret.is_none() })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Option<&[ValueId]>
@@ -674,6 +677,7 @@ impl Value
             | Self::StaticApplication(..)
             | Self::Constructor { .. }
             | Self::Record(_)
+            | Self::Row(_)
             | Self::Hole(_)
             | Self::Mark { .. }
             | Self::Reify(_) => None,
@@ -1121,6 +1125,15 @@ pub enum ValueType
         /// level.
         target: Level,
     },
+    /// `Row`: the kind of row descriptions, classifying the values a row
+    /// variable ranges over.
+    Row,
+    /// The row a row value denotes, standing as a row's tail: the further
+    /// instances a row variable is instantiated with. Like [`Self::Element`]
+    /// its child crosses into the term language. A tail over a row literal is
+    /// merged into the row carrying it when that row is minted, so it stands
+    /// over a variable, a hole or another neutral row.
+    RowTail(ValueId),
     /// A sealed abstract type: a nominal atom named by the admission position
     /// of the declaration that introduced it.
     Abstract(ConstantIndex),
@@ -2291,6 +2304,44 @@ fn signature_children(
     CertificateEquality::Equal
 }
 
+/// Queue the type pairs of two rows after checking their shapes: the same
+/// interfaces, and a tail on both or on neither.
+///
+/// # Specification
+/// - ensures: [`CertificateEquality::Equal`] queues each pair of interfaces'
+///   operation types as [`signature_children`] does, then the two tails;
+///   [`CertificateEquality::Different`] for rows of different lengths, a
+///   mismatched interface, or a row open where the other is closed.
+/// - executable: none — this is the structural comparison's work-list rule.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a closed row against itself, against the same row open
+///   and two rows open through different tails separate the three answers.
+/// - witness: `syntax::tests::a_returner_open_through_a_tail_is_not_the_closed_one_2270`
+fn row_children(
+    pending: &mut alloc::vec::Vec<StructuralGoal>,
+    left: &crate::effect::EffectRow,
+    right: &crate::effect::EffectRow,
+) -> CertificateEquality
+{
+    if left.signatures().len() != right.signatures().len() {
+        return CertificateEquality::Different;
+    }
+    for (left, right) in left.signatures().zip(right.signatures()) {
+        if signature_children(pending, left, right) == CertificateEquality::Different {
+            return CertificateEquality::Different;
+        }
+    }
+    match (left.tail(), right.tail()) {
+        (None, None) => CertificateEquality::Equal,
+        (Some(left), Some(right)) => {
+            pending.push(StructuralGoal::ValueType(left, right));
+            CertificateEquality::Equal
+        },
+        (Some(_), None) | (None, Some(_)) => CertificateEquality::Different,
+    }
+}
+
 /// Queue the payload type pairs of two session types whose protocols behave
 /// alike from their states.
 ///
@@ -2836,6 +2887,13 @@ fn equal_syntax(
                     {
                         {
                             pending.push(CT(a, b));
+                        }
+                    }
+                    else if let Value::Row(ref a) = *matched_left_value
+                        && let Value::Row(ref b) = *matched_right_value
+                    {
+                        if row_children(&mut pending, a, b) == CertificateEquality::Different {
+                            return CertificateEquality::Different;
                         }
                     }
                     else if let Value::Mark {
@@ -3501,8 +3559,13 @@ fn equal_syntax(
                     }
                     else if matches!(
                         (matched_left_value, matched_right_value),
-                        (&ValueType::Web, &ValueType::Web)
+                        (&ValueType::Web, &ValueType::Web) | (&ValueType::Row, &ValueType::Row)
                     ) {
+                    }
+                    else if let (&ValueType::RowTail(a), &ValueType::RowTail(b)) =
+                        (matched_left_value, matched_right_value)
+                    {
+                        pending.push(V(a, b));
                     }
                     else if (matches!(
                         *matched_left_value,
@@ -3541,15 +3604,10 @@ fn equal_syntax(
                             effects: ref second,
                         },
                     ) => {
-                        if first.signatures().len() != second.signatures().len() {
+                        if row_children(&mut pending, first, second)
+                            == CertificateEquality::Different
+                        {
                             return CertificateEquality::Different;
-                        }
-                        for (left, right) in first.signatures().zip(second.signatures()) {
-                            if signature_children(&mut pending, left, right)
-                                == CertificateEquality::Different
-                            {
-                                return CertificateEquality::Different;
-                            }
                         }
                         pending.push(VT(a, b));
                     },
@@ -3897,6 +3955,57 @@ mod tests
             equal_type_reading(&arena, &signatures, off_doubled, over_path),
             CertificateEquality::Different,
             "reflexivity off the point is no word"
+        );
+    }
+
+    #[test]
+    fn a_returner_open_through_a_tail_is_not_the_closed_one_2270()
+    {
+        use crate::effect::EffectName;
+        use crate::effect::EffectOp;
+        use crate::effect::EffectRow;
+        use crate::effect::EffectSig;
+        use crate::effect::OperationName;
+
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_type_unit();
+        let console = EffectRow::singleton(
+            EffectSig::new(EffectName::from("Console"), [EffectOp {
+                name: OperationName::from("print"),
+                payload: unit,
+                reply: unit,
+            }])
+            .expect("one operation"),
+        );
+        let first = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let second = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let tail = arena.value_type_row_tail(first);
+        let other = arena.value_type_row_tail(second);
+        let closed = arena.comp_type_returner_with_effects(unit, console.clone());
+        let open = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(tail)));
+        let again = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(tail)));
+        let elsewhere = arena.comp_type_returner_with_effects(unit, console.with_tail(Some(other)));
+        assert_eq!(
+            equal_comp_type_syntax(&arena, open, again),
+            CertificateEquality::Equal,
+            "one row open through one tail"
+        );
+        assert_eq!(
+            equal_comp_type_syntax(&arena, open, closed),
+            CertificateEquality::Different,
+            "a row open through a tail is not the row closed"
+        );
+        assert_eq!(
+            equal_comp_type_syntax(&arena, open, elsewhere),
+            CertificateEquality::Different,
+            "two tails over different variables"
+        );
+        let row = arena.value_row(console.with_tail(Some(tail)));
+        let closed_row = arena.value_row(console);
+        assert_eq!(
+            equal_certificate_syntax(&arena, row, closed_row),
+            CertificateEquality::Different,
+            "a row value open through a tail is not the closed one"
         );
     }
 
