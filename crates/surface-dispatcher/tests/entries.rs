@@ -412,6 +412,10 @@ enum Placed
     /// at, `Region` in `def read @[r : Region] (…)`: the lowering reads the
     /// binder as a region of the signature and forms no type for its sort,
     /// so the kept types naming the binder answer.
+    /// Or a row's label naming a region, as a label names its function's
+    /// region binder, `r` in `[r : Console]` beside `@[r : Region]`, or the
+    /// function's instance from a row other than its result's: a region, no
+    /// term, so the row answers (#2390).
     Region,
     /// The theory a model type is written over, `T` in `Model(T)`: the name
     /// of a presentation, neither a term the checker judges nor a type the
@@ -513,6 +517,11 @@ fn gated(
             [named(before), operation]
         })
         .flatten()
+        .collect();
+    // The region binders a telescope writes, `r` in `@[r : Region]`, by name.
+    let regions: BTreeSet<String> = source
+        .match_indices(": Region")
+        .filter_map(|(at, _)| named(source.get(.. at).unwrap_or("")))
         .collect();
     let rules: Vec<(usize, usize)> = source
         .match_indices("rule ")
@@ -758,6 +767,33 @@ fn gated(
             && def.label == "type_identifier"
             && text == "Region"
             && parent.is_some_and(|(_, label, ..)| label == "def");
+        // A row's label that names a region rather than binding an instance:
+        // one naming a region binder, `r` in `[r : Console]` beside `@[r :
+        // Region]`, or one in a row other than a function's result, `o` in a
+        // parameter's `+U (-F [o : Console] Unit)`.
+        let naming = !melded
+            && def.label == "type_variable"
+            && source
+                .get(usize::from(span.end()) ..)
+                .is_some_and(|after| after.trim_start().starts_with(':'))
+            && source
+                .get(.. usize::from(span.start()))
+                .and_then(|before| {
+                    let open = before.rfind('[')?;
+                    let inside = before.get(open.saturating_add(1) ..)?;
+                    if inside.contains(['(', ')', ']', '@']) {
+                        return None;
+                    }
+                    let lead = before.get(.. open)?.trim_end();
+                    let returned = lead.strip_suffix("-F").map(str::trim_end);
+                    if !lead.ends_with("->") && returned.is_none() {
+                        return None;
+                    }
+                    let result = lead.ends_with("->")
+                        || returned.is_some_and(|returned| returned.ends_with("->"));
+                    Some(!result || regions.contains(text.trim()))
+                })
+                .unwrap_or(false);
         let supplied = !melded
             && def.label == "identifier"
             && stages.contains(text.trim())
@@ -781,7 +817,7 @@ fn gated(
             .or_else(|| dropped.then_some(Placed::Discarded))
             .or_else(|| kinded.then_some(Placed::Kind))
             .or_else(|| (sized || supplied).then_some(Placed::Stage))
-            .or_else(|| regioned.then_some(Placed::Region))
+            .or_else(|| (regioned || naming).then_some(Placed::Region))
             .or_else(|| unstated.then_some(Placed::Unstated))
             .or_else(|| packed.then_some(Placed::Packed));
         gated.push((kind(grammar, tree, position, *def), span, placed));
