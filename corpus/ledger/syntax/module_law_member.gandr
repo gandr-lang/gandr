@@ -5,8 +5,9 @@ theory Reflexive {
   law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
 }
 
-/// The host's integers, their reflexivity admitted.
+/// The host's integers, decided by the host's equality, its reflexivity
+/// admitted.
 module ReflexiveInteger : Model(Reflexive) with sort Carrier = Integer {
-  def alike(a : Integer, b : Integer) -> Bool { true }
+  def alike(a : Integer, b : Integer) -> Bool { int.eq(a, b) }
   law refl admitted;
 }

@@ -115,7 +115,7 @@ pub(in crate::lower) fn preluded<'source>(
 }
 
 /// Assert that every declaration of `module` checks, a theory forming as
-/// data does.
+/// data does and a law admitted on the host's word owed as its axiom.
 ///
 /// # Specification
 /// trivial.
@@ -131,9 +131,11 @@ pub(in crate::lower) fn assert_checked(
         "nothing is refused: {:?}",
         module.declarations()
     );
-    for verdict in report.judged() {
+    for (declaration, verdict) in module.declarations().iter().zip(report.judged()) {
+        let admitted = declaration.role() == crate::module::Role::Admitted
+            && matches!(verdict.verdict(), Verdict::Owed(_));
         assert!(
-            matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data),
+            admitted || matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data),
             "every declaration checks: {report:?}"
         );
     }
@@ -144,7 +146,8 @@ pub(in crate::lower) fn assert_checked(
 ///
 /// # Specification
 /// - requires: `module` was lowered over `arena` and declares no abstract type.
-/// - ensures: one verdict per unrefused declaration, in admission order.
+/// - ensures: one verdict per unrefused declaration, in admission order; a law
+///   admitted on the host's word stands hosted, as the dispatcher reads it.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -170,7 +173,12 @@ pub(in crate::lower) fn judged(
                 } => (Maybe::Present(declared_type), Maybe::Present(body)),
                 DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
-                    Maybe::Absent(body::Absent::Hole),
+                    Maybe::Absent(if declaration.role() == crate::module::Role::Admitted {
+                        body::Absent::Hosted
+                    }
+                    else {
+                        body::Absent::Hole
+                    }),
                 ),
                 DeclarationOutcome::Bodied { body } => (
                     Maybe::Absent(signature::Absent::Unsigned),

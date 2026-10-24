@@ -838,6 +838,7 @@ mod tests
                 ("plus", Kind::VARIABLE),
                 ("n", Kind::VARIABLE),
                 ("Eq", Kind::FUNCTION),
+                ("PartialEq", Kind::FUNCTION),
                 ("Succ", Kind::CONSTRUCTOR),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
@@ -846,6 +847,8 @@ mod tests
                 ("gt", Kind::FUNCTION),
                 ("le", Kind::FUNCTION),
                 ("lt", Kind::FUNCTION),
+                ("refl", Kind::FUNCTION),
+                ("sym", Kind::FUNCTION),
             ]),
             "a value: the binders in scope, innermost first, then the values and constructors, \
              the prelude's among them"
@@ -863,6 +866,7 @@ mod tests
                 ("plus", Kind::VARIABLE),
                 ("n", Kind::VARIABLE),
                 ("Eq", Kind::FUNCTION),
+                ("PartialEq", Kind::FUNCTION),
                 ("Succ", Kind::CONSTRUCTOR),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
@@ -871,6 +875,8 @@ mod tests
                 ("gt", Kind::FUNCTION),
                 ("le", Kind::FUNCTION),
                 ("lt", Kind::FUNCTION),
+                ("refl", Kind::FUNCTION),
+                ("sym", Kind::FUNCTION),
             ]),
             "a body: the parameters, never a pattern's binder"
         );
@@ -882,8 +888,13 @@ mod tests
         let ty = at("Nat) ;");
         assert_eq!(
             ty.names,
-            named!([("Eq", Kind::ENUM), ("Nat", Kind::ENUM), ("Ord", Kind::ENUM)]),
-            "a type: the families alone, the prelude's `Eq` and `Ord` among them"
+            named!([
+                ("Eq", Kind::ENUM),
+                ("Nat", Kind::ENUM),
+                ("Ord", Kind::ENUM),
+                ("PartialEq", Kind::ENUM),
+            ]),
+            "a type: the families alone, the prelude's `Eq`, `Ord` and `PartialEq` among them"
         );
         assert!(has(&ty, "Type") && !has(&ty, "return"), "{ty:?}");
 
@@ -1283,6 +1294,7 @@ mod tests
                 name("Base"),
                 name("Eq"),
                 call("P", "P(${1:x})$0"),
+                name("PartialEq"),
                 call("S", "S(${1:x})$0"),
                 call("Succ", "Succ(${1:n})$0"),
                 name("Z"),
@@ -1297,11 +1309,13 @@ mod tests
                 call("loopOn", "loopOn(${1:p})$0"),
                 call("lt", "lt(${1:a}, ${2:b})$0"),
                 call("mul", "mul(${1:a}, ${2:b})$0"),
+                name("refl"),
                 call("retr", "retr(${1:n})$0"),
                 call("sect", "sect(${1:p})$0"),
                 call("selfloop", "selfloop(${1:x})$0"),
                 call("selfrefl", "selfrefl(${1:x})$0"),
                 call("spin", "spin(${1:n})$0"),
+                name("sym"),
                 call("unloopOn", "unloopOn(${1:p})$0"),
                 call("up", "up(${1:n})$0"),
                 call("wind", "wind(${1:p})$0"),

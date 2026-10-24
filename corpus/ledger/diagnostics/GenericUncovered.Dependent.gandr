@@ -1,0 +1,8 @@
+/// `GenericUncovered.Dependent`: a law of a derived equality over a data type with a flag, whose proof cases on the flag under a motive.
+@[ checks ]
+data Marked : Type {
+  Marked : (place : Integer, shown : Bool) --> Marked;
+}
+
+@[ refuses("GenericUncovered.Dependent") ]
+def reflMarked = Eq.generic.refl(Marked) ;

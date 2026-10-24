@@ -1360,9 +1360,12 @@ fn decide(
                 Err(failure) => (Verdict::Refused(failure.refusal()), Maybe::Present(failure)),
             }
         },
-        Maybe::Absent(body::Absent::Hole) => {
+        Maybe::Absent(absent @ (body::Absent::Hole | body::Absent::Hosted)) => {
             let owed = hole(direction, constant, declaration.origin()).and_then(|absence| {
                 crate::capability::held(context, constant, absence.declared())?;
+                if absent == body::Absent::Hosted {
+                    hosted(context, absence.declared())?;
+                }
                 Ok(absence)
             });
             residue = context.deferrals_mut().take();
@@ -2795,6 +2798,59 @@ fn hole(
             form: CheckingForm::Hole(constant),
         }),
     }
+}
+
+/// Whether the host asserts `declared`: some law of its law table, stated
+/// over its primitive, converts with it.
+///
+/// # Specification
+/// - requires: `declared` is formed.
+/// - ensures: `Ok` exactly when, for some row of
+///   [`gandr_core_term::primitive::PRELUDE`] and some law
+///   [`gandr_core_term::primitive::Primitive::laws`] lists for it, the
+///   statement [`gandr_core_term::primitive::Primitive::law_statement`] mints
+///   forms and converts with `declared`; a statement that does not form or
+///   convert is another row's to match.
+/// - fails: [`CheckRefusal::UnassertedLaw`] at `declared` when none does.
+/// - panics: none.
+/// - executable: none — the search is the predicate.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a law at the integers stated through a model's own
+///   component is admitted, reflexivity at the floats and a statement over an
+///   ordering are refused.
+/// - witness: `module::tests::a_hosted_law_is_admitted_only_where_the_host_asserts_it_2302`
+fn hosted(
+    context: &mut CheckingContext<'_>,
+    declared: FormedValueType,
+) -> Result<(), CheckRefusal>
+{
+    for primitive in gandr_core_term::primitive::PRELUDE.iter().copied() {
+        let Some((_, laws)) = primitive.laws()
+        else {
+            continue;
+        };
+        for &law in laws {
+            let Some(statement) = primitive.law_statement(law, context.arena_mut())
+            else {
+                continue;
+            };
+            let Ok(statement) = crate::formation::form_value_type(context, statement)
+            else {
+                continue;
+            };
+            if matches!(
+                crate::conversion::equivalent(context, declared.id(), statement.id()),
+                Ok(crate::conversion::Agreement::Convertible)
+            ) {
+                return Ok(());
+            }
+        }
+    }
+    Err(CheckRefusal::UnassertedLaw { at: declared.id() })
 }
 
 #[cfg(test)]

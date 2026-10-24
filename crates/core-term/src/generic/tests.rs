@@ -47,7 +47,7 @@ fn derived(
     arena: &mut CoreArena,
     position: ConstantIndex,
     signatures: &BTreeMap<ConstantIndex, DataSignature>,
-) -> Result<super::Equality, Uncovered>
+) -> Result<super::Derived, Uncovered>
 {
     equality(arena, position, &|at| signatures.get(&at))
 }

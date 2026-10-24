@@ -1,30 +1,52 @@
-/// Decidable equality over a carrier.
-theory Eq {
+/// Decidable equality over a carrier some value may be unequal to itself in:
+/// symmetric.
+theory PartialEq {
   sort Carrier : Type;
   oper eq : (a : Carrier, b : Carrier) --> Bool;
+  law sym : (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b, a));
 }
 
-/// Structural equality from `T`'s constructors.
+/// Decidable equality over a carrier: a partial equality every value is
+/// equal to itself in.
+theory Eq {
+  include PartialEq;
+  law refl : (a : Carrier) => Path(Bool, eq(a, a), true);
+}
+
+/// Structural equality from `T`'s constructors, and its laws.
 module Eq {
-  /// `def eq = Eq.generic(T)`.
+  /// `def eq = Eq.generic(T)`; `def refl = Eq.generic.refl(T)` and `def sym
+  /// = Eq.generic.sym(T)` prove its laws.
   def generic : (T : Type) => (T, T) => Bool ;
 }
 
-/// Integer equality, the integer primitive.
+/// Integer equality, the integer primitive, its laws the host's.
 module EqInteger : Model(Eq) with sort Carrier = Integer {
   /// Whether two integers are equal.
   def eq(a : Integer, b : Integer) -> Bool { int.eq(a, b) }
+  law refl admitted;
+  law sym admitted;
 }
 
-/// String equality, the string primitive.
+/// String equality, the string primitive, its laws the host's.
 module EqString : Model(Eq) with sort Carrier = String {
   /// Whether two strings are equal, byte for byte.
   def eq(a : String, b : String) -> Bool { string.eq(a, b) }
+  law refl admitted;
+  law sym admitted;
 }
 
-/// Equality through the model of `Eq` the operands' type resolves: what `a ==
-/// b` calls.
-def eq @[e : Model(Eq)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
+/// Float equality, the float primitive: symmetric, and no equality, since
+/// NaN is equal to nothing, itself included.
+module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 {
+  /// Whether two floats are equal, NaN equal to none.
+  def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
+  law sym admitted;
+}
+
+/// Equality through the model of `PartialEq` the operands' type resolves:
+/// what `a == b` calls.
+def eq @[e : Model(PartialEq)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
 
 /// A decidable order over a carrier with its equality: below, at most, above
 /// and at least.

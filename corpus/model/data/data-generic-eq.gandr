@@ -2,8 +2,14 @@
 // written `Eq.generic(T)` is structural equality over `T`, the checker
 // judging it as any declaration. Integers and strings compare by their
 // primitives, a sum by its side, a field of `T` itself recursively and a field
-// of another such type by that type's equality, written in place. A model of
-// `Eq` whose member is derived puts the type under `==`.
+// of another such type by that type's equality, written in place.
+//
+// `Eq.generic.refl(T)` and `Eq.generic.sym(T)` prove that equality's laws by
+// congruence over `T`'s constructors, resting on the laws the host admits of
+// integer and string equality, so a model of `Eq` whose members are derived
+// puts `T` under `==`. A field of a sum, as `Mark`'s flag, or of `T` itself,
+// as `Peano`'s, takes a proof the derivation does not write; the refusals are
+// beside `../../pathological/data/generic-eq-refused.gandr`.
 
 /// A point in the plane.
 @[ checks ]
@@ -28,15 +34,30 @@ data Mark : Type {
 @[ checks ]
 def eqPoint = Eq.generic(Point) ;
 
+/// Every point is equal to itself under `eqPoint`.
+@[ checks ]
+def reflPoint = Eq.generic.refl(Point) ;
+
 /// Naturals compared structurally, at the type the derivation states.
 @[ checks ]
 def eqPeano : (Peano, Peano) => Bool = Eq.generic(Peano) ;
 
-/// Marks under `==`.
-module EqMark : Model(Eq) with sort Carrier = Mark {
-  /// Every field, in order, the count and the point by their own equality.
+/// Marks compared field by field, the count and the point by their own
+/// equality.
+@[ checks ]
+def eqMark = Eq.generic(Mark) ;
+
+/// Points under `==`, every member derived.
+module EqPoint : Model(Eq) with sort Carrier = Point {
+  /// Field by field.
   @[ checks ]
-  def eq = Eq.generic(Mark) ;
+  def eq = Eq.generic(Point) ;
+  /// Each coordinate by the host's reflexivity.
+  @[ checks ]
+  def refl = Eq.generic.refl(Point) ;
+  /// Each coordinate by the host's symmetry.
+  @[ checks ]
+  def sym = Eq.generic.sym(Point) ;
 }
 
 /// One point is itself.
@@ -58,23 +79,43 @@ def shorterPeano() -> Bool { eqPeano(Next(Nought), Next(Next(Nought))) }
 /// Two marks alike in every field.
 @[ runs("+{.0 = unit}") ]
 def sameMark() -> Bool {
-  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 4), true, "here")
+  eqMark(
+    Mark(Next(Nought), Point(3, 4), true, "here"),
+    Mark(Next(Nought), Point(3, 4), true, "here")
+  )
 }
 
 /// Two marks apart in their point alone.
 @[ runs("+{.1 = unit}") ]
 def movedMark() -> Bool {
-  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 5), true, "here")
+  eqMark(
+    Mark(Next(Nought), Point(3, 4), true, "here"),
+    Mark(Next(Nought), Point(3, 5), true, "here")
+  )
 }
 
 /// Two marks apart in their flag alone.
 @[ runs("+{.1 = unit}") ]
 def hiddenMark() -> Bool {
-  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 4), false, "here")
+  eqMark(
+    Mark(Next(Nought), Point(3, 4), true, "here"),
+    Mark(Next(Nought), Point(3, 4), false, "here")
+  )
 }
 
 /// Two marks apart in their label alone.
 @[ runs("+{.1 = unit}") ]
 def relabelledMark() -> Bool {
-  Mark(Next(Nought), Point(3, 4), true, "here") == Mark(Next(Nought), Point(3, 4), true, "there")
+  eqMark(
+    Mark(Next(Nought), Point(3, 4), true, "here"),
+    Mark(Next(Nought), Point(3, 4), true, "there")
+  )
 }
+
+/// One point is itself under `==`.
+@[ runs("+{.0 = unit}") ]
+def samePointUnderEq() -> Bool { Point(1, 2) == Point(1, 2) }
+
+/// Two points apart in one coordinate under `==`.
+@[ runs("+{.1 = unit}") ]
+def movedPointUnderEq() -> Bool { Point(1, 2) == Point(1, 3) }

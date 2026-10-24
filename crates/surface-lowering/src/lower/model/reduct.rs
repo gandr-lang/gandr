@@ -51,8 +51,8 @@ use crate::origin::Origin;
 use crate::resolve::Frame;
 
 /// A theory a reduct or a forgetting map reads: the theories of its bundled
-/// record, the record's type, and how many sorts and operations its signature
-/// holds before its laws.
+/// record, the record's type, and how many sorts, operations and rules its
+/// signature holds before the laws it states.
 ///
 /// # Specification
 /// trivial.
@@ -67,6 +67,8 @@ pub(super) struct Bundle
     sorts: usize,
     /// The operations it presents.
     operations: usize,
+    /// The rules it presents, its faces.
+    faces: usize,
 }
 
 impl Bundle
@@ -325,11 +327,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the type `U(Model(T') -> F Model(T))` and the body `thunk(λm.
     ///   r)`, `r` destructuring `m` into one binder per field and returning
     ///   `T`'s record of the fields the slot's inclusion places `T`'s members
-    ///   at.
+    ///   at; a law `T` states, and a circuit rule, which the inclusion does not
+    ///   place, at the member of `T'` past its rules of the same name, where
+    ///   the include copied it.
     /// - fails: [`Missing::Unlowered`] where either model type does not mint,
     ///   or the inclusion places a member past the including signature or at a
     ///   member of another name.
-    /// - panics: none.
     ///
     /// # Errors
     /// As the fails clause.
@@ -367,26 +370,41 @@ impl<'source> Lowerer<'_, 'source>
             .signature;
         let inclusion = &reduct.inclusion;
         // The member at a place of `T`'s signature — its sorts, then its
-        // operations, then its laws — stands at the place of `T'`'s the
-        // inclusion gives it, counted the same way.
-        let laws = target.sorts.saturating_add(target.operations);
-        let placed = |place: usize| {
+        // operations, then its rules — stands at the place of `T'`'s the
+        // inclusion gives it, counted the same way; a stated law or a circuit
+        // after them stands at `T'`'s member of its name past `T'`'s rules.
+        let operations = target.sorts.saturating_add(target.operations);
+        let rules = operations.saturating_add(target.faces);
+        let stated = source
+            .sorts
+            .saturating_add(source.operations)
+            .saturating_add(source.faces);
+        let placed = |place: usize, name: &gandr_theory_levitation::Name| {
             let (list, offset, at) = if place < target.sorts {
                 (&inclusion.sorts, 0, place)
             }
-            else if place < laws {
+            else if place < operations {
                 (
                     &inclusion.operations,
                     source.sorts,
                     place.saturating_sub(target.sorts),
                 )
             }
-            else {
+            else if place < rules {
                 (
                     &inclusion.rules,
                     source.sorts.saturating_add(source.operations),
-                    place.saturating_sub(laws),
+                    place.saturating_sub(operations),
                 )
+            }
+            else {
+                return including
+                    .components
+                    .iter()
+                    .enumerate()
+                    .skip(stated)
+                    .find(|&(_, held)| held.name == *name)
+                    .map(|(at, _)| at);
             };
             list.get(at)
                 .map(|&position| offset.saturating_add(usize::from(position)))
@@ -396,7 +414,7 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_comp_type(returner, below);
         let mut fields = Vec::with_capacity(included.components.len());
         for (place, member) in included.components.iter().enumerate() {
-            let index = placed(place)
+            let index = placed(place, &member.name)
                 .filter(|&at| {
                     including
                         .components
@@ -494,6 +512,7 @@ impl<'source> Lowerer<'_, 'source>
             model,
             sorts: members.sorts.len(),
             operations: members.operations.len(),
+            faces: members.laws.len(),
         })
     }
 }

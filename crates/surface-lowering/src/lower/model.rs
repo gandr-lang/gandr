@@ -40,13 +40,10 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
-use gandr_core_term::CompType;
 use gandr_core_term::Computation;
-use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
-use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::TermId;
@@ -86,7 +83,6 @@ use super::stretch;
 use crate::error::AscriptionForm;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
-use crate::error::LawProof;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
 use crate::form::Cursor;
@@ -115,7 +111,6 @@ use crate::module::Half;
 use crate::module::Member;
 use crate::module::ModelPart;
 use crate::module::Operand;
-use crate::module::Role;
 use crate::module::SlotIndex;
 use crate::module::Stratum;
 use crate::module::StructureIndex;
@@ -698,9 +693,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   theory's name there and not the type; a slot whose component names a
     ///   refused one holds that refusal as a fault, and one naming a component
     ///   that did not lower holds [`LoweringRefusal::UnstatedComponent`] with
-    ///   [`ModelFault::Inherited`]; an admitted law whose type quantifies over
-    ///   a carrier the host does not provide holds
-    ///   [`LoweringRefusal::UnprovenLaw`], admitted.
+    ///   [`ModelFault::Inherited`]. An admitted law takes its type like any
+    ///   other component; whether the host asserts it is the checker's.
     /// - provides: the declared types [`Self::outcome`] reads for model halves.
     /// - fails: never.
     /// - panics: none.
@@ -708,8 +702,7 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` operations and laws mint the written
     ///   signature's types, and a law over a refused family inherits it; a law
-    ///   admitted at `Integer` takes its type, and one admitted at a data type
-    ///   is refused.
+    ///   admitted at `Integer` takes its type.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
     /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
@@ -756,22 +749,6 @@ impl<'source> Lowerer<'_, 'source>
             let origin = written.inserted(Insertion::Model);
             let position = SlotIndex::from(position);
             match self.mint_component(structure, part, sink, origin) {
-                Ok(minted)
-                    if slot.role == Role::Admitted
-                        && carriers(sink.arena, minted) == Carriers::Written =>
-                {
-                    let module = self
-                        .collected
-                        .structures
-                        .get(usize::from(structure))
-                        .map_or(slot.name, |entry| entry.name);
-                    let _first = faults.insert(position, LoweringRefusal::UnprovenLaw {
-                        span: slot.introduced_by.span,
-                        module,
-                        law: slot.name,
-                        why: LawProof::Admitted,
-                    });
-                },
                 Ok(minted) => {
                     let _first = modelled.insert(position, minted);
                 },
@@ -3991,61 +3968,6 @@ fn member_read<'source>(
             &(Ok(ModelForm::Sort { .. } | ModelForm::Law { .. } | ModelForm::Nested(_)) | Err(_)),
         )
         | None => Err(Missing::Unlowered),
-    }
-}
-
-/// Whether a law type takes every carrier from the host.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Carriers
-{
-    /// Every domain is a host primitive or a path between its values.
-    Primitive,
-    /// Some domain is a type the source writes.
-    Written,
-}
-
-/// The carriers the law type `law`, a thunked chain of Π and arrows into a
-/// path, quantifies over.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: [`Carriers::Primitive`] exactly when `law` is a thunk whose chain
-///   reaches its returner through domains each a host base type or a path type
-///   — a law's hypotheses; [`Carriers::Written`] otherwise.
-/// - fails: never.
-/// - panics: none.
-/// - executable: none — the walk is the predicate.
-///
-/// # Termination
-/// Each step descends to a codomain of the finite chain.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a law admitted at `Integer` is primitive, and one
-///   admitted at a data type is written.
-/// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
-fn carriers(
-    arena: &CoreArena,
-    law: ValueTypeId,
-) -> Carriers
-{
-    let Some(&ValueType::Thunk(mut chain)) = arena.value_type(law)
-    else {
-        return Carriers::Written;
-    };
-    loop {
-        match arena.comp_type(chain) {
-            Some(&(CompType::Pi { domain, codomain } | CompType::Arrow { domain, codomain })) => {
-                if !matches!(
-                    arena.value_type(domain),
-                    Some(ValueType::Base(_) | ValueType::Path { .. })
-                ) {
-                    return Carriers::Written;
-                }
-                chain = codomain;
-            },
-            Some(&CompType::Returner { .. }) => return Carriers::Primitive,
-            _ => return Carriers::Written,
-        }
     }
 }
 

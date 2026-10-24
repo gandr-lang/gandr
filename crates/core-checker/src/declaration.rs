@@ -83,6 +83,10 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The body is a hole: no definition supplies it.
             Hole,
+            /// The host asserts the declared type, a law of one of its
+            /// primitives: no definition supplies it, and it is owed only
+            /// when it converts with a statement the host's law table holds.
+            Hosted,
         }
     }
 }

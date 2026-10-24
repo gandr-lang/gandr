@@ -670,32 +670,6 @@ impl fmt::Display for CrossedExit
     }
 }
 
-/// Why a law of a module's model stands unproven.
-///
-/// # Specification
-/// - requires: a producer matches a module's members against the laws its model
-///   states.
-/// - ensures: a law no member answers is missing; a law a member admits at a
-///   carrier the host does not provide is admitted where a proof was owed.
-/// - provides: the qualifier of [`LoweringRefusal::UnprovenLaw`].
-/// - fails: not applicable to the reason itself.
-/// - panics: none.
-/// - executable: none — the reason holds neither the law nor the carrier.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a model without a law and a model admitting a law at its
-///   own data type are refused with their reasons.
-/// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LawProof
-{
-    /// No member of the module answers the law.
-    Missing,
-    /// A member admits the law at a carrier the host does not provide: the
-    /// admission is the author's, and the law is the author's to prove.
-    Admitted,
-}
-
 /// Where a type family's parameters part from the index telescope its
 /// component states.
 ///
@@ -1080,17 +1054,15 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A law of a module's model the module does not prove: no member answers
-    /// it, or a member admits it at a carrier the host does not provide.
+    /// it.
     UnprovenLaw
     {
-        /// The bytes of the law's name, or of the member admitting it.
+        /// The bytes of the law's name.
         span: ByteSpan,
         /// The module, as the declaration spelled it.
         module: SurfaceName<'source>,
         /// The law's name.
         law: SurfaceName<'source>,
-        /// Why the law stands unproven.
-        why: LawProof,
     },
 
     /// A field read off a data value by its name, `e.l`, where a constructor
@@ -1907,24 +1879,9 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::UnknownMember { module, member, .. } => {
                 write!(f, "the module `{module}` exports no member `{member}`")
             },
-            Self::UnprovenLaw {
-                module,
-                law,
-                why: LawProof::Missing,
-                ..
-            } => write!(
+            Self::UnprovenLaw { module, law, .. } => write!(
                 f,
                 "the module `{module}` neither proves nor admits its model's law `{law}`"
-            ),
-            Self::UnprovenLaw {
-                module,
-                law,
-                why: LawProof::Admitted,
-                ..
-            } => write!(
-                f,
-                "the module `{module}` admits the law `{law}` at a carrier the host does not \
-                 provide; only a primitive carrier's law is admitted, and any other is proved"
             ),
             Self::PartialField {
                 field, constructor, ..
@@ -2252,6 +2209,22 @@ fn uncovered(
             write!(
                 f,
                 "field {field} of constructor {tag} holds the type under a product or a sum"
+            )
+        },
+        Uncovered::DependentCase(_, site) => {
+            let (tag, field) = at(site);
+            write!(
+                f,
+                "field {field} of constructor {tag} is a sum or a tuple, whose law cases on it under \
+                 a motive core's case does not carry (#2374)"
+            )
+        },
+        Uncovered::Inductive(_, site) => {
+            let (tag, field) = at(site);
+            write!(
+                f,
+                "field {field} of constructor {tag} holds the type itself, whose law is an \
+                 induction the derivation does not write"
             )
         },
         Uncovered::BinderCeiling => {

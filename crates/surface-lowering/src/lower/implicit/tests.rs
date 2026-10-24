@@ -835,9 +835,10 @@ fn an_omitted_model_implicit_plans_each_module_of_its_theory_739()
 #[test]
 fn equality_calls_the_prelude_s_eq_2302()
 {
-    // `==` calls the prelude's `eq`, its model of `Eq` omitted: one slot of
-    // two holes, the carrier and the operation, `EqInteger` and `EqString`
-    // its candidates and `OrdInteger` and `OrdString` through their include
+    // `==` calls the prelude's `eq`, its model of `PartialEq` omitted: one
+    // slot of three holes, the carrier, the operation and its symmetry,
+    // `PartialEqFloat` its candidate and `EqInteger` and `EqString` through
+    // their theory's include, `OrdInteger` and `OrdString` through theirs
     // (#2333), and the operands force one. A source's own `eq` does not
     // capture its `==`; a unit with no prelude keeps the primitive.
     let source = "\
@@ -856,10 +857,10 @@ def own() -> Bool { 3 == 4 }
     for name in ["integers", "strings", "own"] {
         let slots = module.models(declaration_named(&module, SurfaceName::from(name)));
         assert!(
-            matches!(slots, [slot] if slot.holes.len() == 2
-                && slot.candidates.len() == 4
-                && slot.candidates.iter().all(|candidate| candidate.components.len() == 2)),
-            "`{name}`'s `==` resolves a model of `Eq`: {slots:?}"
+            matches!(slots, [slot] if slot.holes.len() == 3
+                && slot.candidates.len() == 5
+                && slot.candidates.iter().all(|candidate| candidate.components.len() == 3)),
+            "`{name}`'s `==` resolves a model of `PartialEq`: {slots:?}"
         );
     }
     assert_checked(&module, &mut arena);
@@ -877,10 +878,11 @@ def own() -> Bool { 3 == 4 }
 fn an_order_calls_the_prelude_s_order_2333()
 {
     // `<`, `<=`, `>` and `>=` call the prelude's `lt`, `le`, `gt` and `ge`,
-    // their model of `Ord` omitted: one slot of six holes, the carrier, the
-    // included equality and the four operations, `OrdInteger` and `OrdString`
-    // its candidates, and the operands force one. A source's own `lt` does not
-    // capture its `<`; a unit with no prelude keeps the primitive.
+    // their model of `Ord` omitted: one slot of eight holes, the carrier, the
+    // included equality with its symmetry and reflexivity, and the four
+    // operations, `OrdInteger` and `OrdString` its candidates, and the
+    // operands force one. A source's own `lt` does not capture its `<`; a unit
+    // with no prelude keeps the primitive.
     let source = "\
 def below() -> Bool { 3 < 4 }
 def atMost() -> Bool { 3 <= 4 }
@@ -899,9 +901,9 @@ def own() -> Bool { 4 < 3 }
     for name in ["below", "atMost", "above", "atLeast", "own"] {
         let slots = module.models(declaration_named(&module, SurfaceName::from(name)));
         assert!(
-            matches!(slots, [slot] if slot.holes.len() == 6
+            matches!(slots, [slot] if slot.holes.len() == 8
                 && slot.candidates.len() == 2
-                && slot.candidates.iter().all(|candidate| candidate.components.len() == 6)),
+                && slot.candidates.iter().all(|candidate| candidate.components.len() == 8)),
             "`{name}`'s operator resolves a model of `Ord`: {slots:?}"
         );
     }

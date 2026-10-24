@@ -441,3 +441,53 @@ fn table_signatures_and_currying_agree()
     });
     assert_eq!(primitive.evaluate(&operands), Ok(integer(Digits("12"))));
 }
+
+#[test]
+fn the_host_asserts_the_laws_of_its_equalities_2302()
+{
+    let all = [Law::Reflexive, Law::Symmetric, Law::Transitive];
+    let partial = [Law::Symmetric, Law::Transitive];
+    for (name, carrier, laws) in [
+        ("int.eq", PrimitiveType::Integer, &all[..]),
+        ("eq", PrimitiveType::Integer, &all[..]),
+        ("string.eq", PrimitiveType::Text, &all[..]),
+        ("float64.eq", PrimitiveType::Float64, &partial[..]),
+    ] {
+        assert_eq!(
+            named(PrimitiveName(name)).laws(),
+            Some((carrier, laws)),
+            "{name} asserts its laws at its carrier"
+        );
+    }
+    let asserting = PRELUDE
+        .iter()
+        .filter(|primitive| primitive.laws().is_some())
+        .count();
+    assert_eq!(asserting, 4, "no other row asserts a law");
+    let mut arena = CoreArena::new();
+    for primitive in PRELUDE.iter().copied() {
+        for law in all {
+            let asserted = primitive
+                .laws()
+                .is_some_and(|(_, laws)| laws.contains(&law));
+            let stated = primitive.law_statement(law, &mut arena);
+            assert_eq!(
+                stated.is_some(),
+                asserted,
+                "{}: {law:?}",
+                primitive.name().as_ref()
+            );
+            if let Some(stated) = stated {
+                assert!(
+                    matches!(arena.value_type(stated), Some(&ValueType::Thunk(_))),
+                    "a statement is a thunked chain"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        named(PrimitiveName("float64.eq")).law_statement(Law::Reflexive, &mut arena),
+        None,
+        "a NaN is not equal to itself"
+    );
+}

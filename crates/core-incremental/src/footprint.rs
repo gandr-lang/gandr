@@ -24,7 +24,6 @@
 use alloc::collections::BTreeSet;
 
 use anodized::spec;
-use gandr_core_checker::body;
 use quenchant_shape::shape::Maybe;
 
 use crate::content::ItemContent;
@@ -52,7 +51,7 @@ pub enum HoleMark
 {
     /// The item has a body.
     Filled,
-    /// The item's body is a hole.
+    /// The item has no body: a hole, or a law the host asserts.
     Hole,
 }
 
@@ -166,7 +165,7 @@ impl Footprint
 ///   position; the type reads are those beneath a type-sorted root and those
 ///   beneath a type former under a term root. The item is opaque exactly when
 ///   [`ItemContent::opacity`] says so; the hole mark is set exactly when the
-///   body is a hole.
+///   body is absent, a hole or a law the host asserts.
 /// - provides: the read relation the value-changed closure runs over.
 /// - panics: none.
 /// - intension: one union per root over the references the roots carry; no node
@@ -195,7 +194,7 @@ impl Footprint
         node.value_reads().chain(node.type_reads()).all(|read| ret.reads.contains(read))
         && node.type_reads().all(|read| ret.type_reads.contains(read))))
     && ret.hole == match *(content.declaration()) {
-crate::content::DeclarationRoots::Value { body:Maybe::Absent(body::Absent::Hole),.. } => HoleMark::Hole,
+crate::content::DeclarationRoots::Value { body:Maybe::Absent(_),.. } => HoleMark::Hole,
 crate::content::DeclarationRoots::Value { body:Maybe::Present(_),.. } | crate::content::DeclarationRoots::Data(_) | crate::content::DeclarationRoots::Abstract(_) | crate::content::DeclarationRoots::World | crate::content::DeclarationRoots::Codata => HoleMark::Filled,
 })]
 #[inline]
@@ -219,7 +218,7 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
         opacity: content.opacity(),
         hole: match *(content.declaration()) {
             crate::content::DeclarationRoots::Value {
-                body: Maybe::Absent(body::Absent::Hole),
+                body: Maybe::Absent(_),
                 ..
             } => HoleMark::Hole,
             crate::content::DeclarationRoots::Value {

@@ -992,7 +992,12 @@ fn report(lowered: &mut Lowered<'_>) -> ModuleReport
                 } => (Maybe::Present(declared_type), Maybe::Present(body)),
                 DeclarationOutcome::Uncompleted { declared_type } => (
                     Maybe::Present(declared_type),
-                    Maybe::Absent(body::Absent::Hole),
+                    Maybe::Absent(if declaration.role() == Role::Admitted {
+                        body::Absent::Hosted
+                    }
+                    else {
+                        body::Absent::Hole
+                    }),
                 ),
                 DeclarationOutcome::Bodied { body } => (
                     Maybe::Absent(signature::Absent::Unsigned),

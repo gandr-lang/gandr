@@ -3,6 +3,9 @@
 // the law's name, at the module, whose attributes state the expectation; an
 // admission at a carrier the host does not provide is refused
 // `UnprovenLaw.Admitted` at the admission, the law the author's to prove.
+// Float equality is symmetric and transitive but not reflexive, NaN equal to
+// nothing: a model of `Eq` at `f64` admits `sym`, and its `refl` is refused
+// whether admitted or left out, so floats are a model of `PartialEq` alone.
 
 /// Reflexivity and symmetry of a decision.
 theory Decided {
@@ -31,4 +34,21 @@ module Overadmitted : Model(Decided) with sort Carrier = Lone {
   @[ refuses("UnprovenLaw.Admitted") ]
   law refl admitted;
   def sym(a : Lone, b : Lone) -> Path(Bool, alike(a, b), alike(b, a)) { here(true) }
+}
+
+/// Float equality as an `Eq`: its symmetry is the host's, its reflexivity no
+/// law the host asserts.
+module FloatEqAdmitted : Model(Eq) with sort Carrier = f64 {
+  def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
+  @[ refuses("UnprovenLaw.Admitted") ]
+  law refl admitted;
+  @[ checks ]
+  law sym admitted;
+}
+
+/// Float equality as an `Eq` stating no reflexivity at all.
+@[ refuses("UnprovenLaw") ]
+module FloatEqMissing : Model(Eq) with sort Carrier = f64 {
+  def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
+  law sym admitted;
 }

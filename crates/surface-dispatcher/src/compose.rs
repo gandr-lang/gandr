@@ -3652,15 +3652,16 @@ impl gandr_surface_format::Elaborate for Elaborating
 /// - ensures: one [`Declaration`] per unrefused declaration, in admission
 ///   order, at the same position and with the lowering's origin as its token: a
 ///   completed declaration carries its declared type and its body, an
-///   uncompleted one its declared type and a hole, a bodiless definition its
-///   body and no signature, a run target's reason when it is the source's run
-///   target and an unsigned one otherwise, each of the three the laws its
-///   `respects` attribute names and the entry its `entry` attribute names; a
-///   data declaration carries its native signature and a codata declaration its
-///   decoded one, each shared with the lowered module, a sealed abstract type
-///   its kind, representation, extent, site, mobility and the interface its
-///   type member's `identity` attribute names, and a world declaration nothing
-///   but its position. A refused declaration is not offered.
+///   uncompleted one its declared type and a hole — a law the module admits the
+///   hole the host asserts — a bodiless definition its body and no signature, a
+///   run target's reason when it is the source's run target and an unsigned one
+///   otherwise, each of the three the laws its `respects` attribute names and
+///   the entry its `entry` attribute names; a data declaration carries its
+///   native signature and a codata declaration its decoded one, each shared
+///   with the lowered module, a sealed abstract type its kind, representation,
+///   extent, site, mobility and the interface its type member's `identity`
+///   attribute names, and a world declaration nothing but its position. A
+///   refused declaration is not offered.
 /// - provides: the one place that names both the lowering's module and the
 ///   checker's declaration input.
 /// - fails: never.
@@ -3689,7 +3690,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 DeclarationOutcome::Completed { declared_type, body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Present(body)},
                 DeclarationOutcome::Uncompleted { declared_type } =>
-                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(body::Absent::Hole)},
+                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(if lowered.role() == Role::Admitted { body::Absent::Hosted } else { body::Absent::Hole })},
                 DeclarationOutcome::Bodied { body } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(if lowered.role() == Role::RunTarget { signature::Absent::RunTarget } else { signature::Absent::Unsigned }),body:Maybe::Present(body)},
                 DeclarationOutcome::Data(index) =>
@@ -3715,7 +3716,12 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
             } => (Maybe::Present(declared_type), Maybe::Present(body)),
             DeclarationOutcome::Uncompleted { declared_type } => (
                 Maybe::Present(declared_type),
-                Maybe::Absent(body::Absent::Hole),
+                Maybe::Absent(if lowered.role() == Role::Admitted {
+                    body::Absent::Hosted
+                }
+                else {
+                    body::Absent::Hole
+                }),
             ),
             DeclarationOutcome::Bodied { body } => (
                 Maybe::Absent(if lowered.role() == Role::RunTarget {

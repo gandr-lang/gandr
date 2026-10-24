@@ -91,7 +91,6 @@ use super::slot_refusal;
 use crate::error::AscriptionForm;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
-use crate::error::LawProof;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
 use crate::form::Cursor;
@@ -1092,7 +1091,8 @@ impl<'source> Collector<'_, 'source>
     ///   module's form, whose attributes state its expectation, and nothing is
     ///   yielded — save a name whose member was repaired, whose parse error
     ///   already answers for it. A law nothing answers is
-    ///   [`LoweringRefusal::UnprovenLaw`], missing.
+    ///   [`LoweringRefusal::UnprovenLaw`]; a law an admission answers is judged
+    ///   against the host's laws by the checker.
     /// - provides: the derived half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -1204,7 +1204,6 @@ impl<'source> Collector<'_, 'source>
                 span: component.named.span,
                 module,
                 law: component.name,
-                why: LawProof::Missing,
             },
             (None, _, Maybe::Absent(_)) => LoweringRefusal::UnknownMember {
                 span: component.named.span,

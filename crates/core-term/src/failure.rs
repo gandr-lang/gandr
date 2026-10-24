@@ -157,8 +157,11 @@ impl TrackingIssue
     /// A constructor field at a finite grade other than `1`.
     pub const FIELD_GRADE: Self = Self(2033);
     /// `Eq.generic` at a declaration with parameters or indices, a nested or
-    /// mutual recursion, or a dependent field.
+    /// mutual recursion, or a dependent field; a derived law's induction.
     pub const GENERIC_EQUALITY: Self = Self(2345);
+    /// A case whose motive reads its scrutinee: a derived law over a field of
+    /// a sum or a tuple, and transitivity's inversion of a conjunction.
+    pub const CASE_MOTIVE: Self = Self(2374);
 
     /// The issue's page.
     ///
