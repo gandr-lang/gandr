@@ -2,32 +2,33 @@
 // the element type the body answers, as a constructor at the same tail takes
 // the answer itself. `Maybe` is the one `data-maybe.gandr` declares. Before
 // #1602 each constructor among the elements was refused for want of a stated
-// type.
+// type. The result is written without its returner, `-> List(T)`, which
+// answers its element type as `-> -F List(T)` does (#2255).
 
 /// Optional values, `None` and `Some(x)`.
 import "./data-maybe.gandr" ;
 
 /// A present value and an absent one, at the type the function returns.
 @[ checks ]
-def around(n : Integer) -> -F List(Maybe(Integer)) {
+def around(n : Integer) -> List(Maybe(Integer)) {
   [Some(n), None]
 }
 
 /// The same list ending a thunk whose signature writes the value function
 /// space it returns.
 @[ checks ]
-def suspended() -> -F List(Maybe(Integer)) { [None, Some(2)] }
+def suspended() -> List(Maybe(Integer)) { [None, Some(2)] }
 
 /// Lists in a list: each inner list takes the element type the outer one
 /// answers, and gives its own to its constructors.
 @[ checks ]
-def grouped() -> -F List(List(Maybe(Integer))) {
+def grouped() -> List(List(Maybe(Integer))) {
   [[Some(3)], [], [None]]
 }
 
 /// The element type names a parameter: `Maybe(a)`, read where the function's
 /// parameters bind.
 @[ checks ]
-def wrapped(a : Type, x : a) -> -F List(Maybe(a)) {
+def wrapped(a : Type, x : a) -> List(Maybe(a)) {
   [Some(x), None]
 }
