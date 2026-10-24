@@ -1286,45 +1286,61 @@ fn a_keyword_in_a_classifier_slot_stands_there_unmolded() -> Result<(), Box<dyn 
     Ok(())
 }
 
-/// #722: a keyword written where a declaration's name belongs stands in the
-/// name slot as an unmolded token, at a top-level definition and at a theory's
-/// member alike. The parse's first obligation lies over the keyword's own
-/// bytes and the declaration after it owes nothing, where the keyword's form
-/// used to open there and read the rest of the source inside it, owing a
-/// missing closer at the end.
+/// #722, #2460: a keyword written where a declaration's name belongs stands in
+/// the name slot as an unmolded token, at a top-level definition, a theory's
+/// operation and a theory's rule alike, whether the keyword's own form is a
+/// type (`mu`) or an expression the slot's sort admits (`drop`, `dup`,
+/// `send`). The parse's first obligation lies over the keyword's own bytes
+/// and the declaration after it owes nothing, where the keyword's form used to
+/// open there and read the rest of the source inside it, owing a missing
+/// closer at the end.
 #[test]
 fn a_keyword_in_a_name_slot_stands_there_unmolded_722() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    for written in [
-        "def mu : Integer ;\ndef ok = 2 ;",
-        "theory T {\n  sort Tm : Type;\n  oper mu : (b : Tm) --> Tm;\n}\ndef ok = 2 ;",
-    ] {
-        let result = parse(pbg, SourceText::from(written))?;
-        let start = written.find("mu").ok_or("the keyword is written")?;
-        let next = written
-            .find("def ok")
-            .ok_or("the next declaration is written")?;
-        let owed: Vec<_> = result
-            .obligations()
-            .iter()
-            .map(|obligation| {
-                (
-                    obligation.class,
-                    usize::from(obligation.span.start()),
-                    usize::from(obligation.span.end()),
-                )
-            })
-            .collect();
-        assert_eq!(
-            owed.first().copied(),
-            Some((Oblig::UnmoldedTok, start, start.saturating_add(2))),
-            "{written:?} owes its first obligation over the keyword's own bytes; got {owed:?}"
-        );
-        assert!(
-            owed.iter().all(|&(_, from, _)| from < next),
-            "{written:?} owes nothing in the declaration after the keyword's; got {owed:?}"
-        );
+    for keyword in ["mu", "drop", "dup", "send"] {
+        for written in [
+            format!("def {keyword} : Integer ;\ndef ok = 2 ;"),
+            format!(
+                "theory T {{\n  sort Tm : Type;\n  oper {keyword} : (b : Tm) --> Tm;\n}}\ndef ok = 2 ;"
+            ),
+            format!(
+                "theory T {{\n  sort Tm : Type;\n  oper nil : () --> Tm;\n  rule {keyword} : nil() <=> nil();\n}}\ndef ok = 2 ;"
+            ),
+        ] {
+            let result = parse(pbg, SourceText::from(written.as_str()))?;
+            let start = written
+                .find(&format!(" {keyword} :"))
+                .ok_or("the keyword is written")?
+                .saturating_add(1);
+            let next = written
+                .find("def ok")
+                .ok_or("the next declaration is written")?;
+            let owed: Vec<_> = result
+                .obligations()
+                .iter()
+                .map(|obligation| {
+                    (
+                        obligation.class,
+                        usize::from(obligation.span.start()),
+                        usize::from(obligation.span.end()),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                owed.first().copied(),
+                Some((
+                    Oblig::UnmoldedTok,
+                    start,
+                    start.saturating_add(keyword.len())
+                )),
+                "{written:?} owes its first obligation over the keyword's own bytes; got {owed:?}"
+            );
+            assert!(
+                owed.iter().all(|&(_, from, _)| from < next),
+                "{written:?} owes nothing in the declaration after the keyword's; got {owed:?}"
+            );
+        }
     }
     let named = parse(pbg, SourceText::from("def mux : Integer ;\ndef mux = 1 ;"))?;
     assert!(
