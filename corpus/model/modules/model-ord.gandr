@@ -1,0 +1,67 @@
+// Order through the prelude's `Ord` (#2333): `<`, `<=`, `>` and `>=` call the
+// prelude's `lt`, `le`, `gt` and `ge`, whose model of `Ord` the operands'
+// type resolves. `OrdInteger` answers the integers with the integer
+// primitives, so their verdicts are the primitives'; `OrdString` answers the
+// strings byte by byte, the order a Rust `BTreeMap<String, _>` keeps. Each
+// includes its `Eq` model, so `==` still resolves at both.
+
+/// One name below another: the first differing byte decides.
+@[ runs("+{.0 = unit}") ]
+def alphabetical() -> Bool { "alpha" < "beta" }
+
+/// The order is the operands'.
+@[ runs("+{.1 = unit}") ]
+def reversed() -> Bool { "beta" < "alpha" }
+
+/// A proper prefix is below the name it begins.
+@[ runs("+{.0 = unit}") ]
+def prefix() -> Bool { "alp" < "alpha" }
+
+/// Bytes, not a case-folded order: every capital is below every small letter.
+@[ runs("+{.0 = unit}") ]
+def capital() -> Bool { "Zeta" < "alpha" }
+
+/// At most, at its equality boundary.
+@[ runs("+{.0 = unit}") ]
+def nameAtMost() -> Bool { "alpha" <= "alpha" }
+
+/// Above, the order turned round.
+@[ runs("+{.0 = unit}") ]
+def above() -> Bool { "beta" > "alpha" }
+
+/// At least, refused below.
+@[ runs("+{.1 = unit}") ]
+def atLeast() -> Bool { "alpha" >= "beta" }
+
+/// The integers keep their order: `OrdInteger` is the integer primitives.
+@[ runs("+{.0 = unit}") ]
+def integerOrder() -> Bool { -4 < 9 }
+
+/// Equality at the strings still resolves: `EqString` and `OrdString`'s
+/// reduct to `Eq` are one elaboration.
+@[ runs("+{.0 = unit}") ]
+def sameName() -> Bool { "alpha" == "alpha" }
+
+/// The lesser of two, through the order the operands force.
+@[ checks ]
+def least @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> o.Carrier {
+  if o.lt(b, a) { b } else { a }
+}
+
+/// The lesser name.
+@[ runs("\"alpha\"") ]
+def leastName() -> String { least("beta", "alpha") }
+
+/// The lesser integer.
+@[ runs("3") ]
+def leastNumber() -> Integer { least(3, 4) }
+
+/// Order across types: the string fixes the carrier `<` orders at, and the
+/// integer is not one.
+@[ refuses("TypeMismatch") ]
+def across() -> Bool { "three" < 3 }
+
+/// No model of `Ord` answers a flag: the annotation forces the carrier, and
+/// the prelude orders no `Bool`.
+@[ refuses("ModelUnanswered") ]
+def flagOrder() -> Bool { (true : Bool) < false }

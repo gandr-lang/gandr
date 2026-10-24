@@ -25,3 +25,53 @@ module EqString : Model(Eq) with sort Carrier = String {
 /// Equality through the model of `Eq` the operands' type resolves: what `a ==
 /// b` calls.
 def eq @[e : Model(Eq)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
+
+/// A decidable order over a carrier with its equality: below, at most, above
+/// and at least.
+theory Ord {
+  include Eq;
+  oper lt : (a : Carrier, b : Carrier) --> Bool;
+  oper le : (a : Carrier, b : Carrier) --> Bool;
+  oper gt : (a : Carrier, b : Carrier) --> Bool;
+  oper ge : (a : Carrier, b : Carrier) --> Bool;
+}
+
+/// The integers' order, the integer primitives, over `EqInteger`.
+module OrdInteger : Model(Ord) with sort Carrier = Integer {
+  include EqInteger;
+  /// Whether one integer is below another.
+  def lt(a : Integer, b : Integer) -> Bool { int.lt(a, b) }
+  /// Whether one integer is at most another.
+  def le(a : Integer, b : Integer) -> Bool { int.le(a, b) }
+  /// Whether one integer is above another.
+  def gt(a : Integer, b : Integer) -> Bool { int.gt(a, b) }
+  /// Whether one integer is at least another.
+  def ge(a : Integer, b : Integer) -> Bool { int.ge(a, b) }
+}
+
+/// The strings' byte-lexicographic order, the string primitive, over
+/// `EqString`.
+module OrdString : Model(Ord) with sort Carrier = String {
+  include EqString;
+  /// Whether one string is below another, byte by byte.
+  def lt(a : String, b : String) -> Bool { string.lt(a, b) }
+  /// Whether one string is at most another.
+  def le(a : String, b : String) -> Bool { bool.not(string.lt(b, a)) }
+  /// Whether one string is above another.
+  def gt(a : String, b : String) -> Bool { string.lt(b, a) }
+  /// Whether one string is at least another.
+  def ge(a : String, b : String) -> Bool { bool.not(string.lt(a, b)) }
+}
+
+/// Below, through the model of `Ord` the operands' type resolves: what `a < b`
+/// calls.
+def lt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.lt(a, b) }
+
+/// At most, through the operands' model of `Ord`: what `a <= b` calls.
+def le @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.le(a, b) }
+
+/// Above, through the operands' model of `Ord`: what `a > b` calls.
+def gt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b) }
+
+/// At least, through the operands' model of `Ord`: what `a >= b` calls.
+def ge @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }

@@ -568,6 +568,49 @@ where
     }
 }
 
+/// The first kept map between models that carries the type `found` to the
+/// type `wanted`, decided rigidly: no comparison it makes waits on an owed
+/// hole.
+///
+/// # Specification
+/// - requires: as [`kept_crossing`].
+/// - ensures: [`kept_crossing`]'s answer with the collector off for its
+///   comparisons, so the decode of an owed code converts with a model's type
+///   only where it is that type, never by a residual; the collector is in the
+///   state it was before, whatever the answer.
+/// - fails: as [`kept_crossing`].
+/// - panics: none.
+///
+/// # Errors
+/// As the fails clause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — beside a theory that includes another, a value at one
+///   owed code's decode where another's is wanted is still apart, and a model
+///   still crosses to the included theory's by its reduct.
+/// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
+/// - witness: `module::tests::an_owed_decode_crosses_by_no_reduct`
+#[spec(
+    captures: before = context.deferrals().collecting,
+    ensures: context.deferrals().collecting == before,
+)]
+fn crossing(
+    context: &mut CheckingContext<'_>,
+    found: Relocated<ValueTypeId>,
+    wanted: ValueTypeId,
+) -> Result<Maybe<gandr_core_term::Crossing, ()>, CheckRefusal>
+{
+    // A crossing applies a map the elaboration runs; one taken on a residual
+    // runs where no computation may, so the owed decode is compared rigidly.
+    let collecting = core::mem::replace(
+        &mut context.deferrals_mut().collecting,
+        crate::elaboration::Collecting::Off,
+    );
+    let crossed = kept_crossing(context, found, wanted);
+    context.deferrals_mut().collecting = collecting;
+    crossed
+}
+
 /// The first kept map between models whose signature carries the type `found`
 /// to the type `wanted`, with the carriers it takes before the value.
 ///
@@ -592,7 +635,7 @@ where
 ///   manifest crosses at the counters by the forgetting map at that carrier.
 /// - witness: `module::tests::a_model_crosses_to_an_included_theory_s_by_its_reduct`
 /// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
-fn crossing(
+fn kept_crossing(
     context: &mut CheckingContext<'_>,
     found: Relocated<ValueTypeId>,
     wanted: ValueTypeId,
@@ -659,19 +702,19 @@ fn crossing(
 ///   `chain` instantiated at them, and the domain of the arrow below posed
 ///   against `found` settled: the solutions, outermost first, when the solver
 ///   refutes nothing and binds every one, what it postpones left to the
-///   conversion [`crossing`] confirms by; nothing otherwise. The metavariables
-///   are the call's own and stand in no body.
+///   conversion [`kept_crossing`] confirms by; nothing otherwise. The
+///   metavariables are the call's own and stand in no body.
 /// - fails: a view's refusal of `chain`; the context's refusal of a depth no
 ///   binder count holds.
 /// - panics: none.
 /// - executable: none — the solutions are the solver's, which a predicate would
-///   pose again; [`crossing`] confirms them by conversion.
+///   pose again; [`kept_crossing`] confirms them by conversion.
 ///
 /// # Errors
 /// As the fails clause.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`crossing`].
+/// - hypothesis: L3 — as [`kept_crossing`].
 /// - witness: `module::tests::a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier`
 fn carriers(
     context: &mut CheckingContext<'_>,

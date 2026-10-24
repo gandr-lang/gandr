@@ -15221,9 +15221,15 @@ mod tests
         assert!(
             admitted.to_string().contains("at version 2: ")
                 && admitted.to_string().contains(", admitted in ")
-                && admitted.to_string().ends_with(", 9/9 declarations crossed"),
-            "the change's admission crosses the revision whole, the prelude's seven among \
-             them: {admitted}"
+                && admitted
+                    .to_string()
+                    .rsplit_once(", ")
+                    .and_then(|(_, crossed)| crossed
+                        .strip_suffix(" declarations crossed")?
+                        .split_once('/'))
+                    .is_some_and(|(crossed, of)| crossed == of),
+            "the change's admission crosses the revision whole, the prelude's among them: \
+             {admitted}"
         );
         assert!(matches!(
             blocking.wait(),
@@ -15887,8 +15893,11 @@ mod tests
             lines
                 .iter()
                 .filter_map(|line| {
+                    // The items judged, of every item the revision holds, the
+                    // prelude's among them: the count judged is the contract.
                     let (judged, _) = line.split_once(" items judged")?;
-                    Some(judged.rsplit(' ').next()?.to_owned())
+                    let (judged, _) = judged.rsplit(' ').next()?.split_once('/')?;
+                    Some(judged.to_owned())
                 })
                 .collect::<Vec<String>>()
         };
@@ -15902,12 +15911,12 @@ mod tests
         let lone = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = a ;\n";
         assert_eq!(
             judged(&mut first, &mut workspace, &open(lone)),
-            ["2/9"],
+            ["2"],
             "a first open judges every item of its own, the prelude's adopted"
         );
         assert_eq!(
             judged(&mut second, &mut workspace, &open(lone)),
-            ["0/9"],
+            ["0"],
             "a second connection's copy resumes from the first's"
         );
         let _closed = judged(&mut first, &mut workspace, &close);
@@ -15915,14 +15924,14 @@ mod tests
         assert!(workspace.documents.is_empty(), "the last close forgets it");
         assert_eq!(
             judged(&mut first, &mut workspace, &open(lone)),
-            ["0/9"],
+            ["0"],
             "a copy opened again resumes from what the last one let go recorded"
         );
         let _closed = judged(&mut first, &mut workspace, &close);
         let edited = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = 2 ;\n";
         assert_eq!(
             judged(&mut first, &mut workspace, &open(edited)),
-            ["1/9"],
+            ["1"],
             "an edited text adopts its unchanged item and judges the changed one"
         );
     }
@@ -17307,8 +17316,11 @@ mod tests
             lines
                 .iter()
                 .filter_map(|line| {
+                    // The items judged, of every item the revision holds, the
+                    // prelude's among them: the count judged is the contract.
                     let (judged, _) = line.split_once(" items judged")?;
-                    Some(judged.rsplit(' ').next()?.to_owned())
+                    let (judged, _) = judged.rsplit(' ').next()?.split_once('/')?;
+                    Some(judged.to_owned())
                 })
                 .collect()
         };
@@ -17317,7 +17329,7 @@ mod tests
         let (_, opened) = notified(&mut first, &open("lone.gandr", lone));
         assert_eq!(
             judged(&opened),
-            ["2/9"],
+            ["2"],
             "a first open judges every item of its own, the prelude's adopted"
         );
         assert_eq!(
@@ -17329,7 +17341,7 @@ mod tests
         let (_, reopened) = notified(&mut saving(&saves), &open("lone.gandr", lone));
         assert_eq!(
             judged(&reopened),
-            ["0/9"],
+            ["0"],
             "an open of the saved text adopts what the save judged"
         );
         let (_, other) = notified(
@@ -17338,21 +17350,21 @@ mod tests
         );
         assert_eq!(
             judged(&other),
-            ["1/8"],
+            ["1"],
             "another text restores nothing of its own"
         );
 
         let (_, laid) = notified(&mut first, &open("importer.gandr", importer));
         assert_eq!(
             judged(&laid),
-            ["1/9"],
+            ["1"],
             "an importer judges its own item after its closure"
         );
         let _kept = notified(&mut first, &save("importer.gandr"));
         let (_, relaid) = notified(&mut saving(&saves), &open("importer.gandr", importer));
         assert_eq!(
             judged(&relaid),
-            ["0/9"],
+            ["0"],
             "a reopened importer adopts its own item after a closure laid anew"
         );
 
@@ -17368,7 +17380,7 @@ mod tests
             "a save read while the judgement is due is kept once it is published"
         );
         let (_, owed) = notified(&mut saving(&saves), &open("lone.gandr", edited));
-        assert_eq!(judged(&owed), ["0/8"]);
+        assert_eq!(judged(&owed), ["0"]);
         let _saved = handled(&mut owing, &save("lone.gandr"));
         let _changed = handled(
             &mut owing,

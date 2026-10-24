@@ -1558,14 +1558,14 @@ mod sweeps
 
     /// The bytes one check of `source` reads: the text the server judges it
     /// in, its import closure laid out before its own text, or its own text
-    /// when it imports nothing.
+    /// when it imports nothing. The prelude laid before every unit is not
+    /// counted: its items are adopted, never judged at a keystroke.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the length of the text [`lay_out`] lays out for the path of
-    ///   `source`'s URI under the root that path classifies as, or of
-    ///   `source`'s own text when no closure is laid out; never less than the
-    ///   own text's.
+    ///   `source`'s URI under the root that path classifies as, past the
+    ///   prelude; never less than the own text's.
     /// - provides: the size the typing ceiling, the erasure's keystrokes and
     ///   the hover's spacing bound a source's work by.
     /// - panics: none.
@@ -1593,7 +1593,8 @@ mod sweeps
                 SourceText::from(source.text.as_str()),
             )
             .text
-            .len(),
+            .len()
+            .saturating_sub(usize::from(gandr_surface_lowering::prelude::base())),
         )
     }
 

@@ -29,3 +29,18 @@ def blue_channel(color : Color3) -> Integer {
 def reddish(color : Color3) -> Bool {
   color.r > color.g
 }
+
+/// Whether a colour's red and green channels are one, both read by name: the
+/// first channel's type binds the model of `Eq` the comparison resolves.
+@[ checks ]
+def grey(color : Color3) -> Bool {
+  color.r == color.g
+}
+
+/// A colour whose red and green channels are one.
+@[ runs("+{.0 = unit}") ]
+def greyRun() -> Bool { become grey(RGB(5, 5, 9)) }
+
+/// A colour whose red channel exceeds its green.
+@[ runs("+{.0 = unit}") ]
+def reddishRun() -> Bool { become reddish(RGB(9, 5, 1)) }

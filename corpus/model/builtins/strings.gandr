@@ -1,9 +1,10 @@
 // The string operations of the `string` namespace: containment, equality,
 // prefix and suffix, escaping and splitting. The native `string` namespace
-// holds `append` and `eq` (`simple-builtins.gandr`), so the others name no
-// member of it; scanning and escaping are planned text primitives (#318).
+// holds `append`, `eq` and `lt` (`simple-builtins.gandr`), so the others name
+// no member of it; scanning and escaping are planned text primitives (#318).
 // Equality is written `==`, which resolves the prelude's `Eq` model of
-// strings (#1832).
+// strings (#1832); their order is written `<`, through `Ord`
+// (`model-ord.gandr`).
 
 /// A string, named.
 @[ checks ]

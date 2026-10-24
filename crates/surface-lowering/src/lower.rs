@@ -2268,9 +2268,10 @@ const STACK: &str = "Stack";
 /// earlier declaration at one argument.
 const MODEL: &str = "Model";
 
-/// The infix spelling that calls the prelude's equality, its model of `Eq`
-/// resolved from the operands (`crate::prelude`).
-const EQUALITY: &str = "==";
+/// The infix spellings that call the prelude's declaration of their row's
+/// name, its model resolved from the operands (`crate::prelude`): `==` the
+/// equality of `Eq`, and `<`, `<=`, `>` and `>=` the order of `Ord`.
+const THROUGH_PRELUDE: [&str; 5] = ["==", "<", "<=", ">", ">="];
 
 /// What the mint sweep does for one node, decided by the classification.
 ///
@@ -10283,15 +10284,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - ensures: the table row selected by the operator receives value
-    ///   operands in source order; `a == b` in a unit that lays the prelude is
-    ///   instead the call of the prelude's declaration of the row's name, its
-    ///   model of `Eq` resolved from the operands ([`Self::equality`]); a
-    ///   prefix `-` before a number written with the `f64` suffix is
-    ///   `float64.neg`, so the printers' spelling of a negative float,
-    ///   `-0.5f64`, lowers back to that float; the infix `then` is the
-    ///   composite of two paths, or of two flows where a flow is answered, as
-    ///   [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
-    ///   [`Self::cons`] plans it.
+    ///   operands in source order; an infix `==`, `<`, `<=`, `>` or `>=` in a
+    ///   unit that lays the prelude is instead the call of the prelude's
+    ///   declaration of the row's name, its model of `Eq` or `Ord` resolved
+    ///   from the operands ([`Self::through_prelude`]); a prefix `-` before a
+    ///   number written with the `f64` suffix is `float64.neg`, so the
+    ///   printers' spelling of a negative float, `-0.5f64`, lowers back to that
+    ///   float; the infix `then` is the composite of two paths, or of two flows
+    ///   where a flow is answered, as [`Self::derive`] plans it; the cons `g ∷
+    ///   p` is a word, as [`Self::cons`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
     ///   [`Self::cons`] does.
@@ -10311,6 +10312,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
     /// - witness: `lower::tests::a_negated_float_literal_is_float64_negation_1830`
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
     fn operator(
         &mut self,
@@ -10381,8 +10383,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(site.out(FragmentBoundary::Unadmitted(feature)));
         };
         if let Arguments::Binary(operands) = arguments
-            && primitive.operator() == Operator::Infix(EQUALITY)
-            && self.equality(
+            && let Operator::Infix(spelling) = primitive.operator()
+            && THROUGH_PRELUDE.contains(&spelling)
+            && self.through_prelude(
                 site,
                 frame,
                 (
