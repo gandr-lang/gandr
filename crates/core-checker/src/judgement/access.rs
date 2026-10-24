@@ -12,13 +12,13 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
-use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::HoldGrade;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
+use gandr_core_term::row::RowInclusion;
 use gandr_kernel_term::DeBruijnIndex;
 
 use super::Control;

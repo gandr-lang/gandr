@@ -1570,8 +1570,6 @@
 2409 Type package_type type_identifier L[,] R[, ]]
 2410 Other package_type , L[type_identifier] R[]]
 2418 Operator union_type | L[<type>] R[<type>]
-2432 Other f_type , L[type_identifier] R[type_identifier]
-2433 Type f_type type_identifier L[,] R[, ]]
 2434 Other f_type , L[type_identifier] R[]]
 2440 Number u_type identifier L[[] R[]]
 2458 Operator path_type - L[[] R[, ]]

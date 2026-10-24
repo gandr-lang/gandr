@@ -144,6 +144,7 @@
 //! - reversal: relocatable continuation marks, with which the `return` becomes
 //!   a jump to the body's own continuation and no reset is minted.
 
+use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -733,11 +734,13 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: `cursor` stands just past the row's `[`.
-    /// - ensures: the interfaces the row names, each once, in host order, the
-    ///   cursor past the `]`.
+    /// - ensures: the interfaces the row names, in host order, the cursor past
+    ///   the `]`.
     /// - fails: [`LoweringRefusal::UnresolvedTypeHead`] for an interface the
-    ///   host does not declare, at the name; a misplaced-tile fault for a row
-    ///   out of shape.
+    ///   host does not declare, at the name;
+    ///   [`LoweringRefusal::DuplicateDefinition`] for an interface named again,
+    ///   at the second name, since a row holds each label once; a
+    ///   misplaced-tile fault for a row out of shape.
     /// - panics: none.
     ///
     /// # Errors
@@ -748,6 +751,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   asserted as the minted returner or the exact refusal.
     /// - witness: `lower::capability::tests::a_returner_row_names_whole_interfaces`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
+    /// - witness: `lower::capability::tests::a_row_names_each_interface_once`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |row| !row.is_empty()))]
     pub(super) fn returner_row(
         &self,
@@ -756,7 +760,7 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<BTreeSet<EffectName>, LoweringRefusal<'source>>
     {
         let table = host(site)?;
-        let mut row = BTreeSet::new();
+        let mut row = BTreeMap::new();
         loop {
             let Maybe::Present(written) = cursor.tile(TileName::TYPE_IDENTIFIER)
             else {
@@ -771,14 +775,21 @@ impl<'source> Lowerer<'_, 'source>
                     arity: HeadArity::Nullary,
                 });
             };
-            let _first = row.insert(interface.name().clone());
+            if let Some(&first) = row.get(interface.name()) {
+                return Err(LoweringRefusal::DuplicateDefinition {
+                    span: written.span,
+                    name,
+                    first,
+                });
+            }
+            let _first = row.insert(interface.name().clone(), written.span);
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA) {
                 break;
             }
         }
         closed(site, cursor, TileName::BRACKET_CLOSE)?;
 
-        Ok(row)
+        Ok(row.into_keys().collect())
     }
 
     /// Plan the returner over `argument` whose row holds `row`.

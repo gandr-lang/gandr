@@ -12,8 +12,8 @@ use crate::effect::EffectOp;
 use crate::effect::EffectRow;
 use crate::effect::EffectSig;
 use crate::effect::OperationName;
-use crate::effect::RowInclusion;
 use crate::effect::host::HostSignatures;
+use crate::row::RowInclusion;
 
 #[test]
 fn a_region_outlives_only_regions_nested_in_it()
