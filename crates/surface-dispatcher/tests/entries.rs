@@ -349,9 +349,9 @@ fn kind(
 /// product chain, as the value a discarded bind drops, as an arrow of a data
 /// family's kind, as the sort of a stage binder or the binder a call
 /// supplies, as the sort of a region binder, as the theory a model type
-/// names, as the module and the model type a pack names, as a binding
-/// operation or a variable a binding port binds in a theory's rule, or as the
-/// head or the type of an `Eq.generic(T)` or of one of its laws.
+/// names, as the module and the model type a pack names, as a variable a
+/// binding port binds or an abstracting operation in a theory's rule, or as
+/// the head or the type of an `Eq.generic(T)` or of one of its laws.
 ///
 /// # Specification
 /// trivial.
@@ -431,12 +431,13 @@ enum Placed
     /// the theory whose record the pack builds or whose map the call applies,
     /// neither a core node of its own, so the pack or the call answers.
     Packed,
-    /// A binding operation applied in a theory's rule, `let` in `rule zeta :
-    /// let(u, t) <=> t(u)`, or a variable a binding port binds, `t` there
-    /// and in `t(u)`, or one a rule writes bare at a binding port under
-    /// another name, `l` in `ext(m, l)` (#2360): no core type states a `pi+`
-    /// port, so the operation's and the port's own names answer nowhere, and
-    /// the application around answers at its sort.
+    /// A variable a binding port binds, `t` in `rule zeta : let(u, t) <=>
+    /// t(u)` and in `t(u)`, one a rule writes bare at a binding port under
+    /// another name, `l` in `ext(m, l)` (#2360), or an abstracting operation
+    /// applied in a theory's rule, `nu` in `nu(bind a . p)`: the variable is
+    /// written without the field its port binds, and no core type states a
+    /// `bind` port, so these names answer nowhere, and the application around
+    /// answers at its sort.
     Unstated,
     /// The head and the type of a derived equality or law, `Eq.generic` and
     /// `T` in `def eq = Eq.generic(T)` or `def refl = Eq.generic.refl(T)`
@@ -503,18 +504,22 @@ fn gated(
         before.get(start ..).map(str::to_owned)
     };
     // The ports that bind or abstract, `t` in `t : pi+ (x : Tm) . Tm` and `p`
-    // in `p : bind (a : Name) . Proc`, and the operations declaring them, `let`
-    // in `oper let : (u : Tm, t : pi+ …) --> Tm`, by name; and the bytes of
-    // every rule a theory writes, `rule` to its `;`.
+    // in `p : bind (a : Name) . Proc`, and the operations declaring an
+    // abstracting one, `nu` in `oper nu : (p : bind …) --> Proc`, by name; and
+    // the bytes of every rule a theory writes, `rule` to its `;`.
     let binding: BTreeSet<String> = source
         .match_indices(": pi+")
-        .chain(source.match_indices(": bind"))
-        .flat_map(|(at, _)| {
+        .map(|(at, _)| (at, false))
+        .chain(source.match_indices(": bind").map(|(at, _)| (at, true)))
+        .flat_map(|(at, abstracting)| {
             let before = source.get(.. at).unwrap_or("");
-            let operation = before.rfind("oper ").and_then(|oper| {
-                let after = before.get(oper.saturating_add(5) ..)?;
-                named(after.get(.. after.find(char::is_whitespace)?)?)
-            });
+            let operation = before
+                .rfind("oper ")
+                .filter(|_| abstracting)
+                .and_then(|oper| {
+                    let after = before.get(oper.saturating_add(5) ..)?;
+                    named(after.get(.. after.find(char::is_whitespace)?)?)
+                });
             [named(before), operation]
         })
         .flatten()

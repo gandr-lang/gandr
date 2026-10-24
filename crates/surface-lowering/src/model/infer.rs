@@ -610,8 +610,10 @@ impl Engine
     ///   arguments, left to right.
     /// - fails: [`ModelFault::Constructor`] and [`ModelFault::ManyOut`] for a
     ///   constructor term or a results tuple; [`ModelFault::Binding`] for a
-    ///   metavariable's instantiation, which only a second-order law writes;
-    ///   [`ModelFault::UnknownHead`] for a name the environment does not bind.
+    ///   binding field, its variable or a metavariable's instantiation, which
+    ///   only a law at a binding port writes; [`ModelFault::Abstraction`] for
+    ///   an atom's abstraction or the atom; [`ModelFault::UnknownHead`] for a
+    ///   name the environment does not bind.
     /// - executable: none — the node pushed is the variable's image.
     ///
     /// # Adequacy
@@ -670,11 +672,10 @@ impl Engine
             },
             TermView::Ctor { .. } => return Err(ModelFault::Constructor),
             TermView::Results { .. } => return Err(ModelFault::ManyOut),
-            TermView::Inst { .. } => return Err(ModelFault::Binding),
-            TermView::Abs { .. }
-            | TermView::Atom(_)
-            | TermView::Lam { .. }
-            | TermView::Bound(_) => return Err(ModelFault::Abstraction),
+            TermView::Inst { .. } | TermView::Lam { .. } | TermView::Bound(_) => {
+                return Err(ModelFault::Binding);
+            },
+            TermView::Abs { .. } | TermView::Atom(_) => return Err(ModelFault::Abstraction),
         }
         Ok(())
     }
@@ -689,8 +690,9 @@ impl Engine
     ///   binder to its argument; a written application's first binder queued
     ///   over an empty one.
     /// - fails: [`ModelFault::Arity`] for a count other than every binder's
-    ///   (instance) or the explicit ones' (written); the faults of
-    ///   [`Self::finish`].
+    ///   (instance) or the explicit ones' (written); [`ModelFault::Binding`]
+    ///   for an instance of a head with a binder that takes variables; the
+    ///   faults of [`Self::finish`].
     /// - executable: none — the tasks queued are the application's steps.
     ///
     /// # Adequacy
@@ -715,6 +717,9 @@ impl Engine
             Mode::Instance(_) => {
                 if arguments.len() != head.binders.len() {
                     return Err(ModelFault::Arity);
+                }
+                if head.binders.iter().any(|binder| !binder.over.is_empty()) {
+                    return Err(ModelFault::Binding);
                 }
                 let bindings = head
                     .binders
@@ -749,7 +754,8 @@ impl Engine
     /// - ensures: the next binder's sort queued before its binding; with none
     ///   left, a sort head's arguments pushed as its sort, an operation's
     ///   application finished.
-    /// - fails: the faults of [`Self::finish`].
+    /// - fails: [`ModelFault::Binding`] for a binder that takes variables,
+    ///   whose argument is a host function; the faults of [`Self::finish`].
     /// - executable: none — the tasks queued are the instantiation's steps.
     ///
     /// # Adequacy
@@ -758,7 +764,7 @@ impl Engine
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     ///
     /// # Errors
-    /// The [`ModelFault`] of [`Self::finish`].
+    /// The [`ModelFault`] the specification names.
     fn next<'input>(
         instantiation: Instantiation<'input>,
         pending: &mut Vec<Task<'input>>,
@@ -767,6 +773,9 @@ impl Engine
     {
         let head = instantiation.head;
         if let Some(binder) = head.binders.get(instantiation.arguments.len()) {
+            if !binder.over.is_empty() {
+                return Err(ModelFault::Binding);
+            }
             let env = instantiation.env;
             pending.push(Task::Bound(instantiation));
             pending.push(Task::Sort(&binder.sort, env));
@@ -1290,26 +1299,30 @@ impl Engine
 
     /// Name every item of `order` — a written variable by its name, a
     /// metavariable by the first letter no written name takes — and read each
-    /// one's sort back as its binder.
+    /// one's sort back as its binder, an item `taken` lists taking its
+    /// variables, each sort read under the ones before it.
     ///
     /// # Specification
     /// - ensures: one binder per item, in order, each sort naming only the
-    ///   binders before it.
-    /// - fails: [`ModelFault::Unsorted`] for an item with no sort, or a sort
-    ///   naming an item outside `order` or after it.
+    ///   binders before it and its own variables; the names hold the items of
+    ///   `order` alone.
+    /// - fails: [`ModelFault::Unsorted`] for an item or a variable with no
+    ///   sort, or a sort naming an item outside `order` or after it.
     /// - executable: none — the telescope is the order's.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — `comp`'s and `assoc`'s telescopes spell as the
-    ///   written signature's.
+    ///   written signature's; `get`'s continuation takes its state.
     /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
     /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
+    /// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
     fn telescope(
         &self,
         order: &[Item],
+        taken: &BTreeMap<Item, Vec<Item>>,
     ) -> Result<(Vec<Binder>, BTreeMap<Item, Name>), ModelFault>
     {
-        let mut taken: BTreeSet<Name> = self
+        let mut used: BTreeSet<Name> = self
             .variables
             .iter()
             .map(|known| known.name.clone())
@@ -1321,20 +1334,62 @@ impl Engine
             else {
                 return Err(ModelFault::Unsorted);
             };
-            let bound = self.read_back_sort(&sort, &names)?;
-            let name = match item {
-                Item::Variable(variable) => self
-                    .variables
-                    .get(variable.0)
-                    .map(|known| known.name.clone())
-                    .ok_or(ModelFault::Unsorted)?,
-                Item::Meta(_) => fresh(&taken),
-            };
-            let _fresh = taken.insert(name.clone());
+            let variables = taken.get(&item).map_or(&[][..], Vec::as_slice);
+            let mut over = Vec::with_capacity(variables.len());
+            for &variable in variables {
+                let Maybe::Present(sort) = self.item_sort(variable)
+                else {
+                    return Err(ModelFault::Unsorted);
+                };
+                let bound = self.read_back_sort(&sort, &names)?;
+                let name = self.item_name(variable, &used)?;
+                let _first = names.insert(variable, name.clone());
+                over.push(super::Variable { name, sort: bound });
+            }
+            let bound = self.read_back_sort(&sort, &names);
+            for variable in variables {
+                let _scoped = names.remove(variable);
+            }
+            let name = self.item_name(item, &used)?;
+            let _fresh = used.insert(name.clone());
             let _first = names.insert(item, name.clone());
-            binders.push(Binder { name, sort: bound });
+            binders.push(Binder {
+                name,
+                over,
+                sort: bound?,
+            });
         }
         Ok((binders, names))
+    }
+
+    /// The name `item` binds under: a written variable's own, a
+    /// metavariable's the first `used` leaves free.
+    ///
+    /// # Specification
+    /// - ensures: a variable's written name; a metavariable's name outside
+    ///   `used`.
+    /// - fails: [`ModelFault::Unsorted`] for a variable the engine does not
+    ///   hold.
+    /// - executable: none — the name is the variable's or [`fresh`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the shape's sort metavariables are named apart from
+    ///   the written variables and from each other.
+    /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
+    fn item_name(
+        &self,
+        item: Item,
+        used: &BTreeSet<Name>,
+    ) -> Result<Name, ModelFault>
+    {
+        match item {
+            Item::Variable(variable) => self
+                .variables
+                .get(variable.0)
+                .map(|known| known.name.clone())
+                .ok_or(ModelFault::Unsorted),
+            Item::Meta(_) => Ok(fresh(used)),
+        }
     }
 
     /// The item a resolved node is, when it is a variable or an unsolved
@@ -1416,23 +1471,26 @@ fn head_of<'heads>(
 }
 
 /// Derive a sort's or an operation's head: its ports' and results' sorts
-/// elaborated in order, every name a port does not bind a free sort variable
-/// whose sort its occurrences infer, bound first.
+/// elaborated in order, a binding port's sort under its `pi+` variables,
+/// every name a port does not bind a free sort variable whose sort its
+/// occurrences infer, bound first.
 ///
 /// # Specification
 /// - ensures: the binders are the free sort variables, in the order a walk of
-///   the ports' sorts and then the results' meets them, each after the ones its
-///   sort mentions, then the ports in written order; `explicit` is the port
-///   count; an operation's results read over the binders.
-/// - fails: a [`ModelFault`] for a sort naming no earlier sort, an index of the
-///   wrong sort, or a free variable no occurrence sorts.
+///   the ports' variables' and sorts' and then the results' meets them, each
+///   after the ones its sort mentions, then the ports in written order, a
+///   binding port's binder taking its variables; `explicit` is the port count;
+///   an operation's results read over the binders.
+/// - fails: a [`ModelFault`] for a sort naming no earlier sort or variable, an
+///   index of the wrong sort, or a free variable no occurrence sorts.
 /// - executable: none — the head is the inference.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — `Ob`, `Hom`, `id` and `comp` derive the written
-///   signature's telescopes.
+///   signature's telescopes; `get`'s continuation takes its state.
 /// - witness: `model::tests::the_cat_shape_sorts_are_a_type_and_a_family`
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
+/// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
 pub(super) fn derive_head(
     heads: &Heads,
     kind: HeadKind,
@@ -1442,25 +1500,54 @@ pub(super) fn derive_head(
 {
     let mut engine = Engine::default();
     let mut explicit = Vec::with_capacity(ports.len());
+    let mut roots = Vec::with_capacity(ports.len());
+    let mut taken: BTreeMap<Item, Vec<Item>> = BTreeMap::new();
     for port in ports {
+        let mut variables = Vec::with_capacity(port.binders.len());
+        let mut outer = Vec::with_capacity(port.binders.len());
+        for variable in &port.binders {
+            let sort = engine.elaborate_sort(heads, &variable.sort)?;
+            let bound = engine.variable(variable.name.clone(), Maybe::Present(sort));
+            outer.push((
+                variable.name.clone(),
+                engine.scope.insert(variable.name.clone(), bound),
+            ));
+            if let Maybe::Present(item) = engine.item(bound) {
+                variables.push(item);
+            }
+        }
         let sort = engine.elaborate_sort(heads, &port.sort)?;
+        for (name, shadowed) in outer.into_iter().rev() {
+            let _scoped = match shadowed {
+                Some(shadowed) => engine.scope.insert(name, shadowed),
+                None => engine.scope.remove(&name),
+            };
+        }
         let bound = engine.variable(port.name.clone(), Maybe::Present(sort));
         let _shadowed = engine.scope.insert(port.name.clone(), bound);
         if let Maybe::Present(item) = engine.item(bound) {
+            roots.extend(variables.iter().copied());
+            roots.push(item);
             explicit.push(item);
+            if !variables.is_empty() {
+                let _first = taken.insert(item, variables);
+            }
         }
     }
     let mut results = Vec::with_capacity(outputs.len());
     for output in outputs {
         results.push(engine.elaborate_sort(heads, &output.sort)?);
     }
-    let ported: BTreeSet<Item> = explicit.iter().copied().collect();
-    let mut roots: Vec<Item> = explicit.clone();
     for result in &results {
         for &index in &result.indices {
             roots.extend(engine.leaves(index));
         }
     }
+    let ported: BTreeSet<Item> = explicit
+        .iter()
+        .copied()
+        .chain(taken.values().flatten().copied())
+        .collect();
     let mut order = Vec::new();
     let mut placed = BTreeSet::new();
     engine.emit(
@@ -1477,7 +1564,7 @@ pub(super) fn derive_head(
         &mut placed,
     );
     order.extend(explicit);
-    let (binders, names) = engine.telescope(&order)?;
+    let (binders, names) = engine.telescope(&order, &taken)?;
     let mut read = Vec::with_capacity(results.len());
     for result in &results {
         read.push(engine.read_back_sort(result, &names)?);
@@ -1501,7 +1588,9 @@ pub(super) fn derive_head(
 ///   argument nothing determined, then the remaining variables in order of
 ///   first occurrence; the carrier is the terms' common sort.
 /// - fails: a [`ModelFault`] for an ill-sorted term, a variable no occurrence
-///   sorts, or a term naming a refused or undeclared head.
+///   sorts, or a term naming a refused or undeclared head;
+///   [`ModelFault::Binding`] for a term relating a binding port's field, its
+///   variable or an instantiation.
 /// - executable: none — the law is the inference.
 ///
 /// # Adequacy
@@ -1575,7 +1664,7 @@ pub(super) fn derive_law(
             order.push(item);
         }
     }
-    let (telescope, names) = engine.telescope(&order)?;
+    let (telescope, names) = engine.telescope(&order, &BTreeMap::new())?;
 
     Ok(ModelForm::Law {
         telescope,
@@ -1686,7 +1775,7 @@ pub(super) fn derive_stated(
             order.push(item);
         }
     }
-    let (telescope, names) = engine.telescope(&order)?;
+    let (telescope, names) = engine.telescope(&order, &BTreeMap::new())?;
     let mut read = Vec::with_capacity(equations.len());
     for &(ref sort, ref left, ref right) in &equations {
         read.push((

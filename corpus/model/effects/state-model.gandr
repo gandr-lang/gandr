@@ -1,0 +1,122 @@
+// State's models over host types. `get`'s continuation binds the state, so a
+// model gives it the thunked function from the state to the carrier,
+// `+U (S -> -F C)`: in the standard model of a second-order signature a
+// representable sort's binder is an exponential (Fiore and Hur,
+// _Second-Order Equational Logic_, CSL 2010). The model here is state
+// passing, the carrier a function of the current state. A law relating terms
+// at `get`'s port is a path between host functions, which the derivation does
+// not state yet: `../../pathological/effects/state-model.gandr`. A model is
+// a record, so one carried along an equivalence of states is a model again,
+// its `get` conjugated by the equivalence.
+
+// The theories `State` and `StatePutPut`.
+import "./state.gandr" ;
+// The counts, three states, and their negation, a path between types.
+import "../identity/model-counter.gandr" ;
+
+/// State passing: what runs reads the current state and answers an integer.
+module Passing : Model(State) with sort S = Integer {
+  /// A computation awaiting the current state.
+  type C = Integer => Integer;
+  /// Reading hands the current state to what runs after, at that same state.
+  @[ checks ]
+  def get(k : Integer => Integer => Integer) -> Integer => Integer {
+    thunk { fn (s) { run after <- k(s); after(s) } }
+  }
+  /// Storing runs what comes after at the stored value, whatever the state
+  /// was.
+  @[ checks ]
+  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
+    thunk { fn (_old) { k(s) } }
+  }
+}
+
+/// Storing four and then reading twice from an initial zero: the read sees
+/// the stored four both times, put-get at a point.
+@[ runs("44") ]
+def putThenGet() -> Integer {
+  run read <- Passing.get(fn (s) { pure fn (t) { pure s * 10 + t } });
+  run program <- Passing.put(4, read);
+  program(0)
+}
+
+/// The same model of `StatePutPut`: put-put relates no term at `get`'s port,
+/// so the model states it, and proves it by conversion — both sides run what
+/// comes after at the second value.
+module Overwriting : Model(StatePutPut) with sort S = Integer {
+  /// A computation awaiting the current state.
+  type C = Integer => Integer;
+  /// As `Passing.get`.
+  @[ checks ]
+  def get(k : Integer => Integer => Integer) -> Integer => Integer {
+    thunk { fn (s) { run after <- k(s); after(s) } }
+  }
+  /// As `Passing.put`.
+  @[ checks ]
+  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
+    thunk { fn (_old) { k(s) } }
+  }
+  /// Storing twice keeps the second value.
+  @[ checks ]
+  def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path(
+    Integer => Integer,
+    put(s, put(u, k)),
+    put(u, k)
+  ) {
+    here(put(u, k))
+  }
+}
+
+/// The counts read as integers, the first count zero.
+@[ checks ]
+def shown(c : Unit + (Unit + Unit)) -> Integer {
+  case c {
+    +{.0 = u} => 0,
+    +{.1 = rest} => case rest {
+      +{.0 = u} => 1,
+      +{.1 = v} => 2
+    }
+  }
+}
+
+/// State passing over the counts with both sorts manifest, so a model is the
+/// record of its two operations.
+@[ checks ]
+def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
+  .get = fn (k) { pure fn (s) { run after <- k(s); after(s) } },
+  .put = fn (s) { fn (k) { pure fn (_old) { k(s) } } }
+} ;
+
+/// The same model carried along negation of the counts: `get`'s continuation
+/// is a function of the state, so the state it is handed is negated back and
+/// the computation it answers negated forth.
+@[ checks ]
+def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = transport(
+  \x. Model(State) with sort S = x with sort C = (x => Integer),
+  countsNegated,
+  passing
+) ;
+
+/// Storing the second count and then reading the state twice, from the first
+/// count.
+@[ checks ]
+def putGet(m : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
+  case m {
+    #{.get = g, .put = p} => {
+      run read <- g(fn (s) {
+        pure fn (t) { run a <- shown(s); run b <- shown(t); pure a * 10 + b }
+      });
+      run program <- p(+{.1 = +{.0 = unit}}, read);
+      program(+{.0 = unit})
+    }
+  }
+}
+
+/// Through the model itself: both reads see the stored count.
+@[ runs("11") ]
+def direct() -> Integer { putGet(passing) }
+
+/// Through the carried model, where put-get holds as in any model. It runs to
+/// `11` once the machine transports along `put`'s curried function (#2421).
+@[ checks ]
+def carried() -> Integer { putGet(negated) }

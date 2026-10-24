@@ -10,13 +10,16 @@
 //! component `f : (x₁ : S₁, …) => S` lowers to: `+U` over one binder per
 //! telescope entry, dependent exactly where a later entry or the result names
 //! it, into the returner of the result — the product of the results for a
-//! many-out operation. A law mints the same telescope into the returner of
-//! `Path(S, l, r)`, an application `g(t₁, …)` in either endpoint as the
-//! returned call of the member `g` names, `↑((force g) t₁ …)`, as the written
-//! endpoint lowers. A sort mints as what its component reads: the member's
-//! type for a strengthened sort, the atom for a sealed one, and the family's
-//! type over the index terms for an indexed one. The derived type is therefore
-//! the written signature's, node for node, and the checker sees no
+//! many-out operation. An entry whose port binds variables binds the thunked
+//! function from them to its sort: `k : pi+ (s : R) . C` binds
+//! `+U ((s : R) -> -F C)`, Π over a variable a later variable's sort or `C`
+//! names and an arrow over any other. A law mints the same telescope into the
+//! returner of `Path(S, l, r)`, an application `g(t₁, …)` in either endpoint
+//! as the returned call of the member `g` names, `↑((force g) t₁ …)`, as the
+//! written endpoint lowers. A sort mints as what its component reads: the
+//! member's type for a strengthened sort, the atom for a sealed one, and the
+//! family's type over the index terms for an indexed one. The derived type is
+//! therefore the written signature's, node for node, and the checker sees no
 //! difference between the two.
 //!
 //! # A module packs as the record its members give
@@ -40,6 +43,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
@@ -104,6 +108,7 @@ use crate::model::ModelSignature;
 use crate::model::SortTerm;
 use crate::model::Tail;
 use crate::model::dependence;
+use crate::model::variable_dependence;
 use crate::module::Container;
 use crate::module::FamilyForm;
 use crate::module::FamilyIndex;
@@ -878,7 +883,7 @@ impl<'source> Lowerer<'_, 'source>
                 binders: telescope.get(.. depth).unwrap_or_default(),
                 dependent: dependent.get(.. depth).unwrap_or_default(),
             };
-            domains.push(self.sort_type(&binder.sort, context, minting, sink)?);
+            domains.push(self.domain(binder, context, minting, sink)?);
         }
         let context = Context {
             binders: telescope,
@@ -924,15 +929,72 @@ impl<'source> Lowerer<'_, 'source>
             chain = sink.arena.comp_type_arrow(hypothesis, chain);
             sink.origins.record_comp_type(chain, origin);
         }
-        for (&domain, &binds) in domains.iter().zip(&dependent).rev() {
-            chain = if binds.0 {
-                sink.arena.comp_type_pi(domain, chain)
-            }
-            else {
-                sink.arena.comp_type_arrow(domain, chain)
-            };
-            sink.origins.record_comp_type(chain, origin);
+        chain = quantified(sink, origin, &domains, &dependent, chain);
+        let id = sink.arena.value_type_thunk(chain);
+        sink.origins.record_value_type(id, origin);
+
+        Ok(id)
+    }
+
+    /// The type `binder` binds under `context`: its sort's, or for a binder
+    /// that takes variables the thunked function from them to its sort, each
+    /// variable's sort read under the ones before it.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: a value binder's [`Self::sort_type`]; for one that takes
+    ///   variables, `+U ((x : R) -> -F C)`, a Π for a variable a later sort
+    ///   names and an arrow for any other, every node carrying the minting's
+    ///   origin.
+    /// - fails: as [`Self::sort_type`] for any of the sorts.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Missing`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `get`'s continuation is the thunked function from the
+    ///   state to the carrier, so a module's `get` taking one checks and one
+    ///   taking the carrier is refused.
+    /// - witness: `tests::modules::models::a_binding_port_is_the_function_from_its_variables_765`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&id| sink.arena.value_type(id).is_some()))]
+    fn domain(
+        &self,
+        binder: &Binder,
+        context: Context<'_>,
+        minting: &Minting<'source, '_>,
+        sink: &mut Sink<'_>,
+    ) -> Result<ValueTypeId, Missing<'source>>
+    {
+        if binder.over.is_empty() {
+            return self.sort_type(&binder.sort, context, minting, sink);
         }
+        let origin = minting.origin;
+        let dependent = variable_dependence(&binder.over, &binder.sort);
+        let mut binders = context.binders.to_vec();
+        let mut flags = context.dependent.to_vec();
+        let mut domains = Vec::with_capacity(binder.over.len());
+        for (variable, &binds) in binder.over.iter().zip(&dependent) {
+            let under = Context {
+                binders: &binders,
+                dependent: &flags,
+            };
+            domains.push(self.sort_type(&variable.sort, under, minting, sink)?);
+            binders.push(Binder {
+                name: variable.name.clone(),
+                over: Vec::new(),
+                sort: variable.sort.clone(),
+            });
+            flags.push(binds);
+        }
+        let under = Context {
+            binders: &binders,
+            dependent: &flags,
+        };
+        let codomain = self.sort_type(&binder.sort, under, minting, sink)?;
+        let returner = sink.arena.comp_type_returner(codomain);
+        sink.origins.record_comp_type(returner, origin);
+        let chain = quantified(sink, origin, &domains, &dependent, returner);
         let id = sink.arena.value_type_thunk(chain);
         sink.origins.record_value_type(id, origin);
 
@@ -3792,6 +3854,9 @@ fn component_reads<'form>(
             ref results,
         }) => {
             for binder in telescope {
+                for variable in &binder.over {
+                    sort_reads(&variable.sort, into);
+                }
                 sort_reads(&binder.sort, into);
             }
             for result in results {
@@ -3820,6 +3885,42 @@ fn component_reads<'form>(
         },
         Ok(ModelForm::Nested(_)) | Err(_) => {},
     }
+}
+
+/// `chain` under each of `domains`, innermost last: a Π for a domain
+/// `dependent` marks as binding and an arrow for any other, each node carrying
+/// `origin`.
+///
+/// # Specification
+/// - requires: `domains` and `dependent` of one length.
+/// - ensures: the computation type `chain` quantified over every domain, in
+///   order.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`dependence`].
+/// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
+#[spec(ensures: |ret| (ret == chain) == domains.is_empty())]
+fn quantified(
+    sink: &mut Sink<'_>,
+    origin: Origin,
+    domains: &[ValueTypeId],
+    dependent: &[Dependent],
+    chain: CompTypeId,
+) -> CompTypeId
+{
+    let mut chain = chain;
+    for (&domain, &binds) in domains.iter().zip(dependent).rev() {
+        chain = if binds.0 {
+            sink.arena.comp_type_pi(domain, chain)
+        }
+        else {
+            sink.arena.comp_type_arrow(domain, chain)
+        };
+        sink.origins.record_comp_type(chain, origin);
+    }
+    chain
 }
 
 /// Push the sort `sort` names and the heads its index terms apply onto

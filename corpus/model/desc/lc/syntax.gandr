@@ -4,7 +4,7 @@
 // FSCD 2024, doi:10.4230/LIPIcs.FSCD.2024.10, §7): the presentation
 // `first_order` mints from `theory Lambda`, its names written without the
 // generated `$` and its context arguments implicit, as a `theory` block
-// writes them (#765). The syntax model's carriers are de Bruijn terms and
+// writes them (#2422). The syntax model's carriers are de Bruijn terms and
 // two substitution data: a substitution shifts, conses a term onto another
 // or lifts one under a binder, and a renaming shifts or lifts. Lifting is a
 // constructor, so the substitution laws reach their inductive steps by

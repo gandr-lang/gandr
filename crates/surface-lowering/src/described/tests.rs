@@ -3,6 +3,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use gandr_core_term::CompType;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::ValueType;
@@ -294,8 +295,10 @@ fn a_stated_law_answers_at_its_statement_2356()
     assert!(boolean(assumed), "a hypothesis's side at its sort");
 }
 
+/// A port that binds a variable answers at the thunked function from it, as
+/// `Model(S)` states the operation's component, and its variable at its sort.
 #[test]
-fn a_binder_answers_at_its_sort_and_its_operation_nowhere()
+fn a_binding_port_answers_at_the_function_from_its_variables_765()
 {
     let source = SourceText::from(
         "theory IdentityReturn {\n  sort VTy : Type;\n  sort CTy : Type;\n  sort VTm(a : VTy) : \
@@ -346,12 +349,28 @@ fn a_binder_answers_at_its_sort_and_its_operation_nowhere()
             "an index application at its operation's result, first-order or not"
         );
     }
-    for unstated in [span("oper lam", "lam"), span("t : pi+", "t")] {
-        assert!(
-            types.entries.iter().all(|held| held.span != unstated),
-            "no component states a binding operation or its bound port"
-        );
-    }
+    let port = entry(&types, span("t : pi+", "t"), DescribedRole::Name);
+    let Some(ValueType::Thunk(function)) = ty(port)
+    else {
+        panic!("the bound port at a thunk: {:?}", ty(port));
+    };
+    assert!(
+        matches!(
+            arena.comp_type(function).cloned(),
+            Some(CompType::Arrow { .. })
+        ),
+        "the function from its variable, which its sort does not name"
+    );
+    assert_eq!(
+        context(&types, port),
+        ["VTy", "CTy", "VTm", "CTm", "f", "arrow", "ret", "a", "b"],
+        "under the members and the ports before it"
+    );
+    let operation = entry(&types, span("oper lam", "lam"), DescribedRole::Name);
+    assert!(
+        matches!(ty(operation), Some(ValueType::Thunk(_))),
+        "the operation at the type its component states"
+    );
 }
 
 /// #668: a constant applied in a law, `pt()`, answers at its sort as every
@@ -685,11 +704,11 @@ fn a_codata_observation_s_type_answers_at_its_universe()
     assert_eq!(context(&types, integer), Vec::<String>::new());
 }
 
-/// A law over a binding operation, which no `Model(S)` component states,
-/// answers each node at the sort the theory writes for it: the application,
-/// the variable at a first-order port and the instantiation at `Tm`; the
-/// variable the binding port binds and the binding operation's head answer
-/// nowhere, as their ports do.
+/// A law relating a term at a binding port, which no `Model(S)` component
+/// states, answers each node at the sort the theory writes for it: the
+/// application, the variable at a first-order port and the instantiation at
+/// `Tm`; the operation's head at the type its component states; the variable
+/// the binding port binds answers nowhere, as no field of it is written.
 #[test]
 fn a_second_order_law_answers_at_its_written_sorts()
 {
@@ -718,14 +737,13 @@ fn a_second_order_law_answers_at_its_written_sorts()
             "`{inner}` in `{around}` at the same sort"
         );
     }
-    for unstated in [
-        span("zeta : let", "let"),
-        span("u, t)", "t"),
-        span("<=> t(u)", "t"),
-    ] {
+    let head = entry(&types, span("zeta : let", "let"), DescribedRole::Term);
+    let declared = entry(&types, span("oper let", "let"), DescribedRole::Name);
+    assert_eq!(head.ty, declared.ty, "a head at its operation's type");
+    for unstated in [span("u, t)", "t"), span("<=> t(u)", "t")] {
         assert!(
             types.entries.iter().all(|held| held.span != unstated),
-            "no component states a binding operation or the variable its port binds"
+            "the variable a binding port binds, written without its field, answers nowhere"
         );
     }
 }
@@ -733,7 +751,8 @@ fn a_second_order_law_answers_at_its_written_sorts()
 /// A law over an abstracting port answers the variable its abstraction holds
 /// at the port's sort, on both sides, as a first-order port's variable
 /// answers, and the atom it abstracts at the atom sort the port abstracts;
-/// the abstraction itself answers nowhere, as its port does.
+/// the abstraction itself answers nowhere, as its port does, whose declared
+/// atom answers at that atom sort.
 #[test]
 fn a_variable_under_an_abstraction_answers_at_its_port()
 {
@@ -771,6 +790,21 @@ fn a_variable_under_an_abstraction_answers_at_its_port()
     assert!(
         types.entries.iter().all(|held| held.span != abstraction),
         "an abstraction answers nowhere"
+    );
+    let declared = entry(&types, span("bind (a :", "a"), DescribedRole::Name);
+    assert!(
+        code(declared).is_some(),
+        "the port's declared atom at its atom sort"
+    );
+    assert_eq!(
+        context(&types, declared),
+        ["Name", "Proc", "par"],
+        "under the members before its operation"
+    );
+    let port = span("(p : bind", "p");
+    assert!(
+        types.entries.iter().all(|held| held.span != port),
+        "an abstracting port's name answers nowhere"
     );
 }
 

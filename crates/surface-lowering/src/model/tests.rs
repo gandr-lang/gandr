@@ -5,6 +5,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt::Write as _;
 
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
@@ -91,7 +92,8 @@ fn sort(term: &SortTerm) -> String
     format!("{}({})", term.sort, indices.join(", "))
 }
 
-/// A telescope as the surface spells it.
+/// A telescope as the surface spells it, a binder that takes variables
+/// written as the port that binds them.
 ///
 /// # Specification
 /// trivial.
@@ -99,7 +101,20 @@ fn telescope(binders: &[Binder]) -> String
 {
     let entries: Vec<String> = binders
         .iter()
-        .map(|binder| format!("{} : {}", binder.name, sort(&binder.sort)))
+        .map(|binder| {
+            let mut entry = format!("{} : ", binder.name);
+            for variable in &binder.over {
+                write!(
+                    entry,
+                    "pi+ ({} : {}) . ",
+                    variable.name,
+                    sort(&variable.sort)
+                )
+                .unwrap();
+            }
+            entry.push_str(&sort(&binder.sort));
+            entry
+        })
         .collect();
     format!("({})", entries.join(", "))
 }
@@ -317,6 +332,7 @@ fn an_underivable_component_keeps_its_fault()
   oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
   oper nu : (p : bind (c : Name) . Ob) --> Ob;
   rule twice : id(id(a)) ==> id(a);
+  rule same : lam(bind x . t(x)) ==> lam(bind y . t(y));
   rule loose : x ==> x;
   rule halves : split(a) ==> split(a);
   rule wired : (data x : Ob) ==> (o : Hom(x, x)) {
@@ -351,9 +367,9 @@ fn an_underivable_component_keeps_its_fault()
         "a circuit rule is kept by name"
     );
     assert_eq!(
-        spelled(&model, "lam"),
-        "lam refused: Binding",
-        "an operation whose port binds a variable"
+        spelled(&model, "same"),
+        "same refused: Binding",
+        "a law relating a term at a port that binds a variable"
     );
     assert_eq!(
         spelled(&model, "nu"),
@@ -366,6 +382,37 @@ fn an_underivable_component_keeps_its_fault()
             .iter()
             .all(|component| component.form != Err(ModelFault::Inherited)),
         "no component names a refused one"
+    );
+}
+
+/// A binding port's binder takes its `pi+` variables, its sort read under
+/// them: `get`'s continuation takes the state, and `lam`'s body binds a value
+/// whose type is a free sort variable no other port names, bound first.
+#[test]
+fn a_binding_port_derives_the_function_from_its_variables_765()
+{
+    let model = derived(
+        r"theory Typed {
+  sort VTy : Type;
+  sort CTy : Type;
+  sort VTm(a : VTy) : Type+;
+  sort CTm(b : CTy) : Type;
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper lam : (t : pi+ (x : VTm(a)) . CTm(b)) --> CTm(b);
+}",
+    );
+
+    assert_eq!(
+        spelled(&model, "get"),
+        "get : (k : pi+ (s : S) . C) => C",
+        "the continuation takes the state"
+    );
+    assert_eq!(
+        spelled(&model, "lam"),
+        "lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)) . CTm(b)) => CTm(b)",
+        "a sort variable only a variable's sort names is bound before the port"
     );
 }
 

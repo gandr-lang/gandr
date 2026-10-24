@@ -551,6 +551,7 @@ where
         list.into_iter()
             .map(|binder| Binder {
                 name: binder.name,
+                over: Vec::new(),
                 sort: SortTerm {
                     sort: binder.sort,
                     indices: binder.indices,
@@ -575,19 +576,48 @@ where
 
 /// One binder of a derived telescope.
 ///
+/// A binder that takes variables is a binding port's: in a model over host
+/// types its port is the thunked function from those variables to its sort,
+/// `+U ((x : R) -> -F C)`, the standard model of a second-order signature, in
+/// which a representable sort's binder is an exponential.
+///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the binder's name and its sort, whose index terms name only the
-///   binders before it.
+/// - ensures: the binder's name, the variables it takes, outermost first, each
+///   at a representable sort, and its sort under them; every index term names
+///   only the binders before it and, in its sort, its own variables.
 /// - executable: none — a binder is data the lowering mints from.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`SortTerm`].
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
+/// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Binder
 {
     /// The binder's name.
+    pub name: Name,
+    /// The variables it takes, outermost first; empty for a value binder.
+    pub over: Vec<Variable>,
+    /// Its sort, under the variables it takes.
+    pub sort: SortTerm,
+}
+
+/// One variable a binding port's binder takes.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the variable's name and its representable sort, whose index terms
+///   name the binders before its binder and the variables before it.
+/// - executable: none — a variable is data the lowering mints from.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Binder`].
+/// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Variable
+{
+    /// The variable's name.
     pub name: Name,
     /// Its sort.
     pub sort: SortTerm,
@@ -659,7 +689,7 @@ pub enum ModelForm
 ///
 /// # Adequacy
 /// - hypothesis: L3 — an ill-sorted law, an unsorted variable, a circuit rule
-///   and a binding operation each keep their own fault.
+///   and a law at a binding port each keep their own fault.
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ModelFault
@@ -682,9 +712,8 @@ pub enum ModelFault
     /// A component naming a sort or an operation whose own derivation
     /// failed.
     Inherited,
-    /// An operation one of whose ports binds a variable: a second-order
-    /// operation, whose models are the first-order translation's, not a
-    /// structure on the value universe.
+    /// A law relating a term at a port that binds a variable: its two sides
+    /// are host functions, whose path the derivation does not state.
     Binding,
     /// An operation one of whose ports abstracts an atom: a nominal
     /// operation, whose models are nominal sets', not a structure on the
@@ -721,7 +750,7 @@ impl core::fmt::Display for ModelFault
             Self::Constructor => "applies a constructor, which a theory does not declare",
             Self::Inherited => "names a component the model cannot state",
             Self::Binding => {
-                "binds a variable over a port, whose models are its first-order translation's"
+                "relates a term at a port that binds a variable, a path between host functions"
             },
             Self::Abstraction => "abstracts an atom over a port, whose models are nominal sets'",
             Self::Unbound => "names a variable its statement does not bind once",
@@ -885,9 +914,10 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 ///   port at a builtin type the theory does not declare reads it as a closed
 ///   sort; a constant whose type leaves no variable free derives that type
 ///   alone, and one whose type does derives as an operation of no inputs; a
-///   component that cannot be stated keeps its fault, an operation one of whose
-///   ports binds a variable keeps [`ModelFault::Binding`], and one naming such
-///   a component is [`ModelFault::Inherited`].
+///   binding port's binder takes its `pi+` variables; a component that cannot
+///   be stated keeps its fault, a law relating a term at a binding port keeps
+///   [`ModelFault::Binding`], and one naming such a component is
+///   [`ModelFault::Inherited`].
 /// - fails: never; a fault is kept on its component.
 /// - panics: none.
 /// - executable: none — the inference the components result from is the
@@ -901,6 +931,7 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 /// - witness: `model::tests::the_cat_shape_operations_bind_their_free_sorts_first`
 /// - witness: `model::tests::the_cat_shape_laws_relate_elaborated_terms`
 /// - witness: `model::tests::an_underivable_component_keeps_its_fault`
+/// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
 /// - witness: `model::tests::a_constant_derives_its_type_alone`
 #[must_use]
 pub(crate) fn derive_members(
@@ -1016,11 +1047,12 @@ fn derive_heads(
         }
     }
     for operation in &members.operations {
-        let mut sides = operation.inputs.iter().chain(&operation.outputs);
-        let head = if sides.clone().any(|port| !port.binders.is_empty()) {
-            Err(ModelFault::Binding)
-        }
-        else if sides.any(|port| !port.abstractions.is_empty()) {
+        let head = if operation
+            .inputs
+            .iter()
+            .chain(&operation.outputs)
+            .any(|port| !port.abstractions.is_empty())
+        {
             Err(ModelFault::Abstraction)
         }
         else {
@@ -1095,8 +1127,9 @@ pub(crate) enum Tail<'form>
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one flag per binder, in order: affirmative exactly when the
-///   binder's name is a variable of a later binder's index terms or of the
-///   tail's hypotheses, sorts and terms.
+///   binder's name is a variable of a later binder's index terms — its own or
+///   its variables', less the names those variables bind — or of the tail's
+///   hypotheses, sorts and terms.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -1138,11 +1171,90 @@ pub(crate) fn dependence(
     let mut flags = Vec::with_capacity(telescope.len());
     for binder in telescope.iter().rev() {
         flags.push(Dependent(named.contains(&&binder.name)));
-        sort_vars(&binder.sort, &mut named);
+        binder_vars(binder, &mut named);
     }
     flags.reverse();
 
     flags
+}
+
+/// Whether each of `variables`, the variables one binder takes, is named by
+/// a later variable's sort or by `result`, the binder's sort under them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: one flag per variable, in order: affirmative exactly when the
+///   variable's name is a variable of a later variable's index terms or of
+///   `result`'s.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `get`'s state is named by no sort, so its function is an
+///   arrow.
+/// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
+#[spec(ensures: |ret| ret.len() == variables.len())]
+#[cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    expect(
+        linear_search_in_loop,
+        reason = "bounded: `named` holds the variables one port's sorts mention"
+    )
+)]
+pub(crate) fn variable_dependence(
+    variables: &[Variable],
+    result: &SortTerm,
+) -> Vec<Dependent>
+{
+    let mut named: Vec<&Name> = Vec::new();
+    sort_vars(result, &mut named);
+    let mut flags = Vec::with_capacity(variables.len());
+    for variable in variables.iter().rev() {
+        flags.push(Dependent(named.contains(&&variable.name)));
+        sort_vars(&variable.sort, &mut named);
+    }
+    flags.reverse();
+
+    flags
+}
+
+/// Push every variable `binder`'s sort and its variables' sorts name, less
+/// the names those variables bind, onto `into`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: for a value binder, as [`sort_vars`] over its sort; for one that
+///   takes variables, every variable of its sort's and its variables' index
+///   terms that none of its variables is named.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`dependence`].
+/// - witness: `model::tests::a_binding_port_derives_the_function_from_its_variables_765`
+#[spec(
+    captures: before = into.len(),
+    ensures: into.len() >= before,
+)]
+fn binder_vars<'term>(
+    binder: &'term Binder,
+    into: &mut Vec<&'term Name>,
+)
+{
+    if binder.over.is_empty() {
+        sort_vars(&binder.sort, into);
+        return;
+    }
+    let mut mentioned = Vec::new();
+    sort_vars(&binder.sort, &mut mentioned);
+    for variable in &binder.over {
+        sort_vars(&variable.sort, &mut mentioned);
+    }
+    into.extend(
+        mentioned
+            .into_iter()
+            .filter(|&name| binder.over.iter().all(|variable| variable.name != *name)),
+    );
 }
 
 /// Push every variable of `sort`'s index terms onto `into`.

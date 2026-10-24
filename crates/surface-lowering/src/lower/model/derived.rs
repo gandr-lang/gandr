@@ -509,6 +509,7 @@ impl<'source> Lowerer<'_, 'source>
         let mut binders = context.binders.to_vec();
         binders.push(Binder {
             name: Name::from(HOLE),
+            over: Vec::new(),
             sort: SortTerm {
                 sort: step.sorts.0.clone(),
                 indices: Vec::new(),
