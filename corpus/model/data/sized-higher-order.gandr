@@ -56,9 +56,10 @@ def rec helped(n : Nat) -> Nat {
 def helpedTwo : () => Nat = helped(Succ(Succ(Zero))) ;
 
 /// The predecessor of a number at a stage `i`, zero's its own: the result
-/// stands at `i` too, as the signature states.
+/// stands at `i` too, as the signature states, the returner inserted over the
+/// staged type and never over its base (#2373).
 @[ checks ]
-def predAt @[i : Size] (n : Nat[i]) -> -F Nat[i] {
+def predAt @[i : Size] (n : Nat[i]) -> Nat[i] {
   case n {
     Zero => Zero,
     Succ(p) => p
@@ -82,9 +83,9 @@ def halvedAtFour : () => Nat = halvedAt(Succ(three)) ;
 
 /// A number below a stage `j` handed back, the stage `k` it stands at bounded
 /// below `j`: the result stands below `j`, as the body was checked with `k`
-/// there.
+/// there; written without its returner, as `predAt`'s is (#2373).
 @[ checks ]
-def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> -F Nat[<j] {
+def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> Nat[<j] {
   y
 }
 
