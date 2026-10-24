@@ -82,6 +82,20 @@ struct Entry
     solution: Maybe<ValueId, meta_lookup::Absent>,
 }
 
+/// One change a trial made to its metacontext, as what puts it back.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Undo
+{
+    /// `hole` was declared the last metavariable.
+    Declared(HoleId),
+    /// The metavariable was bound; its solution before.
+    Bound(MetaId, Maybe<ValueId, meta_lookup::Absent>),
+    /// An equation was put last in the store.
+    Postponed,
+    /// These equations left the store, each with the place it held.
+    Woken(Vec<(usize, Postponed)>),
+}
+
 /// The metavariables of one problem, each with its context and its solution,
 /// and the equations that wait on them.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -93,6 +107,9 @@ pub struct Metas
     by_hole: BTreeMap<HoleId, MetaId>,
     /// The equations that wait, in the order they were postponed.
     postponed: Vec<Postponed>,
+    /// While a [`Metas::trial`] runs, every change made since it began, in
+    /// order; none outside one.
+    journal: Option<Vec<Undo>>,
 }
 
 impl Metas
@@ -142,6 +159,9 @@ impl Metas
             solution: Maybe::Absent(meta_lookup::Absent::Unsolved),
         });
         let _fresh = self.by_hole.insert(hole, id);
+        if let Some(ref mut journal) = self.journal {
+            journal.push(Undo::Declared(hole));
+        }
         Maybe::Present(id)
     }
 
@@ -278,7 +298,10 @@ impl Metas
     )
     {
         if let Some(entry) = self.entries.get_mut(meta.0) {
-            entry.solution = Maybe::Present(solution);
+            let previous = core::mem::replace(&mut entry.solution, Maybe::Present(solution));
+            if let Some(ref mut journal) = self.journal {
+                journal.push(Undo::Bound(meta, previous));
+            }
         }
     }
 
@@ -313,6 +336,9 @@ impl Metas
     )
     {
         self.postponed.push(waiting);
+        if let Some(ref mut journal) = self.journal {
+            journal.push(Undo::Postponed);
+        }
     }
 
     /// Take out of the store every equation `meta` blocks, in the order they
@@ -325,12 +351,79 @@ impl Metas
         meta: MetaId,
     ) -> Vec<Equation>
     {
-        let (woken, waiting): (Vec<Postponed>, Vec<Postponed>) =
-            core::mem::take(&mut self.postponed)
-                .into_iter()
-                .partition(|postponed| postponed.blockers().contains(&meta));
-        self.postponed = waiting;
-        woken.iter().map(Postponed::equation).collect()
+        let mut woken = Vec::new();
+        let mut left = Vec::new();
+        for (place, postponed) in core::mem::take(&mut self.postponed).into_iter().enumerate() {
+            if postponed.blockers().contains(&meta) {
+                woken.push(postponed.equation());
+                if self.journal.is_some() {
+                    left.push((place, postponed));
+                }
+            }
+            else {
+                self.postponed.push(postponed);
+            }
+        }
+        if let Some(ref mut journal) = self.journal
+            && !left.is_empty()
+        {
+            journal.push(Undo::Woken(left));
+        }
+        woken
+    }
+
+    /// Run `trial` against this metacontext, then put back every change it
+    /// made: a solver run on a candidate's equations, judged by its verdict
+    /// alone, at the cost of what the run touched rather than of a copy of the
+    /// whole metacontext.
+    ///
+    /// # Specification
+    /// - ensures: `trial`'s answer, the metacontext equal to what it was before
+    ///   — its metavariables, their solutions and the store, in order — however
+    ///   `trial` declared, bound, postponed or woke; a trial run inside another
+    ///   puts back its own changes before the outer one resumes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a trial that binds a metavariable, postpones an
+    ///   equation and wakes one leaves the metacontext as it found it, and a
+    ///   run outside one keeps what it does.
+    /// - witness: `tests::solve::a_trial_leaves_the_metacontext_as_it_found_it`
+    #[spec(captures: [entries = self.entries.len(), waiting = self.postponed.len()],
+        ensures: |_| self.entries.len() == entries && self.postponed.len() == waiting)]
+    #[inline]
+    pub fn trial<Answer, Run>(
+        &mut self,
+        trial: Run,
+    ) -> Answer
+    where
+        Run: FnOnce(&mut Self) -> Answer,
+    {
+        let outer = self.journal.replace(Vec::new());
+        let answer = trial(self);
+        let journal = core::mem::replace(&mut self.journal, outer).unwrap_or_default();
+        for undo in journal.into_iter().rev() {
+            match undo {
+                Undo::Declared(hole) => {
+                    let _declared = self.entries.pop();
+                    let _mapped = self.by_hole.remove(&hole);
+                },
+                Undo::Bound(meta, previous) => {
+                    if let Some(entry) = self.entries.get_mut(meta.0) {
+                        entry.solution = previous;
+                    }
+                },
+                Undo::Postponed => {
+                    let _postponed = self.postponed.pop();
+                },
+                Undo::Woken(left) => {
+                    for (place, postponed) in left {
+                        self.postponed.insert(place, postponed);
+                    }
+                },
+            }
+        }
+        answer
     }
 }
 

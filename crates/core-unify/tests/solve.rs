@@ -521,6 +521,61 @@ fn a_postponed_equation_wakes_in_either_order()
     );
 }
 #[test]
+fn a_trial_leaves_the_metacontext_as_it_found_it()
+{
+    // `?m = (x, ?k)` waits in the store before the trial. Inside it, `?m = (?p,
+    // ?q)` binds `?m`, wakes the waiting equation out of the store, postpones
+    // `?p = x` and binds `?k`; a trial nested in it binds `?p` besides. Each
+    // trial puts back what it did, and the same equation posed outside a trial
+    // keeps it.
+    let mut arena = CoreArena::new();
+    let mut metas = Metas::new();
+    let holes = [0_u32, 1, 2, 3].map(HoleId::from);
+    let declared = holes.map(|hole| meta(&mut metas, hole, Binders::NONE));
+    let [hole_m, hole_p, hole_q, hole_k] = holes.map(|hole| arena.value_hole(hole));
+    let bound = variable(&mut arena, DeBruijnIndex::from(0_u32));
+    let escaping = arena.value_tuple(&[bound, hole_k]);
+    let parts = arena.value_tuple(&[hole_p, hole_q]);
+    let unit = arena.value_unit();
+    let waits = Equation::new(Binders::ONE, Side::Value(hole_m), Side::Value(escaping));
+    let splits = Equation::new(Binders::NONE, Side::Value(hole_m), Side::Value(parts));
+    let fills = Equation::new(Binders::NONE, Side::Value(hole_p), Side::Value(unit));
+    assert_eq!(Verdict::Postponed, solve(&mut arena, &mut metas, &[waits]));
+    let before = metas.clone();
+    let (outer, inner) = metas.trial(|trial| {
+        let outer = solve(&mut arena, trial, &[splits]);
+        let within = trial.clone();
+        let (inner, filled) = trial.trial(|nested| {
+            let verdict = solve(&mut arena, nested, &[fills]);
+            (verdict, nested.clone())
+        });
+        assert_ne!(within, filled, "the nested trial binds `?p`");
+        assert_eq!(within, *trial, "the nested trial puts back its own binding");
+        assert_eq!(
+            outcome(&arena, trial, &declared).0,
+            vec![
+                String::from("(?1, ?2)"),
+                String::from("Unsolved"),
+                String::from("Unsolved"),
+                String::from("?2"),
+            ],
+            "inside the trial its bindings read"
+        );
+        (outer, inner)
+    });
+    assert_eq!(Verdict::Postponed, outer);
+    assert!(
+        !matches!(inner, Verdict::Refuted(_)),
+        "filling `?p` refutes nothing"
+    );
+    assert_eq!(
+        before, metas,
+        "the trial leaves the metacontext as it found it"
+    );
+    assert_eq!(Verdict::Postponed, solve(&mut arena, &mut metas, &[splits]));
+    assert_ne!(before, metas, "outside a trial the run keeps what it does");
+}
+#[test]
 fn two_metavariables_meet_in_the_wider_context()
 {
     // `?b`, whose context holds one binder, against `?a`, whose context holds

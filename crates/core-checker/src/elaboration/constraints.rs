@@ -769,17 +769,18 @@ impl Deferrals
     ///   arguments force has been posed.
     /// - ensures: for each slot, in order, every hole of which the judgement
     ///   met and some hole of which the solver left unbound: each candidate is
-    ///   tried on a copy of the store, its components posed against the holes
-    ///   and its code of each sort the slot fixes against the slot's, where the
-    ///   slot's code reads no binder of the callee, and one the solver refutes
-    ///   is dropped. Candidates left are counted up to conversion: one whose
-    ///   components and codes convert with the first one left's ([`agreement`])
-    ///   is the same elaboration, as a model including another is at the
-    ///   included model's theory, and is not counted again. A single
-    ///   elaboration binds the holes as its first candidate's trial did. A slot
-    ///   whose holes are all bound, one a hole of which the judgement did not
-    ///   meet, and a candidate of another arity, or carrying another number of
-    ///   fixed sorts, are left out.
+    ///   tried in a trial of the store ([`Metas::trial`]), which puts back what
+    ///   the solver bound, its components posed against the holes and its code
+    ///   of each sort the slot fixes against the slot's, where the slot's code
+    ///   reads no binder of the callee, and one the solver refutes is dropped.
+    ///   Candidates left are counted up to conversion: one whose components and
+    ///   codes convert with the first one left's ([`agreement`]) is the same
+    ///   elaboration, as a model including another is at the included model's
+    ///   theory, and is not counted again. A single elaboration binds the holes
+    ///   as its candidate's trial did, its equations solved again against the
+    ///   store. A slot whose holes are all bound, one a hole of which the
+    ///   judgement did not meet, and a candidate of another arity, or carrying
+    ///   another number of fixed sorts, are left out.
     /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
     ///   no candidate is left; [`CheckRefusal::ModelAmbiguous`] there, naming
     ///   the first candidate left and every one not converting with it, when
@@ -828,7 +829,7 @@ impl Deferrals
             .collect();
         let mut holes: Vec<(ValueId, MetaId)> = Vec::new();
         let mut equations: Vec<gandr_core_unify::Equation> = Vec::new();
-        let mut closed: Vec<(usize, ValueId)> = Vec::new();
+        let mut closed: Vec<Option<ValueId>> = Vec::new();
         'slots: for slot in models {
             holes.clear();
             for hole in &slot.holes {
@@ -849,22 +850,16 @@ impl Deferrals
                 continue;
             }
             closed.clear();
-            closed.extend(
-                slot.fixed
-                    .iter()
-                    .enumerate()
-                    .filter(|&(_, &code)| {
-                        crate::code::loose_reach(
-                            arena,
-                            crate::refusal::CoreNode::Term(crate::refusal::TermNode::Value(code)),
-                        )
-                        .is_ok_and(|reach| usize::from(reach) == 0)
-                    })
-                    .map(|(place, &code)| (place, code)),
-            );
+            closed.extend(slot.fixed.iter().map(|&code| {
+                crate::code::loose_reach(
+                    arena,
+                    crate::refusal::CoreNode::Term(crate::refusal::TermNode::Value(code)),
+                )
+                .is_ok_and(|reach| usize::from(reach) == 0)
+                .then_some(code)
+            }));
             let mut survivors = Survivors::default();
             let mut count = 0_usize;
-            let mut chosen = None;
             let mut elaborated = None;
             for (place, candidate) in slot.candidates.iter().enumerate() {
                 if candidate.components.len() != holes.len()
@@ -872,32 +867,9 @@ impl Deferrals
                 {
                     continue;
                 }
-                let mut trial = self.metas.clone();
-                equations.clear();
-                equations.extend(holes.iter().zip(&candidate.components).map(
-                    |(&(at, meta), &component)| {
-                        let scope = match trial.scope(meta) {
-                            Maybe::Present(scope) => scope,
-                            Maybe::Absent(_) => Binders::NONE,
-                        };
-                        gandr_core_unify::Equation::new(
-                            scope,
-                            Side::Value(at),
-                            Side::Value(component),
-                        )
-                    },
-                ));
-                equations.extend(closed.iter().filter_map(|&(sort, code)| {
-                    candidate.fixed.get(sort).map(|&own| {
-                        gandr_core_unify::Equation::new(
-                            Binders::NONE,
-                            Side::Value(code),
-                            Side::Value(own),
-                        )
-                    })
-                }));
+                pose(&mut equations, &self.metas, &holes, &closed, candidate);
                 if let gandr_core_unify::Verdict::Refuted(_) =
-                    gandr_core_unify::solve(arena, &mut trial, &equations)
+                    tried(arena, &mut self.metas, &equations)
                 {
                     continue;
                 }
@@ -909,13 +881,18 @@ impl Deferrals
                 }
                 survivors = survivors.with(CandidatePlace::from(place));
                 count = count.saturating_add(1);
-                if chosen.is_none() {
-                    chosen = Some(trial);
+                if elaborated.is_none() {
                     elaborated = Some(candidate);
                 }
             }
-            match (count, chosen) {
-                (1, Some(trial)) => self.metas = trial,
+            match (count, elaborated) {
+                (1, Some(candidate)) => {
+                    // The solver is a function of the store and the
+                    // equations, so solving the survivor's again binds the
+                    // holes as its trial did.
+                    pose(&mut equations, &self.metas, &holes, &closed, candidate);
+                    let _solved = gandr_core_unify::solve(arena, &mut self.metas, &equations);
+                },
                 (0, _) | (_, None) => {
                     return Err((first, CheckRefusal::ModelUnanswered { at: first }));
                 },
@@ -929,6 +906,61 @@ impl Deferrals
         }
         Ok(())
     }
+}
+
+/// Pose into `equations` what trying `candidate` at a slot asks: each of its
+/// components against the slot's hole at its place, under the hole's context,
+/// and its code of each sort the slot fixes against the slot's closed code.
+///
+/// # Specification
+/// - requires: `holes` are the slot's holes with their metavariables in
+///   `metas`, as many as `candidate` has components, and `closed` the slot's
+///   fixed codes in sort order, each present when it reads no binder of the
+///   callee.
+/// - ensures: `equations` holds exactly those equations, the components' first,
+///   in place order; what it held before is gone.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Deferrals::resolve`].
+/// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+/// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
+#[spec(ensures: equations.len() <= holes.len().saturating_add(closed.len()))]
+fn pose(
+    equations: &mut Vec<gandr_core_unify::Equation>,
+    metas: &Metas,
+    holes: &[(ValueId, MetaId)],
+    closed: &[Option<ValueId>],
+    candidate: &gandr_core_term::model::Candidate,
+)
+{
+    equations.clear();
+    equations.extend(
+        holes
+            .iter()
+            .zip(&candidate.components)
+            .map(|(&(at, meta), &component)| {
+                let scope = match metas.scope(meta) {
+                    Maybe::Present(scope) => scope,
+                    Maybe::Absent(_) => Binders::NONE,
+                };
+                gandr_core_unify::Equation::new(scope, Side::Value(at), Side::Value(component))
+            }),
+    );
+    equations.extend(
+        closed
+            .iter()
+            .zip(&candidate.fixed)
+            .filter_map(|(&code, &own)| {
+                code.map(|code| {
+                    gandr_core_unify::Equation::new(
+                        Binders::NONE,
+                        Side::Value(code),
+                        Side::Value(own),
+                    )
+                })
+            }),
+    );
 }
 
 /// Whether the candidates `one` and `other` are one elaboration: each
@@ -971,4 +1003,31 @@ fn agreement(
         })
         .find(|&verdict| verdict != MachineVerdict::Convertible)
         .unwrap_or(MachineVerdict::Convertible)
+}
+
+/// The solver's verdict on `equations`, a candidate's at a slot, run in a
+/// trial of `metas` ([`Metas::trial`]).
+///
+/// # Specification
+/// - requires: as [`gandr_core_unify::solve`].
+/// - ensures: the run's verdict; `metas` as it was, whatever the run bound or
+///   postponed, so a trial costs what the run touched rather than a copy of the
+///   store.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`Deferrals::resolve`]: a candidate of the forced sort
+///   is kept and one of another sort refuted, each against the store as the
+///   judgement left it.
+/// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+/// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
+#[spec(captures: count = metas.count(), ensures: |_| metas.count() == count)]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn tried(
+    arena: &mut CoreArena,
+    metas: &mut Metas,
+    equations: &[gandr_core_unify::Equation],
+) -> gandr_core_unify::Verdict
+{
+    metas.trial(|trial| gandr_core_unify::solve(arena, trial, equations))
 }

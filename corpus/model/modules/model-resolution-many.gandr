@@ -1,0 +1,347 @@
+// Many models in scope (#2395): sixteen models of `Count`, each at a carrier
+// of its own, and one body calling `advanced` once at each carrier. Every call
+// leaves its model implicit out, so the checker tries each of the sixteen
+// candidates at each of the sixteen slots, against one solver store holding
+// all of their holes: the hotpath series' `many candidates` workload.
+import "./model-resolution-tally.gandr" ;
+
+/// The carrier of the tally numbered 0.
+@[ checks ]
+data Tag0 : Type {
+  Mark0 : Tag0;
+}
+
+/// A tally over `Tag0`, reading 0.
+module Tally0 : Model(Count) {
+  type C = Tag0;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark0;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag0) -> Tag0 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag0) -> Integer { 0 }
+}
+
+/// The carrier of the tally numbered 1.
+@[ checks ]
+data Tag1 : Type {
+  Mark1 : Tag1;
+}
+
+/// A tally over `Tag1`, reading 1.
+module Tally1 : Model(Count) {
+  type C = Tag1;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark1;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag1) -> Tag1 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag1) -> Integer { 1 }
+}
+
+/// The carrier of the tally numbered 2.
+@[ checks ]
+data Tag2 : Type {
+  Mark2 : Tag2;
+}
+
+/// A tally over `Tag2`, reading 2.
+module Tally2 : Model(Count) {
+  type C = Tag2;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark2;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag2) -> Tag2 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag2) -> Integer { 2 }
+}
+
+/// The carrier of the tally numbered 3.
+@[ checks ]
+data Tag3 : Type {
+  Mark3 : Tag3;
+}
+
+/// A tally over `Tag3`, reading 3.
+module Tally3 : Model(Count) {
+  type C = Tag3;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark3;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag3) -> Tag3 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag3) -> Integer { 3 }
+}
+
+/// The carrier of the tally numbered 4.
+@[ checks ]
+data Tag4 : Type {
+  Mark4 : Tag4;
+}
+
+/// A tally over `Tag4`, reading 4.
+module Tally4 : Model(Count) {
+  type C = Tag4;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark4;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag4) -> Tag4 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag4) -> Integer { 4 }
+}
+
+/// The carrier of the tally numbered 5.
+@[ checks ]
+data Tag5 : Type {
+  Mark5 : Tag5;
+}
+
+/// A tally over `Tag5`, reading 5.
+module Tally5 : Model(Count) {
+  type C = Tag5;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark5;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag5) -> Tag5 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag5) -> Integer { 5 }
+}
+
+/// The carrier of the tally numbered 6.
+@[ checks ]
+data Tag6 : Type {
+  Mark6 : Tag6;
+}
+
+/// A tally over `Tag6`, reading 6.
+module Tally6 : Model(Count) {
+  type C = Tag6;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark6;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag6) -> Tag6 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag6) -> Integer { 6 }
+}
+
+/// The carrier of the tally numbered 7.
+@[ checks ]
+data Tag7 : Type {
+  Mark7 : Tag7;
+}
+
+/// A tally over `Tag7`, reading 7.
+module Tally7 : Model(Count) {
+  type C = Tag7;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark7;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag7) -> Tag7 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag7) -> Integer { 7 }
+}
+
+/// The carrier of the tally numbered 8.
+@[ checks ]
+data Tag8 : Type {
+  Mark8 : Tag8;
+}
+
+/// A tally over `Tag8`, reading 8.
+module Tally8 : Model(Count) {
+  type C = Tag8;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark8;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag8) -> Tag8 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag8) -> Integer { 8 }
+}
+
+/// The carrier of the tally numbered 9.
+@[ checks ]
+data Tag9 : Type {
+  Mark9 : Tag9;
+}
+
+/// A tally over `Tag9`, reading 9.
+module Tally9 : Model(Count) {
+  type C = Tag9;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark9;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag9) -> Tag9 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag9) -> Integer { 9 }
+}
+
+/// The carrier of the tally numbered 10.
+@[ checks ]
+data Tag10 : Type {
+  Mark10 : Tag10;
+}
+
+/// A tally over `Tag10`, reading 10.
+module Tally10 : Model(Count) {
+  type C = Tag10;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark10;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag10) -> Tag10 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag10) -> Integer { 10 }
+}
+
+/// The carrier of the tally numbered 11.
+@[ checks ]
+data Tag11 : Type {
+  Mark11 : Tag11;
+}
+
+/// A tally over `Tag11`, reading 11.
+module Tally11 : Model(Count) {
+  type C = Tag11;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark11;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag11) -> Tag11 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag11) -> Integer { 11 }
+}
+
+/// The carrier of the tally numbered 12.
+@[ checks ]
+data Tag12 : Type {
+  Mark12 : Tag12;
+}
+
+/// A tally over `Tag12`, reading 12.
+module Tally12 : Model(Count) {
+  type C = Tag12;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark12;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag12) -> Tag12 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag12) -> Integer { 12 }
+}
+
+/// The carrier of the tally numbered 13.
+@[ checks ]
+data Tag13 : Type {
+  Mark13 : Tag13;
+}
+
+/// A tally over `Tag13`, reading 13.
+module Tally13 : Model(Count) {
+  type C = Tag13;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark13;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag13) -> Tag13 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag13) -> Integer { 13 }
+}
+
+/// The carrier of the tally numbered 14.
+@[ checks ]
+data Tag14 : Type {
+  Mark14 : Tag14;
+}
+
+/// A tally over `Tag14`, reading 14.
+module Tally14 : Model(Count) {
+  type C = Tag14;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark14;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag14) -> Tag14 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag14) -> Integer { 14 }
+}
+
+/// The carrier of the tally numbered 15.
+@[ checks ]
+data Tag15 : Type {
+  Mark15 : Tag15;
+}
+
+/// A tally over `Tag15`, reading 15.
+module Tally15 : Model(Count) {
+  type C = Tag15;
+  /// The one mark.
+  @[ checks ]
+  def zero = Mark15;
+  /// A step leaves the mark as it is.
+  @[ checks ]
+  def incr(c : Tag15) -> Tag15 { c }
+  /// The tally's number.
+  @[ checks ]
+  def read(c : Tag15) -> Integer { 15 }
+}
+
+/// Each mark forces its own tally: the readings add up to 0 + 1 + … + 15.
+@[ runs("120") ]
+def summed() -> Integer {
+  advanced(Mark0)
+    + advanced(Mark1)
+    + advanced(Mark2)
+    + advanced(Mark3)
+    + advanced(Mark4)
+    + advanced(Mark5)
+    + advanced(Mark6)
+    + advanced(Mark7)
+    + advanced(Mark8)
+    + advanced(Mark9)
+    + advanced(Mark10)
+    + advanced(Mark11)
+    + advanced(Mark12)
+    + advanced(Mark13)
+    + advanced(Mark14)
+    + advanced(Mark15)
+}
