@@ -602,10 +602,11 @@ jobs:
           --jq '"artifacts=" + ([.artifacts[] | select(.expired == false) | .name] | tojson)'
           >> "$GITHUB_OUTPUT"
       # The newest plain baseline a scheduled or dispatched run of this
-      # repository's main published; a failed lookup only skips the ratio.
+      # repository's main published, for the landing's specification cost
+      # (`spec-cost-landed`); a failed lookup only skips the ratio.
       - id: baseline
         name: find the newest plain baseline of main
-        if: ${{ env.CI_QUEUE_STATE == 'true' && env.ACT != 'true' && github.event_name != 'push' }}
+        if: ${{ env.ACT != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         run: >-
           gh api --method GET "repos/$GH_REPO/actions/artifacts"
@@ -787,42 +788,6 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
-      # Each test's specification cost: this run's enforcing report over the
-      # newest plain baseline of main, as the job summary and an artifact. A
-      # measurement, never a gate: no outcome here fails the lane.
-      - name: download the plain baseline
-        id: plain-baseline
-        if: ${{ !cancelled() && env.CI_SPEC_COST_RATIO == 'true' && env.ACT != 'true' && needs.prepare.outputs.baseline-run-id != '' && hashFiles('target/nextest/ci-enforcing/junit.xml') != '' }}
-        continue-on-error: true
-        uses: *download-artifact
-        with:
-          name: junit-cargo-test-plain-baseline
-          path: target/plain-baseline
-          run-id: ${{ needs.prepare.outputs.baseline-run-id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: report each test's specification cost
-        id: spec-cost-ratio
-        if: ${{ !cancelled() && steps.plain-baseline.outcome == 'success' }}
-        continue-on-error: true
-        shell: bash
-        env:
-          CI_BASELINE_SHA: ${{ needs.prepare.outputs.baseline-sha }}
-          CI_BASELINE_CREATED: ${{ needs.prepare.outputs.baseline-created }}
-        run: >-
-          mise run ci:spec-cost-ratio
-          --plain target/plain-baseline/ci/junit.xml
-          --enforcing target/nextest/ci-enforcing/junit.xml
-          --baseline-commit "$CI_BASELINE_SHA"
-          --baseline-age-hours "$(( ($(date +%s) - $(date -d "$CI_BASELINE_CREATED" +%s)) / 3600 ))"
-          | tee target/spec-cost-ratio.md >> "$GITHUB_STEP_SUMMARY"
-      - name: upload each test's specification cost
-        if: ${{ !cancelled() && steps.spec-cost-ratio.outcome == 'success' }}
-        continue-on-error: true
-        uses: *upload-artifact
-        with:
-          name: spec-cost-ratio${{ env.CI_SHARD != '' && format('-{0}', env.CI_SHARD) || '' }}
-          path: target/spec-cost-ratio.md
-          if-no-files-found: error
       - *lane-timing
 
   # The recovery sweep in a lane of its own (#2148). A change that reaches
@@ -961,7 +926,6 @@ jobs:
       CI_BUILD_STATE: cargo-test-enforcing
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
       CI_ENFORCING: "true"
-      CI_SPEC_COST_RATIO: "true"
       CI_FETCH_DEPTH: "2"
       CI_SHARD: ${{ matrix.shard }}
       CI_SHARD_PACKAGES: ${{ matrix.packages }}
@@ -1839,6 +1803,61 @@ jobs:
       - *install-policy-tools
       - name: file the surviving mutants
         run: mise run ci:mutants-landed
+
+  # Each test's specification cost (#2148), once per landing: the enforcing
+  # reports of the run that built main's head (the merge group's, or this
+  # push's own lanes when no group built it) over the newest plain baseline
+  # of main, one section per shard, as the job summary and the
+  # `spec-cost-ratio` artifact. A measurement, never a gate: it left the
+  # merge group's enforcing lanes, where it held each one's verdict about
+  # 7 s, and nothing needs this job.
+  spec-cost-landed:
+    name: report the landing's specification cost
+    needs: [prepare, ci-image, cargo-test-enforcing-shard]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false && needs.prepare.outputs.baseline-run-id != '' }}
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 10
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: download the landing's enforcing reports
+        uses: *download-artifact
+        with:
+          pattern: junit-cargo-test-enforcing-shard-*
+          path: target/landed
+          run-id: ${{ needs.prepare.outputs.run-id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: download the plain baseline
+        uses: *download-artifact
+        with:
+          name: junit-cargo-test-plain-baseline
+          path: target/plain-baseline
+          run-id: ${{ needs.prepare.outputs.baseline-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: report each test's specification cost
+        shell: bash
+        env:
+          CI_BASELINE_SHA: ${{ needs.prepare.outputs.baseline-sha }}
+          CI_BASELINE_CREATED: ${{ needs.prepare.outputs.baseline-created }}
+        run: |
+          age=$(( ($(date +%s) - $(date -d "$CI_BASELINE_CREATED" +%s)) / 3600 ))
+          for report in target/landed/junit-cargo-test-enforcing-shard-*/ci-enforcing/junit.xml; do
+            shard=${report#target/landed/junit-cargo-test-enforcing-shard-}
+            shard=${shard%%/*}
+            printf '## %s\n\n' "$shard"
+            mise run ci:spec-cost-ratio --plain target/plain-baseline/ci/junit.xml \
+              --enforcing "$report" --baseline-commit "$CI_BASELINE_SHA" --baseline-age-hours "$age"
+            printf '\n'
+          done | tee target/spec-cost-ratio.md >> "$GITHUB_STEP_SUMMARY"
+      - name: upload each test's specification cost
+        uses: *upload-artifact
+        with:
+          name: spec-cost-ratio
+          path: target/spec-cost-ratio.md
+          if-no-files-found: error
 
   # Formatting and workflow security lint share the treefmt pass. It runs
   # over a failed image build and fails pulling the missing image (`ci-image`),
