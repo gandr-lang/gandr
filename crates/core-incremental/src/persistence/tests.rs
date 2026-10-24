@@ -229,7 +229,7 @@ fn decoded(bytes: &CheckpointBytes) -> Result<Checkpoints, CheckpointStoreError>
                 && ret.items().first().is_some_and(|checkpoint| {
                     let content = checkpoint.content();
                     content.nodes().len() == count
-                        && matches!(content.declaration(), crate::DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(root),laws,rules,stages,supplies} if *root == NodeIndex::from(0_usize) && laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty())
+                        && matches!(content.declaration(), crate::DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(root),laws,rules,stages,supplies,models} if *root == NodeIndex::from(0_usize) && laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty() && models.is_empty())
                         && checkpoint.support().is_empty()
                         && matches!(checkpoint.typing(), &Typing::Owed)
                         && match *content.reference() {
@@ -268,6 +268,7 @@ fn hand_made(nodes: Vec<ContentNode>) -> Checkpoints
             rules: Vec::new(),
             stages: Vec::new(),
             supplies: Vec::new(),
+            models: Vec::new(),
         },
         nodes,
         vec![gandr_core_term::support::Thinning::empty()],
@@ -473,6 +474,8 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::SealSiteRepeated(_)) => "seal-site-repeated",
         Typing::Refused(Refusal::UnenclosedRun { .. }) => "unenclosed-run",
         Typing::Refused(Refusal::ImplicitUnsolved { .. }) => "implicit-unsolved",
+        Typing::Refused(Refusal::ModelUnanswered { .. }) => "model-unanswered",
+        Typing::Refused(Refusal::ModelAmbiguous { .. }) => "model-ambiguous",
         Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",
         Typing::Refused(Refusal::Linearity { .. }) => "linearity",
         Typing::Refused(Refusal::CapabilityForged { .. }) => "capability-forged",

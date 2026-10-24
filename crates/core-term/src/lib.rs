@@ -206,6 +206,7 @@ pub mod hole;
 pub mod identity;
 mod import;
 pub mod memory;
+pub mod model;
 pub mod pattern;
 pub mod primitive;
 mod relocation;

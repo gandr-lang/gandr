@@ -1141,6 +1141,23 @@ pub enum CheckRefusal
         /// Why the solver bound it nothing.
         reason: Unsolved,
     },
+    /// A call omits a model slot no model in scope answers: the scope holds
+    /// none whose theory is the slot's or includes it, or every one passes a
+    /// component the call's arguments force otherwise.
+    ModelUnanswered
+    {
+        /// The hole the call nominated for the slot's first component.
+        at: ValueId,
+    },
+    /// A call omits a model slot more than one model in scope answers once
+    /// the call's arguments force what they force.
+    ModelAmbiguous
+    {
+        /// The hole the call nominated for the slot's first component.
+        at: ValueId,
+        /// The candidates left, by their place among the slot's.
+        survivors: gandr_core_term::model::Survivors,
+    },
     /// A term stands at a capability type without being a capability
     /// hypothesis: only a capability the host holds or the binder a
     /// capability scope introduces carries authority, so no term forms one.
@@ -1360,7 +1377,7 @@ impl CheckRefusal
         | Self::FamilyArgumentClassifier { .. }
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
-        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. }
+        | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. } | Self::ModelUnanswered { .. } | Self::ModelAmbiguous { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
@@ -1421,6 +1438,8 @@ impl CheckRefusal
             | Self::StagesDisagree { .. }
             | Self::UnenclosedRun { .. }
             | Self::ImplicitUnsolved { .. }
+            | Self::ModelUnanswered { .. }
+            | Self::ModelAmbiguous { .. }
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
@@ -1642,6 +1661,8 @@ impl CheckRefusal
             | Self::StagesDisagree { .. }
             | Self::UnenclosedRun { .. }
             | Self::ImplicitUnsolved { .. }
+            | Self::ModelUnanswered { .. }
+            | Self::ModelAmbiguous { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
             | Self::Codata { .. }

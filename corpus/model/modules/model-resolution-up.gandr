@@ -1,0 +1,16 @@
+// A tally of integers, in a source of its own (#739).
+import "./model-resolution-tally.gandr" ;
+
+/// Counting up by one.
+module Up : Model(Count) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// One count more.
+  @[ checks ]
+  def incr(c : Integer) -> Integer { c + 1 }
+  /// The count as it is.
+  @[ checks ]
+  def read(c : Integer) -> Integer { c }
+}

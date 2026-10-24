@@ -1430,6 +1430,9 @@ pub struct Collected<'source>
     /// The model signatures ascriptions derive, in the order their modules
     /// open.
     pub models: Vec<crate::model::ModelSignature>,
+    /// The theory each module's ascription `Model(S)` names, by the model
+    /// signature it derives: the slot of `S`'s `theory` block.
+    pub model_theories: BTreeMap<ModelIndex, SlotIndex>,
     /// Each family component's check slot — the witness checking a written
     /// kind, or the held slot of a derived sort — with what it compares.
     pub family_checks: BTreeMap<SlotIndex, FamilyCheck>,
@@ -2665,6 +2668,7 @@ pub fn begin_collection<'source>(
         top_types: Vec::new(),
         parameter_lists: Vec::new(),
         models: Vec::new(),
+        model_theories: BTreeMap::new(),
         family_checks: BTreeMap::new(),
         functors: Vec::new(),
         instances: Vec::new(),
@@ -5793,8 +5797,9 @@ struct Opened<'source>
     named: Placed,
     /// The inline signature's components, when ascribed.
     ascription: Maybe<Vec<Component<'source>>, ascription::Absent>,
-    /// The model signature the ascription derives, when it is `Model(S)`.
-    model: Maybe<crate::model::ModelSignature, derived::Absent>,
+    /// The model signature the ascription derives, when it is `Model(S)`,
+    /// beside the slot of `S`.
+    model: Maybe<(crate::model::ModelSignature, SlotIndex), derived::Absent>,
     /// Whether the ascription is opaque.
     sealed: Sealed,
     /// The body's member forms, in source order.
@@ -6267,7 +6272,7 @@ impl<'source> Collector<'_, 'source>
             let read = if let Maybe::Present(_) = cursor.at(TileName::TYPE_IDENTIFIER) {
                 self.model_signature(&mut cursor, form)
                     .map(|(components, derived, named)| {
-                        model = Maybe::Present(derived);
+                        model = Maybe::Present((derived, named.1));
                         self.collected.declared_uses.push(named);
                         components
                     })
@@ -6651,9 +6656,10 @@ impl<'source> Collector<'_, 'source>
         }
         let structure = StructureIndex(self.collected.structures.len());
         let sealed = Sealed(opened.sealed.0 || self.seals_nested(container, opened.name).0);
-        let model = opened.model.map(|derived| {
+        let model = opened.model.map(|(derived, theory)| {
             let index = ModelIndex(self.collected.models.len());
             self.collected.models.push(derived);
+            let _fresh = self.collected.model_theories.insert(index, theory);
             index
         });
         self.collected.structures.push(Structure {
@@ -9283,6 +9289,9 @@ pub struct LoweredModule<'source>
     /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
     /// declaration whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
+    /// Each model slot a call omits, its candidates minted, by the
+    /// declaration whose body makes the call.
+    models: BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,
     /// The theory each derived rule's statement is read under, `T` in `T.r`,
     /// by the statement's position.
     qualified: BTreeMap<ConstantIndex, SurfaceName<'source>>,
@@ -9340,6 +9349,7 @@ impl<'source> LoweredModule<'source>
             region_names: BTreeMap::new(),
             implicits: BTreeMap::new(),
             supplies: BTreeMap::new(),
+            models: BTreeMap::new(),
             qualified: BTreeMap::new(),
             reducts: Vec::new(),
             forgets: Vec::new(),
@@ -9523,6 +9533,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.supplies = supplies;
+        self
+    }
+
+    /// This module, carrying `models`, the model slots each declaration's
+    /// calls omit, by the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_models(
+        mut self,
+        models: BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,
+    ) -> Self
+    {
+        self.models = models;
         self
     }
 
@@ -10548,6 +10574,36 @@ impl<'source> LoweredModule<'source>
     ) -> &[gandr_core_term::staged::Supply]
     {
         self.supplies
+            .get(&declaration.constant())
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// The model slots `declaration`'s calls omit, each with its candidates:
+    /// what the checker's declaration carries to resolve each slot, and the
+    /// kernel never reads.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the slots filed under the declaration's constant; the empty
+    ///   slice for a declaration whose calls omit none.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the module's own map, read at the declaration's
+    ///   constant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call omitting a counter's slot files it with each
+    ///   module of its theory as a candidate.
+    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    #[inline]
+    #[must_use]
+    pub fn models(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> &[gandr_core_term::model::ModelSlot]
+    {
+        self.models
             .get(&declaration.constant())
             .map(Vec::as_slice)
             .unwrap_or_default()

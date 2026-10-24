@@ -71,6 +71,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -813,16 +814,20 @@ impl<'source> Lowerer<'_, 'source>
     /// Pass the model implicit `implicit` of `function`, whose slot is
     /// `slot`, at the call `site` read under `frame`: one operand per
     /// component, the value the resident `value` supplies when it is written
-    /// ([`Self::supply_model`]) and a hole the call nominates otherwise.
+    /// ([`Self::supply_model`]) and a hole the call nominates otherwise, with
+    /// the slot's candidates planned ([`Self::model_candidates`]).
     ///
     /// # Specification
     /// - requires: the operands so far are the call's arguments before the
     ///   implicit's.
     /// - ensures: one operand per component of the slot, in signature order,
     ///   each the call's own node, kept with the supply and the component's
-    ///   place, or with a hole nominated as the implicit's.
-    /// - fails: the refusals [`Self::supply_model`] yields; the budget refusal
-    ///   once no hole can be nominated.
+    ///   place, or with a hole nominated as the implicit's; an omitted slot
+    ///   whose call a declaration makes is planned at the call, its holes kept
+    ///   with the candidates' names.
+    /// - fails: the refusals [`Self::supply_model`] and
+    ///   [`Self::model_candidates`] yield; the budget refusal once no hole can
+    ///   be nominated.
     /// - panics: none.
     ///
     /// # Errors
@@ -830,9 +835,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a module supplied passes its members and an omitted
-    ///   model a hole per component.
+    ///   model a hole per component, its slot planned with each module of its
+    ///   theory.
     /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_nominates_a_hole_per_component_739`
+    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[spec(
         captures: before = self.operands.len(),
         ensures: |ret| ret.is_err() || self.operands.len() == before.saturating_add(slot.components().len()),
@@ -855,6 +862,7 @@ impl<'source> Lowerer<'_, 'source>
             )?)),
             None => None,
         };
+        let mut holes = Vec::new();
         for place in 0 .. slot.components().len() {
             if let Some(ref supplied) = supplied {
                 let _first = self.components.insert(
@@ -865,8 +873,39 @@ impl<'source> Lowerer<'_, 'source>
             else {
                 let hole = self.nominate(Nomination::Omitted { function, implicit })?;
                 let _first = self.nominated.insert(self.operands.len(), hole);
+                holes.push(hole);
             }
             self.operands.push(site.at.node);
+        }
+        let caller = match self.collected.owner_of(site.at.node) {
+            Maybe::Present(owner) => self
+                .collected
+                .slots
+                .get(usize::from(owner))
+                .map(|declared| declared.constant),
+            Maybe::Absent(_) => None,
+        };
+        if supplied.is_none()
+            && slot.fixed().is_empty()
+            && !holes.is_empty()
+            && let Some(caller) = caller
+        {
+            let candidates = self.model_candidates(site, slot)?;
+            let names: Vec<String> = candidates
+                .iter()
+                .map(|&(name, _)| String::from(name.as_ref()))
+                .collect();
+            for &hole in &holes {
+                let _first = self.model_candidates.insert(hole, names.clone());
+            }
+            self.planned_models
+                .entry(site.at.node)
+                .or_default()
+                .push(model::PlannedModel {
+                    caller,
+                    holes,
+                    candidates,
+                });
         }
 
         Ok(())

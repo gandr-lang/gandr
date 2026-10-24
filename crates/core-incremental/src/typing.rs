@@ -824,6 +824,20 @@ pub enum Refusal
         /// Why the solver bound it nothing.
         reason: gandr_core_checker::Unsolved,
     },
+    /// A call's omitted model slot no model in scope answers.
+    ModelUnanswered
+    {
+        /// The hole the call nominated for the slot's first component.
+        at: Site,
+    },
+    /// A call's omitted model slot more than one model in scope answers.
+    ModelAmbiguous
+    {
+        /// The hole the call nominated for the slot's first component.
+        at: Site,
+        /// The candidates left, by their place among the slot's.
+        survivors: gandr_core_term::model::Survivors,
+    },
     /// An action the endpoint's session type does not admit.
     SessionMismatch
     {
@@ -1522,6 +1536,8 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::StagesDisagree { at, binder } = matched_left_value && let Refusal::StagesDisagree { at: projected, binder: named } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && named == binder }
  else if let CheckRefusal::UnenclosedRun { at } = matched_left_value && let Refusal::UnenclosedRun { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
  else if let CheckRefusal::ImplicitUnsolved { at, reason } = matched_left_value && let Refusal::ImplicitUnsolved { at: projected, reason: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && kept == reason }
+ else if let CheckRefusal::ModelUnanswered { at } = matched_left_value && let Refusal::ModelUnanswered { at: projected } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) }
+ else if let CheckRefusal::ModelAmbiguous { at, survivors } = matched_left_value && let Refusal::ModelAmbiguous { at: projected, survivors: kept } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && kept == survivors }
  else if let CheckRefusal::SessionMismatch { at, endpoint, state, defect } = matched_left_value && let Refusal::SessionMismatch { at: projected, endpoint: returned, state: ref stored, defect: kept } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && returned == self.endpoint(endpoint) && *stored == self.value_type(state) && kept == defect }
  else if let CheckRefusal::Linearity { at, defect } = matched_left_value && let Refusal::Linearity { at: projected, defect: ref stored } = *matched_right_value { projected == self.core_site(at) && *stored == self.linearity(defect) }
  else if let CheckRefusal::CapabilityForged { at, expected } = matched_left_value && let Refusal::CapabilityForged { at: projected, expected: ref stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && *stored == self.value_type(expected) }
@@ -1839,6 +1855,13 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             CheckRefusal::ImplicitUnsolved { at, reason } => Refusal::ImplicitUnsolved {
                 at: self.site(ArenaNode::Value(at)),
                 reason,
+            },
+            CheckRefusal::ModelUnanswered { at } => Refusal::ModelUnanswered {
+                at: self.site(ArenaNode::Value(at)),
+            },
+            CheckRefusal::ModelAmbiguous { at, survivors } => Refusal::ModelAmbiguous {
+                at: self.site(ArenaNode::Value(at)),
+                survivors,
             },
             CheckRefusal::SessionMismatch {
                 at,

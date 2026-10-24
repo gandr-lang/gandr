@@ -154,7 +154,8 @@ pub(in crate::lower) fn judged(
             Some(
                 Declaration::new(declaration.constant(), declared, defined, origin)
                     .staged(module.stages(declaration).to_vec())
-                    .supplied(module.supplies(declaration).to_vec()),
+                    .supplied(module.supplies(declaration).to_vec())
+                    .resolving(module.models(declaration).to_vec()),
             )
         })
         .collect();

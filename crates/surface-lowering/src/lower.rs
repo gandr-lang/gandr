@@ -3305,6 +3305,15 @@ struct Lowerer<'run, 'source>
     /// Each stage a call supplies, at the value it forces, by the declaration
     /// whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
+    /// The model slots a call omits, by the node of the call, each with the
+    /// declaration making the call, its holes and its candidates.
+    planned_models: BTreeMap<NodeIndex, Vec<model::PlannedModel<'source>>>,
+    /// The names of an omitted model slot's candidates, in place order, by
+    /// each hole the slot nominated.
+    model_candidates: BTreeMap<gandr_core_term::hole::HoleId, Vec<String>>,
+    /// Each model slot a call omits, its candidates minted, by the
+    /// declaration whose body makes the call.
+    models: BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,
     /// Each `run` binder written with no type, by the frame it binds: the
     /// frame its computation reads under and the computation, whose callee's
     /// written result states the binder's type to a match on it.
@@ -4444,6 +4453,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             mut resolutions,
             stage_bounds,
             supplies,
+            models,
             region_binders,
             ..
         } = self;
@@ -4583,6 +4593,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_region_names(region_names)
         .with_implicits(implicits)
         .with_supplies(supplies)
+        .with_models(models)
         .with_qualified(qualified)
         .with_reducts(reducts)
         .with_forgets(forgets)
@@ -4840,6 +4851,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ended_views: BTreeSet::new(),
             planned_supplies: BTreeMap::new(),
             supplies: BTreeMap::new(),
+            planned_models: BTreeMap::new(),
+            model_candidates: BTreeMap::new(),
+            models: BTreeMap::new(),
             ran: BTreeMap::new(),
             holes: Vec::new(),
             pattern_stated: BTreeMap::new(),
@@ -13927,6 +13941,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         }),
                 );
         }
+        if let Maybe::Present(_) = minted
+            && let Some(planned) = self.planned_models.remove(&position)
+        {
+            for slot in planned {
+                self.mint_model(slot, sink, origin);
+            }
+        }
         // A type a term quotes was minted in its telescope, which counts a
         // typed binder only once a type names it; the term's context binds
         // every binder, so the quote is carried into it (#540). A body's quote
@@ -16146,13 +16167,21 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.value_hole(hole);
                 sink.origins
                     .record_value(id, origin.inserted(Insertion::Implicit));
-                if let Some(&implicit::Nomination::Omitted { function, implicit }) =
-                    self.nominations.get(&hole)
-                {
-                    sink.origins.record_omitted(id, Omitted::Implicit {
-                        function: String::from(function.as_ref()),
-                        implicit: String::from(implicit.as_ref()),
-                    });
+                match self.nominations.get(&hole) {
+                    Some(&implicit::Nomination::Omitted { function, implicit }) => {
+                        let function = String::from(function.as_ref());
+                        let implicit = String::from(implicit.as_ref());
+                        sink.origins
+                            .record_omitted(id, match self.model_candidates.get(&hole) {
+                                Some(candidates) => Omitted::Model {
+                                    function,
+                                    implicit,
+                                    candidates: candidates.clone(),
+                                },
+                                None => Omitted::Implicit { function, implicit },
+                            });
+                    },
+                    Some(&implicit::Nomination::Wildcard) | None => {},
                 }
                 id
             }

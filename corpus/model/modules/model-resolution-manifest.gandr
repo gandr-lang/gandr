@@ -1,0 +1,37 @@
+// An omitted model implicit resolved among models whose model type states the
+// sort (#739): `Model(Same) with sort Carrier = Integer` is a candidate as a
+// module defining `type Carrier = Integer` is, and the sort the operands force
+// leaves the one candidate stating it.
+
+/// Equality over a carrier.
+@[ checks ]
+theory Same {
+  sort Carrier : Type;
+  oper eq : (a : Carrier, b : Carrier) --> Bool;
+}
+
+/// Integers, the sort stated by the model type.
+module SameInteger : Model(Same) with sort Carrier = Integer {
+  /// Integer equality.
+  @[ checks ]
+  def eq(a : Integer, b : Integer) -> Bool { a == b }
+}
+
+/// Flags, the sort stated by the model type.
+module SameBool : Model(Same) with sort Carrier = Bool {
+  /// Flag equality.
+  @[ checks ]
+  def eq(a : Bool, b : Bool) -> Bool { if a { b } else { if b { false } else { true } } }
+}
+
+/// Equality through the model the operands force.
+@[ checks ]
+def same @[e : Model(Same)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
+
+/// The integers force `SameInteger`: three is three.
+@[ runs("+{.0 = unit}") ]
+def integers() -> Bool { same(3, 3) }
+
+/// The flags force `SameBool`: true is not false.
+@[ runs("+{.1 = unit}") ]
+def flags() -> Bool { same((true : Bool), (false : Bool)) }

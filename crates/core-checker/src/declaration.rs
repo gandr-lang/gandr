@@ -488,6 +488,10 @@ pub struct Declaration
     /// at, `f[i = j]`, each at the value its call forces; none for every
     /// other declaration. The kernel never reads them.
     supplies: Vec<gandr_core_term::staged::Supply>,
+    /// The model slots a value declaration's calls omit, each with the
+    /// models in scope that may answer it; none for every other declaration.
+    /// The kernel never reads them: each is resolved before the body crosses.
+    models: Vec<gandr_core_term::model::ModelSlot>,
     /// The entry a value declaration states, or why none.
     entry: Maybe<Entry, entry::Absent>,
 }
@@ -531,6 +535,7 @@ impl Declaration
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
             supplies: Vec::new(),
+            models: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -580,6 +585,7 @@ impl Declaration
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
             supplies: Vec::new(),
+            models: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -604,6 +610,7 @@ impl Declaration
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
             supplies: Vec::new(),
+            models: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -628,6 +635,7 @@ impl Declaration
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
             supplies: Vec::new(),
+            models: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -651,6 +659,7 @@ impl Declaration
             operation_rules: gandr_kernel_term::OperationRules::default(),
             stages: Vec::new(),
             supplies: Vec::new(),
+            models: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -712,6 +721,18 @@ impl Declaration
     pub fn supplies(&self) -> &[gandr_core_term::staged::Supply]
     {
         &self.supplies
+    }
+
+    /// The model slots the declaration's calls omit, each with its
+    /// candidates.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn models(&self) -> &[gandr_core_term::model::ModelSlot]
+    {
+        &self.models
     }
 
     /// The entry the declaration states, or why none.
@@ -873,6 +894,42 @@ impl Declaration
     {
         match self.content {
             DeclarationContent::Value { .. } => Self { supplies, ..self },
+            DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
+        }
+    }
+
+    /// This value declaration whose calls omit the model slots `models`,
+    /// everything else unchanged; any other declaration unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the judgement resolves each slot whose holes its
+    ///   body nominates, and leaves any other unread.
+    /// - ensures: a value declaration carries exactly `models`; any other
+    ///   declaration is returned unchanged.
+    /// - provides: how a producer attaches the candidates an omitted model slot
+    ///   is resolved among.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot one candidate answers resolves to it.
+    /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+    #[spec(
+        captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.models.len(), models.len()),
+        ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
+            && ret.models.len() == if entry.2 { entry.4 } else { entry.3 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn resolving(
+        self,
+        models: Vec<gandr_core_term::model::ModelSlot>,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Value { .. } => Self { models, ..self },
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)

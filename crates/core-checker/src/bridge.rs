@@ -583,6 +583,8 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::Linearity { .. }
         | CheckRefusal::UnenclosedRun { .. }
         | CheckRefusal::ImplicitUnsolved { .. }
+        | CheckRefusal::ModelUnanswered { .. }
+        | CheckRefusal::ModelAmbiguous { .. }
         | CheckRefusal::CapabilityForged { .. }
         | CheckRefusal::CapabilityAmplified(_)
         | CheckRefusal::CapabilityOutsideAuthority { .. }

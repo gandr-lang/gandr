@@ -24,10 +24,25 @@
 //! pack is. `f[s = t]`, for a model implicit `t` of the caller's, passes `t`'s
 //! component of each name. Anything else a slot is supplied is refused,
 //! [`LoweringRefusal::ModelImplicitValue`]: a model implicit is supplied by a
-//! path, never by a value. A call omitting the slot nominates one hole per
-//! component, which the checker solves.
+//! path, never by a value.
+//!
+//! # An omitted slot is resolved
+//!
+//! A call omitting the slot nominates one hole per component, and plans its
+//! candidates: every top-level module declared before the call whose
+//! ascription `Model(T)` names `S` or a theory `T` including `S`, each packed
+//! as a supply naming it would be, in the order the modules are declared. No
+//! module is marked as an instance: being a model of `S` is the whole
+//! condition. A module that cannot be packed at `S` is no candidate. The
+//! checker solves the explicit arguments first, then keeps the one candidate
+//! whose components the solved holes admit; it refuses a slot none answers
+//! and one two or more answer, naming every candidate left. An omitted slot
+//! at a manifest model type is not resolved, and its holes stay unsolved: the
+//! sorts it fixes are no holes, so the trial cannot refute a candidate of
+//! another sort (#2317).
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -37,6 +52,7 @@ use gandr_core_term::Binders;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
@@ -68,6 +84,9 @@ use crate::lower::lowered;
 use crate::model::Dependent;
 use crate::model::ModelComponent;
 use crate::model::ModelForm;
+use crate::module::Container;
+use crate::module::Stratum;
+use crate::module::StructureIndex;
 use crate::module::TelescopeEntry;
 use crate::origin::Insertion;
 use crate::origin::Origin;
@@ -173,6 +192,15 @@ impl ModelSlot
             .first()
             .map_or(&[], |theory| theory.signature.components.as_slice())
     }
+
+    /// The sorts the model type fixes, each sort's name beside the type it is.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(in crate::lower) const fn fixed(&self) -> &BTreeMap<Name, Placed>
+    {
+        &self.fixed
+    }
 }
 
 /// What a supply passes for a flattened model implicit: one value per
@@ -188,6 +216,23 @@ pub(in crate::lower) enum Supplied
     /// The parameters of the caller's model implicit, one per component, each
     /// variable's index from the call beside its frame.
     Bound(Vec<(DeBruijnIndex, ScopeId)>),
+}
+
+/// A model slot a call omits, planned at the call: the declaration making the
+/// call, the hole nominated for each component, and the candidates, each the
+/// module it names beside what it passes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub(in crate::lower) struct PlannedModel<'source>
+{
+    /// The declaration whose body makes the call.
+    pub caller: gandr_kernel_term::ConstantIndex,
+    /// The hole nominated for each component, in signature order.
+    pub holes: Vec<gandr_core_term::hole::HoleId>,
+    /// The candidates, in the order their modules are declared.
+    pub candidates: Vec<(SurfaceName<'source>, Supplied)>,
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -669,6 +714,83 @@ impl<'source> Lowerer<'_, 'source>
         }
     }
 
+    /// The modules that may answer the slot `slot` a call at `site` omits,
+    /// each beside what it passes, as [`Self::supply_model`] reads a module a
+    /// supply names.
+    ///
+    /// # Specification
+    /// - requires: `slot` is the slot of a model implicit the call omits.
+    /// - ensures: each top-level module declared before `site` whose ascription
+    ///   names the slot's theory, or a theory including it, and that
+    ///   [`Self::packed_structure`] packs at the slot, in declaration order.
+    /// - fails: the refusals [`crate::module::Collected::presented_theory`]
+    ///   yields for the slot's theory; the budget refusal a pack yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's slot plans its two modules, one through
+    ///   an include, and leaves a module of another theory out.
+    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(_, ref supplied)| matches!(*supplied, Supplied::Module(_)))))]
+    pub(in crate::lower) fn model_candidates(
+        &mut self,
+        site: Site,
+        slot: &ModelSlot,
+    ) -> Result<Vec<(SurfaceName<'source>, Supplied)>, LoweringRefusal<'source>>
+    {
+        let (wanted, _) = self.collected.presented_theory(
+            slot.theory.span.start(),
+            slot.theory.span,
+            self.name_at(slot.theory),
+        )?;
+        let mut answering = BTreeSet::from([wanted]);
+        for (&theory, included) in &self.collected.included {
+            for &(reached, _) in included {
+                if reached == wanted {
+                    let _fresh = answering.insert(theory);
+                }
+            }
+        }
+        let modules: Vec<(StructureIndex, ByteSpan, SurfaceName<'source>)> = self
+            .collected
+            .structures
+            .iter()
+            .enumerate()
+            .filter(|&(_, structure)| {
+                matches!(structure.container, Container::TopLevel(_))
+                    && matches!(structure.stratum, Stratum::Module)
+                    && structure.declared_by.span.end() <= site.at.span.start()
+                    && match structure.model {
+                        Maybe::Present(model) => self
+                            .collected
+                            .model_theories
+                            .get(&model)
+                            .is_some_and(|theory| answering.contains(theory)),
+                        Maybe::Absent(_) => false,
+                    }
+            })
+            .map(|(at, structure)| {
+                (
+                    StructureIndex::from(at),
+                    structure.named.span,
+                    structure.name,
+                )
+            })
+            .collect();
+        let mut candidates = Vec::with_capacity(modules.len());
+        for module in modules {
+            match self.packed_structure(site, module, slot.theory, &slot.fixed) {
+                Ok(packed) => candidates.push((module.2, Supplied::Module(Arc::new(packed)))),
+                Err(refusal @ LoweringRefusal::BudgetExceeded { .. }) => return Err(refusal),
+                Err(_) => {},
+            }
+        }
+        Ok(candidates)
+    }
+
     /// Mint the value `supplied` passes for the component at `place` of its
     /// slot, raised past `under` binders a standing supply opens.
     ///
@@ -745,6 +867,59 @@ impl<'source> Lowerer<'_, 'source>
                 Maybe::Present(raised)
             },
         }
+    }
+
+    /// File the model slot `planned` a call omits with its declaration's,
+    /// each candidate's components minted as [`Self::mint_supplied`] mints a
+    /// supply's, carrying the call's `origin`.
+    ///
+    /// # Specification
+    /// - requires: the call's own plan has been minted.
+    /// - ensures: one slot filed under the caller, its holes the call's, each
+    ///   candidate holding one minted value per hole, in place order; nothing
+    ///   filed when a candidate's component did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the effect is a slot filed in the lowerer's table
+    ///   of slots, whose contents before the call the predicate cannot read.
+    ///
+    /// # Termination
+    /// One mint per component of each finite candidate.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::model_candidates`].
+    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    pub(in crate::lower) fn mint_model(
+        &mut self,
+        planned: PlannedModel<'source>,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    )
+    {
+        let mut candidates = Vec::with_capacity(planned.candidates.len());
+        for &(_, ref supplied) in &planned.candidates {
+            let mut components = Vec::with_capacity(planned.holes.len());
+            for place in 0 .. planned.holes.len() {
+                match self.mint_supplied(
+                    supplied,
+                    ComponentPlace::from(place),
+                    Binders::NONE,
+                    sink,
+                    origin,
+                ) {
+                    Maybe::Present(id) => components.push(id),
+                    Maybe::Absent(_) => return,
+                }
+            }
+            candidates.push(gandr_core_term::model::Candidate { components });
+        }
+        self.models
+            .entry(planned.caller)
+            .or_default()
+            .push(gandr_core_term::model::ModelSlot {
+                holes: planned.holes,
+                candidates,
+            });
     }
 
     /// The types of the parameters a model implicit written at `declared`

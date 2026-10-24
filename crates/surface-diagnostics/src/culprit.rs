@@ -328,6 +328,8 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         },
         CheckRefusal::UnenclosedRun { .. } => "a run with no computation to run before",
         CheckRefusal::ImplicitUnsolved { .. } => "an implicit left unsolved",
+        CheckRefusal::ModelUnanswered { .. } => "a model implicit no module answers",
+        CheckRefusal::ModelAmbiguous { .. } => "a model implicit more than one module answers",
         CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },
