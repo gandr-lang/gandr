@@ -457,6 +457,25 @@ if [[ -n ${usage_pr:-} ]]; then
     | jq -s -f .config/hotpath/report.jq > target/evidence/hotpath.json
   extra+=(--hotpath target/evidence/hotpath.json)
 fi
+# The policy state is restored from main's cache and saved again, so a
+# target removed or renamed since leaves its records and rustdoc JSON behind,
+# and the report reads every file in both directories (#2479). A record is
+# kept while a workspace target's root source, `/` and `.` written as `_`,
+# names it; a rustdoc file while a target's crate name does.
+metadata=$(cargo metadata --no-deps --format-version 1 --locked)
+declare -A written=()
+while IFS= read -r kept; do written[$kept]=1; done < <(jq -r '
+  (.workspace_root + "/") as $root
+  | .packages[].targets[]
+  | "records/" + (.src_path | ltrimstr($root) | gsub("[/.]"; "_")),
+    "doc/" + (.name | gsub("-"; "_"))' <<< "$metadata")
+for left in target/evidence/records/*.jsonl target/evidence/doc/*.json; do
+  [[ -e $left ]] || continue
+  file=${left#target/evidence/}
+  directory=${file%%/*}
+  name=${file#*/}
+  [[ -n ${written[$directory/${name%%.*}]:-} ]] || rm -- "$left"
+done
 quenchant-gates obligations --manifest-path Cargo.toml --base "$base" \
   --records target/evidence/records --rustdoc target/evidence/doc "${extra[@]}" \
   --comment target/evidence/comment.md --selection target/evidence/selection
