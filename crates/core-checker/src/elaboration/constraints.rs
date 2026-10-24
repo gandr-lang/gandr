@@ -708,11 +708,13 @@ impl Deferrals
     ///   arguments force has been posed.
     /// - ensures: for each slot, in order, every hole of which the judgement
     ///   met and some hole of which the solver left unbound: each candidate is
-    ///   tried on a copy of the store, its components posed against the holes,
-    ///   and one the solver refutes is dropped; a single candidate left binds
-    ///   the holes as its trial did. A slot whose holes are all bound, one a
-    ///   hole of which the judgement did not meet, and a candidate of another
-    ///   arity are left out.
+    ///   tried on a copy of the store, its components posed against the holes
+    ///   and its code of each sort the slot fixes against the slot's, where the
+    ///   slot's code reads no binder of the callee, and one the solver refutes
+    ///   is dropped; a single candidate left binds the holes as its trial did.
+    ///   A slot whose holes are all bound, one a hole of which the judgement
+    ///   did not meet, and a candidate of another arity, or carrying another
+    ///   number of fixed sorts, are left out.
     /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
     ///   no candidate is left; [`CheckRefusal::ModelAmbiguous`] there, naming
     ///   every candidate left, when more than one is.
@@ -729,10 +731,12 @@ impl Deferrals
     /// - hypothesis: L3 — a slot whose sort the argument forces resolves to the
     ///   candidate of that sort, its operation then solved as the candidate's;
     ///   two candidates of the forced sort are ambiguous, naming both; a slot
-    ///   no candidate of the forced sort answers is unanswered.
+    ///   no candidate of the forced sort answers is unanswered; a slot whose
+    ///   type fixes the sort resolves to the candidate of that sort alone.
     /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
     /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
     /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
+    /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
     #[spec(ensures: |ret| match ret {
         | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
         | Err((at, refusal)) => refusal == CheckRefusal::ModelUnanswered { at },
@@ -754,6 +758,7 @@ impl Deferrals
             .collect();
         let mut holes: Vec<(ValueId, MetaId)> = Vec::new();
         let mut equations: Vec<gandr_core_unify::Equation> = Vec::new();
+        let mut closed: Vec<(usize, ValueId)> = Vec::new();
         'slots: for slot in models {
             holes.clear();
             for hole in &slot.holes {
@@ -773,11 +778,27 @@ impl Deferrals
             {
                 continue;
             }
+            closed.clear();
+            closed.extend(
+                slot.fixed
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &code)| {
+                        crate::code::loose_reach(
+                            arena,
+                            crate::refusal::CoreNode::Term(crate::refusal::TermNode::Value(code)),
+                        )
+                        .is_ok_and(|reach| usize::from(reach) == 0)
+                    })
+                    .map(|(place, &code)| (place, code)),
+            );
             let mut survivors = Survivors::default();
             let mut count = 0_usize;
             let mut chosen = None;
             for (place, candidate) in slot.candidates.iter().enumerate() {
-                if candidate.components.len() != holes.len() {
+                if candidate.components.len() != holes.len()
+                    || candidate.fixed.len() != slot.fixed.len()
+                {
                     continue;
                 }
                 let mut trial = self.metas.clone();
@@ -795,6 +816,15 @@ impl Deferrals
                         )
                     },
                 ));
+                equations.extend(closed.iter().filter_map(|&(sort, code)| {
+                    candidate.fixed.get(sort).map(|&own| {
+                        gandr_core_unify::Equation::new(
+                            Binders::NONE,
+                            Side::Value(code),
+                            Side::Value(own),
+                        )
+                    })
+                }));
                 if let gandr_core_unify::Verdict::Refuted(_) =
                     gandr_core_unify::solve(arena, &mut trial, &equations)
                 {

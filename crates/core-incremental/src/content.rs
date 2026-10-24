@@ -2560,15 +2560,20 @@ pub struct InterfaceRoots
 }
 
 /// The roots of a model slot a call omits: the node of each hole the call
-/// nominated, numbered by the body's walk, and each candidate's components,
-/// each a value root of its own.
+/// nominated, numbered by the body's walk, the code of each type the slot fixes
+/// a sort to, and each candidate's components and codes of those sorts, each a
+/// value root of its own.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ModelRoots
 {
     /// The hole nominated for each component, in signature order.
     pub holes: Vec<NodeIndex>,
+    /// The code of the type the slot fixes each fixed sort to, in the order
+    /// of the sorts' names.
+    pub fixed: Vec<NodeIndex>,
     /// Each candidate's components, in the order the lowering met the
-    /// candidates; each holds one component per hole.
+    /// candidates; each holds one component per hole, then its own code of
+    /// each fixed sort.
     pub candidates: Vec<Vec<NodeIndex>>,
 }
 
@@ -2577,17 +2582,18 @@ impl DeclarationRoots
     /// Each root and its required family, in discovery order.
     ///
     /// # Specification
-    /// - ensures: value signature before body, then each model candidate's
-    ///   components in slot and candidate order, all nominal roots in order as
-    ///   [`DataRoots::sorted`] sorts them, an abstract type's kind before its
-    ///   representation and both before its interface's relation, reflexivity
-    ///   and law, or none for a world or a codata declaration.
+    /// - ensures: value signature before body, then each model slot's fixed
+    ///   codes and each of its candidates' components and codes, in slot and
+    ///   candidate order, all nominal roots in order as [`DataRoots::sorted`]
+    ///   sorts them, an abstract type's kind before its representation and both
+    ///   before its interface's relation, reflexivity and law, or none for a
+    ///   world or a codata declaration.
     /// - executable: none — the return is an opaque iterator.
     ///
     /// # Clause cost
     /// - bound: one step per root the declaration holds: its value roots, each
-    ///   model candidate's components and its nominal roots; nothing outside
-    ///   the roots is read.
+    ///   model slot's fixed codes and its candidates' roots and its nominal
+    ///   roots; nothing outside the roots is read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — persistence rejects ill-sorted and reordered native
@@ -2651,7 +2657,7 @@ impl DeclarationRoots
             .chain(
                 models
                     .iter()
-                    .flat_map(|slot| slot.candidates.iter().flatten())
+                    .flat_map(|slot| slot.fixed.iter().chain(slot.candidates.iter().flatten()))
                     .map(|&root| (root, Sort::Value)),
             )
             .chain(data.into_iter().flat_map(DataRoots::sorted))
@@ -2707,6 +2713,7 @@ impl DeclarationRoots
                     .iter()
                     .map(|slot| ModelRoots {
                         holes: slot.holes.iter().map(|&hole| image(hole)).collect(),
+                        fixed: slot.fixed.iter().map(|&code| image(code)).collect(),
                         candidates: slot
                             .candidates
                             .iter()
@@ -3766,6 +3773,11 @@ pub fn encode_item(
             else {
                 continue;
             };
+            let fixed = slot
+                .fixed
+                .iter()
+                .map(|&code| encoder.discover(ArenaNode::Value(code)))
+                .collect();
             let candidates = slot
                 .candidates
                 .iter()
@@ -3773,11 +3785,16 @@ pub fn encode_item(
                     candidate
                         .components
                         .iter()
+                        .chain(&candidate.fixed)
                         .map(|&component| encoder.discover(ArenaNode::Value(component)))
                         .collect()
                 })
                 .collect();
-            models.push(ModelRoots { holes, candidates });
+            models.push(ModelRoots {
+                holes,
+                fixed,
+                candidates,
+            });
         }
         encoder.drain();
     }

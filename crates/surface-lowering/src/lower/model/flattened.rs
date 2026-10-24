@@ -36,10 +36,12 @@
 //! condition. A module that cannot be packed at `S` is no candidate. The
 //! checker solves the explicit arguments first, then keeps the one candidate
 //! whose components the solved holes admit; it refuses a slot none answers
-//! and one two or more answer, naming every candidate left. An omitted slot
-//! at a manifest model type is not resolved, and its holes stay unsolved: the
-//! sorts it fixes are no holes, so the trial cannot refute a candidate of
-//! another sort (#2317).
+//! and one two or more answer, naming every candidate left. A slot at a
+//! manifest model type, `Model(S) with sort C = A`, has no hole for a sort it
+//! fixes: it carries the code of `A`, each candidate the code of its own sort
+//! `C`, and the trial poses the two equal, so a candidate of another sort is
+//! refuted. A fixed type that reads a binder of the callee is not posed, and
+//! leaves its candidates untested on that sort.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -219,8 +221,8 @@ pub(in crate::lower) enum Supplied
 }
 
 /// A model slot a call omits, planned at the call: the declaration making the
-/// call, the hole nominated for each component, and the candidates, each the
-/// module it names beside what it passes.
+/// call, the hole nominated for each component, the sorts the slot's type
+/// fixes, and the candidates, each the module it names beside what it passes.
 ///
 /// # Specification
 /// trivial.
@@ -231,6 +233,9 @@ pub(in crate::lower) struct PlannedModel<'source>
     pub caller: gandr_kernel_term::ConstantIndex,
     /// The hole nominated for each component, in signature order.
     pub holes: Vec<gandr_core_term::hole::HoleId>,
+    /// Each sort the slot's model type fixes beside the type it fixes it to,
+    /// in the order of the sorts' names.
+    pub fixed: Vec<(Name, Placed)>,
     /// The candidates, in the order their modules are declared.
     pub candidates: Vec<(SurfaceName<'source>, Supplied)>,
 }
@@ -875,20 +880,25 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Specification
     /// - requires: the call's own plan has been minted.
-    /// - ensures: one slot filed under the caller, its holes the call's, each
-    ///   candidate holding one minted value per hole, in place order; nothing
-    ///   filed when a candidate's component did not lower.
+    /// - ensures: one slot filed under the caller, its holes the call's and the
+    ///   code of each type its model type fixes a sort to, each candidate
+    ///   holding one minted value per hole, in place order, and the code of its
+    ///   own sort of each fixed name ([`Self::packed_sort`]), up to the first
+    ///   it has none of, so that the checker refutes it; nothing filed when a
+    ///   candidate's component or a fixed type did not lower.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the effect is a slot filed in the lowerer's table
     ///   of slots, whose contents before the call the predicate cannot read.
     ///
     /// # Termination
-    /// One mint per component of each finite candidate.
+    /// One mint per component and fixed sort of each finite candidate.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::model_candidates`].
+    /// - hypothesis: L3 — as [`Self::model_candidates`]; a manifest slot files
+    ///   the code of its fixed type and each candidate's own.
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    /// - witness: `lower::implicit::tests::an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317`
     pub(in crate::lower) fn mint_model(
         &mut self,
         planned: PlannedModel<'source>,
@@ -896,6 +906,17 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     )
     {
+        let inserted = origin.inserted(Insertion::Implicit);
+        let mut fixed = Vec::with_capacity(planned.fixed.len());
+        for &(_, stated) in &planned.fixed {
+            let Maybe::Present(ty) = self.value_type_at(stated.node)
+            else {
+                return;
+            };
+            let code = sink.arena.value_quote(ty);
+            sink.origins.record_value(code, inserted);
+            fixed.push(code);
+        }
         let mut candidates = Vec::with_capacity(planned.candidates.len());
         for &(_, ref supplied) in &planned.candidates {
             let mut components = Vec::with_capacity(planned.holes.len());
@@ -911,13 +932,40 @@ impl<'source> Lowerer<'_, 'source>
                     Maybe::Absent(_) => return,
                 }
             }
-            candidates.push(gandr_core_term::model::Candidate { components });
+            let module = match *supplied {
+                Supplied::Module(ref packed) => packed.modules.first().copied(),
+                Supplied::Bound(_) => None,
+            };
+            let mut own = Vec::with_capacity(planned.fixed.len());
+            for &(ref name, _) in &planned.fixed {
+                let code = module.and_then(|module| {
+                    let sort = self
+                        .collected
+                        .structures
+                        .get(usize::from(module))?
+                        .types
+                        .iter()
+                        .find(|component| component.name.as_ref() == name.as_ref())?
+                        .name;
+                    self.packed_sort(module, sort, sink, inserted)
+                });
+                let Some(code) = code
+                else {
+                    break;
+                };
+                own.push(code);
+            }
+            candidates.push(gandr_core_term::model::Candidate {
+                components,
+                fixed: own,
+            });
         }
         self.models
             .entry(planned.caller)
             .or_default()
             .push(gandr_core_term::model::ModelSlot {
                 holes: planned.holes,
+                fixed,
                 candidates,
             });
     }
