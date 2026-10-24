@@ -331,6 +331,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use gandr_theory_levitation::DeclPolarity;
+use gandr_theory_levitation::THEORY_CONSTRUCTORS;
 use quenchant_shape::shape::Maybe;
 
 use super::Code;
@@ -2185,12 +2186,168 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(found)
     }
 
+    /// The constructor `name` of the family `family` names, written
+    /// qualified as `family.name` at `site`.
+    ///
+    /// The family is resolved as any global name is at `site`, and the
+    /// constructor read from its own generators, so a constructor whose bare
+    /// name the source gives another family's constructor is still named:
+    /// `Theory.App` beside a source's own `App`.
+    ///
+    /// # Specification
+    /// - requires: `site` is the qualified form or the form holding it.
+    /// - ensures: the constructor of that name among the generators of the data
+    ///   family or the `Theory` code `family` resolves to, when its family's
+    ///   admission position is strictly earlier than the site's declaration's;
+    ///   otherwise the unnamed absence.
+    /// - fails: as [`Self::resolve_name`] at the family's name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The family name's resolution refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a qualified pattern of a family the source shadows a
+    ///   constructor of, and a qualified constructor value, each lower to the
+    ///   family's constructor.
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(found)) if !matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if found.family < own)))]
+    pub(super) fn qualified_constructor(
+        &mut self,
+        site: Site,
+        family: Placed,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(unnamed);
+        };
+        // A tile has no owner of its own: the family is resolved from the
+        // site's node, at the family name's bytes.
+        let named = Site {
+            at: Placed {
+                node: site.at.node,
+                span: family.span,
+            },
+            ..site
+        };
+        let family_name = SurfaceName::from(self.text_at(family));
+        let Maybe::Present(Resolved::Declaration { constant, .. }) =
+            self.resolve_name(named, Frame::Outermost, family_name)?
+        else {
+            return Ok(unnamed);
+        };
+        let slot_of = |slot: SlotIndex| {
+            self.collected
+                .slots
+                .get(usize::from(slot))
+                .is_some_and(|entry| entry.constant == constant)
+        };
+        let found = if let Some((position, form)) = self
+            .collected
+            .data
+            .iter()
+            .enumerate()
+            .find(|&(_, form)| slot_of(form.slot))
+        {
+            form.generators
+                .iter()
+                .enumerate()
+                .find(|&(_, generator)| SurfaceName::from(self.text_at(generator.named)) == name)
+                .map(|(tag, generator)| Constructor {
+                    family: form.slot,
+                    form: Generators::Written(position),
+                    tag,
+                    arity: generator.fields.len(),
+                    named: generator.named,
+                })
+        }
+        else if let Maybe::Present(ref theory) = self.collected.theory
+            && slot_of(theory.slot)
+        {
+            theory
+                .arities
+                .iter()
+                .zip(THEORY_CONSTRUCTORS)
+                .enumerate()
+                .find(|&(_, (_, constructor))| SurfaceName::from(constructor) == name)
+                .map(|(tag, (&arity, _))| Constructor {
+                    family: theory.slot,
+                    form: Generators::Presentation,
+                    tag,
+                    arity,
+                    named: theory.named,
+                })
+        }
+        else {
+            None
+        };
+        Ok(match found {
+            Some(found) if found.family < own => Maybe::Present(found),
+            Some(_) | None => unnamed,
+        })
+    }
+
+    /// The constructor the selection `head`, written at `site`, names as
+    /// `Family.Constructor`.
+    ///
+    /// # Specification
+    /// - requires: `head` is the form at `site` or one of its operands.
+    /// - ensures: as [`Self::qualified_constructor`] for a selection whose
+    ///   target is a bare capitalised name, the unnamed absence where that
+    ///   name's resolution refuses; the unnamed absence for any other form, so
+    ///   a module's member, a record's field and a family's field keep their
+    ///   own readings.
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
+    ///   not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::qualified_constructor`]; a module's member
+    ///   selected off a capitalised name still reads as the member.
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
+    pub(super) fn selected_constructor(
+        &mut self,
+        site: Site,
+        head: Placed,
+    ) -> Result<Maybe<Constructor, constructed::Absent>, LoweringRefusal<'source>>
+    {
+        let unnamed = Maybe::Absent(constructed::Absent::Unnamed);
+        let Some((family, member)) = self.linked_selection(site, head)?
+        else {
+            return Ok(unnamed);
+        };
+        let Some(node) = self.tree.node(family.node)
+        else {
+            return Ok(unnamed);
+        };
+        let Shape::Form {
+            former: Former::Constructor,
+            ..
+        } = shape_of(self.pbg, node)?
+        else {
+            return Ok(unnamed);
+        };
+        let name = SurfaceName::from(self.text_at(member));
+        // A family name that does not resolve is the projection's to refuse.
+        Ok(self
+            .qualified_constructor(site, family, name)
+            .unwrap_or(unnamed))
+    }
+
     /// The constructor `head`, the head of a call written at `site`, names.
     ///
     /// # Specification
     /// - requires: `head` is the first operand of the call at `site`.
-    /// - ensures: as [`Self::constructor_named`] for a capitalised name; the
-    ///   unnamed absence for any other form.
+    /// - ensures: as [`Self::constructor_named`] for a capitalised name; as
+    ///   [`Self::selected_constructor`] for a selection; the unnamed absence
+    ///   for any other form.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a mold the grammar does
     ///   not hold.
     /// - panics: none.
@@ -2202,6 +2359,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a constructor head and a function head take their own
     ///   readings.
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     pub(super) fn constructor_head(
         &mut self,
@@ -2213,15 +2371,19 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Maybe::Absent(constructed::Absent::Unnamed));
         };
-        let Shape::Form {
-            former: Former::Constructor,
-            ..
-        } = shape_of(self.pbg, node)?
-        else {
-            return Ok(Maybe::Absent(constructed::Absent::Unnamed));
-        };
-
-        Ok(self.constructor_named(site, SurfaceName::from(self.text_at(head))))
+        match shape_of(self.pbg, node)? {
+            Shape::Form {
+                former: Former::Constructor,
+                ..
+            } => Ok(self.constructor_named(site, SurfaceName::from(self.text_at(head)))),
+            Shape::Form {
+                former: Former::Projection,
+                ..
+            } => self.selected_constructor(site, head),
+            Shape::Root | Shape::Form { .. } | Shape::Repair(_) | Shape::Layout => {
+                Ok(Maybe::Absent(constructed::Absent::Unnamed))
+            },
+        }
     }
 
     /// Classify `constructor` applied to the fields `fields` holds in the
@@ -4877,7 +5039,8 @@ impl<'source> Lowerer<'_, 'source>
             return Ok(Matcher::Boolean(self.text_at(at).as_ref() == "true"));
         }
         if name == FormName::CONSTRUCTOR {
-            return self.constructor_pattern(site, here, at, &[], patterns, work);
+            let found = self.constructor_named(site, SurfaceName::from(self.text_at(at)));
+            return self.constructor_pattern(here, at, found, &[], patterns, work);
         }
         read_pieces(self.pbg, self.tree, at.node, pieces)?;
         if let Maybe::Present(repaired) = pieces.repair {
@@ -4939,9 +5102,20 @@ impl<'source> Lowerer<'_, 'source>
         }
         if name == FormName::CONSTRUCTOR_PATTERN {
             let mut cursor = Cursor::new(&pieces.pieces, at.span);
-            let Maybe::Present(head) = cursor.tile(TileName::CONSTRUCTOR)
+            let Maybe::Present(first) = cursor.tile(TileName::CONSTRUCTOR)
             else {
                 return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+            };
+            // `Family.Constructor` names its family first.
+            let (family, head) = match cursor.tile(TileName::DOT) {
+                Maybe::Present(_) => {
+                    let Maybe::Present(head) = cursor.tile(TileName::CONSTRUCTOR)
+                    else {
+                        return Err(here.fault(cursor.here(), FormFault::MisplacedTile));
+                    };
+                    (Some(first), head)
+                },
+                Maybe::Absent(_) => (None, first),
             };
             let mut fields = Vec::new();
             if let Maybe::Present(_) = cursor.tile(TileName::PAREN_OPEN) {
@@ -4954,7 +5128,12 @@ impl<'source> Lowerer<'_, 'source>
                 }
             }
             exhausted(here, &cursor)?;
-            let shape = self.constructor_pattern(site, here, head, &fields, patterns, work)?;
+            let name = SurfaceName::from(self.text_at(head));
+            let found = match family {
+                Some(family) => self.qualified_constructor(site, family, name)?,
+                None => self.constructor_named(site, name),
+            };
+            let shape = self.constructor_pattern(here, head, found, &fields, patterns, work)?;
             patterns
                 .spelled
                 .push((queued.slot, head.span, PatternReading::Constructor));
@@ -4987,15 +5166,17 @@ impl<'source> Lowerer<'_, 'source>
         Err(here.out(FragmentBoundary::Unadmitted(super::unread_pattern(name))))
     }
 
-    /// The shape of the constructor pattern at `here`, the constructor
-    /// spelled at `head`, its field patterns `fields` allocated and queued.
+    /// The shape of the constructor pattern at `here`, `found` the constructor
+    /// resolved for the name spelled at `head`, its field patterns `fields`
+    /// allocated and queued.
     ///
     /// # Specification
-    /// - requires: `here` is a constructor pattern of the match at `site`.
+    /// - requires: `here` is a constructor pattern; `found` is the resolution
+    ///   of the name at `head`, under the family written before it when one is.
     /// - ensures: the constructor, its fields a fresh stretch of the part
     ///   store, each field queued on `work` after its slot is allocated.
-    /// - fails: the unresolved-name refusal for a name no earlier family's
-    ///   constructor carries; the arity refusal for other than its arity.
+    /// - fails: the unresolved-name refusal when `found` is absent; the arity
+    ///   refusal for other than its arity.
     /// - panics: none.
     ///
     /// # Errors
@@ -5004,19 +5185,20 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::pattern`].
     /// - witness: `lower::native::tests::nested_constructor_patterns_compile_to_nested_cases`
+    /// - witness: `lower::native::tests::a_qualified_constructor_names_its_family_s_constructor_2428`
     #[spec(captures: before = work.len(), ensures: |ret| ret.is_err() || work.len() == before.saturating_add(fields.len()))]
     fn constructor_pattern(
-        &mut self,
-        site: Site,
+        &self,
         here: Site,
         head: Placed,
+        found: Maybe<Constructor, constructed::Absent>,
         fields: &[Placed],
         patterns: &mut Written,
         work: &mut Vec<Queued>,
     ) -> Result<Matcher, LoweringRefusal<'source>>
     {
         let name = SurfaceName::from(self.text_at(head));
-        let Maybe::Present(constructor) = self.constructor_named(site, name)
+        let Maybe::Present(constructor) = found
         else {
             return Err(LoweringRefusal::UnresolvedName {
                 span: head.span,

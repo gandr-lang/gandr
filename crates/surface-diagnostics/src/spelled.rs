@@ -81,11 +81,13 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_corpus::SettleReport;
+use gandr_surface_lowering::ConstructorSpelling;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Origin;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_lowering::Role;
+use gandr_surface_lowering::SurfaceName;
 use gandr_surface_pretty::Arity;
 use gandr_surface_pretty::Constructors;
 use gandr_surface_pretty::CoreNode;
@@ -1069,10 +1071,12 @@ impl Families
     /// - requires: nothing.
     /// - ensures: one family per data declaration whose signature the module
     ///   holds, at its constant's position, its constructors named as written
-    ///   in tag order with the field count the signature gives each, then its
-    ///   loops named as written, the words declaring them in module order; the
-    ///   words of a family's loops are consed, their empty word written
-    ///   `here(a)` as a value at their point `a`; no case.
+    ///   in tag order with the field count the signature gives each, a
+    ///   constructor whose bare name the module reports shadowed qualified by
+    ///   its family's path, `Theory.App`; then its loops named as written, the
+    ///   words declaring them in module order; the words of a family's loops
+    ///   are consed, their empty word written `here(a)` as a value at their
+    ///   point `a`; no case.
     /// - provides: the constructor names a [`CoreSource`] over any arena spells
     ///   a constructor value with.
     /// - fails: never.
@@ -1085,6 +1089,7 @@ impl Families
     /// - witness: `tests::diagnostics::a_mismatch_spells_the_constructors_its_type_mentions`
     /// - witness: `tests::diagnostics::a_word_spells_by_its_letters`
     /// - witness: `tests::diagnostics::a_loop_arm_is_named_by_its_loop_823`
+    /// - witness: `tests::diagnostics::a_shadowed_constructor_spells_by_its_family_2428`
     #[spec(ensures: |ret| ret.families.len() <= module.declarations().len() && ret.cases.is_empty())]
     #[inline]
     #[must_use]
@@ -1119,6 +1124,7 @@ impl Families
                 .or_default()
                 .extend(letters);
         }
+        let mut qualifier = alloc::string::String::new();
         let families = module
             .declarations()
             .iter()
@@ -1133,10 +1139,31 @@ impl Families
                 };
                 let point = words_point(module, declaration);
                 let names = module.constructors(index);
+                let family = declaration.constant();
+                qualifier.clear();
                 let constructors = names
                     .iter()
                     .zip(signature.constructors())
-                    .map(|(name, fields)| (name.clone(), fields.len()))
+                    .map(|(name, fields)| {
+                        let spelled = if module
+                            .constructor_spelling(family, SurfaceName::from(name.as_str()))
+                            == ConstructorSpelling::Qualified
+                        {
+                            if qualifier.is_empty() {
+                                for segment in module.path_of(declaration) {
+                                    if !qualifier.is_empty() {
+                                        qualifier.push('.');
+                                    }
+                                    qualifier.push_str(<&str>::from(SourceFragment::from(segment)));
+                                }
+                            }
+                            alloc::format!("{qualifier}.{name}")
+                        }
+                        else {
+                            name.clone()
+                        };
+                        (spelled, fields.len())
+                    })
                     .collect();
                 let empty = match point {
                     Maybe::Present((_, ref point)) => {

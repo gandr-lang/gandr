@@ -1,0 +1,40 @@
+// A constructor is named by its family, `Family.Constructor`, in a pattern
+// and in a value (#354). Where a source's own constructor takes the bare name
+// of one of `Theory`'s, the qualified form is how the source names `Theory`'s,
+// and how the printer writes it back (#2428).
+
+/// Trees whose application is named as `Theory`'s is.
+@[ checks ]
+data Tree : Type {
+  Var : (n : Integer) --> Tree;
+  App : (t : Tree, u : Tree) --> Tree;
+}
+
+/// A presentation, so this source reads `Theory`.
+@[ checks ]
+theory Pointed {
+  sort P : Type;
+  oper point : () --> (p : P);
+}
+
+/// One for `Theory`'s application link, zero for every other: the pattern
+/// names `Theory`'s `App`, which the bare name does not reach here.
+@[ checks ]
+def isApplication(link : Theory) -> Integer {
+  case link {
+    Theory.App(head, arguments) => 1,
+    _ => 0
+  }
+}
+
+/// `Theory`'s `App` built by its qualified name, ending at `Theory.End`.
+@[ runs("1") ]
+def theoryApplied() -> Integer { isApplication(Theory.App("f", Theory.End)) }
+
+/// The bare `App` is this source's.
+@[ runs("App(Var(0), Var(1))") ]
+def bare() -> Tree { App(Var(0), Var(1)) }
+
+/// A source's own constructor written qualified is the same constructor.
+@[ runs("App(Var(0), Var(1))") ]
+def qualified() -> Tree { Tree.App(Var(0), Var(1)) }

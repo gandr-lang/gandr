@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xa82efc66a00ef0aa`
+- Grammar fingerprint: `0xeb910eeb1cb24002`
 - Rules: 165 — 164 committed, 1 internal
-- Molds: 3183
+- Molds: 3185
 - Attributes: 14
 
 ## Reading a form
@@ -48,7 +48,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
 | [`wildcard`](../corpus/ledger/syntax/wildcard.gandr) | `_` | `pattern.atom` | `wildcard` | admitted | Variable |
-| [`constructor_pattern`](../corpus/ledger/syntax/constructor_pattern.gandr) | `‹constructor› ⦅ ( PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? ) ⦆?` | `pattern.atom` | `constructor_pattern` | admitted | Constructor, Other |
+| [`constructor_pattern`](../corpus/ledger/syntax/constructor_pattern.gandr) | `‹constructor› ⦅ . ‹constructor› ⦆? ⦅ ( PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? ) ⦆?` | `pattern.atom` | `constructor_pattern` | admitted | Constructor, Other |
 | [`tuple_pattern`](../corpus/ledger/syntax/tuple_pattern.gandr) | `( PATTERN , PATTERN ⦅ , PATTERN ⦆* ⦅ , ⦆? )` | `pattern.atom` | `tuple_pattern` | admitted | Other |
 | [`telescope_pattern`](../corpus/ledger/syntax/telescope_pattern.gandr) | `#{ ⦅ ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦅ , ⦅ . ⦅ ‹identifier› ‖ ‹number› ⦆ ⦅ = PATTERN ⦆? ‖ PATTERN ⦅ = PATTERN ⦆? ⦆ ⦆* ⦅ , ⦆? ⦆? }` | `pattern.atom` | `telescope_pattern` * | admitted | Other, Member, Number |
 | [`labelled_sum_pattern`](../corpus/ledger/syntax/labelled_sum_pattern.gandr) | `+ { . ⦅ ‹identifier› ‖ ‹number› ⦆ = PATTERN }` | `pattern.atom` | `labelled_sum_pattern` * | admitted | Operator, Other, Member, Number |

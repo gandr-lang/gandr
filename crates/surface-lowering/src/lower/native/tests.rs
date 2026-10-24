@@ -3939,6 +3939,63 @@ fn the_presentation_code_names_its_family_where_a_type_is_read()
     assert_accepted(&judged(&module, &mut arena));
 }
 
+/// `Theory.App` names `Theory`'s application where the source's own `App`
+/// takes the bare name, in a value and in a pattern, and `Term.App` the
+/// source's; only `Theory`'s is shadowed (#2428).
+#[test]
+fn a_qualified_constructor_names_its_family_s_constructor_2428()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(
+            "data Term : Type { Var : (n : Integer) --> Term; App : (t : Term, u : Term) --> \
+             Term; }\ntheory Pointed { sort P : Type; oper point : () --> (p : P); }\ndef \
+             theirs : Theory ;\ndef theirs = Theory.App(\"f\", Theory.End) ;\ndef ours : Term \
+             ;\ndef ours = Term.App(Var(0), Var(1)) ;\ndef applies(link : Theory) -> Integer { \
+             case link { Theory.App(head, rest) => 1, _ => 0 } }\n",
+        ),
+        &mut arena,
+    );
+    let constant = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map(crate::module::LoweredDeclaration::constant)
+            .expect("the declaration is lowered")
+    };
+    let (theory, term) = (constant("Theory"), constant("Term"));
+    let application = gandr_theory_levitation::THEORY_CONSTRUCTORS
+        .iter()
+        .position(|&name| name == "App")
+        .expect("`Theory` has an application link");
+    let built = |name: &str| match arena.value(body_named(&module, SurfaceName::from(name))) {
+        Some(&Value::Constructor { datatype, tag, .. }) => match arena.value_type(datatype) {
+            Some(&ValueType::Data { declaration, .. }) => (declaration, tag),
+            other => panic!("`{name}` is built at a family: {other:?}"),
+        },
+        other => panic!("`{name}` is a constructor value: {other:?}"),
+    };
+    assert_eq!(built("theirs"), (theory, ConstructorTag::from(application)));
+    assert_eq!(built("ours"), (term, ConstructorTag::from(1_usize)));
+    assert_eq!(
+        module.constructor_spelling(theory, SurfaceName::from("App")),
+        crate::ConstructorSpelling::Qualified,
+        "`Theory`'s `App` is shadowed, so written qualified"
+    );
+    assert_eq!(
+        module.constructor_spelling(term, SurfaceName::from("App")),
+        crate::ConstructorSpelling::Bare,
+        "the source's own `App` is written bare"
+    );
+    assert_eq!(
+        module.constructor_spelling(theory, SurfaceName::from("Oper")),
+        crate::ConstructorSpelling::Bare,
+        "a name the source leaves free is written bare"
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
 #[test]
 fn a_case_over_a_family_of_parameters_reads_its_answer_unabstracted()
 {

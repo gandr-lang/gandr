@@ -604,6 +604,73 @@ fn a_body_names_its_match_arms_by_their_constructors_809()
     );
 }
 
+/// A constructor of `Theory` whose bare name the source's own constructor
+/// takes is spelled by its family, `Theory.App`, so the printed arm reads back
+/// as `Theory`'s; one the source leaves free stays bare (#2428).
+#[test]
+fn a_shadowed_constructor_spells_by_its_family_2428()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(
+        "data Term : Type {\n  Var : (n : Integer) --> Term;\n  App : (t : Term, u : Term) --> \
+         Term;\n}\ntheory Pointed {\n  sort P : Type;\n  oper point : () --> (p : P);\n}\ndef \
+         applies(link : Theory) -> Integer {\n  case link {\n    Theory.App(head, rest) => 1,\n    \
+         _ => 0\n  }\n}\n",
+    );
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let body = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name().as_ref() == "applies")
+        .and_then(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Bodied { body } | DeclarationOutcome::Completed { body, .. } => {
+                arena.value(body)
+            },
+            DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World
+            | DeclarationOutcome::Refused(_) => None,
+        });
+    let Some(&Value::Thunk(computation)) = body
+    else {
+        panic!("`applies` is defined by a thunk");
+    };
+    let spelled = constant_names(&module);
+    let names: Vec<Name<'_>> = spelled
+        .iter()
+        .map(|name| Name::from(name.as_str()))
+        .collect();
+    let families = Families::of(&module);
+    let constructors = families.naming(&names);
+    let source = CoreSource::new(&arena, &names).naming(&constructors);
+    let printed = present_computation(
+        &source,
+        CoreNode::Computation(computation),
+        PageWidth::from(1_000_u32),
+        Form::Sugared.into(),
+    )
+    .expect("the body lays out")
+    .to_string();
+    for written in ["Theory.App(", "Theory.Var(", " Oper("] {
+        assert!(
+            printed.contains(written),
+            "the arms write `{written}`: {printed}"
+        );
+    }
+    assert!(
+        !printed.contains(" App(") && !printed.contains(" Var("),
+        "no shadowed constructor is written bare: {printed}"
+    );
+}
+
 /// The binders a node inside a declaration stands under are named as the
 /// source writes them, outermost first: a recursive function's own name, its
 /// parameter, and the pattern variable an arm binds (#803: the formatter

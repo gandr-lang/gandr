@@ -364,7 +364,8 @@ enum Placed
     /// stopped at the refusal, which answers.
     Refused,
     /// The head of a constructor's or a primitive former's call, or of an
-    /// annotation: the call is the one core node, and answers.
+    /// annotation, a constructor qualified by its family among them: the call
+    /// is the one core node, and answers.
     Head,
     /// A count of the stratum an annotation on a head writes, `1` and `4`
     /// in `ua[1, 4](a, b, f, g)`: the degree and the catalogue bound the
@@ -810,10 +811,23 @@ fn gated(
         if !matches!(def.sort, Sort::Expression | Sort::Type | Sort::Pattern) {
             continue;
         }
-        let head = !melded
-            && parent.is_some_and(|(_, label, headed, ..)| {
-                headed && (label == "[" || def.label == "constructor" || FORMERS.contains(&text))
-            });
+        // A constructor qualified by its family heading its call,
+        // `Term.App(…)`, stands as a bare one does.
+        let qualified = melded
+            && def.label == "."
+            && text
+                .rsplit('.')
+                .next()
+                .is_some_and(|member| member.trim_start().starts_with(char::is_uppercase));
+        let head = parent.is_some_and(|(_, label, headed, ..)| {
+            headed
+                && if melded {
+                    label == "(" && qualified
+                }
+                else {
+                    label == "[" || def.label == "constructor" || FORMERS.contains(&text)
+                }
+        });
         // A model implicit's name, read inside the declaration whose
         // telescope writes it.
         let modelled = models.implicits.iter().any(|&((start, end), ref name)| {
