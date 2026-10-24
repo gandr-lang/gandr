@@ -238,6 +238,63 @@ fn a_theory_answers_at_every_member()
 }
 
 #[test]
+fn a_stated_law_answers_at_its_statement_2356()
+{
+    let source = SourceText::from(
+        "theory Decision {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl \
+         : (a : C) => Path(Bool, eq(a, a), true);\n  law flip : (a : C, b : C, p : Path(Bool, \
+         eq(a, b), true)) => Path(Bool, eq(b, a), true);\n}\n",
+    );
+    let span = |around: &'static str, inner: &'static str| {
+        at(source, SourceText::from(around), SourceText::from(inner))
+    };
+    let (types, arena) = described(source);
+    let ty = |entry: DescribedType| arena.value_type(entry.ty).cloned();
+
+    let refl = entry(&types, span("law refl", "refl"), DescribedRole::Name);
+    assert!(
+        matches!(returned(&arena, refl.ty), Some(ValueType::Path { .. })),
+        "a law's name at the function into the path it concludes"
+    );
+    assert_eq!(context(&types, refl), ["C", "eq"]);
+    let statement = "(a : C) => Path(Bool, eq(a, a), true)";
+    let written = entry(&types, span("law refl", statement), DescribedRole::Type);
+    assert!(matches!(ty(written), Some(ValueType::Universe { .. })));
+    let binder = entry(&types, span("(a : C) =>", "a"), DescribedRole::Name);
+    assert!(
+        matches!(ty(binder), Some(ValueType::Element { .. })),
+        "a binder at its sort"
+    );
+    // `Bool`, the sum of two units, by shape: the arena keeps each minting.
+    let boolean = |entry: DescribedType| {
+        match ty(entry) {
+        Some(ValueType::Sum(summands)) => {
+            summands.len() == 2
+                && summands.iter().all(|&summand| {
+                    matches!(arena.value_type(summand), Some(ValueType::Product(units)) if units.is_empty())
+                })
+        },
+        _ => false,
+    }
+    };
+    let applied = entry(&types, span("law refl", "eq(a, a)"), DescribedRole::Term);
+    assert!(boolean(applied), "an application at the operation's result");
+    let literal = entry(&types, span("law refl", "true"), DescribedRole::Term);
+    assert!(boolean(literal), "the literal at the path's carrier");
+    let carrier = entry(&types, span("law refl", "Bool"), DescribedRole::Type);
+    assert!(matches!(ty(carrier), Some(ValueType::Universe { .. })));
+
+    let hypothesis = entry(&types, span("C, p : Path", "p"), DescribedRole::Name);
+    assert!(
+        matches!(ty(hypothesis), Some(ValueType::Path { .. })),
+        "a hypothesis at the path it assumes"
+    );
+    assert_eq!(context(&types, hypothesis), ["C", "eq", "a", "b"]);
+    let assumed = entry(&types, span("p : ", "eq(a, b)"), DescribedRole::Term);
+    assert!(boolean(assumed), "a hypothesis's side at its sort");
+}
+
+#[test]
 fn a_binder_answers_at_its_sort_and_its_operation_nowhere()
 {
     let source = SourceText::from(

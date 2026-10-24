@@ -91,6 +91,7 @@ use gandr_core_term::FailureClass;
 use gandr_kernel_term::StringLiteral;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentFeature;
+use gandr_surface_lowering::LawProof;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::Unbuilt;
@@ -591,6 +592,9 @@ pub enum RefusalName
     PhaseDependence,
     /// A selection or a signature component a module does not supply.
     UnknownMember,
+    /// A law of a module's model the module does not prove: missing, bare;
+    /// admitted at a carrier the host does not provide, qualified `Admitted`.
+    UnprovenLaw(LawProof),
     /// A field read by name off a data value some constructor declares none of.
     PartialField,
     /// A module binding applying a name that is not a functor.
@@ -881,7 +885,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 209_usize] = [
+    pub const VOCABULARY: [Self; 210_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -971,6 +975,7 @@ impl RefusalName
         Self::ForwardMemberReference,
         Self::PhaseDependence,
         Self::UnknownMember,
+        Self::UnprovenLaw(LawProof::Missing),
         Self::PartialField,
         Self::NotAFunctor,
         Self::ProjectionFromApplication,
@@ -1095,9 +1100,9 @@ impl RefusalName
 
     /// Every name no form qualifies: the vocabulary, in its order, then each
     /// `OutOfFragment` name qualified by a named reading, each model
-    /// component's fault and each member's. A name qualified by a form is not
-    /// among them: the forms are the grammar's, and the syntax ledger lists
-    /// them.
+    /// component's fault, each member's, and the law admitted where a proof
+    /// was owed. A name qualified by a form is not among them: the forms are
+    /// the grammar's, and the syntax ledger lists them.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1124,6 +1129,7 @@ impl RefusalName
             )
             .chain(MODEL_FAULTS.map(|fault| Self::UnstatedComponent(model_tag(fault))))
             .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
+            .chain([Self::UnprovenLaw(LawProof::Admitted)])
             .collect()
     }
 
@@ -1165,7 +1171,7 @@ impl RefusalName
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
         b"IllTypedPayload") | (Self::ForwardMemberReference, b"ForwardMemberReference") |
         (Self::PhaseDependence, b"PhaseDependence") |
-        (Self::UnknownMember, b"UnknownMember") | (Self::PartialField, b"PartialField")
+        (Self::UnknownMember, b"UnknownMember") | (Self::UnprovenLaw(_), b"UnprovenLaw") | (Self::PartialField, b"PartialField")
         | (Self::NotAFunctor, b"NotAFunctor")
         | (Self::ProjectionFromApplication, b"ProjectionFromApplication")
         | (Self::UnreadAscription,
@@ -1342,7 +1348,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::UnprovenLaw(LawProof::Admitted))
         == ret.qualifier.is_some()
 },
     )]
@@ -1498,6 +1504,7 @@ impl RefusalName
             Self::ForwardMemberReference => "ForwardMemberReference",
             Self::PhaseDependence => "PhaseDependence",
             Self::UnknownMember => "UnknownMember",
+            Self::UnprovenLaw(_) => "UnprovenLaw",
             Self::PartialField => "PartialField",
             Self::NotAFunctor => "NotAFunctor",
             Self::ProjectionFromApplication => "ProjectionFromApplication",
@@ -1570,6 +1577,9 @@ impl RefusalName
         else if let Self::UnstatedComponent(fault) | Self::UndescribedMember(fault) = self {
             Some(Qualifier::Named(fault))
         }
+        else if matches!(self, Self::UnprovenLaw(LawProof::Admitted)) {
+            Some(Qualifier::Named(ADMITTED))
+        }
         else {
             None
         };
@@ -1584,7 +1594,8 @@ impl RefusalName
     ///   byte; no case folding, trimming or prefix match. A qualified name is
     ///   read only with a qualifier some refusal carries: an unbuilt feature's
     ///   spelling; a boundary other than reserved and unadmitted; the run
-    ///   target; a checker former; a model component's or a member's fault.
+    ///   target; a checker former; a model component's or a member's fault; a
+    ///   law's admission.
     /// - provides: the reading of a `refuses` payload.
     /// - fails: never; text naming nothing is the [`refusal_name::Absent`]
     ///   absence, which the expectation reader turns into a fixture failure.
@@ -1633,6 +1644,9 @@ impl RefusalName
                 "UndescribedMember" => {
                     tagged(&MEMBER_FAULTS.map(member_tag)).map(Self::UndescribedMember)
                 },
+                "UnprovenLaw" => {
+                    (rest == ADMITTED.0).then_some(Self::UnprovenLaw(LawProof::Admitted))
+                },
                 _ => None,
             }
         };
@@ -1646,6 +1660,10 @@ impl RefusalName
 /// declaration is read, an expression at the root that is not the source's
 /// run target.
 const STRAY: Tag = Tag("WrongSort.declaration");
+
+/// The tag a law admitted where a proof was owed is qualified by: the
+/// carrier is not the host's, so the admission is the author's.
+const ADMITTED: Tag = Tag("Admitted");
 
 /// Every former the checker's judgement has no rule for.
 const FORMERS: [UnadmittedFormer; 24_usize] = [
@@ -1676,7 +1694,7 @@ const FORMERS: [UnadmittedFormer; 24_usize] = [
 ];
 
 /// Every fault a model component the derivation cannot state carries.
-const MODEL_FAULTS: [ModelFault; 10_usize] = [
+const MODEL_FAULTS: [ModelFault; 11_usize] = [
     ModelFault::UnknownHead,
     ModelFault::Arity,
     ModelFault::IllSorted,
@@ -1687,6 +1705,7 @@ const MODEL_FAULTS: [ModelFault; 10_usize] = [
     ModelFault::Inherited,
     ModelFault::Binding,
     ModelFault::Abstraction,
+    ModelFault::Unbound,
 ];
 
 /// Every fault a member the description does not read carries.
@@ -1906,6 +1925,7 @@ const fn model_tag(fault: ModelFault) -> Tag
         ModelFault::Inherited => "Inherited",
         ModelFault::Binding => "Binding",
         ModelFault::Abstraction => "Abstraction",
+        ModelFault::Unbound => "Unbound",
     })
 }
 
@@ -2069,7 +2089,9 @@ impl Refusal<'_>
         (Self::Lowering(LoweringRefusal::PhaseDependence { .. }),
         RefusalName::PhaseDependence) |
         (Self::Lowering(LoweringRefusal::UnknownMember { .. }),
-        RefusalName::UnknownMember) | (Self::Lowering(LoweringRefusal::PartialField { .. }),
+        RefusalName::UnknownMember) |
+        (Self::Lowering(LoweringRefusal::UnprovenLaw { .. }), RefusalName::UnprovenLaw(_)) |
+        (Self::Lowering(LoweringRefusal::PartialField { .. }),
         RefusalName::PartialField) | (Self::Lowering(LoweringRefusal::NotAFunctor { .. }),
         RefusalName::NotAFunctor) |
         (Self::Lowering(LoweringRefusal::ProjectionFromApplication { .. }),
@@ -2342,7 +2364,8 @@ impl Refusal<'_>
         RefusalName::IllTypedPayload) | (LoweringRefusal::ForwardMemberReference { .. },
         RefusalName::ForwardMemberReference) | (LoweringRefusal::PhaseDependence { .. },
         RefusalName::PhaseDependence) | (LoweringRefusal::UnknownMember { .. },
-        RefusalName::UnknownMember) | (LoweringRefusal::PartialField { .. },
+        RefusalName::UnknownMember) | (LoweringRefusal::UnprovenLaw { .. },
+        RefusalName::UnprovenLaw(_)) | (LoweringRefusal::PartialField { .. },
         RefusalName::PartialField) | (LoweringRefusal::NotAFunctor { .. },
         RefusalName::NotAFunctor) | (LoweringRefusal::ProjectionFromApplication { .. },
         RefusalName::ProjectionFromApplication) | (LoweringRefusal::UnreadAscription { .. },
@@ -2394,6 +2417,8 @@ impl Refusal<'_>
         ret == RefusalName::UnstatedComponent(model_tag(fault))
     } else if let LoweringRefusal::UndescribedMember { fault, .. } = refusal {
         ret == RefusalName::UndescribedMember(member_tag(fault))
+    } else if let LoweringRefusal::UnprovenLaw { why, .. } = refusal {
+        ret == RefusalName::UnprovenLaw(why)
     } else {
         true
     }
@@ -2432,6 +2457,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
         LoweringRefusal::PhaseDependence { .. } => RefusalName::PhaseDependence,
         LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
+        LoweringRefusal::UnprovenLaw { why, .. } => RefusalName::UnprovenLaw(why),
         LoweringRefusal::PartialField { .. } => RefusalName::PartialField,
         LoweringRefusal::NotAFunctor { .. } => RefusalName::NotAFunctor,
         LoweringRefusal::ProjectionFromApplication { .. } => RefusalName::ProjectionFromApplication,

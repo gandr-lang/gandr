@@ -91,6 +91,7 @@ use super::slot_refusal;
 use crate::error::AscriptionForm;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
+use crate::error::LawProof;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
 use crate::form::Cursor;
@@ -1082,12 +1083,16 @@ impl<'source> Collector<'_, 'source>
     ///   definition member of its name as [`Self::state`] states a written
     ///   type, the member yielded; a nested model is answered by the nested
     ///   module of its name ascribed the model signature its theory derives,
-    ///   the module yielded; a component the derivation cannot state, a value
-    ///   component a nested module answers, a nested model anything else
-    ///   answers, and a name nothing answers each refuse a held slot under the
-    ///   component's name, introduced by the module's form, whose attributes
-    ///   state its expectation, and nothing is yielded — save a name whose
-    ///   member was repaired, whose parse error already answers for it.
+    ///   the module yielded; a law is answered as well by the admission of its
+    ///   name, `law name admitted ;`, stated as a definition member is; a
+    ///   component the derivation cannot state, a value component a nested
+    ///   module answers, a component other than a law an admission answers, a
+    ///   nested model anything else answers, and a name nothing answers each
+    ///   refuse a held slot under the component's name, introduced by the
+    ///   module's form, whose attributes state its expectation, and nothing is
+    ///   yielded — save a name whose member was repaired, whose parse error
+    ///   already answers for it. A law nothing answers is
+    ///   [`LoweringRefusal::UnprovenLaw`], missing.
     /// - provides: the derived half of [`Self::match_signature`].
     /// - fails: never; a fault is filed rather than raised.
     /// - panics: none.
@@ -1098,6 +1103,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_model_missing_an_operation_is_refused_naming_it`
     /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
+    /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
     #[spec(
         captures: before = self.member_named(Container::Module(structure), component.name),
         ensures: |ret| match ret {
@@ -1130,6 +1136,8 @@ impl<'source> Collector<'_, 'source>
             .get(model.0)
             .and_then(|signature| signature.components.get(place.0));
         let fault = derived.and_then(|derived| derived.form.as_ref().err().copied());
+        let law =
+            matches!(derived, Some(derived) if matches!(derived.form, Ok(ModelForm::Law { .. })));
         let nested_theory = derived.and_then(|derived| match derived.form {
             Ok(ModelForm::Nested(ref theory)) => Some(theory.clone()),
             Ok(
@@ -1163,21 +1171,40 @@ impl<'source> Collector<'_, 'source>
             },
             (None, Some(_), Maybe::Present(_))
             | (None, None, Maybe::Present(Member::Module(_))) => wrong_sort,
+            (None, None, Maybe::Present(Member::Slot(slot)))
+                if !law
+                    && self
+                        .collected
+                        .slots
+                        .get(slot.0)
+                        .is_some_and(|entry| entry.role == Role::Admitted) =>
+            {
+                wrong_sort
+            },
             (None, None, Maybe::Present(Member::Slot(slot))) => {
                 let part = ModelPart {
                     model,
                     component: place,
                 };
-                self.state(
-                    slot,
-                    Operand::Model(part),
-                    component.named,
-                    Maybe::Present(scope),
-                );
+                // An admission states the law's type at its own member, where
+                // its attributes are filed and its refusal stands.
+                let at = self
+                    .collected
+                    .slots
+                    .get(slot.0)
+                    .filter(|entry| entry.role == Role::Admitted)
+                    .map_or(component.named, |entry| entry.introduced_by);
+                self.state(slot, Operand::Model(part), at, Maybe::Present(scope));
                 return Maybe::Present(Member::Slot(slot));
             },
             (None, _, Maybe::Absent(_)) if self.repaired_member(container, component.name).0 => {
                 return undeclared;
+            },
+            (None, _, Maybe::Absent(_)) if law => LoweringRefusal::UnprovenLaw {
+                span: component.named.span,
+                module,
+                law: component.name,
+                why: LawProof::Missing,
             },
             (None, _, Maybe::Absent(_)) => LoweringRefusal::UnknownMember {
                 span: component.named.span,

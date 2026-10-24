@@ -496,6 +496,9 @@ impl TileName
     pub const AMPERSAND: Self = Self("&");
     /// The static abstraction's lead `\`.
     pub const BACKSLASH: Self = Self("\\");
+    /// The keyword `admitted` closing a module's law member: the host asserts
+    /// the law.
+    pub const ADMITTED: Self = Self("admitted");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
     /// The bang `!` marking a shared fork, and the send session type's lead.
@@ -549,6 +552,8 @@ impl TileName
     pub const INCLUDE: Self = Self("include");
     /// The interpolation opener `${`.
     pub const INTERPOLATION: Self = Self("${");
+    /// The keyword `law`, opening a theory's or a module's law member.
+    pub const LAW: Self = Self("law");
     /// The keyword `leta`, opening a statement.
     pub const LETA: Self = Self("leta");
     /// The less-than sign `<`: an instantiation's structural-descent claim.

@@ -208,6 +208,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
         LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
         LoweringRefusal::UnknownMember { .. } => "no member of this name",
+        LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
         LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
         LoweringRefusal::NotAFunctor { .. } => "not a functor",
         LoweringRefusal::ProjectionFromApplication { .. } => {
@@ -622,6 +623,7 @@ mod tests
             LoweringRefusal::ForwardMemberReference { .. } => "named before it is declared",
             LoweringRefusal::PhaseDependence { .. } => "a value a type depends on",
             LoweringRefusal::UnknownMember { .. } => "no member of this name",
+            LoweringRefusal::UnprovenLaw { .. } => "a law this module does not prove",
             LoweringRefusal::PartialField { .. } => "a field some constructor lacks",
             LoweringRefusal::NotAFunctor { .. } => "not a functor",
             LoweringRefusal::ProjectionFromApplication { .. } => {

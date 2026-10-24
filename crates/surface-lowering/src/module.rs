@@ -687,8 +687,8 @@ pub enum Container
 /// - ensures: Declared slots introduce names, witnesses check an extra type
 ///   without declaring a name, held slots own components or refusals without
 ///   becoming exports, abstract slots declare the atom an opaque ascription
-///   mints without entering a name table, and the generic program is named
-///   without declaring anything.
+///   mints without entering a name table, the generic program is named without
+///   declaring anything, and an admitted law declares its type with no body.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -746,6 +746,11 @@ pub enum Role
     /// definition `def m = Eq.generic(T)`, whose body the lowering derives
     /// from `T`'s constructors, and declaring nothing itself.
     Generic,
+    /// A law of a module's model the host asserts at a primitive carrier,
+    /// `law refl admitted;`: entered in the module's name table, declared at
+    /// the law's derived type with no definition, and crossing as the axiom
+    /// the report's audit lists.
+    Admitted,
 }
 
 /// One member of a module's body, or one component it exports.
@@ -6825,6 +6830,8 @@ impl<'source> Collector<'_, 'source>
     ///   frame on `stack` holding the inclusion, and a name no module answers
     ///   is refused there, held at the module's own form as a header refusal
     ///   is, so an expectation written before the module states it; a form
+    ///   opening on `law` admits the law it names, as [`Self::admitted_law`]
+    ///   reads it, and is refused at the member when it does not read; a form
     ///   opening on `module` is a nested module, opened onto `stack` or refused
     ///   as a whole under its name; every other form is a malformed member,
     ///   refused under the module's name at the member, and the module's other
@@ -6937,6 +6944,16 @@ impl<'source> Collector<'_, 'source>
             }
             return Ok(());
         }
+        if pieces
+            .pieces
+            .iter()
+            .any(|piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::LAW))
+        {
+            if let Err(refusal) = self.admitted_law(container, member, pieces) {
+                self.fault_at(structure, member, refusal);
+            }
+            return Ok(());
+        }
         if let Maybe::Absent(_) = cursor.at(TileName::MODULE) {
             self.fault_at(structure, member, misplaced_in(form, cursor.here()));
             return Ok(());
@@ -6954,6 +6971,95 @@ impl<'source> Collector<'_, 'source>
                 let _held = self.refuse_held(container, name, member, named, refusal);
             },
             Header::Unnamed(refusal) => self.fault_at(structure, member, refusal),
+        }
+
+        Ok(())
+    }
+
+    /// Read the law member `member`, `law name admitted ;` after any attribute
+    /// blocks, as the admission of its model's law of that name.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of `member`, a member form of
+    ///   `container` holding a `law` tile.
+    /// - ensures: the name takes a slot of [`Role::Admitted`], introduced and
+    ///   owned by the member, holding no half and the attributes written before
+    ///   `law`: the model's law of its name states its type when the module is
+    ///   matched against its model. An attribute block that does not read
+    ///   refuses the slot.
+    /// - fails: [`LoweringRefusal::DuplicateDefinition`] for a name an earlier
+    ///   member declares, and a misplaced-tile refusal for a member out of
+    ///   shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admitted law at a primitive carrier checks, and
+    ///   one at the module's own data type is refused.
+    /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: |ret| ret.is_err() == (self.collected.slots.len() == before)
+            && (ret.is_err() || self.collected.slots.last().is_some_and(|slot| slot.role == Role::Admitted && slot.container == container)),
+    )]
+    fn admitted_law(
+        &mut self,
+        container: Container,
+        member: Placed,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let split = pieces.pieces.iter().position(
+            |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::LAW),
+        );
+        let Some((before, after)) = split.and_then(|at| pieces.pieces.split_at_checked(at))
+        else {
+            return Err(misplaced_in(FormName::MODULE, member.span));
+        };
+        let mut attributes = Vec::new();
+        let attributed = self.read_attributes(
+            Cursor::new(before, member.span),
+            member.node,
+            &mut attributes,
+        );
+        let mut cursor = Cursor::new(after, member.span);
+        let _law = cursor.tile(TileName::LAW);
+        let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        };
+        let closed = (
+            cursor.tile(TileName::ADMITTED),
+            cursor.tile(TileName::SEMICOLON),
+        );
+        if !matches!(closed, (Maybe::Present(_), Maybe::Present(_)))
+            || matches!(cursor.peek(), Maybe::Present(_))
+        {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+        let name = self.name_of(named);
+        if let Some(&earlier) = self.collected.by_name.get(&(container, name)) {
+            return Err(LoweringRefusal::DuplicateDefinition {
+                span: member.span,
+                name,
+                first: self
+                    .collected
+                    .slots
+                    .get(earlier.0)
+                    .map_or(member.span, |slot| slot.introduced_by.span),
+            });
+        }
+        let slot = self.admit(container, name, member, named);
+        self.collected.own(member.node, slot);
+        self.document(slot, member.node, named.span.start(), member.node);
+        if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+            entry.role = Role::Admitted;
+            entry.attributes.extend(attributes);
+            if let Err(refusal) = attributed {
+                entry.refuse(member.node, refusal);
+            }
         }
 
         Ok(())

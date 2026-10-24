@@ -85,6 +85,12 @@ pub enum SignatureFault
     IncludeClash(IncludeClash),
     /// An `ext` member states no extension type the block can generate.
     Extension(ExtensionFault),
+    /// A `law` member's statement is not a function type from named binders,
+    /// sorts first and then paths, to a path between two terms.
+    LawStatement,
+    /// A `law` member named as an operation, a rule or another law of the
+    /// block is: a model's members share one namespace.
+    LawName(Name),
 }
 
 /// A pair of theories a block reaches with more than one join among the

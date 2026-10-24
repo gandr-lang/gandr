@@ -20,7 +20,11 @@
 //!   bound by the law's telescope; an operation's head at the operation's type;
 //!   each written sort at its universe, and the classifier `Type` at its own;
 //!   and a circuit's ports and wires at the sort the ports they meet read,
-//!   where that sort is one the theory declares unindexed. An operation one of
+//!   where that sort is one the theory declares unindexed. A stated law's name
+//!   answers at the type its component states, into the `Path` it concludes;
+//!   its statement and each path at their universe; each binder at its sort and
+//!   each hypothesis's name at the path it assumes; each node of a side as a
+//!   rule's, a `true` or `false` at the path's carrier. An operation one of
 //!   whose ports binds a variable (`t : pi+ (x : S) . T`) has no component: its
 //!   name and a bound port's name answer nowhere, while each binder's name
 //!   answers at its sort and its ports otherwise as written.
@@ -93,6 +97,7 @@ use crate::description::FamilyParameter;
 use crate::description::written::WrittenCircuit;
 use crate::description::written::WrittenMembers;
 use crate::description::written::WrittenOperation;
+use crate::description::written::WrittenPath;
 use crate::description::written::WrittenPort;
 use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
@@ -370,6 +375,12 @@ enum Reading<'law, 'form>
     /// The sorts the theory writes for a law no component states.
     Written(&'law Unstated<'form>),
 }
+
+/// A path a stated law writes, `Path(C, l, r)`: its carrier and its two sides.
+///
+/// # Specification
+/// trivial.
+type PathParts<'term> = (&'term SortTerm, &'term FreeTerm, &'term FreeTerm);
 
 /// The sorts a law no `Model(S)` component states reads its nodes at, as the
 /// theory writes them: each operation by name, each variable its left side
@@ -682,8 +693,9 @@ impl Typer<'_>
 
     /// The value `term` denotes under `scope`: a variable its index, an
     /// application `g(t₁, …)` the returned call `↑((force g) t₁ …)` of the
-    /// variable `g` names; none for a constructor, a results tuple or a name
-    /// the scope does not bind.
+    /// variable `g` names, and a law's `true` or `false` its injection into
+    /// `Bool`; none for any other constructor, a results tuple or a name the
+    /// scope does not bind.
     ///
     /// # Specification
     /// trivial.
@@ -706,6 +718,22 @@ impl Typer<'_>
                         let args: Vec<TermNode<'_>> = args.collect();
                         pending.push(Step::Apply(name, args.len()));
                         pending.extend(args.into_iter().rev().map(Step::Read));
+                    },
+                    TermView::Ctor { name, ref args }
+                        if matches!(name.as_ref(), "true" | "false")
+                            && args.clone().next().is_none() =>
+                    {
+                        let side = if name.as_ref() == "true" {
+                            gandr_kernel_term::Side::Left
+                        }
+                        else {
+                            gandr_kernel_term::Side::Right
+                        };
+                        let unit = self.arena.value_unit();
+                        built.push(
+                            self.arena
+                                .value_injection(gandr_kernel_term::Summand::from(side), unit),
+                        );
                     },
                     TermView::Ctor { .. }
                     | TermView::Results { .. }
@@ -844,12 +872,7 @@ impl Typer<'_>
                     _ => self.arena.value_type_product(&sorts),
                 }
             },
-            Codomain::Path(carrier, left, right) => {
-                let over = self.sort(scope, carrier)?;
-                let from = self.value(scope, left)?;
-                let to = self.value(scope, right)?;
-                self.arena.value_type_path(over, from, to)
-            },
+            Codomain::Path(carrier, left, right) => self.path(scope, (carrier, left, right))?,
         };
         let mut chain = self.arena.comp_type_returner(result);
         for (&domain, binds) in domains.iter().zip(dependent).rev() {
@@ -981,6 +1004,71 @@ impl Typer<'_>
         self.indices(scope, telescope, declared, raw, sort, &port.sort);
     }
 
+    /// The path type `Path(C, l, r)` under `scope`, from its carrier and its
+    /// two sides as the derivation elaborates them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn path(
+        &mut self,
+        scope: &Scope,
+        (carrier, left, right): PathParts<'_>,
+    ) -> Option<ValueTypeId>
+    {
+        let over = self.sort(scope, carrier)?;
+        let from = self.value(scope, left)?;
+        let to = self.value(scope, right)?;
+        Some(self.arena.value_type_path(over, from, to))
+    }
+
+    /// Record a path a stated law assumes or concludes, presented as `raw`,
+    /// elaborated as `elaborated` and written as `written`, under `scope`,
+    /// the law's binders among `telescope`: the path at its universe, its
+    /// carrier at its own, and each side as [`Self::law_side`] records one, a
+    /// `true` or `false` at the carrier. The path's type, when it mints.
+    ///
+    /// # Specification
+    /// trivial.
+    fn stated_path(
+        &mut self,
+        scope: &Scope,
+        telescope: &[Binder],
+        declared: &Declared<'_>,
+        raw: PathParts<'_>,
+        elaborated: PathParts<'_>,
+        written: &WrittenPath,
+    ) -> Option<ValueTypeId>
+    {
+        let context = self.context(scope);
+        let universe = self.universe(Level::zero());
+        self.emit(written.span, DescribedRole::Type, universe, context);
+        let (carrier, left, right) = elaborated;
+        self.occurrence(&written.carrier, &carrier.sort, &declared.sorts);
+        self.indices(scope, telescope, declared, raw.0, carrier, &written.carrier);
+        let sides = [(raw.1, left, &written.left), (raw.2, right, &written.right)];
+        for (side, image, nodes) in sides {
+            let literal = matches!(
+                side.to_node().view(),
+                TermView::Ctor { name, .. } if matches!(name.as_ref(), "true" | "false")
+            );
+            if !literal {
+                self.law_side(
+                    scope,
+                    telescope,
+                    declared,
+                    side,
+                    nodes,
+                    Reading::Elaborated(Some(image)),
+                );
+            }
+            else if let (Some(leaf), Some(ty)) = (nodes.nodes.first(), self.sort(scope, carrier))
+            {
+                self.emit(leaf.span, DescribedRole::Term, ty, context);
+            }
+        }
+        self.path(scope, elaborated)
+    }
+
     /// Record the ports of `operation`, one of whose ports binds, written as
     /// `member`, under `scope`. `Model(S)` states no component for it, so its
     /// name answers nowhere; its ports read as the written telescope states
@@ -1078,13 +1166,15 @@ impl Typer<'_>
     /// - requires: `written` is where the theory reader read `presentation`'s
     ///   members.
     /// - ensures: as the module documentation states for a theory: each sort,
-    ///   operation and law at what its `Model(S)` component states, each port
-    ///   at its sort, each node of a law at its sort, each node of a rule a
-    ///   `derive` declaration states over the theory at the sort the theory
-    ///   writes for it, each written sort at its universe, each circuit's ports
-    ///   and wires at their sorts, a nested model's `Model(T)` at its universe
-    ///   and its `T` at `code`; and each written sort's head and each operation
-    ///   applied, beside the name tile of the member it names.
+    ///   operation, rule and stated law at what its `Model(S)` component
+    ///   states, each port and each stated law's binder at its sort, each
+    ///   hypothesis at the path it assumes, each node of a rule or a stated law
+    ///   at its sort, each node of a rule a `derive` declaration states over
+    ///   the theory at the sort the theory writes for it, each written sort,
+    ///   statement and path at its universe, each circuit's ports and wires at
+    ///   their sorts, a nested model's `Model(T)` at its universe and its `T`
+    ///   at `code`; and each written sort's head and each operation applied,
+    ///   beside the name tile of the member it names.
     /// - fails: never; a presentation whose members cannot be read records
     ///   nothing, and a component the derivation cannot state records none of
     ///   the nodes its type would read, save a binding operation's ports, which
@@ -1095,10 +1185,11 @@ impl Typer<'_>
     ///   each back.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the probe theories' sorts, operations, laws and
-    ///   circuit answer at the types asserted; the identity-return `lam`'s
-    ///   binder answers at its indexed sort and its name nowhere.
+    /// - hypothesis: L3 — the probe theories' sorts, operations, rules, stated
+    ///   laws and circuit answer at the types asserted; the identity-return
+    ///   `lam`'s binder answers at its indexed sort and its name nowhere.
     /// - witness: `described::tests::a_theory_answers_at_every_member`
+    /// - witness: `described::tests::a_stated_law_answers_at_its_statement_2356`
     /// - witness: `described::tests::a_derived_rule_answers_each_side_node_at_its_sort`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     /// - witness: `description::theory::tests::a_model_type_reads_as_a_nested_model_1226`
@@ -1113,7 +1204,7 @@ impl Typer<'_>
         else {
             return;
         };
-        let model = derive_members(&members, &presentation.circuits);
+        let model = derive_members(&members, &presentation.circuits, &presentation.laws);
         self.members = members
             .sorts
             .iter()
@@ -1263,16 +1354,17 @@ impl Typer<'_>
             let stated = match form {
                 Some(&Ok(ModelForm::Law {
                     ref telescope,
+                    ref hypotheses,
                     ref carrier,
                     ref left,
                     ref right,
-                })) => Some((telescope, carrier, left, right)),
+                })) => Some((telescope, carrier, left, right, hypotheses)),
                 Some(_) | None => None,
             };
             let base = scope.binders.len();
             let mut binders: &[Binder] = &[];
-            if let Some((telescope, carrier, left, right)) = stated {
-                let tail = Tail::Path(carrier, left, right);
+            if let Some((telescope, carrier, left, right, hypotheses)) = stated {
+                let tail = Tail::Path(hypotheses, carrier, left, right);
                 let codomain = Codomain::Path(carrier, left, right);
                 if let Some(ty) = self.telescope(&mut scope, telescope, tail, codomain)
                     && let Maybe::Present(named) = member.named
@@ -1300,6 +1392,72 @@ impl Typer<'_>
                     .map_or(Reading::Elaborated(elaborated), Reading::Written);
                 self.law_side(&scope, binders, &declared, side, nodes, read);
             }
+            scope.binders.truncate(base);
+        }
+        // A stated law: its statement at its universe, its name at the type
+        // its component states, each written binder as an operation's port,
+        // each hypothesis's name at the path it assumes, and each path it
+        // assumes or concludes as `stated_path` records it.
+        for (law, member) in presentation.laws.iter().zip(&written.laws) {
+            let Some(&Ok(ModelForm::Law {
+                ref telescope,
+                ref hypotheses,
+                ref carrier,
+                ref left,
+                ref right,
+            })) = forms.next()
+            else {
+                continue;
+            };
+            let universe = self.universe(Level::zero());
+            let context = self.context(&scope);
+            self.emit(member.statement, DescribedRole::Type, universe, context);
+            let tail = Tail::Path(hypotheses, carrier, left, right);
+            let codomain = Codomain::Path(carrier, left, right);
+            if let Some(ty) = self.telescope(&mut scope, telescope, tail, codomain) {
+                self.emit(member.named, DescribedRole::Name, ty, context);
+            }
+            let base = scope.binders.len();
+            // The written binders are the telescope's last: those before them
+            // are the sort variables the derivation inserts.
+            let first = telescope.len().saturating_sub(member.binders.len());
+            for (at, (binder, binds)) in telescope
+                .iter()
+                .zip(dependence(telescope, tail))
+                .enumerate()
+            {
+                if let Some(place) = at.checked_sub(first)
+                    && let (Some(port), Some(raw)) =
+                        (member.binders.get(place), law.binders.get(place))
+                {
+                    self.port(&scope, telescope, &declared, &raw.sort, &binder.sort, port);
+                }
+                scope.push(&binder.name, binds);
+            }
+            let assumed = law
+                .hypotheses
+                .iter()
+                .zip(hypotheses)
+                .zip(&member.hypotheses);
+            for ((raw, elaborated), &(named, ref path)) in assumed {
+                let raw = (&raw.carrier, &raw.left, &raw.right);
+                let elaborated = (&elaborated.carrier, &elaborated.left, &elaborated.right);
+                if let Some(ty) =
+                    self.stated_path(&scope, telescope, &declared, raw, elaborated, path)
+                {
+                    let context = self.context(&scope);
+                    self.emit(named, DescribedRole::Name, ty, context);
+                }
+            }
+            let raw = (&law.carrier, &law.left, &law.right);
+            let _concluded = self.stated_path(
+                &scope,
+                telescope,
+                &declared,
+                raw,
+                (carrier, left, right),
+                &member.path,
+            );
             scope.binders.truncate(base);
         }
         // A rule a `derive` declaration states is a law no component states:

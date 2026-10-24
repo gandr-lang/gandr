@@ -491,13 +491,52 @@ pub struct WrittenDerived
     pub right: (FreeTerm, WrittenTerm),
 }
 
+/// Where a path type a law writes is: `Path(C, l, r)`, its carrier and its
+/// two sides.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenPath
+{
+    /// The bytes the path type covers.
+    pub span: ByteSpan,
+    /// Its carrier.
+    pub carrier: WrittenSort,
+    /// The side it starts at, its nodes in pre-order.
+    pub left: WrittenTerm,
+    /// The side it ends at, its nodes in pre-order.
+    pub right: WrittenTerm,
+}
+
+/// Where a stated law is written: `law sym : (a : C, b : C) => Path(Bool,
+/// eq(a, b), eq(b, a))`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenLaw
+{
+    /// The law's name tile.
+    pub named: ByteSpan,
+    /// The bytes its statement, a value function type, covers.
+    pub statement: ByteSpan,
+    /// Each binder over a sort, in written order.
+    pub binders: Vec<WrittenPort>,
+    /// Each hypothesis: its name tile and the path it assumes, in written
+    /// order.
+    pub hypotheses: Vec<(ByteSpan, WrittenPath)>,
+    /// The path it concludes.
+    pub path: WrittenPath,
+}
+
 /// Where a described declaration's members are written.
 ///
 /// Each list but `uses` is parallel to the one the description reads its
-/// members into: for a `theory`, the presentation's sorts, operations, laws
-/// and circuits; for a `data` family, the description's constructors,
-/// operations and rules; for a `codata` family, the description's
-/// observations.
+/// members into: for a `theory`, the presentation's sorts, operations, faces,
+/// circuits and stated laws; for a `data` family, the description's
+/// constructors, operations and rules; for a `codata` family, the
+/// description's observations.
 ///
 /// # Specification
 /// trivial.
@@ -516,6 +555,9 @@ pub struct WrittenMembers
     pub faces: Vec<WrittenFace>,
     /// The circuit rules.
     pub circuits: Vec<WrittenCircuit>,
+    /// For a `theory`, its stated laws, those of the theories it includes
+    /// first.
+    pub laws: Vec<WrittenLaw>,
     /// The names an `ext` member writes for the face and the boundary
     /// constant it is stated over.
     pub uses: Vec<WrittenUse>,

@@ -233,13 +233,18 @@ use super::written::WrittenCircuit;
 use super::written::WrittenCircuitPort;
 use super::written::WrittenFace;
 use super::written::WrittenFrame;
+use super::written::WrittenLaw;
 use super::written::WrittenMembers;
+use super::written::WrittenNode;
 use super::written::WrittenOperation;
+use super::written::WrittenPath;
 use super::written::WrittenPort;
 use super::written::WrittenRewrite;
 use super::written::WrittenSort;
 use super::written::WrittenSortMember;
+use super::written::WrittenTerm;
 use super::written::WrittenWire;
+use super::written::head;
 use super::written::port_name;
 use crate::circuit::ArrowRow;
 use crate::circuit::OutputCount;
@@ -248,13 +253,45 @@ use crate::description::DescribedDeclaration as Earlier;
 use crate::description::Visible;
 use crate::form::Piece;
 use crate::form::Placed;
+use crate::model::Binder;
+use crate::model::Hypothesis;
 use crate::model::Included;
 use crate::model::Placement;
 use crate::model::Presentation;
 use crate::model::PresentedCircuit;
 use crate::model::SortTerm;
+use crate::model::StatedLaw;
 use crate::model::presentation;
 use crate::unit::SourceIndex;
+
+quenchant_shape::reason_enum! {
+    /// Why a type a law writes states no path.
+    pub mod stated_path {
+        /// The reason no path is read.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The type is of another former than `Path`.
+            OtherFormer,
+        }
+    }
+}
+
+/// A path a law writes, `Path(C, l, r)`, as read: its carrier, its two
+/// sides, and where each is written.
+///
+/// # Specification
+/// trivial.
+struct LawPath
+{
+    /// The carrier.
+    carrier: SortTerm,
+    /// The side the path starts at.
+    left: FreeTerm,
+    /// The side it ends at.
+    right: FreeTerm,
+    /// Where the path and its parts are written.
+    written: WrittenPath,
+}
 
 /// The two sides of a signature and its rewrite-sorted binders.
 struct Boundary
@@ -369,7 +406,8 @@ impl Reader<'_, '_>
     /// Each `include` member first extends the presentation by the members of
     /// the block it names among those `visible` holds; each `ext`
     /// member declares its cell sort among the block's sorts and generates its
-    /// operations and laws after the written ones.
+    /// operations and laws after the written ones; each `law` member is kept
+    /// beside the value, which the rule decision reads.
     ///
     /// # Specification
     /// - ensures: an unreadable member does not consume a following member;
@@ -379,11 +417,14 @@ impl Reader<'_, '_>
     ///   come first, in written order, each by [`TheoryParts::include`], with
     ///   the inclusion kept beside the value and each included member's
     ///   provenance its own block's. An `ext` member's generated operations and
-    ///   laws follow the written ones, each placed at the member's keyword.
+    ///   laws follow the written ones, each placed at the member's keyword. The
+    ///   stated laws are the included presentations' then the block's own, in
+    ///   written order.
     /// - fails: a malformed signature head refuses the whole declaration; an
     ///   `include` that names no visible block, names two, or whose members
-    ///   clash with the presentation's, and an `ext` member the block cannot
-    ///   generate, is that member's own diagnostic.
+    ///   clash with the presentation's, an `ext` member the block cannot
+    ///   generate, and a `law` member [`Self::signature_law`] refuses or named
+    ///   as another member is, is that member's own diagnostic.
     /// - panics: none.
     /// - executable: none — a member's independence is a relation between the
     ///   source's members and the report, which the call does not retain.
@@ -428,6 +469,9 @@ impl Reader<'_, '_>
         let mut included_circuits = BTreeSet::new();
         let mut extensions = Vec::new();
         let mut face_tiles = Vec::new();
+        let mut laws: Vec<StatedLaw> = Vec::new();
+        // Each stated law's name, at its place among `laws`.
+        let mut stated: BTreeMap<Name, usize> = BTreeMap::new();
         for member in &members {
             let span = member_span(member, at.span);
             let mut reading = Run::new(member, span);
@@ -503,6 +547,24 @@ impl Reader<'_, '_>
                     presented_circuits.push(presented_circuit.clone());
                     circuits.push(rule.clone());
                     written.circuits.push(wired.clone());
+                }
+            }
+            // A law two includes reach through one theory is held once; a
+            // different law under a held name clashes.
+            for (law, sides) in presented.laws.iter().zip(&declaration.written.laws) {
+                match stated.get(&law.name).and_then(|&at| laws.get(at)) {
+                    Some(held) if held == law => {},
+                    Some(_) => diagnostics.push(DescriptionDiagnostic {
+                        span: include_tile.span,
+                        fault: DescriptionFault::Signature(SignatureFault::LawName(
+                            law.name.clone(),
+                        )),
+                    }),
+                    None => {
+                        let _first = stated.insert(law.name.clone(), laws.len());
+                        laws.push(law.clone());
+                        written.laws.push(sides.clone());
+                    },
                 }
             }
             inclusions.push(Included {
@@ -621,6 +683,21 @@ impl Reader<'_, '_>
                         },
                     })
             }
+            else if reading.eat(Spelling("law")).0 {
+                self.signature_law(&mut reading).and_then(|(law, sides)| {
+                    let spelled = Name::from(self.text(law.named).0);
+                    if scope.contains_key(&self.text(law.named)) || stated.contains_key(&spelled) {
+                        return Err(DescriptionDiagnostic {
+                            span: law.named.span,
+                            fault: DescriptionFault::Signature(SignatureFault::LawName(spelled)),
+                        });
+                    }
+                    let _first = stated.insert(spelled, laws.len());
+                    laws.push(law);
+                    written.laws.push(sides);
+                    Ok(())
+                })
+            }
             else if reading.eat(Spelling("include")).0 || reading.eat(Spelling("ext")).0 {
                 continue;
             }
@@ -659,6 +736,7 @@ impl Reader<'_, '_>
             placement,
             circuits: presented_circuits,
             inclusions,
+            laws,
         };
         let faces: Vec<SurfaceSpan> = presentation
             .placement
@@ -1537,6 +1615,220 @@ impl Reader<'_, '_>
                 indices: written,
             },
         ))
+    }
+
+    /// Read a law member, `law name : (binders) => Path(C, l, r)`: the
+    /// equation a model proves at the path type its statement writes, and
+    /// where each of its parts is written.
+    ///
+    /// # Specification
+    /// - requires: `run` stands just past the member's `law` keyword.
+    /// - ensures: the law's name and tile, its sort binders in written order,
+    ///   then its path hypotheses, and the path its statement ends in; each
+    ///   sort read as [`Self::sort_term`] reads one, each side as
+    ///   [`Self::law_side`] reads one; beside it, the bytes of its name, its
+    ///   statement, each binder, each hypothesis and each node of every side.
+    /// - fails: [`SignatureFault::LawStatement`] for a statement that is not a
+    ///   value function type from named binders to a path, or a sort binder
+    ///   after a hypothesis; a malformed sort or side as its reader refuses it.
+    /// - panics: none.
+    /// - executable: none — the law read is source syntax.
+    ///
+    /// # Errors
+    /// Returns the located diagnostic of the first failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `refl`, `sym` and `trans` read their binders,
+    ///   hypotheses and paths, and a statement that is no path is refused at
+    ///   its member.
+    /// - witness: `description::theory::tests::a_law_member_reads_its_statement_2356`
+    fn signature_law(
+        &self,
+        run: &mut Run<'_>,
+    ) -> Result<(StatedLaw, WrittenLaw), DescriptionDiagnostic>
+    {
+        let named = run.take()?;
+        if !run.eat(Spelling(":")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let statement = run.take()?;
+        run.end()?;
+        let refused = |at: Placed| DescriptionDiagnostic {
+            span: at.span,
+            fault: DescriptionFault::Signature(SignatureFault::LawStatement),
+        };
+        let pieces = self.pieces(statement)?;
+        let mut arrow = Run::new(&pieces, statement.span);
+        let domain = arrow.take()?;
+        if !arrow.eat(Spelling("=>")).0 {
+            return Err(refused(statement));
+        }
+        let concluded = arrow.take()?;
+        arrow.end()?;
+        let entries = self.pieces(domain)?;
+        let mut entry = Run::new(&entries, domain.span);
+        if !entry.eat(Spelling("(")).0 {
+            return Err(refused(domain));
+        }
+        let mut binders = Vec::new();
+        let mut hypotheses = Vec::new();
+        let mut written_binders = Vec::new();
+        let mut written_hypotheses = Vec::new();
+        while !entry.eat(Spelling(")")).0 {
+            let key = entry.take()?;
+            if !entry.eat(Spelling(":")).0 {
+                return Err(refused(key));
+            }
+            let typed = entry.take()?;
+            let name = Name::from(self.text(key).0);
+            match self.law_path(typed)? {
+                Maybe::Present(path) => {
+                    hypotheses.push(Hypothesis {
+                        name,
+                        carrier: path.carrier,
+                        left: path.left,
+                        right: path.right,
+                    });
+                    written_hypotheses.push((key.span, path.written));
+                },
+                Maybe::Absent(_) if hypotheses.is_empty() => {
+                    let (sort, written) = self.sort_term(typed)?;
+                    binders.push(Binder { name, sort });
+                    written_binders.push(WrittenPort {
+                        named: Maybe::Present(key.span),
+                        binders: Vec::new(),
+                        sort: written,
+                    });
+                },
+                Maybe::Absent(_) => return Err(refused(typed)),
+            }
+            if !entry.eat(Spelling(",")).0 && !entry.at(Spelling(")")).0 {
+                return Err(entry.fault(DescriptionFault::Malformed));
+            }
+        }
+        entry.end()?;
+        let Maybe::Present(path) = self.law_path(concluded)?
+        else {
+            return Err(refused(concluded));
+        };
+        Ok((
+            StatedLaw {
+                name: Name::from(self.text(named).0),
+                named,
+                binders,
+                hypotheses,
+                carrier: path.carrier,
+                left: path.left,
+                right: path.right,
+            },
+            WrittenLaw {
+                named: named.span,
+                statement: statement.span,
+                binders: written_binders,
+                hypotheses: written_hypotheses,
+                path: path.written,
+            },
+        ))
+    }
+
+    /// The path a law's type writes, `Path(C, l, r)`: its carrier and its two
+    /// sides, and where each is written; none for a type of another former.
+    ///
+    /// # Specification
+    /// - ensures: for an application headed `Path` of three arguments, the
+    ///   first read as [`Self::sort_term`] reads a sort and the others as
+    ///   [`Self::law_side`] reads a side, with the bytes of the whole type;
+    ///   [`Maybe::Absent`] for any other type.
+    /// - fails: a malformed carrier or side as its reader refuses it.
+    /// - panics: none.
+    /// - executable: none — the path read is source syntax.
+    ///
+    /// # Errors
+    /// Returns the located diagnostic of the first failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::signature_law`].
+    /// - witness: `description::theory::tests::a_law_member_reads_its_statement_2356`
+    fn law_path(
+        &self,
+        at: Placed,
+    ) -> Result<Maybe<LawPath, stated_path::Absent>, DescriptionDiagnostic>
+    {
+        let unpathed = Maybe::Absent(stated_path::Absent::OtherFormer);
+        let pieces = self.pieces(at)?;
+        if let [Piece::Tile { .. }] = *pieces.as_slice() {
+            return Ok(unpathed);
+        }
+        let mut run = Run::new(&pieces, at.span);
+        let head = run.take()?;
+        if self.text(head).0 != "Path" || !run.eat(Spelling("(")).0 {
+            return Ok(unpathed);
+        }
+        let mut arguments = Vec::with_capacity(3);
+        while !run.eat(Spelling(")")).0 {
+            arguments.push(run.take()?);
+            if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+        }
+        run.end()?;
+        let [carrier, left, right] =
+            <[Placed; 3]>::try_from(arguments).map_err(|_count| DescriptionDiagnostic {
+                span: at.span,
+                fault: DescriptionFault::Signature(SignatureFault::LawStatement),
+            })?;
+        let (carrier, carried) = self.sort_term(carrier)?;
+        let (left, from) = self.law_side(left)?;
+        let (right, to) = self.law_side(right)?;
+        Ok(Maybe::Present(LawPath {
+            carrier,
+            left,
+            right,
+            written: WrittenPath {
+                span: at.span,
+                carrier: carried,
+                left: from,
+                right: to,
+            },
+        }))
+    }
+
+    /// One side of a law's path: a `Bool` literal, or a term of the theory,
+    /// with where each of its nodes is written.
+    ///
+    /// # Specification
+    /// - ensures: `true` and `false` are the nullary constructor terms of their
+    ///   spelling, one leaf node at their bytes; any other side is the term and
+    ///   nodes [`Self::free_term`] reads.
+    /// - fails: as [`Self::free_term`].
+    /// - panics: none.
+    /// - executable: none — the side read is source syntax.
+    ///
+    /// # Errors
+    /// Returns `Malformed` for an unreadable term.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `refl`'s `true` and `sym`'s applications read as the
+    ///   literal and the terms they are.
+    /// - witness: `description::theory::tests::a_law_member_reads_its_statement_2356`
+    fn law_side(
+        &self,
+        at: Placed,
+    ) -> Result<(FreeTerm, WrittenTerm), DescriptionDiagnostic>
+    {
+        let pieces = self.pieces(at)?;
+        if let [Piece::Tile { label, .. }] = *pieces.as_slice()
+            && matches!(label.as_ref(), "true" | "false")
+        {
+            let leaf = WrittenNode {
+                span: at.span,
+                head: Maybe::Absent(head::Absent::Leaf),
+            };
+            return Ok((FreeTerm::ctor(self.text(at).0, []), WrittenTerm {
+                nodes: vec![leaf],
+            }));
+        }
+        self.free_term(at, &BTreeSet::new())
     }
 
     /// Read a rule member: a written face between two terms, with the

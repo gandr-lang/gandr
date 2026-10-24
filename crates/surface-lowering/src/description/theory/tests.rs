@@ -2201,6 +2201,75 @@ fn an_include_is_refused_at_its_member()
     );
 }
 
+/// #2356: a `law` member is kept beside the value — its binders, its
+/// hypotheses and its path — an included theory's laws first; a statement
+/// that is no path, a sort binder after a hypothesis and a law named as an
+/// operation are refused at the member, the rest read.
+#[test]
+fn a_law_member_reads_its_statement_2356()
+{
+    let source = "theory Base {\n  sort C : Type;\n  oper eq : (a : C, b : C) --> Bool;\n  law refl : (a : C) => Path(Bool, eq(a, a), true);\n}\ntheory Same {\n  include Base;\n  law sym : (a : C, b : C) => Path(Bool, eq(a, b), eq(b, a));\n  law flat : (a : C) => Bool;\n  law late : (a : C, p : Path(Bool, eq(a, a), true), b : C) => Path(Bool, eq(a, b), true);\n  law eq : (a : C) => Path(Bool, eq(a, a), true);\n}\n";
+    let report = described(source);
+    let faults = report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            (
+                diagnostic.fault.clone(),
+                source
+                    .get(usize::from(diagnostic.span.start()) .. usize::from(diagnostic.span.end()))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(faults, [
+        (
+            DescriptionFault::Signature(SignatureFault::LawStatement),
+            "Bool"
+        ),
+        (
+            DescriptionFault::Signature(SignatureFault::LawStatement),
+            "C"
+        ),
+        (
+            DescriptionFault::Signature(SignatureFault::LawName(Name::from("eq"))),
+            "eq"
+        ),
+    ]);
+    let laws = &presented(&report.declarations[1]).laws;
+    let read: Vec<(String, usize, usize, String, String, String)> = laws
+        .iter()
+        .map(|law| {
+            (
+                format!("{}", law.name),
+                law.binders.len(),
+                law.hypotheses.len(),
+                format!("{}", law.carrier.sort),
+                format!("{}", law.left),
+                format!("{}", law.right),
+            )
+        })
+        .collect();
+    assert_eq!(read, [
+        (
+            String::from("refl"),
+            1,
+            0,
+            String::from("Bool"),
+            String::from("eq(a, a)"),
+            String::from("true")
+        ),
+        (
+            String::from("sym"),
+            2,
+            0,
+            String::from("Bool"),
+            String::from("eq(a, b)"),
+            String::from("eq(b, a)")
+        ),
+    ]);
+}
+
 /// #1225: a second theory including a pair another already joins leaves the
 /// pair two incomparable joins, refused at the second naming the pair and
 /// both; a block above both joins, and a diamond over one base, are not.

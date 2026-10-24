@@ -47,17 +47,18 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// a module body's model include, `include M ;` (#2333).
-const BUILT_IN_FINGERPRINT: u64 = 0x9157_82ba_dd51_b07b;
+/// a theory's stated law, `law sym : … ;`, and a module body's admission of
+/// one, `law sym admitted ;` (#2356).
+const BUILT_IN_FINGERPRINT: u64 = 0xab54_e1d7_206e_c686;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3148);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3159);
 
 /// How many labels the walk index projects to more than one mold.
-const BUILT_IN_MULTI_MOLD_LABELS: usize = 90;
+const BUILT_IN_MULTI_MOLD_LABELS: usize = 92;
 
 /// The built-in surface's molds per label, ascending by label.
 const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
@@ -85,9 +86,9 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("-F", 2),
     (".", 35),
     ("..", 3),
-    (":", 269),
+    (":", 270),
     (":>", 2),
-    (";", 249),
+    (";", 251),
     ("<", 12),
     ("<&", 1),
     ("<-", 20),
@@ -127,6 +128,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("abort", 1),
     ("access", 1),
     ("acquire", 20),
+    ("admitted", 2),
     ("as", 85),
     ("at", 3),
     ("become", 1),
@@ -171,7 +173,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("hole_name", 2),
     ("i32", 1),
     ("i64", 1),
-    ("identifier", 431),
+    ("identifier", 434),
     ("if", 2),
     ("import", 1),
     ("in", 2),
@@ -180,6 +182,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("infixl", 1),
     ("infixr", 1),
     ("is", 1),
+    ("law", 3),
     ("leta", 20),
     ("loop", 1),
     ("migrate", 1),

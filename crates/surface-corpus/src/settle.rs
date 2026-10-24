@@ -83,6 +83,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_syntax::ByteSpan;
@@ -130,6 +131,19 @@ quenchant_shape::reason_enum! {
             /// refuse it: it checked, owes, or the lowering or the root refused
             /// it first, so there is no checker-refused body to run.
             Unrefused,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration names no admission.
+    pub mod admitted {
+        /// The declaration is no law the host admits.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// It is no admitted law, or the admission did not cross as the
+            /// owed axiom it is.
+            Unadmitted,
         }
     }
 }
@@ -397,8 +411,8 @@ impl fmt::Display for Surviving
 /// - requires: the producer establishes correspondence with the source or
 ///   counts represented.
 /// - ensures: A settlement-produced report retains source identity, admission
-///   position, stated and produced outcomes, owed obligations and the requested
-///   run outcome.
+///   position, stated and produced outcomes, owed obligations, the requested
+///   run outcome and the path of a law the host admits.
 /// - panics: none.
 /// - executable: none — The record has no module, original attributes or
 ///   checker report; `settle` and the report’s comparison methods carry the
@@ -406,12 +420,13 @@ impl fmt::Display for Surviving
 ///
 /// # Adequacy
 /// - hypothesis: L3 — matched and mismatched source expectations, missing or
-///   shifted verdicts, and guarded and run-producing declarations. Exact
-///   classifications, identities, counts and fault positions distinguish lost
-///   or swapped fields at their consuming boundaries.
+///   shifted verdicts, guarded and run-producing declarations, and an admitted
+///   law. Exact classifications, identities, counts and fault positions
+///   distinguish lost or swapped fields at their consuming boundaries.
 /// - witness: `settle::tests::a_lowering_refused_declaration_consumes_no_verdict`
 /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
 /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
+/// - witness: `settle::tests::an_admitted_law_settles_as_checks_and_lists_its_admission_2356`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DeclarationReport<'source>
 {
@@ -435,6 +450,10 @@ pub struct DeclarationReport<'source>
     /// The outcome its run produced, or the line its block's normal form
     /// produced, when it states one and was accepted.
     ran: Maybe<RunSpelling, ran::Absent>,
+    /// The structured name of the law, when the declaration is one its module
+    /// admits at a primitive carrier and it crossed as the axiom it is: the
+    /// audit row the report lists in place of an obligation.
+    admitted: Maybe<Vec<SurfaceName<'source>>, admitted::Absent>,
 }
 
 impl<'source> DeclarationReport<'source>
@@ -477,6 +496,16 @@ impl<'source> DeclarationReport<'source>
             span,
             ..self.clone()
         }
+    }
+
+    /// The structured name of the law the declaration admits, when it is one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn admitted(&self) -> &Maybe<Vec<SurfaceName<'source>>, admitted::Absent>
+    {
+        &self.admitted
     }
 
     /// The name's admission position.
@@ -782,14 +811,14 @@ impl<'source> DeclarationReport<'source>
 impl fmt::Display for DeclarationReport<'_>
 {
     /// Writes one line: the settlement, the name and its span, what it
-    /// states, what it produced with the refusal's class, and the obligations
-    /// that survive when any do.
+    /// states, what it produced with the refusal's class, the obligations
+    /// that survive when any do, and the audit row of a law the host admits.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the declaration’s settlement, name, span, stated and
-    ///   produced outcomes, refusal class when present, and nonzero residual
-    ///   obligations.
+    ///   produced outcomes, refusal class when present, nonzero residual
+    ///   obligations, and `audit: M.law admitted` for an admitted law.
     /// - fails: propagates a refusing sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -806,6 +835,7 @@ impl fmt::Display for DeclarationReport<'_>
     ///   distinguish erased metadata and swallowed failures without fixing
     ///   sentences.
     /// - witness: `settle::tests::settlement_formatters_retain_fields_and_sink_refusals`
+    /// - witness: `settle::tests::an_admitted_law_settles_as_checks_and_lists_its_admission_2356`
     #[inline]
     fn fmt(
         &self,
@@ -834,6 +864,17 @@ impl fmt::Display for DeclarationReport<'_>
         let surviving = self.surviving();
         if surviving != Surviving::default() {
             write!(f, "; surviving obligations: {surviving}")?;
+        }
+        if let Maybe::Present(ref path) = self.admitted {
+            f.write_str("; audit: ")?;
+            let mut segments = path.iter();
+            if let Some(first) = segments.next() {
+                write!(f, "{first}")?;
+            }
+            for segment in segments {
+                write!(f, ".{segment}")?;
+            }
+            f.write_str(" admitted")?;
         }
         Ok(())
     }
@@ -968,7 +1009,8 @@ impl Error for SettleFault
 ///   declarations stating a run beside their refusal call its refused run, once
 ///   each in order; only accepted declarations stating a normal form read one,
 ///   through [`LoweredModule::normal_form`], under the rules of the block that
-///   holds them; the report preserves the checker ledger count.
+///   holds them; an admitted law the checker owes is owed nothing; the report
+///   preserves the checker ledger count.
 /// - fails: `SettleFault` for the first missing or misaligned verdict, an
 ///   unreadable expectation payload, or a verdict left after the module ends.
 ///   Calls made to the runner before a later fault are not rolled back.
@@ -995,6 +1037,7 @@ impl Error for SettleFault
 /// - witness: `settle::tests::a_normal_form_settles_against_the_engines_reading`
 /// - witness: `settle::tests::a_run_beside_a_refusal_settles_only_when_both_hold`
 /// - witness: `settle::tests::a_web_settles_against_the_dialogue_s_decomposition_2077`
+/// - witness: `settle::tests::an_admitted_law_settles_as_checks_and_lists_its_admission_2356`
 #[spec(
     ensures: |ret| match ret {
     Ok(ref report) => {
@@ -1095,7 +1138,10 @@ impl Error for SettleFault
                 .zip(verdicts.judged())
                 .all(|((declaration, lowered), answer)| {
                     lowered.constant() == answer.constant()
-                        && usize::from(declaration.owed) == usize::from(owed_by(verdicts, answer))
+                        && (usize::from(declaration.owed) == usize::from(owed_by(verdicts, answer))
+                            || (lowered.role() == Role::Admitted
+                                && matches!(answer.verdict(), Verdict::Owed(_))
+                                && usize::from(declaration.owed) == 0_usize))
                         && (declaration.produced == Produced::Judged(answer.verdict())
                             || matches!(declaration.produced, Produced::Guarded(_)))
                 })
@@ -1323,6 +1369,24 @@ pub fn settle_after<'source>(
             | Produced::Unlowered(_)
             | Produced::Guarded(_) => Vec::new(),
         };
+        // A law the host admits crosses as the axiom it is: the audit lists
+        // it in place of an obligation.
+        let (owed, admitted) = match produced {
+            Produced::Judged(Verdict::Owed(_)) if lowered.role() == Role::Admitted => (
+                ObligationCount::from(0_usize),
+                Maybe::Present(module.path_of(lowered)),
+            ),
+            Produced::Judged(
+                Verdict::Data
+                | Verdict::Checked { .. }
+                | Verdict::Synthesised { .. }
+                | Verdict::Owed(_)
+                | Verdict::Suspended(_)
+                | Verdict::Refused(_),
+            )
+            | Produced::Unlowered(_)
+            | Produced::Guarded(_) => (owed, Maybe::Absent(admitted::Absent::Unadmitted)),
+        };
         declarations.push(DeclarationReport {
             name: lowered.name(),
             span: lowered.span(),
@@ -1333,6 +1397,7 @@ pub fn settle_after<'source>(
             owed,
             waits,
             ran,
+            admitted,
         });
     }
     if let Some(surplus) = judged.next() {
@@ -1756,6 +1821,7 @@ mod tests
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_surface_lowering::SurfaceName;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
@@ -2139,6 +2205,45 @@ mod tests
         );
         assert_eq!(usize::from(resumed.owed()), 0_usize);
         assert!(resumed.waits().is_empty());
+    }
+
+    /// #2356: a law a module admits at a primitive carrier crosses as the
+    /// owed axiom it is, settles `checks` owing nothing and lists its
+    /// admission on its line; the checker's ledger still holds it.
+    #[test]
+    fn an_admitted_law_settles_as_checks_and_lists_its_admission_2356()
+    {
+        let report = settled(
+            CorpusRoot::Fixture,
+            SourceText::from(
+                "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n}\nmodule SameInteger : Model(Same) with sort Carrier = Integer {\n  def same(a : Integer, b : Integer) -> Bool { true }\n  law refl admitted;\n}\n",
+            ),
+        );
+        let refl = report
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from("refl"))
+            .unwrap_or_else(|| panic!("`refl` is declared: {:?}", report.declarations()));
+        assert!(
+            matches!(refl.produced(), Produced::Judged(Verdict::Owed(_))),
+            "the admission is owed to the checker: {:?}",
+            refl.produced()
+        );
+        assert_eq!(
+            (refl.settlement(), usize::from(refl.owed())),
+            (Settlement::Settled, 0_usize),
+            "and settles `checks`, owing nothing"
+        );
+        assert!(
+            refl.to_string()
+                .ends_with("; audit: SameInteger.refl admitted"),
+            "its line names the admission: {refl}"
+        );
+        assert_eq!(
+            usize::from(report.ledger()),
+            1_usize,
+            "the ledger holds the axiom the kernel takes"
+        );
     }
 
     #[test]

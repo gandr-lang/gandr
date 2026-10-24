@@ -597,12 +597,14 @@ fn top_level_judgment() -> Regex
 /// cells are stated over and its named faces, each the subshape of the points
 /// it lists; its spelling is provisional. A sixth, `include`, names a theory
 /// whose members the block extends. A seventh, `ext`, states an extension
-/// type over the shape: a sort of cells fixed to a constant on a face.
+/// type over the shape: a sort of cells fixed to a constant on a face. An
+/// eighth, `law`, states an equation no rule orients, as the path type a model
+/// proves it at.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the sort, data, circuit-judgment, shape, include and extension
-///   member alternatives.
+/// - ensures: the sort, data, circuit-judgment, shape, include, extension and
+///   law member alternatives.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -614,7 +616,7 @@ fn top_level_judgment() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 6 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "include")))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "ext"))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 7 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "sort")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "data")))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(_))) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "shape")))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "include")))) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "ext")))) && parts.get(6).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law"))))))]
 fn theory_member() -> Regex
 {
     alt([
@@ -676,6 +678,15 @@ fn theory_member() -> Regex
             t(TileLabel("identifier")),
             t(TileLabel("is")),
             t(TileLabel("identifier")),
+        ]),
+        // `law sym : (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b,
+        // a))` — an equation no rule orients, stated as the path type a model
+        // proves it at; the rule decision never reads it.
+        seq([
+            t(TileLabel("law")),
+            t(TileLabel("identifier")),
+            t(TileLabel(":")),
+            h(Sort::Type),
         ]),
     ])
 }
