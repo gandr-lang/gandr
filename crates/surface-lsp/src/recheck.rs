@@ -29,8 +29,9 @@
 //! session on the serving thread before the next frame, and a disagreement it
 //! finds is published at the document's version in place of the reports, as
 //! one error at the origin naming the fault. A token request reads the text's
-//! one [`Reading`](crate::reading::Reading), which parses it again once per
-//! change.
+//! one [`Reading`], read off the judgement's parse when the judgement parsed
+//! the document alone ([`Reading::of_tree`]), and otherwise made by one parse
+//! of its own once per change.
 //!
 //! **The log.** Each synchronisation writes one line to the log `serve` is
 //! given — `<uri> at version <n>: <molded>/<forms> forms molded,
@@ -187,6 +188,7 @@ use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Spelling;
 use gandr_surface_grammar::built_in;
+use gandr_surface_lowering::Unit;
 use gandr_surface_parser::parse;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
@@ -194,17 +196,19 @@ use gandr_surface_session::CandidateIndex;
 use gandr_surface_session::ClosureSlot;
 use gandr_surface_session::Detached;
 use gandr_surface_session::FormCensus;
+use gandr_surface_session::JudgedParse;
 use gandr_surface_session::Laying;
 use gandr_surface_session::Ran;
 use gandr_surface_session::Session;
 use gandr_surface_session::SessionFault;
 use gandr_surface_session::Submission;
+use gandr_surface_session::Tables;
 use gandr_surface_syntax::ByteOffset as SyntaxOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
-use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::hover::heads;
 use crate::inline::Forms;
 use crate::position::Range;
 use crate::protocol::CodeDescription;
@@ -216,6 +220,8 @@ use crate::protocol::RelatedInformation;
 use crate::protocol::Severity;
 use crate::quiet::caret_form;
 use crate::quiet::formless;
+use crate::reading::Reading;
+use crate::signature::Signatures;
 
 /// The session one open document's revisions are submitted to, or the fault
 /// that kept the grammar it parses under from building. Its store keeps
@@ -574,10 +580,23 @@ impl Timing
     }
 }
 
+/// Whether a judgement reads its document's [`Reading`] off its own parse,
+/// for a copy whose requests read one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Readings
+{
+    /// The judgement reads the reading and hands it on.
+    Kept,
+    /// The judgement reads none: no request read the copy's reading since
+    /// the judgement before.
+    Unkept,
+}
+
 /// What one recheck produced: the diagnostics to publish, the binders left
 /// unused, the imports nothing reads, the form under the caret it was asked
 /// about, the paths its closure named, the lay-out it judged, the imports its
-/// parse read, the type table its judgement kept, and its timing.
+/// parse read, the type table its judgement kept with the heads read off its
+/// parse, the reading of its parse, and its timing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Rechecked
 {
@@ -600,8 +619,14 @@ pub struct Rechecked
     /// named paths moved to `named`, or why it was judged alone.
     pub laid: Maybe<Laid, laid::Absent>,
     /// The type table the judgement kept of the document's own text, which
-    /// the document's hovers read, or why it kept none.
-    pub table: Maybe<TypeTable, tabled::Absent>,
+    /// the document's hovers read, beside the heads read off the judgement's
+    /// tree as [`heads`] reads them, or why it kept none.
+    pub table: Maybe<(TypeTable, Signatures), tabled::Absent>,
+    /// The reading of the document's own text off the judgement's parse of
+    /// it ([`Reading::of_tree`]), when the judgement was asked to keep one
+    /// ([`Readings::Kept`]); none when it was not, when it parsed the document
+    /// only joined to its closure, or when it parsed nothing.
+    pub reading: Option<Reading>,
     /// The path addresses the document's root imports write, in source order,
     /// as the judgement's parse of its text read them: what its next revision
     /// is laid out over.
@@ -687,7 +712,9 @@ impl Rechecked
 ///   judged, submitted again, molds no form and judges no item, and its
 ///   diagnostics are the ones its previous judgement produced. Retired before
 ///   an item, [`Polled::Retired`], the session left as
-///   [`Session::judge_reading_retiring`] leaves it.
+///   [`Session::judge_reading_retiring`] leaves it. The reading is
+///   [`Reading::of_tree`] of the document's own tree when `readings` keeps one
+///   and the judgement parsed the document alone, and none otherwise.
 /// - provides: the one judgement every synchronisation publishes, on whatever
 ///   thread runs it.
 /// - fails: never; a fault is a diagnostic.
@@ -735,7 +762,7 @@ pub fn judge_laid<Poll>(
         Spelling,
         Maybe<gandr_surface_syntax::ByteOffset, formless::Absent>,
     ),
-    (started, retirement): (Instant, &Poll),
+    (started, retirement, readings): (Instant, &Poll, Readings),
 ) -> Polled<Rechecked, Poll::Retired, ()>
 where
     Poll: Retirement,
@@ -749,6 +776,7 @@ where
             named,
             laid,
             table: Maybe::Absent(tabled::Absent::Untabled),
+            reading: None,
             written: Maybe::Absent(reread::Absent::Unparsed),
             timing: Timing {
                 forms: FormCensus::default(),
@@ -777,17 +805,40 @@ where
         Maybe::Present(ref mut laid) => (laid.base, core::mem::take(&mut laid.named)),
         Maybe::Absent(_) => (SyntaxOffset::from(0_usize), Vec::new()),
     };
-    let read = |tree: &SyntaxTree<'_>| {
+    let keeps = session.tables() == Tables::Kept;
+    let single = Unit::single();
+    let mut reading = None;
+    let mut signatures = Signatures::default();
+    let read = |parsed: JudgedParse<'_, '_>| {
         form = match caret {
             Maybe::Present(at) => {
                 let at = SyntaxOffset::from(usize::from(at).saturating_add(usize::from(base)));
-                match caret_form(tree, at) {
+                match caret_form(parsed.tree, at) {
                     Maybe::Present(span) => own(span, base),
                     Maybe::Absent(reason) => Maybe::Absent(reason),
                 }
             },
             Maybe::Absent(reason) => Maybe::Absent(reason),
         };
+        // The reading and the heads the copy's requests read, off this parse
+        // rather than a parse of their own.
+        if let (Ok(grammar), Ok(roles)) = (grammar(), roles()) {
+            reading = parsed
+                .own
+                .filter(|_| readings == Readings::Kept)
+                .map(|tree| Reading::of_tree(grammar, roles, tree));
+            if keeps {
+                let unit = match laid {
+                    Maybe::Present(ref laid) => &laid.unit,
+                    Maybe::Absent(_) => &single,
+                };
+                signatures = heads(
+                    (grammar, roles),
+                    (parsed.tree, unit, base),
+                    parsed.closure.as_ref(),
+                );
+            }
+        }
     };
     let slot = ClosureSlot::new();
     let outcome = match laid {
@@ -818,7 +869,10 @@ where
             |parsed| path_imports(session.grammar(), parsed.tree()),
         ),
     };
-    let table = submission.take_table();
+    let table = match submission.take_table() {
+        Maybe::Present(table) => Maybe::Present((table, signatures)),
+        Maybe::Absent(reason) => Maybe::Absent(reason),
+    };
     let forms = submission.forms();
     let (judged, pending) = match submission.resumed() {
         Maybe::Present(resumed) => (Maybe::Present(resumed.census()), admitted::Absent::Pending),
@@ -860,6 +914,7 @@ where
         named,
         laid,
         table,
+        reading,
         written: Maybe::Present(written),
         timing: Timing {
             forms,
@@ -929,7 +984,11 @@ pub fn recheck(
         session,
         (text, laid),
         (verbosity, spelling, caret),
-        (started, &gandr_surface_dispatcher::Unretired),
+        (
+            started,
+            &gandr_surface_dispatcher::Unretired,
+            Readings::Unkept,
+        ),
     )
     .whole()
 }
@@ -1734,6 +1793,53 @@ mod tests
         .diagnostics
     }
 
+    /// #2440: a text the lowering refuses whole types nothing, so a recheck
+    /// keeping its table hands the hovers the refused table and the heads read
+    /// off its parse — what a hover typing the same text answers — and the
+    /// copy parses nothing to learn it.
+    #[test]
+    fn a_text_refused_whole_hovers_its_refusal_2440()
+    {
+        let uri = DocumentUri::from("file:///tmp/refused-2440.gandr");
+        let text = SourceText::from("def1 f(x : Integer) -> -F Integer {\n  return x\n}\n");
+        let mut session = open(&uri);
+        if let Ok(judging) = session.as_mut() {
+            judging.keep(gandr_surface_session::Tables::Kept);
+        }
+        let rechecked = recheck(
+            &uri,
+            &mut session,
+            text,
+            &gandr_surface_dispatcher::Unshadowed,
+            Verbosity::User,
+            Spelling::Unicode,
+            UNCARETED,
+        );
+        assert!(
+            matches!(
+                rechecked.timing.judged,
+                Maybe::Absent(super::judged::Absent::RefusedWhole)
+            ),
+            "the lowering refuses the text whole"
+        );
+        let Maybe::Present((table, signatures)) = rechecked.table
+        else {
+            panic!("a recheck keeping its table hands the hovers one");
+        };
+        let session = session.expect("the grammar builds");
+        let typed = crate::hover::hovering(
+            text,
+            std::path::Path::new("/tmp/refused-2440.gandr"),
+            &session,
+            &gandr_surface_dispatcher::Unshadowed,
+        );
+        assert_eq!(
+            (&table, &signatures),
+            (typed.table(), typed.signatures()),
+            "the table and heads handed on are those a hover types"
+        );
+    }
+
     /// The sweep of a recheck's kept table against a hover's. A run visits the
     /// sources [`Sweep::visit_rotating`] names: under a pull-request profile,
     /// plain or enforcing, a sample of the sources importing a sibling, a
@@ -1776,7 +1882,8 @@ mod tests
         /// otherwise type — after its closure's lowering when it imports a
         /// sibling, alone otherwise: every entry, declaration and declared
         /// name answers as the table [`hovering`](crate::hover::hovering)
-        /// types over the same lay-out does.
+        /// types over the same lay-out does, and so do the heads read off the
+        /// judgement's parse.
         #[test]
         fn a_recheck_keeps_the_table_its_hover_types_1521()
         {
@@ -1831,7 +1938,7 @@ mod tests
                     Spelling::Unicode,
                     UNCARETED,
                 );
-                let Maybe::Present(table) = rechecked.table
+                let Maybe::Present((table, signatures)) = rechecked.table
                 else {
                     continue;
                 };
@@ -1850,13 +1957,13 @@ mod tests
                     &session,
                     &gandr_surface_dispatcher::Unshadowed,
                 );
-                if answers(&table) != answers(typed.table()) {
+                if answers(&table) != answers(typed.table()) || signatures != *typed.signatures() {
                     differing.push(source.path);
                 }
             }
             assert!(
                 laid > 0 && kept > laid && differing.is_empty(),
-                "over {kept} sources, {laid} laid after a closure, a recheck's table answers as a hover's; differing: {differing:?}"
+                "over {kept} sources, {laid} laid after a closure, a recheck's table and heads answer as a hover's; differing: {differing:?}"
             );
         }
     }

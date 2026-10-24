@@ -418,14 +418,14 @@ impl<'source> ParseResult<'source>
         }),
     )]
     pub fn after<'joined>(
-        self,
+        &self,
         before: &SyntaxTree<'_>,
         source: SourceText<'joined>,
     ) -> Result<ParseResult<'joined>, SyntaxError>
     {
         let tree = SyntaxTree::joined(before, &self.tree, source)?;
         let by = ByteLength::from(<&str>::from(before.source()).len());
-        let mut obligations = self.obligations;
+        let mut obligations = self.obligations.clone();
         for obligation in &mut obligations {
             obligation.span = obligation.span.shifted(by);
         }

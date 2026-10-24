@@ -267,6 +267,7 @@ use crate::quiet::publishable;
 use crate::reading::Reading;
 use crate::recheck::DocumentSession;
 use crate::recheck::Finished;
+use crate::recheck::Readings;
 use crate::recheck::Rechecked;
 use crate::recheck::Taken;
 use crate::recheck::Timing;
@@ -323,6 +324,7 @@ use crate::saved::Saved;
 use crate::search::Declared;
 use crate::search::FOUND_HELD;
 use crate::search::Query;
+use crate::signature::Signatures;
 use crate::signature::help;
 use crate::sweep::Seen;
 use crate::sweep::Sweep;
@@ -629,16 +631,21 @@ impl Judgement
     }
 }
 
-/// A copy's text and, once a request has asked, the one [`Reading`] of it, its
-/// printed syntax tree and the [`Hovering`] its hovers read, beside whether
-/// its next judgement keeps a type table.
+/// A copy's text and, once a judgement or a request has read it, the one
+/// [`Reading`] of it, its printed syntax tree and the [`Hovering`] its hovers
+/// read, beside whether its next judgement keeps a type table.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a reading, a printed tree, a lay-out, a judged table or a hover
 ///   table, once made, is of the text as it stands: every change to the text
 ///   drops all five. The next judgement keeps a table exactly when a request
-///   has read the hover table since the latest did.
+///   has read the hover table since the latest did, and reads the copy's
+///   reading off its parse exactly when a request has read the reading since
+///   the latest did. A judgement that parsed the document alone and read its
+///   reading hands it on, and one that kept its table hands on the table and
+///   the heads read off its parse, so the copy parses its text itself only for
+///   what no judgement handed it.
 /// - panics: none.
 /// - executable: none — the text and what is read off it are private and change
 ///   only together, so the structure states the invariant and no call boundary
@@ -655,7 +662,8 @@ struct HeldText
 {
     /// The text.
     text: String,
-    /// The reading of `text`, made by the first request that asks.
+    /// The reading of `text`, from its latest judgement's parse, else made by
+    /// the first request that asks.
     reading: OnceCell<Reading>,
     /// The syntax tree of `text`, printed by the first request that asks.
     tree: OnceCell<ContentResult>,
@@ -666,14 +674,23 @@ struct HeldText
     /// it was judged alone; none until a recheck since the text or its
     /// closure last changed.
     laid: Option<Maybe<Laid, laid::Absent>>,
-    /// The type table the latest recheck of `text` kept, until the hover table
-    /// is made from it; none until a recheck since the text or its closure
-    /// last changed.
-    judged: Cell<Option<TypeTable>>,
+    /// The type table the latest recheck of `text` kept, with the heads read
+    /// off its parse, until the hover table is made from them; none until a
+    /// recheck since the text or its closure last changed.
+    judged: Cell<Option<(TypeTable, Signatures)>>,
     /// Whether the next judgement of `text` keeps its type table: kept once a
     /// request has read the hover table since the latest judgement, so a
     /// client that reads none pays for none. A change to the text leaves it.
     wanted: Cell<Tables>,
+    /// Whether the next judgement of `text` reads its reading off its parse:
+    /// kept once a request has read the reading since the latest judgement,
+    /// so a client that reads none pays for none. A change to the text leaves
+    /// it.
+    reads: Cell<Readings>,
+    /// How many times the copy parsed `text` itself since it last changed,
+    /// for its reading or its hover table.
+    #[cfg(test)]
+    parses: Cell<u32>,
 }
 
 impl HeldText
@@ -692,6 +709,9 @@ impl HeldText
             laid: None,
             judged: Cell::new(None),
             wanted: Cell::new(Tables::Unkept),
+            reads: Cell::new(Readings::Unkept),
+            #[cfg(test)]
+            parses: Cell::new(0),
         }
     }
 
@@ -719,6 +739,8 @@ impl HeldText
         self.hovering = OnceCell::new();
         self.laid = None;
         self.judged = Cell::new(None);
+        #[cfg(test)]
+        self.parses.set(0);
     }
 
     /// Apply `change` to the text held, as [`apply`] does, drop what was read
@@ -737,17 +759,34 @@ impl HeldText
         self.hovering = OnceCell::new();
         self.laid = None;
         self.judged = Cell::new(None);
+        #[cfg(test)]
+        self.parses.set(0);
         caret
     }
 
-    /// The reading of the text held, made now when no request has asked since
-    /// it last changed.
+    /// The reading of the text held, made now when neither its judgement nor
+    /// a request read it since it last changed.
     ///
     /// # Specification
     /// trivial.
     fn reading(&self) -> &Reading
     {
-        self.reading.get_or_init(|| Reading::of(self.source()))
+        self.reads.set(Readings::Kept);
+        self.reading.get_or_init(|| {
+            #[cfg(test)]
+            self.parsed_itself();
+            Reading::of(self.source())
+        })
+    }
+
+    /// Count one parse the copy made of its text itself, in the tests' count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[cfg(test)]
+    fn parsed_itself(&self)
+    {
+        self.parses.set(self.parses.get().saturating_add(1));
     }
 
     /// The syntax tree of the text held, printed now when no request has
@@ -764,9 +803,9 @@ impl HeldText
 
     /// What the hovers of the text held, the document at `path` that `session`
     /// judges, read, made now when no hover has asked since it or its closure
-    /// last changed: from the table the text's latest recheck kept over the
-    /// lay-out it made, else over that lay-out, else laid out now, each import
-    /// of its closure read as `shadows` holds it.
+    /// last changed: from the table and heads the text's latest recheck kept
+    /// over the lay-out it made, else over that lay-out, else laid out now,
+    /// each import of its closure read as `shadows` holds it.
     ///
     /// # Specification
     /// trivial.
@@ -779,31 +818,45 @@ impl HeldText
     {
         self.wanted.set(Tables::Kept);
         self.hovering.get_or_init(|| {
+            let judged = self.judged.take();
+            #[cfg(test)]
+            if self.laid.is_none() || judged.is_none() {
+                self.parsed_itself();
+            }
             self.laid.as_ref().map_or_else(
                 || hovering(self.source(), path, session, shadows),
-                |laid| hovering_laid(self.source(), path, session, (laid, self.judged.take())),
+                |laid| hovering_laid(self.source(), path, session, (laid, judged)),
             )
         })
     }
 
-    /// Hold `laid`, the lay-out a recheck of the text held judged, and
-    /// `table`, the type table its judgement kept, for the hovers to read; the
-    /// next judgement keeps none unless a request reads the hover table first.
+    /// Hold `laid`, the lay-out a recheck of the text held judged, `table`,
+    /// the type table its judgement kept with the heads read off its parse,
+    /// for the hovers to read, and `reading`, the reading of its parse, for
+    /// every request; the next judgement keeps no table and reads no reading
+    /// unless a request reads the hover table or the reading first.
     ///
     /// # Specification
     /// trivial.
     fn judged_over(
         &mut self,
         laid: Maybe<Laid, laid::Absent>,
-        table: Maybe<TypeTable, tabled::Absent>,
+        (table, reading): (
+            Maybe<(TypeTable, Signatures), tabled::Absent>,
+            Option<Reading>,
+        ),
     )
     {
         self.laid = Some(laid);
         self.wanted.set(Tables::Unkept);
+        self.reads.set(Readings::Unkept);
         self.judged = Cell::new(match table {
             Maybe::Present(table) => Some(table),
             Maybe::Absent(_) => None,
         });
+        if let Some(reading) = reading {
+            let _read = self.reading.set(reading);
+        }
     }
 
     /// Drop what the hovers read off the text's closure, whose imports
@@ -3398,6 +3451,7 @@ impl Server
             text: text.clone(),
             laid,
             wanted: Tables::Unkept,
+            reads: Readings::Unkept,
             rendering: (
                 rendering.0,
                 rendering.1,
@@ -8546,6 +8600,8 @@ struct Judging
     laid: Maybe<Laid, laid::Absent>,
     /// Whether the judgement keeps its type table.
     wanted: Tables,
+    /// Whether the judgement reads the copy's reading off its parse.
+    reads: Readings,
     /// The connection's verbosity, spelling and the caret whose form the
     /// publication holds back.
     rendering: (Verbosity, Spelling, Maybe<ByteOffset, formless::Absent>),
@@ -8584,6 +8640,7 @@ impl Judging
             text: String::from(<&str>::from(document.text.source())),
             laid: lay(uri, document.text.source(), shadows, written),
             wanted: document.text.wanted.get(),
+            reads: document.text.reads.get(),
             rendering: (verbosity, spelling, caret),
             started,
         }
@@ -8660,7 +8717,7 @@ impl Judging
             &mut session,
             (SourceText::from(self.text.as_str()), self.laid),
             self.rendering,
-            (self.started, retirement),
+            (self.started, retirement, self.reads),
         );
         drop(session);
         judged
@@ -8746,7 +8803,9 @@ fn publication(
         Maybe::Present(written) => Maybe::Present(written),
         Maybe::Absent(_) => Maybe::Absent(written::Absent::Unread),
     };
-    document.text.judged_over(rechecked.laid, rechecked.table);
+    document
+        .text
+        .judged_over(rechecked.laid, (rechecked.table, rechecked.reading));
     document.judgement = Judgement::Settled;
     (
         publish(PublishParams {
@@ -16884,6 +16943,87 @@ mod tests
         assert!(
             !kept(&workspace),
             "a change past which no request read the table keeps none"
+        );
+    }
+
+    /// #2440: a hover after a keystroke answers from the parse the
+    /// keystroke's judgement made — its reading and its hover table, the
+    /// table and the heads the judgement kept — so the copy parses its text
+    /// itself for neither; the reading equals a fresh parse's. A judgement
+    /// past which no request read the reading reads none.
+    #[test]
+    fn a_hover_reads_the_parse_its_judgement_made_2440()
+    {
+        let (mut workspace, [mut first, _second]) = two_connections();
+        let uri = crate::protocol::DocumentUri::from("file:///tmp/shared.gandr");
+        let rewrite = |version: Json<'_>, text: Json<'_>| {
+            let (Json(version), Json(text)) = (version, text);
+            shared(
+                Json("textDocument/didChange"),
+                Json(&format!(
+                    r#","version":{version}}},"contentChanges":[{{"text":"{text}"}}]"#
+                )),
+            )
+        };
+        drop(first.handle(
+            &mut workspace,
+            &shared(
+                Json("textDocument/didOpen"),
+                Json(
+                    r#","version":1,"text":"def1 f(x : Integer) -> -F Integer {\n  return x\n}\n"}"#,
+                ),
+            ),
+        ));
+        // A hover since the opening judgement has the next keep its table.
+        let _opened = hovered(&mut first, &mut workspace);
+        drop(first.handle(
+            &mut workspace,
+            &rewrite(
+                Json("2"),
+                Json(r"def1 f(x : Integer) -> -F Integer {\n  return x \n}\n"),
+            ),
+        ));
+        let _typed = hovered(&mut first, &mut workspace);
+        let held = &workspace
+            .documents
+            .get(&uri)
+            .expect("the document is held")
+            .document
+            .text;
+        assert!(
+            held.reading.get().is_some() && held.hovering.get().is_some(),
+            "the hover read the copy's reading and its hover table"
+        );
+        assert_eq!(
+            held.parses.get(),
+            0,
+            "and the copy parsed its text for neither since the keystroke"
+        );
+        assert_eq!(
+            held.reading.get(),
+            Some(&crate::reading::Reading::of(held.source())),
+            "the reading off the judgement's parse is a fresh parse's"
+        );
+        for (version, text) in [
+            (
+                "3",
+                r"def1 f(x : Integer) -> -F Integer {\n  return x  \n}\n",
+            ),
+            (
+                "4",
+                r"def1 f(x : Integer) -> -F Integer {\n  return x   \n}\n",
+            ),
+        ] {
+            drop(first.handle(&mut workspace, &rewrite(Json(version), Json(text))));
+        }
+        assert!(
+            workspace.documents.get(&uri).is_some_and(|held| held
+                .document
+                .text
+                .reading
+                .get()
+                .is_none()),
+            "a judgement past which no request read the reading reads none"
         );
     }
 

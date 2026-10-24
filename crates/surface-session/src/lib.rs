@@ -223,6 +223,7 @@ pub use crate::session::ClosureSlot;
 pub use crate::session::Detached;
 pub use crate::session::Holding;
 pub use crate::session::ImportRow;
+pub use crate::session::JudgedParse;
 pub use crate::session::KernelCheckpoint;
 pub use crate::session::Laying;
 pub use crate::session::Persistence;

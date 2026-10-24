@@ -6,29 +6,20 @@
 //! Semantic tokens, document symbols, folding ranges, selection ranges,
 //! document links, a hover, signature help and the render bus's report all
 //! read the molded tree of the same text. A copy of a document holds that text
-//! beside a [`Reading`] of it, made by the first such request after the text
-//! last changed: one parse, from which the highlighter's spans, the
+//! beside a [`Reading`] of it: read off the parse the text's judgement made
+//! ([`Reading::of_tree`]) when the judgement parsed the document alone, else
+//! made by the first such request after the text last changed
+//! ([`Reading::of`]). From that one parse the highlighter's spans, the
 //! declarations with their form keys, the folds, the selection skeleton, the
-//! calls and the path imports are read and kept.
-//! Every later request until the next change answers from them. A change to
-//! the text drops the reading, so every answer is read off the text the copy
-//! holds.
+//! calls and the path imports are read and kept. Every later request until
+//! the next change answers from them. A change to the text drops the reading,
+//! so every answer is read off the text the copy holds.
 //!
 //! An editor sends the four structural requests after each keystroke, so a
 //! parse per request parses each text four times or more and pays the molder's
 //! cost on a malformed text, which a text being typed often is, at each. The
 //! reading keeps owned answers, not the tree, because the tree borrows the
 //! text it is held beside.
-//!
-//! - Alternatives: a parse per request, which keeps nothing between requests
-//!   and pays the molder once per request; the tree itself beside the text,
-//!   which borrows the text and would need a self-referential holder; a parse
-//!   at each synchronisation, which reads texts no request asks about, since
-//!   the session's composition consumes its own tree.
-//! - Reversal: a measured memory cost of a reading per held copy, with many
-//!   documents open, drops a reading once its requests are answered; a request
-//!   that needs the tree's every node, not what is kept here, holds the tree
-//!   beside an owned text instead.
 
 use alloc::vec::Vec;
 use std::path::Path;
@@ -37,6 +28,7 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Sort;
 use gandr_surface_lowering::Address;
 use gandr_surface_lowering::WrittenImport;
@@ -347,9 +339,43 @@ impl Reading
         else {
             return Self(Maybe::Absent(unread::Absent::Unparsed));
         };
-        let tree = parsed.into_tree();
-        let index = LineIndex::new(<&str>::from(text).into());
-        let declared = declarations(grammar, roles, &tree, &index);
+        Self::of_tree(grammar, roles, parsed.tree())
+    }
+
+    /// The reading of `tree`'s text, read off `tree`.
+    ///
+    /// # Specification
+    /// - requires: `tree` is the parse of its source under `grammar`, as
+    ///   [`parse`] makes it, and `roles` is `grammar`'s role table.
+    /// - ensures: the reading [`Reading::of`] gives of `tree`'s source, whose
+    ///   spans are sorted, pairwise disjoint and on character boundaries of it.
+    /// - provides: the reading a judgement's parse of a text gives, so no
+    ///   request about the text parses it again.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one walk of the tree per answer kind.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — after a keystroke, the reading a copy holds off its
+    ///   judgement's parse equals the reading of a fresh parse of its text.
+    /// - witness: `server::tests::a_hover_reads_the_parse_its_judgement_made_2440`
+    #[spec(ensures: |ret| match ret.0 {
+        Maybe::Present(ref readout) => readout.spans.iter().zip(readout.spans.iter().skip(1))
+            .all(|(first, second)| first.range.end() <= second.range.start())
+            && readout.spans.iter().all(|span| usize::from(span.range.end()) <= <&str>::from(tree.source()).len()
+                && <&str>::from(tree.source()).is_char_boundary(usize::from(span.range.start()))
+                && <&str>::from(tree.source()).is_char_boundary(usize::from(span.range.end()))),
+        Maybe::Absent(_) => true,
+    })]
+    #[must_use]
+    pub fn of_tree(
+        grammar: &Pbg,
+        roles: &RoleTable,
+        tree: &SyntaxTree<'_>,
+    ) -> Self
+    {
+        let index = LineIndex::new(<&str>::from(tree.source()).into());
+        let declared = declarations(grammar, roles, tree, &index);
         let members: Vec<(NodeIndex, ByteSpan)> = declared
             .iter()
             .filter_map(|&(declarer, _)| match declarer {
@@ -358,16 +384,16 @@ impl Reading
             })
             .collect();
         let mut readout = Readout {
-            spans: roles.highlight(&tree).unwrap_or_default(),
+            spans: roles.highlight(tree).unwrap_or_default(),
             declarations: declared
                 .into_iter()
                 .map(|(declarer, symbol)| match declarer {
                     Declarer::Form(at) | Declarer::Root(at) => Declaration {
                         key: tree.key(at),
-                        head: head(&tree, &index, at, &symbol),
+                        head: head(tree, &index, at, &symbol),
                         members: match symbol.kind {
                             SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT => {
-                                runs(&tree, at).into_iter().map(|run| run.span).collect()
+                                runs(tree, at).into_iter().map(|run| run.span).collect()
                             },
                             _ => Vec::new(),
                         },
@@ -389,13 +415,13 @@ impl Reading
                     },
                 })
                 .collect(),
-            folds: folds(&tree, &index, &members),
-            skeleton: Skeleton::of(&tree, &members),
-            calls: Calls::of(grammar, &tree),
+            folds: folds(tree, &index, &members),
+            skeleton: Skeleton::of(tree, &members),
+            calls: Calls::of(grammar, tree),
             imports_end: None,
             imports: Vec::new(),
             written: Vec::new(),
-            tiles: tiles(grammar, &tree),
+            tiles: tiles(grammar, tree),
             own: tree
                 .roots()
                 .iter()
@@ -409,7 +435,7 @@ impl Reading
                 })
                 .collect(),
         };
-        if let Ok(written) = written_imports(grammar, &tree) {
+        if let Ok(written) = written_imports(grammar, tree) {
             readout.imports_end = written.last().map(|import| import.span.end());
             readout.written.clone_from(&written);
             readout.imports = written
