@@ -334,6 +334,34 @@ pub const PRELUDE: &[Primitive] = &[
         operation: Operation::Eq,
     }),
     Primitive(&Definition {
+        name: "int.lt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Lt,
+    }),
+    Primitive(&Definition {
+        name: "int.le",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Le,
+    }),
+    Primitive(&Definition {
+        name: "int.gt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Gt,
+    }),
+    Primitive(&Definition {
+        name: "int.ge",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Ge,
+    }),
+    Primitive(&Definition {
         name: "neg",
         operator: Operator::Prefix("-"),
         arguments: &[PrimitiveType::Integer],
@@ -416,6 +444,13 @@ pub const PRELUDE: &[Primitive] = &[
         arguments: &[PrimitiveType::Text, PrimitiveType::Text],
         result: PrimitiveType::Boolean,
         operation: Operation::Eq,
+    }),
+    Primitive(&Definition {
+        name: "string.lt",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Text, PrimitiveType::Text],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Lt,
     }),
     Primitive(&Definition {
         name: "float64.add",
@@ -688,10 +723,11 @@ impl Primitive
     /// - requires: nothing; unchecked callers receive typed refusals.
     /// - ensures: exact integer arithmetic; division truncates toward zero,
     ///   remainder has the dividend's sign; booleans use left for true; an
-    ///   append is the first string's characters followed by the second's, and
-    ///   two strings are equal when their bytes are; floating-point rows are
-    ///   IEEE 754 binary64, ties to even, with `exp` from `libm` and every NaN
-    ///   canonical.
+    ///   append is the first string's characters followed by the second's; two
+    ///   strings are equal when their bytes are, and one is below another when
+    ///   its bytes are lexicographically, a proper prefix below the text it
+    ///   begins; floating-point rows are IEEE 754 binary64, ties to even, with
+    ///   `exp` from `libm` and every NaN canonical.
     /// - fails: arity before argument classifiers, then zero division; invalid
     ///   decimal conversion is named separately; a floating-point number with
     ///   no nearest integer is not finite.
@@ -705,12 +741,13 @@ impl Primitive
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
     ///   beyond machine width, every boolean pair, two strings appended in both
-    ///   orders and two strings equal only byte for byte distinguish operation
-    ///   and error drift.
+    ///   orders, two strings equal only byte for byte and two ordered by their
+    ///   bytes distinguish operation and error drift.
     /// - witness: `primitive::tests::exact_arithmetic_and_errors`
     /// - witness: `primitive::tests::comparisons_and_booleans`
     /// - witness: `primitive::tests::an_append_writes_the_first_string_then_the_second`
     /// - witness: `primitive::tests::a_string_equality_compares_the_texts_byte_for_byte`
+    /// - witness: `primitive::tests::a_string_order_compares_the_texts_byte_for_byte`
     /// - witness: `primitive::tests::floating_point_rows_are_ieee_binary64`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| value.classifier() == self.0.result))]
     #[inline]
@@ -760,6 +797,12 @@ impl Primitive
                 else {
                     Side::Right
                 })),
+                Operation::Lt => Ok(Scalar::Boolean(if left.as_bytes() < right.as_bytes() {
+                    Side::Left
+                }
+                else {
+                    Side::Right
+                })),
                 Operation::First
                 | Operation::Add
                 | Operation::Sub
@@ -768,7 +811,6 @@ impl Primitive
                 | Operation::Mod
                 | Operation::Neg
                 | Operation::Ne
-                | Operation::Lt
                 | Operation::Le
                 | Operation::Gt
                 | Operation::Ge

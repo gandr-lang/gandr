@@ -1229,12 +1229,25 @@ fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
     else {
         panic!("one timing line per synchronisation: {log:?}");
     };
+    // The declarations offered, of every declaration the revision holds, the
+    // prelude's among them.
+    let crossed = |line: &str| -> Option<(usize, usize)> {
+        let (_, crossed) = line.rsplit_once(", ")?;
+        let (offered, of) = crossed
+            .strip_suffix(" declarations crossed")?
+            .split_once('/')?;
+        Some((offered.parse().ok()?, of.parse().ok()?))
+    };
+    let whole = crossed(opened).map(|(offered, of)| (offered == of).then_some(of));
     assert!(
-        opened.contains(", 10/10 declarations crossed"),
+        whole.is_some_and(|whole| whole.is_some()),
         "opening offers the kernel the prelude, the closure and the document: {opened}"
     );
-    assert!(
-        changed.contains(", 2/11 declarations crossed"),
+    assert_eq!(
+        crossed(changed),
+        whole
+            .flatten()
+            .and_then(|of| Some((2_usize, of.checked_add(1)?))),
         "an edit to its own text offers the document's declarations alone: {changed}"
     );
 }

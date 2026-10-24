@@ -1458,6 +1458,59 @@ fn a_model_crosses_to_an_included_theory_s_by_its_reduct()
     );
 }
 
+/// Beside a kept reduct, a value at one owed code's decode where another's is
+/// wanted is still apart: the crossing's comparisons are decided rigidly, so
+/// neither decode converts with the reduct's types by a residual, and no
+/// reduct runs in the definition's value.
+#[test]
+fn an_owed_decode_crosses_by_no_reduct()
+{
+    let mut arena = CoreArena::new();
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    // `reduct = thunk(λn. return n)`, a map from the integers to the integers.
+    let reduct_type = {
+        let returns = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns);
+        arena.value_type_thunk(arrow)
+    };
+    let reduct = {
+        let bound = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(0_u32),
+        );
+        let returned = arena.computation_return(bound);
+        let lambda = arena.computation_lambda(returned);
+        arena.value_thunk(lambda)
+    };
+    let decode = |arena: &mut CoreArena, at: usize| {
+        let code = arena.value_constant(ConstantIndex::from(at));
+        arena.value_type_element(code, Level::zero())
+    };
+    let code = decode(&mut arena, 1);
+    let other = decode(&mut arena, 2);
+    let held = arena.value_constant(ConstantIndex::from(3_usize));
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.keep_reducts(&[ConstantIndex::from(0_usize)]);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(reduct_type), Maybe::Present(reduct)),
+            declaration(At(1), Maybe::Present(universe), HOLE),
+            declaration(At(2), Maybe::Present(universe), HOLE),
+            declaration(At(3), Maybe::Present(other), HOLE),
+            declaration(At(4), Maybe::Present(code), Maybe::Present(held)),
+        ])
+    };
+    assert!(
+        matches!(
+            report.judged()[4].verdict(),
+            Verdict::Refused(CheckRefusal::TypeMismatch(_))
+        ),
+        "two owed decodes stay apart, the reduct crossing neither: {:?}",
+        report.judged()[4].verdict()
+    );
+}
+
 #[test]
 fn a_manifest_model_crosses_by_its_forgetting_map_at_its_carrier()
 {
@@ -2852,5 +2905,66 @@ fn a_scope_is_checked_as_a_model_of_its_theory_2272()
             left: apart.left,
             right: apart.right,
         })
+    );
+}
+
+#[test]
+fn a_nested_argument_binds_the_implicit_it_is_read_at()
+{
+    use gandr_core_term::Zone;
+    use gandr_core_term::hole::HoleId;
+    use gandr_core_term::hole::NominationIndex;
+
+    // def forget : U ((a : Type) -> El a -> F unit) = thunk λ λ. return () ;
+    // def k      : U (F unit) = thunk ((force forget) ?a) (nested (return 0)) ;
+    // Only the computation written as the argument determines `a`: read at
+    // the decode of a hole nothing has bound yet, it runs, and the integers
+    // it returns bind `a`.
+    let mut arena = CoreArena::new();
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unit = arena.value_type_unit();
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let element = arena.value_type_element(bound, Level::zero());
+    let returns_unit = arena.comp_type_returner(unit);
+    let arrow = arena.comp_type_arrow(element, returns_unit);
+    let polymorphic = arena.comp_type_pi(small, arrow);
+    let forget_type = arena.value_type_thunk(polymorphic);
+    let forget = {
+        let nothing = arena.value_unit();
+        let returned = arena.computation_return(nothing);
+        let inner = arena.computation_lambda(returned);
+        let outer = arena.computation_lambda(inner);
+        arena.value_thunk(outer)
+    };
+    let suspended = arena.value_type_thunk(returns_unit);
+    let zero = arena.value_literal(integer_literal());
+    let produce = arena.computation_return(zero);
+    let argument = arena.value_nested(produce);
+    let hole = arena.value_hole(
+        HoleId::nominated(NominationIndex::from(0_u32)).expect("the first nominated name"),
+    );
+    let constant = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(constant);
+    let head = arena.computation_application(forced, hole);
+    let applied = arena.computation_application(head, argument);
+    let call = arena.value_thunk(applied);
+    let report = {
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        check_module(&mut context, &[
+            declaration(At(0), Maybe::Present(forget_type), Maybe::Present(forget)),
+            declaration(At(1), Maybe::Present(suspended), Maybe::Present(call)),
+        ])
+    };
+    assert!(
+        matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+        "the argument's integers bind the implicit: {:?}",
+        report.judged()[1].verdict()
+    );
+    assert_eq!(
+        report.nested_elaborations()[&ConstantIndex::from(1_usize)]
+            .decisions()
+            .get(&argument),
+        Some(&Nesting::Ran(Purity::Pure)),
+        "the argument runs, never suspended at the hole's decode"
     );
 }

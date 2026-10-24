@@ -673,11 +673,11 @@ impl<'source> Lowerer<'_, 'source>
         )
     }
 
-    /// Plan the comparison `a == b` at `site`, read under `frame`, whose
+    /// Plan the comparison `a ⊙ b` at `site`, read under `frame`, whose
     /// operator tile is `tile` and operands `operands`, as the call of the
     /// prelude's declaration of `name`, the name the native operator table
-    /// gives `==`'s row: its model of `Eq` omitted, so resolved by the sort
-    /// the operands force.
+    /// gives `⊙`'s row: its model of `Eq` (for `==`) or of `Ord` (for `<`,
+    /// `<=`, `>` and `>=`) omitted, so resolved by the sort the operands force.
     ///
     /// # Specification
     /// - requires: `site` is a binary operator form read as a computation under
@@ -696,10 +696,12 @@ impl<'source> Lowerer<'_, 'source>
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two integers and two strings compare through the
-    ///   prelude's models, a source's own `eq` leaves its `==` the prelude's,
-    ///   and a unit with no prelude keeps the primitive.
+    /// - hypothesis: L3 — two integers and two strings compare and order
+    ///   through the prelude's models, a source's own `eq` or `lt` leaves its
+    ///   operator the prelude's, and a unit with no prelude keeps the
+    ///   primitive.
     /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    /// - witness: `lower::implicit::tests::an_order_calls_the_prelude_s_order_2333`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| match ret {
@@ -711,7 +713,7 @@ impl<'source> Lowerer<'_, 'source>
             Err(_) => true,
         },
     )]
-    pub(super) fn equality(
+    pub(super) fn through_prelude(
         &mut self,
         site: Site,
         frame: Frame,

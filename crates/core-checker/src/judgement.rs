@@ -4956,9 +4956,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   computation checks against the thunk's body and it is recorded
     ///   suspended, except a call against a thunk whose body is no returner
     ///   ([`Self::nested_read`]), which synthesises first and runs when it
-    ///   returns; against any other it runs: its computation synthesises a
-    ///   returner whose result crosses the value bridge to `expected`, and it
-    ///   is recorded run; a constructor checked at a staged type checks as
+    ///   returns, and except the decode of an implicit the solver has not bound
+    ///   yet, where it runs so that what it returns binds the implicit; against
+    ///   any other it runs: its computation synthesises a returner whose result
+    ///   crosses the value bridge to `expected`, and it is recorded run; a
+    ///   constructor checked at a staged type checks as
     ///   [`Self::staged_constructor`] does; a synthesising value synthesises,
     ///   then crosses the value bridge to `expected`. Every other rule
     ///   descends.
@@ -4980,6 +4982,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - witness: `judgement::tests::a_hole_synthesises_the_unknown_type_and_checks_against_any`
     /// - witness: `module::tests::a_nested_computation_is_decided_by_its_expected_type`
     /// - witness: `module::tests::a_call_returning_a_function_runs_where_one_is_read_2327`
+    /// - witness: `module::tests::a_nested_argument_binds_the_implicit_it_is_read_at`
     /// - witness: `judgement::access::tests::a_view_kept_in_a_region_lives_as_long_as_its_scope`
     ///
     /// # Judgement
@@ -5068,7 +5071,21 @@ impl<'context, 'arena> Machine<'context, 'arena>
             },
             Value::Nested(computation) => {
                 let head = self.context.whnf_value_type(expected)?;
-                match matched_thunk(self.context.arena_mut(), head) {
+                // The decode of an implicit no argument has bound yet is no
+                // thunk the author wrote: the computation runs, and the type
+                // it returns binds the implicit across the bridge.
+                let matched = if self
+                    .context
+                    .deferrals()
+                    .unbound(self.context.arena(), head)
+                    .is_some()
+                {
+                    Maybe::Absent(matching::Absent::Mismatched)
+                }
+                else {
+                    matched_thunk(self.context.arena_mut(), head)
+                };
+                match matched {
                     Maybe::Present(body_type) => {
                         // Against a thunk whose body no returner converts
                         // with, a call is read by what it synthesises.

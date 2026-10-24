@@ -1,0 +1,36 @@
+// An owed code's decode beside a theory that includes another. A model of the
+// including theory stands at a model of the included one by its reduct, and
+// the bridge looks for that crossing only between types it can decide: the
+// decode of an owed code is compared rigidly there, never left waiting, so a
+// value at one owed code's decode where another's is wanted is still apart,
+// as in `suspended-decode.gandr`, and no reduct is run where no computation
+// may run.
+
+/// A carrier with a test.
+theory Base {
+  sort Carrier : Type;
+  oper test : (a : Carrier) --> Bool;
+}
+
+/// A carrier with a test and another, over `Base`.
+theory Wider {
+  include Base;
+  oper other : (a : Carrier) --> Bool;
+}
+
+/// A code the module owes.
+@[ owes(1) ]
+def code : Type ;
+
+/// A second code the module owes.
+@[ owes(1) ]
+def other : Type ;
+
+/// A value the module owes at the second code's decode.
+@[ owes(1) ]
+def held : other ;
+
+/// A value at one owed code's decode where another's is wanted: two holes and
+/// no rigid side, and no reduct crosses between them.
+@[ refuses("TypeMismatch") ]
+def acrossHoles : code = held ;

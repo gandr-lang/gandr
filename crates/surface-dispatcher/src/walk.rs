@@ -2712,14 +2712,23 @@ pub mod tests
             );
             let &(_, (ref apart, own), ref declared, ref apart_segments) = find("apart");
             assert_eq!(
-                (own, declared.as_slice(), apart_segments.len()),
+                (own, declared.as_slice()),
                 (
                     gandr_surface_lowering::prelude::base(),
-                    ["apart".to_owned()].as_slice(),
-                    10_usize
+                    ["apart".to_owned()].as_slice()
                 ),
-                "a source joined to no other is judged after the prelude alone, its \
-                 certificate the prelude's nine segments and its own"
+                "a source joined to no other is laid after the prelude alone"
+            );
+            let (apart_own, prelude_segments) = apart_segments
+                .split_last()
+                .expect("the apart source's certificate holds its declaration");
+            assert!(
+                !prelude_segments.is_empty()
+                    && base_segments.starts_with(prelude_segments)
+                    && !base_segments.contains(apart_own),
+                "a source joined to no other is judged after the prelude alone: its \
+                 certificate is the prelude's segments, which the base's begins with, \
+                 and its own"
             );
             assert!(!apart.contains("data Point"));
         }

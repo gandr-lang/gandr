@@ -115,6 +115,10 @@ fn comparisons_and_booleans()
         ("le", Side::Left),
         ("gt", Side::Right),
         ("ge", Side::Right),
+        ("int.lt", Side::Left),
+        ("int.le", Side::Left),
+        ("int.gt", Side::Right),
+        ("int.ge", Side::Right),
     ] {
         assert_eq!(
             named(PrimitiveName(name)).evaluate(&[less.borrowed(), more.borrowed()]),
@@ -130,6 +134,10 @@ fn comparisons_and_booleans()
         ("le", Side::Left),
         ("gt", Side::Right),
         ("ge", Side::Left),
+        ("int.lt", Side::Right),
+        ("int.le", Side::Left),
+        ("int.gt", Side::Right),
+        ("int.ge", Side::Left),
     ] {
         assert_eq!(
             named(PrimitiveName(name)).evaluate(&[less.borrowed(), less.borrowed()]),
@@ -235,6 +243,55 @@ fn a_string_equality_compares_the_texts_byte_for_byte()
     );
     assert_eq!(
         equal.evaluate(&[machines.borrowed(), integer(Digits("1")).borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "a text row refuses an integer"
+    );
+}
+
+#[test]
+fn a_string_order_compares_the_texts_byte_for_byte()
+{
+    let below = named(PrimitiveName("string.lt"));
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let answer =
+        |left: &Scalar, right: &Scalar| below.evaluate(&[left.borrowed(), right.borrowed()]);
+    let yes = Ok(Scalar::Boolean(Side::Left));
+    let no = Ok(Scalar::Boolean(Side::Right));
+    let (alpha, beta) = (text("alpha"), text("beta"));
+    assert_eq!(
+        answer(&alpha, &beta),
+        yes,
+        "the first differing byte decides"
+    );
+    assert_eq!(answer(&beta, &alpha), no, "the order is the operands'");
+    assert_eq!(answer(&alpha, &alpha), no, "a text is not below itself");
+    assert_eq!(
+        answer(&text("alp"), &alpha),
+        yes,
+        "a proper prefix is below the text it begins"
+    );
+    assert_eq!(
+        answer(&alpha, &text("alp")),
+        no,
+        "and the text is not below it"
+    );
+    assert_eq!(
+        answer(&text(""), &text("a")),
+        yes,
+        "the empty text is the least"
+    );
+    assert_eq!(
+        answer(&text("Z"), &text("a")),
+        yes,
+        "bytes, not a case-folded order"
+    );
+    assert_eq!(
+        answer(&text("z"), &text("é")),
+        yes,
+        "a multi-byte character orders by its leading byte"
+    );
+    assert_eq!(
+        below.evaluate(&[alpha.borrowed(), integer(Digits("1")).borrowed()]),
         Err(PrimitiveError::ArgumentType),
         "a text row refuses an integer"
     );

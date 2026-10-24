@@ -450,6 +450,33 @@ impl Deferrals
         }
     }
 
+    /// The metavariable the value type `ty` is the decode of, when the running
+    /// judgement declared it and the solver has not bound it yet.
+    ///
+    /// # Specification
+    /// - requires: `ty` is read at its weak head.
+    /// - ensures: the metavariable exactly when `ty` is the decode of a hole
+    ///   the running judgement declared, with no solution in its store; nothing
+    ///   for any other type, an author's hole's decode among them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an implicit only a computation argument determines is
+    ///   unbound when that argument is read, so the argument runs and binds it;
+    ///   were it reported bound, the argument would be suspended and the
+    ///   implicit left unforced.
+    /// - witness: `module::tests::a_nested_argument_binds_the_implicit_it_is_read_at`
+    #[spec(ensures: |ret| ret.is_none_or(|meta| ret == self.decoded(arena, Side::ValueType(ty)) && matches!(self.metas.solution(meta), Maybe::Absent(_))))]
+    pub(crate) fn unbound(
+        &self,
+        arena: &CoreArena,
+        ty: gandr_core_term::ValueTypeId,
+    ) -> Option<MetaId>
+    {
+        self.decoded(arena, Side::ValueType(ty))
+            .filter(|&meta| matches!(self.metas.solution(meta), Maybe::Absent(_)))
+    }
+
     /// Why the solver left `meta` unbound: the reason of the first equation
     /// in its store that waits on `meta`, names it, or has its decode at a
     /// head; unforced when none does.
