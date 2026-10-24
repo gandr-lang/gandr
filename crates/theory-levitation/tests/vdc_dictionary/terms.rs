@@ -90,6 +90,8 @@ enum Application
     Inst,
     /// An atom's abstraction over its one body.
     Abs,
+    /// A binding field over its one body.
+    Lam,
 }
 
 impl Application
@@ -111,6 +113,12 @@ impl Application
             Self::Results => FreeTerm::results(args),
             Self::Inst => FreeTerm::inst(name, args),
             Self::Abs => FreeTerm::abs(
+                name,
+                args.into_iter()
+                    .next()
+                    .unwrap_or_else(|| FreeTerm::results([])),
+            ),
+            Self::Lam => FreeTerm::lam(
                 name,
                 args.into_iter()
                     .next()
@@ -230,7 +238,11 @@ where
                 TermView::Abs { atom, args } => {
                     schedule(&mut work, Application::Abs, atom.clone(), args);
                 },
+                TermView::Lam { var, args } => {
+                    schedule(&mut work, Application::Lam, var.clone(), args);
+                },
                 TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
+                TermView::Bound(name) => built.push(FreeTerm::bound(name.clone())),
             },
             Rebuild::Assemble {
                 application,
@@ -405,8 +417,8 @@ fn match_node(
 /// - witness: `tests::vdc_dictionary::terms::tests::positions_and_replacement_preserve_the_spine`
 #[spec(ensures: |ref found| *found == position.iter().try_fold(term.to_node(), |node, index| {
     match node.view() {
-        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } | TermView::Inst { mut args, .. } | TermView::Abs { mut args, .. } => args.nth(usize::from(*index)),
-        | TermView::Var(_) | TermView::Atom(_) => None,
+        | TermView::Ctor { mut args, .. } | TermView::Op { mut args, .. } | TermView::Results { mut args } | TermView::Inst { mut args, .. } | TermView::Abs { mut args, .. } | TermView::Lam { mut args, .. } => args.nth(usize::from(*index)),
+        | TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => None,
     }
 }).map_or(Maybe::Absent(position::Absent::OffTerm), Maybe::Present))]
 pub fn subterm_at<'term>(
@@ -421,8 +433,9 @@ pub fn subterm_at<'term>(
             | TermView::Op { mut args, .. }
             | TermView::Results { mut args }
             | TermView::Inst { mut args, .. }
-            | TermView::Abs { mut args, .. } => args.nth(usize::from(index)),
-            TermView::Var(_) | TermView::Atom(_) => None,
+            | TermView::Abs { mut args, .. }
+            | TermView::Lam { mut args, .. } => args.nth(usize::from(index)),
+            TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => None,
         };
         let Some(next) = next
         else {
@@ -478,7 +491,8 @@ pub fn replace_at(
             TermView::Results { args } => (Application::Results, Name::from(""), args),
             TermView::Inst { name, args } => (Application::Inst, name.clone(), args),
             TermView::Abs { atom, args } => (Application::Abs, atom.clone(), args),
-            TermView::Var(_) | TermView::Atom(_) => {
+            TermView::Lam { var, args } => (Application::Lam, var.clone(), args),
+            TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {
                 return Maybe::Absent(position::Absent::OffTerm);
             },
         };

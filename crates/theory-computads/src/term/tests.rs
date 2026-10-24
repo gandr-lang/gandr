@@ -843,7 +843,7 @@ fn abstractions_naming_different_atoms_are_one_term()
     assert_eq!(
         Term(alloc::vec![
             Head::Op(Name::from("nu"), Count(1)),
-            Head::Abs,
+            Head::Abs(Binds::Atom),
             Head::Var(Name::from("p")),
         ]),
         term,
@@ -853,6 +853,20 @@ fn abstractions_naming_different_atoms_are_one_term()
         Maybe::Present(restricted("a0")),
         term.read(),
         "it reads back naming its canonical atom"
+    );
+    let field = FreeTerm::op("nu", [FreeTerm::lam("a", FreeTerm::var("p"))]);
+    assert_ne!(
+        Term::from(&field),
+        term,
+        "a binding field is not an atom's abstraction"
+    );
+    assert_eq!(
+        Maybe::Present(FreeTerm::op("nu", [FreeTerm::lam(
+            "a0",
+            FreeTerm::var("p")
+        )])),
+        Term::from(&field).read(),
+        "and reads back as the field it is"
     );
     let nu = |atom: &str, body: FreeTerm| FreeTerm::op("nu", [FreeTerm::abs(atom, body)]);
     let z = || FreeTerm::op("z", []);
@@ -888,11 +902,11 @@ fn an_atom_counts_the_abstractions_to_its_binder()
     let heads = |between: usize| {
         Term(alloc::vec![
             Head::Op(Name::from("nu"), Count(1)),
-            Head::Abs,
+            Head::Abs(Binds::Atom),
             Head::Op(Name::from("nu"), Count(1)),
-            Head::Abs,
+            Head::Abs(Binds::Atom),
             Head::Op(Name::from("out"), Count(2)),
-            Head::Occ(Count(between)),
+            Head::Occ(Binds::Atom, Count(between)),
             Head::Op(Name::from("nil"), Count(0)),
         ])
     };
@@ -928,12 +942,12 @@ fn an_atom_counts_the_abstractions_to_its_binder()
     );
     assert_eq!(
         (
-            Term(alloc::vec![Head::Free(Name::from("c"))]),
+            Term(alloc::vec![Head::Free(Binds::Atom, Name::from("c"))]),
             Maybe::Present(FreeTerm::atom("^1")),
         ),
         (
             Term::from(&FreeTerm::atom("c")),
-            Term(alloc::vec![Head::Occ(Count(1))]).read(),
+            Term(alloc::vec![Head::Occ(Binds::Atom, Count(1))]).read(),
         ),
         "an atom no abstraction binds stays named, and a dangling occurrence reads as how far it reaches past the root"
     );

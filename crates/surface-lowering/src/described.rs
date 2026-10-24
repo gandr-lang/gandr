@@ -320,6 +320,8 @@ enum Rebuild<'term>
     Inst(&'term Name, usize),
     /// An abstraction of the atom whose body has been rebuilt.
     Abs(&'term Name),
+    /// A binding field whose body has been rebuilt.
+    Lam(&'term Name),
 }
 
 /// A data family's operation, read over the module's families.
@@ -424,12 +426,13 @@ impl<'form> Unstated<'form>
         let mut pending = Vec::from([left.to_node()]);
         while let Some(node) = pending.pop() {
             match node.view() {
-                TermView::Var(_) | TermView::Atom(_) => {},
+                TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
                 TermView::Op { name, args } => {
                     if let Some(operation) = operations.get(name) {
                         for (arg, port) in args.clone().zip(&operation.inputs) {
                             let mut held = arg;
-                            while let TermView::Abs { mut args, .. } = held.view()
+                            while let TermView::Abs { mut args, .. }
+                            | TermView::Lam { mut args, .. } = held.view()
                                 && let Some(body) = args.next()
                             {
                                 held = body;
@@ -450,7 +453,8 @@ impl<'form> Unstated<'form>
                 TermView::Ctor { args, .. }
                 | TermView::Results { args }
                 | TermView::Inst { args, .. }
-                | TermView::Abs { args, .. } => pending.extend(args),
+                | TermView::Abs { args, .. }
+                | TermView::Lam { args, .. } => pending.extend(args),
             }
         }
         Self {
@@ -536,6 +540,7 @@ fn substitute(
                         .map_or_else(|| FreeTerm::var(name.clone()), Clone::clone),
                 ),
                 TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
+                TermView::Bound(name) => built.push(FreeTerm::bound(name.clone())),
                 TermView::Op { name, args } => {
                     let args: Vec<TermNode<'_>> = args.collect();
                     pending.push(Rebuild::Op(name, args.len()));
@@ -560,6 +565,10 @@ fn substitute(
                     pending.push(Rebuild::Abs(atom));
                     pending.extend(args.map(Rebuild::Read));
                 },
+                TermView::Lam { var, args } => {
+                    pending.push(Rebuild::Lam(var));
+                    pending.extend(args.map(Rebuild::Read));
+                },
             },
             Rebuild::Op(name, count) => {
                 let args = take(&mut built, count);
@@ -580,6 +589,10 @@ fn substitute(
             Rebuild::Abs(atom) => {
                 let body = built.pop().unwrap_or_else(|| FreeTerm::results([]));
                 built.push(FreeTerm::abs(atom.clone(), body));
+            },
+            Rebuild::Lam(var) => {
+                let body = built.pop().unwrap_or_else(|| FreeTerm::results([]));
+                built.push(FreeTerm::lam(var.clone(), body));
             },
         }
     }
@@ -698,7 +711,9 @@ impl Typer<'_>
                     | TermView::Results { .. }
                     | TermView::Inst { .. }
                     | TermView::Abs { .. }
-                    | TermView::Atom(_) => {
+                    | TermView::Atom(_)
+                    | TermView::Lam { .. }
+                    | TermView::Bound(_) => {
                         return None;
                     },
                 },
@@ -1398,7 +1413,7 @@ impl Typer<'_>
                         self.emit(written.span, DescribedRole::Term, ty, context);
                     }
                 },
-                TermView::Atom(_) => {
+                TermView::Atom(_) | TermView::Bound(_) => {
                     if let Some(sort) = port
                         && let Some(ty) = self.sort(scope, sort)
                     {
@@ -1484,7 +1499,7 @@ impl Typer<'_>
                         added.reverse();
                     }
                 },
-                TermView::Abs { mut args, .. } => {
+                TermView::Abs { mut args, .. } | TermView::Lam { mut args, .. } => {
                     let (inner, below) = atoms
                         .split_first()
                         .map_or((None, atoms), |(inner, below)| (Some(inner), below));
@@ -1789,7 +1804,9 @@ impl Typer<'_>
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
                 | TermView::Abs { .. }
-                | TermView::Atom(_) => None,
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => None,
             };
             for (side, nodes, expected) in [
                 (&face.lhs, &member.left, None),
@@ -1862,8 +1879,10 @@ impl Typer<'_>
                         TermView::Inst { args, .. } => {
                             (expected, args.map(|arg| (arg, None)).collect())
                         },
-                        TermView::Abs { args, .. } => (None, args.map(|arg| (arg, None)).collect()),
-                        TermView::Atom(_) => (expected, Vec::new()),
+                        TermView::Abs { args, .. } | TermView::Lam { args, .. } => {
+                            (None, args.map(|arg| (arg, None)).collect())
+                        },
+                        TermView::Atom(_) | TermView::Bound(_) => (expected, Vec::new()),
                     };
                     if let Some(ty) = ty {
                         self.emit(written.span, DescribedRole::Term, ty, closed);

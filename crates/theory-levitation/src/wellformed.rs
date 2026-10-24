@@ -459,7 +459,7 @@ pub fn check_desc<G>(desc: &TheoryDesc<G>) -> Vec<WfDiagnostic>
         check_rule_binders(rule, &operations, &mut diagnostics);
         check_abstractions(rule, &operations, &mut diagnostics);
         check_atoms(rule, &operations, &mut diagnostics);
-        check_freshness(rule, &operations, &mut diagnostics);
+        check_freshness(rule, &mut diagnostics);
         // Two instances of one variable under different abstractions match
         // only up to the atoms they name, where a term can name one.
         if let Some((operation, port)) = nameable
@@ -1044,10 +1044,11 @@ fn check_rule_binders(
             },
             TermView::Ctor { args, .. }
             | TermView::Results { args }
-            | TermView::Abs { args, .. } => {
+            | TermView::Abs { args, .. }
+            | TermView::Lam { args, .. } => {
                 pending.extend(args);
             },
-            TermView::Var(_) | TermView::Atom(_) => {},
+            TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
         }
     }
     let same_binders = |port: &SortRef, binding: &SortRef| {
@@ -1128,10 +1129,11 @@ fn check_rule_binders(
             },
             TermView::Ctor { args, .. }
             | TermView::Results { args }
-            | TermView::Abs { args, .. } => {
+            | TermView::Abs { args, .. }
+            | TermView::Lam { args, .. } => {
                 sited.extend(args.map(|arg| (arg, Site::Elsewhere)));
             },
-            TermView::Atom(_) => {},
+            TermView::Atom(_) | TermView::Bound(_) => {},
         }
     }
 }
@@ -1171,7 +1173,8 @@ fn check_abstractions(
         while let Some((node, port)) = pending.pop() {
             let mut depth = 0_usize;
             let mut body = node;
-            while let TermView::Abs { mut args, .. } = body.view() {
+            while let TermView::Abs { mut args, .. } | TermView::Lam { mut args, .. } = body.view()
+            {
                 let Some(next) = args.next()
                 else {
                     break;
@@ -1207,10 +1210,11 @@ fn check_abstractions(
                 TermView::Ctor { args, .. }
                 | TermView::Results { args }
                 | TermView::Inst { args, .. }
-                | TermView::Abs { args, .. } => {
+                | TermView::Abs { args, .. }
+                | TermView::Lam { args, .. } => {
                     pending.extend(args.map(|arg| (arg, None)));
                 },
-                TermView::Var(_) | TermView::Atom(_) => {},
+                TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
             }
         }
     }
@@ -1273,9 +1277,18 @@ fn check_atoms(
     #[derive(Clone, Copy)]
     #[repr(transparent)]
     struct Link(usize);
-    /// An abstraction read: its name, the sort its port binds it at, and the
-    /// abstraction enclosing it.
-    type Scope<'term> = (&'term Name, Option<&'term Name>, Option<Link>);
+    /// Which binder an abstraction is.
+    #[derive(Clone, Copy, Eq, PartialEq)]
+    enum Kind
+    {
+        /// An atom's abstraction.
+        Atom,
+        /// A binding field.
+        Field,
+    }
+    /// A binder read: its name, its kind, the sort its port binds it at, and
+    /// the binder enclosing it.
+    type Scope<'term> = (&'term Name, Kind, Option<&'term Name>, Option<Link>);
     /// How the innermost abstraction of a name in scope binds it.
     #[derive(Clone, Copy)]
     enum Binding<'term>
@@ -1290,7 +1303,8 @@ fn check_atoms(
     /// A node to read: where it stands, its place in a chain of abstractions
     /// there, and the innermost abstraction in scope.
     type Pending<'term> = (TermNode<'term>, Option<Place<'term>>, usize, Option<Link>);
-    /// How the innermost abstraction of `name` in scope from `link` binds it.
+    /// How the innermost binder of `name`'s kind in scope from `link` binds
+    /// it.
     ///
     /// # Specification
     /// trivial.
@@ -1298,10 +1312,11 @@ fn check_atoms(
         scopes: &[Scope<'term>],
         mut link: Option<Link>,
         name: &Name,
+        kind: Kind,
     ) -> Binding<'term>
     {
-        while let Some(&(atom, sort, outer)) = link.and_then(|Link(at)| scopes.get(at)) {
-            if atom == name {
+        while let Some(&(bound, held, sort, outer)) = link.and_then(|Link(at)| scopes.get(at)) {
+            if bound == name && held == kind {
                 return sort.map_or(Binding::Unsorted, Binding::Sorted);
             }
             link = outer;
@@ -1315,24 +1330,33 @@ fn check_atoms(
         let mut pending: Vec<Pending<'_>> = vec![(side.to_node(), None, 0, None)];
         while let Some((node, at, place, scope)) = pending.pop() {
             match node.view() {
-                TermView::Abs { atom, args } => {
-                    let sort = match at {
-                        Some(Place::Port(port)) => port
-                            .abstractions
-                            .get(place)
-                            .or_else(|| {
-                                port.bindings
-                                    .get(place.checked_sub(port.abstractions.len())?)
-                            })
-                            .map(|binder| &binder.sort),
-                        Some(Place::Sort(_)) | None => None,
+                TermView::Abs { atom: name, args } | TermView::Lam { var: name, args } => {
+                    let kind = if matches!(node.view(), TermView::Lam { .. }) {
+                        Kind::Field
+                    }
+                    else {
+                        Kind::Atom
                     };
-                    scopes.push((atom, sort, scope));
+                    let sort = match at {
+                        Some(Place::Port(port)) if kind == Kind::Field => place
+                            .checked_sub(port.abstractions.len())
+                            .and_then(|at| port.bindings.get(at)),
+                        Some(Place::Port(port)) => port.abstractions.get(place),
+                        Some(Place::Sort(_)) | None => None,
+                    }
+                    .map(|binder| &binder.sort);
+                    scopes.push((name, kind, sort, scope));
                     let inner = Some(Link(scopes.len().saturating_sub(1)));
                     pending.extend(args.map(|body| (body, at, place.saturating_add(1), inner)));
                 },
-                TermView::Atom(name) => {
-                    let misplaced = match (binding(&scopes, scope, name), at) {
+                TermView::Atom(name) | TermView::Bound(name) => {
+                    let kind = if matches!(node.view(), TermView::Bound(_)) {
+                        Kind::Field
+                    }
+                    else {
+                        Kind::Atom
+                    };
+                    let misplaced = match (binding(&scopes, scope, name, kind), at) {
                         (Binding::Free, _) => Some(String::from("under no abstraction of it")),
                         (Binding::Sorted(sort), Some(Place::Port(port))) if port.sort == *sort => {
                             None
@@ -1350,13 +1374,23 @@ fn check_atoms(
                         },
                     };
                     if let Some(misplaced) = misplaced {
-                        diagnostics.push(located(
-                            WfKind::MisplacedAtom,
-                            named(&[name]),
+                        let message = if kind == Kind::Field {
+                            format!(
+                                "rule names the bound variable `{name}` {misplaced}: name a bound \
+                                 variable inside `bind {name} . t`, at a port of the sort its \
+                                 binding port binds"
+                            )
+                        }
+                        else {
                             format!(
                                 "rule names the atom `{name}` {misplaced}: name an atom inside \
                                  `bind {name} . t`, at a port of the sort it abstracts"
-                            ),
+                            )
+                        };
+                        diagnostics.push(located(
+                            WfKind::MisplacedAtom,
+                            named(&[name]),
+                            message,
                             cell.provenance,
                         ));
                     }
@@ -1385,16 +1419,20 @@ fn check_atoms(
                     let sorts = binders.entry(name).or_insert_with(|| {
                         args.iter()
                             .map(|arg| match arg.view() {
-                                TermView::Atom(bound) => match binding(&scopes, scope, bound) {
-                                    Binding::Sorted(sort) => Some(sort),
-                                    Binding::Free | Binding::Unsorted => None,
+                                TermView::Bound(bound) => {
+                                    match binding(&scopes, scope, bound, Kind::Field) {
+                                        Binding::Sorted(sort) => Some(sort),
+                                        Binding::Free | Binding::Unsorted => None,
+                                    }
                                 },
                                 TermView::Var(_)
                                 | TermView::Ctor { .. }
                                 | TermView::Op { .. }
                                 | TermView::Results { .. }
                                 | TermView::Inst { .. }
-                                | TermView::Abs { .. } => None,
+                                | TermView::Abs { .. }
+                                | TermView::Atom(_)
+                                | TermView::Lam { .. } => None,
                             })
                             .collect()
                     });
@@ -1423,11 +1461,11 @@ fn check_atoms(
 /// variable's occurrences and not others, with no condition naming that atom
 /// fresh for it: the variable's instance moves into the abstraction, or out of
 /// it, and an occurrence of the atom in it would be captured or escape
-/// (Fernández and Gabbay, _Nominal rewriting_, I&C 2007, § 3). An abstraction
-/// a `pi+` port binds a variable by encloses nothing: the variable is renamed
-/// apart, as a combinatory reduction system's metaterm `[x]t` is (Klop, van
-/// Oostrom and van Raamsdonk, _Combinatory reduction systems_, TCS 1993), so
-/// an instance cannot name it unless an instantiation passes it.
+/// (Fernández and Gabbay, _Nominal rewriting_, I&C 2007, § 3). A binding
+/// field encloses nothing and abstracts no atom: an instance names its
+/// variable only where an instantiation passes it, as a second-order
+/// metavariable's does (Kaposi and Xie, _Second-Order Generalised Algebraic
+/// Theories_, FSCD 2024).
 ///
 /// # Specification
 /// - ensures: one `UnknownFreshness` per such condition, in written order, then
@@ -1445,9 +1483,8 @@ fn check_atoms(
 ///   the abstraction; a variable under the same abstractions on both sides
 ///   passes unstated; a condition naming an atom the rule never abstracts and
 ///   one naming no variable of the left side each earn one `UnknownFreshness`.
-///   A monad's associativity moving its last continuation under the abstraction
-///   of `x` at the bind's port passes, and counting that abstraction refuses
-///   it.
+///   A monad's associativity moving its last continuation under the binding
+///   field of `x` passes, and counting that field refuses it.
 /// - witness: `wellformed::tests::a_metavariable_crossing_an_abstraction_names_its_atom_fresh`
 /// - witness: `wellformed::tests::a_variable_abstracted_at_a_binding_port_is_named_at_its_sort_2115`
 #[spec(
@@ -1457,7 +1494,6 @@ fn check_atoms(
 )]
 fn check_freshness(
     cell: &RuleFace,
-    operations: &BTreeMap<&Name, &OperDesc>,
     diagnostics: &mut Vec<WfDiagnostic>,
 )
 {
@@ -1469,11 +1505,9 @@ fn check_freshness(
     for (side, left) in [(&cell.lhs, true), (&cell.rhs, false)] {
         let mut stack: Vec<&Name> = Vec::new();
         let mut above: BTreeMap<&Name, usize> = BTreeMap::new();
-        // A node, the number of atoms abstracted above it, and the port it
-        // stands at with its place in a chain of abstractions there.
-        let mut pending: Vec<(TermNode<'_>, usize, Option<&SortRef>, usize)> =
-            vec![(side.to_node(), 0, None, 0)];
-        while let Some((node, depth, at, place)) = pending.pop() {
+        // A node and the number of atoms abstracted above it.
+        let mut pending: Vec<(TermNode<'_>, usize)> = vec![(side.to_node(), 0)];
+        while let Some((node, depth)) = pending.pop() {
             while stack.len() > depth {
                 if let Some(atom) = stack.pop()
                     && let Some(count) = above.get_mut(atom)
@@ -1489,32 +1523,18 @@ fn check_freshness(
                 TermView::Inst { name, args } => (Some(name), Some(args)),
                 TermView::Abs { atom, args } => {
                     let _new = atoms.insert(atom);
-                    // Past the port's atom abstractions, an abstraction binds
-                    // a variable, which encloses nothing.
-                    let below = if at.is_none_or(|port| place < port.abstractions.len()) {
-                        stack.push(atom);
-                        let count = above.entry(atom).or_insert(0);
-                        *count = count.saturating_add(1);
-                        depth.saturating_add(1)
-                    }
-                    else {
-                        depth
-                    };
-                    pending.extend(args.map(|arg| (arg, below, at, place.saturating_add(1))));
+                    stack.push(atom);
+                    let count = above.entry(atom).or_insert(0);
+                    *count = count.saturating_add(1);
+                    let below = depth.saturating_add(1);
+                    pending.extend(args.map(|arg| (arg, below)));
                     continue;
                 },
-                TermView::Op { name, args } => {
-                    let ports = operations
-                        .get(name)
-                        .map_or(&[][..], |operation| &*operation.arity.inputs);
-                    pending.extend(
-                        args.enumerate()
-                            .map(|(index, arg)| (arg, depth, ports.get(index), 0)),
-                    );
-                    continue;
-                },
-                TermView::Ctor { args, .. } | TermView::Results { args } => (None, Some(args)),
-                TermView::Atom(_) => (None, None),
+                TermView::Op { args, .. }
+                | TermView::Ctor { args, .. }
+                | TermView::Results { args }
+                | TermView::Lam { args, .. } => (None, Some(args)),
+                TermView::Atom(_) | TermView::Bound(_) => (None, None),
             };
             if let Some(variable) = variable {
                 if left {
@@ -1528,7 +1548,7 @@ fn check_freshness(
                 }
             }
             if let Some(args) = args {
-                pending.extend(args.map(|arg| (arg, depth, None, 0)));
+                pending.extend(args.map(|arg| (arg, depth)));
             }
         }
     }
@@ -2713,7 +2733,7 @@ mod tests
                 .map(|diagnostic| diagnostic.kind)
                 .collect::<Vec<_>>()
         };
-        let (var, atom, bind) = (FreeTerm::var, FreeTerm::atom, FreeTerm::abs);
+        let (var, atom, bind) = (FreeTerm::var, FreeTerm::bound, FreeTerm::lam);
         let ext = |m: FreeTerm, k: FreeTerm| FreeTerm::op("ext", [m, k]);
         let get = |k: FreeTerm| FreeTerm::op("get", [k]);
         let ret = |a: FreeTerm| FreeTerm::op("ret", [a]);
@@ -2749,6 +2769,14 @@ mod tests
             ),
             [WfKind::MisplacedAtom],
             "`x` as a constructor's field stands at no port of its sort"
+        );
+        assert_eq!(
+            refused(
+                ext(var("m"), FreeTerm::abs("x", ret(FreeTerm::atom("x")))),
+                var("m")
+            ),
+            [WfKind::MisplacedAtom],
+            "an atom's abstraction at a `pi+` port binds no atom there: the port binds a variable"
         );
         assert_eq!(
             naming_port(&desc(var("m"), var("m"))),

@@ -651,6 +651,9 @@ impl Reader<'_, '_>
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
         }
+        // An abstraction a rule writes at a `pi+` port is the binding field
+        // that port binds, read against every operation the parts hold.
+        parts.bind_fields();
         let presentation = Presentation {
             value: TheoryValue::encode(&parts),
             placement,
@@ -2310,6 +2313,8 @@ fn patterned(
         Inst(&'term Name, usize),
         /// An abstraction over its body.
         Abs(&'term Name),
+        /// A binding field over its body.
+        Lam(&'term Name),
     }
     let mut pending = vec![Step::Read(term.to_node())];
     let mut built: Vec<FreeTerm> = Vec::new();
@@ -2322,6 +2327,7 @@ fn patterned(
             Step::Read(node) => match node.view() {
                 TermView::Var(name) => built.push(FreeTerm::var(name.clone())),
                 TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
+                TermView::Bound(name) => built.push(FreeTerm::bound(name.clone())),
                 TermView::Op { name, args } => {
                     let args: Vec<TermNode<'_>> = args.collect();
                     names.clear();
@@ -2351,6 +2357,10 @@ fn patterned(
                     pending.push(Step::Abs(atom));
                     pending.extend(args.map(Step::Read));
                 },
+                TermView::Lam { var, args } => {
+                    pending.push(Step::Lam(var));
+                    pending.extend(args.map(Step::Read));
+                },
             },
             Step::Op(name, count, pattern) => {
                 let args = take(&mut built, count);
@@ -2377,25 +2387,30 @@ fn patterned(
                 let body = built.pop().unwrap_or_else(|| FreeTerm::results([]));
                 built.push(FreeTerm::abs(atom.clone(), body));
             },
+            Step::Lam(var) => {
+                let body = built.pop().unwrap_or_else(|| FreeTerm::results([]));
+                built.push(FreeTerm::lam(var.clone(), body));
+            },
         }
     }
     built.pop().unwrap_or_else(|| term.clone())
 }
 
-/// The name `node` is when it is a name an enclosing abstraction binds.
+/// The name `node` is when it is a name an enclosing binder binds.
 ///
 /// # Specification
 /// trivial.
 fn bound_name(node: TermNode<'_>) -> Option<&Name>
 {
     match node.view() {
-        TermView::Atom(name) => Some(name),
+        TermView::Atom(name) | TermView::Bound(name) => Some(name),
         TermView::Var(_)
         | TermView::Ctor { .. }
         | TermView::Op { .. }
         | TermView::Results { .. }
         | TermView::Inst { .. }
-        | TermView::Abs { .. } => None,
+        | TermView::Abs { .. }
+        | TermView::Lam { .. } => None,
     }
 }
 
@@ -2425,8 +2440,9 @@ fn patterns(term: &FreeTerm) -> Vec<&Name>
             TermView::Ctor { args, .. }
             | TermView::Op { args, .. }
             | TermView::Results { args }
-            | TermView::Abs { args, .. } => pending.extend(args),
-            TermView::Var(_) | TermView::Atom(_) => {},
+            | TermView::Abs { args, .. }
+            | TermView::Lam { args, .. } => pending.extend(args),
+            TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
         }
     }
     heads

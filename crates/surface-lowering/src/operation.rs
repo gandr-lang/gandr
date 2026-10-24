@@ -500,7 +500,10 @@ fn read_rule(
                     OperationNode::Results(gandr_kernel_term::FieldCount::from(arguments.len()))
                 },
                 TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
-                TermView::Abs { .. } | TermView::Atom(_) => return Err(RouteFault::Pattern),
+                TermView::Abs { .. }
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => return Err(RouteFault::Pattern),
             };
             side.push(read);
             pending.extend(arguments.iter().rev().copied());
@@ -635,7 +638,9 @@ fn switch<'face>(
                     | TermView::Results { .. }
                     | TermView::Inst { .. }
                     | TermView::Abs { .. }
-                    | TermView::Atom(_),
+                    | TermView::Atom(_)
+                    | TermView::Lam { .. }
+                    | TermView::Bound(_),
                 ) => {
                     return Err(RouteFault::Pattern);
                 },
@@ -740,7 +745,9 @@ fn leaf(
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
                 | TermView::Abs { .. }
-                | TermView::Atom(_),
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_),
             ) => {
                 return Err(RouteFault::Pattern);
             },
@@ -807,12 +814,13 @@ fn steps(
             Visit::Enter(node, rooted) => {
                 stack.push(Visit::Exit(node, rooted));
                 let arguments: Vec<TermNode<'_>> = match node.view() {
-                    TermView::Var(_) | TermView::Atom(_) => Vec::new(),
+                    TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => Vec::new(),
                     TermView::Ctor { args, .. }
                     | TermView::Op { args, .. }
                     | TermView::Results { args }
                     | TermView::Inst { args, .. }
-                    | TermView::Abs { args, .. } => args.collect(),
+                    | TermView::Abs { args, .. }
+                    | TermView::Lam { args, .. } => args.collect(),
                 };
                 stack.extend(
                     arguments
@@ -872,7 +880,10 @@ fn steps(
                     planned.push(Step::Deliver(Width(args.len())));
                 },
                 TermView::Inst { name, .. } => return Err(RouteFault::Instantiated(name.clone())),
-                TermView::Abs { .. } | TermView::Atom(_) => return Err(RouteFault::Pattern),
+                TermView::Abs { .. }
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => return Err(RouteFault::Pattern),
             },
         }
     }

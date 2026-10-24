@@ -194,9 +194,14 @@ enum Class
     Tuple,
     /// An atom's abstraction, keyed without its atom's name.
     Abstraction,
-    /// An atom's occurrence, keyed by the number of abstractions between it
-    /// and the one binding it.
+    /// An atom's occurrence, keyed by the number of binders between it and
+    /// the one binding it.
     Occurrence(usize),
+    /// A binding field, keyed without its variable's name.
+    Field,
+    /// A bound variable's occurrence, keyed by the number of binders between
+    /// it and the one binding it.
+    BoundVariable(usize),
 }
 
 impl<'term> Symbols<'term>
@@ -224,9 +229,12 @@ impl<'term> Symbols<'term>
             .iter()
             .filter_map(|&(class, name, _)| match class {
                 Class::Operation => name.cloned(),
-                Class::Constructor | Class::Tuple | Class::Abstraction | Class::Occurrence(_) => {
-                    None
-                },
+                Class::Constructor
+                | Class::Tuple
+                | Class::Abstraction
+                | Class::Occurrence(_)
+                | Class::Field
+                | Class::BoundVariable(_) => None,
             })
             .collect()
     }
@@ -252,6 +260,8 @@ impl<'term> Symbols<'term>
                     },
                     (Class::Abstraction, _) => SymbolKind::Abstraction,
                     (Class::Occurrence(_), _) => SymbolKind::Occurrence,
+                    (Class::Field, _) => SymbolKind::Field,
+                    (Class::BoundVariable(_), _) => SymbolKind::Bound,
                 };
                 (kind, FieldCount::from(arity))
             })
@@ -277,8 +287,8 @@ impl<'term> Symbols<'term>
 
     /// `term` in pre-order, interning its symbols and numbering its
     /// variables among `variables`, an instantiated one as an instantiated
-    /// variable is, and an occurrence by the number of abstractions between
-    /// it and the innermost abstracting its atom.
+    /// variable is, and an occurrence by the number of binders between it and
+    /// the innermost of its kind binding its name.
     ///
     /// # Specification
     /// trivial.
@@ -289,11 +299,12 @@ impl<'term> Symbols<'term>
     ) -> Vec<TheoryNode>
     {
         let mut nodes = Vec::new();
-        // Each node still to read, with the number of abstractions above it.
+        // Each node still to read, with the number of binders above it.
         let mut pending: Vec<(TermNode<'term>, usize)> = Vec::from([(term.to_node(), 0)]);
         let mut arguments: Vec<TermNode<'term>> = Vec::new();
-        // The atoms the abstractions above the node read abstract.
-        let mut atoms: Vec<&'term Name> = Vec::new();
+        // The names the binders above the node read bind, each with whether
+        // its binder is a binding field.
+        let mut atoms: Vec<(&'term Name, bool)> = Vec::new();
         while let Some((node, depth)) = pending.pop() {
             arguments.clear();
             atoms.truncate(depth);
@@ -325,16 +336,27 @@ impl<'term> Symbols<'term>
                 },
                 TermView::Abs { atom, args } => {
                     arguments.extend(args);
-                    atoms.push(atom);
+                    atoms.push((atom, false));
                     (Class::Abstraction, None)
                 },
-                TermView::Atom(name) => {
+                TermView::Lam { var, args } => {
+                    arguments.extend(args);
+                    atoms.push((var, true));
+                    (Class::Field, None)
+                },
+                TermView::Atom(name) | TermView::Bound(name) => {
+                    let field = matches!(node.view(), TermView::Bound(_));
                     let between = atoms
                         .iter()
                         .rev()
-                        .position(|&atom| atom == name)
+                        .position(|&binder| binder == (name, field))
                         .unwrap_or(atoms.len());
-                    (Class::Occurrence(between), None)
+                    if field {
+                        (Class::BoundVariable(between), None)
+                    }
+                    else {
+                        (Class::Occurrence(between), None)
+                    }
                 },
             };
             let key = (class, name, arguments.len());
@@ -344,7 +366,7 @@ impl<'term> Symbols<'term>
                 fresh
             });
             nodes.push(TheoryNode::Symbol(symbol));
-            let below = if class == Class::Abstraction {
+            let below = if matches!(class, Class::Abstraction | Class::Field) {
                 depth.saturating_add(1)
             }
             else {

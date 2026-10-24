@@ -1056,10 +1056,12 @@ fn flexible(term: &FreeTerm) -> FreeTerm
                     built.push(FreeTerm::var(name.clone()));
                 },
                 TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
+                TermView::Bound(name) => built.push(FreeTerm::bound(name.clone())),
                 TermView::Ctor { args, .. }
                 | TermView::Op { args, .. }
                 | TermView::Results { args }
-                | TermView::Abs { args, .. } => {
+                | TermView::Abs { args, .. }
+                | TermView::Lam { args, .. } => {
                     let args: Vec<TermNode<'_>> = args.collect();
                     pending.push(Step::Build(node, args.len()));
                     pending.extend(args.into_iter().rev().map(Step::Read));
@@ -1076,10 +1078,17 @@ fn flexible(term: &FreeTerm) -> FreeTerm
                             .next()
                             .unwrap_or_else(|| FreeTerm::results([])),
                     ),
+                    TermView::Lam { var, .. } => FreeTerm::lam(
+                        var.clone(),
+                        args.into_iter()
+                            .next()
+                            .unwrap_or_else(|| FreeTerm::results([])),
+                    ),
                     TermView::Results { .. }
                     | TermView::Var(_)
                     | TermView::Inst { .. }
-                    | TermView::Atom(_) => FreeTerm::results(args),
+                    | TermView::Atom(_)
+                    | TermView::Bound(_) => FreeTerm::results(args),
                 });
             },
         }
@@ -1502,7 +1511,9 @@ fn orient_derived<G>(
                 | TermView::Results { .. }
                 | TermView::Inst { .. }
                 | TermView::Abs { .. }
-                | TermView::Atom(_) => {
+                | TermView::Atom(_)
+                | TermView::Lam { .. }
+                | TermView::Bound(_) => {
                     return false;
                 },
             }
@@ -2043,7 +2054,9 @@ fn spell(term: &FreeTerm) -> String
         | TermView::Op { .. }
         | TermView::Inst { .. }
         | TermView::Abs { .. }
-        | TermView::Atom(_) => term.to_string(),
+        | TermView::Atom(_)
+        | TermView::Lam { .. }
+        | TermView::Bound(_) => term.to_string(),
     }
 }
 

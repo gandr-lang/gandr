@@ -833,9 +833,9 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
         | TermView::Ctor { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Ctor(ref actual)) if actual == name) && args.iter().copied().eq(expected),
         | TermView::Op { name, args: expected } => matches!(*head, WhiskerHead::Frame(FrameHead::Op(ref actual)) if actual == name) && args.iter().copied().eq(expected),
         | TermView::Results { args: expected } => matches!(*head, WhiskerHead::Results) && args.iter().copied().eq(expected),
-        | TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_) => false,
+        | TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_) | TermView::Lam { .. } | TermView::Bound(_) => false,
     },
-    | Err(_) => matches!(node.view(), TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_)),
+    | Err(_) => matches!(node.view(), TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_) | TermView::Lam { .. } | TermView::Bound(_)),
 })]
 fn application<E, O>(
     node: TermNode<'_>,
@@ -854,9 +854,12 @@ where
             args.collect(),
         )),
         TermView::Results { args } => Ok((WhiskerHead::Results, args.collect())),
-        TermView::Var(_) | TermView::Inst { .. } | TermView::Abs { .. } | TermView::Atom(_) => {
-            Err(off_boundary())
-        },
+        TermView::Var(_)
+        | TermView::Inst { .. }
+        | TermView::Abs { .. }
+        | TermView::Atom(_)
+        | TermView::Lam { .. }
+        | TermView::Bound(_) => Err(off_boundary()),
     }
 }
 
@@ -1118,12 +1121,13 @@ pub fn redex_occurrences(body: &CircuitBody)
             },
             Walk::Term(term) => match term.view() {
                 TermView::Var(name) => stack.push(Walk::Port(name)),
-                TermView::Atom(_) => {},
+                TermView::Atom(_) | TermView::Bound(_) => {},
                 TermView::Ctor { args, .. }
                 | TermView::Op { args, .. }
                 | TermView::Results { args }
                 | TermView::Inst { args, .. }
-                | TermView::Abs { args, .. } => {
+                | TermView::Abs { args, .. }
+                | TermView::Lam { args, .. } => {
                     push_args(&mut stack, args);
                 },
             },

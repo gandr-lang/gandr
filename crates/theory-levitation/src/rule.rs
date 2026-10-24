@@ -47,11 +47,17 @@ enum TermHead
     Results(ArgumentCount),
     /// A metavariable instantiated at its argument count of terms.
     Inst(Name, ArgumentCount),
-    /// An atom abstracted over its one body, `bind a . t`.
+    /// An atom abstracted over its one body, `bind a . t`, at a port written
+    /// `bind (a : N) . T`.
     Abs(Name),
     /// An atom named inside an abstraction that binds it, at a port of its
     /// atom sort.
     Atom(Name),
+    /// A variable of a representable sort bound over its one body,
+    /// `bind x . t`, at a port written `pi+ (x : S) . T`: the binding field.
+    Lam(Name),
+    /// A variable named inside the binding field that binds it.
+    Bound(Name),
 }
 
 impl Head for TermHead
@@ -64,8 +70,8 @@ impl Head for TermHead
     fn arity(&self) -> ArgumentCount
     {
         match *self {
-            Self::Var(_) | Self::Atom(_) => ArgumentCount::from(0_usize),
-            Self::Abs(_) => ArgumentCount::from(1_usize),
+            Self::Var(_) | Self::Atom(_) | Self::Bound(_) => ArgumentCount::from(0_usize),
+            Self::Abs(_) | Self::Lam(_) => ArgumentCount::from(1_usize),
             Self::Ctor(_, arity)
             | Self::Op(_, arity)
             | Self::Results(arity)
@@ -222,6 +228,39 @@ impl FreeTerm
         Self(Tree::leaf(TermHead::Atom(name.into())))
     }
 
+    /// The binding field `bind x . t` of the variable `x` over `body`, at a
+    /// port written `pi+ (x : S) . T`: the variable, of a representable sort,
+    /// is bound in `body`, and two fields that differ by renaming it to a
+    /// variable fresh for the body are one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn lam<N>(
+        var: N,
+        body: Self,
+    ) -> Self
+    where
+        N: Into<Name>,
+    {
+        Self(Tree::node(TermHead::Lam(var.into()), alloc::vec![body.0]))
+    }
+
+    /// The variable `x` named inside a binding field `bind x . t` that binds
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn bound<N>(name: N) -> Self
+    where
+        N: Into<Name>,
+    {
+        Self(Tree::leaf(TermHead::Bound(name.into())))
+    }
+
     /// The canonical name of the atom an abstraction `depth` abstractions deep
     /// abstracts: `a0` at the outermost, `a1` under it, and so on.
     ///
@@ -234,52 +273,57 @@ impl FreeTerm
         Name::from(format!("a{}", usize::from(depth)))
     }
 
-    /// The term with every abstraction's atom re-minted canonically: an
-    /// abstraction under `n` others abstracts the canonical atom of depth `n`
-    /// ([`Self::canonical_atom`]), and an atom named inside it is renamed
-    /// with it. Two terms that differ only in the atoms their abstractions
-    /// name re-mint to one term.
+    /// The term with every binder's name re-minted canonically: an atom's
+    /// abstraction or a binding field under `n` binders names the canonical
+    /// atom of depth `n` ([`Self::canonical_atom`]), and a name inside it that
+    /// it binds is renamed with it. Two terms that differ only in the names
+    /// their binders bind re-mint to one term.
     ///
     /// # Specification
-    /// - ensures: the term's shape, heads and variables kept, each
-    ///   abstraction's atom replaced by the canonical atom of its depth among
-    ///   the abstractions above it, and each atom named inside an abstraction
-    ///   of it replaced by the innermost such abstraction's canonical atom; an
-    ///   atom no abstraction above it binds is kept. The executable predicate
-    ///   checks the root, whose head is kept unless it is an abstraction or an
-    ///   atom.
+    /// - ensures: the term's shape, heads and variables kept, each binder's
+    ///   name replaced by the canonical atom of its depth among the binders
+    ///   above it, and each atom or bound variable replaced by the canonical
+    ///   atom of the innermost binder of its kind naming it; a name no binder
+    ///   of its kind above it binds is kept. The executable predicate checks
+    ///   the root, whose head is kept unless it is a binder or a name one
+    ///   binds.
     /// - panics: none.
     /// - intension: one worklist pass, each node read once and rebuilt from its
-    ///   rebuilt arguments; the abstractions in scope form a tree of links,
-    ///   each node naming its innermost, so an atom looks its binder up along
-    ///   the abstractions above it alone.
+    ///   rebuilt arguments; the binders in scope form a tree of links, each
+    ///   node naming its innermost, so a name looks its binder up along the
+    ///   binders above it alone.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two terms whose nested abstractions name different
     ///   atoms re-mint to one term, an abstraction beside another, rather than
-    ///   under it, takes the same level, and an atom named under two
-    ///   abstractions takes its own binder's level, not the innermost's.
+    ///   under it, takes the same level, an atom named under two abstractions
+    ///   takes its own binder's level, not the innermost's, and a bound
+    ///   variable and an atom of one name each take their own kind's binder.
     /// - witness: `rule::tests::atoms_are_reminted_by_their_depth`
+    /// - witness: `rule::tests::an_abstraction_at_a_binding_port_reads_as_its_field`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ref minted| matches!(*self.0.to_ref().head(), TermHead::Abs(_) | TermHead::Atom(_))
-        || minted.0.to_ref().head() == self.0.to_ref().head())]
+    #[spec(ensures: |ref minted| matches!(
+        *self.0.to_ref().head(),
+        TermHead::Abs(_) | TermHead::Atom(_) | TermHead::Lam(_) | TermHead::Bound(_)
+    ) || minted.0.to_ref().head() == self.0.to_ref().head())]
     pub fn canonical_atoms(&self) -> Self
     {
         /// A step of the rebuild: a node to read at a depth under the
-        /// innermost abstraction in scope, or a head to apply to the
-        /// arguments rebuilt last.
+        /// innermost binder in scope, or a head to apply to the arguments
+        /// rebuilt last.
         enum Mint<'term>
         {
-            /// Read a node `usize` abstractions deep.
+            /// Read a node `usize` binders deep.
             Read(TermNode<'term>, usize, Option<usize>),
             /// Rebuild the application of this node's head to its rebuilt
-            /// arguments, `usize` abstractions deep.
+            /// arguments, `usize` binders deep.
             Build(TermNode<'term>, usize, Option<usize>),
         }
-        // Each abstraction read: its atom, its depth and the link to the
-        // abstraction enclosing it.
-        let mut scopes: Vec<(&Name, usize, Option<usize>)> = Vec::new();
+        /// A binder read: its name, whether it is a binding field, its depth
+        /// and the link to the binder enclosing it.
+        type Scope<'term> = (&'term Name, bool, usize, Option<usize>);
+        let mut scopes: Vec<Scope<'_>> = Vec::new();
         let mut pending = alloc::vec![Mint::Read(self.to_node(), 0, None)];
         let mut built: Vec<Self> = Vec::new();
         while let Some(step) = pending.pop() {
@@ -287,9 +331,10 @@ impl FreeTerm
                 Mint::Read(node, depth, scope) => {
                     pending.push(Mint::Build(node, depth, scope));
                     let (args, below, inner) = match node.view() {
-                        TermView::Var(_) | TermView::Atom(_) => continue,
-                        TermView::Abs { atom, args } => {
-                            scopes.push((atom, depth, scope));
+                        TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => continue,
+                        TermView::Abs { atom: name, args } | TermView::Lam { var: name, args } => {
+                            let field = matches!(node.view(), TermView::Lam { .. });
+                            scopes.push((name, field, depth, scope));
                             (
                                 args,
                                 depth.saturating_add(1),
@@ -308,31 +353,31 @@ impl FreeTerm
                     }
                 },
                 Mint::Build(node, depth, scope) => {
-                    let count = match node.view() {
-                        TermView::Var(_) | TermView::Atom(_) => 0,
-                        TermView::Ctor { args, .. }
-                        | TermView::Op { args, .. }
-                        | TermView::Results { args }
-                        | TermView::Inst { args, .. }
-                        | TermView::Abs { args, .. } => args.len(),
-                    };
+                    let count = usize::from(node.0.head().arity());
                     let args = built.split_off(built.len().saturating_sub(count));
                     built.push(match node.view() {
                         TermView::Var(name) => Self::var(name.clone()),
-                        TermView::Atom(name) => {
+                        TermView::Atom(name) | TermView::Bound(name) => {
+                            // The innermost binder of the name's own kind above
+                            // the node mints it; a name none binds stays.
+                            let field = matches!(node.view(), TermView::Bound(_));
                             let mut link = scope;
-                            let mut minted = None;
-                            while let Some(&(atom, level, outer)) =
+                            let mut minted = name.clone();
+                            while let Some(&(bound, kind, level, outer)) =
                                 link.and_then(|at| scopes.get(at))
                             {
-                                if atom == name {
-                                    minted =
-                                        Some(Self::canonical_atom(AbstractionDepth::from(level)));
+                                if bound == name && kind == field {
+                                    minted = Self::canonical_atom(AbstractionDepth::from(level));
                                     break;
                                 }
                                 link = outer;
                             }
-                            Self::atom(minted.unwrap_or_else(|| name.clone()))
+                            if field {
+                                Self::bound(minted)
+                            }
+                            else {
+                                Self::atom(minted)
+                            }
                         },
                         TermView::Ctor { name, .. } => Self::ctor(name.clone(), args),
                         TermView::Op { name, .. } => Self::op(name.clone(), args),
@@ -342,6 +387,151 @@ impl FreeTerm
                             Self::canonical_atom(AbstractionDepth::from(depth)),
                             args.into_iter().next().unwrap_or_else(|| Self::results([])),
                         ),
+                        TermView::Lam { .. } => Self::lam(
+                            Self::canonical_atom(AbstractionDepth::from(depth)),
+                            args.into_iter().next().unwrap_or_else(|| Self::results([])),
+                        ),
+                    });
+                },
+            }
+        }
+        built.pop().unwrap_or_else(|| self.clone())
+    }
+
+    /// The term with each abstraction standing at a binding port read as the
+    /// binding field it is.
+    ///
+    /// Written `bind x . t` alike, an abstraction in the chain an operation's
+    /// argument opens, past the atoms that port abstracts and within the
+    /// variables it binds, is a [`Self::lam`], and a name inside it that it
+    /// binds a [`Self::bound`]; every other abstraction stays an atom's.
+    /// `ports` answers, for an operation's name and an input's index, how
+    /// many atoms that port abstracts and how many variables it binds.
+    ///
+    /// # Specification
+    /// - ensures: the term's shape and every other head kept; the abstraction
+    ///   at place `k` of the chain an operation's argument opens turned into a
+    ///   binding field exactly when `ports` answers `(a, b)` for that argument
+    ///   with `a ≤ k < a + b`, and each atom whose innermost abstraction naming
+    ///   it was turned turned into a bound variable. The root stands at no
+    ///   port, so its head is kept.
+    /// - panics: none.
+    /// - intension: one worklist pass, each node read once with its place in
+    ///   the chain it stands in and rebuilt from its rebuilt arguments; the
+    ///   binders in scope form a tree of links, as in
+    ///   [`Self::canonical_atoms`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an abstraction at a port that binds one variable and
+    ///   abstracts one atom, its atom's abstraction outside its field, pins the
+    ///   place split; an occurrence of each name inside both, and one of an
+    ///   atom whose name the field shadows, pin the binder lookup; an
+    ///   abstraction under a constructor pins the chain ending at a port.
+    /// - witness: `rule::tests::an_abstraction_at_a_binding_port_reads_as_its_field`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ref read| read.0.to_ref().head() == self.0.to_ref().head())]
+    pub fn bind_fields<P>(
+        &self,
+        ports: P,
+    ) -> Self
+    where
+        P: Fn(&Name, usize) -> Option<(usize, usize)>,
+    {
+        /// Where a node stands in the chain of abstractions an operation's
+        /// argument opens: the port's atom count, its binder count and the
+        /// node's place in the chain.
+        type Place = Option<(usize, usize, usize)>;
+        /// A binder read: its name, whether it is a binding field and the
+        /// link to the binder enclosing it.
+        type Scope<'term> = (&'term Name, bool, Option<usize>);
+        /// A step of the rebuild: a node to read where it stands under the
+        /// innermost binder in scope, or a head to apply to the arguments
+        /// rebuilt last, an abstraction's as a field or not.
+        enum Step<'term>
+        {
+            /// Read a node.
+            Read(TermNode<'term>, Place, Option<usize>),
+            /// Rebuild a node's application.
+            Build(TermNode<'term>, bool, Option<usize>),
+        }
+        let mut scopes: Vec<Scope<'_>> = Vec::new();
+        let mut pending = alloc::vec![Step::Read(self.to_node(), None, None)];
+        let mut built: Vec<Self> = Vec::new();
+        while let Some(step) = pending.pop() {
+            match step {
+                Step::Read(node, place, scope) => {
+                    let field = matches!(node.view(), TermView::Lam { .. })
+                        || place.is_some_and(|(atoms, binders, at)| {
+                            atoms <= at && at < atoms.saturating_add(binders)
+                        });
+                    pending.push(Step::Build(node, field, scope));
+                    let mark = pending.len();
+                    match node.view() {
+                        TermView::Var(_) | TermView::Atom(_) | TermView::Bound(_) => {},
+                        TermView::Abs { atom: name, args } | TermView::Lam { var: name, args } => {
+                            scopes.push((name, field, scope));
+                            let inner = Some(scopes.len().saturating_sub(1));
+                            let below = place
+                                .map(|(atoms, binders, at)| (atoms, binders, at.saturating_add(1)));
+                            pending.extend(args.map(|arg| Step::Read(arg, below, inner)));
+                        },
+                        TermView::Op { name, args } => {
+                            pending.extend(args.enumerate().map(|(index, arg)| {
+                                let place =
+                                    ports(name, index).map(|(atoms, binders)| (atoms, binders, 0));
+                                Step::Read(arg, place, scope)
+                            }));
+                        },
+                        TermView::Ctor { args, .. }
+                        | TermView::Results { args }
+                        | TermView::Inst { args, .. } => {
+                            pending.extend(args.map(|arg| Step::Read(arg, None, scope)));
+                        },
+                    }
+                    if let Some(children) = pending.get_mut(mark ..) {
+                        children.reverse();
+                    }
+                },
+                Step::Build(node, field, scope) => {
+                    let count = usize::from(node.0.head().arity());
+                    let mut args = built.split_off(built.len().saturating_sub(count));
+                    built.push(match node.view() {
+                        TermView::Var(name) => Self::var(name.clone()),
+                        TermView::Atom(name) | TermView::Bound(name) => {
+                            // An occurrence is a bound variable exactly when
+                            // the innermost binder naming it is a field.
+                            let mut link = scope;
+                            let mut bound = false;
+                            while let Some(&(binder, field, outer)) =
+                                link.and_then(|at| scopes.get(at))
+                            {
+                                if binder == name {
+                                    bound = field;
+                                    break;
+                                }
+                                link = outer;
+                            }
+                            if bound {
+                                Self::bound(name.clone())
+                            }
+                            else {
+                                Self::atom(name.clone())
+                            }
+                        },
+                        TermView::Ctor { name, .. } => Self::ctor(name.clone(), args),
+                        TermView::Op { name, .. } => Self::op(name.clone(), args),
+                        TermView::Results { .. } => Self::results(args),
+                        TermView::Inst { name, .. } => Self::inst(name.clone(), args),
+                        TermView::Abs { atom: name, .. } | TermView::Lam { var: name, .. } => {
+                            let body = args.pop().unwrap_or_else(|| Self::results([]));
+                            if field {
+                                Self::lam(name.clone(), body)
+                            }
+                            else {
+                                Self::abs(name.clone(), body)
+                            }
+                        },
                     });
                 },
             }
@@ -422,7 +612,9 @@ impl FreeTerm
             | TermHead::Results(_)
             | TermHead::Inst(..)
             | TermHead::Abs(_)
-            | TermHead::Atom(_) => None,
+            | TermHead::Atom(_)
+            | TermHead::Lam(_)
+            | TermHead::Bound(_) => None,
             TermHead::Ctor(ref name, _) | TermHead::Op(ref name, _) => Some(name),
         })
     }
@@ -470,7 +662,9 @@ impl FreeTerm
             | TermHead::Op(..)
             | TermHead::Inst(..)
             | TermHead::Abs(_)
-            | TermHead::Atom(_) => None,
+            | TermHead::Atom(_)
+            | TermHead::Lam(_)
+            | TermHead::Bound(_) => None,
         })
     }
 
@@ -507,7 +701,9 @@ impl FreeTerm
             | TermHead::Results(_)
             | TermHead::Inst(..)
             | TermHead::Abs(_)
-            | TermHead::Atom(_) => Maybe::Absent(leaf_image::Absent::Kept),
+            | TermHead::Atom(_)
+            | TermHead::Lam(_)
+            | TermHead::Bound(_) => Maybe::Absent(leaf_image::Absent::Kept),
         }))
     }
 }
@@ -550,8 +746,10 @@ impl fmt::Display for FreeTerm
         let mut args: Vec<String> = Vec::new();
         for head in self.0.heads() {
             let (name, arity) = match *head {
-                TermHead::Var(ref name) | TermHead::Atom(ref name) => (Some(name), 0_usize),
-                TermHead::Abs(ref atom) => {
+                TermHead::Var(ref name) | TermHead::Atom(ref name) | TermHead::Bound(ref name) => {
+                    (Some(name), 0_usize)
+                },
+                TermHead::Abs(ref atom) | TermHead::Lam(ref atom) => {
                     let body = rendered.pop().unwrap_or_default();
                     rendered.push(format!("bind {atom} . {body}"));
                     continue;
@@ -613,6 +811,11 @@ impl<'term> TermNode<'term>
                 args: TermArgs(self.0.children()),
             },
             TermHead::Atom(ref name) => TermView::Atom(name),
+            TermHead::Lam(ref var) => TermView::Lam {
+                var,
+                args: TermArgs(self.0.children()),
+            },
+            TermHead::Bound(ref name) => TermView::Bound(name),
         }
     }
 
@@ -640,7 +843,9 @@ impl<'term> TermNode<'term>
             | TermHead::Results(_)
             | TermHead::Inst(..)
             | TermHead::Abs(_)
-            | TermHead::Atom(_) => None,
+            | TermHead::Atom(_)
+            | TermHead::Lam(_)
+            | TermHead::Bound(_) => None,
         })
     }
 
@@ -707,6 +912,19 @@ pub enum TermView<'term>
     /// The atom `a` named inside an abstraction `bind a . t` that binds it,
     /// at a port of its atom sort.
     Atom(&'term Name),
+    /// A binding field `bind x . t` at a port written `pi+ (x : S) . T`: the
+    /// variable, of a representable sort, is bound in its one argument, the
+    /// body.
+    Lam
+    {
+        /// The bound variable's name.
+        var: &'term Name,
+        /// The body, the one argument.
+        args: TermArgs<'term>,
+    },
+    /// The variable `x` named inside a binding field `bind x . t` that binds
+    /// it.
+    Bound(&'term Name),
 }
 
 /// The arguments of a free-term application, left to right.
@@ -964,7 +1182,7 @@ impl RuleFace
                 let (variable, args) = match node.view() {
                     TermView::Var(name) => (Some(name), None),
                     TermView::Inst { name, args } => (Some(name), Some(args)),
-                    TermView::Abs { atom, args } => {
+                    TermView::Abs { atom, args } | TermView::Lam { var: atom, args } => {
                         scopes.push((atom, scope));
                         let inner = Some(scopes.len().saturating_sub(1));
                         pending.extend(args.map(|body| (body, inner)));
@@ -973,7 +1191,7 @@ impl RuleFace
                     TermView::Op { args, .. }
                     | TermView::Ctor { args, .. }
                     | TermView::Results { args } => (None, Some(args)),
-                    TermView::Atom(_) => (None, None),
+                    TermView::Atom(_) | TermView::Bound(_) => (None, None),
                 };
                 if let Some(variable) = variable {
                     let mut enclosing = Vec::new();
@@ -1178,6 +1396,79 @@ mod tests
             named("a0", "a1", "a1", "z"),
             "the inner abstraction shadows the outer, and a free atom is kept"
         );
+    }
+
+    #[test]
+    fn an_abstraction_at_a_binding_port_reads_as_its_field()
+    {
+        // `scope`'s one port abstracts one atom and binds one variable, so
+        // in `scope(bind a . bind x . pair(a, x))` the outer abstraction
+        // stays the atom's and the inner one is the binding field.
+        let ports =
+            |name: &Name, index: usize| (name.as_ref() == "scope" && index == 0).then_some((1, 1));
+        let written = FreeTerm::op("scope", [FreeTerm::abs(
+            "a",
+            FreeTerm::abs(
+                "x",
+                FreeTerm::op("pair", [FreeTerm::atom("a"), FreeTerm::atom("x")]),
+            ),
+        )]);
+        let fielded = FreeTerm::op("scope", [FreeTerm::abs(
+            "a",
+            FreeTerm::lam(
+                "x",
+                FreeTerm::op("pair", [FreeTerm::atom("a"), FreeTerm::bound("x")]),
+            ),
+        )]);
+        assert_eq!(
+            written.bind_fields(ports),
+            fielded,
+            "the place in the chain decides"
+        );
+        assert_eq!(
+            fielded.bind_fields(ports),
+            fielded,
+            "a field read again is kept"
+        );
+        // A field shadowing an atom of its name binds the occurrence inside
+        // it, and re-minting keeps each name with its own kind's binder.
+        let shadowed = FreeTerm::op("scope", [FreeTerm::abs(
+            "a",
+            FreeTerm::abs("a", FreeTerm::atom("a")),
+        )]);
+        let read = shadowed.bind_fields(ports);
+        assert_eq!(
+            read,
+            FreeTerm::op("scope", [FreeTerm::abs(
+                "a",
+                FreeTerm::lam("a", FreeTerm::bound("a"))
+            )]),
+            "the innermost binder of the name decides its kind"
+        );
+        assert_eq!(
+            fielded.canonical_atoms(),
+            FreeTerm::op("scope", [FreeTerm::abs(
+                "a0",
+                FreeTerm::lam(
+                    "a1",
+                    FreeTerm::op("pair", [FreeTerm::atom("a0"), FreeTerm::bound("a1")])
+                ),
+            )]),
+            "each name re-mints with its own binder"
+        );
+        // Under a constructor, or at an operation with no binding port, the
+        // chain ends and an abstraction stays an atom's.
+        let elsewhere = FreeTerm::op("scope", [FreeTerm::ctor("c", [FreeTerm::abs(
+            "x",
+            FreeTerm::atom("x"),
+        )])]);
+        assert_eq!(
+            elsewhere.bind_fields(ports),
+            elsewhere,
+            "under a constructor"
+        );
+        let other = FreeTerm::op("other", [FreeTerm::abs("x", FreeTerm::atom("x"))]);
+        assert_eq!(other.bind_fields(ports), other, "at a port binding nothing");
     }
 
     #[test]
