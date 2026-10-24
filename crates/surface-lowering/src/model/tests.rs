@@ -135,14 +135,30 @@ where
         Ok(ModelForm::Nested(ref theory)) => format!("{name} : Model({theory})"),
         Ok(ModelForm::Law {
             telescope: ref binders,
+            ref hypotheses,
             ref carrier,
             ref left,
             ref right,
-        }) => format!(
-            "{name} : {} => Path({}, {left}, {right})",
-            telescope(binders),
-            sort(carrier)
-        ),
+        }) => {
+            let mut entries: Vec<String> = binders
+                .iter()
+                .map(|binder| format!("{} : {}", binder.name, sort(&binder.sort)))
+                .collect();
+            entries.extend(hypotheses.iter().map(|hypothesis| {
+                format!(
+                    "{} : Path({}, {}, {})",
+                    hypothesis.name,
+                    sort(&hypothesis.carrier),
+                    hypothesis.left,
+                    hypothesis.right
+                )
+            }));
+            format!(
+                "{name} : ({}) => Path({}, {left}, {right})",
+                entries.join(", "),
+                sort(carrier)
+            )
+        },
         Err(fault) => format!("{name} refused: {fault:?}"),
     }
 }
@@ -172,6 +188,43 @@ fn the_cat_shape_sorts_are_a_type_and_a_family()
         "type Hom : (dom : Ob, cod : Ob) => Type",
         "an indexed sort is a family over its index telescope"
     );
+}
+
+/// A theory's stated laws derive the components a model proves, after its
+/// rules: the written binders, then each hypothesis, then the path, a `Bool`
+/// literal standing as a whole side; a side naming a variable no binder binds,
+/// or a literal at another carrier, keeps its fault.
+#[test]
+fn a_stated_law_binds_its_written_variables_2356()
+{
+    let model = derived(
+        "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, a));\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n  law loose : (a : Carrier) => Path(Bool, same(a, b), true);\n  law odd : (a : Carrier) => Path(Carrier, a, true);\n}",
+    );
+    let names: Vec<&str> = model
+        .components
+        .iter()
+        .map(|component| component.name.as_ref())
+        .collect();
+    assert_eq!(
+        names,
+        ["Carrier", "same", "refl", "sym", "trans", "loose", "odd"],
+        "the stated laws follow the operations, in written order"
+    );
+    assert_eq!(
+        spelled(&model, "refl"),
+        "refl : (a : Carrier) => Path(Bool, same(a, a), true)"
+    );
+    assert_eq!(
+        spelled(&model, "sym"),
+        "sym : (a : Carrier, b : Carrier) => Path(Bool, same(a, b), same(b, a))"
+    );
+    assert_eq!(
+        spelled(&model, "trans"),
+        "trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true)",
+        "the hypotheses follow the variables, each a path over them"
+    );
+    assert_eq!(spelled(&model, "loose"), "loose refused: Unbound");
+    assert_eq!(spelled(&model, "odd"), "odd refused: IllSorted");
 }
 
 /// A constant, `oper zero : T`, derives a value of its type alone, a sort of

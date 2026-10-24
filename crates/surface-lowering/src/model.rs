@@ -271,16 +271,19 @@ pub struct PresentedCircuit
     pub named: Placed,
 }
 
-/// What a `theory` block presents: its `Theory` value, where each member the
-/// value codes is written, the circuit rules `Theory` does not code yet, and
-/// the inclusion of each theory the block includes.
+/// What a `theory` block presents.
+///
+/// Its `Theory` value, where each member the value codes is written, the
+/// circuit rules `Theory` does not code yet, the inclusion of each theory the
+/// block includes, and the laws it states.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: the value is the one source of the presented sorts, operations
 ///   and faces; the placement holds one name tile per member it codes, in the
 ///   value's order; the value restricts along each inclusion to the value of
-///   the theory it includes.
+///   the theory it includes. A stated law stands beside the value, which the
+///   rule decision reads, so it takes no part in the theory's rewriting.
 /// - executable: none — a presentation is data the derivation reads.
 ///
 /// # Adequacy
@@ -301,6 +304,68 @@ pub struct Presentation
     /// The theories the block includes, each with its inclusion, in written
     /// order.
     pub inclusions: Vec<Included>,
+    /// The laws the block states, `law name : …`, in written order, an
+    /// included theory's first.
+    pub laws: Vec<StatedLaw>,
+}
+
+/// A law a theory states as the path type a model proves it at: `law sym :
+/// (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b, a))`, an equation
+/// no rule orients.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the sort binders in written order, then the path hypotheses, then
+///   the path the law states; every term names only the binders and the
+///   theory's operations, or is a `Bool` literal standing as a whole side.
+/// - executable: none — a stated law is data the derivation reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a theory's `refl`, `sym` and `trans` derive the law
+///   components a model proves or admits.
+/// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatedLaw
+{
+    /// The law's name.
+    pub name: Name,
+    /// Its name tile.
+    pub named: Placed,
+    /// The variables it quantifies over, each at its written sort.
+    pub binders: Vec<Binder>,
+    /// The paths it assumes, after every variable.
+    pub hypotheses: Vec<Hypothesis>,
+    /// The sort both sides inhabit.
+    pub carrier: SortTerm,
+    /// The path's left side.
+    pub left: FreeTerm,
+    /// Its right side.
+    pub right: FreeTerm,
+}
+
+/// A path a law assumes, `p : Path(Bool, eq(a, b), true)`: an argument of
+/// the law's proof no later type names.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the hypothesis' name, carrier and sides, each side naming only
+///   the law's variables.
+/// - executable: none — a hypothesis is data the lowering mints from.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`StatedLaw`].
+/// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Hypothesis
+{
+    /// The hypothesis' name.
+    pub name: Name,
+    /// The sort both sides inhabit.
+    pub carrier: SortTerm,
+    /// The path's left side.
+    pub left: FreeTerm,
+    /// Its right side.
+    pub right: FreeTerm,
 }
 
 /// One theory a block includes, and where the `include` names it.
@@ -533,9 +598,9 @@ pub struct Binder
 /// # Specification
 /// - requires: nothing to construct this data.
 /// - ensures: a sort's index telescope, an operation's telescope and results,
-///   or a law's telescope, carrier and endpoints; every term names only the
-///   telescope's binders and the theory's operations, each application carrying
-///   every argument its operation binds.
+///   or a law's telescope, hypotheses, carrier and endpoints; every term names
+///   only the telescope's binders and the theory's operations, each application
+///   carrying every argument its operation binds, or is a `Bool` literal.
 /// - executable: none — a form is data the lowering mints from.
 ///
 /// # Adequacy
@@ -567,16 +632,19 @@ pub enum ModelForm
     /// A nested model: a module ascribed the model signature of the theory
     /// this name declares, `oper inner : Model(T)`.
     Nested(Name),
-    /// A law: a path between two terms, quantified over their variables.
+    /// A law: a path between two terms, quantified over their variables and
+    /// assuming its hypotheses — a rule's, with none, or a stated law's.
     Law
     {
-        /// The rule's variables.
+        /// The law's variables.
         telescope: Vec<Binder>,
+        /// The paths it assumes, after every variable.
+        hypotheses: Vec<Hypothesis>,
         /// The sort both terms inhabit.
         carrier: SortTerm,
-        /// The term the rule rewrites from.
+        /// The left term: the one a rule rewrites from.
         left: FreeTerm,
-        /// The term it rewrites to.
+        /// The right term: the one a rule rewrites to.
         right: FreeTerm,
     },
 }
@@ -622,6 +690,8 @@ pub enum ModelFault
     /// operation, whose models are nominal sets', not a structure on the
     /// value universe.
     Abstraction,
+    /// A stated law naming a variable it does not bind, or binding one twice.
+    Unbound,
 }
 
 impl core::fmt::Display for ModelFault
@@ -654,6 +724,7 @@ impl core::fmt::Display for ModelFault
                 "binds a variable over a port, whose models are its first-order translation's"
             },
             Self::Abstraction => "abstracts an atom over a port, whose models are nominal sets'",
+            Self::Unbound => "names a variable its statement does not bind once",
         })
     }
 }
@@ -707,8 +778,8 @@ pub struct ModelSignature
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`derive_members`] of the value's members and the circuit rules
-///   kept beside it.
+/// - ensures: [`derive_members`] of the value's members, the circuit rules and
+///   the stated laws kept beside it.
 /// - fails: a value whose members cannot be read, as [`Presentation::members`];
 ///   any other fault is kept on its component.
 /// - panics: none.
@@ -725,25 +796,30 @@ pub struct ModelSignature
 pub fn derive(presentation: &Presentation) -> Result<ModelSignature, PresentationFault>
 {
     let members = presentation.members()?;
-    Ok(derive_members(&members, &presentation.circuits))
+    Ok(derive_members(
+        &members,
+        &presentation.circuits,
+        &presentation.laws,
+    ))
 }
 
-/// Derive the model signature of a presentation's members and its circuit
-/// rules.
+/// Derive the model signature of a presentation's members, its circuit rules
+/// and the laws it states.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: one component per presented sort, operation, face and circuit
-///   rule, in that order and each group in written order; a sort's or an
-///   operation's telescope binds its free sort variables before its ports, a
+/// - ensures: one component per presented sort, operation, face, stated law and
+///   circuit rule, in that order and each group in written order; a sort's or
+///   an operation's telescope binds its free sort variables before its ports, a
 ///   law's binds the variables in another variable's sort first, and every
-///   application carries every argument its operation binds; a port at a
-///   builtin type the theory does not declare reads it as a closed sort; a
-///   constant whose type leaves no variable free derives that type alone, and
-///   one whose type does derives as an operation of no inputs; a component that
-///   cannot be stated keeps its fault, an operation one of whose ports binds a
-///   variable keeps [`ModelFault::Binding`], and one naming such a component is
-///   [`ModelFault::Inherited`].
+///   application carries every argument its operation binds; a stated law's
+///   telescope is its written binders and its hypotheses its written ones; a
+///   port at a builtin type the theory does not declare reads it as a closed
+///   sort; a constant whose type leaves no variable free derives that type
+///   alone, and one whose type does derives as an operation of no inputs; a
+///   component that cannot be stated keeps its fault, an operation one of whose
+///   ports binds a variable keeps [`ModelFault::Binding`], and one naming such
+///   a component is [`ModelFault::Inherited`].
 /// - fails: never; a fault is kept on its component.
 /// - panics: none.
 /// - executable: none — the inference the components result from is the
@@ -762,6 +838,7 @@ pub fn derive(presentation: &Presentation) -> Result<ModelSignature, Presentatio
 pub(crate) fn derive_members(
     members: &Members,
     circuits: &[PresentedCircuit],
+    stated: &[StatedLaw],
 ) -> ModelSignature
 {
     let (heads, mut components) = derive_heads(members);
@@ -770,6 +847,13 @@ pub(crate) fn derive_members(
             name: law.name.clone(),
             named: law.named,
             form: infer::derive_law(&heads, law),
+        });
+    }
+    for law in stated {
+        components.push(ModelComponent {
+            name: law.name.clone(),
+            named: law.named,
+            form: infer::derive_stated(&heads, law),
         });
     }
     for circuit in circuits {
@@ -928,8 +1012,13 @@ pub(crate) enum Tail<'form>
 {
     /// An operation's results.
     Results(&'form [SortTerm]),
-    /// A law's carrier and endpoints.
-    Path(&'form SortTerm, &'form FreeTerm, &'form FreeTerm),
+    /// A law's hypotheses, carrier and endpoints.
+    Path(
+        &'form [Hypothesis],
+        &'form SortTerm,
+        &'form FreeTerm,
+        &'form FreeTerm,
+    ),
 }
 
 /// Whether each binder of `telescope` is named by a later binder's sort or
@@ -939,7 +1028,7 @@ pub(crate) enum Tail<'form>
 /// - requires: nothing.
 /// - ensures: one flag per binder, in order: affirmative exactly when the
 ///   binder's name is a variable of a later binder's index terms or of the
-///   tail's sorts and terms.
+///   tail's hypotheses, sorts and terms.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -967,7 +1056,12 @@ pub(crate) fn dependence(
                 sort_vars(result, &mut named);
             }
         },
-        Tail::Path(carrier, left, right) => {
+        Tail::Path(hypotheses, carrier, left, right) => {
+            for hypothesis in hypotheses {
+                sort_vars(&hypothesis.carrier, &mut named);
+                named.extend(hypothesis.left.to_node().vars());
+                named.extend(hypothesis.right.to_node().vars());
+            }
             sort_vars(carrier, &mut named);
             named.extend(left.to_node().vars());
             named.extend(right.to_node().vars());

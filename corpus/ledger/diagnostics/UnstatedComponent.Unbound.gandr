@@ -1,0 +1,12 @@
+/// `UnstatedComponent.Unbound`: a model component the derivation cannot state: a stated law naming a variable its statement does not bind once.
+///
+/// The theory the model derives from.
+@[ checks ]
+theory Loose {
+  sort Carrier : Type;
+  oper alike : (a : Carrier, b : Carrier) --> Bool;
+  law loose : (a : Carrier) => Path(Bool, alike(a, b), true);
+}
+
+@[ refuses("UnstatedComponent.Unbound") ]
+def model : Model(Loose) ;

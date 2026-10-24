@@ -452,6 +452,25 @@ fn lowered(
         LoweringRefusal::UnknownMember { module, member, .. } => {
             write!(f, "the module `{module}` has no member `{member}`")
         },
+        LoweringRefusal::UnprovenLaw {
+            module,
+            law,
+            why: gandr_surface_lowering::LawProof::Missing,
+            ..
+        } => write!(
+            f,
+            "the module `{module}` neither proves nor admits its model's law `{law}`"
+        ),
+        LoweringRefusal::UnprovenLaw {
+            module,
+            law,
+            why: gandr_surface_lowering::LawProof::Admitted,
+            ..
+        } => write!(
+            f,
+            "the module `{module}` admits the law `{law}` at a carrier the host does not \
+             provide; only a primitive carrier's law is admitted, and any other is proved"
+        ),
         LoweringRefusal::PartialField {
             field, constructor, ..
         } => write!(
@@ -1468,6 +1487,18 @@ mod tests
                 span,
                 module: name,
                 member: name,
+            },
+            LoweringRefusal::UnprovenLaw {
+                span,
+                module: name,
+                law: name,
+                why: gandr_surface_lowering::LawProof::Missing,
+            },
+            LoweringRefusal::UnprovenLaw {
+                span,
+                module: name,
+                law: name,
+                why: gandr_surface_lowering::LawProof::Admitted,
             },
             LoweringRefusal::PartialField {
                 span,

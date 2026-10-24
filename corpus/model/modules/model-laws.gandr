@@ -1,0 +1,66 @@
+// A theory's laws stated as the path types they are, `law name : type`: the
+// equations a model proves, where a rule is a rewrite the theory orients
+// (#2356). Reflexivity, symmetry and transitivity of a decision, the last
+// under two hypotheses, none of which a rule could state: symmetry has no
+// orientation and reflexivity's left side reads its variable twice. A model at
+// a type of its own proves each law by a definition at the law's path; a
+// model at a host primitive admits each, `law refl admitted ;`, and the
+// report's audit lists the admission in place of an obligation. The refusals
+// are beside `../../pathological/modules/model-laws.gandr`.
+
+/// A decision and the laws that make it an equivalence.
+@[ checks ]
+theory Lawful {
+  sort Carrier : Type;
+  oper alike : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
+  law sym : (a : Carrier, b : Carrier) => Path(Bool, alike(a, b), alike(b, a));
+  law trans : (
+    a : Carrier,
+    b : Carrier,
+    c : Carrier,
+    p : Path(Bool, alike(a, b), true),
+    q : Path(Bool, alike(b, c), true)
+  ) => Path(Bool, alike(a, c), true);
+}
+
+/// One value.
+@[ checks ]
+data Single : Type {
+  Only : Single;
+}
+
+/// Every two values of `Single` are alike, so each law is a reflexivity.
+@[ checks ]
+module LawfulSingle : Model(Lawful) with sort Carrier = Single {
+  def alike(a : Single, b : Single) -> Bool { true }
+  def refl(a : Single) -> Path(Bool, alike(a, a), true) { here(true) }
+  def sym(a : Single, b : Single) -> Path(Bool, alike(a, b), alike(b, a)) { here(true) }
+  def trans(
+    a : Single,
+    b : Single,
+    c : Single,
+    p : Path(Bool, alike(a, b), true),
+    q : Path(Bool, alike(b, c), true)
+  ) -> Path(Bool, alike(a, c), true) {
+    here(true)
+  }
+}
+
+/// The host's integer equality: its laws are the host's, admitted, each
+/// settling `checks` with the audit row naming it, `LawfulInteger.refl
+/// admitted` the first.
+@[ checks ]
+module LawfulInteger : Model(Lawful) with sort Carrier = Integer {
+  def alike(a : Integer, b : Integer) -> Bool { a == b }
+  @[ checks ]
+  law refl admitted;
+  @[ checks ]
+  law sym admitted;
+  @[ checks ]
+  law trans admitted;
+}
+
+/// The admitted model decides by the host: three is three.
+@[ runs("+{.0 = unit}") ]
+def threeIsThree() -> Bool { LawfulInteger.alike(3, 3) }

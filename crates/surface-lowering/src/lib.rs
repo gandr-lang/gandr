@@ -404,6 +404,7 @@ pub use crate::error::CrossedExit;
 pub use crate::error::FormFault;
 pub use crate::error::FragmentBoundary;
 pub use crate::error::FragmentSort;
+pub use crate::error::LawProof;
 pub use crate::error::LoopExit;
 pub use crate::error::LoweringRefusal;
 pub use crate::error::TelescopeFault;

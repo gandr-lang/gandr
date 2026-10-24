@@ -1,0 +1,12 @@
+/// `module_law_member`: a module body admitting its model's law at a host primitive.
+theory Reflexive {
+  sort Carrier : Type;
+  oper alike : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
+}
+
+/// The host's integers, their reflexivity admitted.
+module ReflexiveInteger : Model(Reflexive) with sort Carrier = Integer {
+  def alike(a : Integer, b : Integer) -> Bool { true }
+  law refl admitted;
+}

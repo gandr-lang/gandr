@@ -14,6 +14,7 @@ use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::FragmentSort;
 use gandr_surface_lowering::Labelled;
+use gandr_surface_lowering::LawProof;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OperandCount;
 use gandr_surface_lowering::TelescopeFault;
@@ -689,6 +690,65 @@ fn a_model_missing_an_operation_is_refused_naming_it()
                 && role == Role::Held
                 && amounts == missing),
         "the missing operation is refused by its name: {found:?}"
+    );
+}
+
+/// #2356: a theory's stated laws are components a model proves by a
+/// definition at their path type or, at a host primitive carrier, admits by
+/// `law name admitted ;`, owed to the checker as the axiom it is; a model that
+/// neither proves nor admits one is refused `UnprovenLaw`, and one admitting a
+/// law at its own data type is refused `UnprovenLaw.Admitted` at the member.
+#[test]
+fn a_stated_law_is_a_component_a_model_proves_2356()
+{
+    let source = "theory Same {\n  sort Carrier : Type;\n  oper same : (a : Carrier, b : Carrier) --> Bool;\n  law refl : (a : Carrier) => Path(Bool, same(a, a), true);\n  law trans : (a : Carrier, b : Carrier, c : Carrier, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) => Path(Bool, same(a, c), true);\n}\ndata One : Type {\n  Only : One;\n}\nmodule Proved : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n  def refl(a : One) -> Path(Bool, same(a, a), true) { here(true) }\n  def trans(a : One, b : One, c : One, p : Path(Bool, same(a, b), true), q : Path(Bool, same(b, c), true)) -> Path(Bool, same(a, c), true) { here(true) }\n}\nmodule Admitted : Model(Same) with sort Carrier = Integer {\n  def same(a : Integer, b : Integer) -> Bool { true }\n  law refl admitted;\n  law trans admitted;\n}\nmodule Short : Model(Same) with sort Carrier = One {\n  def same(a : One, b : One) -> Bool { true }\n  law refl admitted;\n}\n";
+    let mut lowered = lower(source);
+    let found = rows(&lowered);
+    for (path, role, amounts) in [
+        ("Proved.refl", Role::Declared, Amounts::Completed),
+        ("Proved.trans", Role::Declared, Amounts::Completed),
+        ("Admitted.refl", Role::Admitted, Amounts::Uncompleted),
+        ("Admitted.trans", Role::Admitted, Amounts::Uncompleted),
+        (
+            "Short.refl",
+            Role::Admitted,
+            Amounts::Refused(LoweringRefusal::UnprovenLaw {
+                span: span_of(source, "law refl admitted;", 1_usize),
+                module: name("Short"),
+                law: name("refl"),
+                why: LawProof::Admitted,
+            }),
+        ),
+        (
+            "Short.trans",
+            Role::Held,
+            Amounts::Refused(LoweringRefusal::UnprovenLaw {
+                span: span_of(source, "Same", 3_usize),
+                module: name("Short"),
+                law: name("trans"),
+                why: LawProof::Missing,
+            }),
+        ),
+    ] {
+        assert!(
+            found.contains(&row(path, role, amounts)),
+            "`{path}` is {role:?} {amounts:?}: {found:?}"
+        );
+    }
+    let proved = ["Proved.refl", "Proved.trans"]
+        .map(|path| super::declaration(&lowered, path, Role::Declared).constant());
+    let admitted = ["Admitted.refl", "Admitted.trans"]
+        .map(|path| super::declaration(&lowered, path, Role::Admitted).constant());
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        proved
+            .iter()
+            .all(|&law| judgements.contains(&(law, Judgement::Checked)))
+            && admitted
+                .iter()
+                .all(|&law| judgements.contains(&(law, Judgement::Owed))),
+        "each proof checks at the law's path, and each admission is owed as the axiom it \
+         is: {judgements:?}"
     );
 }
 

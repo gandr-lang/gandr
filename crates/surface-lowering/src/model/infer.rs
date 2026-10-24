@@ -14,11 +14,13 @@ use gandr_theory_levitation::TermView;
 use quenchant_shape::shape::Maybe;
 
 use super::Binder;
+use super::Hypothesis;
 use super::ModelFault;
 use super::ModelForm;
 use super::Port;
 use super::PresentedLaw;
 use super::SortTerm;
+use super::StatedLaw;
 use crate::resolve::OperandCount;
 
 quenchant_shape::reason_enum! {
@@ -208,6 +210,19 @@ struct Engine
     applied: BTreeMap<NodeId, Sorted>,
     /// The written names in scope.
     scope: BTreeMap<Name, NodeId>,
+}
+
+/// One side of a stated law's path, as its derivation reads it: a `Bool`
+/// literal, which no theory declares, or a term the engine elaborated.
+///
+/// # Specification
+/// trivial.
+enum Side
+{
+    /// `true` or `false`, standing as a whole side.
+    Literal(FreeTerm),
+    /// The elaborated term's node.
+    Node(NodeId),
 }
 
 /// An environment of instantiated binders: its place in a walk's table.
@@ -1564,8 +1579,244 @@ pub(super) fn derive_law(
 
     Ok(ModelForm::Law {
         telescope,
+        hypotheses: Vec::new(),
         carrier: engine.read_back_sort(&carrier, &names)?,
         left: engine.read_back(left, &names)?,
         right: engine.read_back(right, &names)?,
     })
+}
+
+/// Derive the law a theory states, `law name : (binders) => Path(C, l, r)`:
+/// its written binders bound at their written sorts, then its hypotheses and
+/// its path checked against them.
+///
+/// # Specification
+/// - ensures: a [`ModelForm::Law`] whose telescope is the written binders, in
+///   written order after any implicit index a later binder's sort needs bound
+///   first, as [`derive_law`] orders them; whose hypotheses are the written
+///   ones, in order; and whose carrier and sides are the written path's, every
+///   application carrying every argument its operation binds. A sort the theory
+///   does not declare, written with no indices, is the builtin type it names; a
+///   `Bool` literal stands only as a whole side at `Bool`.
+/// - fails: [`ModelFault::Unbound`] for a side naming a variable no binder
+///   binds, or a binder written twice; [`ModelFault::IllSorted`] for a side at
+///   another sort than its path's carrier; the faults of elaborating a sort or
+///   a side.
+/// - panics: none.
+/// - executable: none — the inference is the derivation.
+///
+/// # Errors
+/// The [`ModelFault`] the specification names.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `refl`, `sym` and `trans` derive their components, and a
+///   side naming a variable no binder binds keeps its fault.
+/// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
+pub(super) fn derive_stated(
+    heads: &Heads,
+    law: &StatedLaw,
+) -> Result<ModelForm, ModelFault>
+{
+    let mut engine = Engine::default();
+    let mut written: Vec<Item> = Vec::with_capacity(law.binders.len());
+    for binder in &law.binders {
+        let sort = engine.stated_sort(heads, &binder.sort)?;
+        let variable = engine.variable(binder.name.clone(), Maybe::Present(sort));
+        if engine.scope.insert(binder.name.clone(), variable).is_some() {
+            return Err(ModelFault::Unbound);
+        }
+        if let Maybe::Present(item) = engine.item(variable) {
+            written.push(item);
+        }
+    }
+    let bound = engine.scope.len();
+    let paths = law
+        .hypotheses
+        .iter()
+        .map(|hypothesis| (&hypothesis.carrier, &hypothesis.left, &hypothesis.right))
+        .chain(core::iter::once((&law.carrier, &law.left, &law.right)));
+    let mut equations = Vec::with_capacity(law.hypotheses.len().saturating_add(1));
+    for (carrier, left, right) in paths {
+        let sort = engine.stated_sort(heads, carrier)?;
+        let left = engine.side(heads, left, &sort)?;
+        let right = engine.side(heads, right, &sort)?;
+        equations.push((sort, left, right));
+    }
+    if engine.scope.len() != bound {
+        return Err(ModelFault::Unbound);
+    }
+    let mut indexing = BTreeSet::new();
+    for variable in 0 .. engine.variables.len() {
+        indexing.extend(engine.sort_leaves(Item::Variable(VariableId(variable))));
+    }
+    let mut order = Vec::new();
+    let mut placed = BTreeSet::new();
+    engine.emit(
+        &written,
+        &|item| {
+            if indexing.contains(&item) {
+                Admission::Bound
+            }
+            else {
+                Admission::Deferred
+            }
+        },
+        &mut order,
+        &mut placed,
+    );
+    let mut implicit: Vec<Item> = Vec::new();
+    for &(_, ref left, ref right) in &equations {
+        for side in [left, right] {
+            if let Side::Node(node) = *side {
+                implicit.extend(engine.leaves(node));
+            }
+        }
+    }
+    engine.emit(
+        &implicit,
+        &|item| match item {
+            Item::Meta(_) => Admission::Bound,
+            Item::Variable(_) => Admission::Deferred,
+        },
+        &mut order,
+        &mut placed,
+    );
+    for item in written {
+        if placed.insert(item) {
+            order.push(item);
+        }
+    }
+    let (telescope, names) = engine.telescope(&order)?;
+    let mut read = Vec::with_capacity(equations.len());
+    for &(ref sort, ref left, ref right) in &equations {
+        read.push((
+            engine.read_back_sort(sort, &names)?,
+            engine.side_back(left, &names)?,
+            engine.side_back(right, &names)?,
+        ));
+    }
+    let Some((carrier, left, right)) = read.pop()
+    else {
+        return Err(ModelFault::Unsorted);
+    };
+    let hypotheses = law
+        .hypotheses
+        .iter()
+        .zip(read)
+        .map(|(hypothesis, (carrier, left, right))| Hypothesis {
+            name: hypothesis.name.clone(),
+            carrier,
+            left,
+            right,
+        })
+        .collect();
+
+    Ok(ModelForm::Law {
+        telescope,
+        hypotheses,
+        carrier,
+        left,
+        right,
+    })
+}
+
+impl Engine
+{
+    /// Elaborate a sort a stated law writes: a sort of the theory over its
+    /// indices, or, for a name the theory declares nothing under, written with
+    /// no indices, the builtin type it names.
+    ///
+    /// # Specification
+    /// - ensures: the theory's sort elaborated as [`Self::elaborate_sort`]
+    ///   does; a name no head answers, unindexed, as a closed sort.
+    /// - fails: as [`Self::elaborate_sort`] for a theory name, or an indexed
+    ///   name no head answers.
+    /// - panics: none.
+    /// - executable: none — the sort is the engine's.
+    ///
+    /// # Errors
+    /// The [`ModelFault`] of [`Self::elaborate_sort`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Carrier` and `Bool` read as a theory sort and a
+    ///   builtin.
+    /// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
+    fn stated_sort(
+        &mut self,
+        heads: &Heads,
+        sort: &SortTerm,
+    ) -> Result<Sorted, ModelFault>
+    {
+        if heads.get(&sort.sort).is_none() && sort.indices.is_empty() {
+            return Ok(Sorted {
+                sort: sort.sort.clone(),
+                indices: Vec::new(),
+            });
+        }
+        self.elaborate_sort(heads, sort)
+    }
+
+    /// Elaborate one side of a stated law's path at `carrier`.
+    ///
+    /// # Specification
+    /// - ensures: a `Bool` literal as itself; any other term elaborated through
+    ///   the scope and checked at `carrier`.
+    /// - fails: [`ModelFault::IllSorted`] for a literal at another carrier than
+    ///   `Bool`; the faults of [`Self::term`] and [`Self::expect`].
+    /// - panics: none.
+    /// - executable: none — the node is the engine's.
+    ///
+    /// # Errors
+    /// The [`ModelFault`] the specification names.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `refl`'s `true` reads as a literal and `sym`'s sides
+    ///   as elaborated terms.
+    /// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
+    fn side(
+        &mut self,
+        heads: &Heads,
+        term: &FreeTerm,
+        carrier: &Sorted,
+    ) -> Result<Side, ModelFault>
+    {
+        if let TermView::Ctor { name, mut args } = term.to_node().view()
+            && matches!(name.as_ref(), "true" | "false")
+            && args.next().is_none()
+        {
+            if carrier.sort.as_ref() != "Bool" || !carrier.indices.is_empty() {
+                return Err(ModelFault::IllSorted);
+            }
+            return Ok(Side::Literal(term.clone()));
+        }
+        let node = self.term(heads, term)?;
+        self.expect(node, carrier.clone())?;
+        Ok(Side::Node(node))
+    }
+
+    /// Read one side of a stated law's path back as a term.
+    ///
+    /// # Specification
+    /// - ensures: a literal as itself; a node as [`Self::read_back`] reads it.
+    /// - fails: as [`Self::read_back`].
+    /// - panics: none.
+    /// - executable: none — as [`Self::read_back`].
+    ///
+    /// # Errors
+    /// The [`ModelFault`] of [`Self::read_back`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::side`].
+    /// - witness: `model::tests::a_stated_law_binds_its_written_variables_2356`
+    fn side_back(
+        &self,
+        side: &Side,
+        names: &BTreeMap<Item, Name>,
+    ) -> Result<FreeTerm, ModelFault>
+    {
+        match *side {
+            Side::Literal(ref literal) => Ok(literal.clone()),
+            Side::Node(node) => self.read_back(node, names),
+        }
+    }
 }

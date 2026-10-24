@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 105 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=9 => Sort::Item, 10..=14 => Sort::ModuleMember, 15..=26 | 95..=96 => Sort::Pattern, 27..=32 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 106 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=9 => Sort::Item, 10..=15 => Sort::ModuleMember, 16..=27 | 96..=97 => Sort::Pattern, 28..=33 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -3396,11 +3396,11 @@ fn member_sep() -> Regex
 ///
 /// Repeating a bare sort hole is safe here because **every member carries its
 /// own terminator**: a definition ends at `;` or at its body's closing brace,
-/// a type member and a model include at their `;`, and a nested module ends at
-/// its closing brace. After a member the only admissible tiles are the next
-/// member's lead (`@[`, `def`, `type`, `module`, `include`) or the body's `}`,
-/// none of which competes with the hole's own content — the discrimination the
-/// member-list separator rule exists to protect.
+/// a type member, a model include and a law's admission at their `;`, and a
+/// nested module ends at its closing brace. After a member the only admissible
+/// tiles are the next member's lead (`@[`, `def`, `type`, `module`, `include`,
+/// `law`) or the body's `}`, none of which competes with the hole's own content
+/// — the discrimination the member-list separator rule exists to protect.
 ///
 /// A type member `type T = τ ;` names a type inside the body: the
 /// representation a signature's abstract component `type T` seals. It leads
@@ -3410,11 +3410,15 @@ fn member_sep() -> Regex
 /// A model include `include M ;` takes the model module `M`'s members as this
 /// module's own, the dual of a theory's `include`.
 ///
+/// A law's admission `law refl admitted ;` states that the host asserts the
+/// theory's law `refl` at this model's primitive carrier, in the place a
+/// proving model defines it.
+///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends plain definitions, attributed definitions and type
-///   members, a plain type member, a nested module and a model include, all at
-///   the module-member sort with module provenance.
+///   members, a plain type member, a nested module, a model include and a law's
+///   admission, all at the module-member sort with module provenance.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3425,7 +3429,7 @@ fn member_sep() -> Regex
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 5 && added.iter().zip(["module_definition_member", "attributed_module_member", "module_type_member", "nested_module_member", "module_include_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 6 && added.iter().zip(["module_definition_member", "attributed_module_member", "module_type_member", "nested_module_member", "module_include_member", "module_law_member"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::ModuleMember && rule.prec() == p && rule.provenance().0 == "module_declaration")))]
 fn module_members(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -3483,19 +3487,30 @@ fn module_members(
             t(TileLabel(";")),
         ]),
     ));
+    // `law refl admitted ;` admits the theory's law `refl` at a primitive
+    // carrier: the host asserts it, in the place a proving model's `def refl`
+    // stands. It leads with `law` and closes on `;`, like an include.
+    out.push(r(
+        RuleName("module_law_member"),
+        Provenance("module_declaration"),
+        s,
+        p,
+        law_admission_tail(),
+    ));
 }
 
 /// Build one **attributed** module member: at least one `@[ … ]` block, then
-/// either the ordinary definition tail or a type member.
+/// the ordinary definition tail, a type member or a law's admission.
 ///
 /// An attributed type member states the expectation of the check a
-/// signature's component reads the member through; the lowering files the
+/// signature's component reads the member through, and an attributed
+/// admission the expectation of the law it admits; the lowering files the
 /// block under the member's form.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: one mandatory attribute block and any following attribute blocks
-///   before either a def and its regular tail or a type member.
+///   before a def and its regular tail, a type member or a law's admission.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -3505,7 +3520,7 @@ fn module_members(
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref tails) if tails.len() == 2))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(_))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Alt(ref tails) if tails.len() == 3))))]
 fn attributed_module_member() -> Regex
 {
     seq([
@@ -3514,7 +3529,31 @@ fn attributed_module_member() -> Regex
         alt([
             seq([t(TileLabel("def")), regular_def_tail()]),
             type_member_tail(),
+            law_admission_tail(),
         ]),
+    ])
+}
+
+/// Build a law's admission, `law refl admitted ;`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `law`, the law's name, `admitted` and `;`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in term forms, L3 grammar identity and corpus
+///   role observations catch changed discriminators, delimiters and hole sorts.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 4 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "law")) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ";"))))]
+fn law_admission_tail() -> Regex
+{
+    seq([
+        t(TileLabel("law")),
+        t(TileLabel("identifier")),
+        t(TileLabel("admitted")),
+        t(TileLabel(";")),
     ])
 }
 

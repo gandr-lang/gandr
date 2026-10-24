@@ -40,10 +40,13 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::CertificateEquality;
+use gandr_core_term::CompType;
 use gandr_core_term::Computation;
+use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_core_term::hole::TermId;
@@ -83,6 +86,7 @@ use super::stretch;
 use crate::error::AscriptionForm;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
+use crate::error::LawProof;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
 use crate::form::Cursor;
@@ -111,6 +115,7 @@ use crate::module::Half;
 use crate::module::Member;
 use crate::module::ModelPart;
 use crate::module::Operand;
+use crate::module::Role;
 use crate::module::SlotIndex;
 use crate::module::Stratum;
 use crate::module::StructureIndex;
@@ -693,16 +698,21 @@ impl<'source> Lowerer<'_, 'source>
     ///   theory's name there and not the type; a slot whose component names a
     ///   refused one holds that refusal as a fault, and one naming a component
     ///   that did not lower holds [`LoweringRefusal::UnstatedComponent`] with
-    ///   [`ModelFault::Inherited`].
+    ///   [`ModelFault::Inherited`]; an admitted law whose type quantifies over
+    ///   a carrier the host does not provide holds
+    ///   [`LoweringRefusal::UnprovenLaw`], admitted.
     /// - provides: the declared types [`Self::outcome`] reads for model halves.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the `CatShape` operations and laws mint the written
-    ///   signature's types, and a law over a refused family inherits it.
+    ///   signature's types, and a law over a refused family inherits it; a law
+    ///   admitted at `Integer` takes its type, and one admitted at a data type
+    ///   is refused.
     /// - witness: `tests::modules::models::a_derived_signature_states_what_the_written_one_does`
     /// - witness: `tests::modules::models::a_family_of_the_wrong_telescope_is_refused`
+    /// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
         expect(
@@ -746,6 +756,22 @@ impl<'source> Lowerer<'_, 'source>
             let origin = written.inserted(Insertion::Model);
             let position = SlotIndex::from(position);
             match self.mint_component(structure, part, sink, origin) {
+                Ok(minted)
+                    if slot.role == Role::Admitted
+                        && carriers(sink.arena, minted) == Carriers::Written =>
+                {
+                    let module = self
+                        .collected
+                        .structures
+                        .get(usize::from(structure))
+                        .map_or(slot.name, |entry| entry.name);
+                    let _first = faults.insert(position, LoweringRefusal::UnprovenLaw {
+                        span: slot.introduced_by.span,
+                        module,
+                        law: slot.name,
+                        why: LawProof::Admitted,
+                    });
+                },
                 Ok(minted) => {
                     let _first = modelled.insert(position, minted);
                 },
@@ -822,7 +848,8 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the mint sweep has run.
     /// - ensures: an operation's or a law's telescope Π, as the module's
-    ///   documentation states it, and a constant's type itself, every node
+    ///   documentation states it, a law's hypotheses arrows between its
+    ///   telescope and its path, and a constant's type itself, every node
     ///   carrying the minting's origin.
     /// - fails: a sort or a nested model, and a form naming a component that
     ///   did not lower, as unlowered; one naming a refused component, with its
@@ -853,10 +880,11 @@ impl<'source> Lowerer<'_, 'source>
             } => (telescope, Tail::Results(results)),
             ModelForm::Law {
                 ref telescope,
+                ref hypotheses,
                 ref carrier,
                 ref left,
                 ref right,
-            } => (telescope, Tail::Path(carrier, left, right)),
+            } => (telescope, Tail::Path(hypotheses, carrier, left, right)),
             ModelForm::Constant(ref sort) => {
                 let closed = Context {
                     binders: &[],
@@ -879,6 +907,7 @@ impl<'source> Lowerer<'_, 'source>
             binders: telescope,
             dependent: &dependent,
         };
+        let mut assumed = Vec::new();
         let codomain = match tail {
             Tail::Results(results) => {
                 let mut sorts = Vec::with_capacity(results.len());
@@ -894,17 +923,30 @@ impl<'source> Lowerer<'_, 'source>
                     id
                 }
             },
-            Tail::Path(carrier, left, right) => {
-                let over = self.sort_type(carrier, context, minting, sink)?;
-                let from = self.term_value(left, context, minting, sink)?;
-                let to = self.term_value(right, context, minting, sink)?;
-                let id = sink.arena.value_type_path(over, from, to);
-                sink.origins.record_value_type(id, origin);
-                id
+            Tail::Path(hypotheses, carrier, left, right) => {
+                // A hypothesis binds nothing a later type reads, so each path
+                // is minted under the telescope alone.
+                let paths = hypotheses
+                    .iter()
+                    .map(|hypothesis| (&hypothesis.carrier, &hypothesis.left, &hypothesis.right))
+                    .chain(core::iter::once((carrier, left, right)));
+                for (carrier, left, right) in paths {
+                    let over = self.sort_type(carrier, context, minting, sink)?;
+                    let from = self.term_value(left, context, minting, sink)?;
+                    let to = self.term_value(right, context, minting, sink)?;
+                    let id = sink.arena.value_type_path(over, from, to);
+                    sink.origins.record_value_type(id, origin);
+                    assumed.push(id);
+                }
+                assumed.pop().ok_or(Missing::Unlowered)?
             },
         };
         let mut chain = sink.arena.comp_type_returner(codomain);
         sink.origins.record_comp_type(chain, origin);
+        for &hypothesis in assumed.iter().rev() {
+            chain = sink.arena.comp_type_arrow(hypothesis, chain);
+            sink.origins.record_comp_type(chain, origin);
+        }
         for (&domain, &binds) in domains.iter().zip(&dependent).rev() {
             chain = if binds.0 {
                 sink.arena.comp_type_pi(domain, chain)
@@ -1223,10 +1265,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: every operation `term` applies is a member of the module.
     /// - ensures: a variable is the intuitionistic index counting the binding
     ///   binders after it in `context`; an application `g(t₁, …, tₙ)` is
-    ///   `↑((force g) t₁ … tₙ)` over the constant of the member `g` names,
-    ///   every node carrying the minting's origin.
-    /// - fails: a variable `context` does not bind, a constructor or results
-    ///   term, and an operation the module does not define, as unlowered.
+    ///   `↑((force g) t₁ … tₙ)` over the constant of the member `g` names;
+    ///   `true` and `false` are the left and the right unit of `Bool`; every
+    ///   node carrying the minting's origin.
+    /// - fails: a variable `context` does not bind, any other constructor or a
+    ///   results term, and an operation the module does not define, as
+    ///   unlowered.
     /// - panics: none.
     ///
     /// # Errors
@@ -1265,6 +1309,24 @@ impl<'source> Lowerer<'_, 'source>
                         let arguments: Vec<TermNode<'_>> = args.collect();
                         pending.push(Walk::Apply(name, OperandCount::from(arguments.len())));
                         pending.extend(arguments.into_iter().rev().map(Walk::Read));
+                    },
+                    TermView::Ctor { name, ref args }
+                        if matches!(name.as_ref(), "true" | "false")
+                            && args.clone().next().is_none() =>
+                    {
+                        let side = if name.as_ref() == "true" {
+                            gandr_kernel_term::Side::Left
+                        }
+                        else {
+                            gandr_kernel_term::Side::Right
+                        };
+                        let unit = sink.arena.value_unit();
+                        sink.origins.record_value(unit, origin);
+                        let id = sink
+                            .arena
+                            .value_injection(gandr_kernel_term::Summand::from(side), unit);
+                        sink.origins.record_value(id, origin);
+                        built.push(id);
                     },
                     TermView::Ctor { .. }
                     | TermView::Results { .. }
@@ -3761,12 +3823,18 @@ fn component_reads<'form>(
         Ok(ModelForm::Constant(ref sort)) => sort_reads(sort, into),
         Ok(ModelForm::Law {
             ref telescope,
+            ref hypotheses,
             ref carrier,
             ref left,
             ref right,
         }) => {
             for binder in telescope {
                 sort_reads(&binder.sort, into);
+            }
+            for hypothesis in hypotheses {
+                sort_reads(&hypothesis.carrier, into);
+                term_heads(&hypothesis.left, into);
+                term_heads(&hypothesis.right, into);
             }
             sort_reads(carrier, into);
             term_heads(left, into);
@@ -3922,6 +3990,61 @@ fn member_read<'source>(
             &(Ok(ModelForm::Sort { .. } | ModelForm::Law { .. } | ModelForm::Nested(_)) | Err(_)),
         )
         | None => Err(Missing::Unlowered),
+    }
+}
+
+/// Whether a law type takes every carrier from the host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Carriers
+{
+    /// Every domain is a host primitive or a path between its values.
+    Primitive,
+    /// Some domain is a type the source writes.
+    Written,
+}
+
+/// The carriers the law type `law`, a thunked chain of Π and arrows into a
+/// path, quantifies over.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Carriers::Primitive`] exactly when `law` is a thunk whose chain
+///   reaches its returner through domains each a host base type or a path type
+///   — a law's hypotheses; [`Carriers::Written`] otherwise.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the walk is the predicate.
+///
+/// # Termination
+/// Each step descends to a codomain of the finite chain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a law admitted at `Integer` is primitive, and one
+///   admitted at a data type is written.
+/// - witness: `tests::modules::models::a_stated_law_is_a_component_a_model_proves_2356`
+fn carriers(
+    arena: &CoreArena,
+    law: ValueTypeId,
+) -> Carriers
+{
+    let Some(&ValueType::Thunk(mut chain)) = arena.value_type(law)
+    else {
+        return Carriers::Written;
+    };
+    loop {
+        match arena.comp_type(chain) {
+            Some(&(CompType::Pi { domain, codomain } | CompType::Arrow { domain, codomain })) => {
+                if !matches!(
+                    arena.value_type(domain),
+                    Some(ValueType::Base(_) | ValueType::Path { .. })
+                ) {
+                    return Carriers::Written;
+                }
+                chain = codomain;
+            },
+            Some(&CompType::Returner { .. }) => return Carriers::Primitive,
+            _ => return Carriers::Written,
+        }
     }
 }
 

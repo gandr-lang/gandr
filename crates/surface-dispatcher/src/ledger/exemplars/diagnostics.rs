@@ -6,9 +6,9 @@
 //! Every name a `refuses` payload can spell without naming an unbuilt feature
 //! (`RefusalName::closed`: the vocabulary, each `OutOfFragment` name a
 //! boundary, the run target or a checker former qualifies, each model
-//! component's fault and each member's) has an exemplar,
-//! `diagnostics/<name>.gandr`, or a row of [`OWED`]. So have the two
-//! boundaries no name carries, `OutOfFragment.Reserved` and
+//! component's fault and each member's, and the law admitted where a proof was
+//! owed) has an exemplar, `diagnostics/<name>.gandr`, or a row of [`OWED`]. So
+//! have the two boundaries no name carries, `OutOfFragment.Reserved` and
 //! `OutOfFragment.Unadmitted`: a form past either is named by the feature it
 //! carries, so their exemplars are named for the boundary.
 //!

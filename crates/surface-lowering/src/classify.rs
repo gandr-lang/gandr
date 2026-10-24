@@ -241,6 +241,7 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::UnknownMember { .. }
+            | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::ProjectionFromApplication { .. }
@@ -308,6 +309,7 @@ impl LoweringRefusal<'_>
             | Self::ForwardMemberReference { .. }
             | Self::PhaseDependence { .. }
             | Self::UnknownMember { .. }
+            | Self::UnprovenLaw { .. }
             | Self::PartialField { .. }
             | Self::NotAFunctor { .. }
             | Self::ProjectionFromApplication { .. }
@@ -533,8 +535,8 @@ impl FragmentFeature
 /// - ensures: a component relating a many-out operation's results, a circuit
 ///   rule, a binding operation and an abstracting operation are unimplemented,
 ///   each naming its issue; an unknown head, a wrong arity, an ill-sorted term,
-///   an unsorted variable, a constructor term and a component inheriting
-///   another's failure are malformed source.
+///   an unsorted variable, a constructor term, a component inheriting another's
+///   failure and a stated law's unbound variable are malformed source.
 /// - provides: the lowering classifier's arm for `UnstatedComponent`.
 /// - fails: never.
 /// - panics: none.
@@ -560,7 +562,8 @@ fn unstated(fault: ModelFault) -> FailureClass
         | ModelFault::IllSorted
         | ModelFault::Unsorted
         | ModelFault::Constructor
-        | ModelFault::Inherited => FailureClass::MalformedSource,
+        | ModelFault::Inherited
+        | ModelFault::Unbound => FailureClass::MalformedSource,
     }
 }
 

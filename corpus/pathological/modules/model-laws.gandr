@@ -1,0 +1,34 @@
+// The refusals beside `../../model/modules/model-laws.gandr`: a model that
+// neither proves nor admits a law of its theory is refused `UnprovenLaw` by
+// the law's name, at the module, whose attributes state the expectation; an
+// admission at a carrier the host does not provide is refused
+// `UnprovenLaw.Admitted` at the admission, the law the author's to prove.
+
+/// Reflexivity and symmetry of a decision.
+theory Decided {
+  sort Carrier : Type;
+  oper alike : (a : Carrier, b : Carrier) --> Bool;
+  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);
+  law sym : (a : Carrier, b : Carrier) => Path(Bool, alike(a, b), alike(b, a));
+}
+
+/// One value.
+data Lone : Type {
+  Alone : Lone;
+}
+
+/// `sym` is neither proved nor admitted.
+@[ refuses("UnprovenLaw") ]
+module Unproven : Model(Decided) with sort Carrier = Lone {
+  def alike(a : Lone, b : Lone) -> Bool { true }
+  def refl(a : Lone) -> Path(Bool, alike(a, a), true) { here(true) }
+}
+
+/// `Lone` is no carrier the host provides, so its laws are the author's to
+/// prove.
+module Overadmitted : Model(Decided) with sort Carrier = Lone {
+  def alike(a : Lone, b : Lone) -> Bool { true }
+  @[ refuses("UnprovenLaw.Admitted") ]
+  law refl admitted;
+  def sym(a : Lone, b : Lone) -> Path(Bool, alike(a, b), alike(b, a)) { here(true) }
+}
