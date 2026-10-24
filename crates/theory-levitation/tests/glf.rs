@@ -18,13 +18,16 @@ use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperDesc;
 use gandr_theory_levitation::ParamDesc;
 use gandr_theory_levitation::Representability;
+use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SortDesc;
 use gandr_theory_levitation::SortIndex;
 use gandr_theory_levitation::SortRef;
+use gandr_theory_levitation::SurfaceSpan;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TranslationError;
 use gandr_theory_levitation::WfKind;
 use gandr_theory_levitation::check_desc;
+use gandr_theory_levitation::derive_cell_var_meta;
 use gandr_theory_levitation::first_order;
 use gandr_theory_levitation::serialize_desc;
 
@@ -376,6 +379,224 @@ fn translation_refuses_non_signatures()
         first_order(&abstracting),
         Err(TranslationError::AtomAbstraction(Name::from("app")))
     );
+    // A metavariable applied on a left side to a term, not to the variables
+    // its fields bind, stands in no context of the model.
+    let unpatterned = with_equations(lc(), vec![(
+        FreeTerm::op("app", [
+            FreeTerm::op("lam", [FreeTerm::lam(
+                "x",
+                FreeTerm::inst("t", [FreeTerm::op("app", [
+                    FreeTerm::bound("x"),
+                    FreeTerm::bound("x"),
+                ])]),
+            )]),
+            FreeTerm::var("u"),
+        ]),
+        FreeTerm::var("u"),
+    )]);
+    assert_eq!(check_desc(&unpatterned), []);
+    assert_eq!(
+        first_order(&unpatterned),
+        Err(TranslationError::UnreadEquation(0))
+    );
+}
+
+/// A signature's source equations, each face's variables derived from its
+/// left side.
+///
+/// # Specification
+/// trivial.
+fn with_equations(
+    mut source: TheoryDesc<()>,
+    equations: Vec<(FreeTerm, FreeTerm)>,
+) -> TheoryDesc<()>
+{
+    source.rules = equations
+        .into_iter()
+        .map(|(lhs, rhs)| {
+            let vars = derive_cell_var_meta(&lhs);
+            RuleFace::new(lhs, rhs, vars, SurfaceSpan::default())
+        })
+        .collect();
+    source
+}
+
+/// The model's reading of each source equation, in written order.
+///
+/// # Specification
+/// trivial.
+fn images(source: &TheoryDesc<()>) -> Vec<String>
+{
+    let model = first_order(source).expect("the signature translates");
+    assert_eq!(check_desc(&model), []);
+    let first = model.rules.len().saturating_sub(source.rules.len());
+    model
+        .rules
+        .iter()
+        .skip(first)
+        .map(|rule| format!("{} = {}", rule.lhs, rule.rhs))
+        .collect()
+}
+
+/// A source equation reads in the model with each instantiation as the
+/// substitution operator: every law's image is the one written by hand
+/// against Kaposi and Xie's single-substitution calculus, a metavariable in
+/// the context of the variables its left side applies it to.
+#[test]
+fn an_equation_reads_an_instantiation_as_its_substitution()
+{
+    let op = |name: &str, arguments: Vec<FreeTerm>| FreeTerm::op(name, arguments);
+    let inst = |name: &str, arguments: Vec<FreeTerm>| FreeTerm::inst(name, arguments);
+    let var = FreeTerm::var::<&str>;
+    let (lam, bound) = (FreeTerm::lam, FreeTerm::bound);
+    let field = |sort: &str| SortRef::new("k", "C").pi_plus([SortIndex::new("x", sort)]);
+    // β: `t(u)` substitutes `u` for the variable `let`'s field binds.
+    let lets = with_equations(
+        signature(
+            "Let",
+            vec![SortDesc::new("Tm", DeclPolarity::Data).representable()],
+            vec![op_desc("let", vec![
+                SortRef::new("u", "Tm"),
+                SortRef::new("t", "Tm").pi_plus([SortIndex::new("x", "Tm")]),
+            ])],
+        ),
+        vec![(
+            op("let", vec![var("u"), var("t")]),
+            inst("t", vec![var("u")]),
+        )],
+    );
+    assert_eq!(images(&lets), ["let(u, t) = $sub_Tm(t, $single_Tm(u))"]);
+    // State's `getGet`: the pattern on the left is `k` itself, and `k(s, s)`
+    // substitutes the newer variable by the older.
+    let state = with_equations(
+        signature(
+            "State",
+            vec![
+                SortDesc::new("S", DeclPolarity::Data).representable(),
+                SortDesc::new("C", DeclPolarity::Data),
+            ],
+            vec![op_desc("get", vec![field("S")])],
+        ),
+        vec![(
+            op("get", vec![lam(
+                "s",
+                op("get", vec![lam(
+                    "t",
+                    inst("k", vec![bound("s"), bound("t")]),
+                )]),
+            )]),
+            op("get", vec![lam(
+                "s",
+                inst("k", vec![bound("s"), bound("s")]),
+            )]),
+        )],
+    );
+    assert_eq!(images(&state), [
+        "get(get(k)) = get($sub_C(k, $single_S($q_S)))"
+    ]);
+    // The relative monad's laws: a field's variable is `$q`, and `l`, under
+    // a field it does not take, is weakened past it.
+    let monad = with_equations(
+        signature(
+            "Monad",
+            vec![
+                SortDesc::new("V", DeclPolarity::Data).representable(),
+                SortDesc::new("C", DeclPolarity::Data),
+            ],
+            vec![
+                op_desc("ret", vec![SortRef::new("a", "V")]),
+                op_desc("ext", vec![SortRef::new("m", "C"), field("V")]),
+            ],
+        ),
+        vec![
+            (
+                op("ext", vec![op("ret", vec![var("a")]), var("k")]),
+                inst("k", vec![var("a")]),
+            ),
+            (
+                op("ext", vec![var("m"), lam("x", op("ret", vec![bound("x")]))]),
+                var("m"),
+            ),
+            (
+                op("ext", vec![op("ext", vec![var("m"), var("k")]), var("l")]),
+                op("ext", vec![
+                    var("m"),
+                    lam("x", op("ext", vec![inst("k", vec![bound("x")]), var("l")])),
+                ]),
+            ),
+        ],
+    );
+    assert_eq!(images(&monad), [
+        "ext(ret(a), k) = $sub_C(k, $single_V(a))",
+        "ext(m, ret($q_V)) = m",
+        "ext(ext(m, k), l) = ext(m, ext(k, $sub_C(l, $lift_V($p_V))))",
+    ]);
+    // A field whose body the metavariable does not take: `q` is weakened past
+    // it on the left and stands alone on the right.
+    let vacuous = with_equations(
+        signature(
+            "Vacuous",
+            vec![
+                SortDesc::new("Val", DeclPolarity::Data).representable(),
+                SortDesc::new("Proc", DeclPolarity::Data),
+            ],
+            vec![op_desc("new", vec![
+                SortRef::new("body", "Proc").pi_plus([SortIndex::new("x", "Val")]),
+            ])],
+        ),
+        vec![(op("new", vec![lam("x", var("q"))]), var("q"))],
+    );
+    assert_eq!(images(&vacuous), ["new($sub_Proc(q, $p_Val)) = q"]);
+    // A pattern taking its variables out of order: the newest is kept as the
+    // metavariable's first, the older weakened past and single-substituted
+    // back in as its second; the pattern taking them in order is `k` itself.
+    let swap = with_equations(
+        signature(
+            "Swap",
+            vec![
+                SortDesc::new("V", DeclPolarity::Data).representable(),
+                SortDesc::new("C", DeclPolarity::Data),
+            ],
+            vec![op_desc("swap", vec![SortRef::new("k", "C").pi_plus([
+                SortIndex::new("x", "V"),
+                SortIndex::new("y", "V"),
+            ])])],
+        ),
+        vec![(
+            op("swap", vec![lam(
+                "x",
+                lam("y", inst("k", vec![bound("y"), bound("x")])),
+            )]),
+            op("swap", vec![lam(
+                "x",
+                lam("y", inst("k", vec![bound("x"), bound("y")])),
+            )]),
+        )],
+    );
+    assert_eq!(images(&swap), [
+        "swap($sub_C($sub_C(k, $lift_V($lift_V($p_V))), $single_V($sub_V($q_V, $p_V)))) = swap(k)",
+    ]);
+}
+
+/// A single-output operation of the sort `C`, or `Tm` where it reads one.
+///
+/// # Specification
+/// trivial.
+fn op_desc(
+    name: impl Into<Name>,
+    inputs: Vec<SortRef>,
+) -> OperDesc
+{
+    let output = if inputs.iter().any(|input| input.sort.as_ref() == "Tm") {
+        "Tm"
+    }
+    else if inputs.iter().any(|input| input.sort.as_ref() == "Proc") {
+        "Proc"
+    }
+    else {
+        "C"
+    };
+    op(name, inputs, SortRef::new("", output))
 }
 
 #[test]
@@ -396,6 +617,7 @@ fn each_translation_refusal_reads_as_its_own_message()
     let messages: Vec<String> = [
         TranslationError::Malformed(Vec::new()),
         TranslationError::NonSignatureMembers,
+        TranslationError::UnreadEquation(0),
     ]
     .iter()
     .chain(&named)

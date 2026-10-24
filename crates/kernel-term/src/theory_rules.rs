@@ -411,7 +411,12 @@ pub enum TheoryNode
     /// A variable, numbered by first occurrence on the rule's left side.
     Variable(RuleVariable),
     /// A right side's instantiation of a variable its left side binds at the
-    /// next `FieldCount` subterms, one per variable the binding binds.
+    /// next `FieldCount` subterms, one per variable the binding binds. In the
+    /// first-order model the signature generates, the variable stands in the
+    /// context its binders extend and the instantiation is the substitution
+    /// operator applied to it, `X(u)` read as `$sub(X, $single(u))`; the
+    /// calculus is the instantiation's meaning, matched here, never rules the
+    /// kernel rewrites by.
     Instance(RuleVariable, FieldCount),
 }
 

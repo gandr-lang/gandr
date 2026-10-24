@@ -267,8 +267,9 @@ impl<'signature, G> SimplySorted<'signature, G>
     /// # Errors
     /// - `AdmissionError::TermDependentSort`: a declared sort has an index
     ///   telescope.
-    /// - `AdmissionError::Signature`: [`first_order`] would refuse the
-    ///   signature, with its [`TranslationError`].
+    /// - `AdmissionError::Signature`: the signature itself is outside
+    ///   [`first_order`]'s domain, with its [`TranslationError`]; an equation
+    ///   the translation would not read is not this check's.
     /// - `AdmissionError::IndexedOccurrence`: a port or binder applies an
     ///   unindexed sort to index arguments.
     /// - `AdmissionError::BindingResult`: an operation's result port binds.

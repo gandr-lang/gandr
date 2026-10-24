@@ -15,9 +15,11 @@
 //! specialized to it (four of them vacuous for an unindexed sort). Each
 //! operation is translated once, its π⁺ binders extending the context of the
 //! argument they bind, and gains its naturality equation: substitution
-//! commutes with it, lifted once under each binder.
+//! commutes with it, lifted once under each binder. Each source equation is
+//! read in the model, a metavariable's instantiation as the substitution
+//! operator applied to it.
 //!
-//! # Decisions
+//! # Boundaries
 //!
 //! **One fold, no per-signature case.** Sorts, operations and equations are
 //! visited in declaration order by one fold whose step reads only the
@@ -28,21 +30,18 @@
 //! not a category: no identity substitution, no composition and no empty
 //! substitution are generated (`$empty` is the empty context). These are the
 //! operations the kernel's de Bruijn machinery already implements — shifting,
-//! substitution of the innermost binder — so the generated model is the one
-//! the kernel can check against.
+//! substitution of the innermost binder.
 //!
-//! - **Alternatives.** The parallel-substitution translation of the paper's §6
-//!   adds a category of substitutions and its laws, which nothing in the kernel
-//!   implements; a translation written per signature duplicates the structural
-//!   laws for each one.
-//! - **Reversal.** A consumer that needs composite substitutions as terms,
-//!   rather than as iterated single ones, takes the parallel translation; the
-//!   paper conjectures the two equivalent (§8).
-//!
-//! **Equations are carried, not oriented.** A source equation is copied into
-//! the model with its context parameters implicit, as the paper's equation
-//! notation writes them; the fold neither orients nor completes it, and the
-//! generated laws are equations, not rewrite rules. Deciding equality in a
+//! **Equations are read, not oriented.** A source equation's sides are read in
+//! the model with context parameters implicit, as the paper's equation
+//! notation writes them. A binding field is read as its body in the context
+//! its port extends, and the variable it binds as `$q` under one `$p` per
+//! newer binder. A metavariable stands in the context of the variables its
+//! left side applies it to, so its instantiation `t(u)` is read as `t` under
+//! the substitution `$single(u)`, weakened past the binders it does not take:
+//! `let(u, t) = t(u)` reads as `let(u, t) = $sub(t, $single(u))`, the
+//! calculus's β. The fold neither orients nor completes an equation, and the
+//! generated laws are equations, not rewrite rules: deciding equality in a
 //! generated model owes a normalizer, which this module does not provide.
 //!
 //! **The input must already be well typed.** Index expressions are taken as
@@ -75,6 +74,8 @@ use crate::desc::SurfaceSpan;
 use crate::desc::TheoryDesc;
 use crate::rule::FreeTerm;
 use crate::rule::RuleFace;
+use crate::rule::TermNode;
+use crate::rule::TermView;
 use crate::wellformed::WfDiagnostic;
 use crate::wellformed::check_desc;
 use crate::wellformed::derive_cell_var_meta;
@@ -97,6 +98,11 @@ pub enum TranslationError
     /// An operation abstracts an atom over a port, which the
     /// single-substitution model has no context extension for.
     AtomAbstraction(Name),
+    /// The equation at this place of the rule list has no image in the model:
+    /// a metavariable its left side does not bind, an instantiation taking
+    /// other than the variables its left side binds, a name no field writes,
+    /// or a term no operation of the signature heads.
+    UnreadEquation(usize),
 }
 
 impl fmt::Display for TranslationError
@@ -127,6 +133,7 @@ impl fmt::Display for TranslationError
             Self::AtomAbstraction(ref name) => {
                 write!(f, "operation abstracting an atom: {name}")
             },
+            Self::UnreadEquation(place) => write!(f, "equation {place} has no image in the model"),
         }
     }
 }
@@ -142,8 +149,9 @@ enum Declaration<'source>
     Sort(&'source SortDesc),
     /// One operation telescope.
     Operation(&'source OperDesc),
-    /// An equation over operation applications.
-    Equation(&'source RuleFace),
+    /// An equation over operation applications, at its place in the rule
+    /// list.
+    Equation((usize, &'source RuleFace)),
 }
 
 /// Mutable vectors owned by the declaration fold, frozen once at its boundary.
@@ -166,13 +174,15 @@ struct Model
 /// - ensures: the model declares `$Con`, `$Sub` and one context-indexed family
 ///   per source sort; the operation `$empty`, one action `$sub` per sort, five
 ///   structural operations per representable sort and one operation per source
-///   operation; the source equations, then for each representable sort its four
-///   term laws and four laws per sort indexing it, and one naturality equation
-///   per source operation. No model sort is representable and no model port
-///   binds: the model is first-order. No composition, identity or empty
-///   substitution is generated.
+///   operation; the source equations read in the model, then for each
+///   representable sort its four term laws and four laws per sort indexing it,
+///   and one naturality equation per source operation. No model sort is
+///   representable and no model port binds: the model is first-order. No
+///   composition, identity or empty substitution is generated.
 /// - fails: malformed descriptions, constructor/circuit members, generated-name
-///   collisions, undeclared index sorts and non-product operations are refused.
+///   collisions, undeclared index sorts, non-product operations, an operation
+///   abstracting an atom and an equation with no image in the model are
+///   refused.
 /// - panics: none.
 ///
 /// # Errors
@@ -188,6 +198,7 @@ struct Model
 /// - witness: `tests::glf::generation`
 /// - witness: `tests::glf::indexed_signature_translates_without_name_cases`
 /// - witness: `tests::glf::translation_refuses_non_signatures`
+/// - witness: `tests::glf::an_equation_reads_an_instantiation_as_its_substitution`
 #[spec(ensures: |ref result| result.as_ref().map_or(true, |model|
     model.sorts.len() == source.sorts.len().saturating_add(2)
         && model.opers.len() == source.sorts.len()
@@ -224,20 +235,21 @@ pub fn first_order<G>(source: &TheoryDesc<G>) -> Result<TheoryDesc<G>, Translati
         opers: vec![operation("$empty", [], port("", "$Con", []))],
         rules: Vec::new(),
     };
-    let declarations = source
+    let mut declarations = source
         .sorts
         .iter()
         .map(Declaration::Sort)
         .chain(source.opers.iter().map(Declaration::Operation))
-        .chain(source.rules.iter().map(Declaration::Equation));
-    let model = declarations.fold(initial, |mut model, declaration| {
+        .chain(source.rules.iter().enumerate().map(Declaration::Equation));
+    let model = declarations.try_fold(initial, |mut model, declaration| {
         match declaration {
             Declaration::Sort(sort) => translate_sort(&mut model, source, sort),
             Declaration::Operation(op) => translate_operation(&mut model, source, op),
-            Declaration::Equation(rule) => model.rules.push(rule.clone()),
+            Declaration::Equation((place, rule)) => translate_equation(&mut model, source, rule)
+                .ok_or(TranslationError::UnreadEquation(place))?,
         }
-        model
-    });
+        Ok(model)
+    })?;
     Ok(TheoryDesc::new(
         NominalId::new(source.id.serial, format!("{}$ssc", source.id.name)),
         [],
@@ -889,4 +901,395 @@ fn translate_operation<G>(
             application(op.name.clone(), natural_arguments.clone()),
         );
     }
+}
+
+/// A binder's position in the scope an equation side is read under, oldest
+/// first.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Eq, PartialEq)]
+#[repr(transparent)]
+struct BinderAt(usize);
+
+/// Which side of an equation is read: the left binds each metavariable at its
+/// first occurrence, the right only names those bound.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Side
+{
+    /// The left side.
+    Left,
+    /// The right side.
+    Right,
+}
+
+/// A binder an equation side is read under: the representable sort its port
+/// binds, and the name the side writes for it, when it writes one.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+struct Binder<'source>
+{
+    /// The name a field writes; absent where the side leaves the binder to
+    /// the term at the port.
+    name: Option<&'source Name>,
+    /// The sort the binder binds.
+    sort: &'source Name,
+}
+
+/// A metavariable as an equation's left side binds it.
+///
+/// # Specification
+/// trivial.
+struct Hole<'source>
+{
+    /// The sort of the place it stands at.
+    sort: &'source Name,
+    /// The sorts of the variables it takes, oldest first.
+    context: Vec<&'source Name>,
+}
+
+/// An argument an instantiation takes.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy)]
+enum Taken<'source>
+{
+    /// The binder at this position of the scope.
+    At(BinderAt),
+    /// A term, read in the scope.
+    Term(TermNode<'source>),
+}
+
+/// One step of reading an equation side in the model.
+///
+/// # Specification
+/// trivial.
+enum Read<'source>
+{
+    /// A term at a place of this sort, under this many binders of its port
+    /// that the side leaves unwritten.
+    Term(TermNode<'source>, Option<&'source Name>, usize),
+    /// An argument at a port: the fields it writes bound, then its body.
+    Argument(TermNode<'source>, &'source SortRef),
+    /// The scope's binder at this position, as a variable.
+    Variable(BinderAt),
+    /// The scope extended by unnamed binders of these sorts.
+    Extend(Vec<&'source Name>),
+    /// The scope cut back to this length.
+    Restore(usize),
+    /// An operation over this many arguments read.
+    Close(&'source Name, usize),
+    /// A metavariable under its substitution: weakened past binders of these
+    /// sorts, its first variables, this many, the scope's newest binders, the
+    /// rest single-substituted by the arguments read after the weakening.
+    Instance(&'source Name, usize, Vec<&'source Name>),
+}
+
+/// Read one equation of the source in the model, its left side first, under
+/// one table of the metavariables the left side binds.
+///
+/// # Specification
+/// - ensures: on success one equation is appended. A binding field is read as
+///   its body in the context its port extends; a variable a field binds as `$q`
+///   under one `$p` per newer binder; an operation over its arguments; and a
+///   metavariable `X` taking arguments as `X` weakened past each binder of the
+///   scope it does not take, lifted under the variables it binds, then
+///   single-substituted, newest first, by the arguments after those that are
+///   the scope's newest binders in order: `$sub(t, $single(u))` for `t(u)` read
+///   at the top level, `X` itself for the pattern its left side writes under
+///   the binders it takes.
+/// - fails: `None` for a metavariable the left side does not bind, an
+///   instantiation taking other than as many arguments as its left side binds,
+///   a name no field writes, and a term no operation of the signature heads.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — hand translations of State's `getGet`, the relative
+///   monad's three laws, the λ-calculus's β and a garbage-collecting field
+///   separate a missing weakening, a substitution of the wrong variable and a
+///   single substitution where the identity stands; a permuting pattern
+///   separates a prefix read in the wrong order.
+/// - witness: `tests::glf::an_equation_reads_an_instantiation_as_its_substitution`
+#[spec(
+    captures: before = model.rules.len(),
+    ensures: |ref ret| ret.is_none() || model.rules.len() == before.saturating_add(1)
+)]
+fn translate_equation<G>(
+    model: &mut Model,
+    source: &TheoryDesc<G>,
+    rule: &RuleFace,
+) -> Option<()>
+{
+    let operations: BTreeMap<&Name, &OperDesc> =
+        source.opers.iter().map(|op| (&op.name, op)).collect();
+    let mut holes = BTreeMap::new();
+    let lhs = read_side(&rule.lhs, &operations, &mut holes, Side::Left)?;
+    let rhs = read_side(&rule.rhs, &operations, &mut holes, Side::Right)?;
+    push_equation(model, lhs, rhs);
+    Some(())
+}
+
+/// Read one side of an equation in the model, the left side binding each
+/// metavariable at its first occurrence.
+///
+/// # Specification
+/// - ensures: the side's image, as [`translate_equation`] states it; on the
+///   left, each metavariable's first occurrence records the sort of its place
+///   and the sorts of the variables it takes.
+/// - fails: `None` where [`translate_equation`] refuses.
+/// - panics: none.
+/// - executable: none — the side's image is the translation itself, and no
+///   predicate cheaper than reading the side again states it.
+///
+/// # Termination
+/// Each node of the finite side is read once, and each argument of an
+/// instantiation once.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`translate_equation`].
+/// - witness: `tests::glf::an_equation_reads_an_instantiation_as_its_substitution`
+fn read_side<'source>(
+    side: &'source FreeTerm,
+    operations: &BTreeMap<&'source Name, &'source OperDesc>,
+    holes: &mut BTreeMap<&'source Name, Hole<'source>>,
+    reading: Side,
+) -> Option<FreeTerm>
+{
+    let mut scope: Vec<Binder<'source>> = Vec::new();
+    // Each name a field writes, by the scope positions binding it, the
+    // innermost last.
+    let mut innermost: BTreeMap<&'source Name, Vec<BinderAt>> = BTreeMap::new();
+    let mut taken: Vec<Taken<'source>> = Vec::new();
+    let mut work = vec![Read::Term(side.to_node(), None, 0)];
+    let mut built: Vec<FreeTerm> = Vec::new();
+    while let Some(step) = work.pop() {
+        match step {
+            Read::Restore(length) => {
+                for binder in scope.get(length ..).unwrap_or_default() {
+                    if let Some(stack) = binder.name.and_then(|name| innermost.get_mut(name)) {
+                        let _left = stack.pop();
+                    }
+                }
+                scope.truncate(length);
+            },
+            Read::Extend(sorts) => {
+                scope.extend(sorts.into_iter().map(|sort| Binder { name: None, sort }));
+            },
+            Read::Variable(at) => built.push(bound_variable(&scope, at)?),
+            Read::Argument(node, port) => {
+                work.push(Read::Restore(scope.len()));
+                let mut body = node;
+                let mut implicit = 0_usize;
+                for binding in &port.bindings {
+                    let mut name = None;
+                    if implicit == 0
+                        && let TermView::Lam { var, mut args } = body.view()
+                        && let Some(inner) = args.next()
+                    {
+                        name = Some(var);
+                        body = inner;
+                    }
+                    else {
+                        implicit = implicit.saturating_add(1);
+                    }
+                    if let Some(name) = name {
+                        innermost
+                            .entry(name)
+                            .or_default()
+                            .push(BinderAt(scope.len()));
+                    }
+                    scope.push(Binder {
+                        name,
+                        sort: &binding.sort,
+                    });
+                }
+                work.push(Read::Term(body, Some(&port.sort), implicit));
+            },
+            Read::Term(node, sort, implicit) => match node.view() {
+                TermView::Op { name, args } => {
+                    let operation = operations.get(name)?;
+                    let args: Vec<TermNode<'source>> = args.collect();
+                    if args.len() != operation.arity.inputs.len() {
+                        return None;
+                    }
+                    work.push(Read::Close(name, args.len()));
+                    work.extend(
+                        args.into_iter()
+                            .zip(operation.arity.inputs.iter())
+                            .rev()
+                            .map(|(argument, port)| Read::Argument(argument, port)),
+                    );
+                },
+                TermView::Bound(name) => {
+                    let at = *innermost.get(name)?.last()?;
+                    built.push(bound_variable(&scope, at)?);
+                },
+                TermView::Var(name) => {
+                    let first = scope.len().checked_sub(implicit)?;
+                    taken.clear();
+                    taken.extend((first .. scope.len()).map(|at| Taken::At(BinderAt(at))));
+                    instance(&mut work, holes, &scope, (name, sort), &taken, reading)?;
+                },
+                TermView::Inst { name, args } => {
+                    taken.clear();
+                    for argument in args {
+                        taken.push(match argument.view() {
+                            TermView::Bound(bound) => Taken::At(*innermost.get(bound)?.last()?),
+                            TermView::Var(_)
+                            | TermView::Ctor { .. }
+                            | TermView::Op { .. }
+                            | TermView::Results { .. }
+                            | TermView::Inst { .. }
+                            | TermView::Abs { .. }
+                            | TermView::Atom(_)
+                            | TermView::Lam { .. } => Taken::Term(argument),
+                        });
+                    }
+                    instance(&mut work, holes, &scope, (name, sort), &taken, reading)?;
+                },
+                TermView::Ctor { .. }
+                | TermView::Results { .. }
+                | TermView::Abs { .. }
+                | TermView::Atom(_)
+                | TermView::Lam { .. } => return None,
+            },
+            Read::Close(name, count) => {
+                let start = built.len().checked_sub(count)?;
+                let arguments = built.split_off(start);
+                built.push(application(name.clone(), arguments));
+            },
+            Read::Instance(name, kept, weakened) => {
+                let hole = holes.get(name)?;
+                let substituted = hole.context.get(kept ..)?;
+                let start = built.len().checked_sub(substituted.len())?;
+                let arguments = built.split_off(start);
+                let sub = |term, substitution| {
+                    application(named("sub".into(), hole.sort), [term, substitution])
+                };
+                let mut term = FreeTerm::var(name.clone());
+                for crossed in weakened {
+                    let mut weakening = application(named("p".into(), crossed), []);
+                    for &variable in &hole.context {
+                        weakening = application(named("lift".into(), variable), [weakening]);
+                    }
+                    term = sub(term, weakening);
+                }
+                for (argument, &variable) in arguments.into_iter().zip(substituted).rev() {
+                    term = sub(
+                        term,
+                        application(named("single".into(), variable), [argument]),
+                    );
+                }
+                built.push(term);
+            },
+        }
+    }
+    built.pop()
+}
+
+/// Queue a metavariable's occurrence: on the left its first occurrence binds
+/// it, then the arguments it single-substitutes are read, each in the scope
+/// extended by the variables it takes before that argument, and its image is
+/// assembled after them.
+///
+/// # Specification
+/// - ensures: on success the steps are queued; the arguments that are the
+///   scope's newest binders in order, from the first, are kept as the
+///   metavariable's own variables and the binders before them weakened past.
+/// - fails: `None` for a metavariable the left side does not bind, a left
+///   occurrence at the root or taking a term, and an argument count other than
+///   its bound variables'.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`translate_equation`].
+/// - witness: `tests::glf::an_equation_reads_an_instantiation_as_its_substitution`
+#[spec(captures: before = work.len(), ensures: |ref ret| ret.is_none() || work.len() > before)]
+fn instance<'source>(
+    work: &mut Vec<Read<'source>>,
+    holes: &mut BTreeMap<&'source Name, Hole<'source>>,
+    scope: &[Binder<'source>],
+    (name, sort): (&'source Name, Option<&'source Name>),
+    taken: &[Taken<'source>],
+    side: Side,
+) -> Option<()>
+{
+    if side == Side::Left && !holes.contains_key(name) {
+        let context = taken
+            .iter()
+            .map(|&argument| match argument {
+                Taken::At(BinderAt(at)) => scope.get(at).map(|binder| binder.sort),
+                Taken::Term(_) => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let _new = holes.insert(name, Hole {
+            sort: sort?,
+            context,
+        });
+    }
+    let hole = holes.get(name)?;
+    if taken.len() != hole.context.len() {
+        return None;
+    }
+    let depth = scope.len();
+    let kept =
+        (0 ..= taken.len().min(depth))
+            .rev()
+            .find(|&prefix| {
+                let first = depth.saturating_sub(prefix);
+                taken.iter().take(prefix).zip(first ..).all(
+                    |(&argument, at)| matches!(argument, Taken::At(BinderAt(held)) if held == at),
+                )
+            })
+            .unwrap_or(0);
+    let weakened = scope
+        .iter()
+        .take(depth.saturating_sub(kept))
+        .map(|binder| binder.sort)
+        .collect();
+    work.push(Read::Instance(name, kept, weakened));
+    for (place, &argument) in taken.iter().enumerate().skip(kept).rev() {
+        work.push(Read::Restore(depth));
+        work.push(match argument {
+            Taken::At(at) => Read::Variable(at),
+            Taken::Term(node) => Read::Term(node, hole.context.get(place).copied(), 0),
+        });
+        work.push(Read::Extend(hole.context.get(kept .. place)?.to_vec()));
+    }
+    Some(())
+}
+
+/// The scope's binder at `at` as a variable: `$q` of its sort under one `$p`
+/// per newer binder, each named by the sort it crosses.
+///
+/// # Specification
+/// - ensures: `None` exactly when `at` is past the scope.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — as [`translate_equation`]; the canonical form the
+///   first-order view of binding syntax writes.
+/// - witness: `tests::glf::an_equation_reads_an_instantiation_as_its_substitution`
+#[spec(ensures: |ref ret| ret.is_some() == (at.0 < scope.len()))]
+fn bound_variable(
+    scope: &[Binder<'_>],
+    at: BinderAt,
+) -> Option<FreeTerm>
+{
+    let BinderAt(at) = at;
+    let sort = scope.get(at)?.sort;
+    let mut term = application(named("q".into(), sort), []);
+    for crossed in scope.iter().skip(at.saturating_add(1)) {
+        term = application(named("sub".into(), sort), [
+            term,
+            application(named("p".into(), crossed.sort), []),
+        ]);
+    }
+    Some(term)
 }
