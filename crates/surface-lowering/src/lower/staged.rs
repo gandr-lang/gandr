@@ -72,6 +72,7 @@ use super::Lowered;
 use super::Lowerer;
 use super::Plan;
 use super::Produced;
+use super::Reading;
 use super::Sink;
 use super::Site;
 use super::closed;
@@ -556,7 +557,7 @@ impl<'source> Lowerer<'_, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = self.require(site, Produced::ValueType)?;
+        let frame = self.require(site, Produced::ValueType)?;
         let base = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::BRACKET_OPEN)?;
         let _below = cursor.tile(TileName::LESS_THAN);
@@ -577,7 +578,10 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::StagedType)));
         };
-        self.read(base.node, site.reading);
+        // The base is the value type the stage marks, wherever the staged
+        // type stands: at a result the returner is inserted over the staged
+        // type, never over its base.
+        self.read(base.node, Reading::ValueType(frame));
         self.plan(site, Plan::Staged(base.node, stage));
 
         Ok(())
