@@ -26,6 +26,7 @@ use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
+use gandr_surface_dispatcher::classify;
 use gandr_surface_dispatcher::lay_out;
 use gandr_surface_dispatcher::reprinted;
 use gandr_surface_grammar::Pbg;
@@ -258,6 +259,55 @@ fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_2()
 fn every_typed_entry_spells_without_a_dishonest_question_mark_in_shard_3()
 {
     spell(Shard(3));
+}
+
+/// #2429: the comparisons a corpus source states at a path type read back at
+/// every type its table prints, laid out after its import closure as the
+/// census reads it: a model implicit the body's judgement resolved is
+/// written by the path its components read under, and each declaration's
+/// type is the one the checker entered, filled.
+#[test]
+fn the_resolved_comparisons_read_back_2429()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/model/identity/here-congruence.gandr")
+        .canonicalize()
+        .expect("the source resolves");
+    let text = std::fs::read_to_string(&path).expect("the source reads");
+    let laid = lay_out(
+        &grammar,
+        &path,
+        classify(&path),
+        SourceText::from(text.as_str()),
+    );
+    let table = TypeTable::of_unit(
+        &grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .expect("the source types");
+    let reads = table.read_back(&grammar, PageWidth::from(PAGE), Style {
+        form: Form::Sugared,
+        spelling: Spelling::Unicode,
+    });
+    assert!(
+        reads
+            .iter()
+            .any(|read| read.spelled.contains("eq[e = EqInteger](x, y)")),
+        "a resolved model is written by its path"
+    );
+    let unread: Vec<(&str, &RoundTrip)> = reads
+        .iter()
+        .filter(|read| read.trip != RoundTrip::Equal)
+        .map(|read| (read.spelled.as_str(), &read.trip))
+        .collect();
+    assert_eq!(
+        unread,
+        Vec::<(&str, &RoundTrip)>::new(),
+        "every printed type reads back to its certificate"
+    );
 }
 
 /// Every typed entry, declared type and stated run value of the corpus
