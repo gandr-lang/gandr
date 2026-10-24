@@ -69,10 +69,10 @@
 //! add(x′, y)` reads "a rewrite of `x` rewrites the sum" — not a rewrite of
 //! its own: its right-hand side names a hole its left does not bind, so it is
 //! left out of the rewriting the check reads ([`DeclarationCells::rewriting`]).
-//! A block the cell gate declined an operation or a member of is not examined
-//! ([`Coincidence::Unexamined`]): the decline is already its refusal, and a
-//! verdict over the members left would be over rules the author did not write
-//! alone.
+//! A block the description check refused, or the cell gate declined an
+//! operation or a member of, is not examined ([`Coincidence::Unexamined`]):
+//! the refusal is already the block's, and a verdict over the members left
+//! would be over rules the author did not write alone.
 //!
 //! A block whose two readings part is refused whole, as a family: the
 //! equational reading is what the rules mean — what a model of the family

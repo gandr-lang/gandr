@@ -505,6 +505,9 @@ pub struct DescribedDeclaration
     pub named: Placed,
     /// Checked description vocabulary; diagnostics remain in the report.
     pub description: TheoryDesc<DescriptionGrade>,
+    /// Whether the description check refused the description: its refusals
+    /// stand in the report, and the cell gate examines no rule of it.
+    pub ill_formed: bool,
     /// Written operation members, indexed exactly as `description.opers`.
     pub operation_spans: Vec<ByteSpan>,
     /// The parameter classifiers retained for native decoding.
@@ -708,11 +711,14 @@ impl<'pieces> Run<'pieces>
 /// - requires: `grammar` interprets `tree`, and `unit` lays out its text.
 /// - ensures: declarations and diagnostics follow source order; unreadable
 ///   members never disappear without a located refusal; descriptions run
-///   through `check_desc`. A declaration whose own form the parser repaired
-///   carries exactly one diagnostic, [`DescriptionFault::Repaired`] at the
-///   repair: a parse error is reported alone, never beside the refusals its
-///   repaired reading would raise. An `include` reads the blocks its source
-///   sees ([`Sight`]).
+///   through `check_desc`, each refusal it gives reported once — one it repeats
+///   at the same span, a symbol applied twice in one rule, stands the first
+///   time — and a declaration it refuses is marked
+///   [`DescribedDeclaration::ill_formed`]. A declaration whose own form the
+///   parser repaired carries exactly one diagnostic,
+///   [`DescriptionFault::Repaired`] at the repair: a parse error is reported
+///   alone, never beside the refusals its repaired reading would raise. An
+///   `include` reads the blocks its source sees ([`Sight`]).
 /// - fails: grammar lookup failures return the existing lowering refusal.
 /// - panics: none.
 ///
@@ -726,6 +732,7 @@ impl<'pieces> Run<'pieces>
 ///   classifier slot is refused once, at the keyword.
 /// - witness: `description::tests::data_lowering_preserves_constructor_fields`
 /// - witness: `lower::tests::a_keyword_in_a_classifier_slot_is_read_with_its_offer_293`
+/// - witness: `desc_cells::tests::an_ill_formed_rule_is_refused_once_and_left_unexamined_2375`
 #[inline]
 #[spec(ensures: |result| result.as_ref().map_or(true, |report| report.declarations.iter().all(|entry| tree.node(entry.at.node).is_some())))]
 pub fn elaborate_descriptions<'source>(
@@ -979,7 +986,8 @@ pub(crate) fn elaborate_roots<'source>(
         }
         match declaration {
             Ok(Read::Native(family)) => report.natives.push(*family),
-            Ok(Read::Described(declaration)) => {
+            Ok(Read::Described(mut declaration)) => {
+                let refused = report.diagnostics.len();
                 for diagnostic in gandr_theory_levitation::check_desc(&declaration.description) {
                     let span = match diagnostic.span {
                         Maybe::Present(position) => ByteSpan::new(
@@ -989,11 +997,22 @@ pub(crate) fn elaborate_roots<'source>(
                         .unwrap_or(at.span),
                         Maybe::Absent(_) => at.span,
                     };
-                    report.diagnostics.push(DescriptionDiagnostic {
+                    let refusal = DescriptionDiagnostic {
                         span,
                         fault: DescriptionFault::IllFormed(diagnostic),
-                    });
+                    };
+                    // The check refuses each occurrence of a fault, located at
+                    // the rule it stands in: a second one reads as the first.
+                    if !report
+                        .diagnostics
+                        .iter()
+                        .skip(refused)
+                        .any(|held| *held == refusal)
+                    {
+                        report.diagnostics.push(refusal);
+                    }
                 }
+                declaration.ill_formed = report.diagnostics.len() > refused;
                 report.declarations.push(*declaration);
             },
             Err(diagnostic) => report.diagnostics.push(diagnostic),
@@ -1266,6 +1285,7 @@ impl Reader<'_, '_>
                 at,
                 named,
                 description,
+                ill_formed: false,
                 operation_spans,
                 parameters,
                 classifier: Maybe::Present(classifier),
