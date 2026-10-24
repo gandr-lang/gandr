@@ -423,7 +423,6 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::SplitArity
         | EvalFault::RuntimeControl(_)
         | EvalFault::FoldedNonList
-        | EvalFault::NativePrimitive(_)
         | EvalFault::OutOfFuel
         | EvalFault::DanglingTerm
         | EvalFault::Domain(_)

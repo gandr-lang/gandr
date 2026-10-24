@@ -1601,13 +1601,14 @@ fn open_static(
 /// - [`ReadbackFault::MachineInvariant`] — the head is a hole or a mark.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the three-arm head match plus the
+/// - hypothesis: L3 — the decision surface is the four-arm head match plus the
 ///   conversion guard, separated by a variable at the innermost and at the
 ///   outermost of two open binders, a variable with nothing open, a declaration
-///   head, and a module head.
+///   head, a module head, and a native operation's head.
 /// - witness: `readback::tests::nested_binders_read_back_as_the_indices_that_name_them`
 /// - witness: `readback::tests::a_level_outside_the_open_binders_is_refused`
 /// - witness: `readback::tests::a_module_head_and_a_declaration_head_read_back_alike`
+/// - witness: `readback::tests::a_primitive_head_reads_back_as_its_thunk_2378`
 #[spec(ensures: |ret| match head {
     | NeutralHead::Variable { zone, level } => match binders.index(zone, level) {
         | Some(index) => {
@@ -1630,6 +1631,13 @@ fn open_static(
             })
         })
     },
+    | NeutralHead::Primitive(primitive) => {
+        ret.as_ref().is_ok_and(|term| {
+            core.value(*term).is_some_and(|node| {
+                matches!(*node, gandr_core_term::Value::Primitive { primitive: at, .. } if at == primitive)
+            })
+        })
+    },
     | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => ret == Err(ReadbackFault::MachineInvariant),
 })]
 fn head_term(
@@ -1649,6 +1657,7 @@ fn head_term(
         NeutralHead::Constant(constant) | NeutralHead::Module(constant) => {
             Ok(core.value_constant(constant))
         },
+        NeutralHead::Primitive(primitive) => Ok(primitive.thunk(core)),
         NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => {
             Err(ReadbackFault::MachineInvariant)
         },
@@ -4416,6 +4425,7 @@ fn step_neutral(
             | NeutralHead::Variable { .. }
             | NeutralHead::Constant(_)
             | NeutralHead::Module(_)
+            | NeutralHead::Primitive(_)
             | NeutralHead::Returned(_) => Polarity::Value,
         },
         Some(Glued::Value(_)) => Polarity::Value,
@@ -4447,7 +4457,10 @@ fn step_neutral(
                     binders,
                 });
             },
-            NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Module(_) => {
+            NeutralHead::Variable { .. }
+            | NeutralHead::Constant(_)
+            | NeutralHead::Module(_)
+            | NeutralHead::Primitive(_) => {
                 let term = head_term(core, head, binders)?;
                 machine.values.push(term);
             },

@@ -927,7 +927,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                 NeutralHead::Variable { zone, level } => ret == Ok(Atom::Variable(zone, level)),
                 NeutralHead::Constant(constant) => ret == Ok(Atom::Constant(constant,
                     if matches!(held.unfolding(), Unfolding::Rigid) { Rigidity::Rigid } else { Rigidity::Flexible })),
-                NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
+                NeutralHead::Module(_) | NeutralHead::Primitive(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
             }
         } else {
             match held.spine().get(prefix.0.saturating_sub(1)) {
@@ -958,6 +958,7 @@ DomainValue::Recorded { .. } | DomainValue::PathCertificate { .. } | DomainValue
                     Atom::Constant(constant, rigidity)
                 },
                 NeutralHead::Module(_)
+                | NeutralHead::Primitive(_)
                 | NeutralHead::Hole { .. }
                 | NeutralHead::Mark { .. }
                 | NeutralHead::Returned(_) => Atom::Other(Node::Stuck(neutral, prefix)),

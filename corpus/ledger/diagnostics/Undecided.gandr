@@ -1,4 +1,4 @@
-/// `Undecided`: a claim the machine cannot decide: a `ua` whose translator branches on a comparison the machine leaves unread.
+/// `Undecided`: a claim the machine cannot decide: a `ua` whose translator branches on a lazy record's entry, which the machine does not observe.
 theory Magma {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
@@ -11,8 +11,18 @@ def keep(e : +{Unit}) -> -F +{Unit} {
 }
 
 @[ checks ]
+def flag() -> &{get : -F Bool} {
+  &{.get => true}
+}
+
+@[ checks ]
+def observed(m : +U &{get : -F Bool}) -> Bool {
+  m.get
+}
+
+@[ checks ]
 def measured(b : Bool) -> -F Bool {
-  if 1 < 2 {
+  if observed(flag) {
     case b {
       true => +{.1 = unit},
       false => +{.0 = unit}

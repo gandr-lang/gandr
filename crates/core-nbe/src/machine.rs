@@ -2648,6 +2648,7 @@ where
                         NeutralHead::Variable { .. }
                         | NeutralHead::Constant(_)
                         | NeutralHead::Module(_)
+                        | NeutralHead::Primitive(_)
                         | NeutralHead::Hole { .. }
                         | NeutralHead::Mark { .. }
                         | NeutralHead::Returned(_) => continue,
@@ -2868,7 +2869,7 @@ where
                         .ok_or(ConversionFault::Domain(DomainFault::Dangling))
                         .map(|node| match node.head() {
                             NeutralHead::Constant(constant) => self.definitions.height(constant),
-                            NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => DefinitionHeight::default(),
+                            NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Primitive(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => DefinitionHeight::default(),
                         }))
             };
             ret == height(pair.0).and_then(|left| height(pair.1).map(|right| left.max(right)))
@@ -3414,8 +3415,10 @@ where
     /// - requires: nothing.
     /// - ensures: the head's admission position.
     /// - provides: the identifier every constant decision names.
-    /// - fails: [`ConversionFault::MachineInvariant`] for a variable or module
-    ///   head, [`ConversionFault::Domain`] for a dangling neutral.
+    /// - fails: [`ConversionFault::MachineInvariant`] for a head that is no
+    ///   constant — a variable, a module form, a native operation, a hole, a
+    ///   mark or a returned endpoint — and [`ConversionFault::Domain`] for a
+    ///   dangling neutral.
     /// - panics: none.
     ///
     /// # Errors
@@ -3435,7 +3438,7 @@ where
             .ok_or(ConversionFault::Domain(DomainFault::Dangling))
             .and_then(|held| match held.head() {
                 NeutralHead::Constant(constant) => Ok(constant),
-                NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => Err(ConversionFault::MachineInvariant),
+                NeutralHead::Variable { .. } | NeutralHead::Module(_) | NeutralHead::Primitive(_) | NeutralHead::Hole { .. } | NeutralHead::Mark { .. } | NeutralHead::Returned(_) => Err(ConversionFault::MachineInvariant),
             })
     )]
     fn head_constant(
@@ -3451,6 +3454,7 @@ where
             NeutralHead::Constant(constant) => Ok(constant),
             NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
+            | NeutralHead::Primitive(_)
             | NeutralHead::Hole { .. }
             | NeutralHead::Mark { .. }
             | NeutralHead::Returned(_) => Err(ConversionFault::MachineInvariant),
@@ -4573,6 +4577,7 @@ where
             NeutralHead::Constant(constant) => self.definitions.height(constant),
             NeutralHead::Variable { .. }
             | NeutralHead::Module(_)
+            | NeutralHead::Primitive(_)
             | NeutralHead::Hole { .. }
             | NeutralHead::Mark { .. }
             | NeutralHead::Returned(_) => {

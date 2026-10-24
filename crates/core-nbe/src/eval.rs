@@ -385,8 +385,6 @@ pub enum EvalFault
     /// — a rigid neutral or another recording — or a dialogue whose web has
     /// no decomposition, its order closing a cycle.
     Decomposition,
-    /// Runtime-native arithmetic is outside the certificate normalizer.
-    NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
     TransportedNonPath,
     /// A ride met a canonical flow and a value no row of the directed
@@ -4835,7 +4833,33 @@ fn step_comp(
             machine.tasks.push(Task::Value { term: list, env });
             Ok(())
         },
-        Computation::Primitive { primitive, .. } => Err(EvalFault::NativePrimitive(primitive)),
+        // A native operation is never run: its call stands as the kernel reads
+        // it, the opaque operation forced and applied to its arguments in
+        // order, each argument evaluated before the head is stood under them.
+        Computation::Primitive {
+            primitive,
+            arguments,
+        } => {
+            let neutral = domain
+                .neutral_node(
+                    NeutralHead::Primitive(primitive),
+                    Vec::new(),
+                    Unfolding::Rigid,
+                )
+                .map_err(EvalFault::Domain)?;
+            let head = domain
+                .value_neutral(neutral, TermFace::Reduced)
+                .map_err(EvalFault::Domain)?;
+            machine
+                .tasks
+                .extend(core::iter::repeat_n(Task::Apply, arguments.len()));
+            machine.tasks.push(Task::Force);
+            machine.tasks.push(Task::Supply(head));
+            machine
+                .tasks
+                .extend(arguments.iter().map(|&term| Task::Value { term, env }));
+            Ok(())
+        },
         Computation::Split { scrutinee, .. } => {
             machine.tasks.push(Task::Split { term, env });
             machine.tasks.push(Task::Value {
@@ -8440,16 +8464,18 @@ fn definition_call(
 }
 
 /// The first bind at or past `from` in a stuck computation's spine, when the
-/// computation is stuck at a variable or a constant with no body: the bind's
-/// position, its continuation, and the call before it as a held endpoint.
+/// computation is stuck at a variable, a constant with no body or a native
+/// operation: the bind's position, its continuation, and the call before it
+/// as a held endpoint.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: `Some` exactly when `computation` is neutral, its head — read
-///   through returned heads to the call they wait on — is a variable or a
-///   constant, rigid, and its spine holds a bind at or past `from`; the
-///   position is the first such bind's, and the call is the neutral's head
-///   under its spine before that position, delivered by [`returned_value`].
+///   through returned heads to the call they wait on — is a variable, a
+///   constant or a native operation, rigid, and its spine holds a bind at or
+///   past `from`; the position is the first such bind's, and the call is the
+///   neutral's head under its spine before that position, delivered by
+///   [`returned_value`].
 /// - provides: the bind [`read_from`] reads through.
 /// - fails: [`DomainFault::Dangling`] when a node does not resolve.
 /// - panics: none.
@@ -8529,13 +8555,14 @@ fn read_through(
         NeutralHead::Variable { .. }
         | NeutralHead::Constant(_)
         | NeutralHead::Module(_)
+        | NeutralHead::Primitive(_)
         | NeutralHead::Hole { .. }
         | NeutralHead::Mark { .. } => (head, unfolding),
     };
     if !matches!(
         waits,
         (
-            NeutralHead::Variable { .. } | NeutralHead::Constant(_),
+            NeutralHead::Variable { .. } | NeutralHead::Constant(_) | NeutralHead::Primitive(_),
             Unfolding::Rigid
         )
     ) {
@@ -8699,6 +8726,7 @@ pub fn held_endpoint(
         NeutralHead::Variable { .. }
         | NeutralHead::Constant(_)
         | NeutralHead::Module(_)
+        | NeutralHead::Primitive(_)
         | NeutralHead::Hole { .. }
         | NeutralHead::Mark { .. }
         | NeutralHead::Returned(_) => None,

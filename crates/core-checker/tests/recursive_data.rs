@@ -10,6 +10,7 @@ use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::Judged;
 use gandr_core_checker::Mismatch;
 use gandr_core_checker::ModuleReport;
 use gandr_core_checker::ModuleRun;
@@ -2329,4 +2330,94 @@ fn derived_equalities_are_admitted_readmitted_and_decide_2302()
             "{what}"
         );
     }
+}
+
+#[test]
+fn a_case_over_a_held_native_call_meets_the_derived_equality_binding_it_2378()
+{
+    // `Point(Integer, Integer)`, its derived equality `E`, and `here(⟨force F
+    // ⟨int.eq(x1, x1)⟩⟩)` at `Path(Bool, ⟨force F ⟨int.eq(x1, x1)⟩⟩, ⟨force E
+    // (Point x1 x2) (Point x1 x2)⟩)`, with `F` the case `λr. case r {
+    // int.eq(x2, x2) ; return false }` written by hand. `E` at the two points
+    // binds `int.eq(x1, x1)` and cases on it: the bind over the stuck call
+    // converts with the case over its returned endpoint, the call run by
+    // neither side, and the kernel replays it.
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    use gandr_core_term::primitive::PrimitiveType;
+    let mut arena = CoreArena::new();
+    let kind = kind(&mut arena);
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let boolean = PrimitiveType::Boolean.mint(&mut arena);
+    let returns_boolean = arena.comp_type_returner(boolean);
+    let int_eq = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "int.eq")
+        .expect("the prelude holds int.eq");
+    let [point_at, equality_at, claim_at] = [0_usize, 1, 2].map(ConstantIndex::from);
+    let signature = DataSignature::new(vec![], vec![vec![integer, integer]], kind);
+    let derived = gandr_core_term::generic::equality(&mut arena, point_at, &|at| {
+        (at == point_at).then_some(&signature)
+    })
+    .expect("Point derives its equality");
+
+    // Under `λx1 x2`, `x2` is index zero and `x1` one; under `F`'s `λr` and a
+    // branch's binder, `x2` is index two.
+    let variable = |arena: &mut CoreArena, index: u32| {
+        arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+    };
+    let [x2, x1, in_branch] = [0, 1, 2].map(|index| variable(&mut arena, index));
+    let unit = arena.value_unit();
+    let falsity = arena.value_injection(gandr_kernel_term::Summand::from(1_usize), unit);
+    let on_true = arena.computation_primitive(int_eq, Arguments::Binary([in_branch, in_branch]));
+    let on_false = arena.computation_return(falsity);
+    let scrutinee = variable(&mut arena, 0);
+    let case = arena.computation_case(scrutinee, &[on_true, on_false]);
+    let lambda = arena.computation_lambda(case);
+    let thunk = arena.value_thunk(lambda);
+    let arrow = arena.comp_type_arrow(boolean, returns_boolean);
+    let arrow = arena.value_type_thunk(arrow);
+    let pick = arena.value_ascribe(thunk, arrow);
+    let held = arena.computation_primitive(int_eq, Arguments::Binary([x1, x1]));
+    let held = arena.value_returned(held);
+    let forced = arena.computation_force(pick);
+    let cased = arena.computation_application(forced, held);
+    let cased = arena.value_returned(cased);
+    let point_type = arena.value_type_data(point_at, vec![]);
+    let point = arena.value_constructor(point_type, ConstructorTag::from(0_usize), vec![x1, x2]);
+    let equality = arena.value_constant(equality_at);
+    let forced = arena.computation_force(equality);
+    let applied = arena.computation_application(forced, point);
+    let applied = arena.computation_application(applied, point);
+    let derived_endpoint = arena.value_returned(applied);
+    let path = arena.value_type_path(boolean, cased, derived_endpoint);
+    let returns = arena.comp_type_returner(path);
+    let inner = arena.comp_type_pi(integer, returns);
+    let outer = arena.comp_type_pi(integer, inner);
+    let claim_type = arena.value_type_thunk(outer);
+    let here = arena.value_here(cased);
+    let returned = arena.computation_return(here);
+    let body = arena.computation_lambda(returned);
+    let body = arena.computation_lambda(body);
+    let claim = arena.value_thunk(body);
+
+    let (report, crossed) = run(&mut arena, &[
+        data(point_at, signature),
+        definition(equality_at, derived.declared(), derived.body()),
+        definition(claim_at, claim_type, claim),
+    ]);
+    let verdicts: Vec<_> = report.judged().iter().map(Judged::verdict).collect();
+    assert!(
+        matches!(verdicts.get(2), Some(&Verdict::Checked { .. })),
+        "the case over the held call converts with the derived bind over it: {verdicts:?}"
+    );
+    assert!(
+        matches!(
+            crossed.readmitted().get(2).map(bridge::Readmitted::outcome),
+            Some(&Outcome::Defined { .. })
+        ),
+        "the kernel replays the conversion: {:?}",
+        crossed.readmitted()
+    );
 }
