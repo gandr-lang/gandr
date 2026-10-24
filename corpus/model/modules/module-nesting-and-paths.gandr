@@ -1,5 +1,6 @@
 // Modules nest to any depth, and a path of names reaches a member at any
-// depth from outside.
+// depth from outside; from inside, a nested module's name reaches its
+// members.
 
 /// A configuration, three modules deep.
 module Config {
@@ -23,7 +24,13 @@ module Config {
         def note = "the innermost component";
       }
     }
+    /// The hard value, through the nested module's name.
+    @[ checks ]
+    def hard_inside = hard.value;
   }
+  /// The innermost note, through the nested modules' names.
+  @[ checks ]
+  def note_inside = limits.hard.detail.note;
 }
 
 /// The hard limit, through a path of three names.

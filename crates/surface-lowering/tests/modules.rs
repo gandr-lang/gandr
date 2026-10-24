@@ -3698,3 +3698,54 @@ fn a_backward_member_reference_resolves()
         "so does an earlier member of an enclosing module"
     );
 }
+
+/// #1106: a nested module is a source-ordered member of its enclosing module,
+/// so a member of the enclosing module, or of a module beside the nested one,
+/// names the nested module's members through its name, under either case
+/// spelling, as the nested module's own signature exports them.
+#[test]
+fn a_nested_module_is_named_from_inside_its_enclosing_module_1106()
+{
+    let nested = "module M { module inner { def answer = 41; } def total = inner.answer; }";
+    let mut lowered = lower(nested);
+    assert_eq!(
+        constant_read_by(&lowered, "M.total"),
+        ConstantIndex::from(0_usize),
+        "the enclosing module's member reads the nested member's constant"
+    );
+    assert_eq!(
+        verdicts(&mut lowered),
+        [
+            judged(0_usize, Judgement::Synthesised),
+            judged(1_usize, Judgement::Synthesised),
+        ],
+        "and checks"
+    );
+    let sibling =
+        "module M { module Inner { def answer = 41; } module other { def total = Inner.answer; } }";
+    assert_eq!(
+        constant_read_by(&lower(sibling), "M.other.total"),
+        ConstantIndex::from(0_usize),
+        "a module beside it reads it too, under a capitalised name"
+    );
+    let refused = |source: &str, refusal: LoweringRefusal<'_>| {
+        let found = rows(&lower(source));
+        assert!(
+            found.contains(&row("M.total", Role::Declared, Amounts::Refused(refusal))),
+            "`M.total` is refused {refusal:?} in {source:?}, got {found:?}"
+        );
+    };
+    let hidden = "module M { module inner : #{ answer: Integer } { def hidden = 1; def answer = 2; \
+                  } def total = inner.hidden; }";
+    refused(hidden, LoweringRefusal::UnknownMember {
+        span: span_of(hidden, "hidden", 1_usize),
+        module: name("inner"),
+        member: name("hidden"),
+    });
+    let later = "module M { def total = inner.answer; module inner { def answer = 41; } }";
+    refused(later, LoweringRefusal::ForwardMemberReference {
+        span: span_of(later, "inner.answer", 0_usize),
+        name: name("answer"),
+        declared: span_of(later, "answer", 1_usize),
+    });
+}

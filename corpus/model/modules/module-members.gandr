@@ -27,8 +27,10 @@ module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
     @[ refuses("UnknownConstant") ]
     def answer = base + 1;
   }
-  /// The nested answer, through a projection (#1106).
-  @[ refuses("OutOfFragment.projection_expression") ]
+  /// The nested answer, one more: the nested module's member is named
+  /// through its name. An operator in a value runs before the computation
+  /// around it, and a definition's value has none.
+  @[ refuses("UnenclosedRun") ]
   def total = inner.answer + 1;
 }
 
