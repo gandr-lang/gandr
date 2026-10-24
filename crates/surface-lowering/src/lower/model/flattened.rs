@@ -220,6 +220,27 @@ pub(in crate::lower) enum Supplied
     Bound(Vec<(DeBruijnIndex, ScopeId)>),
 }
 
+/// A model implicit as its declaration writes it, `@[s : Model(S) with sort x
+/// = A]`: what a printed telescope writes in place of the parameters its
+/// components bind.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub(in crate::lower) struct WrittenSlot<'source>
+{
+    /// The implicit's name, `s`.
+    pub name: SurfaceName<'source>,
+    /// The theory its model type names, `S`.
+    pub theory: SurfaceName<'source>,
+    /// Each component's name in signature order, beside whether it is a
+    /// sort.
+    pub components: Vec<(Name, bool)>,
+    /// Each sort the model type fixes, beside the node of the type it fixes
+    /// it to.
+    pub fixed: Vec<(Name, NodeIndex)>,
+}
+
 /// A model slot a call omits, planned at the call: the declaration making the
 /// call, the hole nominated for each component, the sorts the slot's type
 /// fixes, and the candidates, each the module it names beside what it passes.
@@ -386,6 +407,47 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(frame)
+    }
+
+    /// The model implicit `entry`, whose slot is `slot`, as its declaration
+    /// writes it.
+    ///
+    /// # Specification
+    /// - requires: `slot` is [`Self::model_slot`]'s answer for `entry`'s type.
+    /// - ensures: the implicit's name, the theory's, each component's name with
+    ///   whether it is a sort, in signature order, and each fixed sort beside
+    ///   its type's node.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's implicit writes its theory and its four
+    ///   components, the first a sort.
+    /// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
+    #[spec(ensures: |ret| ret.components.len() == slot.components().len() && ret.fixed.len() == slot.fixed.len())]
+    pub(in crate::lower) fn written_slot(
+        &self,
+        entry: TelescopeEntry<'source>,
+        slot: &ModelSlot,
+    ) -> WrittenSlot<'source>
+    {
+        WrittenSlot {
+            name: entry.name,
+            theory: self.name_at(slot.theory),
+            components: slot
+                .components()
+                .iter()
+                .map(|component| {
+                    let sort = matches!(component.form, Ok(ModelForm::Sort { .. }));
+                    (component.name.clone(), sort)
+                })
+                .collect(),
+            fixed: slot
+                .fixed
+                .iter()
+                .map(|(name, stated)| (name.clone(), stated.node))
+                .collect(),
+        }
     }
 
     /// Refuse `resolved`, the binder a name written at `site` names, when it

@@ -660,6 +660,59 @@ fn a_declaration_s_binders_are_named_as_written_803()
     ]]);
 }
 
+/// A model implicit's components are named by the paths a body reads them
+/// by, `s.x`, where every component's binder is written at the implicit's
+/// one name, and the explicit parameter after them keeps its own (#2364).
+#[test]
+fn a_model_implicit_s_components_are_named_by_their_paths_2364()
+{
+    let grammar = built_in().expect("the built-in grammar builds");
+    let text = SourceText::from(
+        "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c \
+         : C) --> Integer; }\ndef stepped @[s : Model(Counter)] (c : s.C) -> -F Integer { \
+         s.read(s.incr(c)) }\n",
+    );
+    let Lowered::Module { module, arena } =
+        lower_source(&grammar, text, &mut LoweringCount::default())
+            .expect("the source lowers")
+            .into_lowered()
+    else {
+        panic!("the source is one module");
+    };
+    let used = <&str>::from(text)
+        .rfind("(c)")
+        .and_then(|at| at.checked_add(1))
+        .expect("the body reads `c`");
+    let variables: Vec<_> = module
+        .origins()
+        .values()
+        .iter()
+        .filter(|&&(_, origin)| usize::from(origin.span().start()) == used)
+        .map(|&(variable, _)| variable)
+        .collect();
+    let naming = Naming::of(&module, text);
+    let names = constant_names(&module);
+    let around: Vec<Vec<Option<String>>> = naming
+        .declarations()
+        .flat_map(|(_, roots)| {
+            let scoped = naming.scoped(&arena, &names, roots);
+            variables
+                .iter()
+                .filter_map(|&variable| scoped.around(CoreNode::Value(variable)))
+                .map(|around| {
+                    around
+                        .into_iter()
+                        .map(|binder| binder.name.map(String::from))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    assert_eq!(around, [
+        ["s.C", "s.zero", "s.incr", "s.read", "c"].map(|name| Some(String::from(name)))
+    ]);
+}
+
 /// A dependent record's field variable under `≃` is one node in each copy of
 /// the record the relation abbreviates; at the depth its type was judged, the
 /// written side's `Path(b, x, y)`, it stands under the parameter and the

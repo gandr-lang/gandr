@@ -717,6 +717,28 @@ struct Context
     /// The type each binder binds, in the context of the binders before it;
     /// none where the table knows none.
     types: Vec<Option<ValueTypeId>>,
+    /// The model implicits among the binders, each over the binders of its
+    /// components.
+    slots: Vec<ContextSlot>,
+}
+
+/// A model implicit among a context's binders, `@[s : Model(S) with sort x =
+/// A]`: the binders from `at` on, one per component, are its components,
+/// each named by the path a body reads it by, `s.x`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ContextSlot
+{
+    /// The position of the first component's binder.
+    at: usize,
+    /// How many binders its components are.
+    count: usize,
+    /// The implicit's name, `s`.
+    name: String,
+    /// The theory its model type names, `S`.
+    theory: String,
+    /// Each sort the model type fixes, beside the type it fixes it to, in
+    /// the context of the binders before the slot.
+    fixed: Vec<(String, ValueTypeId)>,
 }
 
 /// The binders a printed type naming them stands under, declared as the
@@ -724,8 +746,12 @@ struct Context
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Under
 {
-    /// Each binder as a parameter, `name : type, `, outermost first.
+    /// Each binder as a parameter, `name : type, `, outermost first, but for
+    /// a model implicit's components.
     parameters: String,
+    /// The model implicits among the binders, each written whole, ` @[s :
+    /// Model(S), …] `; empty when there is none.
+    implicits: String,
     /// The binders' names the parameters declare, and the types they bind.
     context: Context,
 }
@@ -900,6 +926,11 @@ pub struct TypeTable
     /// The documentation each source of the unit writes of itself, its `//!`
     /// runs, by the source.
     documented: BTreeMap<SourceIndex, DocumentationText>,
+    /// Each model implicit each declaration's telescope writes, by the
+    /// declaration, beside the path each of its components is read by: a
+    /// context whose binders bear those paths at the slot's positions
+    /// declares the slot whole.
+    slots: BTreeMap<ConstantIndex, Vec<(ContextSlot, Vec<String>)>>,
 }
 
 /// The printer's root for `node`.
@@ -2425,6 +2456,41 @@ impl TypeTable
             }
             same
         });
+        let slots = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let constant = declaration.constant();
+                let held: Vec<(ContextSlot, Vec<String>)> = module
+                    .model_slots(constant)
+                    .iter()
+                    .map(|slot| {
+                        let paths = slot
+                            .components
+                            .iter()
+                            .map(|&(ref component, _)| {
+                                format!("{}.{}", slot.name.as_ref(), component.as_ref())
+                            })
+                            .collect();
+                        (
+                            ContextSlot {
+                                at: slot.at,
+                                count: slot.components.len(),
+                                name: String::from(slot.name.as_ref()),
+                                theory: String::from(slot.theory.as_ref()),
+                                fixed: slot
+                                    .fixed
+                                    .iter()
+                                    .map(|&(ref sort, ty)| (String::from(sort.as_ref()), ty))
+                                    .collect(),
+                            },
+                            paths,
+                        )
+                    })
+                    .collect();
+                (!held.is_empty()).then_some((constant, held))
+            })
+            .collect();
         let documented = module
             .source_documentations()
             .iter()
@@ -2450,6 +2516,7 @@ impl TypeTable
             documented,
             runs,
             crossings,
+            slots,
         }
     }
 
@@ -3573,7 +3640,9 @@ impl TypeTable
     ///   part standing under the parts before it, those of its match's node,
     ///   then each earlier part's name, of no known type; for a described
     ///   member, each name its context binds; empty for a closed node or one
-    ///   its declaration does not reach.
+    ///   its declaration does not reach. A judged node's context keeps each
+    ///   model implicit of its declaration whose components' binders it holds
+    ///   under their paths, `s.x`, to be declared as the implicit whole.
     /// - provides: the context an entry's type is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -3619,6 +3688,7 @@ impl TypeTable
                         .unwrap_or_default(),
                     regions: Vec::new(),
                     types: Vec::new(),
+                    slots: Vec::new(),
                 };
             },
             Standing::Judged(within) => (within, None),
@@ -3644,6 +3714,20 @@ impl TypeTable
         for binder in around.unwrap_or_default() {
             context.binders.push(binder.name.map(String::from));
             context.types.push(self.bound_type(binder.opener));
+        }
+        // A model implicit's components stand among the declaration's own
+        // binders, each named by its path where the naming reached it.
+        for &(ref slot, ref paths) in self.slots.get(&constant).into_iter().flatten() {
+            let named = paths.iter().enumerate().all(|(place, path)| {
+                context
+                    .binders
+                    .get(slot.at.saturating_add(place))
+                    .and_then(Option::as_deref)
+                    == Some(path.as_str())
+            });
+            if named {
+                context.slots.push(slot.clone());
+            }
         }
         context.regions = regions
             .unwrap_or_default()
@@ -3696,14 +3780,18 @@ impl TypeTable
 
     /// The binders of `context` declared as parameters, each type spelled
     /// under the parameters before it, a binder the source names nothing
-    /// named afresh.
+    /// named afresh, and a model implicit's components declared as the
+    /// implicit whole.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one parameter per binder of `context`, outermost first, each
-    ///   `name : type, ` with its type spelled in `style` on a page of `page`
-    ///   columns under the names before it; none when `context` binds nothing,
-    ///   or a binder's type is unknown to the table or spells a `?`.
+    /// - ensures: one parameter per binder of `context` outside a model
+    ///   implicit, outermost first, each `name : type, ` with its type spelled
+    ///   in `style` on a page of `page` columns under the names before it, and
+    ///   one implicit per model implicit, `s : Model(S) with sort x = A`, each
+    ///   fixed sort's type spelled under the names before the slot, its
+    ///   components keeping their paths; none when `context` binds nothing, or
+    ///   a binder's type is unknown to the table or spells a `?`.
     /// - provides: the context [`Self::read_back`] reads an open type under.
     /// - fails: never.
     /// - panics: none.
@@ -3711,8 +3799,10 @@ impl TypeTable
     ///   types through it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::read_back`].
+    /// - hypothesis: L3 — as [`Self::read_back`]; a type under a model
+    ///   implicit's components reads back under the implicit.
     /// - witness: `typed::tests::a_printed_type_reads_back_to_its_certificate`
+    /// - witness: `typed::tests::a_type_under_a_model_implicit_reads_back_under_it_2364`
     fn telescope(
         &self,
         context: &Context,
@@ -3724,21 +3814,49 @@ impl TypeTable
             return None;
         }
         let mut parameters = String::new();
+        let mut implicits = String::new();
         let mut names: Vec<Option<String>> = Vec::with_capacity(context.binders.len());
-        for (at, name) in context.binders.iter().enumerate() {
-            let ty = context.types.get(at).copied().flatten()?;
+        let starting: BTreeMap<usize, &ContextSlot> =
+            context.slots.iter().map(|slot| (slot.at, slot)).collect();
+        let mut at = 0_usize;
+        while let Some(name) = context.binders.get(at) {
             let before = Context {
                 binders: names.clone(),
-                regions: Vec::new(),
-                types: Vec::new(),
+                ..Context::default()
             };
-            let Maybe::Present(spelled) = self.spell(TypeNode::Value(ty), &before, page, style)
-            else {
-                return None;
+            let spelled = |ty: ValueTypeId| {
+                let Maybe::Present(spelled) = self.spell(TypeNode::Value(ty), &before, page, style)
+                else {
+                    return None;
+                };
+                spelled.unspelled().is_empty().then_some(spelled)
             };
-            if !spelled.unspelled().is_empty() {
-                return None;
+            if let Some(&slot) = starting.get(&at) {
+                let opener = if implicits.is_empty() { " @[" } else { ", " };
+                for part in [
+                    opener,
+                    slot.name.as_str(),
+                    " : Model(",
+                    slot.theory.as_str(),
+                    ")",
+                ] {
+                    implicits.push_str(part);
+                }
+                for &(ref sort, ty) in &slot.fixed {
+                    let spelled = spelled(ty)?;
+                    // Formatting into a `String` cannot fail.
+                    let _written = core::fmt::Write::write_fmt(
+                        &mut implicits,
+                        format_args!(" with sort {sort} = {spelled}"),
+                    );
+                }
+                let past = at.saturating_add(slot.count);
+                names.extend(context.binders.get(at .. past)?.iter().cloned());
+                at = past;
+                continue;
             }
+            let ty = context.types.get(at).copied().flatten()?;
+            let spelled = spelled(ty)?;
             let name = name
                 .clone()
                 .unwrap_or_else(|| format!("read_back_bound_{at}"));
@@ -3749,13 +3867,19 @@ impl TypeTable
             let _written =
                 core::fmt::Write::write_fmt(&mut parameters, format_args!("{spelled}, "));
             names.push(Some(name));
+            at = at.saturating_add(1_usize);
+        }
+        if !implicits.is_empty() {
+            implicits.push_str("] ");
         }
         Some(Under {
             parameters,
+            implicits,
             context: Context {
                 binders: names,
                 regions: context.regions.clone(),
                 types: context.types.clone(),
+                slots: context.slots.clone(),
             },
         })
     }
@@ -3922,7 +4046,8 @@ impl TypeTable
                 || format!(" : {} ;\n", signature(node, spelled)),
                 |under| {
                     format!(
-                        "({}read_back_it : {}) -> -F Unit {{ return unit }}\n",
+                        "{}({}read_back_it : {}) -> -F Unit {{ return unit }}\n",
+                        under.implicits,
                         under.parameters,
                         signature(node, spelled),
                     )
@@ -6717,6 +6842,33 @@ mod tests
             open.len() >= 2 && open.iter().all(|trip| *trip == RoundTrip::Equal),
             "a term typed under its parameters and a bind reads back equal under them: {open:?}"
         );
+    }
+
+    /// A type naming a model implicit's components spells them by their
+    /// paths and reads back under the implicit declared whole, `@[s :
+    /// Model(Counter)]`, where every component's binder is written at the
+    /// implicit's one name (#2364).
+    #[test]
+    fn a_type_under_a_model_implicit_reads_back_under_it_2364()
+    {
+        let source = SourceText::from(
+            "theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read \
+             : (c : C) --> Integer; }\ndef stepped @[s : Model(Counter)] (c : s.C) -> -F Integer \
+             { s.read(s.incr(c)) }\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let read = table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
+        for spelled in ["s.C", "s.C => s.C", "s.C => Integer"] {
+            let trips: Vec<&RoundTrip> = read
+                .iter()
+                .filter(|read| read.spelled == spelled)
+                .map(|read| &read.trip)
+                .collect();
+            assert!(
+                !trips.is_empty() && trips.iter().all(|trip| **trip == RoundTrip::Equal),
+                "`{spelled}` reads back equal under the implicit: {trips:?}"
+            );
+        }
     }
 
     #[test]

@@ -8,6 +8,7 @@
 //! around it reads them here: a hover's type, a diagnostic's, and the
 //! formatter's motive of a path composite written as its transport.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -102,6 +103,10 @@ pub struct Naming
     /// resolves to, then the use itself, which a type's variables have and no
     /// binding records.
     uses: Vec<(ValueId, ByteSpan)>,
+    /// Each declaration whose telescope writes a model implicit, with the
+    /// path each component's parameter is read by, `s.x`, at its position,
+    /// ascending by constant.
+    qualified: Vec<(ConstantIndex, Vec<(usize, String)>)>,
 }
 
 impl Naming
@@ -113,7 +118,9 @@ impl Naming
     /// - ensures: the source text, each value declaration's roots by its
     ///   constant, the origin table's binders, split components, dependent
     ///   arrows, dependent record pairs and their second labels, relations and
-    ///   model types, and its bindings then its written values as uses.
+    ///   model types, its bindings then its written values as uses, and the
+    ///   path each model implicit's component is read by, `s.x`, at its
+    ///   position in its declaration's telescope.
     /// - provides: the input of [`Self::scoped`].
     /// - fails: never.
     /// - panics: none.
@@ -207,6 +214,26 @@ impl Naming
         relations.sort_by_key(|&(related, _)| related);
         let mut models = origins.models().to_vec();
         models.sort_by_key(|&(modelled, _)| modelled);
+        let qualified = roots
+            .iter()
+            .filter_map(|&(constant, _)| {
+                let paths: Vec<(usize, String)> = module
+                    .model_slots(constant)
+                    .iter()
+                    .flat_map(|slot| {
+                        slot.components.iter().enumerate().map(
+                            move |(place, &(ref component, _))| {
+                                (
+                                    slot.at.saturating_add(place),
+                                    format!("{}.{}", slot.name.as_ref(), component.as_ref()),
+                                )
+                            },
+                        )
+                    })
+                    .collect();
+                (!paths.is_empty()).then_some((constant, paths))
+            })
+            .collect();
         Self {
             text: String::from(<&str>::from(source)),
             roots,
@@ -218,6 +245,7 @@ impl Naming
             relations,
             models,
             uses,
+            qualified,
         }
     }
 
@@ -344,15 +372,16 @@ impl Naming
     ///   module's constants'.
     /// - ensures: the scopes of every node reachable from `roots`, and for each
     ///   binder, at its position, the intuitionistic binder around it and its
-    ///   name: the one written for the lambda or bind that opens it, or for the
-    ///   split component it is, counted from the split's outermost binder along
-    ///   the chain each component stands under the one before in, or the label
-    ///   of the dependent record field whose pair opens it, else the one
-    ///   written at a use's binder; a split component a label pattern leaves
-    ///   unwritten, or that holds a dependent record's rest, is named by its
-    ///   field's label, primed (`′`) until no other binder of the declaration
-    ///   holds the name; a dependent split's motive binder, the scrutinee's
-    ///   again, keeps none.
+    ///   name: for the lambda a model implicit's component opens, the path the
+    ///   body reads it by, `s.x`; else the one written for the lambda or bind
+    ///   that opens it, or for the split component it is, counted from the
+    ///   split's outermost binder along the chain each component stands under
+    ///   the one before in, or the label of the dependent record field whose
+    ///   pair opens it, else the one written at a use's binder; a split
+    ///   component a label pattern leaves unwritten, or that holds a dependent
+    ///   record's rest, is named by its field's label, primed (`′`) until no
+    ///   other binder of the declaration holds the name; a dependent split's
+    ///   motive binder, the scrutinee's again, keeps none.
     /// - provides: the context a node inside the declaration is spelled in.
     /// - fails: never.
     /// - panics: none.
@@ -374,6 +403,10 @@ impl Naming
         let names: Vec<Name<'_>> = names.iter().map(|name| Name::from(name.as_str())).collect();
         let printer = CoreSource::new(arena, &names);
         let scopes = Scopes::of(&printer, roots.into_iter().flatten());
+        // A model implicit's components are named by the path a body reads
+        // each by, `s.x`: the lambdas the declaration's body opens first, at
+        // the components' positions.
+        let paths = self.paths(arena, roots);
         // A split's binders chain, its outermost component first: a binder
         // continues the split whose last component it stands under.
         let mut split: Option<(ComputationId, BinderIndex, usize)> = None;
@@ -401,12 +434,14 @@ impl Naming
                         };
                         split = Some((opener, index, component));
                         let key = (opener, SplitComponent::from(component));
-                        let opened = self
-                            .openers
-                            .binary_search_by_key(&opener, |&(held, _)| held)
-                            .ok()
-                            .and_then(|at| self.openers.get(at))
-                            .and_then(|&(_, span)| self.written(span));
+                        let opened = paths.get(&opener).cloned().or_else(|| {
+                            let &(_, span) = self
+                                .openers
+                                .binary_search_by_key(&opener, |&(held, _)| held)
+                                .ok()
+                                .and_then(|at| self.openers.get(at))?;
+                            self.written(span)
+                        });
                         let name = opened.or_else(|| {
                             let held = self
                                 .components
@@ -505,6 +540,68 @@ impl Naming
             }
         }
         Scoped { scopes, bound }
+    }
+
+    /// The lambda each component of a model implicit opens in the body
+    /// `roots` holds, with the path the body reads the component by, `s.x`.
+    ///
+    /// # Specification
+    /// - requires: `roots` are a declaration's, as [`Self::roots`] holds them.
+    /// - ensures: for the declaration holding `roots`, each component at
+    ///   position `p` of its telescope beside the `p`-th lambda of the chain
+    ///   its body's thunk opens, where the chain reaches that far; nothing for
+    ///   a declaration writing no model implicit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a counter's model implicit names its four parameters'
+    ///   lambdas by their paths, and an explicit parameter after them keeps its
+    ///   written name.
+    /// - witness: `tests::diagnostics::a_model_implicit_s_components_are_named_by_their_paths_2364`
+    #[spec(ensures: |ret| ret.is_empty() || matches!(roots, [_, Some(CoreNode::Value(_))]))]
+    fn paths(
+        &self,
+        arena: &CoreArena,
+        roots: [Option<CoreNode>; 2],
+    ) -> BTreeMap<ComputationId, String>
+    {
+        let Some(&(_, ref held)) = self
+            .roots
+            .iter()
+            .find(|&&(_, declared)| declared == roots)
+            .and_then(|&(constant, _)| {
+                let at = self
+                    .qualified
+                    .binary_search_by_key(&constant, |&(held, _)| held)
+                    .ok()?;
+                self.qualified.get(at)
+            })
+        else {
+            return BTreeMap::new();
+        };
+        let [_, Some(CoreNode::Value(body))] = roots
+        else {
+            return BTreeMap::new();
+        };
+        let mut lambdas = Vec::new();
+        let mut opened = if let Some(&Value::Thunk(computation)) = arena.value(body) {
+            Some(computation)
+        }
+        else {
+            None
+        };
+        while let Some(computation) = opened {
+            let Some(&Computation::Lambda(inner)) = arena.computation(computation)
+            else {
+                break;
+            };
+            lambdas.push(computation);
+            opened = Some(inner);
+        }
+        held.iter()
+            .filter_map(|&(position, ref path)| Some((*lambdas.get(position)?, path.clone())))
+            .collect()
     }
 }
 

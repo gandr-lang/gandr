@@ -374,6 +374,9 @@ enum Placed
     /// The module or the builtin namespace a path selects from, `M` in `M.x`
     /// or `M.T`, `M.N` in `M.N.x`, and `int` in `int.div(c, 64)`: a
     /// namespace, neither a term nor a type, so the path answers (#1170).
+    /// Or the model implicit a path reads a component of, `s` in `s.x` or
+    /// `s.C` (#2364): the model is its components, never a value, so the
+    /// path, the component's variable, answers.
     Qualifier,
     /// A move of a run literal, its head, or the label it names: read by
     /// its shape, never resolved, so the run answers.
@@ -416,7 +419,9 @@ enum Placed
     /// the model type answers.
     Theory,
     /// The module a pack packs and the model type it states, `M` and
-    /// `Model(T)` in `pack M at Model(T)`, or the model type a written
+    /// `Model(T)` in `pack M at Model(T)`, the module or the caller's model
+    /// implicit a call supplies a model implicit by, `M` or `t` in `f[s =
+    /// M]` and `f[s = t]` (#2364), or the model type a written
     /// forgetting map states, `Model(T)` in `forget[sort C = A](m) at
     /// Model(T)` (#2218): the module is a namespace and the model type names
     /// the theory whose record the pack builds or whose map the call applies,
@@ -436,6 +441,21 @@ enum Placed
     Generic,
 }
 
+/// What the lowering knows of a source's models: each model implicit a
+/// declaration's telescope writes, by the bytes the declaration covers, and
+/// the name of each module the source declares.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+struct Models
+{
+    /// Each model implicit's name, beside the bytes its declaration covers.
+    implicits: Vec<((usize, usize), String)>,
+    /// Each module's own name.
+    modules: BTreeSet<String>,
+}
+
 /// Every gated node of `tree` with its kind, its span and where it stands.
 ///
 /// # Specification
@@ -444,6 +464,7 @@ fn gated(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
     refused: &BTreeSet<gandr_surface_syntax::NodeKey>,
+    models: &Models,
 ) -> Vec<(String, ByteSpan, Option<Placed>)>
 {
     let source: &str = tree.source().into();
@@ -679,6 +700,13 @@ fn gated(
             && parent.is_some_and(|(_, label, headed, ..)| {
                 headed && (label == "[" || def.label == "constructor" || FORMERS.contains(&text))
             });
+        // A model implicit's name, read inside the declaration whose
+        // telescope writes it.
+        let modelled = models.implicits.iter().any(|&((start, end), ref name)| {
+            name == text.trim()
+                && start <= usize::from(span.start())
+                && usize::from(span.end()) <= end
+        });
         let qualifier = parent.is_some_and(|(_, _, _, qualifying, _)| qualifying)
             && if melded {
                 def.label == "."
@@ -692,7 +720,18 @@ fn gated(
                 def.label == "constructor"
                     || def.label == "type_identifier"
                     || (def.label == "identifier" && namespaces.contains(text))
+                    || ((def.label == "identifier" || def.label == "type_variable") && modelled)
             };
+        // A module or a model implicit a call supplies a model implicit by,
+        // `M` in `f[s = M]` and `t` in `f[s = t]`.
+        let packed = !melded
+            && ((def.label == "constructor" && models.modules.contains(text.trim()))
+                || (def.label == "identifier" && modelled))
+            && parent.is_some_and(|(held, ..)| {
+                grammar
+                    .mold(held)
+                    .is_ok_and(|resident| resident.sort == Sort::Instantiation)
+            });
         let moved = match run {
             Run::Outside => false,
             Run::Moves => {
@@ -743,7 +782,8 @@ fn gated(
             .or_else(|| kinded.then_some(Placed::Kind))
             .or_else(|| (sized || supplied).then_some(Placed::Stage))
             .or_else(|| regioned.then_some(Placed::Region))
-            .or_else(|| unstated.then_some(Placed::Unstated));
+            .or_else(|| unstated.then_some(Placed::Unstated))
+            .or_else(|| packed.then_some(Placed::Packed));
         gated.push((kind(grammar, tree, position, *def), span, placed));
     }
     gated
@@ -869,6 +909,7 @@ mod sweeps
                         .collect(),
                     Composed::Refused(_) => BTreeSet::new(),
                 };
+                let mut models = Models::default();
                 if let Ok(lowering) = lowering
                     && let Lowered::Module { ref module, .. } = lowering.into_lowered()
                 {
@@ -882,12 +923,28 @@ mod sweeps
                                 }
                             }
                         }
+                        let covered = written
+                            .zip(usize::from(declaration.span().end()).checked_sub(laid_base));
+                        for slot in module.model_slots(declaration.constant()) {
+                            if let Some(covered) = covered {
+                                models
+                                    .implicits
+                                    .push((covered, String::from(slot.name.as_ref())));
+                            }
+                        }
                     }
+                    models.modules.extend(
+                        module
+                            .structures()
+                            .iter()
+                            .filter_map(|structure| structure.path().last())
+                            .map(|name| String::from(name.as_ref())),
+                    );
                 }
                 let spans: BTreeSet<ByteSpan> = table.spans().collect();
                 let mut innermost: Vec<Option<ByteSpan>> = vec![None; <&str>::from(text).len()];
                 let mut held = Vec::new();
-                for (key, span, placed) in gated(&grammar, &tree, &refused) {
+                for (key, span, placed) in gated(&grammar, &tree, &refused, &models) {
                     if placed.is_some() {
                         continue;
                     }

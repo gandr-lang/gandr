@@ -620,6 +620,7 @@ use crate::module::DeclarationParts;
 use crate::module::DeclarationSlot;
 use crate::module::DecoratedModule;
 use crate::module::FamilyIndex;
+use crate::module::FlattenedSlot;
 use crate::module::Forgetting;
 use crate::module::Half;
 use crate::module::HalfAt;
@@ -3380,6 +3381,9 @@ struct Lowerer<'run, 'source>
     /// Each model implicit flattened into one parameter per component, by the
     /// frame its name resolves to.
     flattened: BTreeMap<ScopeId, model::Flattened>,
+    /// Each model implicit a function's telescope writes, by the slot of the
+    /// function, beside the entry of its merged telescope that writes it.
+    written_slots: BTreeMap<SlotIndex, Vec<(usize, model::WrittenSlot<'source>)>>,
     /// Each hole nominated for an omitted implicit or a written wildcard, in
     /// the order nominated, with what it stands for: the hole's name counts
     /// them.
@@ -4463,6 +4467,40 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
             })
             .collect();
+        // Each model implicit a telescope writes, by its function's slot and
+        // entry, with the number of parameters it binds and, when every
+        // sort it fixes minted, how a printed telescope writes it.
+        let mut written_slots: BTreeMap<
+            SlotIndex,
+            BTreeMap<usize, (usize, Option<FlattenedSlot<'source>>)>,
+        > = core::mem::take(&mut self.written_slots)
+            .into_iter()
+            .map(|(slot, written)| {
+                let resolved = written
+                    .into_iter()
+                    .map(|(entry, spelled)| {
+                        let count = spelled.components.len();
+                        let fixed: Option<Vec<_>> = spelled
+                            .fixed
+                            .into_iter()
+                            .map(|(name, node)| match self.value_type_at(node) {
+                                Maybe::Present(id) => Some((name, id)),
+                                Maybe::Absent(_) => None,
+                            })
+                            .collect();
+                        let flattened = fixed.map(|fixed| FlattenedSlot {
+                            at: 0,
+                            name: spelled.name,
+                            theory: spelled.theory,
+                            components: spelled.components,
+                            fixed,
+                        });
+                        (entry, (count, flattened))
+                    })
+                    .collect();
+                (slot, resolved)
+            })
+            .collect();
         let Self {
             collected,
             recognition,
@@ -4556,29 +4594,54 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 })
                 .collect();
         // Each function whose merged telescope binds an implicit names it, so
-        // a printed call supplies it by name.
-        let implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> = collected
-            .plicities
-            .iter()
-            .filter_map(|(&slot, merged)| {
-                let entries = merged.as_ref().ok()?;
-                if !entries
-                    .iter()
-                    .any(|entry| entry.plicity == Plicity::Implicit)
-                {
-                    return None;
+        // a printed call supplies it by name. A model implicit binds one
+        // parameter per component, which no single name supplies: each is
+        // left unnamed there, and the slot is kept whole beside it.
+        let mut implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> =
+            BTreeMap::new();
+        let mut model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>> = BTreeMap::new();
+        for (&slot, merged) in &collected.plicities {
+            let Ok(entries) = merged.as_ref()
+            else {
+                continue;
+            };
+            if !entries
+                .iter()
+                .any(|entry| entry.plicity == Plicity::Implicit)
+            {
+                continue;
+            }
+            let Some(constant) = collected
+                .slots
+                .get(usize::from(slot))
+                .map(|entry| entry.constant)
+            else {
+                continue;
+            };
+            let written = written_slots.remove(&slot).unwrap_or_default();
+            let mut names = Vec::with_capacity(entries.len());
+            let mut flattened = Vec::new();
+            for (at, entry) in entries.iter().enumerate() {
+                if let Some(&(count, ref spelled)) = written.get(&at) {
+                    if let Some(spelled) = spelled.clone() {
+                        flattened.push(FlattenedSlot {
+                            at: names.len(),
+                            ..spelled
+                        });
+                    }
+                    names.extend(core::iter::repeat_n(None, count));
+                    continue;
                 }
-                let constant = collected.slots.get(usize::from(slot))?.constant;
-                let names = entries
-                    .iter()
-                    .map(|entry| match entry.plicity {
-                        Plicity::Implicit => Some(entry.name),
-                        Plicity::Explicit => None,
-                    })
-                    .collect();
-                Some((constant, names))
-            })
-            .collect();
+                names.push(match entry.plicity {
+                    Plicity::Implicit => Some(entry.name),
+                    Plicity::Explicit => None,
+                });
+            }
+            if !flattened.is_empty() {
+                let _first = model_slots.insert(constant, flattened);
+            }
+            let _first = implicits.insert(constant, names);
+        }
 
         Ok(LoweredModule::new(
             declarations,
@@ -4611,6 +4674,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_stage_bounds(stage_bounds)
         .with_region_names(region_names)
         .with_implicits(implicits)
+        .with_model_slots(model_slots)
         .with_supplies(supplies)
         .with_models(models)
         .with_qualified(qualified)
@@ -4887,6 +4951,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             abstracted: BTreeMap::new(),
             components: BTreeMap::new(),
             flattened: BTreeMap::new(),
+            written_slots: BTreeMap::new(),
             nominations: BTreeMap::new(),
             operated: BTreeMap::new(),
             derivations: BTreeMap::new(),

@@ -9503,6 +9503,43 @@ pub struct Forgetting
     pub sorts: Vec<Name>,
 }
 
+/// A model implicit a function's telescope writes, `@[s : Model(S) with sort
+/// x = A]`, as a source writes it.
+///
+/// The core binds one parameter per component of `S` and none for a sort the
+/// type fixes, so a printed telescope writes the slot whole in their place, a
+/// body reads each component as `s.x`, and a call supplies the slot by one
+/// path, `f[s = M]`.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: `at` is the position, in the function's merged telescope, of the
+///   parameter the first component binds, the next `components.len()`
+///   parameters the components' in signature order; each component beside
+///   whether it is a sort; each fixed sort beside the type it fixes it to, read
+///   under the parameters before the slot.
+/// - executable: none — the record is data the lowering reads.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a counter's implicit after an explicit parameter starts
+///   past it and writes its four components, the first a sort.
+/// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FlattenedSlot<'source>
+{
+    /// The position of the first component's parameter.
+    pub at: usize,
+    /// The implicit's name, `s`.
+    pub name: SurfaceName<'source>,
+    /// The theory its model type names, `S`, as written.
+    pub theory: SurfaceName<'source>,
+    /// Each component's name in signature order, beside whether it is a
+    /// sort.
+    pub components: Vec<(Name, bool)>,
+    /// Each sort the model type fixes, beside the type it fixes it to.
+    pub fixed: Vec<(Name, ValueTypeId)>,
+}
+
 /// One module, lowered: its declarations, its attributes, its origins, its
 /// imports, and the outermost scope its names were declared in.
 ///
@@ -9594,6 +9631,9 @@ pub struct LoweredModule<'source>
     /// its merged telescope in order: an implicit's name, none for an
     /// explicit parameter, by the function's position.
     implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    /// Each function written with a model implicit, each such slot of its
+    /// merged telescope, by the function's position.
+    model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>>,
     /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
     /// declaration whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
@@ -9656,6 +9696,7 @@ impl<'source> LoweredModule<'source>
             stage_bounds: BTreeMap::new(),
             region_names: BTreeMap::new(),
             implicits: BTreeMap::new(),
+            model_slots: BTreeMap::new(),
             supplies: BTreeMap::new(),
             models: BTreeMap::new(),
             qualified: BTreeMap::new(),
@@ -9825,6 +9866,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.implicits = implicits;
+        self
+    }
+
+    /// This module, carrying `model_slots`, the model implicits each
+    /// function's telescope writes, by its position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_model_slots(
+        mut self,
+        model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>>,
+    ) -> Self
+    {
+        self.model_slots = model_slots;
         self
     }
 
@@ -10852,6 +10909,35 @@ impl<'source> LoweredModule<'source>
     ) -> &[Option<SurfaceName<'source>>]
     {
         self.implicits
+            .get(&constant)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// The model implicits the telescope of the function at `constant`
+    /// writes, in telescope order: what a printed telescope writes whole in
+    /// place of the parameters each binds, and a printed call supplies by
+    /// one path.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each slot as [`FlattenedSlot`] states it; the empty slice for
+    ///   a function that writes none.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`FlattenedSlot`].
+    /// - witness: `lower::implicit::tests::a_telescope_writes_its_model_implicit_as_one_slot_2364`
+    #[spec(ensures: |ret| ret.is_empty() != self.model_slots.contains_key(&constant))]
+    #[inline]
+    #[must_use]
+    pub fn model_slots(
+        &self,
+        constant: ConstantIndex,
+    ) -> &[FlattenedSlot<'source>]
+    {
+        self.model_slots
             .get(&constant)
             .map(Vec::as_slice)
             .unwrap_or_default()
