@@ -42,6 +42,15 @@
 //! `C`, and the trial poses the two equal, so a candidate of another sort is
 //! refuted. A fixed type that reads a binder of the callee is not posed, and
 //! leaves its candidates untested on that sort.
+//!
+//! # A scope names a model
+//!
+//! A capability scope over a theory may name a module in place of its clauses,
+//! `handle c : T with sort x = A { M } with N`: the slot is the theory's at
+//! the manifest's sorts, as a model implicit at `Model(T) with sort x = A`
+//! reads it, and `N` passes its members as a supply naming it does. Each
+//! operation's component is stated at its derived type, the carrier read as
+//! the type `N` gives it.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -53,13 +62,18 @@ use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::Name;
 use quenchant_shape::shape::Maybe;
 
 use super::BundledTheory;
+use super::Fields;
+use super::Members;
+use super::Minting;
 use super::Packed;
 use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
@@ -169,7 +183,7 @@ pub(in crate::lower) struct Flattened
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::lower) struct ModelSlot
 {
     /// The bundle's theories, the outermost first, which holds no component
@@ -210,7 +224,7 @@ impl ModelSlot
 ///
 /// # Specification
 /// trivial.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::lower) enum Supplied
 {
     /// A module's members, as `pack M at Model(S)` reads them.
@@ -326,12 +340,46 @@ impl<'source> Lowerer<'_, 'source>
             let mut scratch = Pieces::new();
             self.bindings(written, bound, &mut scratch, &mut sorts)?;
         }
+        let named = Site { at: theory, ..site };
+
+        self.theory_slot(named, declared.span.start(), &sorts)
+            .map(Some)
+    }
+
+    /// The slot of the theory whose name `named` stands at, read where a form
+    /// starting at `at` reads it, each sort `sorts` names fixed to the type
+    /// written beside it.
+    ///
+    /// # Specification
+    /// - requires: `named` is at a theory's name tile; each of `sorts` is a
+    ///   sort's name tile beside the type written for it.
+    /// - ensures: the slot of the theory, its outermost theory holding no sort
+    ///   `sorts` names, each named sort beside its type.
+    /// - fails: the refusals [`Self::bundled`] yields for a theory nothing
+    ///   presents.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::model_slot`], and a scope over `State`
+    ///   fixing its state names a model of it.
+    /// - witness: `lower::implicit::tests::a_manifest_model_implicit_binds_no_fixed_sort_739`
+    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |slot| !slot.theories.is_empty() && slot.fixed.len() <= sorts.len()))]
+    pub(in crate::lower) fn theory_slot(
+        &mut self,
+        named: Site,
+        at: ByteOffset,
+        sorts: &[(Placed, Placed)],
+    ) -> Result<ModelSlot, LoweringRefusal<'source>>
+    {
         let fixed: BTreeMap<Name, Placed> = sorts
             .iter()
             .map(|&(sort, stated)| (Name::from(self.name_at(sort).as_ref()), stated))
             .collect();
-        let named = Site { at: theory, ..site };
-        let mut theories = self.bundled(named, (declared.span.start(), self.name_at(theory)))?;
+        let mut theories = self.bundled(named, (at, self.name_at(named.at)))?;
         if let Some(outermost) = theories.first_mut() {
             outermost
                 .signature
@@ -339,11 +387,147 @@ impl<'source> Lowerer<'_, 'source>
                 .retain(|component| !fixed.contains_key(&component.name));
         }
 
-        Ok(Some(ModelSlot {
+        Ok(ModelSlot {
             theories,
             fixed,
-            theory,
-        }))
+            theory: named.at,
+        })
+    }
+
+    /// What the module whose name `module` writes in `site` passes for the
+    /// slot `slot`.
+    ///
+    /// # Specification
+    /// - requires: `module` is a capitalised name written in `site`.
+    /// - ensures: the module's members, as [`Self::packed_module`] reads them
+    ///   at the slot's theory and its fixed sorts.
+    /// - fails: the refusals [`Self::packed_module`] yields.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over `State` naming a state-passing module
+    ///   runs, and one naming no module is refused at the name.
+    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |supplied| matches!(*supplied, Supplied::Module(_))))]
+    pub(in crate::lower) fn named_model(
+        &mut self,
+        site: Site,
+        module: Placed,
+        slot: &ModelSlot,
+    ) -> Result<Supplied, LoweringRefusal<'source>>
+    {
+        let packed = self.packed_module(site, module, slot.theory, &slot.fixed)?;
+
+        Ok(Supplied::Module(Arc::new(packed)))
+    }
+
+    /// The slot `slot`'s carrier, its one unfixed unindexed sort, beside the
+    /// type `supplied` gives it.
+    ///
+    /// # Specification
+    /// - requires: `supplied` was read for `slot`.
+    /// - ensures: the sort's name and the decoding of the code `supplied`
+    ///   passes for it, at `origin`; nothing for a slot leaving no unindexed
+    ///   sort, or a code that did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a state-passing module's carrier is the function type
+    ///   it writes.
+    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present((_, id)) if sink.arena.value_type(id).is_some()))]
+    pub(in crate::lower) fn supplied_carrier(
+        &self,
+        slot: &ModelSlot,
+        supplied: &Supplied,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<(Name, ValueTypeId), lowered::Absent>
+    {
+        let Some((place, carrier)) =
+            slot.components()
+                .iter()
+                .enumerate()
+                .find(|&(_, component)| {
+                    matches!(component.form, Ok(ModelForm::Sort { ref indices }) if indices.is_empty())
+                })
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        let name = carrier.name.clone();
+        self.mint_supplied(
+            supplied,
+            ComponentPlace::from(place),
+            Binders::NONE,
+            sink,
+            origin,
+        )
+        .map(|code| {
+            // A quoted code decodes to the type it quotes, which keeps the
+            // origin it was minted with; only a fresh element takes one.
+            let mark = sink.arena.watermark();
+            let id = sink
+                .arena
+                .value_type_element(code, Level::constant(Universe::FUSS_FREE.level));
+            if sink.arena.value_types_since(mark).next().is_some() {
+                sink.origins
+                    .record_value_type(id, origin.inserted(Insertion::Decode));
+            }
+            (name, id)
+        })
+    }
+
+    /// The type of the operation at `place` of the slot `slot`, each sort it
+    /// reads stated by `sorts`, a sort's name beside its type.
+    ///
+    /// # Specification
+    /// - requires: `sorts` states every sort the operation reads.
+    /// - ensures: the operation's type as a model's component states it, each
+    ///   sort read as its type in `sorts`, every node carrying `origin`;
+    ///   nothing for a place holding no operation, or a type that does not
+    ///   mint.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `State`'s `get` and `put` at an integer state and a
+    ///   state-passing carrier, as the module's members are declared.
+    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(ret, Maybe::Present(id) if sink.arena.value_type(id).is_some()))]
+    pub(in crate::lower) fn operation_domain(
+        &self,
+        slot: &ModelSlot,
+        place: ComponentPlace,
+        sorts: &[(&Name, ValueTypeId)],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let unminted = Maybe::Absent(lowered::Absent::Unminted);
+        let place = usize::from(place);
+        let components = slot.components();
+        let Some(&ModelComponent {
+            form: Ok(ref form @ ModelForm::Operation { .. }),
+            ..
+        }) = components.get(place)
+        else {
+            return unminted;
+        };
+        let binds = vec![Dependent(false); place];
+        let minting = Minting {
+            members: Members::Fields(Fields {
+                before: components.get(.. place).unwrap_or_default(),
+                binds: &binds,
+                manifests: sorts,
+            }),
+            origin,
+        };
+        self.mint_form(form, &minting, sink)
+            .map_or(unminted, Maybe::Present)
     }
 
     /// Bind the model implicit `entry`, written at the model type `declared`

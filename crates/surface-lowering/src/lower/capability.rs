@@ -1,8 +1,8 @@
 //! Capabilities in the lowering: the capability type `Cap {op, …}`, a
 //! returner's effect row `-F [I, …] A`, the exercise `c.op(v)`, the perform
 //! `I.op(v)` by an interface's name, the capability scope `handle c : I { M }
-//! with { … }`, and the resumption `k(v)` of a continuation an operation
-//! clause binds or a parameter states.
+//! with { … }` or `with N`, and the resumption `k(v)` of a continuation an
+//! operation clause binds or a parameter states.
 //!
 //! The rules these forms lower into are `gandr-core-checker`'s `capability`
 //! module; this one decides only their spelling and what each spelling
@@ -219,10 +219,12 @@ use crate::resolve::SurfaceName;
 use crate::resolve::binder_site;
 use crate::unbuilt::Unbuilt;
 
+mod answered;
 #[cfg(test)]
 mod tests;
 mod theory;
 
+use answered::Answering;
 pub(super) use theory::TheoryInterface;
 
 /// The name an abandonment is called by, where the program binds none.
@@ -422,6 +424,31 @@ pub(super) struct Scoped
     binder: NodeIndex,
     /// The subject, under the capability's binder.
     subject: Block,
+    /// What answers the interface's operations.
+    handlers: Handlers,
+}
+
+/// What answers a capability scope's operations, as the classification read
+/// it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Handlers
+{
+    /// The clauses the scope writes, `with { … }`.
+    Written(Written),
+    /// The module the scope names, `with N`, a model of the theory it handles.
+    Model(Arc<Answering>),
+}
+
+/// A capability scope's written clauses, as the classification read them.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Written
+{
     /// The return clause's body, under its result's binder.
     on_return: NodeIndex,
     /// The return clause's result binder, as written.
@@ -1667,7 +1694,8 @@ impl<'source> Lowerer<'_, 'source>
     /// Classify a capability scope,
     /// `handle c : I { M } with { pure(x) => N, oper op(p, k) => N_op, … }`,
     /// its interface a host's or a theory's with its value sorts, `handle c :
-    /// T with sort S = A { M } with { … }`.
+    /// T with sort S = A { M } with { … }`, the clauses of a theory's scope
+    /// given by a model of it the scope names, `with N`.
     ///
     /// # Specification
     /// - requires: `site` is a capability scope in term position.
@@ -1682,9 +1710,12 @@ impl<'source> Lowerer<'_, 'source>
     ///   for a theory's scope, whose written name is resolved to the theory's
     ///   declaration ([`crate::LoweredModule::resolutions`]); the scope is
     ///   planned over the interface, [`Self::handled`], the subject and the
-    ///   clauses in written order.
-    /// - fails: the wrong-sort refusal where no computation is read; the
-    ///   refusals of [`Self::handled`];
+    ///   clauses in written order, or, for `with N`, the theory's slot at the
+    ///   manifest's sorts ([`Self::theory_slot`]) and what `N` passes for it
+    ///   ([`Self::named_model`]).
+    /// - fails: the wrong-sort refusal where no computation is read, and at a
+    ///   module a host interface's scope names; the refusals of
+    ///   [`Self::handled`], [`Self::theory_slot`] and [`Self::named_model`];
     ///   [`LoweringRefusal::DuplicateDefinition`] for a second return clause; a
     ///   missing-operand fault for a scope with none; a misplaced-tile fault
     ///   for a scope out of shape, a minting clause naming no payload among
@@ -1702,6 +1733,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `lower::capability::tests::a_scoped_capability_cannot_escape`
     /// - witness: `lower::capability::tests::an_unknown_operation_or_interface_is_refused_by_name`
+    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(&super::Plan::Scope(_))))]
     pub(super) fn capability_scope(
         &mut self,
@@ -1736,6 +1768,7 @@ impl<'source> Lowerer<'_, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         let mut manifest = Vec::new();
+        let mut stated = Vec::new();
         while let Maybe::Present(_) = cursor.tile(TileName::WITH) {
             closed(site, &mut cursor, TileName::SORT)?;
             let Maybe::Present(sort) = cursor.tile(TileName::TYPE_IDENTIFIER)
@@ -1749,6 +1782,7 @@ impl<'source> Lowerer<'_, 'source>
             // subject stands after it in the tree.
             self.fixed_carriers.push(ty);
             manifest.push((sort, ty.node));
+            stated.push((sort, ty));
         }
         let interface = self.handled(site, written, &manifest)?;
         let held = self.bind(binder, frame)?;
@@ -1770,6 +1804,29 @@ impl<'source> Lowerer<'_, 'source>
 
         let mut cursor = Cursor::new(handlers, site.at.span);
         closed(site, &mut cursor, TileName::WITH)?;
+        if let Maybe::Present(module) = cursor.tile(TileName::TYPE_IDENTIFIER) {
+            exhausted(site, &cursor)?;
+            if !matches!(interface, Interface::Theory(_)) {
+                let named = Site { at: module, ..site };
+                return Err(named.out(FragmentBoundary::WrongSort));
+            }
+            let named = Site {
+                at: written,
+                ..site
+            };
+            let slot = self.theory_slot(named, site.at.span.start(), &stated)?;
+            let supplied = self.named_model(site, module, &slot)?;
+            self.plan(
+                site,
+                super::Plan::Scope(Scoped {
+                    interface,
+                    subject,
+                    binder: binder.node,
+                    handlers: Handlers::Model(Arc::new(Answering { slot, supplied })),
+                }),
+            );
+            return Ok(());
+        }
         closed(site, &mut cursor, TileName::BRACE_OPEN)?;
         let mut on_return: Maybe<(NodeIndex, Placed, NodeIndex), clause::Absent> =
             Maybe::Absent(clause::Absent::Unwritten);
@@ -1906,9 +1963,11 @@ impl<'source> Lowerer<'_, 'source>
                 interface,
                 subject,
                 binder: binder.node,
-                on_return,
-                result,
-                clauses,
+                handlers: Handlers::Written(Written {
+                    on_return,
+                    result,
+                    clauses,
+                }),
             }),
         );
 
@@ -2559,14 +2618,16 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the scope over the interface's whole signature, its subject,
-    ///   its return clause and its operation clauses in written order, each
-    ///   body minted as a body a path runs through, at `origin`, with the
-    ///   capability's written name recorded as the scope's binder and each
-    ///   clause's binders — the result, and each operation clause's payload and
-    ///   continuation by its place — as the scope's clause binders, and, for a
-    ///   scope over a theory, the theory and each sort its manifest fixes
-    ///   beside the type it fixes it to, in the order written, as the scope's
-    ///   theory; the first absence among the bodies.
+    ///   its return clause and its operation clauses — written ones in written
+    ///   order ([`Self::mint_clauses`]), or the ones its model gives in the
+    ///   theory's order ([`Self::mint_answered`]) — each body minted as a body
+    ///   a path runs through, at `origin`, with the capability's written name
+    ///   recorded as the scope's binder and each written clause's binders — the
+    ///   result, and each operation clause's payload and continuation by its
+    ///   place — as the scope's clause binders, and, for a scope over a theory,
+    ///   the theory and each sort its manifest fixes beside the type it fixes
+    ///   it to, in the order written, as the scope's theory; the first absence
+    ///   among the bodies.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2575,6 +2636,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
     /// - witness: `lower::capability::tests::a_scope_records_where_its_clauses_bind_1439`
     /// - witness: `lower::capability::tests::a_scope_records_the_theory_and_sorts_it_handles_2382`
+    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -2591,12 +2653,102 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Present(subject) => subject,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let on_return = match self.mint_body(clause_body(scoped.on_return), sink, origin) {
+        let minted = match (&scoped.handlers, &scoped.interface) {
+            (&Handlers::Written(ref written), _) => self.mint_clauses(written, sink, origin),
+            (&Handlers::Model(ref answering), &Interface::Theory(ref theory)) => {
+                self.mint_answered(theory, answering, sink, origin)
+            },
+            (&Handlers::Model(_), &Interface::Host(_)) => Maybe::Absent(lowered::Absent::Unminted),
+        };
+        let (on_return, clauses) = match minted {
+            Maybe::Present(minted) => minted,
+            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        self.interface_signature(&scoped.interface, sink, origin)
+            .map(|signature| {
+                let id =
+                    sink.arena
+                        .computation_scope(signature, subject, on_return, Arc::from(clauses));
+                let scope = sink.computation(id, origin);
+                if let Maybe::Present(name) = self.origin_at(scoped.binder) {
+                    sink.origins.record_binder(id, name);
+                }
+                if let Handlers::Written(ref written) = scoped.handlers {
+                    let binders = core::iter::once((ClauseBinder::Result, Some(written.result)))
+                        .chain(
+                            written
+                                .clauses
+                                .iter()
+                                .enumerate()
+                                .flat_map(|(place, clause)| {
+                                    let place = ClausePlace::from(place);
+                                    [
+                                        (ClauseBinder::Payload(place), clause.payload),
+                                        (
+                                            ClauseBinder::Continuation(place),
+                                            Some(clause.continuation),
+                                        ),
+                                    ]
+                                }),
+                        );
+                    for (binder, node) in binders {
+                        if let Some(node) = node
+                            && let Maybe::Present(name) = self.origin_at(node)
+                        {
+                            sink.origins.place_clause_binder(id, binder, name);
+                        }
+                    }
+                }
+                if let Interface::Theory(ref theory) = scoped.interface {
+                    let sorts = theory
+                        .manifest
+                        .iter()
+                        .filter_map(|&(ref sort, ty)| match self.value_type_at(ty) {
+                            Maybe::Present(fixed) => Some((sort.clone(), fixed)),
+                            Maybe::Absent(_) => None,
+                        })
+                        .collect();
+                    sink.origins.record_scope_theory(id, WrittenModel {
+                        theory: Name::from(theory.name.as_ref()),
+                        sorts,
+                    });
+                }
+                scope
+            })
+    }
+
+    /// The return clause and the operation clauses a scope writes, `written`,
+    /// each body minted as a body a path runs through.
+    ///
+    /// # Specification
+    /// - requires: every node `written` names is already minted or absent.
+    /// - ensures: the return clause's body, and one clause per written
+    ///   operation clause, in written order, a minting clause's body split into
+    ///   its payload and its mint, the mint placed live, at `origin`; the first
+    ///   absence among the bodies.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::capability_scope`].
+    /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present((_, ref clauses)) => clauses.len() == written.clauses.len(),
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_clauses(
+        &self,
+        written: &Written,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<(ComputationId, Vec<EffectClause>), lowered::Absent>
+    {
+        let on_return = match self.mint_body(clause_body(written.on_return), sink, origin) {
             Maybe::Present(on_return) => on_return,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
         };
-        let mut clauses: Vec<EffectClause> = Vec::with_capacity(scoped.clauses.len());
-        for clause in &scoped.clauses {
+        let mut clauses: Vec<EffectClause> = Vec::with_capacity(written.clauses.len());
+        for clause in &written.clauses {
             let mut body: ComputationId =
                 match self.mint_body(clause_body(clause.body), sink, origin) {
                     Maybe::Present(body) => body,
@@ -2636,51 +2788,8 @@ impl<'source> Lowerer<'_, 'source>
                 body,
             });
         }
-        self.interface_signature(&scoped.interface, sink, origin)
-            .map(|signature| {
-                let id =
-                    sink.arena
-                        .computation_scope(signature, subject, on_return, Arc::from(clauses));
-                let scope = sink.computation(id, origin);
-                if let Maybe::Present(name) = self.origin_at(scoped.binder) {
-                    sink.origins.record_binder(id, name);
-                }
-                let written = core::iter::once((ClauseBinder::Result, Some(scoped.result))).chain(
-                    scoped
-                        .clauses
-                        .iter()
-                        .enumerate()
-                        .flat_map(|(place, clause)| {
-                            let place = ClausePlace::from(place);
-                            [
-                                (ClauseBinder::Payload(place), clause.payload),
-                                (ClauseBinder::Continuation(place), Some(clause.continuation)),
-                            ]
-                        }),
-                );
-                for (binder, node) in written {
-                    if let Some(node) = node
-                        && let Maybe::Present(name) = self.origin_at(node)
-                    {
-                        sink.origins.place_clause_binder(id, binder, name);
-                    }
-                }
-                if let Interface::Theory(ref theory) = scoped.interface {
-                    let sorts = theory
-                        .manifest
-                        .iter()
-                        .filter_map(|&(ref sort, ty)| match self.value_type_at(ty) {
-                            Maybe::Present(fixed) => Some((sort.clone(), fixed)),
-                            Maybe::Absent(_) => None,
-                        })
-                        .collect();
-                    sink.origins.record_scope_theory(id, WrittenModel {
-                        theory: Name::from(theory.name.as_ref()),
-                        sorts,
-                    });
-                }
-                scope
-            })
+
+        Maybe::Present((on_return, clauses))
     }
 
     /// The laws the minted scope `scope` owes the theory `scoped` handles,
@@ -2690,19 +2799,22 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `scope` is the scope [`Self::mint_scope`] minted for
     ///   `scoped`.
-    /// - ensures: for a scope over a theory, its owner and one law per law of
-    ///   the theory whose operations each have a clause, in the theory's order,
-    ///   both sides read by [`handler::obligation`] and every node they mint at
-    ///   `origin`; nothing for a scope over a host interface. A law naming an
-    ///   operation the scope has no clause for is left to the coverage refusal
-    ///   the scope meets first.
+    /// - ensures: for a scope over a theory whose clauses it writes, its owner
+    ///   and one law per law of the theory whose operations each have a clause,
+    ///   in the theory's order, both sides read by [`handler::obligation`] and
+    ///   every node they mint at `origin`; nothing for a scope over a host
+    ///   interface, nor for one a model answers, whose module's ascription
+    ///   states the laws. A law naming an operation the scope has no clause for
+    ///   is left to the coverage refusal the scope meets first.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a scope over a theory with two laws owes both, and a
-    ///   scope over one with none owes nothing.
+    /// - hypothesis: L3 — a scope over a theory with two laws owes both, a
+    ///   scope over one with none owes nothing, and a scope naming a model owes
+    ///   nothing.
     /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
+    /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref laws)| laws.iter().all(|law| law.scope == scope)))]
     pub(super) fn scope_laws(
         scoped: &Scoped,
@@ -2711,7 +2823,8 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Option<(ConstantIndex, Vec<HandlerLaw>)>
     {
-        let Interface::Theory(ref theory) = scoped.interface
+        let (&Interface::Theory(ref theory), &Handlers::Written(_)) =
+            (&scoped.interface, &scoped.handlers)
         else {
             return None;
         };

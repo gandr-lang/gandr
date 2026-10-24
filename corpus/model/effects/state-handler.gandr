@@ -1,11 +1,14 @@
 // A handler over a theory: the scope takes `State` as its interface, fixes
 // the stored sort `S` at `Integer` where it names the theory, and answers
-// each operation by a clause. The carrier `C` is what the scope answers;
-// `get` replies an integer to its continuation, and `put` sends one and is
-// replied the unit.
+// each operation by a clause, or names a model of the theory whose
+// operations answer them. The carrier `C` is what the scope answers; `get`
+// replies an integer to its continuation, and `put` sends one and is replied
+// the unit.
 
 // The theory `State`.
 import "./state.gandr" ;
+// `Passing`, the state-passing model of `State`.
+import "./state-model.gandr" ;
 
 /// Reading always answers four, and storing is forgotten: the two reads
 /// answer four each, and the subject adds them and one.
@@ -21,4 +24,26 @@ def constant() -> Integer {
     oper get(k) => k(4),
     oper put(s, k) => k(unit)
   }
+}
+
+/// The state-passing model answers the scope in place of written clauses:
+/// each operation is the model's, so the subject computes a value of its
+/// carrier, a function of the initial state. Storing four and then reading
+/// twice, both reads see four, as `putThenGet` calls the model's operations
+/// by hand.
+@[ checks ]
+def answeredByPassing() -> Integer => Integer {
+  handle st : State with sort S = Integer {
+    st.put(4);
+    run a <- st.get();
+    run b <- st.get();
+    pure fn (_s) { pure a * 10 + b }
+  } with Passing
+}
+
+/// The handled program from an initial zero.
+@[ runs("44") ]
+def answeredFromZero() -> Integer {
+  run f <- answeredByPassing();
+  f(0)
 }
