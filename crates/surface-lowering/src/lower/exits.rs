@@ -542,9 +542,9 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::exits::tests::the_paths_of_a_computation_are_surveyed_through_nesting`
     /// - witness: `lower::loops::tests::a_loop_leaves_where_it_stands_only_through_its_breaks`
     #[spec(
-        captures: before = (self.fuel.remaining, self.leaves.len()),
+        captures: before = (self.fuel.remaining, usize::from(self.leaves.count())),
         ensures: |ret| {
-            self.leaves.len() == before.1
+            usize::from(self.leaves.count()) == before.1
                 && (ret.is_err()
                     || self.fuel.remaining
                         <= before.0.saturating_sub(self.own.len()))

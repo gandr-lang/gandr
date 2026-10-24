@@ -840,7 +840,7 @@ fn suspend<'closure>(
         }
     }
     let tables = sink.into_tables();
-    lowerer.plans.share();
+    lowerer.share_tables();
     let finished = lowerer
         .clone()
         .finish(&arena, origins.clone(), None)
