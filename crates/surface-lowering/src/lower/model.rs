@@ -53,6 +53,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FieldLabel;
 use gandr_surface_syntax::ByteOffset;
+use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
@@ -2626,6 +2627,47 @@ impl<'source> Lowerer<'_, 'source>
                 name,
             });
         };
+        self.packed_structure(
+            site,
+            (StructureIndex::from(outermost), module.span, name),
+            theory,
+            fixed,
+        )
+    }
+
+    /// The theories [`Self::bundled`] reads off the theory `theory` names,
+    /// each beside the module giving its members, as [`Self::packed_module`]
+    /// reads them, the outermost beside the top-level module `outermost`,
+    /// named `name`; a refusal names the module at `span`.
+    ///
+    /// # Specification
+    /// - requires: `outermost` is a top-level module declared before `site`;
+    ///   `theory` the name tile of a model type; `fixed` names sorts the model
+    ///   type fixes.
+    /// - ensures: as [`Self::packed_module`] once the module is found.
+    /// - fails: as [`Self::packed_module`], but for the unresolved name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// As [`Self::packed_module`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::packed_module`]; a slot a call omits packs
+    ///   each candidate module of its theory.
+    /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
+    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |packed| packed.theories.len() == packed.modules.len()))]
+    pub(in crate::lower) fn packed_structure(
+        &mut self,
+        site: Site,
+        (outermost, span, name): (StructureIndex, ByteSpan, SurfaceName<'source>),
+        theory: Placed,
+        fixed: &BTreeMap<Name, Placed>,
+    ) -> Result<Packed, LoweringRefusal<'source>>
+    {
         let written = Site { at: theory, ..site };
         let mut theories = self.bundled(written, (site.at.span.start(), self.name_at(theory)))?;
         if let Some(outermost) = theories.first_mut() {
@@ -2634,7 +2676,7 @@ impl<'source> Lowerer<'_, 'source>
                 .components
                 .retain(|component| !fixed.contains_key(&component.name));
         }
-        let mut modules = vec![StructureIndex::from(outermost); theories.len()];
+        let mut modules = vec![outermost; theories.len()];
         for (place, read) in theories.iter().enumerate() {
             let Some(&holder) = modules.get(place)
             else {
@@ -2644,7 +2686,7 @@ impl<'source> Lowerer<'_, 'source>
             for component in &read.signature.components {
                 let member = self.name_at(component.named);
                 let unknown = LoweringRefusal::UnknownMember {
-                    span: module.span,
+                    span,
                     module: name,
                     member,
                 };
@@ -3891,4 +3933,5 @@ mod reduct;
 pub(super) use self::flattened::ComponentPlace;
 pub(super) use self::flattened::Flattened;
 pub(super) use self::flattened::ModelSlot;
+pub(super) use self::flattened::PlannedModel;
 pub(super) use self::flattened::Supplied;

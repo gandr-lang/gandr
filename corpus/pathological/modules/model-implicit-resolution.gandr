@@ -1,0 +1,71 @@
+// An omitted model implicit no module answers, or more than one (#739): a call
+// leaving the slot out is refused when no module in scope is a model of its
+// theory at the types its arguments force, and when two are, naming both. An
+// omitted slot at a manifest model type is not resolved yet (#2317).
+
+/// A tally: a carrier, a zero, a step and a reading.
+@[ checks ]
+theory Tally {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
+
+/// The reading after one step, over any tally the slot names.
+@[ checks ]
+def stepped @[s : Model(Tally)] (c : s.C) -> Integer { s.read(s.incr(c)) }
+
+/// No module of `Tally` is in scope yet.
+@[ refuses("ModelUnanswered") ]
+def nothingYet() -> Integer { stepped(4) }
+
+/// Counting up by one.
+module Up : Model(Tally) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// One count more.
+  @[ checks ]
+  def incr(c : Integer) -> Integer { c + 1 }
+  /// The count as it is.
+  @[ checks ]
+  def read(c : Integer) -> Integer { c }
+}
+
+/// Counting up by ten.
+module Tens : Model(Tally) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// Ten counts more.
+  @[ checks ]
+  def incr(c : Integer) -> Integer { c + 10 }
+  /// The count as it is.
+  @[ checks ]
+  def read(c : Integer) -> Integer { c }
+}
+
+/// Text is no tally's carrier.
+@[ refuses("ModelUnanswered") ]
+def textual() -> Integer { stepped("four") }
+
+/// Both count integers.
+@[ refuses("ModelAmbiguous") ]
+def twin() -> Integer { stepped(4) }
+
+/// Naming one settles it.
+@[ runs("14") ]
+def named() -> Integer { stepped[s = Tens](4) }
+
+/// The reading from zero over a tally of integers.
+@[ checks ]
+def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
+  s.read(s.incr(s.zero))
+}
+
+/// A manifest slot is not resolved yet (#2317).
+@[ refuses("ImplicitUnsolved") ]
+def manifest() -> Integer { fromZero() }

@@ -1219,3 +1219,133 @@ fn an_implicit_solved_past_its_scope_escapes_1216()
     );
     assert_eq!(deferrals.solutions(&arena), Err((at, Unsolved::Escape)));
 }
+
+/// A collector open for a value declaration over a counter's model slot: its
+/// sort's hole and its step's, both declared at no binder, the sort's forced
+/// to the integers as `stepped(4)`'s argument forces it. The holes, the sort
+/// hole's node, and the codes of the integers and of the unit type.
+///
+/// # Specification
+/// trivial.
+fn forced_slot(
+    arena: &mut CoreArena,
+    deferrals: &mut super::Deferrals,
+) -> ([gandr_core_term::hole::HoleId; 2], ValueId, [ValueId; 2])
+{
+    let [sort, step] = [0_u32, 1].map(|index| {
+        gandr_core_term::hole::HoleId::nominated(gandr_core_term::hole::NominationIndex::from(
+            index,
+        ))
+        .expect("a nominated name")
+    });
+    let [sort_at, step_at] = [sort, step].map(|hole| arena.value_hole(hole));
+    deferrals.open(super::Collecting::On);
+    deferrals.nominate(sort_at, sort, Binders::NONE);
+    deferrals.nominate(step_at, step, Binders::NONE);
+    let decoded = arena.value_type_element(sort_at, Level::zero());
+    let integer = arena.value_type_base(BaseType::Integer);
+    assert_eq!(
+        deferrals.unify(
+            arena,
+            Binders::NONE,
+            TypeNode::Value(decoded),
+            TypeNode::Value(integer)
+        ),
+        super::Unified::Agreed,
+        "the argument forces the sort"
+    );
+    let unit = arena.value_type_unit();
+    let codes = [integer, unit].map(|ty| arena.value_quote(ty));
+    ([sort, step], sort_at, codes)
+}
+
+/// The candidate passing the sort `code` and the step named by the constant
+/// at `step`.
+///
+/// # Specification
+/// trivial.
+fn candidate(
+    arena: &mut CoreArena,
+    code: ValueId,
+    step: ConstantIndex,
+) -> gandr_core_term::model::Candidate
+{
+    gandr_core_term::model::Candidate {
+        components: Vec::from([code, arena.value_constant(step)]),
+    }
+}
+
+#[test]
+fn a_model_slot_resolves_to_the_candidate_its_sort_admits_739()
+{
+    // `stepped(4)` with `Up` over the integers and `Flag` over the unit type
+    // in scope: the argument forces the sort, so only `Up` is left, and the
+    // step is solved as `Up`'s.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (holes, _, [integer, unit]) = forced_slot(&mut arena, &mut deferrals);
+    let up = candidate(&mut arena, integer, ConstantIndex::from(1_usize));
+    let flag = candidate(&mut arena, unit, ConstantIndex::from(2_usize));
+    let up_step = up.components[1];
+    let slot = gandr_core_term::model::ModelSlot {
+        holes: Vec::from(holes),
+        candidates: Vec::from([flag, up]),
+    };
+    assert_eq!(deferrals.resolve(&mut arena, &[slot]), Ok(()));
+    let solutions = deferrals.solutions(&arena);
+    assert!(
+        solutions.as_ref().is_ok_and(|solved| solved
+            .get(&holes[1])
+            .is_some_and(|&(step, _)| step == up_step)),
+        "the step is `Up`'s: {solutions:?}"
+    );
+}
+
+#[test]
+fn a_model_slot_two_candidates_answer_is_ambiguous_739()
+{
+    // `Up` and `Tens`, both over the integers: the argument's sort leaves
+    // both, and the refusal names both by their places.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (holes, at, [integer, unit]) = forced_slot(&mut arena, &mut deferrals);
+    let candidates = Vec::from([
+        candidate(&mut arena, integer, ConstantIndex::from(1_usize)),
+        candidate(&mut arena, unit, ConstantIndex::from(2_usize)),
+        candidate(&mut arena, integer, ConstantIndex::from(3_usize)),
+    ]);
+    let slot = gandr_core_term::model::ModelSlot {
+        holes: Vec::from(holes),
+        candidates,
+    };
+    let survivors = [0_usize, 2]
+        .into_iter()
+        .map(gandr_core_term::model::CandidatePlace::from)
+        .fold(
+            gandr_core_term::model::Survivors::default(),
+            gandr_core_term::model::Survivors::with,
+        );
+    assert_eq!(
+        deferrals.resolve(&mut arena, &[slot]),
+        Err((at, CheckRefusal::ModelAmbiguous { at, survivors }))
+    );
+}
+
+#[test]
+fn a_model_slot_no_candidate_answers_is_refused_739()
+{
+    // Only `Flag`, over the unit type, where the argument forces the
+    // integers; and a scope holding no model at all.
+    let mut arena = CoreArena::new();
+    let mut deferrals = super::Deferrals::default();
+    let (holes, at, [_, unit]) = forced_slot(&mut arena, &mut deferrals);
+    let flag = candidate(&mut arena, unit, ConstantIndex::from(2_usize));
+    let [refuted, empty] = [Vec::from([flag]), Vec::new()].map(|candidates| {
+        deferrals.resolve(&mut arena, &[gandr_core_term::model::ModelSlot {
+            holes: Vec::from(holes),
+            candidates,
+        }])
+    });
+    assert_eq!(refuted, Err((at, CheckRefusal::ModelUnanswered { at })));
+    assert_eq!(empty, Err((at, CheckRefusal::ModelUnanswered { at })));
+}

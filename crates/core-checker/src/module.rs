@@ -1256,7 +1256,12 @@ fn decide(
             let (solved, first, solutions) = implicits(
                 context,
                 body,
-                (direction, reading, declaration.stages()),
+                (
+                    direction,
+                    reading,
+                    declaration.stages(),
+                    declaration.models(),
+                ),
                 first,
             );
             let decisions = context.take_nesting();
@@ -1690,25 +1695,31 @@ fn judge(
 type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_term::Binders)>;
 
 /// Judge `body` again with each hole its calls nominated for an omitted
-/// implicit filled by the solution the run `first` bound it to.
+/// implicit filled by the solution the run `first` bound it to, each model
+/// slot of `models` the run met first resolved to its one candidate.
 ///
 /// # Specification
 /// - requires: `first` is the run over `body` in `direction`, read as
-///   `reading`, that left the collector as it stands.
+///   `reading`, that left the collector as it stands; `models` are the slots
+///   the declaration's calls omit.
 /// - ensures: `body`, `first` and no solution when the run refused or met no
-///   nominated hole; the run's failure as [`CheckRefusal::ImplicitUnsolved`] at
-///   the first hole the solver left unbound; otherwise the filled body, minted
-///   after `body`, a fresh run over it, the pairs, stages and residue `first`
-///   left dropped as the nesting elaboration's second run drops them, and the
-///   solutions it was filled with.
+///   nominated hole; the resolution's refusal,
+///   [`CheckRefusal::ModelUnanswered`] or [`CheckRefusal::ModelAmbiguous`], at
+///   the first hole of the first slot it refuses; the run's failure as
+///   [`CheckRefusal::ImplicitUnsolved`] at the first hole the solver left
+///   unbound; otherwise the filled body, minted after `body`, a fresh run over
+///   it, the pairs, stages and residue `first` left dropped as the nesting
+///   elaboration's second run drops them, and the solutions it was filled with.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a call whose argument determines its implicit, one whose
 ///   two arguments disagree on it and one whose arguments determine none
-///   separate the filled run, the refuted run and the unsolved refusal.
+///   separate the filled run, the refuted run and the unsolved refusal; a call
+///   omitting a model slot one module answers runs as that module supplied.
 /// - witness: `bridge::tests::an_omitted_implicit_is_supplied_before_the_kernel_1216`
 /// - witness: `bridge::tests::an_omitted_implicit_is_refused_unforced_or_apart_1216`
+/// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
 #[spec(
     captures: refused = first.is_err(),
     ensures: |ret| ret.0 >= body && (!refused || (ret.0 == body && ret.2.is_empty())),
@@ -1716,16 +1727,20 @@ type Solutions = BTreeMap<gandr_core_term::hole::HoleId, (ValueId, gandr_core_te
 fn implicits(
     context: &mut CheckingContext<'_>,
     body: ValueId,
-    (direction, reading, stages): (
+    (direction, reading, stages, models): (
         Direction<FormedValueType>,
         Reading,
         &[gandr_kernel_term::StageBound],
+        &[gandr_core_term::model::ModelSlot],
     ),
     first: Result<Verdict, Failure>,
 ) -> (ValueId, Result<Verdict, Failure>, Solutions)
 {
     if first.is_err() {
         return (body, first, Solutions::new());
+    }
+    if let Err((at, refusal)) = context.resolve_models(models) {
+        return (body, Err(call_failure(refusal, at)), Solutions::new());
     }
     let solutions = match context.deferrals().solutions(context.arena()) {
         Ok(solutions) if solutions.is_empty() => return (body, first, solutions),
@@ -1864,8 +1879,21 @@ fn unsolved_failure(
     reason: crate::Unsolved,
 ) -> Failure
 {
+    call_failure(CheckRefusal::ImplicitUnsolved { at, reason }, at)
+}
+
+/// The failure `refusal` of a body's call, pursued at the hole `at` the call
+/// nominated.
+///
+/// # Specification
+/// trivial.
+fn call_failure(
+    refusal: CheckRefusal,
+    at: ValueId,
+) -> Failure
+{
     Failure::bare(
-        CheckRefusal::ImplicitUnsolved { at, reason },
+        refusal,
         Pursuit::new(
             CoreNode::Term(TermNode::Value(at)),
             Maybe::Absent(judged::Absent::Synthesised),

@@ -850,6 +850,15 @@ fn checked(
                  parentheses",
             ),
         },
+        CheckRefusal::ModelUnanswered { .. } => f.write_str(
+            "this call omits a model implicit no module in scope answers at the types its \
+             arguments force; declare a module of the theory, or supply one by name in brackets \
+             before the parentheses",
+        ),
+        CheckRefusal::ModelAmbiguous { .. } => f.write_str(
+            "this call omits a model implicit more than one module in scope answers at the types \
+             its arguments force; supply the one meant by name in brackets before the parentheses",
+        ),
         CheckRefusal::SessionNotEquivalent { .. } => {
             f.write_str("`bisim` needs the two protocols to behave alike at every step")
         },
@@ -2021,6 +2030,11 @@ mod tests
             CheckRefusal::ImplicitUnsolved {
                 at: value,
                 reason: gandr_core_checker::Unsolved::Unforced,
+            },
+            CheckRefusal::ModelUnanswered { at: value },
+            CheckRefusal::ModelAmbiguous {
+                at: value,
+                survivors: gandr_core_term::model::Survivors::default(),
             },
             CheckRefusal::SessionNotEquivalent { at: value },
             CheckRefusal::SessionNotSubtype { at: value },

@@ -299,7 +299,8 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                 .lawful(module.laws(lowered).to_vec())
                 .ruled(module.operation_rules(lowered))
                 .staged(module.stages(lowered).to_vec())
-                .supplied(module.supplies(lowered).to_vec());
+                .supplied(module.supplies(lowered).to_vec())
+                .resolving(module.models(lowered).to_vec());
             Some(match Entry::declared(module.worlds(lowered)) {
                 Maybe::Present(entry) => declaration.entered(entry),
                 Maybe::Absent(_) => declaration,

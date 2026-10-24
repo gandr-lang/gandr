@@ -4062,6 +4062,19 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
         self.supplies.extend_from_slice(supplies);
     }
 
+    /// Resolve each of the model slots `models` the judgement under way met,
+    /// as [`crate::elaboration::Deferrals::resolve`] does over the arena.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn resolve_models(
+        &mut self,
+        models: &[gandr_core_term::model::ModelSlot],
+    ) -> Result<(), (ValueId, CheckRefusal)>
+    {
+        self.deferrals.resolve(self.arena, models)
+    }
+
     /// Forget every stage minted and the fixpoint opened: a declaration's
     /// stages are its own, so the stages a refusal names do not depend on the
     /// declarations before it.

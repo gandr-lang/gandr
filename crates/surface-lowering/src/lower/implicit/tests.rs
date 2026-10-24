@@ -708,14 +708,16 @@ fn a_module_supplied_for_a_model_implicit_passes_its_members_739()
 #[test]
 fn an_omitted_model_implicit_nominates_a_hole_per_component_739()
 {
-    // `stepped(4)` passes one hole per component, each naming the slot.
+    // `stepped(4)` passes one hole per component, each naming the slot and
+    // the modules that may answer it.
     let source = format!("{STEPPED}def omitted() -> -F Integer {{ stepped(4) }}\n");
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source.as_str()), &mut arena);
     let holes = nominated_holes(&module, &arena, SurfaceName::from("omitted"));
-    let slot = Omitted::Implicit {
+    let slot = Omitted::Model {
         function: String::from("stepped"),
         implicit: String::from("s"),
+        candidates: Vec::from([String::from("Up"), String::from("Tens")]),
     };
     assert_eq!(
         holes
@@ -730,6 +732,92 @@ fn an_omitted_model_implicit_nominates_a_hole_per_component_739()
         ],
         "one hole per component, each the slot's"
     );
+}
+
+/// The declaration of `module` named `name`.
+///
+/// # Specification
+/// trivial.
+fn declaration_named<'module, 'source>(
+    module: &'module LoweredModule<'source>,
+    name: SurfaceName<'_>,
+) -> &'module crate::module::LoweredDeclaration<'source>
+{
+    module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == name)
+        .expect("the declaration is lowered")
+}
+
+#[test]
+fn an_omitted_model_implicit_plans_each_module_of_its_theory_739()
+{
+    // `stepped(4)` beside `Up`, `Tens`, a resetting counter reached through
+    // its include, and `Lone`, a model of another theory: the slot is filed
+    // for `omitted` with `Up` and `Tens`, each passing four components; both
+    // count the integers `4` forces, so the checker refuses the call naming
+    // both places.
+    let source = format!(
+        "{STEPPED}theory Lonely {{ sort L : Type; oper lone : L; }}\nmodule Lone : \
+         Model(Lonely) {{ type L = Integer; def lone = 0; }}\ndef omitted() -> -F Integer {{ \
+         stepped(4) }}\n"
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let omitted = declaration_named(&module, SurfaceName::from("omitted"));
+    let slots = module.models(omitted);
+    assert!(
+        matches!(slots, [slot] if slot.holes.len() == 4
+            && slot.candidates.len() == 2
+            && slot.candidates.iter().all(|candidate| candidate.components.len() == 4)),
+        "one slot of four holes, `Up` and `Tens` its candidates: {slots:?}"
+    );
+    let report = judged(&module, &mut arena);
+    let verdict = report
+        .judged()
+        .iter()
+        .find(|judged| judged.constant() == omitted.constant())
+        .map(gandr_core_checker::Judged::verdict);
+    assert!(
+        matches!(
+            verdict,
+            Some(Verdict::Refused(gandr_core_checker::CheckRefusal::ModelAmbiguous { survivors, .. }))
+                if survivors.places().map(usize::from).eq([0, 1])
+        ),
+        "both answer the integers: {verdict:?}"
+    );
+}
+
+#[test]
+fn a_model_slot_one_module_answers_checks_as_supplied_739()
+{
+    // `Up` counts integers and `Flips` flips a flag, a counter through its
+    // include: `4` forces `Up`, an annotated flag forces `Flips`, and each
+    // call checks as if it named its module.
+    let source = "\
+theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
+theory ResetCounter { include Counter; oper reset : (c : C) --> C; }
+module Up : Model(Counter) {
+  type C = Integer;
+  def zero = 0;
+  def incr(c : Integer) -> -F Integer { c + 1 }
+  def read(c : Integer) -> -F Integer { c }
+}
+module Flips : Model(ResetCounter) {
+  type C = Bool;
+  def zero = false;
+  def incr(c : Bool) -> -F Bool { case c { true => false, false => true } }
+  def read(c : Bool) -> -F Integer { case c { true => 1, false => 0 } }
+  def reset(c : Bool) -> -F Bool { false }
+}
+def stepped @[s : Model(Counter)] (c : s.C) -> -F Integer { s.read(s.incr(c)) }
+def counted() -> -F Integer { stepped(4) }
+def flipped() -> -F Integer { stepped((false : Bool)) }
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    assert_checked(&module, &mut arena);
 }
 
 #[test]

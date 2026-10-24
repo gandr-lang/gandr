@@ -14,6 +14,9 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueType;
 use gandr_core_term::hole::HoleId;
+use gandr_core_term::model::CandidatePlace;
+use gandr_core_term::model::ModelSlot;
+use gandr_core_term::model::Survivors;
 use gandr_core_unify::MetaId;
 use gandr_core_unify::Metas;
 use gandr_core_unify::Reason;
@@ -21,6 +24,7 @@ use gandr_core_unify::Side;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
+use crate::CheckRefusal;
 use crate::TypeNode;
 use crate::Unsolved;
 
@@ -649,5 +653,128 @@ impl Deferrals
             }
         }
         Ok(solutions)
+    }
+
+    /// Resolve each slot of `models` the running judgement met to the one
+    /// candidate the solver's store leaves, binding the slot's holes as that
+    /// candidate's components.
+    ///
+    /// # Specification
+    /// - requires: the judgement over the body has run, so every equation its
+    ///   arguments force has been posed.
+    /// - ensures: for each slot, in order, every hole of which the judgement
+    ///   met and some hole of which the solver left unbound: each candidate is
+    ///   tried on a copy of the store, its components posed against the holes,
+    ///   and one the solver refutes is dropped; a single candidate left binds
+    ///   the holes as its trial did. A slot whose holes are all bound, one a
+    ///   hole of which the judgement did not meet, and a candidate of another
+    ///   arity are left out.
+    /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
+    ///   no candidate is left; [`CheckRefusal::ModelAmbiguous`] there, naming
+    ///   every candidate left, when more than one is.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// One trial per candidate of each finite slot, each a run of the solver,
+    /// which its step budget bounds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a slot whose sort the argument forces resolves to the
+    ///   candidate of that sort, its operation then solved as the candidate's;
+    ///   two candidates of the forced sort are ambiguous, naming both; a slot
+    ///   no candidate of the forced sort answers is unanswered.
+    /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
+    /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
+    /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
+    #[spec(ensures: |ret| match ret {
+        | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
+        | Err((at, refusal)) => refusal == CheckRefusal::ModelUnanswered { at },
+        | Ok(()) => true,
+    })]
+    pub fn resolve(
+        &mut self,
+        arena: &mut CoreArena,
+        models: &[ModelSlot],
+    ) -> Result<(), (ValueId, CheckRefusal)>
+    {
+        let met: BTreeMap<HoleId, ValueId> = self
+            .nominated
+            .iter()
+            .filter_map(|&at| match arena.value(at) {
+                Some(&Value::Hole(hole)) => Some((hole, at)),
+                _ => None,
+            })
+            .collect();
+        let mut holes: Vec<(ValueId, MetaId)> = Vec::new();
+        let mut equations: Vec<gandr_core_unify::Equation> = Vec::new();
+        'slots: for slot in models {
+            holes.clear();
+            for hole in &slot.holes {
+                let (Some(&at), Maybe::Present(meta)) = (met.get(hole), self.metas.meta(*hole))
+                else {
+                    continue 'slots;
+                };
+                holes.push((at, meta));
+            }
+            let Some(&(first, _)) = holes.first()
+            else {
+                continue;
+            };
+            if holes
+                .iter()
+                .all(|&(_, meta)| matches!(self.metas.solution(meta), Maybe::Present(_)))
+            {
+                continue;
+            }
+            let mut survivors = Survivors::default();
+            let mut count = 0_usize;
+            let mut chosen = None;
+            for (place, candidate) in slot.candidates.iter().enumerate() {
+                if candidate.components.len() != holes.len() {
+                    continue;
+                }
+                let mut trial = self.metas.clone();
+                equations.clear();
+                equations.extend(holes.iter().zip(&candidate.components).map(
+                    |(&(at, meta), &component)| {
+                        let scope = match trial.scope(meta) {
+                            Maybe::Present(scope) => scope,
+                            Maybe::Absent(_) => Binders::NONE,
+                        };
+                        gandr_core_unify::Equation::new(
+                            scope,
+                            Side::Value(at),
+                            Side::Value(component),
+                        )
+                    },
+                ));
+                if let gandr_core_unify::Verdict::Refuted(_) =
+                    gandr_core_unify::solve(arena, &mut trial, &equations)
+                {
+                    continue;
+                }
+                survivors = survivors.with(CandidatePlace::from(place));
+                count = count.saturating_add(1);
+                if chosen.is_none() {
+                    chosen = Some(trial);
+                }
+            }
+            match (count, chosen) {
+                (1, Some(trial)) => self.metas = trial,
+                (0, _) | (_, None) => {
+                    return Err((first, CheckRefusal::ModelUnanswered { at: first }));
+                },
+                _ => {
+                    return Err((first, CheckRefusal::ModelAmbiguous {
+                        at: first,
+                        survivors,
+                    }));
+                },
+            }
+        }
+        Ok(())
     }
 }

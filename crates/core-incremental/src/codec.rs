@@ -5043,6 +5043,7 @@ where
             ref rules,
             ref stages,
             ref supplies,
+            ref models,
         } => {
             // A value naming no law keeps its original tag; a lawful one
             // takes its own, with the laws after the body; a ruled one takes
@@ -5050,8 +5051,13 @@ where
             // quantified over stages takes its own, with the laws and the
             // rules, however many, then each binder's bound; one whose calls
             // supply stages takes its own, with the laws, the rules and the
-            // bounds, however many, then each supply.
-            writer.tag(Tag(if !supplies.is_empty() {
+            // bounds, however many, then each supply; one whose calls omit a
+            // model slot takes its own, with the laws, the rules, the bounds
+            // and the supplies, however many, then each slot.
+            writer.tag(Tag(if !models.is_empty() {
+                10
+            }
+            else if !supplies.is_empty() {
                 7
             }
             else if !stages.is_empty() {
@@ -5081,7 +5087,8 @@ where
                 },
                 Maybe::Absent(body::Absent::Hole) => writer.tag(Tag(0)),
             }
-            let staged = !stages.is_empty() || !supplies.is_empty();
+            let supplied = !supplies.is_empty() || !models.is_empty();
+            let staged = !stages.is_empty() || supplied;
             if !laws.is_empty() || !rules.is_empty() || staged {
                 writer.count(Count(laws.len()))?;
                 for law in laws {
@@ -5106,12 +5113,24 @@ where
                     }))?;
                 }
             }
-            if !supplies.is_empty() {
+            if supplied {
                 writer.count(Count(supplies.len()))?;
                 for &(head, binder, stage) in supplies {
                     write_index(writer, head)?;
                     writer.count(Count(usize::from(binder)))?;
                     write_stage(writer, stage)?;
+                }
+            }
+            if !models.is_empty() {
+                writer.count(Count(models.len()))?;
+                for slot in models {
+                    write_indices(writer, &slot.holes)?;
+                    writer.count(Count(slot.candidates.len()))?;
+                    for components in &slot.candidates {
+                        for &component in components {
+                            write_index(writer, component)?;
+                        }
+                    }
                 }
             }
         },
@@ -5331,7 +5350,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
     let declaration = match reader.tag()?.0 {
-        tag @ (0 | 3 | 5 | 6 | 7) => {
+        tag @ (0 | 3 | 5 | 6 | 7 | 10) => {
             let signature = match reader.tag()?.0 {
                 0 => Maybe::Absent(signature::Absent::Unsigned),
                 1 => Maybe::Present(read_index(reader)?),
@@ -5383,15 +5402,37 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 }
             }
             let mut supplies = Vec::new();
-            if tag == 7 {
+            if tag == 7 || tag == 10 {
                 let count = reader.count()?.0;
-                if count == 0 {
+                if count == 0 && tag == 7 {
                     return Err(CodecError::NonCanonical);
                 }
                 for _supply in 0 .. count {
                     let head = read_index(reader)?;
                     let binder = gandr_kernel_term::StageBinder::from(reader.count()?.0);
                     supplies.push((head, binder, read_stage(reader)?));
+                }
+            }
+            let mut models = Vec::new();
+            if tag == 10 {
+                let count = reader.count()?.0;
+                if count == 0 {
+                    return Err(CodecError::NonCanonical);
+                }
+                for _slot in 0 .. count {
+                    let holes = read_indices(reader)?;
+                    if holes.is_empty() {
+                        return Err(CodecError::NonCanonical);
+                    }
+                    let mut candidates = Vec::new();
+                    for _candidate in 0 .. reader.count()?.0 {
+                        let mut components = Vec::with_capacity(holes.len());
+                        for _component in 0 .. holes.len() {
+                            components.push(read_index(reader)?);
+                        }
+                        candidates.push(components);
+                    }
+                    models.push(crate::content::ModelRoots { holes, candidates });
                 }
             }
             crate::content::DeclarationRoots::Value {
@@ -5401,6 +5442,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                 rules,
                 stages,
                 supplies,
+                models,
             }
         },
         1 => crate::content::DeclarationRoots::Data(read_data_roots(reader)?),
@@ -5447,9 +5489,17 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
     for (root, sort) in declaration.iter() {
         root_of_sort(&nodes, root, sort)?;
     }
-    if let crate::content::DeclarationRoots::Value { ref supplies, .. } = declaration {
+    if let crate::content::DeclarationRoots::Value {
+        ref supplies,
+        ref models,
+        ..
+    } = declaration
+    {
         for &(head, ..) in supplies {
             root_of_sort(&nodes, head, Sort::Value)?;
+        }
+        for &hole in models.iter().flat_map(|slot| &slot.holes) {
+            root_of_sort(&nodes, hole, Sort::Value)?;
         }
     }
     check_discovery(&nodes, declaration.iter().map(|(root, _)| root))?;
@@ -6415,6 +6465,81 @@ where
         .ok_or(CodecError::Corrupt)
 }
 
+/// Write `survivors`: the count of named places, each place ascending, then
+/// the count beyond them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`read_survivors`] reads back `survivors` from what was written.
+/// - fails: a place or count the codec cannot represent.
+/// - panics: none.
+/// - executable: none — the bytes go to a sink the predicate cannot read back.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ambiguous slot's refusal round-trips.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+fn write_survivors<Out>(
+    writer: &mut Writer<'_, Out>,
+    survivors: gandr_core_term::model::Survivors,
+) -> Result<(), CodecError>
+where
+    Out: Sink,
+{
+    writer.count(Count(survivors.places().count()))?;
+    for place in survivors.places() {
+        writer.count(Count(usize::from(place)))?;
+    }
+    writer.word(Word(u64::from(u32::from(survivors.beyond()))));
+    Ok(())
+}
+
+/// Read survivors as [`write_survivors`] writes them.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the set whose named places and count beyond were read.
+/// - fails: [`CodecError::NonCanonical`] for more places than the set names,
+///   places not strictly ascending or at or past [`Survivors::NAMED`];
+///   [`CodecError::Corrupt`] for a count beyond past `u32`; the reader's own
+///   failures.
+/// - panics: none.
+/// - executable: none — the bytes read are consumed from the reader, so the
+///   predicate cannot see what was read.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ambiguous slot's refusal round-trips.
+/// - witness: `codec::tests::every_refusal_round_trips_under_its_own_encoding`
+///
+/// [`Survivors::NAMED`]: gandr_core_term::model::Survivors::NAMED
+fn read_survivors(reader: &mut Reader<'_>)
+-> Result<gandr_core_term::model::Survivors, CodecError>
+{
+    use gandr_core_term::model::CandidatePlace;
+    use gandr_core_term::model::Survivors;
+    let named = reader.count()?.0;
+    if named > usize::from(Survivors::NAMED) {
+        return Err(CodecError::NonCanonical);
+    }
+    let mut survivors = Survivors::default();
+    let mut floor = 0_usize;
+    for _ in 0 .. named {
+        let place = reader.count()?.0;
+        if place < floor || place >= usize::from(Survivors::NAMED) {
+            return Err(CodecError::NonCanonical);
+        }
+        survivors = survivors.with(CandidatePlace::from(place));
+        floor = place.saturating_add(1);
+    }
+    let beyond = u32::try_from(reader.word()?.0).map_err(|_overflow| CodecError::Corrupt)?;
+    Ok(survivors.beyond_named(gandr_core_term::model::Beyond::from(beyond)))
+}
+
 /// Write a refusal.
 ///
 /// # Specification
@@ -6687,6 +6812,15 @@ where
             writer.tag(Tag(86));
             write_site(writer, at)?;
             write_listed(writer, &UNSOLVED, &reason)?;
+        },
+        Refusal::ModelUnanswered { at } => {
+            writer.tag(Tag(89));
+            write_site(writer, at)?;
+        },
+        Refusal::ModelAmbiguous { at, survivors } => {
+            writer.tag(Tag(90));
+            write_site(writer, at)?;
+            write_survivors(writer, survivors)?;
         },
         Refusal::TypeMismatch {
             at,
@@ -7205,6 +7339,8 @@ where
                     | Refusal::UaInequivalent { .. } => 54,
                     | Refusal::UnenclosedRun { .. } => 55,
                     | Refusal::ImplicitUnsolved { .. } => 86,
+                    | Refusal::ModelUnanswered { .. } => 89,
+                    | Refusal::ModelAmbiguous { .. } => 90,
                     | Refusal::SessionMismatch { .. } => 56,
                     | Refusal::Linearity { .. } => 57,
                     | Refusal::CapabilityForged { .. } => 58,
@@ -7497,6 +7633,13 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         86 => Refusal::ImplicitUnsolved {
             at: read_site(reader)?,
             reason: read_listed(reader, &UNSOLVED)?,
+        },
+        89 => Refusal::ModelUnanswered {
+            at: read_site(reader)?,
+        },
+        90 => Refusal::ModelAmbiguous {
+            at: read_site(reader)?,
+            survivors: read_survivors(reader)?,
         },
         56 => {
             let at = read_site(reader)?;
@@ -8271,6 +8414,8 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::SealSiteRepeated(_)
             | Refusal::UnenclosedRun { .. }
             | Refusal::ImplicitUnsolved { .. }
+            | Refusal::ModelUnanswered { .. }
+            | Refusal::ModelAmbiguous { .. }
             | Refusal::Linearity { .. }
             | Refusal::CapabilityForged { .. }
             | Refusal::CapabilityAmplified { .. }

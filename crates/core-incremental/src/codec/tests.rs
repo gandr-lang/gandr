@@ -1711,6 +1711,7 @@ fn checkpoint_encoding_reports_the_first_unresolved_plane()
                 rules: Vec::new(),
                 stages: Vec::new(),
                 supplies: Vec::new(),
+                models: Vec::new(),
             },
             &nodes,
         );
@@ -1951,6 +1952,7 @@ fn encoding_bounds_levels_in_every_node_family_and_plane()
                 rules: Vec::new(),
                 stages: Vec::new(),
                 supplies: Vec::new(),
+                models: Vec::new(),
             },
             &nodes,
         );
@@ -2063,6 +2065,7 @@ fn encoding_bounds_levels_in_every_auxiliary_type_table()
                 rules: Vec::new(),
                 stages: Vec::new(),
                 supplies: Vec::new(),
+                models: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2104,6 +2107,7 @@ fn a_lawful_value_root_round_trips_and_its_law_order_is_content()
                 rules: Vec::new(),
                 stages: Vec::new(),
                 supplies: Vec::new(),
+                models: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2157,6 +2161,7 @@ fn a_run_target_s_reason_round_trips_and_is_content_1105()
                 rules: Vec::new(),
                 stages: Vec::new(),
                 supplies: Vec::new(),
+                models: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2226,6 +2231,7 @@ fn a_ruled_value_root_round_trips_and_its_rules_are_content()
                 rules,
                 stages: Vec::new(),
                 supplies: Vec::new(),
+                models: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2342,6 +2348,7 @@ fn a_quantified_value_root_round_trips_and_its_bounds_are_content()
                 rules: Vec::new(),
                 stages,
                 supplies: Vec::new(),
+                models: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2404,6 +2411,7 @@ fn a_supplying_value_root_round_trips_and_its_supplies_are_content_1227()
                 rules: Vec::new(),
                 stages: vec![StageBound::Unbounded, StageBound::Unbounded],
                 supplies,
+                models: Vec::new(),
             },
             &[ContentNode::Tuple(Vec::new())],
         );
@@ -2448,6 +2456,78 @@ fn a_supplying_value_root_round_trips_and_its_supplies_are_content_1227()
         bytes.as_ref(),
         unsupplied.as_ref(),
         "and so does dropping the supply"
+    );
+}
+
+#[test]
+fn a_modelled_value_root_round_trips_and_its_candidates_are_content_739()
+{
+    // A body `(?a)` whose call omits a one-component slot `?a`, answered by
+    // candidates passing `1` and `2`.
+    let hole = gandr_core_term::hole::HoleId::nominated(
+        gandr_core_term::hole::NominationIndex::from(0_u32),
+    )
+    .expect("the first nominated name");
+    let checkpoints = |second: &'static str, models: bool| {
+        let models = if models {
+            vec![crate::content::ModelRoots {
+                holes: vec![NodeIndex::from(3_usize)],
+                candidates: vec![vec![NodeIndex::from(1_usize)], vec![NodeIndex::from(
+                    2_usize,
+                )]],
+            }]
+        }
+        else {
+            Vec::new()
+        };
+        let content = crate::fixture::item_content(
+            Reference::Unoccupied,
+            &crate::content::DeclarationRoots::Value {
+                signature: Maybe::Absent(signature::Absent::Unsigned),
+                body: Maybe::Present(NodeIndex::from(0_usize)),
+                laws: Vec::new(),
+                rules: Vec::new(),
+                stages: Vec::new(),
+                supplies: Vec::new(),
+                models,
+            },
+            &[
+                ContentNode::Tuple(vec![NodeIndex::from(3_usize)]),
+                ContentNode::Literal(crate::fixture::integer(crate::fixture::Digits("1"))),
+                ContentNode::Literal(crate::fixture::integer(crate::fixture::Digits(second))),
+                ContentNode::Hole(hole),
+            ],
+        );
+        let item = ItemCheckpoint::new(
+            content,
+            Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            ),
+            vec![Answered::new(Reference::Unoccupied, Answer::Untyped)],
+            Typing::Owed,
+        );
+        Checkpoints::new(CheckBudget::DEFAULT, vec![item])
+    };
+    let modelled = checkpoints("2", true);
+    let bytes = encode_checkpoints(&modelled).expect("a modelled root encodes");
+    assert_eq!(
+        decode_checkpoints(Bytes(bytes.as_ref())),
+        Ok(modelled),
+        "and decodes to itself, each candidate's components at their roots"
+    );
+    let other = encode_checkpoints(&checkpoints("3", true)).expect("another candidate encodes");
+    assert_ne!(
+        bytes.as_ref(),
+        other.as_ref(),
+        "changing a candidate changes the content"
+    );
+    let unmodelled = encode_checkpoints(&checkpoints("2", false));
+    assert!(
+        unmodelled.is_ok_and(|unmodelled| unmodelled.as_ref() != bytes.as_ref()),
+        "and so does dropping the slot"
     );
 }
 
@@ -2762,6 +2842,17 @@ fn every_refusal() -> Vec<Refusal>
         Refusal::ImplicitUnsolved {
             at,
             reason: gandr_core_checker::Unsolved::Escape,
+        },
+        Refusal::ModelUnanswered { at },
+        Refusal::ModelAmbiguous {
+            at,
+            survivors: [0_usize, 2, 70]
+                .into_iter()
+                .map(gandr_core_term::model::CandidatePlace::from)
+                .fold(
+                    gandr_core_term::model::Survivors::default(),
+                    gandr_core_term::model::Survivors::with,
+                ),
         },
         Refusal::CapabilityForged { at, expected: ty() },
         Refusal::CapabilityAmplified {

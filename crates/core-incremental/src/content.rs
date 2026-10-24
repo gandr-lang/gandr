@@ -2452,7 +2452,8 @@ pub enum DeclarationRoots
 {
     /// A value declaration's optional signature and body, the laws a fold
     /// rests on, the rules of the operation it lowered from, the stage
-    /// binders it is quantified over and the stages its calls supply.
+    /// binders it is quantified over, the stages its calls supply and the
+    /// model slots they omit.
     Value
     {
         /// The signature classifier, or why it is absent.
@@ -2481,6 +2482,12 @@ pub enum DeclarationRoots
             gandr_kernel_term::StageBinder,
             gandr_kernel_term::Stage,
         )>,
+        /// Each model slot a call of the body omits whose every hole the body
+        /// reaches, with the candidates the checker resolves it among; empty
+        /// for a declaration whose calls omit none. A candidate in scope
+        /// decides the verdict without the body naming it, so a changed
+        /// candidate is changed content.
+        models: Vec<ModelRoots>,
     },
     /// A complete nominal signature.
     Data(DataRoots),
@@ -2528,16 +2535,35 @@ pub struct InterfaceRoots
     pub law: Maybe<NodeIndex, gandr_core_checker::law::Absent>,
 }
 
+/// The roots of a model slot a call omits: the node of each hole the call
+/// nominated, numbered by the body's walk, and each candidate's components,
+/// each a value root of its own.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ModelRoots
+{
+    /// The hole nominated for each component, in signature order.
+    pub holes: Vec<NodeIndex>,
+    /// Each candidate's components, in the order the lowering met the
+    /// candidates; each holds one component per hole.
+    pub candidates: Vec<Vec<NodeIndex>>,
+}
+
 impl DeclarationRoots
 {
     /// Each root and its required family, in discovery order.
     ///
     /// # Specification
-    /// - ensures: value signature before body, all nominal roots in order as
+    /// - ensures: value signature before body, then each model candidate's
+    ///   components in slot and candidate order, all nominal roots in order as
     ///   [`DataRoots::sorted`] sorts them, an abstract type's kind before its
     ///   representation and both before its interface's relation, reflexivity
     ///   and law, or none for a world or a codata declaration.
     /// - executable: none — the return is an opaque iterator.
+    ///
+    /// # Clause cost
+    /// - bound: one step per root the declaration holds: its value roots, each
+    ///   model candidate's components and its nominal roots; nothing outside
+    ///   the roots is read.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — persistence rejects ill-sorted and reordered native
@@ -2545,10 +2571,11 @@ impl DeclarationRoots
     /// - witness: `tests::native_formers::native_checkpoint_round_trip_and_signature_invalidation`
     pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + Clone + '_
     {
-        let (values, data) = match *(self) {
+        let (values, data, models) = match *(self) {
             Self::Value {
                 ref signature,
                 ref body,
+                ref models,
                 ..
             } => (
                 [
@@ -2565,9 +2592,10 @@ impl DeclarationRoots
                     None,
                 ],
                 None,
+                models.as_slice(),
             ),
-            Self::Data(ref roots) => ([None; 5], Some(roots)),
-            Self::World | Self::Codata => ([None; 5], None),
+            Self::Data(ref roots) => ([None; 5], Some(roots), [].as_slice()),
+            Self::World | Self::Codata => ([None; 5], None, [].as_slice()),
             Self::Abstract(roots) => {
                 let (relation, reflexivity, law) = match roots.interface {
                     Maybe::Present(interface) => (
@@ -2589,12 +2617,19 @@ impl DeclarationRoots
                         law,
                     ],
                     None,
+                    [].as_slice(),
                 )
             },
         };
         values
             .into_iter()
             .flatten()
+            .chain(
+                models
+                    .iter()
+                    .flat_map(|slot| slot.candidates.iter().flatten())
+                    .map(|&root| (root, Sort::Value)),
+            )
             .chain(data.into_iter().flat_map(DataRoots::sorted))
     }
 
@@ -2633,6 +2668,7 @@ impl DeclarationRoots
                 ref rules,
                 ref stages,
                 ref supplies,
+                ref models,
             } => Self::Value {
                 signature: signature.map(&image),
                 body: body.map(&image),
@@ -2642,6 +2678,17 @@ impl DeclarationRoots
                 supplies: supplies
                     .iter()
                     .map(|&(head, binder, stage)| (image(head), binder, stage))
+                    .collect(),
+                models: models
+                    .iter()
+                    .map(|slot| ModelRoots {
+                        holes: slot.holes.iter().map(|&hole| image(hole)).collect(),
+                        candidates: slot
+                            .candidates
+                            .iter()
+                            .map(|components| components.iter().map(|&root| image(root)).collect())
+                            .collect(),
+                    })
                     .collect(),
             },
             Self::Data(ref roots) => Self::Data(roots.renumbered(&image)),
@@ -3557,12 +3604,13 @@ pub struct Encoded
     && match layout.items.get(usize::from(ordinal)) {
         Some(item) => layout.references.get(usize::from(ordinal)) == Some(&ret.content.reference)
             && { let (matched_left_value, matched_right_value) = (item.declaration().content(),&ret.content.declaration);
-if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules,stages:ref actual_stages,supplies:ref actual_supplies } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
+if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } = *matched_left_value && let DeclarationRoots::Value { signature:ref actual_signature,body:ref actual_body,laws:ref actual_laws,rules:ref actual_rules,stages:ref actual_stages,supplies:ref actual_supplies,models:ref actual_models } = *matched_right_value { signature.map(|ty| ret.sites.0.get(&ArenaNode::ValueType(ty)).copied()) == actual_signature.map(Some)
                     && body.map(|value| ret.sites.0.get(&ArenaNode::Value(value)).copied()) == actual_body.map(Some)
                     && item.declaration().laws().iter().map(|&law| layout.resolve(law)).eq(actual_laws.iter().cloned())
                     && *actual_rules == rule_roots(layout, item.declaration().operation_rules())
                     && actual_stages.as_slice() == item.declaration().stages()
-                    && actual_supplies.iter().copied().eq(item.declaration().supplies().iter().filter_map(|supply| ret.sites.0.get(&ArenaNode::Value(supply.head)).map(|&head| (head, supply.binder, supply.stage)))) }
+                    && actual_supplies.iter().copied().eq(item.declaration().supplies().iter().filter_map(|supply| ret.sites.0.get(&ArenaNode::Value(supply.head)).map(|&head| (head, supply.binder, supply.stage))))
+                    && actual_models.len() <= item.declaration().models().len() }
  else if let gandr_core_checker::DeclarationContent::Data(ref signature) = *matched_left_value && let DeclarationRoots::Data(ref roots) = *matched_right_value { ret.sites.0.get(&ArenaNode::ValueType(signature.kind())) == Some(&roots.kind)
                     && signature.parameters().iter().map(|&ty| ret.sites.0.get(&ArenaNode::ValueType(ty))).eq(roots.parameters.iter().map(Some))
                     && signature.constructors().len() == roots.constructors.len()
@@ -3580,7 +3628,7 @@ if let gandr_core_checker::DeclarationContent::Value { ref signature,ref body } 
  else { matches!((matched_left_value, matched_right_value), (gandr_core_checker::DeclarationContent::World, DeclarationRoots::World) | (gandr_core_checker::DeclarationContent::Codata(_), DeclarationRoots::Codata)) }
 } && ret.content.locus == layout.locus(),
         None => ret.content.reference == Reference::Unoccupied
-            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages,ref supplies} if laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty())
+            && matches!(ret.content.declaration,DeclarationRoots::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Absent(body::Absent::Hole),ref laws,ref rules,ref stages,ref supplies,ref models} if laws.is_empty() && rules.is_empty() && stages.is_empty() && supplies.is_empty() && models.is_empty())
             && ret.content.nodes.is_empty(),
     })]
 pub fn encode_item(
@@ -3599,6 +3647,7 @@ pub fn encode_item(
                 rules: Vec::new(),
                 stages: Vec::new(),
                 supplies: Vec::new(),
+                models: Vec::new(),
             })
         },
         |item| {
@@ -3618,6 +3667,7 @@ pub fn encode_item(
                     rules: rule_roots(layout, item.declaration().operation_rules()),
                     stages: item.declaration().stages().to_vec(),
                     supplies: Vec::new(),
+                    models: Vec::new(),
                 },
                 gandr_core_checker::DeclarationContent::Data(ref signature) => {
                     DeclarationRoots::Data(encoder.data_roots(signature))
@@ -3653,10 +3703,14 @@ pub fn encode_item(
     );
     encoder.drain();
     // A supplied head is numbered by the body's walk, never as a root of its
-    // own; a head the body no longer reaches supplies nothing.
+    // own; a head the body no longer reaches supplies nothing. A model slot's
+    // holes are numbered the same way, and a slot the body no longer reaches
+    // whole is left out; each candidate's components are roots of their own.
     let mut declaration = declaration;
     if let DeclarationRoots::Value {
-        ref mut supplies, ..
+        ref mut supplies,
+        ref mut models,
+        ..
     } = declaration
         && let Some(item) = layout.items.get(usize::from(ordinal))
     {
@@ -3666,6 +3720,42 @@ pub fn encode_item(
                 .get(&ArenaNode::Value(supply.head))
                 .map(|&raw| (raw, supply.binder, supply.stage))
         }));
+        let met: BTreeMap<gandr_core_term::hole::HoleId, NodeIndex> = encoder
+            .seen
+            .iter()
+            .filter_map(|(&node, &raw)| match node {
+                ArenaNode::Value(at) => match arena.value(at) {
+                    Some(&gandr_core_term::Value::Hole(hole)) => Some((hole, raw)),
+                    _ => None,
+                },
+                ArenaNode::Computation(_) | ArenaNode::ValueType(_) | ArenaNode::CompType(_) => {
+                    None
+                },
+            })
+            .collect();
+        for slot in item.declaration().models() {
+            let Some(holes) = slot
+                .holes
+                .iter()
+                .map(|hole| met.get(hole).copied())
+                .collect::<Option<Vec<NodeIndex>>>()
+            else {
+                continue;
+            };
+            let candidates = slot
+                .candidates
+                .iter()
+                .map(|candidate| {
+                    candidate
+                        .components
+                        .iter()
+                        .map(|&component| encoder.discover(ArenaNode::Value(component)))
+                        .collect()
+                })
+                .collect();
+            models.push(ModelRoots { holes, candidates });
+        }
+        encoder.drain();
     }
     let raw_roots: Vec<NodeIndex> = declaration.iter().map(|(root, _)| root).collect();
     let tabled = tabled(&encoder.nodes, &raw_roots);

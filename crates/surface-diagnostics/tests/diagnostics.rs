@@ -1472,6 +1472,27 @@ fn repeated_equal_siblings_point_at_the_right_occurrence()
     );
 }
 
+/// A call whose omitted model two modules answer names both, in the order
+/// they are declared, and the supply that settles it (#739).
+#[test]
+fn an_ambiguous_model_slot_names_every_module_that_answers_it_739()
+{
+    let text = "theory Tally {\n  sort C : Type;\n  oper incr : (c : C) --> C;\n  oper read : (c : \
+                C) --> Integer;\n}\ndef stepped @[s : Model(Tally)] (c : s.C) -> Integer { \
+                s.read(s.incr(c)) }\nmodule Up : Model(Tally) {\n  type C = Integer;\n  def \
+                incr(c : Integer) -> Integer { c + 1 }\n  def read(c : Integer) -> Integer { c \
+                }\n}\nmodule Tens : Model(Tally) {\n  type C = Integer;\n  def incr(c : Integer) \
+                -> Integer { c + 10 }\n  def read(c : Integer) -> Integer { c }\n}\ndef twin() \
+                -> Integer { stepped(4) }\n";
+    assert_eq!(
+        only(Path::new("ambiguous.gandr"), SourceText::from(text))
+            .message
+            .text,
+        "more than one module in scope answers the model implicit `s` this call to `stepped` \
+         omits: `Up` and `Tens`; supply the one meant as `stepped[s = …](…)`"
+    );
+}
+
 #[test]
 fn a_shadowed_builtin_is_a_warning()
 {

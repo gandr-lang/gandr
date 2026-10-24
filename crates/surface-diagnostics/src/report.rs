@@ -1149,9 +1149,11 @@ impl fmt::Display for MessageText<'_>
     /// - requires: nothing.
     /// - ensures: a refused declaration writes its refusal's plain message, and
     ///   an omitted implicit the solver left unbound names the implicit and the
-    ///   function its call wrote, where the origins record them; a source
-    ///   refused as a whole says so, then the plain message; every other report
-    ///   writes its title, which is already the user's.
+    ///   function its call wrote, where the origins record them, as does a
+    ///   model slot no module or more than one answers, naming every module
+    ///   that answers it; a source refused as a whole says so, then the plain
+    ///   message; every other report writes its title, which is already the
+    ///   user's.
     /// - provides: the first line of a diagnostic.
     /// - fails: if the formatter rejects a write.
     /// - panics: none.
@@ -1175,10 +1177,17 @@ impl fmt::Display for MessageText<'_>
                 origins,
                 ..
             } => match origins.omitted(at) {
-                Maybe::Present(&Omitted::Implicit {
-                    ref function,
-                    ref implicit,
-                }) => match unsolved(reason) {
+                Maybe::Present(
+                    &Omitted::Implicit {
+                        ref function,
+                        ref implicit,
+                    }
+                    | &Omitted::Model {
+                        ref function,
+                        ref implicit,
+                        ..
+                    },
+                ) => match unsolved(reason) {
                     Maybe::Present(why) => write!(
                         f,
                         "the solver cannot determine the implicit `{implicit}` this call to \
@@ -1204,6 +1213,70 @@ impl fmt::Display for MessageText<'_>
                 },
                 Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
             },
+            Subject::Refused {
+                refusal: refusal @ Refusal::Checking(CheckRefusal::ModelUnanswered { at }),
+                origins,
+                ..
+            } => match origins.omitted(at) {
+                Maybe::Present(&Omitted::Model {
+                    ref function,
+                    ref implicit,
+                    ref candidates,
+                }) => {
+                    write!(
+                        f,
+                        "no module in scope answers the model implicit `{implicit}` this call to \
+                         `{function}` omits"
+                    )?;
+                    if !candidates.is_empty() {
+                        f.write_str(" at the types its arguments force: ")?;
+                        named(f, candidates.iter().map(String::as_str))?;
+                        f.write_str(if candidates.len() == 1 {
+                            " does not"
+                        }
+                        else {
+                            " do not"
+                        })?;
+                    }
+                    write!(f, "; supply one as `{function}[{implicit} = …](…)`")
+                },
+                Maybe::Present(&(Omitted::Implicit { .. } | Omitted::Wildcard))
+                | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
+            },
+            Subject::Refused {
+                refusal: refusal @ Refusal::Checking(CheckRefusal::ModelAmbiguous { at, survivors }),
+                origins,
+                ..
+            } => match origins.omitted(at) {
+                Maybe::Present(&Omitted::Model {
+                    ref function,
+                    ref implicit,
+                    ref candidates,
+                }) => {
+                    write!(
+                        f,
+                        "more than one module in scope answers the model implicit `{implicit}` \
+                         this call to `{function}` omits: "
+                    )?;
+                    named(
+                        f,
+                        survivors
+                            .places()
+                            .filter_map(|place| candidates.get(usize::from(place)))
+                            .map(String::as_str),
+                    )?;
+                    let beyond = u32::from(survivors.beyond());
+                    if beyond > 0 {
+                        write!(f, ", and {beyond} more")?;
+                    }
+                    write!(
+                        f,
+                        "; supply the one meant as `{function}[{implicit} = …](…)`"
+                    )
+                },
+                Maybe::Present(&(Omitted::Implicit { .. } | Omitted::Wildcard))
+                | Maybe::Absent(_) => fmt::Display::fmt(&Plain(refusal), f),
+            },
             Subject::Refused { refusal, .. } => fmt::Display::fmt(&Plain(refusal), f),
             Subject::Source(refusal) => write!(
                 f,
@@ -1219,6 +1292,45 @@ impl fmt::Display for MessageText<'_>
             | Subject::Ledger { .. } => fmt::Display::fmt(&TitleText(self.0), f),
         }
     }
+}
+
+/// Write `names` as a list in prose, each in backticks: `` `A` ``,
+/// `` `A` and `B` ``, `` `A`, `B` and `C` ``.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: every name once, in order, the last two joined by `and` and every
+///   earlier pair by a comma; nothing for no name.
+/// - fails: if the formatter rejects a write.
+/// - panics: none.
+/// - executable: none — the formatter exposes no output buffer.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an ambiguous slot names its two modules.
+/// - witness: `tests::diagnostics::an_ambiguous_model_slot_names_every_module_that_answers_it_739`
+fn named<'name>(
+    f: &mut fmt::Formatter<'_>,
+    names: impl Iterator<Item = &'name str>,
+) -> fmt::Result
+{
+    let mut names = names.peekable();
+    let mut first = true;
+    while let Some(name) = names.next() {
+        if !first {
+            f.write_str(if names.peek().is_some() {
+                ", "
+            }
+            else {
+                " and "
+            })?;
+        }
+        write!(f, "`{name}`")?;
+        first = false;
+    }
+    Ok(())
 }
 
 /// The note a refused declaration closes with.

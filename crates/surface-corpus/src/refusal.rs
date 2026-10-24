@@ -625,6 +625,11 @@ pub enum RefusalName
     /// A call omitting an implicit neither its arguments nor the type it is
     /// checked against determine.
     ImplicitUnsolved,
+    /// A call omitting a model implicit no module in scope answers.
+    ModelUnanswered,
+    /// A call omitting a model implicit more than one module in scope
+    /// answers.
+    ModelAmbiguous,
     /// A definition's region binder named as a value.
     RegionAsValue,
     /// A source's top-level `main` declared at a type no entry has.
@@ -871,7 +876,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 205_usize] = [
+    pub const VOCABULARY: [Self; 207_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -973,6 +978,8 @@ impl RefusalName
         Self::ImplicitInParentheses,
         Self::ModelImplicitValue,
         Self::ImplicitUnsolved,
+        Self::ModelUnanswered,
+        Self::ModelAmbiguous,
         Self::RegionAsValue,
         Self::EntryType,
         Self::StrayReceiverMode,
@@ -1165,6 +1172,8 @@ impl RefusalName
         (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
         (Self::ModelImplicitValue, b"ModelImplicitValue") |
         (Self::ImplicitUnsolved, b"ImplicitUnsolved") |
+        (Self::ModelUnanswered, b"ModelUnanswered") |
+        (Self::ModelAmbiguous, b"ModelAmbiguous") |
         (Self::RegionAsValue, b"RegionAsValue") |
         (Self::EntryType, b"EntryType") |
         (Self::StrayReceiverMode, b"StrayReceiverMode") |
@@ -1494,6 +1503,8 @@ impl RefusalName
             Self::ImplicitInParentheses => "ImplicitInParentheses",
             Self::ModelImplicitValue => "ModelImplicitValue",
             Self::ImplicitUnsolved => "ImplicitUnsolved",
+            Self::ModelUnanswered => "ModelUnanswered",
+            Self::ModelAmbiguous => "ModelAmbiguous",
             Self::RegionAsValue => "RegionAsValue",
             Self::EntryType => "EntryType",
             Self::StrayReceiverMode => "StrayReceiverMode",
@@ -2195,6 +2206,8 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::UaInequivalent { .. }), RefusalName::UnknownGenerator | RefusalName::PastTheBound | RefusalName::CorollaCardinality | RefusalName::CorollaTables | RefusalName::NotInverse | RefusalName::NotNatural | RefusalName::TranslatorStuck)
         | (Self::Checking(CheckRefusal::UnenclosedRun { .. }), RefusalName::UnenclosedRun)
         | (Self::Checking(CheckRefusal::ImplicitUnsolved { .. }), RefusalName::ImplicitUnsolved)
+        | (Self::Checking(CheckRefusal::ModelUnanswered { .. }), RefusalName::ModelUnanswered)
+        | (Self::Checking(CheckRefusal::ModelAmbiguous { .. }), RefusalName::ModelAmbiguous)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped | RefusalName::HeldConsumed)
@@ -2540,6 +2553,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::UaInequivalent { defect: UaDefect::Stuck { .. }, .. }, RefusalName::TranslatorStuck)
         | (CheckRefusal::UnenclosedRun { .. }, RefusalName::UnenclosedRun)
         | (CheckRefusal::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
+        | (CheckRefusal::ModelUnanswered { .. }, RefusalName::ModelUnanswered)
+        | (CheckRefusal::ModelAmbiguous { .. }, RefusalName::ModelAmbiguous)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Action { .. }, .. }, RefusalName::SessionMismatch)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Label, .. }, RefusalName::UnofferedLabel)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Arms, .. }, RefusalName::OfferArms)
@@ -2668,6 +2683,8 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         },
         CheckRefusal::UnenclosedRun { .. } => RefusalName::UnenclosedRun,
         CheckRefusal::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
+        CheckRefusal::ModelUnanswered { .. } => RefusalName::ModelUnanswered,
+        CheckRefusal::ModelAmbiguous { .. } => RefusalName::ModelAmbiguous,
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => RefusalName::SessionMismatch,
             ProtocolDefect::Label => RefusalName::UnofferedLabel,

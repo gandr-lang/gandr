@@ -1,0 +1,13 @@
+// `model-resolution` with its modules imported the other way round (#739):
+// the order a source imports its candidates in chooses nothing.
+import "./model-resolution-flips.gandr" ;
+import "./model-resolution-up.gandr" ;
+import "./model-resolution-tally.gandr" ;
+
+/// The integers force `Up`.
+@[ runs("5") ]
+def countedSwapped() -> Integer { advanced(4) }
+
+/// A flag forces `Flips`, a tally through its include.
+@[ runs("1") ]
+def flippedSwapped() -> Integer { advanced((false : Bool)) }
