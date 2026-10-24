@@ -302,17 +302,23 @@ jobs:
   # (#702): checker 0.41, rest 0.26, and the surface shard's 0.51 split as
   # engine 0.37 and faces 0.32, each its setup, two thirds of the one
   # shard's build and its own tests' share (#1177); a join is setup,
-  # transfer and the witness listing. The mutants lane's budget is its
-  # first measurement's, a one-function change at about 290 s under act on a
-  # loaded host with no restored state, until ten hosted runs give it a
-  # median. The macOS lanes run in the daily run and on a dispatch, which
-  # this job does not sample. The daily mutation run is the one lane held
-  # over the scheduled runs (`--daily`): fourteen minutes, its job's own
-  # limit, so a night over it means the night's sizing failed. This
-  # workflow's own all-features and recovery lanes are held over its
-  # scheduled runs (`--nightly`): about 1.5 times the 194 to 216 s each third
-  # of the all-features crates took on a dispatch, and the 210 s the recovery
-  # sweep's setup and run took inside the sweeps job.
+  # transfer and the witness listing. The dispatcher shard took the engine
+  # shard's longest chain and three quarters of its tests (#2148), so it
+  # holds the engine's budgets and the engine keeps them as a bound. The
+  # recovery lane's budget is 1.5 times the sum of the plain lane's hosted
+  # steps it repeats, about 175 s: setup, restore, the parser's tests' build
+  # and the 77 s sweep, until ten hosted runs give it a median; the plain
+  # lane's stands. The mutants lane's budget is its first measurement's, a
+  # one-function change at about 290 s under act on a loaded host with no
+  # restored state, until ten hosted runs give it a median. The macOS lanes
+  # run in the daily run and on a dispatch, which this job does not sample.
+  # The daily mutation run is the one lane held over the scheduled runs
+  # (`--daily`): fourteen minutes, its job's own limit, so a night over it
+  # means the night's sizing failed. This workflow's own all-features and
+  # recovery lanes are held over its scheduled runs (`--nightly`): about 1.5
+  # times the 194 to 216 s each third of the all-features crates took on a
+  # dispatch, and the 210 s the recovery sweep's setup and run took inside
+  # the sweeps job.
   lane-budget:
     name: hold each CI lane to its budget
     needs: ci-image-ref
@@ -336,6 +342,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: >-
           mise run ci:lane-budget --issue "CI lane budgets"
+          --budget "test enforcing targets (linux, dispatcher)=170"
+          --budget "test enforcing targets (linux, dispatcher):deep=250"
           --budget "test enforcing targets (linux, engine)=170"
           --budget "test enforcing targets (linux, engine):deep=250"
           --budget "test enforcing targets (linux, faces)=145"
@@ -346,6 +354,7 @@ jobs:
           --budget "test enforcing targets (linux, rest):deep=200"
           --budget "join the enforcing shards (linux)=120"
           --budget "test plain-only targets (linux)=160"
+          --budget "sweep the recovery records (linux)=260"
           --budget "document the workspace (linux)=150"
           --budget "test the documentation examples (linux)=200"
           --budget "check quenchant compiler policy=180"

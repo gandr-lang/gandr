@@ -624,14 +624,11 @@ jobs:
   # the documentation examples, units no other plain gate builds; plain
   # Clippy lints the plain-only targets. On main's push the Linux test lanes
   # run only when no queue run tested the commit, and then build on main's
-  # state and cache theirs as main's. A pull request, stacked or not, whose
-  # change reaches the recovery records (`parser`) runs the plain lane too,
-  # its full recovery sweep included, so a stale record is red on the pull
-  # request rather than first in the queue (#2101).
+  # state and cache theirs as main's.
   cargo-test-plain-only:
     name: test plain-only targets (linux)
     needs: *rust-needs
-    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'pull_request' && needs.prepare.outputs.parser == 'true') }}
+    if: ${{ !cancelled() && !failure() && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true') }}
     runs-on: *linux
     permissions: &build-state-read-permissions
       contents: read
@@ -642,7 +639,6 @@ jobs:
     env:
       CI_BUILD_STATE: cargo-test-plain-only
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
-      CI_RECOVERY: ${{ needs.prepare.outputs.parser }}
       # The lane runs three Cargo commands over three package selections: the
       # parser's tests, the driver the corpus roots run, and the comments
       # suite. Each resolves its own features, so each compiled the changed
@@ -656,7 +652,8 @@ jobs:
       - *trust-workspace
       # A merge group's sweeps read the whole group's change, from its base
       # on main: the entry below it is its parent (#2101).
-      - name: fetch the merge group's base
+      - &fetch-sweep-base
+        name: fetch the merge group's base
         if: ${{ needs.prepare.outputs.sweep-base != '' }}
         env:
           CI_SWEEP_BASE: ${{ needs.prepare.outputs.sweep-base }}
@@ -716,13 +713,6 @@ jobs:
         run: |
           mkdir -p "$CI_WITNESS_LISTINGS"
           mise run ci:witness-listing
-      # A change that reaches the recovery records sweeps every one of them at
-      # every row, the sources parsed on every core, under half a minute plain
-      # (#2148); the enforcing shards keep their sample, where every row would
-      # take half an hour (#1434).
-      - name: sweep every recovery record the change reaches
-        if: ${{ env.CI_RECOVERY == 'true' }}
-        run: mise run ci:recovery
       # Witness discovery lists the enforcing test inventory, so it runs where
       # that graph is already built: anywhere else it compiles the graph again.
       # The gate binary comes from the revision's cache when present.
@@ -820,6 +810,48 @@ jobs:
           name: spec-cost-ratio${{ env.CI_SHARD != '' && format('-{0}', env.CI_SHARD) || '' }}
           path: target/spec-cost-ratio.md
           if-no-files-found: error
+      - *lane-timing
+
+  # The recovery sweep in a lane of its own (#2148). A change that reaches
+  # the recovery records (`parser`) sweeps every one of them at every row,
+  # the sources parsed on every core, which took 77 s of the plain lane's 267
+  # and ran after its build, before the corpus roots: beside the plain lane
+  # each ends sooner. It restores the plain lane's state and builds what that
+  # lane's first build does, the parser's tests, and saves and hands on
+  # nothing: the plain lane's state holds the same units. A pull request,
+  # stacked or not, whose change reaches the records runs it too, so a
+  # stale record is red on the pull request rather than first in the queue
+  # (#2101). The enforcing shards keep their sample, where every row would
+  # take half an hour (#1434).
+  cargo-test-recovery:
+    name: sweep the recovery records (linux)
+    needs: *rust-needs
+    if: ${{ !cancelled() && !failure() && needs.prepare.outputs.parser == 'true' && (needs.prepare.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') || needs.prepare.outputs.unbuilt == 'true' || github.event_name == 'pull_request') }}
+    runs-on: *linux
+    permissions: *build-state-read-permissions
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 30
+    env:
+      CI_BUILD_STATE: cargo-test-plain-only
+      CI_ON_MAIN: ${{ github.event_name == 'push' }}
+      # As the plain lane's, so the parser's tests reuse its state's units.
+      CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
+      CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *fetch-sweep-base
+      - *identify-build-state
+      - *install-policy-tools
+      - *setup-rust
+      - *restore-test-state
+      - *download-build-state
+      - *find-build-state
+      - *unpack-build-state
+      - name: build the parser's tests
+        run: mise run build:tests-plain-only
+      - name: sweep every recovery record the change reaches
+        run: mise run ci:recovery
       - *lane-timing
 
   # The documentation lane: the private-item rustdoc as its build, over a
@@ -1046,21 +1078,32 @@ jobs:
   # Each enforcing shard resolves its own witnesses, so the Linux job reads
   # the lanes' results and nothing else: no container, no checkout, nothing
   # between the slowest shard and the verdict but a runner pickup (#2148).
+  # The recovery lane runs only when the change reaches the records, so its
+  # skip passes exactly when the run read no `parser` change.
   cargo-test:
     name: test the workspace (linux)
-    needs: [cargo-test-plain-only, cargo-test-docs, cargo-test-doctests, cargo-test-enforcing-shard]
+    needs:
+      [
+        prepare,
+        cargo-test-plain-only,
+        cargo-test-recovery,
+        cargo-test-docs,
+        cargo-test-doctests,
+        cargo-test-enforcing-shard,
+      ]
     if: ${{ always() && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch') }}
     runs-on: *linux
     permissions: {}
     timeout-minutes: 5
     env:
       PLAIN_RESULT: ${{ needs.cargo-test-plain-only.result }}
+      RECOVERY_RESULT: ${{ needs.cargo-test-recovery.result == 'skipped' && needs.prepare.result == 'success' && needs.prepare.outputs.parser != 'true' && 'success' || needs.cargo-test-recovery.result }}
       DOCS_RESULT: ${{ needs.cargo-test-docs.result }}
       DOCTESTS_RESULT: ${{ needs.cargo-test-doctests.result }}
       SHARDS_RESULT: ${{ needs.cargo-test-enforcing-shard.result }}
     steps:
-      - name: require both test flavors, the documentation and its examples
-        run: test "$PLAIN_RESULT:$DOCS_RESULT:$DOCTESTS_RESULT:$SHARDS_RESULT" = success:success:success:success
+      - name: require both test flavors, the recovery sweep, the documentation and its examples
+        run: test "$PLAIN_RESULT:$RECOVERY_RESULT:$DOCS_RESULT:$DOCTESTS_RESULT:$SHARDS_RESULT" = success:success:success:success:success
 
   # Skipped on a pull request, in the queue and on a push, which a skipped
   # job satisfies; in the daily run a failed macOS lane fails it there.
