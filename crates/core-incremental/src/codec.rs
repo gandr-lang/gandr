@@ -3718,10 +3718,12 @@ fn read_effect_signature(
     EffectSig::new(name, operations).map_err(|_duplicate_operation| CodecError::Corrupt)
 }
 
-/// Write a canonical interface map and every operation's type indices.
+/// Write a canonical instance map: each instance's region, the held region for
+/// an interface's default, then its signature and every operation's type
+/// indices.
 ///
 /// # Specification
-/// - ensures: a representable row's interfaces are written in interface and
+/// - ensures: a representable row's instances are written in label and
 ///   operation name order; its tail, when it has one, is the caller's to write.
 /// - fails: `Unrepresentable` when a name length or node index cannot be
 ///   encoded.
@@ -3738,19 +3740,20 @@ fn write_effect_row<Out>(
 where
     Out: Sink,
 {
-    writer.count(Count(row.signatures().len()))?;
-    for signature in row.signatures() {
+    writer.count(Count(row.instances().len()))?;
+    for (label, signature) in row.instances() {
+        write_region(writer, label.region());
         write_effect_signature(writer, signature)?;
     }
     Ok(())
 }
 
-/// Read an interface map without accepting duplicate or noncanonical names.
+/// Read an instance map without accepting duplicate or noncanonical labels.
 ///
 /// # Specification
-/// - ensures: successful rows consume input and preserve canonical names and
+/// - ensures: successful rows consume input and preserve canonical labels and
 ///   type edges.
-/// - fails: `Corrupt` for malformed input or names not in strictly increasing
+/// - fails: `Corrupt` for malformed input or labels not in strictly increasing
 ///   order.
 ///
 /// # Adequacy
@@ -3763,21 +3766,24 @@ fn read_effect_row(
     reader: &mut Reader<'_>
 ) -> Result<gandr_core_term::effect::EffectRow<NodeIndex>, CodecError>
 {
+    use gandr_core_term::effect::EffectLabel;
     use gandr_core_term::effect::EffectRow;
     use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::capability::Region;
     let count = reader.count()?;
-    let mut signatures: Vec<EffectSig<NodeIndex>> = Vec::new();
+    let mut placed: Vec<(EffectSig<NodeIndex>, Region)> = Vec::new();
+    let mut previous: Option<EffectLabel> = None;
     for _ in 0 .. count.0 {
+        let region = read_region(reader)?;
         let signature = read_effect_signature(reader)?;
-        if signatures
-            .last()
-            .is_some_and(|previous| previous.name() >= signature.name())
-        {
+        let label = EffectLabel::at(signature.name(), region);
+        if previous.as_ref().is_some_and(|previous| *previous >= label) {
             return Err(CodecError::Corrupt);
         }
-        signatures.push(signature);
+        previous = Some(label);
+        placed.push((signature, region));
     }
-    EffectRow::from_signatures(signatures).map_err(|_duplicate_interface| CodecError::Corrupt)
+    EffectRow::from_placed(placed).map_err(|_duplicate_label| CodecError::Corrupt)
 }
 
 /// Read a row literal's tail: absent, or the index of the row term it stands

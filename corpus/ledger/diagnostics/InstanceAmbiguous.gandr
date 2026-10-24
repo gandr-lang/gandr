@@ -1,0 +1,20 @@
+/// `InstanceAmbiguous`: a call omitting an instance where several of its interface stand.
+def say() -> [out : Console] Unit {
+  out.print("said")
+}
+
+@[ refuses("InstanceAmbiguous") ]
+def ambiguous() -> Integer {
+  handle a : Console {
+    handle b : Console {
+      say();
+      pure 0
+    } with {
+      pure(x) => pure x,
+      oper print(line, k) => pure 2
+    }
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}

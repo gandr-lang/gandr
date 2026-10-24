@@ -1248,6 +1248,41 @@ pub enum LoweringRefusal<'source>
         implicit: SurfaceName<'source>,
     },
 
+    /// A call omitting an instance a label of the callee's row names, `f()`
+    /// for `def f() -> [a : I] B`, where no instance of `I` stands: a call
+    /// resolves an omitted instance among the instances of its interface in
+    /// scope, a capability scope's capability and a label of the caller's own
+    /// row.
+    InstanceUnanswered
+    {
+        /// The bytes of the call.
+        span: ByteSpan,
+        /// The function's name.
+        function: SurfaceName<'source>,
+        /// The instance the call omits.
+        instance: SurfaceName<'source>,
+        /// The instance's interface.
+        interface: SurfaceName<'source>,
+    },
+
+    /// A call omitting an instance where several instances of its interface
+    /// are in scope: the call names the one it means, `f[a = c](…)`.
+    InstanceAmbiguous
+    {
+        /// The bytes of the call.
+        span: ByteSpan,
+        /// The function's name.
+        function: SurfaceName<'source>,
+        /// The instance the call omits.
+        instance: SurfaceName<'source>,
+        /// The instance's interface.
+        interface: SurfaceName<'source>,
+        /// The innermost instance of the interface in scope.
+        first: SurfaceName<'source>,
+        /// Another instance of the interface in scope.
+        second: SurfaceName<'source>,
+    },
+
     /// A model implicit standing as a value: named alone where a value is
     /// read, or supplied by what names neither a module nor a model implicit.
     /// A model implicit is its components, each read as `s.x`, and a slot
@@ -1949,6 +1984,31 @@ impl fmt::Display for LoweringRefusal<'_>
                  supply `{implicit}` by name, `{function}[{implicit} = …](…)`, and pass the \
                  explicit arguments alone"
             ),
+            Self::InstanceUnanswered {
+                function,
+                instance,
+                interface,
+                ..
+            } => write!(
+                f,
+                "`{function}` performs `{interface}` through its instance `{instance}`, and no \
+                 instance of `{interface}` is handled where this call stands: handle one around \
+                 the call, `handle c : {interface} {{ … }}`, or supply one by name, \
+                 `{function}[{instance} = c](…)`"
+            ),
+            Self::InstanceAmbiguous {
+                function,
+                instance,
+                interface,
+                first,
+                second,
+                ..
+            } => write!(
+                f,
+                "`{function}`'s instance `{instance}` could be `{first}` or `{second}`, each an \
+                 instance of `{interface}` handled where this call stands: name the one it \
+                 means, `{function}[{instance} = {first}](…)`"
+            ),
             Self::ModelImplicitValue { implicit, .. } => write!(
                 f,
                 "the model implicit `{implicit}` is its components and stands as no value: read \
@@ -2272,6 +2332,8 @@ impl LoweringRefusal<'_>
             | Self::TelescopeCycle { span, .. }
             | Self::ImplicitUnsupplied { span, .. }
             | Self::ImplicitInParentheses { span, .. }
+            | Self::InstanceUnanswered { span, .. }
+            | Self::InstanceAmbiguous { span, .. }
             | Self::ModelImplicitValue { span, .. }
             | Self::RegionAsValue { span, .. }
             | Self::EntryType { span }

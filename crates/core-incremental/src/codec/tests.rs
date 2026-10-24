@@ -590,23 +590,31 @@ fn effect_rows_persist_operation_types_and_canonical_identity()
     use gandr_core_term::effect::EffectRow;
     use gandr_core_term::effect::EffectSig;
     use gandr_core_term::effect::OperationName;
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
     let index = NodeIndex::from;
     let rows = [index(1_usize), index(2_usize)].map(|reply| {
-        let effects = EffectRow::from_signatures([
-            EffectSig::new(EffectName::from("Z"), [EffectOp {
-                name: OperationName::from("get"),
-                payload: index(1_usize),
-                reply,
-            }])
-            .expect("distinct operations"),
-            EffectSig::new(EffectName::from("A"), [EffectOp {
-                name: OperationName::from("put"),
-                payload: index(2_usize),
-                reply: index(1_usize),
-            }])
-            .expect("distinct operations"),
+        let effects = EffectRow::from_placed([
+            (
+                EffectSig::new(EffectName::from("Z"), [EffectOp {
+                    name: OperationName::from("get"),
+                    payload: index(1_usize),
+                    reply,
+                }])
+                .expect("distinct operations"),
+                Region::Scoped(RegionDepth::from(1_u32)),
+            ),
+            (
+                EffectSig::new(EffectName::from("A"), [EffectOp {
+                    name: OperationName::from("put"),
+                    payload: index(2_usize),
+                    reply: index(1_usize),
+                }])
+                .expect("distinct operations"),
+                Region::Held,
+            ),
         ])
-        .expect("distinct interfaces");
+        .expect("distinct instances");
         crate::fixture::type_content(&[
             ContentNode::Returner {
                 result: index(1_usize),
@@ -1390,26 +1398,50 @@ fn fixpoint_evidence_round_trips_with_its_staged_position()
 #[test]
 fn effect_rows_reject_duplicate_and_noncanonical_names()
 {
-    for names in [["State", "State"], ["State", "IO"]] {
+    use gandr_core_term::effect::capability::Region;
+    use gandr_core_term::effect::capability::RegionDepth;
+    let held = Region::Held;
+    let scoped = Region::Scoped(RegionDepth::from(1_u32));
+    let write = |entries: [(Region, &str); 2]| {
         let mut bytes = CheckpointBytes::from(Vec::new());
         let mut writer = Writer { sink: &mut bytes };
         writer.count(Count(2)).expect("count");
-        for name in names {
+        for (region, name) in entries {
+            super::write_region(&mut writer, region);
             writer.bytes(Bytes(name.as_bytes())).expect("name");
             writer.count(Count(0)).expect("count");
         }
+        bytes
+    };
+    for entries in [
+        [(held, "State"), (held, "State")],
+        [(held, "State"), (held, "IO")],
+        [(scoped, "State"), (held, "State")],
+        [(scoped, "State"), (scoped, "State")],
+    ] {
         assert_eq!(
             super::read_effect_row(&mut Reader {
-                bytes: bytes.as_ref(),
+                bytes: write(entries).as_ref(),
                 cursor: 0
             }),
-            Err(CodecError::Corrupt)
+            Err(CodecError::Corrupt),
+            "{entries:?}"
         );
     }
+    assert_eq!(
+        super::read_effect_row(&mut Reader {
+            bytes: write([(held, "State"), (scoped, "State")]).as_ref(),
+            cursor: 0
+        })
+        .map(|row| row.instances().len()),
+        Ok(2),
+        "an interface's default and an instance named apart are two labels"
+    );
     for names in [["put", "put"], ["put", "get"]] {
         let mut bytes = CheckpointBytes::from(Vec::new());
         let mut writer = Writer { sink: &mut bytes };
         writer.count(Count(1)).expect("count");
+        super::write_region(&mut writer, Region::Held);
         writer.bytes(Bytes(b"State")).expect("name");
         writer.count(Count(2)).expect("count");
         for name in names {

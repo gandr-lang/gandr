@@ -17,7 +17,7 @@ use crate::mold::StepSym;
 
 /// The built-in surface's tables and the digest of their rules.
 pub(super) static BUILT_IN: FrozenTable = FrozenTable {
-    rules: RulesDigest(0x321e_f086_8829_070b),
+    rules: RulesDigest(0x3b49_20d8_8cdf_c4c5),
     molds: &MOLDS,
     contexts: &CONTEXTS,
     steps: &STEPS,
@@ -25,7 +25,7 @@ pub(super) static BUILT_IN: FrozenTable = FrozenTable {
 
 /// Each mold: label, context, rule, closing class, membership bits, successors, least interchangeable mold.
 #[rustfmt::skip]
-static MOLDS: [FrozenMold; 3163] = [
+static MOLDS: [FrozenMold; 3182] = [
     FrozenMold("def", 0, 0, None, 1, &[1, 91], 0),
     FrozenMold("rec", 1, 0, Some(ClosingClass::Brace), 0, &[2], 1),
     FrozenMold("identifier", 2, 0, Some(ClosingClass::Brace), 0, &[3], 2),
@@ -3189,11 +3189,30 @@ static MOLDS: [FrozenMold; 3163] = [
     FrozenMold("(", 3160, 162, None, 0, &[3161], 3160),
     FrozenMold(")", 3161, 162, None, 0, &[3162], 3161),
     FrozenMold("at", 3162, 162, None, 10, &[], 3162),
+    FrozenMold("-F", 3163, 163, Some(ClosingClass::Bracket), 1, &[3164], 3163),
+    FrozenMold("[", 3164, 163, Some(ClosingClass::Bracket), 0, &[3165, 3166], 3164),
+    FrozenMold(":", 3165, 163, Some(ClosingClass::Bracket), 0, &[3166], 3165),
+    FrozenMold("type_identifier", 3166, 163, Some(ClosingClass::Bracket), 0, &[3167, 3170, 3171, 3172], 3166),
+    FrozenMold(",", 3167, 163, Some(ClosingClass::Bracket), 0, &[3168, 3169], 3167),
+    FrozenMold(":", 3168, 163, Some(ClosingClass::Bracket), 0, &[3169], 3168),
+    FrozenMold("type_identifier", 3169, 163, Some(ClosingClass::Bracket), 0, &[3167, 3170, 3171, 3172], 3169),
+    FrozenMold(",", 3170, 163, Some(ClosingClass::Bracket), 0, &[3171, 3172], 3170),
+    FrozenMold("|", 3171, 163, Some(ClosingClass::Bracket), 0, &[3172], 3171),
+    FrozenMold("]", 3172, 163, Some(ClosingClass::Bracket), 10, &[], 3172),
+    FrozenMold("[", 3173, 164, Some(ClosingClass::Bracket), 1, &[3174, 3175], 3173),
+    FrozenMold(":", 3174, 164, Some(ClosingClass::Bracket), 0, &[3175], 3174),
+    FrozenMold("type_identifier", 3175, 164, Some(ClosingClass::Bracket), 0, &[3176, 3179, 3180, 3181], 3175),
+    FrozenMold(",", 3176, 164, Some(ClosingClass::Bracket), 0, &[3177, 3178], 3176),
+    FrozenMold(":", 3177, 164, Some(ClosingClass::Bracket), 0, &[3178], 3177),
+    FrozenMold("type_identifier", 3178, 164, Some(ClosingClass::Bracket), 0, &[3176, 3179, 3180, 3181], 3178),
+    FrozenMold(",", 3179, 164, Some(ClosingClass::Bracket), 0, &[3180, 3181], 3179),
+    FrozenMold("|", 3180, 164, Some(ClosingClass::Bracket), 0, &[3181], 3180),
+    FrozenMold("]", 3181, 164, Some(ClosingClass::Bracket), 10, &[], 3181),
 ];
 
 /// Each context: whether a hole faces it left, then right; its step lists, left then right.
 #[rustfmt::skip]
-static CONTEXTS: [FrozenContext; 3163] = [
+static CONTEXTS: [FrozenContext; 3182] = [
     FrozenContext(false, false, 0, 1),
     FrozenContext(false, false, 2, 3),
     FrozenContext(false, false, 4, 5),
@@ -6357,11 +6376,30 @@ static CONTEXTS: [FrozenContext; 3163] = [
     FrozenContext(false, true, 36, 22),
     FrozenContext(true, false, 22, 225),
     FrozenContext(false, true, 14, 11),
+    FrozenContext(false, false, 0, 35),
+    FrozenContext(false, true, 216, 179),
+    FrozenContext(true, false, 11, 58),
+    FrozenContext(false, false, 292, 217),
+    FrozenContext(false, true, 58, 179),
+    FrozenContext(true, false, 11, 58),
+    FrozenContext(false, false, 293, 217),
+    FrozenContext(false, false, 58, 218),
+    FrozenContext(false, true, 213, 11),
+    FrozenContext(true, true, 219, 11),
+    FrozenContext(false, true, 0, 179),
+    FrozenContext(true, false, 11, 58),
+    FrozenContext(false, false, 292, 217),
+    FrozenContext(false, true, 58, 179),
+    FrozenContext(true, false, 11, 58),
+    FrozenContext(false, false, 293, 217),
+    FrozenContext(false, false, 58, 218),
+    FrozenContext(false, true, 213, 11),
+    FrozenContext(true, true, 219, 11),
 ];
 
 /// The distinct step lists, in the order the contexts first cross them.
 #[rustfmt::skip]
-static STEPS: [&[StepSym]; 292] = [
+static STEPS: [&[StepSym]; 294] = [
     &[],
     &[StepSym::Tile("identifier"), StepSym::Tile("rec")],
     &[StepSym::Tile("def")],
@@ -6654,4 +6692,6 @@ static STEPS: [&[StepSym]; 292] = [
     &[StepSym::Tile("-->"), StepSym::Tile("<->"), StepSym::Tile("<=>"), StepSym::Tile("==>"), StepSym::Tile("{")],
     &[StepSym::Tile("derive")],
     &[StepSym::Tile("forget")],
+    &[StepSym::Tile(":"), StepSym::Tile("[")],
+    &[StepSym::Tile(","), StepSym::Tile(":")],
 ];

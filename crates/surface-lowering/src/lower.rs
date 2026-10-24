@@ -1710,6 +1710,10 @@ quenchant_shape::reason_enum! {
             /// The source wrote no `: T` after the binder, or no `-> T` after
             /// the parameter list.
             Unstated,
+            /// The parameter is an instance a label of the result's row binds:
+            /// its type is the capability of the label's interface at the
+            /// label's own region ([`super::Lowerer::instance_parameters`]).
+            Instance,
         }
     }
 }
@@ -3373,6 +3377,11 @@ struct Lowerer<'run, 'source>
     /// the application mints the variable there, under one lambda per such
     /// operand.
     abstracted: BTreeMap<usize, DeBruijnIndex>,
+    /// Each operand a call passes for an instance it omits, by its place among
+    /// the operands, with the variable of the instance resolved for it where
+    /// the call stands: the operand's node is the call's own, which no value
+    /// lowers at, and the application mints the variable there.
+    instanced: BTreeMap<usize, DeBruijnIndex>,
     /// Each operand an application passes for a component of a model
     /// implicit its call supplies, by its place among the operands, with the
     /// supply and the component's place in the slot: the operand's node is the
@@ -3412,6 +3421,27 @@ struct Lowerer<'run, 'source>
     /// The theory each capability scope over one reads as its interface, by
     /// the frame of the capability it binds.
     theory_capabilities: BTreeMap<ScopeId, Arc<capability::TheoryInterface>>,
+    /// The interface each capability a capability scope binds answers, by its
+    /// frame: what a call resolving an instance reads.
+    answered: BTreeMap<ScopeId, gandr_core_term::effect::EffectName>,
+    /// Each instance a label of a function's result row binds, by its frame,
+    /// with its interface and the region binder it lives at.
+    labelled: BTreeMap<
+        ScopeId,
+        (
+            gandr_core_term::effect::EffectName,
+            gandr_core_term::effect::capability::RegionBinder,
+        ),
+    >,
+    /// The interface and region binder of each instance parameter, by its
+    /// binder tile: what the declared type mints its capability type from.
+    instance_parameters: BTreeMap<
+        NodeIndex,
+        (
+            gandr_core_term::effect::EffectName,
+            gandr_core_term::effect::capability::RegionBinder,
+        ),
+    >,
     /// The region each capability type written at a scope, a hold or a
     /// region binder lives in, by the capability type's node.
     regions: BTreeMap<NodeIndex, gandr_core_term::effect::capability::Region>,
@@ -4607,10 +4637,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Some((constant, names))
                 })
                 .collect();
-        // Each function whose merged telescope binds an implicit names it, so
-        // a printed call supplies it by name. A model implicit binds one
-        // parameter per component, which no single name supplies: each is
-        // left unnamed there, and the slot is kept whole beside it.
+        // Each function whose merged telescope binds an implicit or an
+        // instance names it, so a printed call supplies it by name. A model
+        // implicit binds one parameter per component, which no single name
+        // supplies: each is left unnamed there, and the slot is kept whole
+        // beside it.
         let mut implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> =
             BTreeMap::new();
         let mut model_slots: BTreeMap<ConstantIndex, Vec<FlattenedSlot<'source>>> = BTreeMap::new();
@@ -4619,9 +4650,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 continue;
             };
-            if !entries
+            if entries
                 .iter()
-                .any(|entry| entry.plicity == Plicity::Implicit)
+                .all(|entry| entry.plicity == Plicity::Explicit)
             {
                 continue;
             }
@@ -4647,7 +4678,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     continue;
                 }
                 names.push(match entry.plicity {
-                    Plicity::Implicit => Some(entry.name),
+                    Plicity::Implicit | Plicity::Instance => Some(entry.name),
                     Plicity::Explicit => None,
                 });
             }
@@ -4963,6 +4994,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             supplied: BTreeSet::new(),
             nominated: BTreeMap::new(),
             abstracted: BTreeMap::new(),
+            instanced: BTreeMap::new(),
             components: BTreeMap::new(),
             flattened: BTreeMap::new(),
             written_slots: BTreeMap::new(),
@@ -4979,6 +5011,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             instantiated: BTreeMap::new(),
             capabilities: BTreeSet::new(),
             theory_capabilities: BTreeMap::new(),
+            answered: BTreeMap::new(),
+            labelled: BTreeMap::new(),
+            instance_parameters: BTreeMap::new(),
             regions: BTreeMap::new(),
             resumptions: BTreeSet::new(),
             described_types: BTreeMap::new(),
@@ -10041,14 +10076,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   the type it spells, as [`Self::applied_head`] plans it, quoted; any
     ///   other call standing as a computation reads its head at the head
     ///   position and each argument as a value, all in its own frame, a model
-    ///   implicit's components standing at the call itself, and is planned as
-    ///   the head applied to the arguments left to right; a call whose head is
-    ///   an instantiation, a recursive call, records every argument for the
-    ///   head's claim to check, reads each as a value so a later parameter's
-    ///   type can name a leading one, and applies those from the staged
-    ///   parameter's on, the ones its fixpoint takes; a call of no arguments is
-    ///   its head, whose force [`Self::mint_at`] marks as the call the source
-    ///   wrote.
+    ///   implicit's components and an omitted instance standing at the call
+    ///   itself, and is planned as the head applied to the arguments left to
+    ///   right; a call whose head is an instantiation, a recursive call,
+    ///   records every argument for the head's claim to check, reads each as a
+    ///   value so a later parameter's type can name a leading one, and applies
+    ///   those from the staged parameter's on, the ones its fixpoint takes; a
+    ///   call of no arguments is its head, whose force [`Self::mint_at`] marks
+    ///   as the call the source wrote.
     /// - provides: the elimination of a lambda, curried over any argument
     ///   count.
     /// - fails: yields the wrong-sort refusal outside computation position, and
@@ -10088,6 +10123,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             && (arguments.start .. arguments.end).all(|position| {
                                 self.nominated.contains_key(&position)
                                     || self.components.contains_key(&position)
+                                    || self.instanced.contains_key(&position)
                                     || self.operands.get(position).is_some_and(|&argument| {
                                         self.reading(argument) == Reading::Value(site.reading.frame())
                                     })
@@ -12448,7 +12484,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             )
                         }),
                         Maybe::Absent(binder_type::Absent::Untyped) => true,
-                        Maybe::Absent(binder_type::Absent::Operand) => false,
+                        Maybe::Absent(
+                            binder_type::Absent::Operand | binder_type::Absent::Instance,
+                        ) => false,
                     }
             },
         };
@@ -16228,16 +16266,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: `c(v1, …, vn)` mints as `app(… app(c, v1) …, vn)`, every
     ///   application carrying the call's origin; an argument the call omits for
-    ///   an implicit is the hole nominated for it ([`Self::nominated`]), marked
-    ///   as an implicit's insertion; a call through a joint fixpoint passes its
-    ///   argument injected at the called member's summand, the injection marked
-    ///   as the fixpoint's insertion; a standing supply passing `k` explicit
-    ///   parameters as the variables of the lambdas it opens
-    ///   ([`Self::abstracted`]) mints `λ … λ. app(…)`, `k` lambdas marked as an
-    ///   implicit's insertion over the application of the head and every other
-    ///   argument raised past them; a call of no arguments is its head's own
-    ///   computation; nothing is minted when the head or a written argument did
-    ///   not lower.
+    ///   an implicit is the hole nominated for it ([`Self::nominated`]), and
+    ///   one it omits for an instance the variable of the instance resolved for
+    ///   it ([`Self::instanced`]), each marked as an implicit's insertion; a
+    ///   call through a joint fixpoint passes its argument injected at the
+    ///   called member's summand, the injection marked as the fixpoint's
+    ///   insertion; a standing supply passing `k` explicit parameters as the
+    ///   variables of the lambdas it opens ([`Self::abstracted`]) mints `λ … λ.
+    ///   app(…)`, `k` lambdas marked as an implicit's insertion over the
+    ///   application of the head and every other argument raised past them; a
+    ///   call of no arguments is its head's own computation; nothing is minted
+    ///   when the head or a written argument did not lower.
     /// - provides: the curried elimination of a lambda.
     /// - fails: never.
     /// - panics: none.
@@ -16253,10 +16292,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     /// - witness: `lower::implicit::tests::a_standing_supply_opens_a_lambda_per_explicit_before_it_1498`
     /// - witness: `lower::implicit::tests::a_module_supplied_for_a_model_implicit_passes_its_members_739`
+    /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
     #[spec(
         captures: (written, opened, supplied) = (
             (arguments.start .. arguments.end)
-                .filter(|position| !self.nominated.contains_key(position) && !self.abstracted.contains_key(position) && !self.components.contains_key(position))
+                .filter(|position| !self.nominated.contains_key(position) && !self.abstracted.contains_key(position) && !self.instanced.contains_key(position) && !self.components.contains_key(position))
                 .filter_map(|position| self.operands.get(position).copied())
                 .collect::<Vec<_>>(),
             (arguments.start .. arguments.end).any(|position| self.abstracted.contains_key(&position)),
@@ -16301,6 +16341,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         for position in arguments.start .. arguments.end {
             if !self.nominated.contains_key(&position)
                 && !self.abstracted.contains_key(&position)
+                && !self.instanced.contains_key(&position)
                 && !self.components.contains_key(&position)
                 && let Some(&argument) = self.operands.get(position)
                 && let Maybe::Absent(reason) = self.value_at(argument)
@@ -16351,6 +16392,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins
                     .record_value(id, origin.inserted(Insertion::Implicit));
                 id
+            }
+            else if let Some(&index) = self.instanced.get(&position) {
+                let id = sink.arena.value_variable(Zone::Intuitionistic, index);
+                sink.origins
+                    .record_value(id, origin.inserted(Insertion::Implicit));
+                if opened > 0 {
+                    gandr_core_term::shift_value(sink.arena, id, under).settle(sink.arena)
+                }
+                else {
+                    id
+                }
             }
             else {
                 match self
@@ -16550,8 +16602,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   each parameter's arrow dependent exactly when a later parameter's type
     ///   or the result names it, and plain otherwise, each parameter of a
     ///   flattened model implicit at its component's type
-    ///   ([`Self::flattened_domains`]); nothing is minted when a type is
-    ///   unstated or did not lower.
+    ///   ([`Self::flattened_domains`]), and each instance a label of the
+    ///   result's row binds at the durable capability of the label's whole
+    ///   interface, at the label's region binder; nothing is minted when a type
+    ///   is unstated or did not lower.
     /// - provides: the signature half of [`Self::mint_function`].
     /// - fails: never.
     /// - panics: none.
@@ -16562,6 +16616,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     #[spec(
         ensures: |ret| match function.result {
             | Maybe::Absent(_) => ret == Maybe::Absent(lowered::Absent::Unstated),
@@ -16572,7 +16627,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
                         parameters
                             .iter()
                             .find_map(|parameter| match parameter.declared {
-                                | Maybe::Absent(_) => Some(lowered::Absent::Unstated),
+                                | Maybe::Absent(stated::Absent::Instance) => None,
+                                | Maybe::Absent(stated::Absent::Unstated) => Some(lowered::Absent::Unstated),
                                 | Maybe::Present(written) => match self.value_type_at(written) {
                                     | Maybe::Absent(reason) => Some(reason),
                                     | Maybe::Present(_) => None,
@@ -16619,9 +16675,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
         }
         for parameter in parameters {
-            let Maybe::Present(written) = parameter.declared
-            else {
-                return Maybe::Absent(lowered::Absent::Unstated);
+            let written = match parameter.declared {
+                Maybe::Present(written) => written,
+                Maybe::Absent(stated::Absent::Instance) => continue,
+                Maybe::Absent(stated::Absent::Unstated) => {
+                    return Maybe::Absent(lowered::Absent::Unstated);
+                },
             };
             if let Maybe::Absent(reason) = self.value_type_at(written) {
                 return Maybe::Absent(reason);
@@ -16631,13 +16690,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         // model type they share, minted once for the group.
         let mut flattened: BTreeMap<NodeIndex, Vec<ValueTypeId>> = BTreeMap::new();
         for parameter in parameters.iter().rev() {
-            let (Maybe::Present(written), Maybe::Present(binder)) =
-                (parameter.declared, self.origin_at(parameter.binder))
+            let Maybe::Present(binder) = self.origin_at(parameter.binder)
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let domain = match parameter.component {
-                Some(place) => {
+            let domain = match (parameter.declared, parameter.component) {
+                (Maybe::Absent(stated::Absent::Instance), _) => {
+                    self.mint_instance(parameter.binder, sink, origin)
+                },
+                (Maybe::Absent(stated::Absent::Unstated), _) => None,
+                (Maybe::Present(written), Some(place)) => {
                     let domains = match flattened.entry(written) {
                         Entry::Occupied(held) => held.into_mut(),
                         Entry::Vacant(free) => {
@@ -16649,7 +16711,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     };
                     domains.get(usize::from(place)).copied()
                 },
-                None => match self.value_type_at(written) {
+                (Maybe::Present(written), None) => match self.value_type_at(written) {
                     Maybe::Present(domain) => Some(domain),
                     Maybe::Absent(_) => None,
                 },
@@ -16673,6 +16735,44 @@ impl<'run, 'source> Lowerer<'run, 'source>
         sink.origins.record_value_type(id, origin);
 
         Maybe::Present(id)
+    }
+
+    /// Mint the type of the instance parameter whose binder tile is `binder`:
+    /// the durable capability of its interface's whole signature at the
+    /// region binder it lives at.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Cap {I} at r` at `origin` for the instance of `I` living at
+    ///   the region binder `r`; none for a binder binding no instance, or an
+    ///   interface the host does not declare.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::mint_signature`].
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    #[spec(ensures: |ret| ret.is_none_or(|id| sink.origins.value_type(id) == Maybe::Present(origin)))]
+    fn mint_instance(
+        &self,
+        binder: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<ValueTypeId>
+    {
+        let &(ref interface, region) = self.instance_parameters.get(&binder)?;
+        let Maybe::Present(signature) = sink.signature(interface, origin)
+        else {
+            return None;
+        };
+        let id = sink.arena.value_type_capability(
+            gandr_core_term::effect::EffectRow::singleton(signature),
+            gandr_core_term::effect::capability::CapabilityGrade::Durable,
+            gandr_core_term::effect::capability::Region::Bound(region),
+        );
+        sink.origins.record_value_type(id, origin);
+
+        Some(id)
     }
 
     /// What `position` lowered to.

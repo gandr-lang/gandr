@@ -1,0 +1,9 @@
+/// `InstanceUnanswered`: a call omitting an instance where none of its interface stands.
+def say() -> [out : Console] Unit {
+  out.print("said")
+}
+
+@[ refuses("InstanceUnanswered") ]
+def unanswered() -> [Console] Unit {
+  say()
+}

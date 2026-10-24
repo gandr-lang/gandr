@@ -377,6 +377,54 @@ def open @[r : Row] () -> [r] Unit {
     );
 }
 
+/// #2271: the sugared form writes a result row naming an instance by its
+/// label before its type as the row reads, each label before its interface:
+/// alone, `[out : Console] B`, after an interface and before a tail; the
+/// explicit form keeps either spelling.
+#[test]
+fn a_labelled_result_row_is_written_before_its_type_2271()
+{
+    let grammar = grammar();
+    let source = "\
+def say() -> -F [out : Console] Unit {
+  out.print(\"said\")
+}
+
+def both() -> -F [Div, out : Console] Unit {
+  out.print(\"said\")
+}
+
+def tailed @[r : Row] () -> -F [d : Console, Div | r] Unit {
+  pure unit
+}
+";
+    let sugared = "\
+def say() -> [out : Console] Unit {
+  out.print(\"said\")
+}
+
+def both() -> [Div, out : Console] Unit {
+  out.print(\"said\")
+}
+
+def tailed @[r : Row] () -> [d : Console, Div | r] Unit {
+  pure unit
+}
+";
+    assert_eq!(
+        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        sugared,
+        "sugared"
+    );
+    for written in [source, sugared] {
+        assert_eq!(
+            spelled(&grammar, written, Form::Explicit, Selection::Every),
+            written,
+            "explicit"
+        );
+    }
+}
+
 /// #1327: the sugared form writes a value-function alias at its shortest:
 /// one domain unparenthesised however deeply written, nested aliases among
 /// them, and a binder nothing later reads left out; a list of domains, a

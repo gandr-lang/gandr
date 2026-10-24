@@ -189,7 +189,7 @@ pub fn stated(
         }
     }
     let entry = EffectRow::singleton(divergence());
-    let name = Label::from(DIV);
+    let name = gandr_core_term::effect::EffectLabel::Interface(Label::from(DIV));
     let mut rebuilt: BTreeMap<CompTypeId, CompTypeId> = BTreeMap::new();
     for &(shape, head) in order.iter().rev() {
         let arena = context.arena();

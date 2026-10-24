@@ -553,8 +553,9 @@ fn built_in_adaptations_name_their_rules() -> Result<(), Box<dyn Error>>
 
 /// The prefix type formers `-F` and `+U` end their form only once their operand
 /// is filled. `+U` and the bare returner open no delimiter, so they name no
-/// closing class and their operand follows them; the returner's row form,
-/// `-F [Fs] A`, closes its bracket, and its operand follows the bracket.
+/// closing class and their operand follows them; the returner's row forms,
+/// `-F [Fs] A` and `-F [a : I] A`, close their bracket, and the operand
+/// follows the bracket.
 #[test]
 fn prefix_formers_keep_required_type_tails_unclosed() -> Result<(), Box<dyn Error>>
 {
@@ -562,7 +563,12 @@ fn prefix_formers_keep_required_type_tails_unclosed() -> Result<(), Box<dyn Erro
     for (label, shapes) in [
         (
             "-F",
-            [(Some(ClosingClass::Bracket), false), (None, true)].as_slice(),
+            [
+                (Some(ClosingClass::Bracket), false),
+                (None, true),
+                (Some(ClosingClass::Bracket), false),
+            ]
+            .as_slice(),
         ),
         ("+U", [(None, true)].as_slice()),
     ] {

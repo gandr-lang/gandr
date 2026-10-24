@@ -1,0 +1,164 @@
+// A row may name an instance of an interface by a label (#2271): `say`
+// performs `Console` through its instance `out`, apart from the
+// interface's default and from every other instance, so one row holds two
+// instances of one interface. The label is a parameter the function
+// abstracts, placed after every parameter it writes: a call supplies it by
+// name, `say[out = c]()`, or omits it and passes the one instance of the
+// interface handled where the call stands, a capability scope's capability
+// or a label of the caller's own row (Brachthäuser, Schuster and
+// Ostermann, "Effects as Capabilities: Effect Handlers and Lightweight
+// Effect Polymorphism", OOPSLA 2020). What refuses is in
+// `../../pathological/control/named-instances.gandr`.
+
+/// A line printed through the instance `out`, the capability its label
+/// binds.
+@[ checks ]
+def say() -> [out : Console] Unit { out.print("said") }
+
+/// One instance of `Console` handled around the call: the call passes it.
+@[ runs("1") ]
+def resolved() -> Integer {
+  handle a : Console {
+    say();
+    pure 0
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}
+
+/// Two instances handled around the call, the outer named: its clause
+/// answers.
+@[ runs("1") ]
+def namedOuter() -> Integer {
+  handle a : Console {
+    handle b : Console {
+      say[out = a]();
+      pure 0
+    } with {
+      pure(x) => pure x,
+      oper print(line, k) => pure 2
+    }
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}
+
+/// The same two, the inner named.
+@[ runs("2") ]
+def namedInner() -> Integer {
+  handle a : Console {
+    handle b : Console {
+      say[out = b]();
+      pure 0
+    } with {
+      pure(x) => pure x,
+      oper print(line, k) => pure 2
+    }
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}
+
+/// A caller's own instance answers the call it makes: `say` passes `o`
+/// on.
+@[ checks ]
+def relayed() -> [o : Console] Unit { say() }
+
+/// An explicit parameter beside the instance, which comes after it.
+@[ checks ]
+def sayLine(s : String) -> [out : Console] Unit { out.print(s) }
+
+/// The explicit argument written, the instance passed from the scope.
+@[ runs("1") ]
+def sayLineRuns() -> Integer {
+  handle a : Console {
+    sayLine("line");
+    pure 0
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}
+
+/// Two instances of `Console` in one row, `first` printed through before
+/// `second`.
+@[ checks ]
+def both() -> [first : Console, second : Console] Unit {
+  say[out = first]();
+  say[out = second]()
+}
+
+/// `both` with its first instance the outer scope: the outer clause
+/// answers the first line.
+@[ runs("1") ]
+def outerFirst() -> Integer {
+  handle a : Console {
+    handle b : Console {
+      both[first = a, second = b]();
+      pure 0
+    } with {
+      pure(x) => pure x,
+      oper print(line, k) => pure 2
+    }
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}
+
+/// The instances swapped: the same `both`, its first instance now the
+/// inner scope, whose clause answers.
+@[ runs("2") ]
+def innerFirst() -> Integer {
+  handle a : Console {
+    handle b : Console {
+      both[first = b, second = a]();
+      pure 0
+    } with {
+      pure(x) => pure x,
+      oper print(line, k) => pure 2
+    }
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}
+
+/// A suspended computation at the function's own instance, run by it: the
+/// parameter's row names the label the result row binds.
+@[ checks ]
+def runAt(body : +U (-F [o : Console] Unit)) -> [o : Console] Unit {
+  force body
+}
+
+/// `both` as the printer writes it: each instance's region binder in the
+/// telescope, its capability an explicit parameter, and each label of the
+/// row naming a binder, which binds nothing more.
+@[ checks ]
+def bothWritten @[r : Region, r1 : Region] (
+  first : Cap {print} at r,
+  second : Cap {print} at r1
+) -> [r : Console, r1 : Console] Unit {
+  say[out = first]();
+  say[out = second]()
+}
+
+/// `bothWritten` passed the inner scope first: its clause answers.
+@[ runs("2") ]
+def bothWrittenRuns() -> Integer {
+  handle a : Console {
+    handle b : Console {
+      bothWritten(b, a);
+      pure 0
+    } with {
+      pure(x) => pure x,
+      oper print(line, k) => pure 2
+    }
+  } with {
+    pure(x) => pure x,
+    oper print(line, k) => pure 1
+  }
+}

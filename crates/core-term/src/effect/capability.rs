@@ -64,7 +64,6 @@ use super::EffectSig;
 use super::OperationName;
 use super::Signature;
 use super::UnknownOperation;
-use crate::row::Label;
 use crate::row::RowInclusion;
 
 /// How many capability scopes enclose a region, counting the one that
@@ -358,7 +357,7 @@ impl EffectRow
     #[inline]
     pub fn granted(
         &self,
-        interface: &Label,
+        interface: &super::EffectLabel,
         operation: &OperationName,
     ) -> Maybe<&EffectOp, grant::Absent>
     {

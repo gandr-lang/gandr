@@ -152,6 +152,10 @@ quenchant_shape::reason_enum! {
             /// A static lambda's binder: an operand of a type operator,
             /// which an application of it applies statically.
             Operand,
+            /// An instance a label of a function's row binds: a capability
+            /// whose type the lowering mints, counted in a telescope only once
+            /// a type of it names the binder, as a written type's binder is.
+            Instance,
         }
     }
 }
@@ -683,7 +687,8 @@ pub enum Telescope
 impl ScopeFrame<'_>
 {
     /// Whether this frame binds in `telescope`: never a linear frame, always
-    /// an untyped one, and a typed one once a type of that telescope names it.
+    /// an untyped one, and a typed one or an instance's once a type of that
+    /// telescope names it.
     ///
     /// # Specification
     /// trivial.
@@ -695,9 +700,17 @@ impl ScopeFrame<'_>
     {
         Mentioned(match (self.zone, self.declared, telescope) {
             (Zone::Linear, ..) => false,
+            (
+                _,
+                Maybe::Present(_) | Maybe::Absent(binder_type::Absent::Instance),
+                Telescope::Signature,
+            ) => self.mentioned.0,
+            (
+                _,
+                Maybe::Present(_) | Maybe::Absent(binder_type::Absent::Instance),
+                Telescope::Quote,
+            ) => self.mentioned.0 || self.quoted.0,
             (_, Maybe::Absent(_), _) => true,
-            (_, Maybe::Present(_), Telescope::Signature) => self.mentioned.0,
-            (_, Maybe::Present(_), Telescope::Quote) => self.mentioned.0 || self.quoted.0,
         })
     }
 }
@@ -876,6 +889,56 @@ impl<'source> Scope<'source>
             parent,
             name,
             Maybe::Absent(binder_type::Absent::Operand),
+            site,
+            Zone::Intuitionistic,
+        )
+    }
+
+    /// The frame that extends `parent` with the binder of an instance named
+    /// `name`, written at `site`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::extend`].
+    /// - ensures: as [`Self::extend`], the new binder answering the instance
+    ///   absence for its written type, so it counts in a telescope only once a
+    ///   type names it.
+    /// - provides: the binder a label of a function's result row adds after
+    ///   every parameter, which the result type reads past unless it names it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function over a row variable and two instances
+    ///   reads the variable in its open row at the index its explicit twin's
+    ///   does.
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    #[spec(
+        requires: match parent {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        captures: before = self.frames.len(),
+        ensures: |ret| {
+            ret.0 == before
+                && self.frames.get(ret.0).is_some_and(|entry| {
+                    entry.parent == parent
+                        && entry.declared == Maybe::Absent(binder_type::Absent::Instance)
+                        && !entry.mentioned.0
+                })
+        },
+    )]
+    #[inline]
+    pub fn extend_instance(
+        &mut self,
+        parent: Frame,
+        name: SurfaceName<'source>,
+        site: Maybe<ByteSpan, binder_site::Absent>,
+    ) -> ScopeId
+    {
+        self.push(
+            parent,
+            name,
+            Maybe::Absent(binder_type::Absent::Instance),
             site,
             Zone::Intuitionistic,
         )
@@ -1329,6 +1392,56 @@ impl<'source> Scope<'source>
         }
 
         Ok(Maybe::Absent(binder::Absent::Unbound))
+    }
+
+    /// Each binder of the chain rooted at `frame`, innermost first, with its
+    /// name and as a variable read where `frame` stands binds it, shadowed or
+    /// not.
+    ///
+    /// # Specification
+    /// - requires: `frame` is outermost or an existing frame position.
+    /// - ensures: one pair per frame [`Self::chain`] walks, in its order, the
+    ///   binding's index the count of frames of its zone between it and
+    ///   `frame`, as [`Self::resolve`] counts it.
+    /// - fails: never.
+    /// - panics: none. Parent links name an earlier frame, so the walk ends.
+    /// - executable: none — the specification facade wraps the body in a
+    ///   closure, which cannot return the opaque iterator; the witness reads an
+    ///   instance's variable through it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an instance resolved beneath a binder of the other
+    ///   zone and one of its own is the variable at its own count.
+    /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
+    #[inline]
+    pub fn bindings(
+        &self,
+        frame: Frame,
+    ) -> impl Iterator<Item = (SurfaceName<'source>, Bound)> + '_
+    {
+        let mut current = frame;
+        let mut linear = 0_usize;
+        let mut intuitionistic = 0_usize;
+        core::iter::from_fn(move || {
+            let Frame::Inner(id) = current
+            else {
+                return None;
+            };
+            let entry = self.frames.get(id.0)?;
+            let depth = match entry.zone {
+                Zone::Linear => &mut linear,
+                Zone::Intuitionistic => &mut intuitionistic,
+            };
+            let bound = Bound {
+                index: DeBruijnIndex::from(u32::try_from(*depth).unwrap_or(u32::MAX)),
+                binder: id,
+                declared: entry.declared,
+                zone: entry.zone,
+            };
+            *depth = depth.saturating_add(1_usize);
+            current = entry.parent;
+            Some((entry.name, bound))
+        })
     }
 
     /// Record that a type position names the binder that introduced `binder`.

@@ -3406,7 +3406,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             effects.clone()
         }
         else {
-            effects.without(&gandr_core_term::row::Label::from(signature.name()))
+            effects.without(&gandr_core_term::effect::EffectLabel::Interface(
+                gandr_core_term::row::Label::from(signature.name()),
+            ))
         };
         let on_return = *on_return;
         let natural = self
@@ -3625,10 +3627,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   `classifier`.
     /// - ensures: the payload is checked against the operation's payload type
     ///   next, and the exercise synthesises the returner of the operation's
-    ///   reply whose row is the operation's interface alone; a capability of
-    ///   the unknown type grants every operation; an operation a scope's clause
-    ///   answers while a resident opened in the scope's region is live is
-    ///   recorded for the clause, as [`Self::region_captured`] says.
+    ///   reply whose row is the operation's interface alone, labelled by the
+    ///   capability's region — the interface's default for a held capability or
+    ///   one of the unknown type, an instance at its region otherwise; a
+    ///   capability of the unknown type grants every operation; an operation a
+    ///   scope's clause answers while a resident opened in the scope's region
+    ///   is live is recorded for the clause, as [`Self::region_captured`] says.
     /// - fails: [`CheckRefusal::UnknownOperation`] for an operation outside the
     ///   carried interface; [`CheckRefusal::ShapeMismatch`] wanting
     ///   [`ExpectedShape::Capability`] for a capability of another former;
@@ -3683,23 +3687,24 @@ impl<'context, 'arena> Machine<'context, 'arena>
         // A capability of the unknown type may be any scope's, so any handler
         // may receive the operation's continuation; so may one at a region the
         // definition abstracts, whose scope stands outside the run.
-        let answerer = if let ValueTypeView::Capability { region, .. } =
+        let (answerer, placed) = if let ValueTypeView::Capability { region, .. } =
             value_type_view(self.context.arena(), head)?
         {
-            match region {
+            let answerer = match region {
                 Region::Held => session::Answerer::Host,
                 Region::Scoped(depth) => session::Answerer::Scope {
                     depth,
                     operation: &operation,
                 },
                 Region::Bound(_) => session::Answerer::Anyone,
-            }
+            };
+            (answerer, region)
         }
         else {
-            session::Answerer::Anyone
+            (session::Answerer::Anyone, Region::Held)
         };
         self.region_captured(at, answerer, payload)?;
-        let effects = gandr_core_term::effect::EffectRow::singleton(signature);
+        let effects = gandr_core_term::effect::EffectRow::instance(signature, placed);
         let result = self
             .context
             .arena_mut()
@@ -3718,10 +3723,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// at.
     ///
     /// # Specification
-    /// - ensures: the subject's type `F^⟨I | ε⟩ A` is formed next, where `I` is
-    ///   the handled interface and `F^ε A` the answer, with the scope waiting
-    ///   on it; a scope of [`gandr_core_term::effect::host::DIV`], which no
-    ///   handler eliminates, checks its subject at `F^ε A` itself.
+    /// - ensures: the subject's type `F^⟨I, I@ρ | ε⟩ A` is formed next, where
+    ///   `I` is the handled interface, `ρ` the region the scope's capability
+    ///   lives in and `F^ε A` the answer, with the scope waiting on it: the
+    ///   subject may perform the interface by name and through the capability;
+    ///   a scope of [`gandr_core_term::effect::host::DIV`], which no handler
+    ///   eliminates, checks its subject at `F^ε A` itself.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for an answer that is no
     ///   returner; [`CheckRefusal::HandlerCoverage`] for clauses that do not
     ///   cover the interface exactly once; [`CheckRefusal::CapabilityEscaped`]
@@ -3803,7 +3810,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
         // Divergence has no operation to answer: its scope runs the subject
         // in the answer's own row.
         let divergence = signature.name().as_ref() == gandr_core_term::effect::host::DIV;
-        let handled = gandr_core_term::effect::EffectRow::singleton(signature);
+        let own = self.next_region()?;
+        let handled = gandr_core_term::effect::EffectRow::from_placed([
+            (signature.clone(), Region::Held),
+            (signature, own),
+        ])
+        .map_err(|_twice| CheckRefusal::MachineInvariant)?;
         let widened = if divergence {
             Ok(ambient)
         }

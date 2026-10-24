@@ -53,11 +53,15 @@ pub trait Authority: core::fmt::Debug
     /// trivial.
     fn granted(&self) -> alloc::vec::Vec<Name<'_>>;
 
-    /// Each interface's name, in row order.
+    /// Each interface's name, in row order, beside the region its instance
+    /// lives at: [`Region::Held`](gandr_core_term::effect::capability::Region)
+    /// for the interface's default.
     ///
     /// # Specification
     /// trivial.
-    fn interfaces(&self) -> alloc::vec::Vec<Name<'_>>;
+    fn interfaces(
+        &self
+    ) -> alloc::vec::Vec<(Name<'_>, gandr_core_term::effect::capability::Region)>;
 }
 
 impl<Id> Authority for gandr_core_term::effect::EffectRow<Id>
@@ -80,15 +84,17 @@ where
             .collect()
     }
 
-    /// The name of every interface, in row order.
+    /// The name of every interface, in row order, beside its instance's
+    /// region.
     ///
     /// # Specification
     /// trivial.
     #[inline]
-    fn interfaces(&self) -> alloc::vec::Vec<Name<'_>>
+    fn interfaces(&self)
+    -> alloc::vec::Vec<(Name<'_>, gandr_core_term::effect::capability::Region)>
     {
-        self.signatures()
-            .map(|signature| Name::from(signature.name().as_ref()))
+        self.instances()
+            .map(|(label, signature)| (Name::from(signature.name().as_ref()), label.region()))
             .collect()
     }
 }

@@ -7,6 +7,7 @@ use alloc::string::ToString as _;
 use gandr_core_term::FailureClass;
 use gandr_core_term::TrackingIssue;
 use gandr_core_term::effect::EffectConflict;
+use gandr_core_term::effect::EffectLabel;
 use gandr_core_term::effect::OperationName;
 use gandr_core_term::primitive::PrimitiveError;
 use gandr_core_term::row::Label;
@@ -83,7 +84,8 @@ fn native_and_effect_refusals_read_apart_and_name_what_they_carry()
     assert_eq!(native.len(), 4, "{native:?}");
 
     let operation = EffectConflict::DuplicateOperation(OperationName::from("ask")).to_string();
-    let interface = EffectConflict::Signature(Label::from("Probe")).to_string();
+    let interface =
+        EffectConflict::Signature(EffectLabel::Interface(Label::from("Probe"))).to_string();
     assert!(operation.ends_with("ask"), "{operation}");
     assert!(interface.ends_with("Probe"), "{interface}");
     assert_ne!(

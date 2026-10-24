@@ -24,6 +24,21 @@
 //! supplies the implicits by name in the instantiation slot, `f[a = T](x)`,
 //! in any order.
 //!
+//! # An instance is a parameter its row's label binds
+//!
+//! A label of a function's result row, `def f() -> [a : Console] Unit`, is
+//! an instance entry of the merged telescope, after every other entry: `a`
+//! binds the capability of the whole interface at a region binder of its own,
+//! also named `a`, so `at a` names its region and `a.print(…)` exercises it,
+//! and the row's `a : Console` is the instance at that region, apart from the
+//! default `Console`. A label naming a region binder of the telescope,
+//! `@[r : Region] … -> [r : I] B`, binds nothing: it is that binder's
+//! instance. A call supplies an instance by name, `f[a = c](…)`, or omits it
+//! and passes the one instance of the interface in scope where it stands, a
+//! capability scope's or a label of the caller's own row; none is
+//! [`LoweringRefusal::InstanceUnanswered`] and several
+//! [`LoweringRefusal::InstanceAmbiguous`].
+//!
 //! # Boundaries
 //!
 //! - A telescope entry is a lower-case name; a capitalised binder is the
@@ -70,6 +85,10 @@ pub enum Plicity
     Implicit,
     /// In the parentheses, supplied in place.
     Explicit,
+    /// A label of the result's row, `-> [a : I] B`: the instance `a` of the
+    /// interface `I`, supplied by name or resolved among the instances of `I`
+    /// handled where the call stands.
+    Instance,
 }
 
 quenchant_shape::reason_enum! {
@@ -130,7 +149,8 @@ pub struct TelescopeEntry<'source>
     pub name: SurfaceName<'source>,
     /// The tile the name is written at.
     pub binder: Placed,
-    /// The type it is written with, when it is.
+    /// The type it is written with, when it is; the interface's name for an
+    /// instance a row label names.
     pub declared: Maybe<Placed, unstated::Absent>,
     /// Where it is written.
     pub plicity: Plicity,
@@ -318,10 +338,12 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `header` stands just past a declaration's name.
     /// - ensures: when the header opens a telescope one of whose entries `a :
-    ///   T` sorts other than by `Size`, and a parameter list follows it, every
-    ///   such entry and every explicit parameter, in the order [`merge_order`]
-    ///   gives over what each one's type mentions, a name the type binds itself
-    ///   mentioning nothing; absent otherwise. `header` is left where it was.
+    ///   T` sorts other than by `Size`, or the result's row writes a label `a :
+    ///   I`, and a parameter list follows, every such entry and every explicit
+    ///   parameter, in the order [`merge_order`] gives over what each one's
+    ///   type mentions, a name the type binds itself mentioning nothing, then
+    ///   every label of the result's row as an instance; absent otherwise.
+    ///   `header` is left where it was.
     /// - provides: the plicity metadata of [`super::Collected::plicities`].
     /// - fails: [`LoweringRefusal::TelescopeCycle`] at the declaration, naming
     ///   two parameters standing in a cycle; a form fault reading a type's
@@ -335,13 +357,15 @@ impl<'source> Collector<'_, 'source>
     /// - hypothesis: L3 — an implicit before the parameter its type mentions is
     ///   placed after it, and one whose type binds a later parameter's name is
     ///   not; a cycle is refused naming both; a telescope of stage binders
-    ///   alone merges nothing.
+    ///   alone merges nothing; a label of the result's row is an instance after
+    ///   every parameter.
     /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
     /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
     /// - witness: `lower::implicit::tests::a_telescope_cycle_is_refused_naming_the_cycle`
     /// - witness: `lower::implicit::tests::a_stage_telescope_merges_nothing`
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |merged| match *merged {
-        Maybe::Present(ref entries) => entries.iter().any(|entry| entry.plicity == Plicity::Implicit),
+        Maybe::Present(ref entries) => entries.iter().any(|entry| entry.plicity != Plicity::Explicit),
         Maybe::Absent(_) => true,
     }))]
     pub(super) fn merged_telescope(
@@ -352,36 +376,38 @@ impl<'source> Collector<'_, 'source>
     {
         let none = Maybe::Absent(merged::Absent::NoImplicit);
         let mut cursor = header.clone();
-        if let Maybe::Absent(_) = cursor.tile(TileName::ATTRIBUTES) {
-            return Ok(none);
-        }
         let mut scratch = Pieces::new();
         let mut entries: Vec<TelescopeEntry<'source>> = Vec::new();
-        while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
-            if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
-                let Maybe::Present(Piece::Operand(sort)) = cursor.read()
-                else {
-                    return Ok(none);
-                };
-                if self.sort_of(sort, &mut scratch)? == EntrySort::Value {
-                    entries.push(TelescopeEntry {
-                        name: self.name_of(written),
-                        binder: written,
-                        declared: Maybe::Present(sort),
-                        plicity: Plicity::Implicit,
-                    });
+        // The names the implicit telescope binds that are no entry: a region
+        // binder's, which a label of the result row names rather than binds.
+        let mut staged: BTreeSet<SurfaceName<'source>> = BTreeSet::new();
+        if let Maybe::Present(_) = cursor.tile(TileName::ATTRIBUTES) {
+            while let Maybe::Present(written) = cursor.tile(TileName::IDENTIFIER) {
+                if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+                    let Maybe::Present(Piece::Operand(sort)) = cursor.read()
+                    else {
+                        return Ok(none);
+                    };
+                    if self.sort_of(sort, &mut scratch)? == EntrySort::Value {
+                        entries.push(TelescopeEntry {
+                            name: self.name_of(written),
+                            binder: written,
+                            declared: Maybe::Present(sort),
+                            plicity: Plicity::Implicit,
+                        });
+                    }
+                    else {
+                        let _fresh = staged.insert(self.name_of(written));
+                    }
                 }
+                else if let Maybe::Present(_) = cursor.tile(TileName::LESS_THAN) {
+                    let _over = cursor.tile(TileName::IDENTIFIER);
+                }
+                let _comma = cursor.tile(TileName::COMMA);
             }
-            else if let Maybe::Present(_) = cursor.tile(TileName::LESS_THAN) {
-                let _over = cursor.tile(TileName::IDENTIFIER);
+            if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
+                return Ok(none);
             }
-            let _comma = cursor.tile(TileName::COMMA);
-        }
-        if entries.is_empty() {
-            return Ok(none);
-        }
-        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_CLOSE) {
-            return Ok(none);
         }
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
             return Ok(none);
@@ -412,7 +438,18 @@ impl<'source> Collector<'_, 'source>
             });
             let _comma = cursor.tile(TileName::COMMA);
         }
-        if let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE) {
+        if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
+            return Ok(none);
+        }
+        if let Maybe::Present(_) = cursor.tile(TileName::ARROW)
+            && let Maybe::Present(Piece::Operand(result)) = cursor.read()
+        {
+            self.row_labels(result, staged, &mut entries, &mut scratch)?;
+        }
+        if entries
+            .iter()
+            .all(|entry| entry.plicity == Plicity::Explicit)
+        {
             return Ok(none);
         }
         let positions: BTreeMap<SurfaceName<'source>, TelescopePosition> = entries
@@ -429,7 +466,8 @@ impl<'source> Collector<'_, 'source>
         let mut keyed = Pieces::new();
         let mut named = Pieces::new();
         for (later, entry) in entries.iter().enumerate() {
-            let Maybe::Present(typed) = entry.declared
+            let (Maybe::Present(typed), Plicity::Implicit | Plicity::Explicit) =
+                (entry.declared, entry.plicity)
             else {
                 continue;
             };
@@ -521,6 +559,94 @@ impl<'source> Collector<'_, 'source>
                 .filter_map(|&position| entries.get(usize::from(position)).copied())
                 .collect(),
         ))
+    }
+
+    /// Append an instance for each label `a : I` the row of the result type
+    /// `result` writes, `-> [a : I] B` or `-> -F [a : I] B`, that names
+    /// neither an entry already in `entries` nor a name of `staged`.
+    ///
+    /// # Specification
+    /// - requires: `result` is a function's result type.
+    /// - ensures: one [`Plicity::Instance`] entry per label naming no entry
+    ///   before it and no name of `staged`, in written order, its binder the
+    ///   label's tile and its declared tile the interface's name; nothing for a
+    ///   result writing no row or a row writing no label. A label naming a
+    ///   region binder `@[r : Region]` is that binder's instance, bound
+    ///   already.
+    /// - fails: a form fault reading the result's pieces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::merged_telescope`], and a label naming the
+    ///   telescope's region binder binds nothing.
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    /// - witness: `lower::implicit::tests::a_row_label_naming_a_region_binder_is_its_instance_2271`
+    #[spec(captures: before = entries.len(), ensures: |ret| ret.is_err() || entries.len() >= before)]
+    fn row_labels(
+        &self,
+        result: Placed,
+        staged: BTreeSet<SurfaceName<'source>>,
+        entries: &mut Vec<TelescopeEntry<'source>>,
+        scratch: &mut Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        read_pieces(self.pbg, self.tree, result.node, scratch)?;
+        let mut taken = staged;
+        taken.extend(entries.iter().map(|entry| entry.name));
+        let pieces = scratch.pieces.as_slice();
+        let tile = |at: usize| match pieces.get(at) {
+            Some(&Piece::Tile { label, at }) => Some((label, at)),
+            Some(&Piece::Operand(_)) | None => None,
+        };
+        // The row opens at the result's first `[`, before which only tiles —
+        // `-F` — stand.
+        let mut at = 0_usize;
+        loop {
+            match tile(at) {
+                Some((label, _)) if label == TileName::BRACKET_OPEN => break,
+                Some(_) => at = at.saturating_add(1),
+                None => return Ok(()),
+            }
+        }
+        at = at.saturating_add(1);
+        let mut named = Pieces::new();
+        loop {
+            match (
+                pieces.get(at),
+                tile(at.saturating_add(1)),
+                tile(at.saturating_add(2)),
+            ) {
+                (Some(&Piece::Operand(label)), Some((colon, _)), Some((typed, interface)))
+                    if colon == TileName::COLON && typed == TileName::TYPE_IDENTIFIER =>
+                {
+                    if let Some(written) = self.lone_name(label.node, &mut named)? {
+                        let name = self.name_of(written);
+                        if taken.insert(name) {
+                            entries.push(TelescopeEntry {
+                                name,
+                                binder: written,
+                                declared: Maybe::Present(interface),
+                                plicity: Plicity::Instance,
+                            });
+                        }
+                    }
+                    at = at.saturating_add(3);
+                },
+                (Some(&Piece::Tile { label, .. }), ..) if label == TileName::TYPE_IDENTIFIER => {
+                    at = at.saturating_add(1);
+                },
+                _ => break,
+            }
+            match tile(at) {
+                Some((comma, _)) if comma == TileName::COMMA => at = at.saturating_add(1),
+                Some(_) | None => break,
+            }
+        }
+
+        Ok(())
     }
 
     /// Each explicit parameter of the function whose header `header` stands
@@ -677,12 +803,39 @@ impl<'source> Collector<'_, 'source>
         scratch: &mut Pieces,
     ) -> Result<Option<SurfaceName<'source>>, LoweringRefusal<'source>>
     {
+        Ok(self.lone_name(node, scratch)?.map(|at| self.name_of(at)))
+    }
+
+    /// The one name tile the operand `node` is, read through `scratch`: a
+    /// key's or a row label's.
+    ///
+    /// # Specification
+    /// - ensures: the tile exactly when the operand's one piece is an
+    ///   identifier or a type variable.
+    /// - fails: a form fault reading the operand's pieces.
+    /// - panics: none.
+    /// - executable: none — as [`Self::key`].
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::key`], and a row's label binding its
+    ///   instance.
+    /// - witness: `lower::implicit::tests::a_binder_of_an_implicit_s_type_mentions_no_parameter_1350`
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
+    fn lone_name(
+        &self,
+        node: NodeIndex,
+        scratch: &mut Pieces,
+    ) -> Result<Option<Placed>, LoweringRefusal<'source>>
+    {
         read_pieces(self.pbg, self.tree, node, scratch)?;
         Ok(match *scratch.pieces.as_slice() {
             [Piece::Tile { label, at }]
                 if label == TileName::IDENTIFIER || label == TileName::TYPE_VARIABLE =>
             {
-                Some(self.name_of(at))
+                Some(at)
             },
             _ => None,
         })

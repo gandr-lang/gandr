@@ -165,13 +165,13 @@ pub(super) enum Nomination<'source>
 impl<'source> Lowerer<'_, 'source>
 {
     /// The merged telescope of the function whose declaration holds `node`,
-    /// when its telescope binds a value.
+    /// when its telescope binds a value or its row labels an instance.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the entries the collection merged for the declaration owning
-    ///   `node`; absent for a node no declaration owns and a declaration with
-    ///   no implicit.
+    ///   `node`, one of them an implicit or an instance; absent for a node no
+    ///   declaration owns and a declaration whose every parameter is explicit.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -180,7 +180,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   the answers.
     /// - witness: `lower::implicit::tests::plicity_is_metadata_not_type_structure`
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(entries) => entries.iter().any(|entry| entry.plicity == Plicity::Implicit),
+        Maybe::Present(entries) => entries.iter().any(|entry| entry.plicity != Plicity::Explicit),
         Maybe::Absent(_) => true,
     })]
     pub(super) fn merged_at(
@@ -244,11 +244,14 @@ impl<'source> Lowerer<'_, 'source>
     ///   in a frame extending the one before it, its type, when written, read
     ///   as a value type under that frame and recorded on its parameter, a
     ///   model implicit flattened into one parameter per component
-    ///   ([`Self::flatten_implicit`]); the cursor then stands at the list's
+    ///   ([`Self::flatten_implicit`]), an instance bound as its interface's
+    ///   capability at a region binder of its own
+    ///   ([`Self::instance_parameter`]); the cursor then stands at the list's
     ///   `)`, and the frame the last entry bound is returned. Otherwise nothing
     ///   changes and `frame` is returned.
     /// - fails: a binder's own refusal; a model type's ([`Self::model_slot`]);
-    ///   a fault at the parameter list when it ends before its `)`.
+    ///   an instance's ([`Self::instance_parameter`]); a fault at the parameter
+    ///   list when it ends before its `)`.
     /// - panics: none.
     ///
     /// # Errors
@@ -261,6 +264,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::plicity_is_metadata_not_type_structure`
     /// - witness: `lower::implicit::tests::a_forward_reference_from_the_prefix_binds_after_its_target`
     /// - witness: `lower::implicit::tests::a_model_implicit_binds_one_parameter_per_component_739`
+    /// - witness: `lower::implicit::tests::a_row_label_is_an_instance_after_every_parameter_2271`
     #[spec(
         captures: before = self.parameters.len(),
         ensures: |ret| ret.is_err() || self.parameters.len() >= before,
@@ -281,6 +285,10 @@ impl<'source> Lowerer<'_, 'source>
         let owner = self.collected.owner_of(site.at.node);
         let mut frame = frame;
         for (written, entry) in entries.into_iter().enumerate() {
+            if entry.plicity == Plicity::Instance {
+                frame = self.instance_parameter(site, entry, frame)?;
+                continue;
+            }
             if let Some((declared, slot)) = self.implicit_slot(site, entry)? {
                 frame = self.flatten_implicit(entry, declared, &slot, frame)?;
                 if let Maybe::Present(owner) = owner {
@@ -419,23 +427,27 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `site` is a call read as a computation under `frame`;
     ///   `cursor` stands at its head.
     /// - ensures: [`arity::Planned`] true exactly when the head is a bare name
-    ///   or an instantiation of a declaration with implicits or stage binders,
-    ///   every resident `a = e` naming one, the call then planned as the
-    ///   declaration applied to one argument per merged entry, an implicit's
-    ///   the resident naming it or, where none does, the hole the call
-    ///   nominates for it ([`Self::nominate`]), and an explicit one's the next
-    ///   written argument, each written argument read as a value under `frame`
-    ///   and the declaration's name as the head; a resident naming a stage
-    ///   binder is no argument but a stage the head carries
-    ///   ([`Self::stage_supplies`]); the head is recorded as supplied. False,
-    ///   with nothing changed, for any other head.
+    ///   or an instantiation of a declaration with implicits, instances or
+    ///   stage binders, every resident `a = e` naming one, the call then
+    ///   planned as the declaration applied to one argument per merged entry,
+    ///   an implicit's the resident naming it or, where none does, the hole the
+    ///   call nominates for it ([`Self::nominate`]), an instance's the resident
+    ///   naming it or, where none does, the instance handled in scope
+    ///   ([`Self::resolved_instance`]), and an explicit one's the next written
+    ///   argument, each written argument read as a value under `frame` and the
+    ///   declaration's name as the head; a resident naming a stage binder is no
+    ///   argument but a stage the head carries ([`Self::stage_supplies`]); the
+    ///   head is recorded as supplied. False, with nothing changed, for any
+    ///   other head.
     /// - fails: [`LoweringRefusal::ImplicitInParentheses`] for a call writing
     ///   one argument per parameter and omitting an implicit;
-    ///   [`LoweringRefusal::UnresolvedName`] at a resident naming no implicit
-    ///   or stage binder, and at a stage supplied by a name the caller binds no
-    ///   stage to; a fault at a resident written twice; the reserved refusal
-    ///   for a resident other than `a = e` beside one that is; the budget
-    ///   refusal once no hole can be nominated; a form fault reading the head.
+    ///   [`LoweringRefusal::UnresolvedName`] at a resident naming no implicit,
+    ///   instance or stage binder, and at a stage supplied by a name the caller
+    ///   binds no stage to; [`Self::resolved_instance`]'s refusal for an
+    ///   omitted instance; a fault at a resident written twice; the reserved
+    ///   refusal for a resident other than `a = e` beside one that is; the
+    ///   budget refusal once no hole can be nominated; a form fault reading the
+    ///   head.
     /// - panics: none.
     ///
     /// # Errors
@@ -450,6 +462,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::an_implicit_in_the_parentheses_is_refused`
     /// - witness: `lower::implicit::tests::a_resident_naming_no_implicit_is_unresolved`
     /// - witness: `lower::staged::tests::a_supplied_stage_crosses_at_the_call_s_head_1227`
+    /// - witness: `lower::implicit::tests::an_omitted_instance_is_the_one_handled_in_scope_2271`
+    /// - witness: `lower::implicit::tests::an_omitted_instance_is_refused_when_none_or_several_stand_2271`
     #[spec(
         captures: start = self.operands.len(),
         ensures: |ret| match ret {
@@ -485,17 +499,19 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: `site` is an instantiation.
     /// - ensures: [`arity::Planned`] true exactly when the instantiation's head
-    ///   names a declaration with implicits or stages and every resident `a =
-    ///   e` names one, the instantiation then planned as the declaration
-    ///   applied in its merged telescope's order to the residents, each read as
-    ///   a value, and to the variable of a lambda the supply opens
-    ///   ([`Self::abstracted`]) for each explicit parameter the telescope
-    ///   places before its last implicit, or for every explicit parameter when
-    ///   a stage is supplied, bridged as a computation read where it stands.
-    ///   False, with nothing changed, for any other instantiation, a
-    ///   recursion's claim among them.
+    ///   names a declaration with implicits, instances or stages and every
+    ///   resident `a = e` names one, the instantiation then planned as the
+    ///   declaration applied in its merged telescope's order to the residents,
+    ///   each read as a value, to the instance handled in scope for each
+    ///   instance no resident names ([`Self::resolved_instance`]), and to the
+    ///   variable of a lambda the supply opens ([`Self::abstracted`]) for each
+    ///   explicit parameter the telescope places before its last implicit, or
+    ///   for every explicit parameter when a stage is supplied, bridged as a
+    ///   computation read where it stands. False, with nothing changed, for any
+    ///   other instantiation, a recursion's claim among them.
     /// - fails: [`LoweringRefusal::ImplicitUnsupplied`] for a supply leaving an
-    ///   implicit out; the wrong-sort refusal where no computation can stand;
+    ///   implicit out; [`Self::resolved_instance`]'s refusal for one leaving an
+    ///   instance out; the wrong-sort refusal where no computation can stand;
     ///   the refusals of [`Self::supplied_call`] at a resident.
     /// - panics: none.
     ///
@@ -811,7 +827,7 @@ impl<'source> Lowerer<'_, 'source>
         }
         let implicits: BTreeSet<SurfaceName<'source>> = entries
             .iter()
-            .filter(|entry| entry.plicity == Plicity::Implicit)
+            .filter(|entry| entry.plicity != Plicity::Explicit)
             .map(|entry| entry.name)
             .collect();
         if let Some((&unknown, &(written, _))) = supplied
@@ -922,6 +938,16 @@ impl<'source> Lowerer<'_, 'source>
                         Some(site.at.node)
                     }
                 },
+                (Plicity::Instance, Some(entry)) => {
+                    if let Some(&(_, value)) = supplied.get(&entry.name) {
+                        Some(value)
+                    }
+                    else {
+                        let index = self.resolved_instance(site, frame, function, *entry)?;
+                        let _first = self.instanced.insert(self.operands.len(), index);
+                        Some(site.at.node)
+                    }
+                },
                 (Plicity::Explicit, _) if bound < opened => {
                     // The outermost lambda binds the first explicit: its
                     // variable is the furthest under the application.
@@ -933,7 +959,9 @@ impl<'source> Lowerer<'_, 'source>
                     );
                     Some(site.at.node)
                 },
-                (Plicity::Explicit | Plicity::Implicit, _) => positional.next().copied(),
+                (Plicity::Explicit | Plicity::Implicit | Plicity::Instance, _) => {
+                    positional.next().copied()
+                },
             };
             if let Some(argument) = argument {
                 self.operands.push(argument);
@@ -952,6 +980,7 @@ impl<'source> Lowerer<'_, 'source>
         for position in applied.start .. applied.end {
             if self.nominated.contains_key(&position)
                 || self.abstracted.contains_key(&position)
+                || self.instanced.contains_key(&position)
                 || self.components.contains_key(&position)
             {
                 continue;

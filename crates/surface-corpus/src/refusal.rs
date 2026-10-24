@@ -626,6 +626,12 @@ pub enum RefusalName
     ImplicitUnsupplied,
     /// A call writing a function's implicit arguments among its parentheses.
     ImplicitInParentheses,
+    /// A call omitting an instance a label of the callee's row names where no
+    /// instance of its interface stands.
+    InstanceUnanswered,
+    /// A call omitting an instance where several instances of its interface
+    /// stand.
+    InstanceAmbiguous,
     /// A model implicit named alone where a value is read, or supplied by what
     /// names neither a module nor a model implicit.
     ModelImplicitValue,
@@ -888,7 +894,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 211_usize] = [
+    pub const VOCABULARY: [Self; 213_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -990,6 +996,8 @@ impl RefusalName
         Self::TelescopeCycle,
         Self::ImplicitUnsupplied,
         Self::ImplicitInParentheses,
+        Self::InstanceUnanswered,
+        Self::InstanceAmbiguous,
         Self::ModelImplicitValue,
         Self::ImplicitUnsolved,
         Self::ModelUnanswered,
@@ -1188,6 +1196,8 @@ impl RefusalName
         (Self::TelescopeCycle, b"TelescopeCycle") |
         (Self::ImplicitUnsupplied, b"ImplicitUnsupplied") |
         (Self::ImplicitInParentheses, b"ImplicitInParentheses") |
+        (Self::InstanceUnanswered, b"InstanceUnanswered") |
+        (Self::InstanceAmbiguous, b"InstanceAmbiguous") |
         (Self::ModelImplicitValue, b"ModelImplicitValue") |
         (Self::ImplicitUnsolved, b"ImplicitUnsolved") |
         (Self::ModelUnanswered, b"ModelUnanswered") |
@@ -1523,6 +1533,8 @@ impl RefusalName
             Self::TelescopeCycle => "TelescopeCycle",
             Self::ImplicitUnsupplied => "ImplicitUnsupplied",
             Self::ImplicitInParentheses => "ImplicitInParentheses",
+            Self::InstanceUnanswered => "InstanceUnanswered",
+            Self::InstanceAmbiguous => "InstanceAmbiguous",
             Self::ModelImplicitValue => "ModelImplicitValue",
             Self::ImplicitUnsolved => "ImplicitUnsolved",
             Self::ModelUnanswered => "ModelUnanswered",
@@ -2122,6 +2134,10 @@ impl Refusal<'_>
         RefusalName::ImplicitUnsupplied) |
         (Self::Lowering(LoweringRefusal::ImplicitInParentheses { .. }),
         RefusalName::ImplicitInParentheses) |
+        (Self::Lowering(LoweringRefusal::InstanceUnanswered { .. }),
+        RefusalName::InstanceUnanswered) |
+        (Self::Lowering(LoweringRefusal::InstanceAmbiguous { .. }),
+        RefusalName::InstanceAmbiguous) |
         (Self::Lowering(LoweringRefusal::ModelImplicitValue { .. }),
         RefusalName::ModelImplicitValue) |
         (Self::Lowering(LoweringRefusal::RegionAsValue { .. }),
@@ -2386,7 +2402,9 @@ impl Refusal<'_>
         RefusalName::ImplicitTelescope) | (LoweringRefusal::TelescopeCycle { .. },
         RefusalName::TelescopeCycle) | (LoweringRefusal::ImplicitUnsupplied { .. },
         RefusalName::ImplicitUnsupplied) | (LoweringRefusal::ImplicitInParentheses { .. },
-        RefusalName::ImplicitInParentheses) | (LoweringRefusal::ModelImplicitValue { .. },
+        RefusalName::ImplicitInParentheses) | (LoweringRefusal::InstanceUnanswered { .. },
+        RefusalName::InstanceUnanswered) | (LoweringRefusal::InstanceAmbiguous { .. },
+        RefusalName::InstanceAmbiguous) | (LoweringRefusal::ModelImplicitValue { .. },
         RefusalName::ModelImplicitValue) | (LoweringRefusal::RegionAsValue { .. },
         RefusalName::RegionAsValue) | (LoweringRefusal::EntryType { .. },
         RefusalName::EntryType) | (LoweringRefusal::StrayReceiverMode { .. },
@@ -2484,6 +2502,8 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::TelescopeCycle { .. } => RefusalName::TelescopeCycle,
         LoweringRefusal::ImplicitUnsupplied { .. } => RefusalName::ImplicitUnsupplied,
         LoweringRefusal::ImplicitInParentheses { .. } => RefusalName::ImplicitInParentheses,
+        LoweringRefusal::InstanceUnanswered { .. } => RefusalName::InstanceUnanswered,
+        LoweringRefusal::InstanceAmbiguous { .. } => RefusalName::InstanceAmbiguous,
         LoweringRefusal::ModelImplicitValue { .. } => RefusalName::ModelImplicitValue,
         LoweringRefusal::RegionAsValue { .. } => RefusalName::RegionAsValue,
         LoweringRefusal::EntryType { .. } => RefusalName::EntryType,
