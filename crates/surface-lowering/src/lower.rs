@@ -604,6 +604,7 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::cursor;
 use crate::form::declined_feature;
+use crate::form::misspelt_keyword;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::import::ImportBinding;
@@ -4309,6 +4310,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_instances(sink);
         self.refuse_misshapen_entries(sink);
         self.place_by_layout();
+        self.place_misspelt();
         self.refused_declarations();
 
         self.end_source();
@@ -6850,6 +6852,66 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     span: found.at,
                     form: bracket_form(pbg, tree, found.bracket),
                     fault: found.fault,
+                }));
+            }
+        }
+    }
+
+    /// Move each extra-operand refusal of a declaration of the current source
+    /// onto the word before the extra operand, when that word misspells a
+    /// keyword ([`misspelt_keyword`]): the operand is extra because the
+    /// keyword read as a name.
+    ///
+    /// # Specification
+    /// - requires: every pass that refuses a declaration of the current source
+    ///   has run.
+    /// - ensures: each slot of the current source refused as a form holding an
+    ///   operand it does not take, whose half holding the refusal holds a word
+    ///   before that operand that [`misspelt_keyword`] reads, is refused at the
+    ///   word instead, at the same node and naming the same form, with the
+    ///   keyword the word misspells; every other refusal is unchanged.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause restates the walk over the slots.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`misspelt_keyword`].
+    /// - witness: `lower::tests::a_keyword_misspelt_is_refused_at_the_word_2259`
+    fn place_misspelt(&mut self)
+    {
+        let pbg = self.pbg;
+        let tree = self.tree;
+        for slot in self.collected.slots.iter_mut().skip(self.current.slots) {
+            let Maybe::Present((
+                position,
+                LoweringRefusal::MalformedForm {
+                    span,
+                    form,
+                    fault: FormFault::ExtraOperand,
+                },
+            )) = slot.refusal
+            else {
+                continue;
+            };
+            let Some(within) = [slot.signature, slot.definition]
+                .into_iter()
+                .find_map(|half| match half {
+                    Maybe::Present(half)
+                        if half.declaration.span.start() <= span.start()
+                            && span.end() <= half.declaration.span.end() =>
+                    {
+                        Some(half.declaration.span)
+                    },
+                    Maybe::Present(_) | Maybe::Absent(_) => None,
+                })
+            else {
+                continue;
+            };
+            if let Some((word, keyword)) = misspelt_keyword(pbg, tree, within, span) {
+                slot.refusal = Maybe::Present((position, LoweringRefusal::MalformedForm {
+                    span: word,
+                    form,
+                    fault: FormFault::Misspelt(keyword),
                 }));
             }
         }
@@ -25162,6 +25224,44 @@ mod tests
             },
             "a parameter's type is one form, and a second juxtaposed beside it is refused as \
              the function's"
+        );
+    }
+
+    /// #2259: a keyword misspelt reads as a name, and the form then holds the
+    /// name and the operand after it in a hole that takes one. The refusal is
+    /// at the word, naming the keyword; a word that misspells none keeps the
+    /// refusal at the operand.
+    #[test]
+    fn a_keyword_misspelt_is_refused_at_the_word_2259()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        for (written, word) in [
+            ("retur", "a last letter left off"),
+            ("retrun", "two letters swapped"),
+            ("returnn", "one letter too many"),
+        ] {
+            let source = alloc::format!("def f(x : Integer) -> -F Integer {{\n  {written} x\n}}\n");
+            let start = source.find(written).unwrap_or_default();
+            assert_eq!(
+                refusal(SourceText::from(source.as_str())),
+                LoweringRefusal::MalformedForm {
+                    span: at(start, start.saturating_add(written.len())),
+                    form: FormName::FUNCTION,
+                    fault: FormFault::Misspelt(crate::form::TileName::RETURN),
+                },
+                "`{written}`, {word}, is refused at the word as `return` misspelt"
+            );
+        }
+        let source = "def f(x : Integer) -> -F Integer {\n  zebra x\n}\n";
+        let start = source.find("x\n").unwrap_or_default();
+        assert_eq!(
+            refusal(SourceText::from(source)),
+            LoweringRefusal::MalformedForm {
+                span: at(start, start.saturating_add(1)),
+                form: FormName::FUNCTION,
+                fault: FormFault::ExtraOperand,
+            },
+            "a word that misspells no keyword keeps the refusal at the extra operand"
         );
     }
 
