@@ -2607,7 +2607,9 @@ impl<'source> Respelling<'_, 'source>
     /// Write the returner whose parts are `parts`, `-F B`, as `B`, answering
     /// `B`'s band, and `-F [E] B` as `[E] B`, the row kept before the type it
     /// rows, its tail among it, `[E | r] B` and `[r] B`; or nothing when a
-    /// comment stands among its parts.
+    /// comment stands among its parts, or when `B` is a value at a world or a
+    /// region, `A at w`: the lowering inserts no returner over one, since
+    /// `-> A at w` reads as a computation placed at `w`.
     ///
     /// # Specification
     /// trivial.
@@ -2626,7 +2628,8 @@ impl<'source> Respelling<'_, 'source>
         else {
             return None;
         };
-        if <&str>::from(keyword) != "-F" {
+        if <&str>::from(keyword) != "-F" || self.unparenthesized(value) == Some(MoldName("at_type"))
+        {
             return None;
         }
         let operand = self.operand(value);
@@ -2672,6 +2675,32 @@ impl<'source> Respelling<'_, 'source>
         out.gap(Spelling(" "));
         out.place(&operand, Band::Atom);
         Some(Band::Bridge)
+    }
+
+    /// The rule of the type `child` writes under any parentheses around it,
+    /// or nothing when `child` is no node.
+    ///
+    /// # Specification
+    /// trivial.
+    fn unparenthesized(
+        &self,
+        child: Child<'source>,
+    ) -> Option<MoldName>
+    {
+        let Child::Node(mut node) = child
+        else {
+            return None;
+        };
+        while self.rule(node) == Some(MoldName("parenthesized_type")) {
+            let (parts, _) = self.parts(node);
+            let (_, operands) = split(&parts);
+            let &[Child::Node(inner)] = operands.as_slice()
+            else {
+                return None;
+            };
+            node = inner;
+        }
+        self.rule(node)
     }
 
     /// Write the `thunk` whose parts are `parts` as the one expression its
