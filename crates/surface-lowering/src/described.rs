@@ -27,7 +27,10 @@
 //!   rule's, a `true` or `false` at the path's carrier. An operation one of
 //!   whose ports binds a variable (`t : pi+ (x : S) . T`) has no component: its
 //!   name and a bound port's name answer nowhere, while each binder's name
-//!   answers at its sort and its ports otherwise as written.
+//!   answers at its sort and its ports otherwise as written. In a law over it,
+//!   a field `bind x .` names its variable at the sort the port binds it at,
+//!   and each occurrence of that variable, an instantiation's argument among
+//!   them, answers there.
 //! - **A data family's** constructors, operations and rules read over the
 //!   module's own unparameterised families: a constant constructor's name
 //!   answers at its family, one with fields at `+U (A₁ -> … -> -F F)`, each
@@ -384,9 +387,9 @@ type PathParts<'term> = (&'term SortTerm, &'term FreeTerm, &'term FreeTerm);
 
 /// The sorts a law no `Model(S)` component states reads its nodes at, as the
 /// theory writes them: each operation by name, each variable its left side
-/// places at a first-order port at that port's sort, and each variable a
-/// binding port binds at the sort of the term it stands for, under the
-/// port's binders.
+/// places at a first-order port, or under a field for each variable a binding
+/// port binds, at that port's sort, and each variable a binding port binds
+/// at the sort of the term it stands for, under the port's binders.
 ///
 /// # Specification
 /// trivial.
@@ -397,7 +400,8 @@ struct Unstated<'form>
     operations: &'form BTreeMap<&'form Name, &'form PresentedOperation>,
     /// Each first-order variable of the left side, at its port's sort.
     variables: BTreeMap<&'form Name, &'form SortTerm>,
-    /// Each variable a binding port binds, at the port's sort.
+    /// Each variable a binding port binds, written there under fewer fields
+    /// than the port binds, at the port's sort.
     bound: BTreeMap<&'form Name, &'form SortTerm>,
 }
 
@@ -408,10 +412,11 @@ impl<'form> Unstated<'form>
     ///
     /// # Specification
     /// - ensures: each variable an application of a declared operation holds
-    ///   directly, or under the abstractions of an abstracting port, at the
-    ///   sort of the port it fills: among `variables` for a first-order port,
-    ///   among `bound` for a binding one; a variable no application holds so is
-    ///   in neither.
+    ///   directly, or under the abstractions and fields of a binding port, at
+    ///   the sort of the port it fills: among `variables` for a first-order
+    ///   port or one whose every variable a field over it binds, among `bound`
+    ///   for a binding port it stands at under fewer fields than that; a
+    ///   variable no application holds so is in neither.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the placement is read off the side's nodes, which a
@@ -424,9 +429,10 @@ impl<'form> Unstated<'form>
     /// # Adequacy
     /// - hypothesis: L3 — `let(u, t)` places `u` at `Tm` and `t` at the binding
     ///   port's `Tm`; `nu(bind a . p)` places `p` at the abstracting port's
-    ///   `Proc`.
+    ///   `Proc`; `new(bind x . q)` places `q` at the field's `C`.
     /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
     /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
+    /// - witness: `described::tests::a_field_s_variable_and_an_instantiation_under_it_answer_2360`
     fn of(
         operations: &'form BTreeMap<&'form Name, &'form PresentedOperation>,
         left: &'form FreeTerm,
@@ -441,15 +447,32 @@ impl<'form> Unstated<'form>
                 TermView::Op { name, args } => {
                     if let Some(operation) = operations.get(name) {
                         for (arg, port) in args.clone().zip(&operation.inputs) {
+                            // The fields written over the argument: a variable
+                            // under one per variable the port binds is a term of
+                            // the port's sort, one under fewer the port's own.
                             let mut held = arg;
-                            while let TermView::Abs { mut args, .. }
-                            | TermView::Lam { mut args, .. } = held.view()
-                                && let Some(body) = args.next()
-                            {
+                            let mut fields = 0_usize;
+                            loop {
+                                let (body, field) = match held.view() {
+                                    TermView::Abs { mut args, .. } => (args.next(), false),
+                                    TermView::Lam { mut args, .. } => (args.next(), true),
+                                    TermView::Var(_)
+                                    | TermView::Ctor { .. }
+                                    | TermView::Op { .. }
+                                    | TermView::Results { .. }
+                                    | TermView::Inst { .. }
+                                    | TermView::Atom(_)
+                                    | TermView::Bound(_) => break,
+                                };
+                                let Some(body) = body
+                                else {
+                                    break;
+                                };
+                                fields = fields.saturating_add(usize::from(field));
                                 held = body;
                             }
                             if let TermView::Var(variable) = held.view() {
-                                let into = if port.binders.is_empty() {
+                                let into = if fields >= port.binders.len() {
                                     &mut variables
                                 }
                                 else {
@@ -1487,16 +1510,19 @@ impl Typer<'_>
     /// arguments the elaboration gives it, and an application's head at its
     /// operation's type; for a law no component states, a variable and an
     /// application at the unindexed sort the theory writes for them, an
-    /// instantiation at the sort of its variable's binding port, an
-    /// abstraction's atom at the atom sort its port abstracts there, and an
-    /// atom's occurrence at the sort of the port it stands at.
+    /// instantiation at the sort of its variable's binding port or else of
+    /// the port it stands at, an abstraction's atom at the atom sort its port
+    /// abstracts there, a field's variable at the representable sort its port
+    /// binds there, and an atom's or a field variable's occurrence at the sort
+    /// of the port it stands at or else of its binder.
     ///
     /// # Specification
     /// - requires: an elaboration, when present, is `side` with each
     ///   application's implicit arguments inserted.
     /// - ensures: as the summary states, each node at the bytes `nodes` holds
-    ///   for it; a variable a binding port binds, a binding operation's head
-    ///   and an abstraction answer nowhere, as their ports do.
+    ///   for it; a variable a binding port binds, written there under fewer
+    ///   fields than the port binds, a binding operation's head and an
+    ///   abstraction answer nowhere, as their ports do.
     /// - fails: never; a node no sort is minted for records nothing.
     /// - panics: none.
     /// - executable: none — as [`Self::theory`].
@@ -1509,12 +1535,15 @@ impl Typer<'_>
     ///   `Hom(a, a)`, `a` at `Ob`, `comp` at its type and the variable `f` at
     ///   the code its sort returns; the identity-return signature's index
     ///   `arrow(a, b)` at `CTy`; `let(u, t)`, `u` and `t(u)` at `Tm`; the atom
-    ///   of `bind a . p` at `Name`; `a` in `out(a, nil())` at `Name`.
+    ///   of `bind a . p` at `Name`; `a` in `out(a, nil())` at `Name`; `k(d, c)`
+    ///   under `bind d .` and `bind c .` at the port's `C`, and `d` and `c`
+    ///   there at the sorts their ports bind them at.
     /// - witness: `described::tests::a_theory_answers_at_every_member`
     /// - witness: `described::tests::a_binder_answers_at_its_sort_and_its_operation_nowhere`
     /// - witness: `described::tests::a_second_order_law_answers_at_its_written_sorts`
     /// - witness: `described::tests::a_variable_under_an_abstraction_answers_at_its_port`
     /// - witness: `described::tests::an_occurrence_answers_at_its_port`
+    /// - witness: `described::tests::a_field_s_variable_and_an_instantiation_under_it_answer_2360`
     fn law_side(
         &mut self,
         scope: &Scope,
@@ -1525,13 +1554,17 @@ impl Typer<'_>
         read: Reading<'_, '_>,
     )
     {
-        // Each node with its elaboration, the atoms its port abstracts that no
-        // abstraction above it has taken, and the port's sort.
+        // Each node with its elaboration, the atoms its port abstracts and the
+        // variables it binds that no abstraction or field above it has taken,
+        // the port's sort, and the innermost entry of the variables bound
+        // above it, one past its index among `scoped`.
         type Pending<'term> = (
             TermNode<'term>,
             Option<TermNode<'term>>,
             &'term [Binder],
+            &'term [Binder],
             Option<&'term SortTerm>,
+            usize,
         );
         let (elaborated, unstated) = match read {
             Reading::Elaborated(elaborated) => (elaborated, None),
@@ -1542,13 +1575,18 @@ impl Typer<'_>
             side.to_node(),
             elaborated.map(FreeTerm::to_node),
             &[][..],
+            &[][..],
             None,
+            0_usize,
         )]);
+        // Each atom an abstraction binds and each variable a field binds, at
+        // its sort, beside the entry of the one bound above it.
+        let mut scoped: Vec<(usize, &Name, &SortTerm)> = Vec::new();
         let mut at = nodes.nodes.iter();
         // The elaborated arguments by the binder each instantiates, refilled
         // per application.
         let mut by: BTreeMap<&Name, FreeTerm> = BTreeMap::new();
-        while let Some((node, image, atoms, port)) = pending.pop() {
+        while let Some((node, image, atoms, fields, port, innermost)) = pending.pop() {
             let Some(written) = at.next()
             else {
                 break;
@@ -1571,8 +1609,21 @@ impl Typer<'_>
                         self.emit(written.span, DescribedRole::Term, ty, context);
                     }
                 },
-                TermView::Atom(_) | TermView::Bound(_) => {
-                    if let Some(sort) = port
+                TermView::Atom(name) | TermView::Bound(name) => {
+                    // Else the sort its innermost binder of that name gives it.
+                    let mut above = innermost;
+                    let mut binding = None;
+                    while let Some(&(outer, bound, sort)) =
+                        above.checked_sub(1).and_then(|at| scoped.get(at))
+                    {
+                        if bound == name {
+                            binding = Some(sort);
+                            break;
+                        }
+                        above = outer;
+                    }
+                    let sort = port.or_else(|| binding.filter(|sort| sort.indices.is_empty()));
+                    if let Some(sort) = sort
                         && let Some(ty) = self.sort(scope, sort)
                     {
                         self.emit(written.span, DescribedRole::Name, ty, context);
@@ -1639,40 +1690,71 @@ impl Typer<'_>
                     for (place, arg) in args.into_iter().enumerate().rev() {
                         let image = images.get(place.saturating_add(implicit)).copied();
                         let port = ports.get(place);
-                        let atoms = port.map_or(&[][..], |port| port.abstractions.as_slice());
-                        pending.push((arg, image, atoms, port.map(|port| &port.sort)));
+                        let (atoms, fields) = port.map_or((&[][..], &[][..]), |port| {
+                            (port.abstractions.as_slice(), port.binders.as_slice())
+                        });
+                        pending.push((
+                            arg,
+                            image,
+                            atoms,
+                            fields,
+                            port.map(|port| &port.sort),
+                            innermost,
+                        ));
                     }
                 },
                 TermView::Inst { name, args } => {
                     if let Some(sort) = unstated
                         .and_then(|unstated| unstated.bound.get(name).copied())
+                        .or(port)
                         .filter(|sort| sort.indices.is_empty())
                         && let Some(ty) = self.sort(scope, sort)
                     {
                         self.emit(written.span, DescribedRole::Term, ty, context);
                     }
                     let first = pending.len();
-                    pending.extend(args.map(|arg| (arg, None, &[][..], None)));
+                    pending.extend(args.map(|arg| (arg, None, &[][..], &[][..], None, innermost)));
                     if let Some(added) = pending.get_mut(first ..) {
                         added.reverse();
                     }
                 },
-                TermView::Abs { mut args, .. } | TermView::Lam { mut args, .. } => {
-                    let (inner, below) = atoms
+                TermView::Abs {
+                    atom: bound,
+                    mut args,
+                }
+                | TermView::Lam {
+                    var: bound,
+                    mut args,
+                } => {
+                    // An abstraction takes the next atom its port abstracts, a
+                    // field the next variable its port binds.
+                    let field = matches!(node.view(), TermView::Lam { .. });
+                    let taken = if field { fields } else { atoms };
+                    let (inner, below) = taken
                         .split_first()
-                        .map_or((None, atoms), |(inner, below)| (Some(inner), below));
-                    if let (Maybe::Present(atom), Some(inner)) = (written.head, inner)
+                        .map_or((None, taken), |(inner, below)| (Some(inner), below));
+                    if let (Maybe::Present(binder), Some(inner)) = (written.head, inner)
                         && let Some(ty) = self.sort(scope, &inner.sort)
                     {
-                        self.emit(atom, DescribedRole::Name, ty, context);
+                        self.emit(binder, DescribedRole::Name, ty, context);
                     }
+                    let innermost = inner.map_or(innermost, |inner| {
+                        scoped.push((innermost, bound, &inner.sort));
+                        scoped.len()
+                    });
+                    let (atoms, fields) = if field {
+                        (atoms, below)
+                    }
+                    else {
+                        (below, fields)
+                    };
                     if let Some(body) = args.next() {
-                        pending.push((body, None, below, port));
+                        pending.push((body, None, atoms, fields, port, innermost));
                     }
                 },
                 TermView::Ctor { args, .. } | TermView::Results { args } => {
                     let first = pending.len();
-                    pending.extend(args.map(|arg| (arg, None, &[][..], None)));
+                    pending.extend(args.map(|arg| (arg, None, &[][..], &[][..], None, innermost)));
                     if let Some(added) = pending.get_mut(first ..) {
                         added.reverse();
                     }
