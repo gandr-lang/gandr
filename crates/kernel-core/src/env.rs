@@ -1219,6 +1219,36 @@ impl Environment
         Self::default()
     }
 
+    /// Share the arena's nodes with every clone of the environment made
+    /// after: such a clone copies, and its drop releases, only the nodes
+    /// minted after the freeze ([`TermArena::freeze`]).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the arena's watermark and the entries are unchanged, and
+    ///   admission, rejection and every read answer as they would have
+    ///   unfrozen.
+    /// - provides: the environment a readmission records, which each
+    ///   readmission resuming it copies at the cost of what it admits.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an environment frozen after one admission and cloned
+    ///   admits a definition reading the frozen one and refuses a bad one as an
+    ///   environment built alike and never frozen does, and the environment it
+    ///   was cloned from sees neither.
+    /// - witness: `env::tests::a_frozen_environment_admits_as_one_never_frozen`
+    #[spec(
+        captures: [entry_mark = self.arena.watermark(), entry_len = self.entries.len()],
+        ensures: self.arena.watermark() == entry_mark && self.entries.len() == entry_len,
+    )]
+    #[inline]
+    pub fn freeze(&mut self)
+    {
+        self.arena.freeze();
+    }
+
     /// The arena, for a consumer reading admitted content.
     ///
     /// # Specification
@@ -3185,6 +3215,66 @@ mod tests
             environment.arena().value_type(declared).is_some(),
             "and the admitted declaration's content still resolves"
         );
+    }
+
+    #[test]
+    fn a_frozen_environment_admits_as_one_never_frozen()
+    {
+        let first = |environment: &mut Environment| {
+            let staged = {
+                let mut staging = environment.stage();
+                let declared = staging.arena().value_type_unit();
+                let body = staging.arena().value_unit();
+                staging.def(LevelSignature::monomorphic(), declared, body)
+            };
+            environment
+                .add_decl(staged)
+                .expect("a unit definition admits")
+        };
+        let then = |environment: &mut Environment, first: ConstantIndex| {
+            let reading = {
+                let mut staging = environment.stage();
+                let declared = staging.arena().value_type_unit();
+                let body = staging.arena().value_constant(first);
+                staging.def(LevelSignature::monomorphic(), declared, body)
+            };
+            let reading = environment
+                .add_decl(reading)
+                .map(super::CheckedId::position);
+            let bad = {
+                let mut staging = environment.stage();
+                let declared = staging.arena().value_type_base(BaseType::Integer);
+                let body = staging.arena().value_unit();
+                staging.def(LevelSignature::monomorphic(), declared, body)
+            };
+            (reading, environment.add_decl(bad).map(|_admitted| ()))
+        };
+        let mut plain = Environment::new();
+        let position = first(&mut plain).position();
+        let mut frozen = Environment::new();
+        assert_eq!(position, first(&mut frozen).position());
+        let at_freeze = frozen.arena().watermark();
+        frozen.freeze();
+        assert_eq!(
+            at_freeze,
+            frozen.arena().watermark(),
+            "a freeze keeps the watermark"
+        );
+        assert_eq!(plain.arena(), frozen.arena(), "and every node");
+
+        let mut copy = frozen.clone();
+        let answers = then(&mut plain, position);
+        assert!(answers.0.is_ok(), "a definition reading the first admits");
+        assert!(answers.1.is_err(), "unit is not an integer");
+        assert_eq!(answers, then(&mut copy, position), "the copy answers alike");
+        assert_eq!(plain.arena(), copy.arena(), "and holds the same nodes");
+        assert_eq!(plain.entries().len(), copy.entries().len());
+        assert_eq!(
+            at_freeze,
+            frozen.arena().watermark(),
+            "the frozen environment never sees the copy's admission"
+        );
+        assert_eq!(1, frozen.entries().len());
     }
 
     #[test]

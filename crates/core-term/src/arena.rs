@@ -97,14 +97,13 @@
 //!   leaves and pass-throughs come back out; a reader that needs an edge per
 //!   child at a cost a derivation cannot meet stores the edges.
 
-use alloc::sync::Arc;
-use alloc::vec::Vec;
-
 use anodized::spec;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Family;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Summand;
 
@@ -151,11 +150,6 @@ pub struct ValueTypeId(u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CompTypeId(u32);
 
-/// The number of nodes allocated in one arena family.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ArenaLength(usize);
-
 /// The stored index of one node within its arena family.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -165,10 +159,11 @@ struct ArenaIndex(u32);
 ///
 /// # Specification
 /// - requires: `length` is a family length within an arena.
-/// - ensures: `|ret| ret.0 == u32::try_from(length.0).unwrap_or(u32::MAX)` —
-///   the equal index below the `u32` ceiling. **At and above the ceiling every
-///   further mint returns the same id and later nodes alias**, so the
-///   saturation is a documented ceiling rather than a safe fallback.
+/// - ensures: `|ret| ret.0 ==
+///   u32::try_from(usize::from(length)).unwrap_or(u32::MAX)` — the equal index
+///   below the `u32` ceiling. **At and above the ceiling every further mint
+///   returns the same id and later nodes alias**, so the saturation is a
+///   documented ceiling rather than a safe fallback.
 /// - provides: the total, panic-free length-to-index widening. The requirement
 ///   stays prose: every `usize` an arena can reach is a family length, so a
 ///   predicate over the argument would state nothing.
@@ -183,19 +178,19 @@ struct ArenaIndex(u32);
 ///   over-ceiling usize, where representable, distinguishes saturation.
 /// - witness: `arena::tests::index_boundaries_preserve_identity_or_saturate`
 #[inline]
-#[spec(ensures: |ret| ret.0 == u32::try_from(length.0).unwrap_or(u32::MAX))]
+#[spec(ensures: |ret| ret.0 == u32::try_from(usize::from(length)).unwrap_or(u32::MAX))]
 fn id_index(length: ArenaLength) -> ArenaIndex
 {
-    ArenaIndex(u32::try_from(length.0).unwrap_or(u32::MAX))
+    ArenaIndex(u32::try_from(usize::from(length)).unwrap_or(u32::MAX))
 }
 
 /// Narrow an id's index to the offset a checked vector read takes.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `|ret| ret.0 == usize::try_from(index.0).unwrap_or(usize::MAX)` —
-///   the equal offset, lossless on every supported platform of at least 32
-///   bits.
+/// - ensures: `|ret| usize::from(ret) ==
+///   usize::try_from(index.0).unwrap_or(usize::MAX)` — the equal offset,
+///   lossless on every supported platform of at least 32 bits.
 /// - provides: the total, panic-free index-to-offset narrowing.
 /// - fails: never; it saturates at the offset ceiling, which a checked read
 ///   then rejects.
@@ -207,10 +202,10 @@ fn id_index(length: ArenaLength) -> ArenaIndex
 ///   over-ceiling usize, where representable, distinguishes saturation.
 /// - witness: `arena::tests::index_boundaries_preserve_identity_or_saturate`
 #[inline]
-#[spec(ensures: |ret| ret.0 == usize::try_from(index.0).unwrap_or(usize::MAX))]
+#[spec(ensures: |ret| usize::from(ret) == usize::try_from(index.0).unwrap_or(usize::MAX))]
 fn id_offset(index: ArenaIndex) -> ArenaLength
 {
-    ArenaLength(usize::try_from(index.0).unwrap_or(usize::MAX))
+    ArenaLength::from(usize::try_from(index.0).unwrap_or(usize::MAX))
 }
 
 /// Where a type stands against its arena's first type naming a region binder,
@@ -260,211 +255,6 @@ struct Row<Node>
     support: Slot,
 }
 
-/// One family's rows in allocation order: those frozen by
-/// [`CoreArena::freeze`], shared with every clone of the arena made after,
-/// then the rows minted since.
-///
-/// # Specification
-/// - executable: none — a data declaration; [`Self::get`], [`Self::truncate`]
-///   and [`Self::freeze`] state what a read, a truncation and a freeze see.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a family read, minted into, truncated and compared across
-///   a freeze answers as one never frozen does.
-/// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
-#[derive(Clone, Debug)]
-struct Family<Node>
-{
-    /// The rows frozen before the family's own, shared by reference.
-    frozen: Option<Arc<[Row<Node>]>>,
-    /// The rows minted after them.
-    own: Vec<Row<Node>>,
-}
-
-impl<Node> Default for Family<Node>
-{
-    /// The empty family.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn default() -> Self
-    {
-        Self {
-            frozen: None,
-            own: Vec::new(),
-        }
-    }
-}
-
-impl<Node: PartialEq> PartialEq for Family<Node>
-{
-    /// Two families hold the same rows in the same order, wherever each row
-    /// is kept.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn eq(
-        &self,
-        other: &Self,
-    ) -> bool
-    {
-        // Two families frozen over one shared base hold its rows alike, so
-        // only the rows minted since are read.
-        if let (Some(mine), Some(theirs)) = (self.frozen.as_ref(), other.frozen.as_ref())
-            && Arc::ptr_eq(mine, theirs)
-        {
-            return self.own == other.own;
-        }
-        self.len() == other.len() && self.iter().eq(other.iter())
-    }
-}
-
-impl<Node: Eq> Eq for Family<Node>
-{
-}
-
-impl<Node> Family<Node>
-{
-    /// The rows frozen before the family's own.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn frozen(&self) -> &[Row<Node>]
-    {
-        self.frozen.as_deref().unwrap_or_default()
-    }
-
-    /// How many rows the family holds.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn len(&self) -> ArenaLength
-    {
-        ArenaLength(self.frozen().len().saturating_add(self.own.len()))
-    }
-
-    /// The row at `offset` in allocation order, or `None` past the family.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn get(
-        &self,
-        offset: ArenaLength,
-    ) -> Option<&Row<Node>>
-    {
-        let frozen = self.frozen();
-        offset
-            .0
-            .checked_sub(frozen.len())
-            .map_or_else(|| frozen.get(offset.0), |own| self.own.get(own))
-    }
-
-    /// The row minted last, or `None` for an empty family.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn last(&self) -> Option<&Row<Node>>
-    {
-        self.own.last().or_else(|| self.frozen().last())
-    }
-
-    /// Every row, in allocation order.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn iter(&self) -> impl Iterator<Item = &Row<Node>>
-    {
-        self.frozen().iter().chain(&self.own)
-    }
-
-    /// Mint `row` after every row the family holds.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn push(
-        &mut self,
-        row: Row<Node>,
-    )
-    {
-        self.own.push(row);
-    }
-}
-
-impl<Node: Clone> Family<Node>
-{
-    /// Keep the first `length` rows, dropping later ones; a length at or past
-    /// the family's end keeps every row.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the family holds its first `length.0.min(entry)` rows, each
-    ///   as it was. A truncation into the frozen rows takes the family's own
-    ///   copy of those it keeps, so no clone made before it changes.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — truncations past the frozen rows and into them, each
-    ///   read back beside a clone taken before.
-    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
-    #[spec(
-        captures: entry = self.len(),
-        ensures: self.len().0 == length.0.min(entry.0),
-    )]
-    fn truncate(
-        &mut self,
-        length: ArenaLength,
-    )
-    {
-        let frozen = self.frozen().len();
-        if let Some(own) = length.0.checked_sub(frozen) {
-            self.own.truncate(own);
-        }
-        else {
-            self.own = self.frozen().get(.. length.0).unwrap_or_default().to_vec();
-            self.frozen = None;
-        }
-    }
-
-    /// Share every row the family holds with every clone made after: the
-    /// rows minted so far join the frozen ones.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the family holds the same rows in the same order, all of them
-    ///   frozen.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a family frozen twice, with rows minted between,
-    ///   reads back every row at its offset.
-    /// - witness: `arena::tests::a_frozen_arena_answers_as_it_did_and_clones_its_own_rows_alone`
-    #[spec(
-        captures: entry = self.len(),
-        ensures: self.len() == entry && self.own.is_empty(),
-    )]
-    fn freeze(&mut self)
-    {
-        if self.own.is_empty() {
-            return;
-        }
-        let own = core::mem::take(&mut self.own);
-        self.frozen = Some(match self.frozen.take() {
-            None => Arc::from(own),
-            Some(frozen) => frozen.iter().cloned().chain(own).collect(),
-        });
-    }
-}
-
 /// The append-only arena owning every core term and type node of one run.
 ///
 /// The four families are parallel append-only vectors and a node's children are
@@ -479,13 +269,13 @@ pub struct CoreArena
 {
     /// The value nodes and their supports, in allocation order, which is
     /// child-before-parent.
-    values: Family<Value>,
+    values: Family<Row<Value>>,
     /// The computation nodes and their supports.
-    computations: Family<Computation>,
+    computations: Family<Row<Computation>>,
     /// The value-type nodes and their supports.
-    value_types: Family<ValueType>,
+    value_types: Family<Row<ValueType>>,
     /// The computation-type nodes and their supports.
-    comp_types: Family<CompType>,
+    comp_types: Family<Row<CompType>>,
     /// The words of every support wider than a slot.
     words: WordArena,
     /// The watermark just before the arena's first node naming a region
@@ -609,10 +399,10 @@ impl CoreArena
     pub fn watermark(&self) -> ArenaWatermark
     {
         ArenaWatermark {
-            values: self.values.len().0,
-            computations: self.computations.len().0,
-            value_types: self.value_types.len().0,
-            comp_types: self.comp_types.len().0,
+            values: usize::from(self.values.len()),
+            computations: usize::from(self.computations.len()),
+            value_types: usize::from(self.value_types.len()),
+            comp_types: usize::from(self.comp_types.len()),
             words: self.words.mark(),
         }
     }
@@ -644,7 +434,8 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = ValueId> + use<>
     {
-        (after.values .. self.values.len().0).map(|index| ValueId(id_index(ArenaLength(index)).0))
+        (after.values .. usize::from(self.values.len()))
+            .map(|index| ValueId(id_index(ArenaLength::from(index)).0))
     }
 
     /// The computation ids allocated after `after`, in allocation order.
@@ -667,8 +458,8 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = ComputationId> + use<>
     {
-        (after.computations .. self.computations.len().0)
-            .map(|index| ComputationId(id_index(ArenaLength(index)).0))
+        (after.computations .. usize::from(self.computations.len()))
+            .map(|index| ComputationId(id_index(ArenaLength::from(index)).0))
     }
 
     /// The value-type ids allocated after `after`, in allocation order.
@@ -691,8 +482,8 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = ValueTypeId> + use<>
     {
-        (after.value_types .. self.value_types.len().0)
-            .map(|index| ValueTypeId(id_index(ArenaLength(index)).0))
+        (after.value_types .. usize::from(self.value_types.len()))
+            .map(|index| ValueTypeId(id_index(ArenaLength::from(index)).0))
     }
 
     /// The computation-type ids allocated after `after`, in allocation order.
@@ -715,8 +506,8 @@ impl CoreArena
         after: ArenaWatermark,
     ) -> impl ExactSizeIterator<Item = CompTypeId> + use<>
     {
-        (after.comp_types .. self.comp_types.len().0)
-            .map(|index| CompTypeId(id_index(ArenaLength(index)).0))
+        (after.comp_types .. usize::from(self.comp_types.len()))
+            .map(|index| CompTypeId(id_index(ArenaLength::from(index)).0))
     }
 
     /// Truncate every family back to `watermark`, dropping later allocations.
@@ -770,17 +561,18 @@ impl CoreArena
         watermark: ArenaWatermark,
     )
     {
-        self.values.truncate(ArenaLength(watermark.values));
+        self.values.truncate(ArenaLength::from(watermark.values));
         self.computations
-            .truncate(ArenaLength(watermark.computations));
+            .truncate(ArenaLength::from(watermark.computations));
         self.value_types
-            .truncate(ArenaLength(watermark.value_types));
-        self.comp_types.truncate(ArenaLength(watermark.comp_types));
+            .truncate(ArenaLength::from(watermark.value_types));
+        self.comp_types
+            .truncate(ArenaLength::from(watermark.comp_types));
         self.words.truncate(watermark.words);
         if self.region_binders_from.is_some_and(|from| {
-            self.values.len().0 <= from.values
-                && self.value_types.len().0 <= from.value_types
-                && self.comp_types.len().0 <= from.comp_types
+            usize::from(self.values.len()) <= from.values
+                && usize::from(self.value_types.len()) <= from.value_types
+                && usize::from(self.comp_types.len()) <= from.comp_types
         }) {
             self.region_binders_from = None;
         }
@@ -1045,10 +837,11 @@ impl CoreArena
         id: ValueTypeId,
     ) -> BinderPrecedence
     {
-        let first = self
-            .region_binders_from
-            .map_or(self.value_types.len().0, |from| from.value_types);
-        if id_offset(ArenaIndex(id.0)).0 < first {
+        let first = self.region_binders_from.map_or_else(
+            || usize::from(self.value_types.len()),
+            |from| from.value_types,
+        );
+        if usize::from(id_offset(ArenaIndex(id.0))) < first {
             BinderPrecedence::Before
         }
         else {
@@ -1076,10 +869,11 @@ impl CoreArena
         id: CompTypeId,
     ) -> BinderPrecedence
     {
-        let first = self
-            .region_binders_from
-            .map_or(self.comp_types.len().0, |from| from.comp_types);
-        if id_offset(ArenaIndex(id.0)).0 < first {
+        let first = self.region_binders_from.map_or_else(
+            || usize::from(self.comp_types.len()),
+            |from| from.comp_types,
+        );
+        if usize::from(id_offset(ArenaIndex(id.0))) < first {
             BinderPrecedence::Before
         }
         else {
@@ -1129,8 +923,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.values.len().0, kind = core::mem::discriminant(&value)],
-        ensures: |ret| entry.checked_add(1) == Some(self.values.len().0)
+        captures: [entry = usize::from(self.values.len()), kind = core::mem::discriminant(&value)],
+        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.values.len()))
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.values.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
@@ -1172,8 +966,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.computations.len().0, kind = core::mem::discriminant(&computation)],
-        ensures: |ret| entry.checked_add(1) == Some(self.computations.len().0)
+        captures: [entry = usize::from(self.computations.len()), kind = core::mem::discriminant(&computation)],
+        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.computations.len()))
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.computations.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
@@ -1242,8 +1036,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.value_types.len().0, kind = core::mem::discriminant(&value_type)],
-        ensures: |ret| entry.checked_add(1) == Some(self.value_types.len().0)
+        captures: [entry = usize::from(self.value_types.len()), kind = core::mem::discriminant(&value_type)],
+        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.value_types.len()))
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.value_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
@@ -1294,8 +1088,8 @@ impl CoreArena
     /// - witness: `arena::tests::distinct_children_survive_every_compound_former`
     /// - witness: `arena::tests::all_families_truncate_without_resurrecting_nodes`
     #[spec(
-        captures: [entry = self.comp_types.len().0, kind = core::mem::discriminant(&comp_type)],
-        ensures: |ret| entry.checked_add(1) == Some(self.comp_types.len().0)
+        captures: [entry = usize::from(self.comp_types.len()), kind = core::mem::discriminant(&comp_type)],
+        ensures: |ret| entry.checked_add(1) == Some(usize::from(self.comp_types.len()))
             && ret.0 == u32::try_from(entry).unwrap_or(u32::MAX)
             && self.comp_types.last().is_some_and(|row| core::mem::discriminant(&row.node) == kind),
     )]
