@@ -873,7 +873,8 @@ impl<'source> Lowerer<'_, 'source>
         Ok(name)
     }
 
-    /// The element type `a` of the result `-F View[m](a)` a method whose
+    /// The element type `a` of the result `-F View[m](a)`, or `View[m](a)`
+    /// with the returner the lowering inserts at a result, a method whose
     /// receiver is at the mode `mode` declares, read as a value type under
     /// `frame`.
     ///
@@ -882,17 +883,19 @@ impl<'source> Lowerer<'_, 'source>
     ///   frame past every parameter.
     /// - ensures: the element's node, read as a value type under `frame`, and
     ///   the view type recorded as one a method's result declares.
-    /// - fails: [`LoweringRefusal::ViewNotPlace`] at the result when it is no
-    ///   `-F View[m](a)`, and at its `m` when that names a mode other than the
-    ///   receiver's; a fault reading the result's pieces.
+    /// - fails: [`LoweringRefusal::ViewNotPlace`] at the result when it is
+    ///   neither `-F View[m](a)` nor `View[m](a)`, and at its `m` when that
+    ///   names a mode other than the receiver's; a fault reading the result's
+    ///   pieces.
     /// - panics: none.
     ///
     /// # Errors
     /// As `fails`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a method answering its receiver's first element, and
-    ///   one declaring a result of another shape.
+    /// - hypothesis: L3 — a method answering its receiver's first element, its
+    ///   result written with its returner and without, and one declaring a
+    ///   result of another shape.
     /// - witness: `lower::method::tests::a_view_method_answers_its_place_index`
     /// - witness: `lower::method::tests::a_view_method_answering_no_place_is_refused`
     #[spec(ensures: |ret| ret.is_err() || !self.view_types.is_empty())]
@@ -904,19 +907,22 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<NodeIndex, LoweringRefusal<'source>>
     {
         let refused = LoweringRefusal::ViewNotPlace { span: result.span };
-        let Some((_, Former::ReturnerType)) = self.form_at(result)?
-        else {
-            return Err(refused);
-        };
         let mut pieces = Pieces::new();
-        read_pieces(self.pbg, self.tree, result.node, &mut pieces)?;
-        let &[Piece::Tile { .. }, Piece::Operand(view)] = pieces.pieces.as_slice()
-        else {
-            return Err(refused);
-        };
-        let Some((_, Former::StagedType)) = self.form_at(view)?
-        else {
-            return Err(refused);
+        let view = match self.form_at(result)? {
+            Some((_, Former::StagedType)) => result,
+            Some((_, Former::ReturnerType)) => {
+                read_pieces(self.pbg, self.tree, result.node, &mut pieces)?;
+                let &[Piece::Tile { .. }, Piece::Operand(view)] = pieces.pieces.as_slice()
+                else {
+                    return Err(refused);
+                };
+                let Some((_, Former::StagedType)) = self.form_at(view)?
+                else {
+                    return Err(refused);
+                };
+                view
+            },
+            Some(_) | None => return Err(refused),
         };
         read_pieces(self.pbg, self.tree, view.node, &mut pieces)?;
         let &[

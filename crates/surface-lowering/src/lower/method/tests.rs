@@ -237,7 +237,7 @@ const PLACES: &str = r"def pair : List(Integer) ;
 def pair = cons(1, cons(2, nil)) ;
 module Places {
   def first @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { self[0] }
-  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> -F View[m](Integer) { self[i] }
+  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i] }
 }
 def head() -> -F Integer { hold xs = pair; run h <- xs.first(); pure h }
 def doubled() -> -F Integer { hold xs = pair; xs.first() as w { pure w + w } }
