@@ -12,26 +12,18 @@
 //! prelude's member itself lowers to nothing: it names the derivation and is
 //! no term ([`Role::Generic`]).
 //!
-//! # Decisions
+//! # The reading
 //!
-//! - **The derivation stands at a definition's whole body.** `Eq.generic(T)` is
-//!   read only as the entire definition of a declaration; anywhere else it is
-//!   refused [`LoweringRefusal::GenericMisplaced`]. The declaration it writes
-//!   is then named like any other, so a use site needs no rule of its own. The
-//!   alternative, a value standing anywhere, needs the derived body minted at
-//!   each use. Reversal: when data codes stand in the language as values,
-//!   `Eq.generic` is a prelude function over them and is read wherever a
-//!   function is.
-//! - **The lowering derives, the checker judges.** The pure derivation lives in
-//!   core-term, beside the eliminator a recursive declaration derives, and
-//!   writes a declaration no more trusted than a written one: what it does not
-//!   cover it refuses by name ([`LoweringRefusal::GenericUncovered`]), and what
-//!   it writes the checker accepts or refuses as source. The alternative, a
-//!   checker-native derivation, needs a declaration content the store and the
-//!   kernel do not hold.
-//! - **A written signature wins.** A definition that also states its type is
-//!   checked at the stated type, so a signature that disagrees with the derived
-//!   equality is refused where it was written.
+//! - `Eq.generic(T)` is read only as a definition's whole body; anywhere else
+//!   it is refused [`LoweringRefusal::GenericMisplaced`]. The declaration it
+//!   writes is named like any other, so a use site needs no rule of its own; a
+//!   use standing elsewhere waits on data codes as values (#2343).
+//! - The derivation lives in core-term and is untrusted: what it does not cover
+//!   it refuses by name ([`LoweringRefusal::GenericUncovered`]), and what it
+//!   writes the checker judges as source.
+//! - A definition that also states its type is checked at the stated type, so a
+//!   signature that disagrees with the derived equality is refused where it was
+//!   written.
 
 use anodized::spec;
 use gandr_core_term::DataSignature;
