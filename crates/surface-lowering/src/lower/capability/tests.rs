@@ -1,3 +1,4 @@
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -44,6 +45,7 @@ use crate::namespace::Recognition;
 use crate::origin::ClauseBinder;
 use crate::origin::ClausePlace;
 use crate::origin::Labelled;
+use crate::origin::Omitted;
 use crate::resolve::HeadArity;
 use crate::resolve::SurfaceName;
 
@@ -122,6 +124,7 @@ fn judged(
             };
             Some(
                 Declaration::new(declaration.constant(), declared, defined, origin)
+                    .resolving(module.models(declaration).to_vec())
                     .obliged(module.handler_laws(declaration).to_vec()),
             )
         })
@@ -1301,6 +1304,140 @@ fn a_scope_names_a_model_of_its_theory_2272()
                 boundary: FragmentBoundary::WrongSort,
                 ..
             }) if source.get(usize::from(span.start()) .. usize::from(span.end())) == Some("Passing")
+        ),
+        "{:?}",
+        outcome_of(&module, "hosted".into())
+    );
+}
+
+/// Two models of `State` at an integer state: reading answers zero or one,
+/// and storing is forgotten.
+const ZERO_AND_ONE: &str = concat!(
+    "module Zero : Model(State) with sort S = Integer {\n",
+    "  type C = Integer => Integer;\n",
+    "  def get(k : Integer => Integer => Integer) -> Integer => Integer { k(0) }\n",
+    "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer { pure k }\n",
+    "}\n",
+    "module One : Model(State) with sort S = Integer {\n",
+    "  type C = Integer => Integer;\n",
+    "  def get(k : Integer => Integer => Integer) -> Integer => Integer { k(1) }\n",
+    "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer { pure k }\n",
+    "}\n",
+);
+
+/// A scope over a theory writing no `with` is answered by the one model of
+/// the theory in scope: each clause applies a hole in place of a module's
+/// component, every hole recorded as the scope's beside the modules that may
+/// answer it, and the slot planned under the scope's declaration with those
+/// modules as its candidates. `Passing`, the one model of `StatePutPut`,
+/// answers such a scope, which checks owing no law. Two models of `State`
+/// answering one are refused as ambiguous; none at its stored sort, as
+/// unanswered. A host interface's scope writing no `with` is refused at its
+/// interface as a former of the wrong sort.
+#[test]
+fn a_scope_is_answered_by_the_model_in_scope_2272()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}{put_put}{passing}{zero_and_one}",
+            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fn (_s) {{ pure a }} }} }}\n",
+            "def ambiguous() -> Integer => Integer {{ handle st : State with sort S = Integer {{ pure fn (s) {{ pure s }} }} }}\n",
+            "def unanswered() -> Integer => Integer {{ handle st : State with sort S = Unit {{ pure fn (s) {{ pure 1 }} }} }}\n",
+            "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} }}\n",
+        ),
+        state = STATE,
+        put_put = PUT_PUT,
+        passing = PASSING,
+        zero_and_one = ZERO_AND_ONE,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let answered = tail_of(&module, &arena, "answered".into());
+    let Some(&Computation::Scope { ref clauses, .. }) = arena.computation(answered)
+    else {
+        panic!("`handle …` writing no `with` is a capability scope");
+    };
+    let Some(get) = clauses
+        .iter()
+        .find(|clause| clause.operation.as_ref() == "get")
+    else {
+        panic!("the scope answers `get`: {clauses:?}");
+    };
+    // `get`'s clause applies the forced component, ascribed its type.
+    let hole = match arena.computation(get.body) {
+        Some(&Computation::Application(head, _)) => match arena.computation(head) {
+            Some(&Computation::Force(ascribed)) => match arena.value(ascribed) {
+                Some(&Value::Ascribe { value, .. }) => value,
+                other => panic!("the component is ascribed its type: {other:?}"),
+            },
+            other => panic!("the component is forced: {other:?}"),
+        },
+        other => panic!("`get`'s clause applies the component: {other:?}"),
+    };
+    assert!(
+        matches!(arena.value(hole), Some(&Value::Hole(_))),
+        "a hole stands for the component: {:?}",
+        arena.value(hole)
+    );
+    assert_eq!(
+        module.origins().omitted(hole),
+        Maybe::Present(&Omitted::Scope {
+            theory: String::from("StatePutPut"),
+            candidates: Vec::from([String::from("Passing")]),
+        }),
+        "the hole is the scope's, `Passing` the one module that may answer it"
+    );
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("answered"))
+    else {
+        panic!("`answered` is declared");
+    };
+    let slots = module.models(declaration);
+    assert!(
+        matches!(slots, [slot] if slot.candidates.len() == 1
+            && slot.candidates.iter().all(|candidate| candidate.components.len() == slot.holes.len())),
+        "one slot planned under `answered`, `Passing` its candidate: {slots:?}"
+    );
+    assert!(
+        module.handler_laws(declaration).is_empty(),
+        "the model's ascription states put-put, so the scope owes none"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "answered".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "answered".into())
+    );
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "ambiguous".into()),
+            Verdict::Refused(CheckRefusal::ModelAmbiguous { survivors, .. })
+                if survivors.places().map(usize::from).eq([0, 1])
+        ),
+        "`Zero` and `One` both answer: {:?}",
+        verdict_of(&module, &report, "ambiguous".into())
+    );
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "unanswered".into()),
+            Verdict::Refused(CheckRefusal::ModelUnanswered { .. })
+        ),
+        "neither stores the unit: {:?}",
+        verdict_of(&module, &report, "unanswered".into())
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "hosted".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            }) if source.get(usize::from(span.start()) .. usize::from(span.end())) == Some("Proc")
         ),
         "{:?}",
         outcome_of(&module, "hosted".into())

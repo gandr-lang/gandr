@@ -1185,8 +1185,7 @@ mod tests
             row("case", "case ${1:value} { \\}"),
             row(
                 "handle",
-                "handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\} with \
-                 ${4:type_identifier}",
+                "handle ${1:identifier} : ${2:type_identifier} { ${3:computation} \\}",
             ),
             row(
                 "if",

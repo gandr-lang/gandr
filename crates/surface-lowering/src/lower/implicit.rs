@@ -158,6 +158,13 @@ pub(super) enum Nomination<'source>
         /// The implicit the call omits.
         implicit: SurfaceName<'source>,
     },
+    /// A component of the model answering a capability scope over `theory`,
+    /// which names none.
+    Answering
+    {
+        /// The theory the scope handles.
+        theory: SurfaceName<'source>,
+    },
     /// A wildcard `_` written where a value is read.
     Wildcard,
 }
@@ -1062,6 +1069,46 @@ impl<'source> Lowerer<'_, 'source>
             }
             self.operands.push(site.at.node);
         }
+        if supplied.is_none() && !holes.is_empty() {
+            self.plan_slot(site, slot, holes)?;
+        }
+
+        Ok(())
+    }
+
+    /// Plan the model slot `slot` left to the models in scope at `site`, its
+    /// components the nominated `holes`: each hole kept with the names of the
+    /// slot's candidates, and the slot planned at `site` under the declaration
+    /// holding it.
+    ///
+    /// # Specification
+    /// - requires: `holes` holds one hole per component of `slot`, in signature
+    ///   order.
+    /// - ensures: when a declaration holds `site`, each hole kept with the
+    ///   names of the candidates [`Self::model_candidates`] finds, and one slot
+    ///   planned at `site` holding the holes, the sorts `slot` fixes and the
+    ///   candidates; nothing kept or planned otherwise.
+    /// - fails: the refusals [`Self::model_candidates`] yields.
+    /// - panics: none.
+    /// - executable: none — the effect is a slot planned in the lowerer's table
+    ///   of slots, whose contents before the call the predicate cannot read.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a call omitting a model implicit and a capability
+    ///   scope naming no model each plan their slot with every module of its
+    ///   theory.
+    /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
+    /// - witness: `lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
+    pub(super) fn plan_slot(
+        &mut self,
+        site: Site,
+        slot: &model::ModelSlot,
+        holes: Vec<gandr_core_term::hole::HoleId>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
         let caller = match self.collected.owner_of(site.at.node) {
             Maybe::Present(owner) => self
                 .collected
@@ -1070,44 +1117,45 @@ impl<'source> Lowerer<'_, 'source>
                 .map(|declared| declared.constant),
             Maybe::Absent(_) => None,
         };
-        if supplied.is_none()
-            && !holes.is_empty()
-            && let Some(caller) = caller
-        {
-            let candidates = self.model_candidates(site, slot)?;
-            let names: Vec<String> = candidates
-                .iter()
-                .map(|&(name, _)| String::from(name.as_ref()))
-                .collect();
-            for &hole in &holes {
-                let _first = self.model_candidates.insert(hole, names.clone());
-            }
-            self.planned_models
-                .entry(site.at.node)
-                .or_default()
-                .push(model::PlannedModel {
-                    caller,
-                    holes,
-                    fixed: slot
-                        .fixed()
-                        .iter()
-                        .map(|(name, &stated)| (name.clone(), stated))
-                        .collect(),
-                    candidates,
-                });
+        let Some(caller) = caller
+        else {
+            return Ok(());
+        };
+        let candidates = self.model_candidates(site, slot)?;
+        let names: Vec<String> = candidates
+            .iter()
+            .map(|&(name, _)| String::from(name.as_ref()))
+            .collect();
+        for &hole in &holes {
+            let _first = self.model_candidates.insert(hole, names.clone());
         }
+        self.planned_models
+            .entry(site.at.node)
+            .or_default()
+            .push(model::PlannedModel {
+                caller,
+                holes,
+                fixed: slot
+                    .fixed()
+                    .iter()
+                    .map(|(name, &stated)| (name.clone(), stated))
+                    .collect(),
+                candidates,
+            });
 
         Ok(())
     }
 
-    /// Nominate a hole for `nomination`, an implicit a call omits or a
-    /// wildcard the text writes, the next nominated name of its kind.
+    /// Nominate a hole for `nomination`, an implicit a call omits, a component
+    /// of the model a capability scope names none of, or a wildcard the text
+    /// writes, the next nominated name of its kind.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a name no hole before it carries, kept beside `nomination`: a
     ///   wildcard's name for a wildcard, so the printer writes it back as `_`,
-    ///   and a nominated one for an omitted implicit, which it leaves out.
+    ///   and a nominated one for an omitted implicit or a scope's component,
+    ///   which it leaves out.
     /// - fails: the budget refusal once the kind's quarter has no more names.
     /// - panics: none.
     ///
@@ -1126,7 +1174,10 @@ impl<'source> Lowerer<'_, 'source>
             Ok(hole) => matches!(
                 (hole.origin(), nomination),
                 (gandr_core_term::hole::HoleOrigin::Wildcard, Nomination::Wildcard)
-                    | (gandr_core_term::hole::HoleOrigin::Nominated, Nomination::Omitted { .. })
+                    | (
+                        gandr_core_term::hole::HoleOrigin::Nominated,
+                        Nomination::Omitted { .. } | Nomination::Answering { .. }
+                    )
             ) && self.nominations.len() == before.saturating_add(1)
                 && self.nominations.get(&hole) == Some(&nomination),
             Err(_) => self.nominations.len() == before,
@@ -1139,7 +1190,9 @@ impl<'source> Lowerer<'_, 'source>
     {
         let named = match nomination {
             Nomination::Wildcard => gandr_core_term::hole::HoleId::wildcard,
-            Nomination::Omitted { .. } => gandr_core_term::hole::HoleId::nominated,
+            Nomination::Omitted { .. } | Nomination::Answering { .. } => {
+                gandr_core_term::hole::HoleId::nominated
+            },
         };
         let hole = u32::try_from(self.nominations.len())
             .ok()

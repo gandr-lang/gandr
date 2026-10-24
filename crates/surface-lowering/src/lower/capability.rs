@@ -1,8 +1,8 @@
 //! Capabilities in the lowering: the capability type `Cap {op, …}`, a
 //! returner's effect row `-F [I, …] A`, the exercise `c.op(v)`, the perform
 //! `I.op(v)` by an interface's name, the capability scope `handle c : I { M }
-//! with { … }` or `with N`, and the resumption `k(v)` of a continuation an
-//! operation clause binds or a parameter states.
+//! with { … }`, `with N` or no `with`, and the resumption `k(v)` of a
+//! continuation an operation clause binds or a parameter states.
 //!
 //! The rules these forms lower into are `gandr-core-checker`'s `capability`
 //! module; this one decides only their spelling and what each spelling
@@ -438,7 +438,8 @@ enum Handlers
 {
     /// The clauses the scope writes, `with { … }`.
     Written(Written),
-    /// The module the scope names, `with N`, a model of the theory it handles.
+    /// The model answering a theory's scope: the module it names, `with N`,
+    /// or the one model in scope, for a scope writing no `with`.
     Model(Arc<Answering>),
 }
 
@@ -1695,7 +1696,8 @@ impl<'source> Lowerer<'_, 'source>
     /// `handle c : I { M } with { pure(x) => N, oper op(p, k) => N_op, … }`,
     /// its interface a host's or a theory's with its value sorts, `handle c :
     /// T with sort S = A { M } with { … }`, the clauses of a theory's scope
-    /// given by a model of it the scope names, `with N`.
+    /// given by a model of it the scope names, `with N`, or by the one model
+    /// in scope, for a scope writing no `with`.
     ///
     /// # Specification
     /// - requires: `site` is a capability scope in term position.
@@ -1712,14 +1714,17 @@ impl<'source> Lowerer<'_, 'source>
     ///   planned over the interface, [`Self::handled`], the subject and the
     ///   clauses in written order, or, for `with N`, the theory's slot at the
     ///   manifest's sorts ([`Self::theory_slot`]) and what `N` passes for it
-    ///   ([`Self::named_model`]).
-    /// - fails: the wrong-sort refusal where no computation is read, and at a
-    ///   module a host interface's scope names; the refusals of
-    ///   [`Self::handled`], [`Self::theory_slot`] and [`Self::named_model`];
-    ///   [`LoweringRefusal::DuplicateDefinition`] for a second return clause; a
-    ///   missing-operand fault for a scope with none; a misplaced-tile fault
-    ///   for a scope out of shape, a minting clause naming no payload among
-    ///   them; the block's and each body's own refusal.
+    ///   ([`Self::named_model`]), or, for no `with`, that slot and its holes
+    ///   ([`Self::answering_model`]).
+    /// - fails: the wrong-sort refusal where no computation is read, at a
+    ///   module a host interface's scope names, and at the interface of a host
+    ///   scope writing no `with`; the refusals of [`Self::handled`],
+    ///   [`Self::theory_slot`], [`Self::named_model`] and
+    ///   [`Self::answering_model`]; [`LoweringRefusal::DuplicateDefinition`]
+    ///   for a second return clause; a missing-operand fault for a scope with
+    ///   none; a misplaced-tile fault for a scope out of shape, a minting
+    ///   clause naming no payload among them; the block's and each body's own
+    ///   refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -1742,15 +1747,22 @@ impl<'source> Lowerer<'_, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let frame = self.require(site, Produced::Computation)?;
-        // The clauses' `with` is the last: every manifest sort's stands
-        // before the subject.
+        // The clauses' `with` is the last, and the one no `sort` follows: every
+        // manifest sort's stands before the subject. A scope writing none
+        // leaves its model to the models in scope.
         let split = pieces
             .pieces
             .iter()
-            .rposition(
-                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::WITH),
-            )
-            .unwrap_or(pieces.pieces.len());
+            .enumerate()
+            .rev()
+            .find(|&(at, piece)| {
+                matches!(*piece, Piece::Tile { label, .. } if label == TileName::WITH)
+                    && !matches!(
+                        pieces.pieces.get(at.saturating_add(1)),
+                        Some(&Piece::Tile { label, .. }) if label == TileName::SORT
+                    )
+            })
+            .map_or(pieces.pieces.len(), |(at, _)| at);
         let Some((head, handlers)) = pieces.pieces.split_at_checked(split)
         else {
             return Err(site.fault(site.at.span, FormFault::MisplacedTile));
@@ -1802,6 +1814,27 @@ impl<'source> Lowerer<'_, 'source>
         let subject = self.block(site, &mut cursor, Frame::Inner(held))?;
         self.open_subject(site, subject)?;
 
+        if handlers.is_empty() {
+            let named = Site {
+                at: written,
+                ..site
+            };
+            if !matches!(interface, Interface::Theory(_)) {
+                return Err(named.out(FragmentBoundary::WrongSort));
+            }
+            let slot = self.theory_slot(named, site.at.span.start(), &stated)?;
+            let supplied = self.answering_model(site, self.name_at(written), &slot)?;
+            self.plan(
+                site,
+                super::Plan::Scope(Scoped {
+                    interface,
+                    subject,
+                    binder: binder.node,
+                    handlers: Handlers::Model(Arc::new(Answering { slot, supplied })),
+                }),
+            );
+            return Ok(());
+        }
         let mut cursor = Cursor::new(handlers, site.at.span);
         closed(site, &mut cursor, TileName::WITH)?;
         if let Maybe::Present(module) = cursor.tile(TileName::TYPE_IDENTIFIER) {

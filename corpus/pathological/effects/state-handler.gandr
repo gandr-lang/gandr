@@ -1,5 +1,6 @@
 // The twin of `model/effects/state-handler.gandr`: where a scope cannot take
-// a theory as its interface, and where a model cannot answer it.
+// a theory as its interface, where a model cannot answer it, and where the
+// models in scope do not answer it as one.
 
 // The theory `State`.
 import "../../model/effects/state.gandr" ;
@@ -68,4 +69,48 @@ def answeredForConsole() -> Integer {
   handle c : Console {
     pure 1
   } with Passing
+}
+
+/// The stored sort two-valued: `Passing`, the one model of `State` in scope,
+/// stores an integer, so no model answers the scope.
+@[ refuses("ModelUnanswered") ]
+def unansweredAtTwo() -> Integer => Integer {
+  handle st : State with sort S = Unit + Unit {
+    pure fn (s) { pure 1 }
+  }
+}
+
+/// A second state-passing model at an integer state: reading answers zero,
+/// and storing is forgotten.
+module Forgetting : Model(State) with sort S = Integer {
+  /// A computation awaiting the current state.
+  type C = Integer => Integer;
+  /// Reading hands zero to what runs after.
+  @[ checks ]
+  def get(k : Integer => Integer => Integer) -> Integer => Integer {
+    k(0)
+  }
+  /// Storing runs what comes after, the stored value forgotten.
+  @[ checks ]
+  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
+    pure k
+  }
+}
+
+/// `Passing` and `Forgetting` both answer the scope, so the scope names
+/// neither.
+@[ refuses("ModelAmbiguous") ]
+def ambiguousInScope() -> Integer => Integer {
+  handle st : State with sort S = Integer {
+    pure fn (s) { pure s }
+  }
+}
+
+/// A host interface writing no `with`: no model answers a host's
+/// operations, so it writes its clauses.
+@[ refuses("OutOfFragment.WrongSort") ]
+def unansweredForConsole() -> Integer {
+  handle c : Console {
+    pure 1
+  }
 }

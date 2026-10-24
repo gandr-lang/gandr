@@ -16603,7 +16603,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                                 None => Omitted::Implicit { function, implicit },
                             });
                     },
-                    Some(&implicit::Nomination::Wildcard) | None => {},
+                    Some(
+                        &(implicit::Nomination::Wildcard | implicit::Nomination::Answering { .. }),
+                    )
+                    | None => {},
                 }
                 id
             }

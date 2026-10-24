@@ -43,17 +43,20 @@
 //! refuted. A fixed type that reads a binder of the callee is not posed, and
 //! leaves its candidates untested on that sort.
 //!
-//! # A scope names a model
+//! # A scope names a model or leaves it to the models in scope
 //!
 //! A capability scope over a theory may name a module in place of its clauses,
 //! `handle c : T with sort x = A { M } with N`: the slot is the theory's at
 //! the manifest's sorts, as a model implicit at `Model(T) with sort x = A`
 //! reads it, and `N` passes its members as a supply naming it does. Each
 //! operation's component is stated at its derived type, the carrier read as
-//! the type `N` gives it.
+//! the type `N` gives it. A scope writing no `with` leaves the slot to the
+//! models in scope as a call omitting it does: a hole per component, the slot
+//! planned at the scope with its candidates.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -62,6 +65,7 @@ use anodized::spec;
 use gandr_core_term::Binders;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::hole::HoleId;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteOffset;
@@ -96,6 +100,7 @@ use crate::lower::Stretch;
 use crate::lower::Universe;
 use crate::lower::arity;
 use crate::lower::closed;
+use crate::lower::implicit::Nomination;
 use crate::lower::lowered;
 use crate::model::Dependent;
 use crate::model::ModelComponent;
@@ -105,6 +110,7 @@ use crate::module::Stratum;
 use crate::module::StructureIndex;
 use crate::module::TelescopeEntry;
 use crate::origin::Insertion;
+use crate::origin::Omitted;
 use crate::origin::Origin;
 use crate::resolve::Bound;
 use crate::resolve::Frame;
@@ -232,6 +238,9 @@ pub(in crate::lower) enum Supplied
     /// The parameters of the caller's model implicit, one per component, each
     /// variable's index from the call beside its frame.
     Bound(Vec<(DeBruijnIndex, ScopeId)>),
+    /// The holes a capability scope naming no model nominates, one per
+    /// component, which the checker fills from the one candidate left.
+    Nominated(Vec<HoleId>),
 }
 
 /// A model implicit as its declaration writes it, `@[s : Model(S) with sort x
@@ -422,6 +431,49 @@ impl<'source> Lowerer<'_, 'source>
         let packed = self.packed_module(site, module, slot.theory, &slot.fixed)?;
 
         Ok(Supplied::Module(Arc::new(packed)))
+    }
+
+    /// The model answering the capability scope at `site` over `theory`,
+    /// which names none: one hole per component of `slot`, each nominated as
+    /// the scope's, the slot planned at the scope with every module of the
+    /// theory in scope ([`Self::plan_slot`]).
+    ///
+    /// # Specification
+    /// - requires: `slot` is the theory's slot at the scope's manifest sorts.
+    /// - ensures: one hole per component of `slot`, in signature order, each
+    ///   nominated as answering a scope over `theory`, kept and planned as
+    ///   [`Self::plan_slot`] keeps and plans them.
+    /// - fails: the refusals [`Self::plan_slot`] yields; the budget refusal
+    ///   once no hole can be nominated.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over `State` writing no `with` runs as one
+    ///   naming the one model in scope; with none in scope it is refused, and
+    ///   with two it is refused naming both.
+    /// - witness: `lower::capability::tests::a_scope_is_answered_by_the_model_in_scope_2272`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Supplied::Nominated(ref holes)) => holes.len() == slot.components().len(),
+        | Ok(Supplied::Module(_) | Supplied::Bound(_)) => false,
+        | Err(_) => true,
+    })]
+    pub(in crate::lower) fn answering_model(
+        &mut self,
+        site: Site,
+        theory: SurfaceName<'source>,
+        slot: &ModelSlot,
+    ) -> Result<Supplied, LoweringRefusal<'source>>
+    {
+        let mut holes = Vec::with_capacity(slot.components().len());
+        for _ in slot.components() {
+            holes.push(self.nominate(Nomination::Answering { theory })?);
+        }
+        self.plan_slot(site, slot, holes.clone())?;
+
+        Ok(Supplied::Nominated(holes))
     }
 
     /// The slot `slot`'s carrier, its one unfixed unindexed sort, beside the
@@ -906,7 +958,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::implicit::tests::a_model_implicit_supplied_by_a_value_is_refused_739`
     #[spec(ensures: |ret| match ret {
         Ok(Supplied::Bound(ref variables)) => variables.len() == slot.components().len(),
-        Ok(Supplied::Module(_)) | Err(_) => true,
+        Ok(Supplied::Module(_) | Supplied::Nominated(_)) | Err(_) => true,
     })]
     pub(in crate::lower) fn supply_model(
         &mut self,
@@ -1059,8 +1111,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: a module's member as [`Self::packed_member`] mints it, or the
     ///   record of its nested module as [`Self::packed_records`] mints it, for
     ///   a module; the variable of the caller's component for a model implicit,
-    ///   raised past `under`; every node carrying `origin` marked
-    ///   [`Insertion::Implicit`]; nothing when a member did not lower.
+    ///   raised past `under`; the component's hole for a scope naming no model,
+    ///   recorded as the scope's with its candidates; every node carrying
+    ///   `origin` marked [`Insertion::Implicit`]; nothing when a member did not
+    ///   lower.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1126,6 +1180,25 @@ impl<'source> Lowerer<'_, 'source>
                 };
                 Maybe::Present(raised)
             },
+            Supplied::Nominated(ref holes) => {
+                let Some(&hole) = holes.get(place)
+                else {
+                    return unminted;
+                };
+                let id = sink.arena.value_hole(hole);
+                sink.origins.record_value(id, inserted);
+                if let Some(&Nomination::Answering { theory }) = self.nominations.get(&hole) {
+                    sink.origins.record_omitted(id, Omitted::Scope {
+                        theory: String::from(theory.as_ref()),
+                        candidates: self
+                            .model_candidates
+                            .get(&hole)
+                            .cloned()
+                            .unwrap_or_default(),
+                    });
+                }
+                Maybe::Present(id)
+            },
         }
     }
 
@@ -1189,7 +1262,7 @@ impl<'source> Lowerer<'_, 'source>
             }
             let module = match *supplied {
                 Supplied::Module(ref packed) => packed.modules.first().copied(),
-                Supplied::Bound(_) => None,
+                Supplied::Bound(_) | Supplied::Nominated(_) => None,
             };
             let mut own = Vec::with_capacity(planned.fixed.len());
             for &(ref name, _) in &planned.fixed {
