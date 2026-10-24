@@ -57,9 +57,9 @@ def lcSyntax : #{
 } = (
   N,
   (
-    thunk { fn (d) { fn (g) { return Env } } },
+    fn (d) { fn (g) { return Env } },
     (
-      thunk { fn (g) { return Term } },
+      fn (g) { return Term },
       (
         LCSyntax.empty,
         (

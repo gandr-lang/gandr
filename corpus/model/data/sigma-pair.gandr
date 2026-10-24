@@ -92,10 +92,10 @@ def selfEquiv(b : Type) -> #{ x : b, y : b, p : Path(b, x, y) } ≃ #{
   p : Path(b, x, y)
 } {
   (
-    thunk { fn (w) { w } },
+    fn (w) { w },
     (
-      (thunk { fn (w) { w } }, thunk { fn (w) { here(w) } }),
-      (thunk { fn (w) { w } }, thunk { fn (w) { here(w) } })
+      (fn (w) { w }, fn (w) { here(w) }),
+      (fn (w) { w }, fn (w) { here(w) })
     )
   )
 }

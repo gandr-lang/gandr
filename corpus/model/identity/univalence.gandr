@@ -37,8 +37,8 @@ def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
   law : (z : b) => Path(a, g(z), transport(\X. X, back(p), z))
 } {
   (
-    thunk { fn (z) { transport(\X. X, back(p), z) } },
-    thunk { fn (z) { here(transport(\X. X, back(p), z)) } }
+    fn (z) { transport(\X. X, back(p), z) },
+    fn (z) { here(transport(\X. X, back(p), z)) }
   )
 }
 
@@ -102,15 +102,15 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
 @[ checks ]
 def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
   (
-    thunk { fn (x) { fwdAlong(a, b, p, x) } },
+    fn (x) { fwdAlong(a, b, p, x) },
     (
       (
-        thunk { fn (y) { transport(\X. X, back(p), y) } },
-        thunk { fn (x) { sectAlong(a, b, p, x) } }
+        fn (y) { transport(\X. X, back(p), y) },
+        fn (x) { sectAlong(a, b, p, x) }
       ),
       (
-        thunk { fn (y) { transport(\X. X, back(p), y) } },
-        thunk { fn (y) { retrAlong(a, b, p, y) } }
+        fn (y) { transport(\X. X, back(p), y) },
+        fn (y) { retrAlong(a, b, p, y) }
       )
     )
   )
@@ -205,10 +205,10 @@ def idtoequivUa : (a : Type, b : Type, e : a ≃ b) => Path(a ≃ b, idtoequiv(a
 @[ checks ]
 def univalenceIso(a : Type, b : Type) -> Path(Type, a, b) ≅ (a ≃ b) {
   (
-    thunk { fn (p) { idtoequiv(a, b, p) } },
+    fn (p) { idtoequiv(a, b, p) },
     (
-      thunk { fn (e) { ua(e) } },
-      (thunk { fn (p) { uaEta(a, b, p) } }, thunk { fn (e) { idtoequivUa(a, b, e) } })
+      fn (e) { ua(e) },
+      (fn (p) { uaEta(a, b, p) }, fn (e) { idtoequivUa(a, b, e) })
     )
   )
 }
@@ -220,10 +220,10 @@ def univalenceIso(a : Type, b : Type) -> Path(Type, a, b) ≅ (a ≃ b) {
 @[ checks ]
 def univalence(a : Type, b : Type) -> Path(Type, a, b) ≃ (a ≃ b) {
   (
-    thunk { fn (p) { idtoequiv(a, b, p) } },
+    fn (p) { idtoequiv(a, b, p) },
     (
-      (thunk { fn (e) { ua(e) } }, thunk { fn (p) { uaEta(a, b, p) } }),
-      (thunk { fn (e) { ua(e) } }, thunk { fn (e) { idtoequivUa(a, b, e) } })
+      (fn (e) { ua(e) }, fn (p) { uaEta(a, b, p) }),
+      (fn (e) { ua(e) }, fn (e) { idtoequivUa(a, b, e) })
     )
   )
 }

@@ -1340,6 +1340,45 @@ fn an_ill_shaped_elimination_is_refused()
     );
 }
 
+/// #2255: a lambda nested where a value is read stands for the thunk it is
+/// suspended to, so a dependent position that forces and applies it reduces,
+/// as `selfEquiv`'s bare components in `corpus/model/data/sigma-pair.gandr`
+/// need.
+#[test]
+fn a_nested_lambda_forced_and_applied_reduces_2255()
+{
+    let mut core = CoreArena::new();
+    // ⟨force ⟨λ. return v0⟩ ()⟩ ⇝ ().
+    let bound = core.value_variable(Zone::Intuitionistic, innermost());
+    let returned = core.computation_return(bound);
+    let lambda = core.computation_lambda(returned);
+    let nested = core.value_nested(lambda);
+    let forced = core.computation_force(nested);
+    let unit = core.value_unit();
+    let applied = core.computation_application(forced, unit);
+    let read = core.value_returned(applied);
+
+    let (chain, environment) = nothing_unfolds();
+    let scope = environment.root();
+    let definitions = Definitions::new(&chain, &environment, scope);
+    let mut domain = DomainArena::new();
+    let evaluated = eval_value(&core, &mut domain, definitions, ample(), read)
+        .expect("a forced nested lambda evaluates");
+    let normal = readback_value(
+        &mut core,
+        &mut domain,
+        definitions,
+        ReadbackMode::Unfolding,
+        ample(),
+        evaluated,
+    )
+    .expect("the reduct reads back");
+    assert!(
+        matches!(core.value(normal), Some(Value::Tuple(components)) if components.is_empty()),
+        "the application reduced to the argument the lambda returns"
+    );
+}
+
 #[test]
 fn normalizes_beta_redex()
 {
