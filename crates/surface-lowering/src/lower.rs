@@ -632,6 +632,7 @@ use crate::module::Member;
 use crate::module::Operand;
 use crate::module::ParameterForm;
 use crate::module::Payload;
+use crate::module::Plicity;
 use crate::module::ReceiverMode;
 use crate::module::Role;
 use crate::module::SealedComponent;
@@ -4508,6 +4509,30 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Some((constant, names))
                 })
                 .collect();
+        // Each function whose merged telescope binds an implicit names it, so
+        // a printed call supplies it by name.
+        let implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>> = collected
+            .plicities
+            .iter()
+            .filter_map(|(&slot, merged)| {
+                let entries = merged.as_ref().ok()?;
+                if !entries
+                    .iter()
+                    .any(|entry| entry.plicity == Plicity::Implicit)
+                {
+                    return None;
+                }
+                let constant = collected.slots.get(usize::from(slot))?.constant;
+                let names = entries
+                    .iter()
+                    .map(|entry| match entry.plicity {
+                        Plicity::Implicit => Some(entry.name),
+                        Plicity::Explicit => None,
+                    })
+                    .collect();
+                Some((constant, names))
+            })
+            .collect();
 
         Ok(LoweredModule::new(
             declarations,
@@ -4539,6 +4564,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_operation_rules(operation_rules)
         .with_stage_bounds(stage_bounds)
         .with_region_names(region_names)
+        .with_implicits(implicits)
         .with_supplies(supplies)
         .with_qualified(qualified)
         .with_reducts(reducts)

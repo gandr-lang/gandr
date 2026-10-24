@@ -508,6 +508,10 @@ pub struct CoreSource<'arena>
     /// The reducts and forgetting maps whose written calls the checker would
     /// apply itself, ascending.
     implied: &'arena [ConstantIndex],
+    /// The parameters of each function whose telescope writes an implicit,
+    /// in the order the core applies them, an implicit's name and none for
+    /// an explicit one, ascending by the function's constant.
+    telescopes: &'arena [(ConstantIndex, Vec<Option<Name<'arena>>>)],
 }
 
 impl<'arena> CoreSource<'arena>
@@ -541,6 +545,7 @@ impl<'arena> CoreSource<'arena>
             forgettings: &[],
             maps: &[],
             implied: &[],
+            telescopes: &[],
         }
     }
 
@@ -798,6 +803,40 @@ impl<'arena> CoreSource<'arena>
     ) -> Self
     {
         Self { implied, ..self }
+    }
+
+    /// This source, writing the implicits of each function `telescopes`
+    /// records, ascending by the function's constant, by name: a call's as
+    /// residents and a definition's in its telescope.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn naming_implicits(
+        self,
+        telescopes: &'arena [(ConstantIndex, Vec<Option<Name<'arena>>>)],
+    ) -> Self
+    {
+        Self { telescopes, ..self }
+    }
+
+    /// The telescope this source records for the function `constant`: one
+    /// entry per parameter, an implicit's name and none for an explicit
+    /// one; the empty slice for a function that writes no implicit.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn telescope(
+        &self,
+        constant: ConstantIndex,
+    ) -> &'arena [Option<Name<'arena>>]
+    {
+        self.telescopes
+            .binary_search_by_key(&constant, |&(held, _)| held)
+            .ok()
+            .and_then(|at| self.telescopes.get(at))
+            .map_or(&[], |&(_, ref names)| names.as_slice())
     }
 
     /// The name at admission position `constant`.
@@ -2859,6 +2898,27 @@ impl Source for CoreSource<'_>
             .binary_search(&map)
             .is_ok()
             .then_some(CoreNode::Value(argument))
+    }
+
+    /// The telescope of the constant `head` reads as, through any
+    /// restoration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn implicits(
+        &self,
+        head: CoreNode,
+    ) -> &[Option<Name<'_>>]
+    {
+        let CoreNode::Value(id) = self.restoration.restored(head)
+        else {
+            return &[];
+        };
+        match self.arena.value(id) {
+            Some(&Value::Constant(constant)) => self.telescope(constant),
+            Some(_) | None => &[],
+        }
     }
 }
 

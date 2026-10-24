@@ -1076,10 +1076,14 @@ quenchant_shape::reason_enum! {
 ///   body keeps a value at a region binder, the header writes `@[r : Region,
 ///   …]` before the parameters, one binder per ordinal up to the greatest kept
 ///   at, each `r`, `r1`, … where the definition takes no such name and named as
-///   a parameter is otherwise, and every `at` names its binder. The
-///   presentation is approximate, its unspelled reasons collected, when a
-///   header type or the body is. Absent for any other shape, and when no names
-///   for the parameters are found.
+///   a parameter is otherwise, and every `at` names its binder. Where `source`
+///   records a telescope for `constant` ([`CoreSource::naming_implicits`]) of
+///   one entry per parameter, each implicit `xᵢ` is written after the region
+///   binders as `xᵢ : Aᵢ`, `@[xᵢ : Aᵢ, …]`, under the name the telescope
+///   records where nothing earlier takes it, and only the explicit parameters
+///   stand in the parentheses. The presentation is approximate, its unspelled
+///   reasons collected, when a header type or the body is. Absent for any other
+///   shape, and when no names for the parameters are found.
 /// - provides: the declaration a function definition reads back as, written
 ///   whole: a recursive one where `def name = body` would write a fixpoint the
 ///   surface spells only in its declaration, a suspended computation as the
@@ -1102,9 +1106,11 @@ quenchant_shape::reason_enum! {
 ///   with no fixpoint distinguishes a `def rec` written for it and a body under
 ///   the wrong context; a suspended returner is written with no parameter; a
 ///   lambda read as a value is written as the thunk holding it is; a fixpoint
-///   that abstracts nothing of its own is written as the body's loop; and a
-///   body that abstracts nothing at an arrow and a type that is no function are
-///   absent.
+///   that abstracts nothing of its own is written as the body's loop; a
+///   function whose implicit's type names the explicit parameter before it
+///   writes the implicit in its telescope and the explicit one in parentheses;
+///   and a body that abstracts nothing at an arrow and a type that is no
+///   function are absent.
 /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
 /// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
 /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
@@ -1112,6 +1118,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
 /// - witness: `tests::goldens::a_suspended_returner_spells_whole_1449`
 /// - witness: `tests::goldens::a_lambda_the_checker_thunks_spells_whole_2228`
+/// - witness: `tests::goldens::a_definition_writes_its_implicits_in_its_telescope_2267`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
         && presentation.as_ref().ends_with('}')
@@ -1122,7 +1129,7 @@ quenchant_shape::reason_enum! {
 #[inline]
 pub fn present_whole(
     source: &CoreSource<'_>,
-    name: Name<'_>,
+    (name, constant): (Name<'_>, ConstantIndex),
     (ty, body): (ValueTypeId, ValueId),
     page: PageWidth,
     style: Style,
@@ -1239,17 +1246,38 @@ pub fn present_whole(
             ordinal => format!("r{ordinal}"),
         })
         .collect();
+    // An implicit is written under the name its uses supply it by.
+    let implicit = source.telescope(constant);
+    let implicit = if implicit.len() == arrows.len() {
+        implicit
+    }
+    else {
+        &[]
+    };
     let preferred: Vec<Option<Name<'_>>> = wanted
         .iter()
         .map(|region| Some(Name::from(region.as_str())))
-        .chain(arrows.iter().map(|&(arrow, _, dependent)| {
-            if dependent {
-                source.written_binder(arrow)
-            }
-            else {
-                None
-            }
-        }))
+        .chain(
+            arrows
+                .iter()
+                .zip(
+                    implicit
+                        .iter()
+                        .copied()
+                        .map(Some)
+                        .chain(core::iter::repeat(None)),
+                )
+                .map(|(&(arrow, _, dependent), resident)| {
+                    resident.flatten().or_else(|| {
+                        if dependent {
+                            source.written_binder(arrow)
+                        }
+                        else {
+                            None
+                        }
+                    })
+                }),
+        )
         .collect();
     let Some(mut binders) = walk::parameters(source, &roots, &[name], &preferred)
     else {
@@ -1291,20 +1319,45 @@ pub fn present_whole(
     });
     let narrower = PageWidth::from(u32::from(page).saturating_sub(2_u32).max(1_u32));
     let spelled = present_computation(&under, inner, narrower, style)?;
-    let telescope = if binders.is_empty() {
-        String::new()
-    }
-    else {
-        let regions: Vec<String> = binders
-            .iter()
-            .map(|region| format!("{region} : Region"))
-            .collect();
-        format!(" @[{}] ", regions.join(", "))
-    };
-    let mut text = format!("{opener} {}{telescope}(", name.as_ref());
+    let resident = |at: usize| implicit.get(at).is_some_and(Option::is_some);
+    let mut text = format!("{opener} {}", name.as_ref());
     let mut written = Vec::new();
-    for (at, (parameter, typed)) in names.iter().zip(&parts).enumerate() {
-        if at > 0_usize {
+    if !binders.is_empty() || (0_usize .. names.len()).any(resident) {
+        text.push_str(" @[");
+        for (entry, region) in binders.iter().enumerate() {
+            if entry > 0_usize {
+                text.push_str(", ");
+            }
+            text.push_str(region);
+            text.push_str(" : Region");
+        }
+        for (entry, (parameter, typed)) in names
+            .iter()
+            .zip(&parts)
+            .enumerate()
+            .filter(|&(at, _)| resident(at))
+            .map(|(_, written_parameter)| written_parameter)
+            .enumerate()
+        {
+            if entry > 0_usize || !binders.is_empty() {
+                text.push_str(", ");
+            }
+            text.push_str(parameter);
+            text.push_str(" : ");
+            appended(&mut text, &mut written, typed);
+        }
+        text.push_str("] ");
+    }
+    text.push('(');
+    for (entry, (parameter, typed)) in names
+        .iter()
+        .zip(&parts)
+        .enumerate()
+        .filter(|&(at, _)| !resident(at))
+        .map(|(_, written_parameter)| written_parameter)
+        .enumerate()
+    {
+        if entry > 0_usize {
             text.push_str(", ");
         }
         text.push_str(parameter);

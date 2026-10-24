@@ -9276,6 +9276,10 @@ pub struct LoweredModule<'source>
     /// The name of each region binder of each definition over regions, by
     /// ordinal, by the definition's position.
     region_names: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    /// Each function written with an implicit telescope, the parameters of
+    /// its merged telescope in order: an implicit's name, none for an
+    /// explicit parameter, by the function's position.
+    implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
     /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
     /// declaration whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
@@ -9334,6 +9338,7 @@ impl<'source> LoweredModule<'source>
             operation_rules: BTreeMap::new(),
             stage_bounds: BTreeMap::new(),
             region_names: BTreeMap::new(),
+            implicits: BTreeMap::new(),
             supplies: BTreeMap::new(),
             qualified: BTreeMap::new(),
             reducts: Vec::new(),
@@ -9486,6 +9491,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.region_names = region_names;
+        self
+    }
+
+    /// This module, carrying `implicits`, each function's merged telescope
+    /// with its implicits named, by its position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_implicits(
+        mut self,
+        implicits: BTreeMap<ConstantIndex, Vec<Option<SurfaceName<'source>>>>,
+    ) -> Self
+    {
+        self.implicits = implicits;
         self
     }
 
@@ -10465,6 +10486,38 @@ impl<'source> LoweredModule<'source>
     ) -> &[Option<SurfaceName<'source>>]
     {
         self.region_names
+            .get(&constant)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// The parameters of the function at `constant`, in the merged
+    /// telescope's order, each implicit by the name a use supplies it by,
+    /// `f[x = v]`, and each explicit one as none: what a printed call writes
+    /// its arguments by, residents for the implicits and the rest in place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per parameter of the merged telescope, an
+    ///   implicit's its written name; the empty slice for a position whose
+    ///   function writes no implicit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a function whose implicit's type names the explicit
+    ///   parameter written after it answers the explicit one first, and a
+    ///   function with no telescope answers nothing.
+    /// - witness: `lower::implicit::tests::a_telescope_names_its_implicits_in_the_merged_order_2267`
+    #[spec(ensures: |ret| ret.is_empty() != self.implicits.contains_key(&constant))]
+    #[inline]
+    #[must_use]
+    pub fn implicits(
+        &self,
+        constant: ConstantIndex,
+    ) -> &[Option<SurfaceName<'source>>]
+    {
+        self.implicits
             .get(&constant)
             .map(Vec::as_slice)
             .unwrap_or_default()

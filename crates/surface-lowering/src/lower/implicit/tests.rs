@@ -115,6 +115,31 @@ fn a_forward_reference_from_the_prefix_binds_after_its_target()
 }
 
 #[test]
+fn a_telescope_names_its_implicits_in_the_merged_order_2267()
+{
+    // `x : t` binds after `t`, so the merged telescope is `t` then `x`; `twin`
+    // writes no telescope and answers nothing.
+    let source = "def chosen @[x : t] (t : Type) -> -F t { return x }\ndef twin(t : Type, x : t) -> -F t { return x }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let constant = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+            .map_or_else(
+                || panic!("`{name}` is declared"),
+                crate::module::LoweredDeclaration::constant,
+            )
+    };
+    assert_eq!(module.implicits(constant("chosen")), [
+        None,
+        Some(SurfaceName::from("x"))
+    ]);
+    assert!(module.implicits(constant("twin")).is_empty());
+}
+
+#[test]
 fn a_binder_of_an_implicit_s_type_mentions_no_parameter_1350()
 {
     let source = "\
