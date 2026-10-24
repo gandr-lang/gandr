@@ -7,9 +7,14 @@
 //! either. A conditional whose false branch is one more conditional, `if c {
 //! t } else if d { u } else { e }`, nests that one in its false branch. An
 //! answer written after the condition, `-> T`, is the answer every branch's
-//! last computation is read at, as a match's written answer is its arms'.
+//! last computation is read at, as a match's written answer is its arms', and
+//! the type the case is ascribed, so the conditional answers it wherever it
+//! stands: `x ← c; (case x { … } : T)`. An `else if` that writes its own
+//! answer ascribes its own case; one that writes none is checked at the
+//! answer of the conditional it stands in.
 
 use anodized::spec;
+use gandr_core_term::Binders;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::Value;
@@ -41,6 +46,7 @@ use crate::form::TileName;
 use crate::origin::Origin;
 use crate::resolve::Frame;
 use crate::resolve::SurfaceName;
+use crate::resolve::Telescope;
 use crate::resolve::TypeAtom;
 use crate::resolve::binder_site;
 
@@ -48,7 +54,8 @@ use crate::resolve::binder_site;
 mod tests;
 
 /// A conditional as the minting reads it: the computation it tests, the block
-/// it runs when that holds, and what it runs when it does not.
+/// it runs when that holds, what it runs when it does not, and the answer
+/// written after its condition.
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
@@ -67,6 +74,8 @@ pub(super) struct Conditional
     then: Block,
     /// What runs when it does not.
     otherwise: Otherwise,
+    /// The answer written after the condition, which the case is ascribed.
+    answer: Maybe<Answer, answered::Absent>,
 }
 
 /// What a conditional runs when its condition does not hold.
@@ -93,6 +102,9 @@ enum Otherwise
         then: Block,
         /// The block it runs when it does not.
         otherwise: Block,
+        /// The answer written after its condition, which its case is
+        /// ascribed.
+        answer: Maybe<Answer, answered::Absent>,
     },
 }
 
@@ -147,6 +159,7 @@ impl<'source> Lowerer<'_, 'source>
                 condition,
                 then,
                 otherwise,
+                answer: own,
             }
         }
         else {
@@ -160,6 +173,7 @@ impl<'source> Lowerer<'_, 'source>
                 condition,
                 then,
                 otherwise,
+                answer,
             }),
         );
 
@@ -297,11 +311,12 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: the condition and every node of the branches are already
     ///   minted or absent.
     /// - ensures: `x ← c; case x { inl _ => t, inr _ => e }`, the false branch
-    ///   `e` the minted block or the nested conditional minted the same way; a
+    ///   `e` the minted block or the nested conditional minted the same way,
+    ///   each case ascribed the answer written after its own condition; a
     ///   condition that is a returner `return v` takes the beta step instead,
     ///   the case instantiated at `v` with every copy it makes marked as its
-    ///   source is; every node at `origin`; nothing when a condition or a
-    ///   branch did not lower.
+    ///   source is; every node at `origin`; nothing when a condition, a branch
+    ///   or a written answer did not lower.
     /// - provides: the minting half of [`Self::conditional`].
     /// - fails: never.
     /// - panics: none.
@@ -328,12 +343,13 @@ impl<'source> Lowerer<'_, 'source>
                 condition,
                 then,
                 otherwise,
+                answer,
             } => match (
                 self.mint_block(then, sink),
                 self.mint_block(otherwise, sink),
             ) {
                 (Maybe::Present(then), Maybe::Present(otherwise)) => {
-                    self.tested(condition, [then, otherwise], sink, origin)
+                    self.tested((condition, answer), [then, otherwise], sink, origin)
                 },
                 (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => Maybe::Absent(reason),
             },
@@ -343,35 +359,45 @@ impl<'source> Lowerer<'_, 'source>
             return Maybe::Absent(lowered::Absent::Unminted);
         };
         // `tested` records every node it mints, the case's root among them.
-        match self.tested(conditional.condition, [then, otherwise], sink, origin) {
+        match self.tested(
+            (conditional.condition, conditional.answer),
+            [then, otherwise],
+            sink,
+            origin,
+        ) {
             Maybe::Present(id) => Maybe::Present(Lowered::Computation(id)),
             Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
 
     /// The case of the computation `condition` over `branches`, the true
-    /// branch first, bound to it: `x ← c; case x { inl _ => t, inr _ => e }`.
+    /// branch first, bound to it and ascribed `answer` when one is written: `x
+    /// ← c; (case x { inl _ => t, inr _ => e } : T)`.
     ///
     /// # Specification
     /// - requires: `branches` are minted under two binders more than the
-    ///   condition.
-    /// - ensures: the bind of the condition over the case of its bound value;
-    ///   for a condition that is the return of a variable, `return x`, the case
+    ///   condition, and `answer` was read under the condition's frame.
+    /// - ensures: the bind of the condition over the case of its bound value,
+    ///   ascribed the written answer carried under the bind's binder; for a
+    ///   condition that is the return of a variable, `return x`, the case
     ///   instantiated at `x`, every copy marked as its source is; for the
     ///   return of any other value, `return v`, whose type the case cannot
     ///   synthesise, the bind of that return ascribed `-F Bool`; the case, the
-    ///   bind and the ascription at `origin`; nothing when the condition did
-    ///   not lower.
+    ///   bind and the ascriptions at `origin`, a copy of the answer at what it
+    ///   copies; nothing when the condition or the written answer did not
+    ///   lower.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::conditional`].
+    /// - hypothesis: L3 — as [`Self::conditional`]; a conditional with a
+    ///   written answer synthesises it where its position states none.
     /// - witness: `lower::conditional::tests::a_conditional_runs_the_branch_its_condition_selects`
-    #[spec(ensures: |ret| matches!(ret, Maybe::Present(_)) == matches!(self.computation_at(condition), Maybe::Present(_)))]
+    /// - witness: `lower::conditional::tests::a_written_answer_ascribes_the_conditional_2089`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_)) || matches!(self.computation_at(condition), Maybe::Present(_)))]
     fn tested(
         &self,
-        condition: NodeIndex,
+        (condition, answer): (NodeIndex, Maybe<Answer, answered::Absent>),
         branches: [ComputationId; 2],
         sink: &mut Sink<'_>,
         origin: Origin,
@@ -387,6 +413,30 @@ impl<'source> Lowerer<'_, 'source>
         sink.origins.record_value(bound, origin);
         let case = sink.arena.computation_case(bound, &branches);
         sink.origins.record_computation(case, origin);
+        let case = match answer {
+            Maybe::Present(answer) => {
+                let mark = sink.arena.watermark();
+                let Maybe::Present(written) = self.answered_type(answer, sink)
+                else {
+                    return Maybe::Absent(lowered::Absent::Unminted);
+                };
+                // The answer is read under the condition's frame, and the case
+                // stands under the condition's binder.
+                let mut carried = alloc::vec::Vec::new();
+                let answered = self.relocate(
+                    sink.arena,
+                    written,
+                    answer.frame,
+                    Telescope::Signature,
+                    Binders::ONE,
+                    Some(&mut carried),
+                );
+                let ascribed = sink.arena.computation_ascribe(case, answered);
+                record_copies(sink, mark, &carried, origin);
+                ascribed
+            },
+            Maybe::Absent(_) => case,
+        };
         let mut tested = tested;
         if let Some(&Computation::Return(value)) = sink.arena.computation(tested) {
             if let Some(&Value::Variable { .. }) = sink.arena.value(value) {

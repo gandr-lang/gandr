@@ -22,7 +22,7 @@ enum Tested
 }
 
 /// The two branches of the case `tests` is, bound to its condition when
-/// `tested` says it is.
+/// `tested` says it is, and seen through the answer it is ascribed.
 ///
 /// # Specification
 /// trivial.
@@ -36,6 +36,10 @@ fn branches(
         (Tested::Bound, Some(&Computation::Bind(_, case))) => case,
         (Tested::Folded, _) => tests,
         (Tested::Bound, _) => return None,
+    };
+    let case = match arena.computation(case) {
+        Some(&Computation::Ascribe { body, .. }) => body,
+        _ => case,
     };
     match arena.computation(case) {
         Some(&Computation::Case { ref branches, .. }) => match **branches {
@@ -90,6 +94,50 @@ fn an_else_if_tests_its_own_condition_in_the_false_branch()
         branches(&arena, otherwise, Tested::Bound).is_some(),
         "the false branch binds and cases on the second condition: {:?}",
         arena.computation(otherwise)
+    );
+    assert_accepted(&judged(&module, &mut arena));
+}
+
+/// #2089: an `if` that writes its answer has its case ascribed that answer,
+/// so it synthesises where nothing states its type, as the computation a
+/// `run` binds; one that writes none leaves its case bare.
+#[test]
+fn a_written_answer_ascribes_the_conditional_2089()
+{
+    let source = "def bound() -> -F Integer {\n  run m <- if true -> -F Integer { pure 1 } else { \
+                  pure 2 } ;\n  pure (m + 1)\n}\ndef stated(b : Bool) -> -F Integer { if b { 1 } \
+                  else { 2 } }\n";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let tail = tail_of(&arena, body_named(&module, SurfaceName::from("bound")));
+    let Some(&Computation::Bind(conditional, _)) = arena.computation(tail)
+    else {
+        panic!(
+            "`bound` runs its conditional: {:?}",
+            arena.computation(tail)
+        );
+    };
+    let Some(&Computation::Bind(_, case)) = arena.computation(conditional)
+    else {
+        panic!(
+            "the conditional binds its condition: {:?}",
+            arena.computation(conditional)
+        );
+    };
+    assert!(
+        matches!(
+            arena.computation(case),
+            Some(&Computation::Ascribe { body, .. })
+                if matches!(arena.computation(body), Some(&Computation::Case { .. }))
+        ),
+        "the case is ascribed the written answer: {:?}",
+        arena.computation(case)
+    );
+    let stated = tail_of(&arena, body_named(&module, SurfaceName::from("stated")));
+    assert!(
+        matches!(arena.computation(stated), Some(&Computation::Case { .. })),
+        "a conditional writing no answer leaves its case bare: {:?}",
+        arena.computation(stated)
     );
     assert_accepted(&judged(&module, &mut arena));
 }

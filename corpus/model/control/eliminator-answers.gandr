@@ -1,0 +1,43 @@
+// An eliminator that writes its answer, `if c -> C { … }` or `case e -> C {
+// … }`, answers it wherever it stands: the case is ascribed the answer, so a
+// computation a `run` binds and a source's run target, which state no type,
+// synthesise it, and each arm is checked against it (#2089). The rule is the
+// annotation rule of bidirectional typing (Dunfield and Krishnaswami,
+// "Bidirectional Typing", ACM Computing Surveys 54(5), 2021, § 3: an
+// annotated term synthesises its annotation).
+
+/// A conditional a `run` binds: its written answer types the bound value.
+@[ runs("2") ]
+def boundIf() -> -F Integer {
+  run m <- if true -> -F Integer { pure 1 } else { pure 0 } ;
+  pure (m + 1)
+}
+
+/// A match over an integer, bound the same way: its case, under the
+/// comparison it tests, answers what the match writes.
+@[ runs("10") ]
+def boundCase() -> -F Integer {
+  run m <- case 3 -> -F Integer { 0 => pure 0, _ => pure 5 } ;
+  pure (m + m)
+}
+
+/// An `else if` chain whose head writes the answer: the head's answer types
+/// the chain, and the later rung is checked against it.
+@[ runs("1") ]
+def chained() -> -F Integer {
+  run m <- if false -> -F Integer { pure 0 } else if true { pure 1 } else { pure 2 } ;
+  pure m
+}
+
+/// A value type written as the answer reads as its returner, as a function's
+/// result does: `-> Integer` answers `-F Integer`.
+@[ runs("1") ]
+def valued() -> -F Integer {
+  run m <- if true -> Integer { pure 1 } else { pure 2 } ;
+  pure m
+}
+
+/// The run target, whose type nothing states: the conditional answers the
+/// type written after its condition.
+@[ runs("1") ]
+if true -> -F Integer { pure 1 } else { pure 2 }
