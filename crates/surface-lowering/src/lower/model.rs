@@ -67,6 +67,7 @@ use super::Lowerer;
 use super::Plan;
 use super::Produced;
 use super::Reading;
+use super::Resolved;
 use super::Sink;
 use super::Site;
 use super::Stretch;
@@ -84,6 +85,7 @@ use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
 use crate::form::Cursor;
+use crate::form::FormName;
 use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
@@ -116,6 +118,7 @@ use crate::module::spine_domains;
 use crate::module::ungrouped;
 use crate::origin::Insertion;
 use crate::origin::Origin;
+use crate::origin::WrittenModel;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
 use crate::resolve::SurfaceName;
@@ -411,6 +414,24 @@ pub(super) struct Bundled
     /// The outermost theory's manifest sorts, `with sort x = A`: each sort's
     /// name beside the type it is.
     manifests: Vec<(Name, NodeIndex)>,
+}
+
+impl Bundled
+{
+    /// Whether the outermost theory's record nests: some component reads one
+    /// before it, so it mints as dependent pairs rather than a record keyed by
+    /// its labels. A bundle with no theory is not keyed.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn dependent(&self) -> arity::Dependent
+    {
+        arity::Dependent(self.theories.first().is_none_or(|theory| {
+            bundle_dependence(&theory.signature)
+                .iter()
+                .any(|binds| binds.0)
+        }))
+    }
 }
 
 /// One theory of a [`Bundled`] record.
@@ -1884,10 +1905,8 @@ impl<'source> Lowerer<'_, 'source>
         ) {
             return Err(site.out(FragmentBoundary::WrongSort));
         }
-        let record = (!bundle_dependence(&theory.signature)
-            .iter()
-            .any(|binds| binds.0))
-        .then(|| FieldLabel::from(String::from(name.as_ref())));
+        let record = (bundled.dependent() == arity::Dependent(false))
+            .then(|| FieldLabel::from(String::from(name.as_ref())));
         let selected = arity::Observed {
             index,
             count: components.len(),
@@ -1898,6 +1917,110 @@ impl<'source> Lowerer<'_, 'source>
         if let Some(read) = head_label {
             self.labelled(head.span, declared, read);
         }
+
+        Ok(arity::Planned(true))
+    }
+
+    /// Classify a selection `m.x` off a name held at a model type as the
+    /// field `x` of the record the model is: an operation, a constant, a law, a
+    /// nested model, or a sort the type leaves a field.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: planned when the selection is one link off a name a binder or
+    ///   a declaration answers whose written type is `Model(T)` or `Model(T)
+    ///   with sort C = A …`: the component the member names among those the
+    ///   type leaves fields, the name read as a value under the form's frame,
+    ///   beside the stated type and the member's label, so the mint projects a
+    ///   keyed record at its label and a dependent one along the nesting;
+    ///   nothing is planned otherwise.
+    /// - fails: the unknown-member refusal for a name the theory lacks; the
+    ///   wrong-sort refusal for a sort the type fixes, which is no field, and
+    ///   where no computation is read; the name's own resolution refusals.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Termination
+    /// Each step follows a transparent plan to the child it stands for,
+    /// strictly deeper in the finite tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation selected off a counter whose carrier is
+    ///   manifest and off one whose carrier is a field, run; a sort the type
+    ///   fixes and a name the theory lacks, refused.
+    /// - witness: `tests::modules::models::an_operation_is_selected_off_a_model_binder_2246`
+    #[spec(ensures: |ret| !matches!(ret, Ok(arity::Planned(true))) || matches!(self.plans.get(site.at.node), Some(&Plan::Select(..))))]
+    pub(super) fn model_member(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let Ok((target, selected)) = Self::link(site, &pieces.pieces, site.at.span)
+        else {
+            return Ok(arity::Planned(false));
+        };
+        if !matches!(self.form_at(target)?, Some((_, Former::Name))) {
+            return Ok(arity::Planned(false));
+        }
+        let frame = site.reading.frame();
+        let named = Site {
+            at: target,
+            name: FormName::IDENTIFIER,
+            reading: Reading::Value(frame),
+        };
+        let declared = match self.resolve_name(named, frame, self.name_at(target))? {
+            Maybe::Present(Resolved::Binder(bound)) => bound.declared,
+            Maybe::Present(Resolved::Declaration { declared, .. }) => declared,
+            Maybe::Absent(_) => return Ok(arity::Planned(false)),
+        };
+        let Maybe::Present(mut stated) = declared
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let bundled = loop {
+            match self.plans.get(stated) {
+                Some(&Plan::Transparent(inner)) => stated = inner,
+                Some(&Plan::Bundle(ref bundled)) => break Arc::clone(bundled),
+                _ => return Ok(arity::Planned(false)),
+            }
+        };
+        let Some(theory) = bundled.theories.first()
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let name = self.name_at(selected);
+        if bundled
+            .manifests
+            .iter()
+            .any(|&(ref sort, _)| sort.as_ref() == name.as_ref())
+        {
+            return Err(site.out(FragmentBoundary::WrongSort));
+        }
+        let components = &theory.signature.components;
+        let Some(index) = components
+            .iter()
+            .position(|component| component.name.as_ref() == name.as_ref())
+        else {
+            return Err(LoweringRefusal::UnknownMember {
+                span: selected.span,
+                module: self.name_at(target),
+                member: name,
+            });
+        };
+        let selected = arity::Observed {
+            index,
+            count: components.len(),
+        };
+        let label = FieldLabel::from(String::from(name.as_ref()));
+        let frame = self.require(site, Produced::Computation)?;
+        self.read(target.node, Reading::Value(frame));
+        self.plan(
+            site,
+            Plan::Select(target.node, selected, Some((stated, label))),
+        );
 
         Ok(arity::Planned(true))
     }
@@ -2331,6 +2454,51 @@ impl<'source> Lowerer<'_, 'source>
             .map_or(Maybe::Absent(lowered::Absent::Unminted), |id| {
                 Maybe::Present(Lowered::ValueType(id))
             })
+    }
+
+    /// Mint the model type the source writes, `Model(T)` or `Model(T) with
+    /// sort C = A …`, and record it as written.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_bundle`]; `bundled` is the plan of a model
+    ///   type the source writes.
+    /// - ensures: as [`Self::mint_bundle`]; a minted record's origins hold the
+    ///   theory's name as written and each sort the type fixes beside the type
+    ///   it fixes it to, in the order written.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model type and a manifest one, each fixing its
+    ///   sorts in the order written, answer at the record they lower to.
+    /// - witness: `tests::modules::models::a_written_model_type_is_recorded_as_written_2246`
+    #[spec(ensures: |ret| matches!(ret, Maybe::Absent(_) | Maybe::Present(Lowered::ValueType(_))))]
+    pub(super) fn mint_model_type(
+        &self,
+        bundled: &Bundled,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let minted = self.mint_bundle(bundled, sink, origin);
+        if let Maybe::Present(Lowered::ValueType(id)) = minted
+            && let Some(node) = self.tree.node(bundled.named)
+        {
+            let sorts = bundled
+                .manifests
+                .iter()
+                .filter_map(|&(ref sort, defined)| match self.value_type_at(defined) {
+                    Maybe::Present(fixed) => Some((sort.clone(), fixed)),
+                    Maybe::Absent(_) => None,
+                })
+                .collect();
+            let theory = self.name_at(Placed::of(bundled.named, node));
+            sink.origins.record_model(id, WrittenModel {
+                theory: Name::from(theory.as_ref()),
+                sorts,
+            });
+        }
+        minted
     }
 
     /// Classify a module packed at its model type, `pack M at Model(S)`.

@@ -32,6 +32,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::former::Arity;
 use crate::former::Component;
+use crate::former::ForgetCall;
 use crate::former::Forgotten;
 use crate::former::Former;
 use crate::former::Name;
@@ -408,6 +409,28 @@ pub struct Forgetting<'arena>
     pub sorts: Vec<(Name<'arena>, CoreNode)>,
 }
 
+/// A model type as a source writes it: the theory's name, and each sort the
+/// type fixes beside the type node it fixes it to, in the order written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Modelled<'arena>
+{
+    /// The theory, as written.
+    pub theory: Name<'arena>,
+    /// Each sort and its type.
+    pub sorts: Vec<(Name<'arena>, CoreNode)>,
+}
+
+/// A forgetting map a source's calls may name: the theory whose model it
+/// returns, and each sort it puts back, by name, in the theory's order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForgetMap<'arena>
+{
+    /// The theory, by admission position.
+    pub theory: ConstantIndex,
+    /// Each sort, by name.
+    pub sorts: Vec<Name<'arena>>,
+}
+
 /// A core arena read through the names of the constants it mentions.
 ///
 /// A core node names a constant or an abstract type by its admission
@@ -470,12 +493,18 @@ pub struct CoreSource<'arena>
     /// The relation each type the source writes as `A ≅ B`, `A ≃ B` or
     /// `A ⇝ B` abbreviates, ascending by the type.
     relations: &'arena [(ValueTypeId, Relation)],
+    /// The model type each type the source writes as `Model(T)`, or `Model(T)
+    /// with sort C = A …`, lowers from, ascending by the type.
+    models: &'arena [(ValueTypeId, Modelled<'arena>)],
     /// The reduct the checker applies at each value it crosses at, ascending
     /// by the value.
     crossings: &'arena [(ValueId, ConstantIndex)],
     /// The forgetting map the checker applies at each value it crosses at,
     /// ascending by the value.
     forgettings: &'arena [(ValueId, Forgetting<'arena>)],
+    /// The forgetting map each constant is, which a written call of it applies,
+    /// ascending by the constant.
+    maps: &'arena [(ConstantIndex, ForgetMap<'arena>)],
     /// The reducts and forgetting maps whose written calls the checker would
     /// apply itself, ascending.
     implied: &'arena [ConstantIndex],
@@ -507,8 +536,10 @@ impl<'arena> CoreSource<'arena>
             pairs: &[],
             seconds: &[],
             relations: &[],
+            models: &[],
             crossings: &[],
             forgettings: &[],
+            maps: &[],
             implied: &[],
         }
     }
@@ -690,6 +721,21 @@ impl<'arena> CoreSource<'arena>
         Self { relations, ..self }
     }
 
+    /// This source, spelling each type `models` records as the model type it
+    /// was written as, ascending by the type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn modeling(
+        self,
+        models: &'arena [(ValueTypeId, Modelled<'arena>)],
+    ) -> Self
+    {
+        Self { models, ..self }
+    }
+
     /// This source, writing the reduct `crossings` records at each value the
     /// checker crosses at, ascending by the value.
     ///
@@ -721,6 +767,21 @@ impl<'arena> CoreSource<'arena>
             forgettings,
             ..self
         }
+    }
+
+    /// This source, writing each call of a forgetting map `maps` records,
+    /// ascending by the map's constant, as the map's form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn forgetting_maps(
+        self,
+        maps: &'arena [(ConstantIndex, ForgetMap<'arena>)],
+    ) -> Self
+    {
+        Self { maps, ..self }
     }
 
     /// This source, leaving each written call of a reduct or a forgetting map
@@ -908,6 +969,35 @@ impl<'arena> CoreSource<'arena>
             relation,
             left,
             right,
+        })
+    }
+
+    /// The model type the type `id` was written as, when the source records
+    /// one.
+    ///
+    /// # Specification
+    /// - requires: `models` is ascending by the type.
+    /// - ensures: the recorded theory and its sorts, each at its type; nothing
+    ///   for an unrecorded type.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model type and a manifest one spell as written; the
+    ///   same record unrecorded spells as the record.
+    /// - witness: `tests::goldens::a_model_type_spells_as_written_2246`
+    #[spec(ensures: |ret| ret.is_none() || self.models.binary_search_by_key(&id, |&(held, _)| held).is_ok())]
+    fn modelled(
+        &self,
+        id: ValueTypeId,
+    ) -> Option<Former<'arena, CoreNode>>
+    {
+        let models = self.models;
+        let at = models.binary_search_by_key(&id, |&(held, _)| held).ok()?;
+        let &(_, ref model) = models.get(at)?;
+        Some(Former::Model {
+            theory: model.theory,
+            sorts: model.sorts.as_slice(),
         })
     }
 
@@ -1289,6 +1379,7 @@ impl<'arena> CoreSource<'arena>
             actual == CoreNode::ValueType(value) && named == region,
         | (Some(&(ValueType::Sigma { .. } | ValueType::Flow { .. })), Former::Relation { .. }) =>
             self.relations.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
+        | (_, Former::Model { .. }) => self.models.binary_search_by_key(&id, |&(held, _)| held).is_ok(),
         | _ => false,
     })]
     fn value_type(
@@ -1296,6 +1387,9 @@ impl<'arena> CoreSource<'arena>
         id: ValueTypeId,
     ) -> Former<'arena, CoreNode>
     {
+        if let Some(modelled) = self.modelled(id) {
+            return modelled;
+        }
         if let Some(related) = self.related(id) {
             return related;
         }
@@ -2643,6 +2737,77 @@ impl Source for CoreSource<'_>
         Some(Forgotten {
             theory: (self.name(forgetting.theory)?, forgetting.theory),
             sorts: &forgetting.sorts,
+        })
+    }
+
+    /// A nested call or a run applying a forced constant `maps` records,
+    /// every carrier it passes a quote, read as the map and the model it is
+    /// applied to.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Termination
+    /// Every turn reads one application nearer the spine's head, a finite
+    /// term.
+    #[inline]
+    fn forget_call(
+        &self,
+        node: CoreNode,
+    ) -> Option<ForgetCall<'_, CoreNode>>
+    {
+        let CoreNode::Value(id) = node
+        else {
+            return None;
+        };
+        let (&Value::Nested(call) | &Value::Run(call)) = self.arena.value(id)?
+        else {
+            return None;
+        };
+        // The spine's arguments from its last: the model, then each carrier
+        // from the last.
+        let mut arguments = Vec::new();
+        let mut function = call;
+        let callee = loop {
+            let computation = self.arena.computation(function)?;
+            if let &Computation::Application(inner, argument) = computation {
+                arguments.push(argument);
+                function = inner;
+                continue;
+            }
+            let &Computation::Force(callee) = computation
+            else {
+                return None;
+            };
+            break callee;
+        };
+        let &Value::Constant(map) = self.arena.value(callee)?
+        else {
+            return None;
+        };
+        let at = self
+            .maps
+            .binary_search_by_key(&map, |&(held, _)| held)
+            .ok()?;
+        let &(_, ref forgetting) = self.maps.get(at)?;
+        arguments.reverse();
+        let (&model, carriers) = arguments.split_last()?;
+        if carriers.len() != forgetting.sorts.len() {
+            return None;
+        }
+        let sorts = forgetting
+            .sorts
+            .iter()
+            .zip(carriers)
+            .map(|(&sort, &carrier)| match self.arena.value(carrier) {
+                Some(&Value::Quote(quoted)) => Some((sort, CoreNode::ValueType(quoted))),
+                Some(_) | None => None,
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(ForgetCall {
+            theory: (self.name(forgetting.theory)?, forgetting.theory),
+            sorts,
+            model: CoreNode::Value(model),
         })
     }
 

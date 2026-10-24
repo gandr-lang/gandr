@@ -663,6 +663,9 @@ pub struct OriginTable
     /// Each relation written between two types, with the type it lowers to,
     /// in the order lowered.
     relations: Vec<(ValueTypeId, Relation)>,
+    /// Each model type written `Model(T)`, or `Model(T) with sort C = A …`,
+    /// with the record it lowers to, in the order lowered.
+    models: Vec<(ValueTypeId, WrittenModel)>,
     /// The implicit each hole a call nominated stands for, by the hole,
     /// ascending by id. The core carries no name; a refusal of the hole
     /// reads it here.
@@ -2192,6 +2195,59 @@ impl OriginTable
     {
         &self.relations
     }
+
+    /// Record that the source writes the type `ty` as the model type `model`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the pair is appended, so [`Self::models`] holds it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a model type and a manifest one, each fixing its
+    ///   sorts in the order written, answer at the record they lower to.
+    /// - witness: `tests::modules::models::a_written_model_type_is_recorded_as_written_2246`
+    #[spec(
+        captures: before = self.models.len(),
+        ensures: self.models.len() == before.saturating_add(1),
+    )]
+    #[inline]
+    pub fn record_model(
+        &mut self,
+        ty: ValueTypeId,
+        model: WrittenModel,
+    )
+    {
+        self.models.push((ty, model));
+    }
+
+    /// Each model type written `Model(T)`, or `Model(T) with sort C = A …`,
+    /// with the record it lowers to, in the order lowered.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn models(&self) -> &[(ValueTypeId, WrittenModel)]
+    {
+        &self.models
+    }
+}
+
+/// A model type as the source writes it: the theory `T` of `Model(T)`, and
+/// each sort `C` a `with sort C = A` fixes beside the type `A` it fixes it
+/// to, in the order written.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WrittenModel
+{
+    /// The theory, as written.
+    pub theory: gandr_theory_levitation::Name,
+    /// Each sort the type fixes, beside the type it fixes it to.
+    pub sorts: Vec<(gandr_theory_levitation::Name, ValueTypeId)>,
 }
 
 /// A label the source writes against an entry: a field of a record or sum

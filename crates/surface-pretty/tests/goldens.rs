@@ -73,9 +73,11 @@ use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::DEPTH_LIMIT;
 use gandr_surface_pretty::Elided;
 use gandr_surface_pretty::Fidelity;
+use gandr_surface_pretty::ForgetMap;
 use gandr_surface_pretty::Forgetting;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Former;
+use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::Notation;
 use gandr_surface_pretty::PageWidth;
@@ -1636,6 +1638,100 @@ fn every_type_former_spells_as_the_grammar_writes_it()
     );
 }
 
+/// #2246: a type the source records as written `Model(T)` or `Model(T) with
+/// sort C = A …` spells as written in both forms, its sorts in the order
+/// written, a carrier looser than a sum parenthesized, and quoted where an
+/// expression stands as `type(…)`; the same record unrecorded spells as the
+/// record.
+#[test]
+fn a_model_type_spells_as_written_2246()
+{
+    let names: [Name<'_>; 0] = [];
+    let mut core = CoreArena::new();
+    let integer = core.value_type_base(BaseType::Integer);
+    let string = core.value_type_base(BaseType::String);
+    let unit = core.value_type_unit();
+    let either = core.value_type_sum(&[integer, string]);
+    let static_function = core.value_type_static_pi(integer, string);
+    // Any record the source records reads as the model type it was written
+    // as; `written` is `fixed`'s unrecorded twin.
+    let plain = core.value_type_sigma(integer, unit);
+    let fixed = core.value_type_product(&[either, unit]);
+    let chained = core.value_type_product(&[static_function, integer]);
+    let written = core.value_type_product(&[either, unit]);
+    let quoted = core.value_quote(plain);
+    let argument = core.value_stay(quoted);
+    let mut models = vec![
+        (plain, Modelled {
+            theory: Name::from("Counter"),
+            sorts: Vec::new(),
+        }),
+        (fixed, Modelled {
+            theory: Name::from("Counter"),
+            sorts: vec![(Name::from("C"), CoreNode::ValueType(either))],
+        }),
+        (chained, Modelled {
+            theory: Name::from("ReadCounter"),
+            sorts: vec![
+                (Name::from("R"), CoreNode::ValueType(static_function)),
+                (Name::from("C"), CoreNode::ValueType(integer)),
+            ],
+        }),
+    ];
+    models.sort_unstable_by_key(|&(id, _)| id);
+    let modelled = CoreSource::new(&core, &names).modeling(&models);
+    for (root, sugared, explicit) in [
+        (plain, "Model(Counter)", "Model(Counter)"),
+        (
+            fixed,
+            "Model(Counter) with sort C = Integer + String",
+            "Model(Counter) with sort C = +{Integer, String}",
+        ),
+        (
+            chained,
+            "Model(ReadCounter) with sort R = (Integer -> String) with sort C = Integer",
+            "Model(ReadCounter) with sort R = (Integer -> String) with sort C = Integer",
+        ),
+    ] {
+        for (form, spelling) in [(Form::Sugared, sugared), (Form::Explicit, explicit)] {
+            let presented = present_type(
+                &modelled,
+                CoreNode::ValueType(root),
+                PageWidth::from(4_096_u32),
+                form.into(),
+            )
+            .expect("the type lays out");
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (spelling, Fidelity::Faithful),
+                "{root:?} spells as the model type it was written as, {form:?}"
+            );
+        }
+    }
+    for (root, spelling) in [
+        (quoted, "type(Model(Counter))"),
+        (argument, "stay(type(Model(Counter)))"),
+    ] {
+        for form in [Form::Sugared, Form::Explicit] {
+            let presented =
+                presented_in(&modelled, Root::Value(CoreNode::Value(root)), wide(), form);
+            assert_eq!(
+                (presented.as_ref(), presented.fidelity()),
+                (spelling, Fidelity::Faithful),
+                "{root:?}, a model type quoted, in the {form:?} form"
+            );
+        }
+    }
+    assert_eq!(
+        spelled(&modelled, Root::Type(CoreNode::ValueType(written))),
+        spelled(
+            &CoreSource::new(&core, &names),
+            Root::Type(CoreNode::ValueType(fixed))
+        ),
+        "the same record unrecorded spells as the record"
+    );
+}
+
 /// The wide-page spelling and fidelity of `root` in `spelling`, explicit,
 /// with why each `?` was written.
 ///
@@ -1977,6 +2073,58 @@ fn a_forgetting_map_the_checker_applies_is_written_in_the_explicit_form_2130()
             .expect("the value lays out");
         assert_eq!(presented.as_ref(), expected, "{form:?}");
         assert_eq!(presented.fidelity(), Fidelity::Faithful, "{form:?}");
+    }
+}
+
+/// #2246: a written call of a forgetting map, its carrier quoted, is written
+/// as the map in the explicit form, `forget[sort C = A](m) at Model(T)`, as a
+/// crossing by it is; at a carrier that is no quote, or where the source
+/// records no map, it is written as the call it is.
+#[test]
+fn a_written_forgetting_map_s_call_is_written_as_the_map_2246()
+{
+    // The map is named with its theory's name, as the lowering mints it.
+    let names = [
+        Name::from("Counter"),
+        Name::from("upManifest"),
+        Name::from("Counter"),
+    ];
+    let mut core = CoreArena::new();
+    let map = core.value_constant(ConstantIndex::from(2_usize));
+    let model = core.value_constant(ConstantIndex::from(1_usize));
+    let unit = core.value_type_unit();
+    let carrier = core.value_quote(unit);
+    let called = |core: &mut CoreArena, carrier| {
+        let forced = core.computation_force(map);
+        let at_carrier = core.computation_application(forced, carrier);
+        let applied = core.computation_application(at_carrier, model);
+        core.value_nested(applied)
+    };
+    let quoted = called(&mut core, carrier);
+    let unquoted = called(&mut core, model);
+    let maps = [(ConstantIndex::from(2_usize), ForgetMap {
+        theory: ConstantIndex::from(0_usize),
+        sorts: vec![Name::from("C")],
+    })];
+    let source = CoreSource::new(&core, &names).forgetting_maps(&maps);
+    let unmapped = CoreSource::new(&core, &names);
+    let page = PageWidth::from(80_u32);
+    for (source, root, expected) in [
+        (
+            &source,
+            quoted,
+            "forget[sort C = Unit](upManifest) at Model(Counter)",
+        ),
+        (&source, unquoted, "Counter(upManifest, upManifest)"),
+        (&unmapped, quoted, "Counter(Unit, upManifest)"),
+    ] {
+        let presented = present_value(source, CoreNode::Value(root), page, Form::Explicit.into())
+            .expect("the value lays out");
+        assert_eq!(
+            (presented.as_ref(), presented.fidelity()),
+            (expected, Fidelity::Faithful),
+            "{root:?}"
+        );
     }
 }
 

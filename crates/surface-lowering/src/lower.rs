@@ -10246,6 +10246,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if self.selection(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
+        if self.model_member(site, pieces)? == arity::Planned(true) {
+            return Ok(());
+        }
         if self.data_field(site, pieces)? == arity::Planned(true) {
             return Ok(());
         }
@@ -14418,7 +14421,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Plan::Relation(relation, left, right) => {
                 self.mint_relation(relation, [left, right], sink, origin)
             },
-            Plan::Bundle(ref signature) => self.mint_bundle(signature, sink, origin),
+            Plan::Bundle(ref signature) => self.mint_model_type(signature, sink, origin),
             Plan::Packed(ref packed) => self.mint_packed(packed, sink, origin),
             Plan::Arrow(..)
             | Plan::StaticPi(..)

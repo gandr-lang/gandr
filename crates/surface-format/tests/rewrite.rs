@@ -797,6 +797,30 @@ def suspended : Type -> Type = \\X. () => X ;
     }
 }
 
+/// #2246: a manifest sort's carrier binds no looser than a sum, as the printer
+/// writes it: a thunk type fixed there takes the alias parenthesised, and the
+/// alias fixed there takes the thunk with the parenthesis it needed gone.
+#[test]
+fn a_manifest_carrier_is_parenthesised_as_the_printer_writes_it_2246()
+{
+    let grammar = grammar();
+    let theory = "theory Pointed {\n  sort M : Type;\n  oper one : M;\n}\n\n";
+    let explicit =
+        format!("{theory}def endo : Model(Pointed) with sort M = +U (Integer -> -F Integer) ;\n");
+    let sugared =
+        format!("{theory}def endo : Model(Pointed) with sort M = (Integer => Integer) ;\n");
+    for (source, form, expected) in [
+        (&explicit, Form::Sugared, &sugared),
+        (&sugared, Form::Explicit, &explicit),
+    ] {
+        assert_eq!(
+            spelled(&grammar, source.as_str(), form, Selection::Every),
+            *expected,
+            "{form}"
+        );
+    }
+}
+
 /// #838: a thunk type a body returns takes the value-function alias over
 /// one bare domain, as the printer writes it, while one standing as a call's
 /// argument, a transport's family, keeps its thunk.

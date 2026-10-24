@@ -29,6 +29,7 @@
 //!   but never reads checkpoints, measured paying for the incremental tier,
 //!   moves `ContentSource` behind a feature.
 
+use alloc::vec::Vec;
 use core::borrow::Borrow;
 
 use anodized::spec;
@@ -693,6 +694,17 @@ pub enum Former<'source, Node>
         left: Node,
         /// The right operand, read as the left one is.
         right: Node,
+    },
+    /// A theory's models as a type, `Model(T)`, or with the sorts it fixes,
+    /// `Model(T) with sort C = A …`: the record the type lowers to, spelled
+    /// as written.
+    Model
+    {
+        /// The theory, as written.
+        theory: Name<'source>,
+        /// Each sort the type fixes beside the type it fixes it to, a value
+        /// type, in the order written.
+        sorts: &'source [(Name<'source>, Node)],
     },
     /// A recorded run, `recorded(sent(v), selected(l), closed)`: its moves in
     /// order, each send's and receive's payload a value the source answers by
@@ -1695,6 +1707,39 @@ pub trait Source
         let _ = node;
         None
     }
+
+    /// The forgetting map's call `node` writes, read as the map and the model
+    /// it is applied to, where each carrier the call passes is a quoted type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the map's theory, each sort it puts back beside the type the
+    ///   call quotes for it, in the theory's order, and the call's last
+    ///   argument, when `node` is a call of a forgetting map the source records
+    ///   whose every carrier is a quote; none otherwise, and the default
+    ///   records none.
+    /// - provides: the form `forget[sort C = A, …](m) at Model(T)` the explicit
+    ///   form writes for a written map's call, as it writes a crossed one.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — as for [`read`].
+    ///
+    /// [`read`]: Self::read
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written call at a quoted carrier spells as the
+    ///   map's form in the explicit form; a call at a carrier that is no quote,
+    ///   and a call of a constant that is no map, spell as calls.
+    /// - witness: `tests::goldens::a_written_forgetting_map_s_call_is_written_as_the_map_2246`
+    #[inline]
+    fn forget_call(
+        &self,
+        node: Self::Node,
+    ) -> Option<ForgetCall<'_, Self::Node>>
+    {
+        let _ = node;
+        None
+    }
 }
 
 /// A forgetting map a source records at a value: the theory whose model it
@@ -1707,4 +1752,19 @@ pub struct Forgotten<'source, Node>
     /// Each sort the map puts back, by name, and the type node of its
     /// carrier, in the theory's order.
     pub sorts: &'source [(Name<'source>, Node)],
+}
+
+/// A forgetting map's call a source writes: the map, as [`Forgotten`] reads a
+/// crossed one, each sort beside the type the call quotes for it, and the
+/// model the call applies the map to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ForgetCall<'source, Node>
+{
+    /// The theory, by its name and its constant.
+    pub theory: (Name<'source>, ConstantIndex),
+    /// Each sort the map puts back, by name, and the type node the call
+    /// quotes for it, in the theory's order.
+    pub sorts: Vec<(Name<'source>, Node)>,
+    /// The model the map is applied to.
+    pub model: Node,
 }
