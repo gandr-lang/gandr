@@ -1052,30 +1052,31 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: nothing; `source` may be malformed.
 /// - ensures: when `ty` is `+U (A₁ -> … -> Aₙ -> C)`, any arrow dependent, and
-///   `body` is `thunk { fn (x₁) { … fn (xₙ) { b } … } }`, `n` the abstractions
-///   the arrows run through and `n ≥ 1` unless `C` is a returner `-F B`: the
-///   header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C {`, each type under the binders
-///   of the dependent arrows before it, then `b` as [`present_computation`]
-///   writes it at a page two columns narrower under the context binding `x₁` to
-///   `xₙ`, each of its lines two columns in, then `}`. When `body` is instead
-///   `thunk { fn (x₁) { … fn (xₖ) { rec f { fn (xₖ₊₁) { … fn (xₙ) { b } … } } }
-///   … } }`, `k ≥ 0` of them outside the fixpoint and at least one inside, the
-///   header opens `def rec` and `b` stands under the context binding `x₁` to
-///   `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each occurrence of the fixpoint's own
-///   binder is written with its claim: `name[<]` where the fixpoint claims
-///   structural recursion on a parameter, `name[>]` where it claims nothing;
-///   each call of it passes the uniform parameters `x₁` to `xₖ` as themselves
-///   before its own arguments. `xᵢ` is its dependent arrow's binder where the
-///   source names it and neither the definition nor an earlier parameter takes
-///   it, otherwise the next generated name that neither `name`, the definition
-///   nor an earlier parameter takes. Where a header type or the body keeps a
-///   value at a region binder, the header writes `@[r : Region, …]` before the
-///   parameters, one binder per ordinal up to the greatest kept at, each `r`,
-///   `r1`, … where the definition takes no such name and named as a parameter
-///   is otherwise, and every `at` names its binder. The presentation is
-///   approximate, its unspelled reasons collected, when a header type or the
-///   body is. Absent for any other shape, and when no names for the parameters
-///   are found.
+///   `body` is `thunk { fn (x₁) { … fn (xₙ) { b } … } }` — or `fn (x₁) { … }`
+///   read as a value at an arrow, the thunk the checker inserts — `n` the
+///   abstractions the arrows run through and `n ≥ 1` unless `C` is a returner
+///   `-F B`: the header `def name(x₁ : A₁, …, xₙ : Aₙ) -> C {`, each type under
+///   the binders of the dependent arrows before it, then `b` as
+///   [`present_computation`] writes it at a page two columns narrower under the
+///   context binding `x₁` to `xₙ`, each of its lines two columns in, then `}`.
+///   When `body` is instead `thunk { fn (x₁) { … fn (xₖ) { rec f { fn (xₖ₊₁) {
+///   … fn (xₙ) { b } … } } } … } }`, `k ≥ 0` of them outside the fixpoint and
+///   at least one inside, the header opens `def rec` and `b` stands under the
+///   context binding `x₁` to `xₖ`, `name`, then `xₖ₊₁` to `xₙ`. Each occurrence
+///   of the fixpoint's own binder is written with its claim: `name[<]` where
+///   the fixpoint claims structural recursion on a parameter, `name[>]` where
+///   it claims nothing; each call of it passes the uniform parameters `x₁` to
+///   `xₖ` as themselves before its own arguments. `xᵢ` is its dependent arrow's
+///   binder where the source names it and neither the definition nor an earlier
+///   parameter takes it, otherwise the next generated name that neither `name`,
+///   the definition nor an earlier parameter takes. Where a header type or the
+///   body keeps a value at a region binder, the header writes `@[r : Region,
+///   …]` before the parameters, one binder per ordinal up to the greatest kept
+///   at, each `r`, `r1`, … where the definition takes no such name and named as
+///   a parameter is otherwise, and every `at` names its binder. The
+///   presentation is approximate, its unspelled reasons collected, when a
+///   header type or the body is. Absent for any other shape, and when no names
+///   for the parameters are found.
 /// - provides: the declaration a function definition reads back as, written
 ///   whole: a recursive one where `def name = body` would write a fixpoint the
 ///   surface spells only in its declaration, a suspended computation as the
@@ -1097,15 +1098,17 @@ quenchant_shape::reason_enum! {
 ///   distinguishes a captured parameter; a function of one parameter and of two
 ///   with no fixpoint distinguishes a `def rec` written for it and a body under
 ///   the wrong context; a suspended returner is written with no parameter; a
-///   fixpoint that abstracts nothing of its own is written as the body's loop;
-///   and a body that abstracts nothing at an arrow and a type that is no
-///   function are absent.
+///   lambda read as a value is written as the thunk holding it is; a fixpoint
+///   that abstracts nothing of its own is written as the body's loop; and a
+///   body that abstracts nothing at an arrow and a type that is no function are
+///   absent.
 /// - witness: `tests::goldens::a_recursive_definition_spells_as_written_941`
 /// - witness: `tests::goldens::a_recursive_parameter_skips_the_names_its_body_mentions_941`
 /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
 /// - witness: `tests::goldens::a_function_definition_spells_whole_941`
 /// - witness: `tests::goldens::a_definition_over_a_region_spells_its_binder_1221`
 /// - witness: `tests::goldens::a_suspended_returner_spells_whole_1449`
+/// - witness: `tests::goldens::a_lambda_the_checker_thunks_spells_whole_2228`
 #[spec(ensures: |ref ret| match *ret {
     Ok(Maybe::Present(ref presentation)) => presentation.as_ref().starts_with("def ")
         && presentation.as_ref().ends_with('}')
@@ -1126,9 +1129,25 @@ pub fn present_whole(
     else {
         return Ok(Maybe::Absent(whole::Absent::NotAFunction));
     };
-    let Former::Thunk(suspended) = source.read(CoreNode::Value(body))
+    let read = source.read(CoreNode::Value(body));
+    let suspended = if let Former::Thunk(suspended) = read {
+        suspended
+    }
     else {
-        return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+        // A lambda read as a value at a function: the checker thunks it.
+        let Former::Nested(nested) = read
+        else {
+            return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+        };
+        if !matches!(source.read(nested), Former::Lambda(_))
+            || !matches!(
+                source.read(function),
+                Former::Arrow { .. } | Former::Pi { .. }
+            )
+        {
+            return Ok(Maybe::Absent(whole::Absent::NotAbstracted));
+        }
+        nested
     };
     // Each parameter: its arrow, its domain, and whether the arrow binds it
     // in what follows; then the codomain and the body under them all. The

@@ -695,12 +695,14 @@ fn add_type_rules(
     // also a whole type, `x : t`, so the two readings tie on the variable and
     // the token after it decides: a type continues this form, anything else
     // ends the variable. After the atom and the application, so `f(A)` keeps
-    // the application's reading. The lowering reads it on a method's `self`
-    // and refuses it anywhere else.
+    // the application's reading. It stands at the arrow's band, a whole type,
+    // so no operator's operand reads one: `M with sort C = A` keeps its
+    // binding where a joined definition's `= e` could follow `M with sort C`.
+    // The lowering reads it on a method's `self` and refuses it anywhere else.
     rules.push(rule(
         RuleName("moded_type"),
         ty,
-        type_application,
+        type_arrow,
         Regex::seq([tile(TileLabel("type_variable")), Regex::sort(ty)]),
     ));
     // The capability `Cap {read, write}`: the authority to exercise the named

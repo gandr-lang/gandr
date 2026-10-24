@@ -12,5 +12,4 @@ import "../../model/identity/circle-base.gandr" ;
 /// n)` over the integers, where the section reads `Path(Path(Circle, Base,
 /// Base), spin(wind(p)), p)` over the loops (#514).
 @[ refuses("TypeMismatch") ]
-def wrongEndpoint : Path(Circle, Base, Base) ≅ Int ;
-def wrongEndpoint = (wind, (spin, (retr, retr))) ;
+def wrongEndpoint : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (retr, retr))) ;

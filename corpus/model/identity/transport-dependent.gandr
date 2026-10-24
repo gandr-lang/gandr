@@ -20,14 +20,12 @@ def reduced : Path(
     Succ(Zero)
   ),
   Succ(Zero)
-);
-def reduced = here(Succ(Zero));
+) = here(Succ(Zero));
 
 /// The unit type's evidence between its point and itself, a closed path
 /// that is no reflexivity.
 @[ checks ]
-def unitPath : Path(Unit, unit, unit);
-def unitPath = unit;
+def unitPath : Path(Unit, unit, unit) = unit;
 
 /// Transport along that evidence, in a family that reads neither the point
 /// nor the path, returns the element given (#1854).
@@ -42,8 +40,7 @@ def carriedUnit : Path(
     Succ(Zero)
   ),
   Succ(Zero)
-);
-def carriedUnit = here(Succ(Zero));
+) = here(Succ(Zero));
 
 /// Transport along that evidence in the family of paths back to the point
 /// returns the unit, the one inhabitant of the unit fibre (#1886).
@@ -58,8 +55,7 @@ def backUnit : Path(
     here(unit)
   ),
   unit
-);
-def backUnit = here(unit);
+) = here(unit);
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.

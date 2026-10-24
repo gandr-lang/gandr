@@ -37,5 +37,4 @@ def loopsRound(
 
 /// A loop carried to the integers and back again is the loop, by a run.
 @[ runs("loop ∷ here(Base)") ]
-def roundRun : () => Path(Circle, Base, Base) ;
-def roundRun = loopsRound(loopsAreIntegers, loop) ;
+def roundRun : () => Path(Circle, Base, Base) = loopsRound(loopsAreIntegers, loop) ;

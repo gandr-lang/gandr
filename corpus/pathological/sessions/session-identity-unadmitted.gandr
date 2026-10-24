@@ -10,8 +10,7 @@ module Evolution {
 }
 
 @[ checks ]
-def served : Run(Evolution.SeatEnd) ;
-def served = recorded(
+def served : Run(Evolution.SeatEnd) = recorded(
   received("task"),
   selected(report),
   sent("progress"),

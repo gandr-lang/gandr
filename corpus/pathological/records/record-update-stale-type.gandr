@@ -8,5 +8,4 @@ def cell = #{ count = 3, label = "start" };
 /// `cell` with a string count, stated at the old type: its count is no
 /// integer.
 @[ refuses("TypeMismatch") ]
-def stale : #{count : Integer, label : String} ;
-def stale = #{ cell | count = "three" } ;
+def stale : #{count : Integer, label : String} = #{ cell | count = "three" } ;

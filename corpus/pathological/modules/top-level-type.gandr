@@ -11,5 +11,4 @@ type Band = #{low : Integer, high : Integer} ;
 
 /// A record without the high bound is no band.
 @[ refuses("MissingRecordField") ]
-def partial : Band ;
-def partial = #{low = 200000} ;
+def partial : Band = #{low = 200000} ;

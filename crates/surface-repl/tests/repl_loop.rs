@@ -807,8 +807,9 @@ fn a_dependent_function_names_its_type_with_its_binder()
     );
 }
 
-/// One-line signatures in three selected strict corpus sources retain
-/// the type spelling written in those sources.
+/// One-line signatures in three selected strict corpus sources, apart or
+/// joined with their value, retain the type spelling written in those
+/// sources.
 #[test]
 #[cfg_attr(
     dylint_lib = "quenchant_dylints",
@@ -829,6 +830,10 @@ fn corpus_types_spell_as_their_source_writes_them()
                 .strip_prefix("def ")
                 .and_then(|rest| rest.strip_suffix(" ;"))
                 .filter(|rest| rest.contains(" : "))
+                .map(|rest| {
+                    rest.split_once(" = ")
+                        .map_or(rest, |(signature, _)| signature)
+                })
             else {
                 continue;
             };

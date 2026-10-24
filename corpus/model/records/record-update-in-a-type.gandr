@@ -12,10 +12,8 @@ def commute : Path(
   #{x : Integer, y : Integer},
   #{ #{ corner | x = 9 } | y = 3 },
   #{ #{ corner | y = 3 } | x = 9 }
-) ;
-def commute = here(#{ x = 9, y = 3 }) ;
+) = here(#{ x = 9, y = 3 }) ;
 
 /// Updating a field with its own value is the record itself.
 @[ checks ]
-def unchanged : Path(#{x : Integer, y : Integer}, #{ corner | x = 1 }, corner) ;
-def unchanged = here(corner) ;
+def unchanged : Path(#{x : Integer, y : Integer}, #{ corner | x = 1 }, corner) = here(corner) ;

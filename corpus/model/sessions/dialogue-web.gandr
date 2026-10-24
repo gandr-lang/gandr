@@ -26,8 +26,7 @@ import "./seat-base.gandr" ;
     parallel(series(event(left, 3), event(left, 4)), event(right, 4))
   )
 ) ]
-def retiring : Dialogue(Seat.SeatEnd) ;
-def retiring = dialogue(
+def retiring : Dialogue(Seat.SeatEnd) = dialogue(
   right(sent(Seat.task)),
   left(received(Seat.task)),
   left(selected(report)),
@@ -45,8 +44,7 @@ def retiring = dialogue(
 /// `retiring` does, stated here by its prime count alone: series-parallel, it
 /// has no prime node.
 @[ decomposes(primes = 0) ]
-def retiringLater : Dialogue(Seat.SeatEnd) ;
-def retiringLater = dialogue(
+def retiringLater : Dialogue(Seat.SeatEnd) = dialogue(
   right(sent(Seat.task)),
   left(received(Seat.task)),
   left(selected(report)),
@@ -62,14 +60,12 @@ def retiringLater = dialogue(
 /// The two logs are one dialogue: they share every endpoint's moves and
 /// every send's receipt, so the path is reflexivity.
 @[ checks ]
-def commuted : Path(Dialogue(Seat.SeatEnd), retiring, retiringLater) ;
-def commuted = here(retiring) ;
+def commuted : Path(Dialogue(Seat.SeatEnd), retiring, retiringLater) = here(retiring) ;
 
 /// The two logs decompose to one web: a web is read off the dialogue it
 /// decomposes, so the path between the logs' webs is reflexivity too.
 @[ checks ]
-def sameWeb : Path(Web, decompose(retiring), decompose(retiringLater)) ;
-def sameWeb = here(decompose(retiring)) ;
+def sameWeb : Path(Web, decompose(retiring), decompose(retiringLater)) = here(decompose(retiring)) ;
 
 /// A dialogue that hands off: the seat's notes sent before the operator takes
 /// the choice. Its web leaves a prime node: the seat's notes precede its
@@ -89,8 +85,7 @@ def sameWeb = here(decompose(retiring)) ;
     )
   )
 ) ]
-def handedOff : Dialogue(Seat.SeatEnd) ;
-def handedOff = dialogue(
+def handedOff : Dialogue(Seat.SeatEnd) = dialogue(
   right(sent(Seat.task)),
   left(received(Seat.task)),
   left(selected(handoff)),

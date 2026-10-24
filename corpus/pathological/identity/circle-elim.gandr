@@ -67,8 +67,7 @@ data Marked : Type {
 /// the turn, the composite's transport checks the turn at the path into
 /// `Elsewhere`, which it is not.
 @[ refuses("TypeMismatch") ]
-def misjoined_then : Path(Marked, Mark, Elsewhere) ;
-def misjoined_then = turn then here(Elsewhere) ;
+def misjoined_then : Path(Marked, Mark, Elsewhere) = turn then here(Elsewhere) ;
 
 /// Every point to itself, by cases: no loop arm, and the motive reads no
 /// point, so the turn is owed nothing.
@@ -85,8 +84,7 @@ def kept(x : Marked) -> -F Marked {
 /// never reaches, so the path is no words and `here(Mark)` does not inhabit
 /// it (#485).
 @[ refuses("TypeMismatch") ]
-def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) ;
-def elsewhereComputed = here(Mark) ;
+def elsewhereComputed : Path(Marked, kept(Elsewhere), kept(Elsewhere)) = here(Mark) ;
 
 /// `cong` maps a path by a function, and the point's constructor is not one:
 /// `Base` names the point, not a map out of the circle.

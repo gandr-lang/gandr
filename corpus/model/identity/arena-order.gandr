@@ -20,8 +20,10 @@ def swapFirstTwo(i : Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
 
 /// The ids to themselves along the relabelling, its own inverse.
 @[ checks ]
-def relabelling : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) ;
-def relabelling = equiv(swapFirstTwo, swapFirstTwo) ;
+def relabelling : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
+  swapFirstTwo,
+  swapFirstTwo
+) ;
 
 /// The ring `a → b → c → a` with `a` allocated first, then `b`, then `c`:
 /// each id links to the next one allocated.
@@ -61,13 +63,17 @@ def labelBAC(i : Unit + (Unit + Unit)) -> -F Integer { case i {
 
 /// The ring allocated `a`, `b`, `c`, walked from `a`.
 @[ checks ]
-def builtABC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} ;
-def builtABC = (type(Unit + (Unit + Unit)), (+{.0 = unit}, (nextABC, labelABC))) ;
+def builtABC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} = (
+  type(Unit + (Unit + Unit)),
+  (+{.0 = unit}, (nextABC, labelABC))
+) ;
 
 /// The ring allocated `b`, `a`, `c`, walked from `a`, now the second id.
 @[ checks ]
-def builtBAC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} ;
-def builtBAC = (type(Unit + (Unit + Unit)), (+{.1 = +{.0 = unit}}, (nextBAC, labelBAC))) ;
+def builtBAC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} = (
+  type(Unit + (Unit + Unit)),
+  (+{.1 = +{.0 = unit}}, (nextBAC, labelBAC))
+) ;
 
 /// The links carried along the relabelling are the other order's links.
 @[ checks ]
@@ -75,8 +81,7 @@ def linksRelabelled : Path(
   Unit + (Unit + Unit) => Unit + (Unit + Unit),
   transport(\t. t => t, relabelling, nextABC),
   nextBAC
-) ;
-def linksRelabelled = funext(transport(\t. t => t, relabelling, nextABC), nextBAC) ;
+) = funext(transport(\t. t => t, relabelling, nextABC), nextBAC) ;
 
 /// The labels carried along the relabelling are the other order's labels.
 @[ checks ]
@@ -84,8 +89,7 @@ def labelsRelabelled : Path(
   Unit + (Unit + Unit) => Integer,
   transport(\t. t => Integer, relabelling, labelABC),
   labelBAC
-) ;
-def labelsRelabelled = funext(transport(\t. t => Integer, relabelling, labelABC), labelBAC) ;
+) = funext(transport(\t. t => Integer, relabelling, labelABC), labelBAC) ;
 
 /// The two allocation orders build one arena: the ids along the relabelling,
 /// the start carried to `a`'s new id, and the links and labels carried to the
@@ -95,8 +99,7 @@ def oneArena : Path(
   #{ids : Type, start : ids, next : ids => ids, label : ids => Integer},
   builtABC,
   builtBAC
-) ;
-def oneArena = (relabelling, (here(+{.1 = +{.0 = unit}}), (linksRelabelled, labelsRelabelled))) ;
+) = (relabelling, (here(+{.1 = +{.0 = unit}}), (linksRelabelled, labelsRelabelled))) ;
 
 /// A consumer of any arena: the label two links on from the start.
 @[ checks ]
@@ -127,5 +130,7 @@ def walkedAlike() -> -F Path(Integer, walk(builtABC), walk(builtBAC)) {
 /// The labels left at their ids are not the other order's: an id names a
 /// node only within its arena.
 @[ refuses("PointwiseDistinct") ]
-def labelsUnrelabelled : Path(Unit + (Unit + Unit) => Integer, labelABC, labelBAC) ;
-def labelsUnrelabelled = funext(labelABC, labelBAC) ;
+def labelsUnrelabelled : Path(Unit + (Unit + Unit) => Integer, labelABC, labelBAC) = funext(
+  labelABC,
+  labelBAC
+) ;

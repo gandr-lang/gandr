@@ -39,8 +39,7 @@ module Point :> #{ type T, origin : T, other : T } {
 
 /// The relation's evidence between two sealed points is a path between them.
 @[ checks ]
-def originOther : Path(Point.T, Point.origin, Point.other) ;
-def originOther = unit ;
+def originOther : Path(Point.T, Point.origin, Point.other) = unit ;
 
 /// Based path induction along that evidence, in a family that reads neither
 /// the point nor the path: the evidence is no reflexivity, and the transport
@@ -56,8 +55,7 @@ def carriedAlong : Path(
     unit
   ),
   unit
-) ;
-def carriedAlong = here(unit) ;
+) = here(unit) ;
 
 /// Based path induction at the sealed type (the HoTT book's § 1.12.1): a
 /// path from `origin` reversed by transport in the family of paths back to
@@ -90,8 +88,7 @@ def backAlong : Path(
     here(Point.origin)
   ),
   unit
-) ;
-def backAlong = here(unit) ;
+) = here(unit) ;
 
 /// Based path induction along the evidence in the family of the identities
 /// of the singleton's own paths: each fibre is an identity of the relation's,
@@ -111,8 +108,7 @@ def overAlong : Path(
     here(here(Point.origin))
   ),
   unit
-) ;
-def overAlong = here(unit) ;
+) = here(unit) ;
 
 /// Two points of the unit type, related by the paths between them: each
 /// fibre of this relation is an identity of the unit type, not the unit type
@@ -152,8 +148,7 @@ module PathPoint :> #{ type T, origin : T, other : T } {
 /// The relation's evidence between the two points: a path of the unit type,
 /// which is the unit.
 @[ checks ]
-def pathOriginOther : Path(PathPoint.T, PathPoint.origin, PathPoint.other) ;
-def pathOriginOther = unit ;
+def pathOriginOther : Path(PathPoint.T, PathPoint.origin, PathPoint.other) = unit ;
 
 /// Based path induction along that evidence in the family of paths back to
 /// `origin`: each fibre is the relation's, an identity of the unit type, so
@@ -173,5 +168,4 @@ def pathBack : Path(
     here(PathPoint.origin)
   ),
   unit
-) ;
-def pathBack = here(unit) ;
+) = here(unit) ;

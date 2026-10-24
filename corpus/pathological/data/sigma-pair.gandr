@@ -5,8 +5,7 @@ data Ix(n : Integer) : Type {
 
 /// The second component lies over another first.
 @[ refuses("TypeMismatch") ]
-def skewed : #{n : Integer, w : Ix(n)} ;
-def skewed = (2, (MkIx : Ix(3))) ;
+def skewed : #{n : Integer, w : Ix(n)} = (2, (MkIx : Ix(3))) ;
 
 /// A pair with no type to check against synthesises the product of its
 /// components, never a dependent pair.

@@ -110,6 +110,7 @@
 //! | `inserted-reduct` | `T.S(m)`, beside a checker | `m`, beside a checker |
 //! | `inserted-forget` | `forget[sort C = A](m) at Model(T)`, beside a checker | `m`, beside a checker |
 //! | `function-form`  | `def f() -> -F B { c }`, from `def f : +U (-F B) ; def f = thunk { c } ;` | `def f() -> -F B { c }`, from `def f : () => B ; def f = thunk { c } ;` |
+//! | `joined-definition` | `def x : T ; def x = e ;`, from `def x : T = e ;` | `def x : T = e ;`, the definition directly after |
 //!
 //! A rewrite changes tokens, so its check is the meaning, never the digest:
 //! the source and the rewritten text are each lowered into one core arena
@@ -946,6 +947,7 @@ pub fn format_beside(
     let mut reduced: Vec<ByteSpan> = Vec::new();
     let mut apart = merge::Apart::default();
     let mut parted: Vec<ByteSpan> = Vec::new();
+    let mut unjoined: Vec<ByteSpan> = Vec::new();
     loop {
         let spans = forms_of(tree, &withdrawn);
         let rewrites = match (chosen, lowered.as_ref()) {
@@ -991,11 +993,13 @@ pub fn format_beside(
                 // keeps them, unreported, and is tried again: there the checker
                 // inserts none. So does one with a reduct written or left out:
                 // there the checker applies none. One still elaborating
-                // otherwise merged into its function form is laid out apart
-                // again, unreported.
+                // otherwise merged into its function form or joined is laid
+                // out apart from that form again, unreported: one held from
+                // the function form may still join.
                 retried.clear();
                 reduced.clear();
                 parted.clear();
+                unjoined.clear();
                 stuck.clear();
                 for declaration in differing {
                     let forms = forms_of(tree, &declaration.keys);
@@ -1021,6 +1025,13 @@ pub fn format_beside(
                         parted.extend(forms);
                         continue;
                     }
+                    if forms
+                        .iter()
+                        .any(|form| laid.joined.binary_search(form).is_ok())
+                    {
+                        unjoined.extend(forms);
+                        continue;
+                    }
                     fresh.clear();
                     fresh.extend(
                         declaration
@@ -1038,12 +1049,17 @@ pub fn format_beside(
                         reports.push(declaration.withdrawal);
                     }
                 }
-                if !retried.is_empty() || !reduced.is_empty() || !parted.is_empty() {
+                if !retried.is_empty()
+                    || !reduced.is_empty()
+                    || !parted.is_empty()
+                    || !unjoined.is_empty()
+                {
                     thunks.keep(&retried);
                     unreduced.append(&mut reduced);
                     unreduced.sort_unstable();
                     unreduced.dedup();
-                    apart.keep(&parted);
+                    apart.keep(&parted, merge::OneForm::Function);
+                    apart.keep(&unjoined, merge::OneForm::Joined);
                     continue;
                 }
                 if withdrawn.len() == before {
@@ -1236,9 +1252,12 @@ struct Written<'source>
     leaves: Vec<Leaf<'source>>,
     /// The top-level forms a rewrite respelled, in order.
     respelled: Vec<NodeIndex>,
-    /// The spans of the signatures and definitions merged into one form,
-    /// ascending.
+    /// The spans of the signatures and definitions merged into one function
+    /// form, ascending.
     merged: Vec<ByteSpan>,
+    /// The spans of the signatures and definitions joined into one form,
+    /// ascending.
+    joined: Vec<ByteSpan>,
     /// The path composites kept, no motive derived for them, in order.
     unspelled: Vec<ByteSpan>,
 }
@@ -1265,8 +1284,9 @@ impl Written<'_>
 
 /// The source whose leaves are `flat` written at `layout`, each clean form
 /// respelled by `rewrites` — the rewrites chosen and the spans they do not
-/// enter — when given, and each signature merged with the definition after
-/// it where the rewrites merge them and `apart` does not hold them.
+/// enter — when given, and each signature merged or joined with the
+/// definition after it where the rewrites do so and `apart` does not hold
+/// them from it.
 ///
 /// # Specification
 /// trivial.
@@ -1286,6 +1306,7 @@ fn write<'source>(
     let mut written: Vec<Leaf<'source>> = Vec::with_capacity(flat.leaves.len());
     let mut respelled = Vec::new();
     let mut merged = Vec::new();
+    let mut joined = Vec::new();
     let mut unspelled = Vec::new();
     let units = units(&flat.leaves);
     let mut at = 0_usize;
@@ -1322,7 +1343,10 @@ fn write<'source>(
                 unspelled.extend(kept.0);
                 let own = changed.as_deref().unwrap_or(unit.leaves);
                 let paired = rewrites
-                    .filter(|chosen| chosen.chosen.pairing() == merge::Pairing::Merged)
+                    .filter(|chosen| {
+                        chosen.chosen.pairing() == merge::Pairing::Merged
+                            || chosen.chosen.joining() == merge::Joining::Join
+                    })
                     .and_then(|chosen| {
                         let next = units.get(at)?;
                         let Owner::Form(defined) = next.leaves.first()?.owner
@@ -1331,33 +1355,77 @@ fn write<'source>(
                         };
                         if flat.integrity(defined) != Integrity::Clean
                             || next.joins != Joins::OwnLine
-                            || merge::candidate(next.leaves) == merge::Pairing::Apart
                         {
                             return None;
                         }
                         let spans = [tree.node(form)?.span(), tree.node(defined)?.span()];
-                        if spans.iter().any(|&span| {
-                            chosen.withdrawn.contains(&span)
-                                || apart.pairing(span) == merge::Pairing::Apart
-                        }) {
+                        if spans.iter().any(|span| chosen.withdrawn.contains(span)) {
+                            return None;
+                        }
+                        let open = |one: merge::OneForm| {
+                            spans
+                                .iter()
+                                .all(|&span| apart.pairing(span, one) == merge::Pairing::Merged)
+                        };
+                        let merging = chosen.chosen.pairing() == merge::Pairing::Merged
+                            && open(merge::OneForm::Function)
+                            && merge::candidate(next.leaves) == merge::Pairing::Merged;
+                        let joining = chosen.chosen.joining() == merge::Joining::Join
+                            && open(merge::OneForm::Joined)
+                            && merge::defines(tree, form).is_none();
+                        if !merging && !joining {
                             return None;
                         }
                         let (definition, also) =
                             respelled_form(grammar, tree, defined, next.leaves, Some(chosen));
-                        let leaves = merge::merged(
-                            own,
-                            (next.leaves, definition.as_deref().unwrap_or(next.leaves)),
-                        )?;
-                        Some((leaves, also, defined, spans, next.span))
+                        let pair = (next.leaves, definition.as_deref().unwrap_or(next.leaves));
+                        let (leaves, one) = merging
+                            .then(|| merge::merged(own, pair))
+                            .flatten()
+                            .map(|leaves| (leaves, merge::OneForm::Function))
+                            .or_else(|| {
+                                joining
+                                    .then(|| merge::joined(own, pair))
+                                    .flatten()
+                                    .map(|leaves| (leaves, merge::OneForm::Joined))
+                            })?;
+                        Some((leaves, one, also, defined, spans, next.span))
                     });
-                if let Some((leaves, also, defined, spans, end)) = paired {
+                if let Some((leaves, one, also, defined, spans, end)) = paired {
                     unspelled.extend(also.0);
                     respelled.extend([form, defined]);
-                    merged.extend(spans);
+                    match one {
+                        merge::OneForm::Function => merged.extend(spans),
+                        merge::OneForm::Joined => joined.extend(spans),
+                    }
                     span = span.join(end);
                     at = at.saturating_add(1);
                     text.push_str(&layout::lay_out(&leaves, layout, ending.spelling())?);
                     written.extend_from_slice(&leaves);
+                }
+                else if let Some((signed, defined)) = rewrites
+                    .filter(|chosen| chosen.chosen.joining() == merge::Joining::Split)
+                    .and_then(|chosen| {
+                        let whole = tree.node(form)?.span();
+                        if chosen.withdrawn.contains(&whole)
+                            || apart.pairing(whole, merge::OneForm::Joined) == merge::Pairing::Apart
+                        {
+                            return None;
+                        }
+                        merge::separated(own, merge::defines(tree, form)?)
+                            .map(|halves| (halves, whole))
+                    })
+                    .map(|(halves, whole)| {
+                        joined.push(whole);
+                        halves
+                    })
+                {
+                    respelled.push(form);
+                    text.push_str(&layout::lay_out(&signed, layout, ending.spelling())?);
+                    text.push_str(breaks);
+                    text.push_str(&layout::lay_out(&defined, layout, ending.spelling())?);
+                    written.extend_from_slice(&signed);
+                    written.extend_from_slice(&defined);
                 }
                 else {
                     if changed.is_some() {
@@ -1389,12 +1457,14 @@ fn write<'source>(
         text.push_str(breaks);
     }
     merged.sort_unstable();
+    joined.sort_unstable();
     Ok(Written {
         text,
         pieces,
         leaves: written,
         respelled,
         merged,
+        joined,
         unspelled,
     })
 }

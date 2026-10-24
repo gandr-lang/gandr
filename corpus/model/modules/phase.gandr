@@ -35,8 +35,7 @@ module Squared = Square(Point) ;
 
 /// The applied functor's value, at its own abstract type.
 @[ checks ]
-def squared : Squared.U ;
-def squared = Squared.w ;
+def squared : Squared.U = Squared.w ;
 
 /// A module whose type members read a literal and a constructor, which are
 /// static data, and whose values read those types.

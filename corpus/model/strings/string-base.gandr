@@ -48,5 +48,4 @@ def rec concat(xs : List(Integer), ys : List(Integer)) -> -F List(Integer) {
 
 /// The number of bytes a string keeps inline, its terminating zero included.
 @[ runs("24") ]
-def inlineCapacity : Integer ;
-def inlineCapacity = 24 ;
+def inlineCapacity : Integer = 24 ;

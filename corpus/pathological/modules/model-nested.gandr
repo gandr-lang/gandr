@@ -24,5 +24,4 @@ module Unascribed : Model(Faceted) {
 /// The sealed nested point read at the integers: `Sealed.inner.T` is an atom
 /// outside the seal, so the point is not an integer there.
 @[ refuses("TypeMismatch") ]
-def leaked : Integer ;
-def leaked = Sealed.inner.zero ;
+def leaked : Integer = Sealed.inner.zero ;

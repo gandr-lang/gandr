@@ -18,13 +18,20 @@ module Evolution {
 
 /// A seat that reported, its offer not yet taken.
 @[ checks ]
-def reported : Prefix(Evolution.SeatEnd) ;
-def reported = recorded(received("task"), selected(report), sent("progress")) ;
+def reported : Prefix(Evolution.SeatEnd) = recorded(
+  received("task"),
+  selected(report),
+  sent("progress")
+) ;
 
 /// The seat after it took `retire`.
 @[ checks ]
-def retired : Prefix(Evolution.SeatEnd) ;
-def retired = recorded(received("task"), selected(report), sent("progress"), offered(retire)) ;
+def retired : Prefix(Evolution.SeatEnd) = recorded(
+  received("task"),
+  selected(report),
+  sent("progress"),
+  offered(retire)
+) ;
 
 /// Short of the offer, the play is a prefix of the narrowed protocol too.
 @[ checks ]

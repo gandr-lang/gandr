@@ -6,8 +6,7 @@ import "./top-level-type.gandr" ;
 
 /// A narrower band, written at the imported synonym.
 @[ checks ]
-def innerBand : Band ;
-def innerBand = #{low = 400000, high = 600000} ;
+def innerBand : Band = #{low = 400000, high = 600000} ;
 
 /// The imported width reads the band built here: two tenths.
 @[ runs("200000") ]
@@ -15,5 +14,4 @@ def innerWidth() -> -F Integer { become width(innerBand) }
 
 /// The imported synonym with a parameter, applied here.
 @[ checks ]
-def innerBounds : Twice(Integer) ;
-def innerBounds = (400000, 600000) ;
+def innerBounds : Twice(Integer) = (400000, 600000) ;

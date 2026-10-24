@@ -58,9 +58,12 @@ use gandr_surface_pretty::present_type;
 use gandr_surface_pretty::present_whole;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeKey;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
+use gandr_surface_syntax::SyntaxTree;
 use gandr_workflow_sweep::CorpusName;
 use quenchant_shape::shape::Maybe;
 
@@ -89,8 +92,8 @@ struct Signed
     ty: ByteSpan,
 }
 
-/// One top-level form of a parsed text: its key, when it has one, and the
-/// span it covers.
+/// One top-level form of a parsed text: its key, when it has one, the span
+/// it covers and the `=` it writes among its own tiles, when it writes one.
 #[derive(Clone, Copy, Debug)]
 struct TopLevel
 {
@@ -98,6 +101,9 @@ struct TopLevel
     key: Option<NodeKey>,
     /// The span of the form.
     span: ByteSpan,
+    /// The span of the form's own `=`: a definition's, or a joined
+    /// signature's before its value.
+    equals: Option<ByteSpan>,
 }
 
 /// The top-level forms of `text`, parsed once for every reading of them;
@@ -120,6 +126,7 @@ fn top_level(
             tree.node(form).map(|node| TopLevel {
                 key: tree.key(form),
                 span: node.span(),
+                equals: equals(tree, form),
             })
         })
         .collect()
@@ -142,8 +149,29 @@ fn tokens(fragment: SourceFragment<'_>) -> Vec<String>
         .collect()
 }
 
+/// The span of the `=` the top-level form `form` of `tree` writes among its
+/// own tiles: a definition's, or a joined signature's before its value.
+///
+/// # Specification
+/// trivial.
+fn equals(
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Option<ByteSpan>
+{
+    tree.children(form).find_map(|child| {
+        let node = tree.node(child)?;
+        (matches!(node.label(), NodeLabel::Tile(_))
+            && tree
+                .fragment(child)
+                .is_some_and(|text| <&str>::from(text) == "="))
+        .then(|| node.span())
+    })
+}
+
 /// The signatures `def name : T ;` among `forms`, the top-level forms of
-/// `text`.
+/// `text`, and the signature half `def name : T` of each joined
+/// `def name : T = e ;`.
 ///
 /// # Specification
 /// trivial.
@@ -155,7 +183,7 @@ fn signed(
     let text = <&str>::from(text);
     let mut found = Vec::new();
     let mut read: Vec<(usize, usize)> = Vec::new();
-    for &TopLevel { key, span } in forms {
+    for &TopLevel { key, span, equals } in forms {
         let Some(key) = key
         else {
             continue;
@@ -180,12 +208,20 @@ fn signed(
             let &(start, end) = read.get(index)?;
             written.get(start .. end)
         };
+        // A joined form's type stops before its own `=`; the tokens stand in
+        // offset order.
+        let stop = equals
+            .and_then(|equals| {
+                let offset = usize::from(equals.start()).checked_sub(usize::from(span.start()))?;
+                read.binary_search_by_key(&offset, |&(start, _)| start).ok()
+            })
+            .unwrap_or_else(|| read.len().saturating_sub(1));
         let (Some("def"), Some(name), Some(":"), Some(&(first, _)), Some(&(_, last)), Some(";")) = (
             at(0),
             at(1),
             at(2),
             read.get(3),
-            read.len().checked_sub(2).and_then(|index| read.get(index)),
+            stop.checked_sub(1).and_then(|index| read.get(index)),
             read.len().checked_sub(1).and_then(at),
         )
         else {
@@ -1199,8 +1235,8 @@ fn apart(
     parted
 }
 
-/// Each `def name = body ;` among `forms`, the top-level forms of `text`:
-/// the body's tokens, by name.
+/// Each `def name = body ;` among `forms`, the top-level forms of `text`,
+/// and each joined `def name : T = body ;`: the body's tokens, by name.
 ///
 /// # Specification
 /// trivial.
@@ -1211,15 +1247,22 @@ fn defined(
 {
     let mut found = BTreeMap::new();
     let text = <&str>::from(text);
-    for &TopLevel { span, .. } in forms {
+    for &TopLevel { span, equals, .. } in forms {
         let Some(written) = text.get(usize::from(span.start()) .. usize::from(span.end()))
         else {
             continue;
         };
-        if let &[ref def, ref name, ref equals, ref body @ .., ref end] =
-            tokens(SourceFragment::from(written)).as_slice()
+        let whole = tokens(SourceFragment::from(written));
+        let (&[ref def, ref name, ..], Some(own)) = (whole.as_slice(), equals)
+        else {
+            continue;
+        };
+        let Some(after) = text.get(usize::from(own.end()) .. usize::from(span.end()))
+        else {
+            continue;
+        };
+        if let &[ref body @ .., ref end] = tokens(SourceFragment::from(after)).as_slice()
             && def == "def"
-            && equals == "="
             && end == ";"
         {
             let _previous = found.insert(name.clone(), body.to_vec());

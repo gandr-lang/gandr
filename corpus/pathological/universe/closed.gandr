@@ -29,8 +29,7 @@ def rec el(u : U) -> -F Type {
 
 /// One is a natural, and the decode of the arrow code runs to `Nat => Nat`.
 @[ refuses("TypeMismatch") ]
-def one : el(Arrow(NatC, NatC)) ;
-def one = Succ(Zero) ;
+def one : el(Arrow(NatC, NatC)) = Succ(Zero) ;
 
 /// At every code `c`, a value at `el(c)` is no function from `el(c)` to
 /// `el(c)`: the decode of the arrow code reads to that function type.
@@ -47,8 +46,7 @@ data Coded : Type {
 /// A code packed where the natural code says a natural stands: the second
 /// field checks at `el(NatC)`, which runs to `Nat`.
 @[ refuses("TypeMismatch") ]
-def miscoded : Coded ;
-def miscoded = Pack(NatC, NatC) ;
+def miscoded : Coded = Pack(NatC, NatC) ;
 
 /// The decoder named bare where a type is read: `el` computes a code only once
 /// applied, so the head is refused at the arity it was offered, not read as a

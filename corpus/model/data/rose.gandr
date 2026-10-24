@@ -28,13 +28,14 @@ data Bush : Type {
 
 /// A node without children, written directly.
 @[ checks ]
-def sprig : Bush ;
-def sprig = Sprout((Nil : List(Bush))) ;
+def sprig : Bush = Sprout((Nil : List(Bush))) ;
 
 /// A node over two childless nodes, written directly.
 @[ checks ]
-def shrub : Bush ;
-def shrub = Sprout((Cons(sprig, (Cons(sprig, (Nil : List(Bush))) : List(Bush))) : List(Bush))) ;
+def shrub : Bush = Sprout((Cons(
+  sprig,
+  (Cons(sprig, (Nil : List(Bush))) : List(Bush))
+) : List(Bush))) ;
 
 /// A list of numbers, summed.
 @[ checks ]
@@ -67,14 +68,12 @@ def rec grow(t : Bush) -> -F Bush {
 /// The shrub's three nodes, its children counted through `map` at the
 /// children's type (#452).
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def shrub_nodes : () => Nat ;
-def shrub_nodes = nodes(shrub) ;
+def shrub_nodes : () => Nat = nodes(shrub) ;
 
 /// The shrub grown, then counted: the root gains a childless node and each
 /// of its two children gains one, six nodes in all (#452).
 @[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
-def grown_nodes : () => Nat ;
-def grown_nodes = nodes(grow(shrub)) ;
+def grown_nodes : () => Nat = nodes(grow(shrub)) ;
 
 /// The tree and its forest, one block: each family names the other, and
 /// the two measures recurse through each other.
@@ -112,20 +111,16 @@ rec {
 
 /// A node without children.
 @[ checks ]
-def leaf : Rose ;
-def leaf = Node(Empty) ;
+def leaf : Rose = Node(Empty) ;
 
 /// A node over two leaves.
 @[ checks ]
-def sapling : Rose ;
-def sapling = Node(More(leaf, More(leaf, Empty))) ;
+def sapling : Rose = Node(More(leaf, More(leaf, Empty))) ;
 
 /// The sapling's three nodes.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def sapling_nodes : () => Nat ;
-def sapling_nodes = treeSize(sapling) ;
+def sapling_nodes : () => Nat = treeSize(sapling) ;
 
 /// A forest of a sapling and a leaf: four nodes.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def forested : () => Nat ;
-def forested = forestSize(More(sapling, More(leaf, Empty))) ;
+def forested : () => Nat = forestSize(More(sapling, More(leaf, Empty))) ;

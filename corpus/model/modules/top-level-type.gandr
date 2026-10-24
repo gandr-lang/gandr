@@ -7,8 +7,7 @@ type Band = #{low : Integer, high : Integer} ;
 
 /// The band every rubric of the set grades against.
 @[ checks ]
-def setBand : Band ;
-def setBand = #{low = 200000, high = 800000} ;
+def setBand : Band = #{low = 200000, high = 800000} ;
 
 /// The width of a band, its fields read through the synonym.
 @[ checks ]
@@ -27,5 +26,4 @@ type Twice(a : Type) = a * a ;
 
 /// The set's bounds as a pair.
 @[ checks ]
-def bounds : Twice(Integer) ;
-def bounds = (200000, 800000) ;
+def bounds : Twice(Integer) = (200000, 800000) ;

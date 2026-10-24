@@ -58,5 +58,4 @@ module Sealed :> Model(Outer) {
 
 /// The nested point, at the nested sort written as a path through `inner`.
 @[ checks ]
-def kept : Sealed.inner.T ;
-def kept = Sealed.inner.zero ;
+def kept : Sealed.inner.T = Sealed.inner.zero ;

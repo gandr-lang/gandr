@@ -2038,12 +2038,12 @@ mod tests
     fn a_declaration_s_name_and_its_written_type_print_one_form_754()
     {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../corpus/model/identity/circle.gandr");
+            .join("../../corpus/model/identity/circle-elim.gandr");
         let written = std::fs::read_to_string(&path).expect("the corpus source is read");
         let text = SourceText::from(written.as_str());
         let line = written
-            .find("def twice : Path(")
-            .expect("the source declares `twice`");
+            .find("def joined : Path(")
+            .expect("the source declares `joined`");
         let index = LineIndex::new(written.as_str().into());
         let session = checked(text);
         let reading = Reading::of(text);
@@ -2061,14 +2061,14 @@ mod tests
                 Maybe::Absent(reason) => panic!("the position hovers nothing: {reason:?}"),
             }
         };
-        let ty = "Path(Path(Circle, Base, Base), loop then loop, loop ∷ loop ∷ here(Base))";
-        let named = at(line.saturating_add("def tw".len()));
+        let ty = "Path(Path(Circle, Base, Base), loop then here(Base), loop)";
+        let named = at(line.saturating_add("def jo".len()));
         assert!(
-            named.starts_with(&fenced(SourceText::from(format!("twice : {ty}").as_str()))),
+            named.starts_with(&fenced(SourceText::from(format!("joined : {ty}").as_str()))),
             "the name prints the type as written: {named}"
         );
         assert_eq!(
-            at(line.saturating_add("def twice : Pa".len())),
+            at(line.saturating_add("def joined : Pa".len())),
             fenced(SourceText::from(format!("{ty} : Type").as_str())),
             "the written type prints the same text"
         );

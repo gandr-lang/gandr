@@ -38,13 +38,11 @@ def viaStated(x : Empty) -> -F Integer { case x -> -F Integer {} }
 /// The same lambda written bare, the checker inserting its thunk: the
 /// signature's arrow types its binder as it types the thunk's (#1944).
 @[ checks ]
-def viaBare : Empty => Integer ;
-def viaBare = fn (x) { case x {} } ;
+def viaBare(x : Empty) -> -F Integer { case x {} }
 
 /// The answer written on a bare lambda binder's match (#1944).
 @[ checks ]
-def viaBareStated : Empty => Integer ;
-def viaBareStated = fn (x) { case x -> -F Integer {} } ;
+def viaBareStated(x : Empty) -> -F Integer { case x -> -F Integer {} }
 
 /// A function of a function on the empty type, applied to its element.
 @[ checks ]

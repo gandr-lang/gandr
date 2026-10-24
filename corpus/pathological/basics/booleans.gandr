@@ -3,5 +3,4 @@
 
 /// `true` where an integer is stated: `Bool` is a sum, and `Integer` is none.
 @[ refuses("ShapeMismatch") ]
-def counted : Integer ;
-def counted = true ;
+def counted : Integer = true ;

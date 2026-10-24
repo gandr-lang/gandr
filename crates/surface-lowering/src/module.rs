@@ -2441,8 +2441,9 @@ enum Signing
 /// # Specification
 /// - requires: nothing to construct this data; its producers and consumers
 ///   state coordinate preconditions separately.
-/// - ensures: Reading separates a written half, a deferred function tail and a
-///   located refusal; refused tails do not file halves or attributes.
+/// - ensures: Reading separates a written half, a joined pair of halves, a
+///   deferred function tail and a located refusal; refused tails do not file
+///   halves or attributes.
 /// - fails: not applicable to the data item.
 /// - panics: not applicable to the data item.
 /// - executable: none — the enabled specification facade does not expose
@@ -2462,6 +2463,15 @@ enum Tail<'source>
 {
     /// A signature or a definition over this operand.
     Wrote(HalfKind, Placed),
+    /// A signature joined with its definition, `: T = e ;`: both halves, over
+    /// the type and the value.
+    Joined
+    {
+        /// The type the signature states.
+        signature: Placed,
+        /// The value the definition gives.
+        definition: Placed,
+    },
     /// A function tail: a definition, and a signature when it is signed.
     Function(Signing),
     /// The first fault of the form.
@@ -5264,15 +5274,15 @@ impl<'source> Collector<'_, 'source>
     /// - ensures: a fault is offered to the slot at the form itself, and the
     ///   form's attributes join the slot's, so the attribute block written
     ///   before it states the refusal (#1798); a clean form's halves — one for
-    ///   a signature or a definition, the definition for a function tail and
-    ///   its signature too when the tail is signed — are recorded unless the
-    ///   slot already holds one of their kinds, which offers the duplicate
-    ///   refusal naming the first instead and records none of them. A written
-    ///   signature and the signature a signed function tail derives are not
-    ///   duplicates: the written one is the slot's, whichever came first, and
-    ///   the derived one is filed as a witness checking it. A clean form's
-    ///   attributes join the slot's in source order, once whatever the halves
-    ///   it writes.
+    ///   a signature or a definition, both for a signature joined with its
+    ///   definition, the definition for a function tail and its signature too
+    ///   when the tail is signed — are recorded unless the slot already holds
+    ///   one of their kinds, which offers the duplicate refusal naming the
+    ///   first instead and records none of them. A written signature and the
+    ///   signature a signed function tail derives are not duplicates: the
+    ///   written one is the slot's, whichever came first, and the derived one
+    ///   is filed as a witness checking it. A clean form's attributes join the
+    ///   slot's in source order, once whatever the halves it writes.
     /// - provides: the filing half of [`Self::declaration`].
     /// - fails: never.
     /// - panics: none.
@@ -5290,6 +5300,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `tests::modules::signatures_attach_to_their_defs`
     /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
     /// - witness: `lower::tests::a_signature_written_after_its_signed_function_is_no_duplicate`
+    /// - witness: `module::tests::a_joined_definition_files_both_halves_2228`
     #[spec(
         captures: before = (
             self.collected.slots.len(),
@@ -5308,16 +5319,22 @@ impl<'source> Collector<'_, 'source>
             else {
                 return false;
             };
-            let (incoming, signs, defines) = match tail {
+            let (signs, defines) = match tail {
                 | Tail::Wrote(HalfKind::Signature, operand) => {
-                    (Operand::Written(operand), true, false)
+                    (Some(Operand::Written(operand)), None)
                 },
                 | Tail::Wrote(HalfKind::Definition, operand) => {
-                    (Operand::Written(operand), false, true)
+                    (None, Some(Operand::Written(operand)))
                 },
-                | Tail::Function(signing) => (Operand::Function, signing == Signing::Signed, true),
-                | Tail::Data(form) => (Operand::Data(form), false, true),
-                | Tail::World => (Operand::World, false, true),
+                | Tail::Joined { signature: stated, definition: given } => {
+                    (Some(Operand::Written(stated)), Some(Operand::Written(given)))
+                },
+                | Tail::Function(Signing::Signed) => {
+                    (Some(Operand::Function), Some(Operand::Function))
+                },
+                | Tail::Function(Signing::Unsigned) => (None, Some(Operand::Function)),
+                | Tail::Data(form) => (None, Some(Operand::Data(form))),
+                | Tail::World => (None, Some(Operand::World)),
                 | Tail::Refused(_) => {
                     return entry.signature == signature
                         && entry.definition == definition
@@ -5325,24 +5342,26 @@ impl<'source> Collector<'_, 'source>
                         && self.collected.slots.len() == before.0;
                 },
             };
-            let mixed = matches!(
-                (signature, incoming),
-                (
-                    Maybe::Present(Half {
-                        operand: Operand::Written(_),
-                        ..
-                    }),
-                    Operand::Function
-                ) | (
-                    Maybe::Present(Half {
-                        operand: Operand::Function,
-                        ..
-                    }),
-                    Operand::Written(_)
+            let mixed = signs.is_some_and(|incoming| {
+                matches!(
+                    (signature, incoming),
+                    (
+                        Maybe::Present(Half {
+                            operand: Operand::Written(_),
+                            ..
+                        }),
+                        Operand::Function
+                    ) | (
+                        Maybe::Present(Half {
+                            operand: Operand::Function,
+                            ..
+                        }),
+                        Operand::Written(_)
+                    )
                 )
-            );
-            let duplicate = (signs && matches!(signature, Maybe::Present(_)) && !mixed)
-                || (defines && matches!(definition, Maybe::Present(_)));
+            });
+            let duplicate = (signs.is_some() && matches!(signature, Maybe::Present(_)) && !mixed)
+                || (defines.is_some() && matches!(definition, Maybe::Present(_)));
             if duplicate {
                 entry.signature == signature
                     && entry.definition == definition
@@ -5350,22 +5369,21 @@ impl<'source> Collector<'_, 'source>
                     && self.collected.slots.len() == before.0
             }
             else {
-                let half = Maybe::Present(Half {
-                    declaration,
-                    named,
-                    operand: incoming,
-                });
+                let half = |operand| {
+                    Maybe::Present(Half {
+                        declaration,
+                        named,
+                        operand,
+                    })
+                };
                 entry.signature
-                    == if signs && !(mixed && incoming == Operand::Function) {
-                        half
+                    == match signs {
+                        Some(incoming) if !(mixed && incoming == Operand::Function) => half(incoming),
+                        Some(_) | None => signature,
                     }
-                    else {
-                        signature
-                    }
-                    && entry.definition == if defines { half } else { definition }
+                    && entry.definition == defines.map_or(definition, half)
                     && entry.attributes.len() == count.saturating_add(before.2)
-                    && self.collected.slots.len()
-                        == before.0.saturating_add(usize::from(signs && mixed))
+                    && self.collected.slots.len() == before.0.saturating_add(usize::from(mixed))
             }
         },
     )]
@@ -5382,20 +5400,20 @@ impl<'source> Collector<'_, 'source>
         else {
             return;
         };
-        let (operand, kinds): (Operand, &[HalfKind]) = match tail {
-            Tail::Wrote(HalfKind::Signature, operand) => {
-                (Operand::Written(operand), &[HalfKind::Signature])
-            },
-            Tail::Wrote(HalfKind::Definition, operand) => {
-                (Operand::Written(operand), &[HalfKind::Definition])
-            },
-            Tail::Function(Signing::Signed) => (Operand::Function, &[
-                HalfKind::Signature,
-                HalfKind::Definition,
-            ]),
-            Tail::Function(Signing::Unsigned) => (Operand::Function, &[HalfKind::Definition]),
-            Tail::Data(form) => (Operand::Data(form), &[HalfKind::Definition]),
-            Tail::World => (Operand::World, &[HalfKind::Definition]),
+        let (signs, defines) = match tail {
+            Tail::Wrote(HalfKind::Signature, operand) => (Some(Operand::Written(operand)), None),
+            Tail::Wrote(HalfKind::Definition, operand) => (None, Some(Operand::Written(operand))),
+            Tail::Joined {
+                signature,
+                definition,
+            } => (
+                Some(Operand::Written(signature)),
+                Some(Operand::Written(definition)),
+            ),
+            Tail::Function(Signing::Signed) => (Some(Operand::Function), Some(Operand::Function)),
+            Tail::Function(Signing::Unsigned) => (None, Some(Operand::Function)),
+            Tail::Data(form) => (None, Some(Operand::Data(form))),
+            Tail::World => (None, Some(Operand::World)),
             Tail::Refused(refusal) => {
                 // The refusal is the declaration's, so its attribute block,
                 // read before the refusal was raised, states its expectation.
@@ -5404,51 +5422,48 @@ impl<'source> Collector<'_, 'source>
                 return;
             },
         };
-        let incoming = Half {
+        let half = |operand| Half {
             declaration,
             named,
             operand,
         };
         let mut derived = Maybe::Absent(declaration_half::Absent::Unwritten);
-        for &kind in kinds {
-            let held = match kind {
-                HalfKind::Signature => entry.signature,
-                HalfKind::Definition => entry.definition,
-            };
-            let Maybe::Present(first) = held
-            else {
-                continue;
-            };
-            if kind == HalfKind::Signature {
-                match (first.operand, operand) {
-                    (Operand::Written(_), Operand::Function) => {
-                        derived = Maybe::Present(incoming);
-                        continue;
-                    },
-                    (Operand::Function, Operand::Written(_)) => {
-                        derived = Maybe::Present(first);
-                        continue;
-                    },
-                    _ => {},
-                }
+        let (span, name) = (declaration.span, entry.name);
+        if let Some(operand) = signs
+            && let Maybe::Present(first) = entry.signature
+        {
+            match (first.operand, operand) {
+                (Operand::Written(_), Operand::Function) => derived = Maybe::Present(half(operand)),
+                (Operand::Function, Operand::Written(_)) => derived = Maybe::Present(first),
+                _ => {
+                    let first = first.declaration.span;
+                    entry.refuse(declaration.node, LoweringRefusal::DuplicateSignature {
+                        span,
+                        name,
+                        first,
+                    });
+                    return;
+                },
             }
-            let (span, name, first) = (declaration.span, entry.name, first.declaration.span);
-            let refusal = match kind {
-                HalfKind::Signature => LoweringRefusal::DuplicateSignature { span, name, first },
-                HalfKind::Definition => LoweringRefusal::DuplicateDefinition { span, name, first },
-            };
-            entry.refuse(declaration.node, refusal);
+        }
+        if defines.is_some()
+            && let Maybe::Present(first) = entry.definition
+        {
+            let first = first.declaration.span;
+            entry.refuse(declaration.node, LoweringRefusal::DuplicateDefinition {
+                span,
+                name,
+                first,
+            });
             return;
         }
-        for &kind in kinds {
-            match kind {
-                HalfKind::Signature => {
-                    if derived != Maybe::Present(incoming) {
-                        entry.signature = Maybe::Present(incoming);
-                    }
-                },
-                HalfKind::Definition => entry.definition = Maybe::Present(incoming),
-            }
+        if let Some(operand) = signs
+            && derived != Maybe::Present(half(operand))
+        {
+            entry.signature = Maybe::Present(half(operand));
+        }
+        if let Some(operand) = defines {
+            entry.definition = Maybe::Present(half(operand));
         }
         entry.attributes.extend(attributes);
         if let Maybe::Present(stated) = derived {
@@ -8270,10 +8285,11 @@ const fn misplaced_in<'source>(
 /// - requires: `header` stands just past the form's name.
 /// - ensures: the half the tail writes, when it is a signature or a definition
 ///   whose hole holds exactly one form and which closes with `;` and nothing
-///   after it; a function tail, opening on `(` or on a telescope `@[ … ]`
-///   followed by `(`, with whether it is signed; every other tail yields its
-///   first fault — an implicit telescope declined by the folded form's own
-///   name, an empty or overfull hole, or a tile out of place.
+///   after it, and both halves for a signature joined with its definition, `: T
+///   = e ;`, each hole holding one form; a function tail, opening on `(` or on
+///   a telescope `@[ … ]` followed by `(`, with whether it is signed; every
+///   other tail yields its first fault — an implicit telescope declined by the
+///   folded form's own name, an empty or overfull hole, or a tile out of place.
 /// - provides: the tail half of a declaration form.
 /// - fails: never; a fault is yielded rather than raised.
 /// - panics: none.
@@ -8288,6 +8304,7 @@ const fn misplaced_in<'source>(
 /// - witness: `tests::modules::member_signature_attaches_and_wins_over_derived_function_type`
 /// - witness: `tests::modules::signatures_attach_to_their_defs`
 /// - witness: `module::tests::a_declaration_missing_its_body_is_refused`
+/// - witness: `module::tests::a_joined_definition_files_both_halves_2228`
 #[spec(
     captures: first = header.peek(),
     ensures: |ret| match ret {
@@ -8298,6 +8315,10 @@ const fn misplaced_in<'source>(
         | Tail::Wrote(kind, _) => {
             matches!(header.peek(), Maybe::Absent(_))
                 && matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == match kind { HalfKind::Signature => TileName::COLON, HalfKind::Definition => TileName::EQUALS })
+        },
+        | Tail::Joined { .. } => {
+            matches!(header.peek(), Maybe::Absent(_))
+                && matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::COLON)
         },
         | Tail::Refused(_) => {
             !matches!(first, Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN)
@@ -8332,22 +8353,36 @@ fn read_tail<'source>(
     else {
         return Tail::Refused(unadmitted_tail(header, declaration));
     };
-    let operand = match header.operands() {
-        Run::One(operand) => operand,
-        Run::Empty(gap) => {
-            return Tail::Refused(LoweringRefusal::MalformedForm {
-                span: gap,
-                form: FormName::DECLARATION,
-                fault: FormFault::MissingOperand,
-            });
-        },
-        Run::Several { extra, .. } => {
-            return Tail::Refused(extra_operand(FormName::DECLARATION, extra));
-        },
+    let one = |header: &mut Cursor<'_>| match header.operands() {
+        Run::One(operand) => Ok(operand),
+        Run::Empty(gap) => Err(LoweringRefusal::MalformedForm {
+            span: gap,
+            form: FormName::DECLARATION,
+            fault: FormFault::MissingOperand,
+        }),
+        Run::Several { extra, .. } => Err(extra_operand(FormName::DECLARATION, extra)),
+    };
+    let operand = match one(header) {
+        Ok(operand) => operand,
+        Err(refusal) => return Tail::Refused(refusal),
+    };
+    let joined = if kind == HalfKind::Signature
+        && let Maybe::Present(_) = header.tile(TileName::EQUALS)
+    {
+        match one(header) {
+            Ok(given) => Some(given),
+            Err(refusal) => return Tail::Refused(refusal),
+        }
+    }
+    else {
+        None
     };
     let closed = header.tile(TileName::SEMICOLON);
     if let (Maybe::Present(_), Maybe::Absent(_)) = (closed, header.peek()) {
-        return Tail::Wrote(kind, operand);
+        return joined.map_or(Tail::Wrote(kind, operand), |definition| Tail::Joined {
+            signature: operand,
+            definition,
+        });
     }
 
     Tail::Refused(misplaced(header.here()))
@@ -10952,6 +10987,66 @@ mod tests
             Maybe::Absent(slot_refusal::Absent::Unrefused),
             "a well-formed pair refuses nothing"
         );
+    }
+
+    /// #2228: a signature joined with its definition is one form writing both
+    /// halves, each over its own hole.
+    #[test]
+    fn a_joined_definition_files_both_halves_2228()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let written = |half: Maybe<Half, declaration_half::Absent>| match half {
+            Maybe::Present(Half {
+                declaration,
+                operand: Operand::Written(operand),
+                ..
+            }) => Some((declaration.span, operand.span)),
+            Maybe::Present(_) | Maybe::Absent(_) => None,
+        };
+        let pbg = grammar();
+        let tree = parsed(&pbg, SourceText::from("def x : Integer = 3 ;"));
+        let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+        let (Some(slot), 1) = (collected.slots.first(), collected.slots.len())
+        else {
+            panic!("one name is one slot: {:?}", collected.slots.len());
+        };
+        assert_eq!(
+            (written(slot.signature), written(slot.definition)),
+            (
+                Some((at(0_usize, 21_usize), at(8_usize, 15_usize))),
+                Some((at(0_usize, 21_usize), at(18_usize, 19_usize)))
+            ),
+            "the one form writes the signature over its type and the definition over its value"
+        );
+        assert_eq!(
+            slot.refusal,
+            Maybe::Absent(slot_refusal::Absent::Unrefused),
+            "a joined definition refuses nothing"
+        );
+        for (source, why) in [
+            (
+                "def x : Integer = 3 ; def x = 4 ;",
+                "a definition after a joined one is a second definition",
+            ),
+            (
+                "def x : Integer ; def x : Integer = 3 ;",
+                "a joined definition after a signature is a second signature",
+            ),
+        ] {
+            let tree = parsed(&pbg, SourceText::from(source));
+            let collected = collect(&pbg, &tree, &Unit::single(), &mut tank()).unwrap();
+            assert!(
+                collected.slots.first().is_some_and(|slot| matches!(
+                    slot.refusal,
+                    Maybe::Present((
+                        _,
+                        LoweringRefusal::DuplicateDefinition { .. }
+                            | LoweringRefusal::DuplicateSignature { .. }
+                    ))
+                )),
+                "{why}"
+            );
+        }
     }
 
     #[test]

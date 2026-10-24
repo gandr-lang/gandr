@@ -34,8 +34,7 @@ def pair = ((3 : Integer), 1);
 
 /// An annotation beside the signature it agrees with.
 @[ checks ]
-def signed : Integer;
-def signed = (3 : Integer);
+def signed : Integer = (3 : Integer);
 
 /// A scrutinee annotated with the sum it is matched at.
 @[ checks ]

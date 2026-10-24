@@ -14,24 +14,32 @@ import "./transport-list.gandr" ;
 
 /// A toggle that starts false and reads its state as it is.
 @[ checks ]
-def plainToggle : #{t : Type, start : t, step : t => t, read : t => Bool} ;
-def plainToggle = (Bool, (+{.0 = unit}, (not, same))) ;
+def plainToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
+  Bool,
+  (+{.0 = unit}, (not, same))
+) ;
 
 /// A toggle that starts true and reads its state negated.
 @[ checks ]
-def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} ;
-def flippedToggle = (Bool, (+{.1 = unit}, (not, not))) ;
+def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
+  Bool,
+  (+{.1 = unit}, (not, not))
+) ;
 
 /// The step carried along negation is the step: negating back, stepping and
 /// negating again steps.
 @[ checks ]
-def stepped : Path(Bool => Bool, transport(\t. t => t, negation, not), not) ;
-def stepped = funext(transport(\t. t => t, negation, not), not) ;
+def stepped : Path(Bool => Bool, transport(\t. t => t, negation, not), not) = funext(
+  transport(\t. t => t, negation, not),
+  not
+) ;
 
 /// The reading carried along negation reads negated.
 @[ checks ]
-def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) ;
-def reread = funext(transport(\t. t => Bool, negation, same), not) ;
+def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) = funext(
+  transport(\t. t => Bool, negation, same),
+  not
+) ;
 
 /// The two toggles are one: the carriers by negation, the start carried to
 /// `true`, and each operation carried to the other's.
@@ -40,13 +48,14 @@ def oneToggle : Path(
   #{t : Type, start : t, step : t => t, read : t => Bool},
   plainToggle,
   flippedToggle
-) ;
-def oneToggle = (negation, (here(+{.1 = unit}), (stepped, reread))) ;
+) = (negation, (here(+{.1 = unit}), (stepped, reread))) ;
 
 /// The reading carried along negation is not the reading left as it is.
 @[ refuses("PointwiseDistinct") ]
-def unread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), same) ;
-def unread = funext(transport(\t. t => Bool, negation, same), same) ;
+def unread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), same) = funext(
+  transport(\t. t => Bool, negation, same),
+  same
+) ;
 
 /// The boolean a tagged boolean carries.
 @[ checks ]
@@ -62,8 +71,7 @@ def tag(b : Bool) -> -F (Bool * Unit) {
 
 /// The tagged booleans to the booleans: the tag dropped, and added back.
 @[ checks ]
-def tagging : Path(Type, Bool * Unit, Bool) ;
-def tagging = equiv(untag, tag) ;
+def tagging : Path(Type, Bool * Unit, Bool) = equiv(untag, tag) ;
 
 /// The reading of a tagged boolean, its first component.
 @[ checks ]
@@ -76,5 +84,7 @@ def readTagged(p : Bool * Unit) -> -F Bool {
 /// pair that returns; the kernel ran `tag` once per component where the
 /// checker ran it once, and refused the pointwise evidence.
 @[ checks ]
-def untagged : Path(Bool => Bool, transport(\t. t => Bool, tagging, readTagged), same) ;
-def untagged = funext(transport(\t. t => Bool, tagging, readTagged), same) ;
+def untagged : Path(Bool => Bool, transport(\t. t => Bool, tagging, readTagged), same) = funext(
+  transport(\t. t => Bool, tagging, readTagged),
+  same
+) ;

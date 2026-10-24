@@ -1,21 +1,15 @@
-def small : Type ;
-def small = Integer ;
+def small : Type = Integer ;
 
-def effect : Type[-] ;
-def effect = -F Integer ;
+def effect : Type[-] = -F Integer ;
 
-def suspended : Type ;
-def suspended = +U (-F Integer) ;
+def suspended : Type = +U (-F Integer) ;
 
-def universe : Type[+, 1] ;
-def universe = Type ;
+def universe : Type[+, 1] = Type ;
 
-def widened : Type[+, 1] ;
-def widened = String ;
+def widened : Type[+, 1] = String ;
 
 @[ runs("5") ]
-def five : small ;
-def five = 5 ;
+def five : small = 5 ;
 
 @[ runs("fn (a) { fn (b) { b } }") ]
 def id(a : Type, x : a) -> -F a { x }

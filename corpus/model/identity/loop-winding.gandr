@@ -33,13 +33,11 @@ def wound_letterwise() -> -F Int { become windWords(Loop(Unloop(Nil))) }
 
 /// Conversion runs the fold at a closed word: two loops are two successors.
 @[ checks ]
-def wound_twice : Path(Int, windWords(Loop(Loop(Nil))), S(S(Z))) ;
-def wound_twice = here(S(S(Z))) ;
+def wound_twice : Path(Int, windWords(Loop(Loop(Nil))), S(S(Z))) = here(S(S(Z))) ;
 
 /// A cancelled word winds to zero in conversion.
 @[ checks ]
-def wound_never : Path(Int, windWords(Loop(Unloop(Nil))), Z) ;
-def wound_never = here(Z) ;
+def wound_never : Path(Int, windWords(Loop(Unloop(Nil))), Z) = here(Z) ;
 
 /// The winding number into the native integers, a fold that rests on the
 /// native model's laws. At `Loop(Unloop(x))` it computes

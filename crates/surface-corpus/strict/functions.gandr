@@ -1,14 +1,11 @@
 @[ runs("fn (a) { a }") ]
-def identity : Integer => Integer ;
-def identity = fn (x) { x } ;
+def identity(x : Integer) -> -F Integer { x }
 
 @[ runs("fn (a) { fn (b) { a } }") ]
-def first : (Integer, Integer) => Integer ;
-def first = fn (x) { fn (y) { x } } ;
+def first(x : Integer, y : Integer) -> -F Integer { x }
 
 @[ runs("42") ]
-def answer : Integer ;
-def answer = 42 ;
+def answer : Integer = 42 ;
 
 @[ runs("42") ]
 def applied() -> -F Integer { become (force identity)(answer) }

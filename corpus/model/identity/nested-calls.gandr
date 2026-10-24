@@ -21,19 +21,24 @@ def rec doubleNat(n : Nat) -> -F Nat {
 /// Doubling twice: the outer call's case waits on the inner call, which
 /// conversion unfolds in turn.
 @[ checks ]
-def quadrupled : Path(Nat, doubleNat(doubleNat(Succ(Zero))), Succ(Succ(Succ(Succ(Zero))))) ;
-def quadrupled = here(Succ(Succ(Succ(Succ(Zero))))) ;
+def quadrupled : Path(
+  Nat,
+  doubleNat(doubleNat(Succ(Zero))),
+  Succ(Succ(Succ(Succ(Zero))))
+) = here(Succ(Succ(Succ(Succ(Zero))))) ;
 
 /// The nested call's value is four, not three.
 @[ refuses("EndpointMismatch") ]
-def miscounted : Path(Nat, doubleNat(doubleNat(Succ(Zero))), Succ(Succ(Succ(Zero)))) ;
-def miscounted = here(Succ(Succ(Succ(Zero)))) ;
+def miscounted : Path(
+  Nat,
+  doubleNat(doubleNat(Succ(Zero))),
+  Succ(Succ(Succ(Zero)))
+) = here(Succ(Succ(Succ(Zero)))) ;
 
 /// `up(down(Z))` is `S` over the held call `down(Z)`; read, that call is
 /// `P(Z)`, and `S(P(Z))` rewrites to `Z`.
 @[ checks ]
-def turned_back : Path(Int, up(down(Z)), Z) ;
-def turned_back = here(Z) ;
+def turned_back : Path(Int, up(down(Z)), Z) = here(Z) ;
 
 /// The same law at every integer: the inner call's argument is a variable,
 /// and the rule cancels around it.
@@ -44,5 +49,4 @@ def turn_unturn(n : Int) -> -F Path(Int, up(down(n)), n) {
 
 /// Reading the inner call cancels a step; it does not add one.
 @[ refuses("EndpointMismatch") ]
-def overturned : Path(Int, up(down(Z)), S(Z)) ;
-def overturned = here(S(Z)) ;
+def overturned : Path(Int, up(down(Z)), S(Z)) = here(S(Z)) ;

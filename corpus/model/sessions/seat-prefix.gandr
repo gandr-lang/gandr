@@ -11,14 +11,16 @@ import "./seat-base.gandr" ;
 
 /// The seat before its first move: the empty record is a prefix.
 @[ checks ]
-def unstarted : Prefix(Seat.SeatEnd) ;
-def unstarted = recorded() ;
+def unstarted : Prefix(Seat.SeatEnd) = recorded() ;
 
 /// A seat that took its task and reported, its next move the offer to go on
 /// or retire: open, so a prefix (#1861).
 @[ checks ]
-def reporting : Prefix(Seat.SeatEnd) ;
-def reporting = recorded(received(Seat.task), selected(report), sent(Seat.progress)) ;
+def reporting : Prefix(Seat.SeatEnd) = recorded(
+  received(Seat.task),
+  selected(report),
+  sent(Seat.progress)
+) ;
 
 /// On the machine the prefix reads back as the moves it records.
 @[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"))") ]
@@ -26,8 +28,7 @@ def shown() -> -F Prefix(Seat.SeatEnd) { reporting }
 
 /// A run the seat completed is a prefix too.
 @[ checks ]
-def retired : Prefix(Seat.SeatEnd) ;
-def retired = recorded(
+def retired : Prefix(Seat.SeatEnd) = recorded(
   received(Seat.task),
   selected(report),
   sent(Seat.progress),
@@ -38,5 +39,7 @@ def retired = recorded(
 /// A seat that reports forever has no complete run, and every record of it
 /// is a prefix: two reports so far.
 @[ checks ]
-def reportedTwice : Prefix(mu more. !(Seat.Report). more) ;
-def reportedTwice = recorded(sent(Seat.progress), sent(Seat.progress)) ;
+def reportedTwice : Prefix(mu more. !(Seat.Report). more) = recorded(
+  sent(Seat.progress),
+  sent(Seat.progress)
+) ;

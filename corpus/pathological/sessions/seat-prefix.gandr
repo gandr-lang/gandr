@@ -13,21 +13,17 @@ module Seat {
 
 /// The seat that took its task and reported has not finished: no run.
 @[ refuses("RunNotAdmitted") ]
-def reporting : Run(Seat.SeatEnd) ;
-def reporting = recorded(received("task"), selected(report), sent("progress")) ;
+def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report), sent("progress")) ;
 
 /// A seat that answers its task with the operator's offer moves the wrong
 /// way: refused by name, open as it is.
 @[ refuses("RunNotAdmitted") ]
-def crossed : Prefix(Seat.SeatEnd) ;
-def crossed = recorded(received("task"), offered(next)) ;
+def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next)) ;
 
 /// A prefix of the protocol, its task received.
 @[ checks ]
-def opened : Prefix(Seat.SeatEnd) ;
-def opened = recorded(received("task")) ;
+def opened : Prefix(Seat.SeatEnd) = recorded(received("task")) ;
 
 /// The prefix declared a run: no prefix converts to a run.
 @[ refuses("TypeMismatch") ]
-def promoted : Run(Seat.SeatEnd) ;
-def promoted = opened ;
+def promoted : Run(Seat.SeatEnd) = opened ;

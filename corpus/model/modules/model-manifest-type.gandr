@@ -34,8 +34,7 @@ def toRight(c : (Unit + Unit) + Unit) -> -F (Unit + (Unit + Unit)) {
 
 /// The two nestings are one type, the two maps inverse by computation.
 @[ checks ]
-def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) ;
-def nestings = equiv(toLeft, toRight) ;
+def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(toLeft, toRight) ;
 
 /// The counters whose carrier is `x`.
 @[ checks ]
@@ -71,13 +70,18 @@ def first() -> -F (Unit + (Unit + Unit)) {
 /// Counting modulo three over the right nesting: the carrier is no field,
 /// so the record is the start and the step.
 @[ checks ]
-def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) ;
-def rightward = #{.start = first, .step = onward} ;
+def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
+  .start = first,
+  .step = onward
+} ;
 
 /// The same counter carried to the left nesting.
 @[ checks ]
-def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit ;
-def leftward = transport(\x. Model(Counter) with sort C = x, nestings, rightward) ;
+def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = transport(
+  \x. Model(Counter) with sort C = x,
+  nestings,
+  rightward
+) ;
 
 /// A counter over the right nesting stepped once from its start.
 @[ checks ]
