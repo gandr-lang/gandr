@@ -11751,9 +11751,9 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: the source is classified and not yet minted.
     /// - ensures: every call through a joint ([`Self::instantiation`]) whose
-    ///   block holds a member refused before the mint is no longer injected,
-    ///   and one through a sibling member is planned as that member's constant;
-    ///   every other call through a joint unchanged.
+    ///   block holds a member refused before the mint carries no injection, and
+    ///   one through a sibling member is planned as that member's constant;
+    ///   every other call through a joint is unchanged.
     /// - provides: a lowered member of such a block typed at its own domain.
     /// - fails: never.
     /// - panics: none.
