@@ -19,6 +19,11 @@
 //! is subsumed into one holding it as into one holding any other interface.
 //! The empty row is the row of a computation that returns.
 //!
+//! `Console` is the process's output: `print` takes a string and replies the
+//! unit once the host has written it as one line. The host at a run target
+//! writes it to standard output; a host capturing it, as a test's does, keeps
+//! the lines instead, and the program runs unchanged under either.
+//!
 //! No two interfaces share an operation name, so an operation names its
 //! interface: [`HostSignatures::offering`] finds it, and
 //! [`HostSignatures::authority`] builds the capability authority granting a
@@ -51,8 +56,10 @@ pub const ENV: &str = "Env";
 pub const RING: &str = "Ring";
 /// The divergence interface, with no operation.
 pub const DIV: &str = "Div";
+/// The console interface: a line written to the process's output.
+pub const CONSOLE: &str = "Console";
 
-/// The six interfaces, sharing their arena-owned payload and reply types.
+/// The seven interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostSignatures
 {
@@ -68,6 +75,8 @@ pub struct HostSignatures
     pub ring: EffectSig,
     /// Run forever: no operation, and no handler.
     pub div: EffectSig,
+    /// Write a line to the console.
+    pub console: EffectSig,
 }
 
 quenchant_shape::reason_enum! {
@@ -138,7 +147,7 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div, &host.console].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))
@@ -234,6 +243,11 @@ impl HostSignatures
             },
         ])?;
         let div = divergence();
+        let console = EffectSig::new(CONSOLE.into(), [EffectOp {
+            name: "print".into(),
+            payload: string,
+            reply: unit,
+        }])?;
         Ok(Self {
             exec,
             fs,
@@ -241,19 +255,26 @@ impl HostSignatures
             env,
             ring,
             div,
+            console,
         })
     }
 
-    /// The six interfaces, in the order the host declares them.
+    /// The seven interfaces, in the order the host declares them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn interfaces(&self) -> [&EffectSig; 6]
+    pub const fn interfaces(&self) -> [&EffectSig; 7]
     {
         [
-            &self.exec, &self.fs, &self.proc, &self.env, &self.ring, &self.div,
+            &self.exec,
+            &self.fs,
+            &self.proc,
+            &self.env,
+            &self.ring,
+            &self.div,
+            &self.console,
         ]
     }
 

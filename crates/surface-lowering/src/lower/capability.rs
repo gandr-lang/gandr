@@ -1,7 +1,8 @@
 //! Capabilities in the lowering: the capability type `Cap {op, …}`, a
-//! returner's effect row `-F [I, …] A`, the exercise `c.op(v)`, the
-//! capability scope `handle c : I { M } with { … }`, and the resumption
-//! `k(v)` of a continuation an operation clause binds or a parameter states.
+//! returner's effect row `-F [I, …] A`, the exercise `c.op(v)`, the perform
+//! `I.op(v)` by an interface's name, the capability scope `handle c : I { M }
+//! with { … }`, and the resumption `k(v)` of a continuation an operation
+//! clause binds or a parameter states.
 //!
 //! The rules these forms lower into are `gandr-core-checker`'s `capability`
 //! module; this one decides only their spelling and what each spelling
@@ -9,13 +10,13 @@
 //!
 //! # Operations and interfaces are the host's
 //!
-//! The interfaces a capability names are the host's — `Exec`, `Fs`, `Proc`
-//! and `Env`, as `gandr_core_term::effect::host` declares them — and the
-//! classification resolves every written name against that table, minted
-//! once into a scratch arena of its own, so the names are never a second
-//! copy. The mint sweep mints the table into the module's arena once, at the
-//! first form that needs a signature, each of its types carrying that form's
-//! origin.
+//! The interfaces a capability names are the host's — `Exec`, `Fs`, `Proc`,
+//! `Env`, `Ring` and `Console`, as `gandr_core_term::effect::host` declares
+//! them — and the classification resolves every written name against that
+//! table, minted once into a scratch arena of its own, so the names are never a
+//! second copy. The mint sweep mints the table into the module's arena once, at
+//! the first form that needs a signature, each of its types carrying that
+//! form's origin.
 //!
 //! A capability type names its operations bare, `Cap {read, write}`, and each
 //! belongs to the one host interface that offers it: no two host interfaces
@@ -57,6 +58,17 @@
 //! alternative, a type-directed choice, waits on an elaborator. Reversal: an
 //! elaborator that reads types, which would let a capability bound without a
 //! written type be exercised.
+//!
+//! # A perform is named by its interface
+//!
+//! `I.op(v)`, where `I` names no value in scope but a host interface, is the
+//! perform of `op` of `I`: no capability is exercised, the computation's row
+//! holds `I`, and the operation goes to whichever handler stands nearest when
+//! it runs — a scope handling `I`, or else the host at the run target. So
+//! `Console.print("hello, world!")` is a computation at `-F [Console] Unit`.
+//! An operation `I` does not offer is [`LoweringRefusal::UnresolvedName`] at
+//! the operation; a value named `I` shadows the interface, and its selection
+//! reads as it would otherwise.
 //!
 //! # A scope's clauses
 //!
@@ -305,15 +317,31 @@ pub(super) fn mints(operation: &OperationName) -> Reply
 /// The operations a capability type grants, named bare.
 pub(super) type Authority = BTreeSet<OperationName>;
 
-/// An exercise `c.op(v, …)`, as the classification read it.
+/// What performs an operation a call `x.op(v, …)` selects.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Performer
+{
+    /// `c.op(v)`: the capability `c` names is exercised.
+    Capability(NodeIndex),
+    /// `I.op(v)`: the operation of the host interface `I` is performed by
+    /// name, handled by whichever handler stands nearest when it runs — the
+    /// host's at the run target.
+    Interface(EffectName),
+}
+
+/// An exercise `c.op(v, …)` or a perform `I.op(v, …)`, as the classification
+/// read it.
 ///
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct Exercised
 {
-    /// The capability's name.
-    capability: NodeIndex,
+    /// What performs the operation.
+    performer: Performer,
     /// The interface the operation belongs to.
     interface: EffectName,
     /// The operation exercised.
@@ -824,18 +852,22 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Classify the call at `site` as an exercise when its head selects an
-    /// operation off a capability.
+    /// operation off a capability, or as a perform when it selects one off a
+    /// host interface by name.
     ///
     /// # Specification
     /// - requires: `cursor` stands at the call's head.
     /// - ensures: a head `c.op` whose `c` is bound or declared at a written
     ///   `Cap` type, or bound by a capability scope, stands as a computation
     ///   reading `c` and each argument as a value under its frame, planned as
-    ///   the exercise of `op` under the host interface offering it; any other
-    ///   call is left unplanned.
+    ///   the exercise of `op` under the host interface offering it; a head
+    ///   `I.op` whose `I` names no value in scope but a host interface stands
+    ///   as a computation reading each argument, planned as the perform of `op`
+    ///   of `I`; any other call is left unplanned.
     /// - fails: [`LoweringRefusal::UnresolvedName`] for an operation no host
-    ///   interface offers; the wrong-sort refusal where no computation is read;
-    ///   the name's resolution refusal; the argument list's fault.
+    ///   interface offers, or one the interface `I` does not; the wrong-sort
+    ///   refusal where no computation is read; the name's resolution refusal;
+    ///   the argument list's fault.
     /// - panics: none.
     ///
     /// # Errors
@@ -844,9 +876,12 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — exercises through a parameter, a declaration and a
     ///   scope's binder lower and check, and one outside the authority is
-    ///   refused by the checker by name.
+    ///   refused by the checker by name; a perform by an interface's name
+    ///   checks at the row holding the interface, and an operation the named
+    ///   interface does not offer is refused at the operation.
     /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
     /// - witness: `lower::capability::tests::a_scope_handles_its_capability_and_resumes`
+    /// - witness: `lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
     #[spec(ensures: |ret| !matches!(ret, Ok(Planned(true))) || matches!(self.plans.get(site.at.node), Some(&super::Plan::Exercise(_))))]
     pub(super) fn exercise(
         &mut self,
@@ -859,7 +894,7 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(Planned(false));
         };
-        let Some((target, selected)) = self.exercised(site, site.reading.frame(), head)?
+        let Some((performer, selected)) = self.exercised(site, site.reading.frame(), head)?
         else {
             return Ok(Planned(false));
         };
@@ -874,6 +909,14 @@ impl<'source> Lowerer<'_, 'source>
             });
         };
         let interface = offered.name().clone();
+        if let Performer::Interface(ref named) = performer
+            && *named != interface
+        {
+            return Err(LoweringRefusal::UnresolvedName {
+                span: selected.span,
+                name,
+            });
+        }
         let frame = self.require(site, Produced::Computation)?;
         let start = self.operands.len();
         arguments(site, &mut ahead, &mut self.operands)?;
@@ -881,7 +924,9 @@ impl<'source> Lowerer<'_, 'source>
             start,
             end: self.operands.len(),
         };
-        self.read(target.node, Reading::Value(frame));
+        if let Performer::Capability(capability) = performer {
+            self.read(capability, Reading::Value(frame));
+        }
         for position in payload.start .. payload.end {
             if let Some(&argument) = self.operands.get(position) {
                 self.read(argument, Reading::Value(frame));
@@ -891,7 +936,7 @@ impl<'source> Lowerer<'_, 'source>
         self.plan(
             site,
             super::Plan::Exercise(Exercised {
-                capability: target.node,
+                performer,
                 interface,
                 operation,
                 head: head.span,
@@ -902,14 +947,18 @@ impl<'source> Lowerer<'_, 'source>
         Ok(Planned(true))
     }
 
-    /// The capability and the operation a call head `c.op` selects, when `c`
-    /// holds a capability where `frame` stands.
+    /// What performs the operation a call head `x.op` selects, and the
+    /// selected `op`, when `x` holds a capability where `frame` stands or
+    /// names a host interface and no value.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the name `c` and the selected `op` for a projection off a
-    ///   name bound or declared at a written `Cap` type, or bound by a
-    ///   capability scope; nothing for any other head.
+    /// - ensures: the capability `c` and the selected `op` for a projection off
+    ///   a name bound or declared at a written `Cap` type, or bound by a
+    ///   capability scope; the interface `I` and `op` for a projection off a
+    ///   name that resolves to no binder or declaration, or a capitalised name
+    ///   no constructor bears, that a host interface bears; nothing for any
+    ///   other head.
     /// - fails: [`LoweringRefusal::UnknownMold`].
     /// - panics: none.
     ///
@@ -919,13 +968,14 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::exercise`].
     /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
+    /// - witness: `lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
     #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(LoweringRefusal::UnknownMold { .. })))]
     fn exercised(
         &mut self,
         site: Site,
         frame: Frame,
         head: Placed,
-    ) -> Result<Option<(Placed, Placed)>, LoweringRefusal<'source>>
+    ) -> Result<Option<(Performer, Placed)>, LoweringRefusal<'source>>
     {
         let Some((_, Former::Projection)) = self.form_at(head)?
         else {
@@ -947,13 +997,23 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(None);
         };
-        let Some((_, Former::Name)) = self.form_at(target)?
-        else {
-            return Ok(None);
-        };
+        let written = self.name_at(target);
+        match self.form_at(target)? {
+            Some((_, Former::Name)) => {},
+            // A capitalised name the source declares no constructor by: the
+            // interface it names, when a host interface bears it.
+            Some((_, Former::Constructor)) => {
+                return Ok(match self.constructor_named(site, written) {
+                    Maybe::Present(_) => None,
+                    Maybe::Absent(_) => Self::interface_named(written)
+                        .map(|interface| (Performer::Interface(interface), selected)),
+                });
+            },
+            Some(_) | None => return Ok(None),
+        }
         // Resolved at the call, whose declaration already owns it: the holder's
         // own node inherits its owner only once the projection is read.
-        let resolved = self.resolve_name(site, frame, self.name_at(target));
+        let resolved = self.resolve_name(site, frame, written);
         let holder = match resolved {
             Ok(Maybe::Present(Resolved::Binder(bound)))
                 if self.capabilities.contains(&bound.binder) =>
@@ -964,9 +1024,28 @@ impl<'source> Lowerer<'_, 'source>
             Ok(Maybe::Present(Resolved::Declaration { declared, .. })) => {
                 self.written_holder(declared)?
             },
-            Ok(Maybe::Absent(_)) | Err(_) => Holder::Other,
+            Ok(Maybe::Absent(_)) | Err(_) => {
+                if let Some(interface) = Self::interface_named(written) {
+                    return Ok(Some((Performer::Interface(interface), selected)));
+                }
+                Holder::Other
+            },
         };
-        Ok((holder == Holder::Capability).then_some((target, selected)))
+        Ok(
+            (holder == Holder::Capability)
+                .then_some((Performer::Capability(target.node), selected)),
+        )
+    }
+
+    /// The host interface named `written`, when the host declares one.
+    ///
+    /// # Specification
+    /// trivial.
+    fn interface_named(written: SurfaceName<'_>) -> Option<EffectName>
+    {
+        let interface = EffectName::from(written.as_ref());
+        let table = HostSignatures::new(&mut CoreArena::new()).ok()?;
+        matches!(table.named(&interface), Maybe::Present(_)).then_some(interface)
     }
 
     /// Whether the computation `bound` a run statement binds, read where
@@ -1635,15 +1714,16 @@ impl<'source> Lowerer<'_, 'source>
         Maybe::Present(id)
     }
 
-    /// Mint the exercise `exercised` plans.
+    /// Mint the exercise or the perform `exercised` plans.
     ///
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the exercise of the operation, under its interface's whole
-    ///   signature, of the capability with the payload its arguments make, at
-    ///   `origin`, and a label at the head naming the operation's type, its
-    ///   payload to the returner of its reply; the first absence among the
-    ///   children.
+    ///   signature, of the capability with the payload its arguments make, or,
+    ///   for an interface named, the perform of the operation under that
+    ///   signature with the payload, at `origin`, and a label at the head
+    ///   naming the operation's type, its payload to the returner of its reply;
+    ///   the first absence among the children.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1652,6 +1732,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   operation it selects.
     /// - witness: `lower::capability::tests::an_exercise_is_checked_against_the_authority_it_was_attenuated_to`
     /// - witness: `lower::capability::tests::an_exercise_s_head_answers_at_its_operation`
+    /// - witness: `lower::capability::tests::an_operation_is_performed_by_its_interface_s_name_2279`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -1664,9 +1745,12 @@ impl<'source> Lowerer<'_, 'source>
         origin: Origin,
     ) -> Maybe<Lowered, lowered::Absent>
     {
-        let capability = match self.value_at(exercised.capability) {
-            Maybe::Present(capability) => capability,
-            Maybe::Absent(reason) => return Maybe::Absent(reason),
+        let capability = match exercised.performer {
+            Performer::Capability(node) => match self.value_at(node) {
+                Maybe::Present(capability) => Some(capability),
+                Maybe::Absent(reason) => return Maybe::Absent(reason),
+            },
+            Performer::Interface(_) => None,
         };
         let payload = match self.mint_payload(exercised.payload, sink, origin) {
             Maybe::Present(payload) => payload,
@@ -1687,12 +1771,19 @@ impl<'source> Lowerer<'_, 'source>
                         },
                     });
                 }
-                let id = sink.arena.computation_exercise(
-                    capability,
-                    signature,
-                    exercised.operation.clone(),
-                    payload,
-                );
+                let id = match capability {
+                    Some(capability) => sink.arena.computation_exercise(
+                        capability,
+                        signature,
+                        exercised.operation.clone(),
+                        payload,
+                    ),
+                    None => sink.arena.computation_perform(
+                        signature,
+                        exercised.operation.clone(),
+                        payload,
+                    ),
+                };
                 sink.computation(id, origin)
             })
     }

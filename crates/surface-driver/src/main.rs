@@ -275,6 +275,7 @@ use gandr_surface_diagnostics::Severity;
 use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::Area;
 use gandr_surface_dispatcher::AuthorityError;
+use gandr_surface_dispatcher::Console;
 use gandr_surface_dispatcher::Entered;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::FeatureId;
@@ -286,10 +287,12 @@ use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Kept;
 use gandr_surface_dispatcher::LedgerRun;
 use gandr_surface_dispatcher::LedgerTask;
+use gandr_surface_dispatcher::Line;
 use gandr_surface_dispatcher::Lints;
 use gandr_surface_dispatcher::OperationName;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::Pool;
+use gandr_surface_dispatcher::Printed;
 use gandr_surface_dispatcher::ProgramSpec;
 use gandr_surface_dispatcher::Ran;
 use gandr_surface_dispatcher::Rewrite;
@@ -536,9 +539,11 @@ enum Command
     /// final expression, or its last declaration when it writes none, and print
     /// the value.
     ///
-    /// A `main` returns the exit code, `def main() -> -F Integer`, and reads
-    /// the arguments after the path when it takes them, `def main(args :
-    /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`.
+    /// A `main` returns the exit code, `def main() -> -F Integer`, or the
+    /// unit, `def main() -> -F [Console] Unit`, for 0, and reads the
+    /// arguments after the path when it takes them, `def main(args :
+    /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`, and
+    /// `Console.print(s)` writes `s` as a line of standard output.
     /// Exits with that code, its low byte; otherwise 0 when the run returns a
     /// value, 1 when it is blamed on a goal or stops short of one, and 2 when
     /// the source never reaches the machine.
@@ -2224,18 +2229,19 @@ fn run(
 ///   <fault>` on standard error. Otherwise every report `gandr check --goals`
 ///   prints for the source, its types in `spelling`, goes to standard error as
 ///   a plain snippet followed by an empty line, and every ledger line beside
-///   them; then a source declaring an entry runs it and writes nothing, and one
-///   declaring none runs its run target — its final expression, else its last
-///   declaration — which, when it returned a value, writes the value as the one
-///   line of standard output. A run blamed, stuck or unfinished, and a target
-///   that reaches a declaration the machine carries no image of, is one line on
-///   standard error: `gandr:`, the path, the target's name in backticks and the
-///   evaluation's spelling. A source carrying a refusal is `gandr: <path>:
-///   refused; nothing ran` and one declaring no name `gandr: <path>: declares
-///   no name to run`, each on standard error. The exit code is an entry's exit
-///   status when it returned or exited with one; otherwise `0` for a value, `1`
-///   for a run that stopped short of one, and `2` for a script that never
-///   reached the machine.
+///   them; then a source declaring an entry runs it and writes nothing but the
+///   lines it prints, and one declaring none runs its run target — its final
+///   expression, else its last declaration — which, when it returned a value,
+///   writes the value as the line after those it printed. Each line a run
+///   prints through `Console.print` is written to standard output as it runs. A
+///   run blamed, stuck or unfinished, and a target that reaches a declaration
+///   the machine carries no image of, is one line on standard error: `gandr:`,
+///   the path, the target's name in backticks and the evaluation's spelling. A
+///   source carrying a refusal is `gandr: <path>: refused; nothing ran` and one
+///   declaring no name `gandr: <path>: declares no name to run`, each on
+///   standard error. The exit code is an entry's exit status when it returned
+///   or exited with one; otherwise `0` for a value, `1` for a run that stopped
+///   short of one, and `2` for a script that never reached the machine.
 /// - provides: `gandr run`, with its value on the one stream a caller reads.
 /// - fails: the first write error on either stream.
 /// - panics: none.
@@ -2262,6 +2268,7 @@ fn run(
 /// - witness: `tests::cli::the_value_of_a_run_is_printed_once`
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
+/// - witness: `tests::cli::a_program_prints_hello_world_2279`
 fn script(
     runnable: &mut Script,
     spelling: Spelling,
@@ -2270,7 +2277,7 @@ fn script(
 ) -> std::io::Result<ExitCode>
 {
     runnable.spell_in(spelling);
-    let ran = runnable.run();
+    let ran = runnable.run(&mut Lines { out: &mut *stdout });
     let status = ran.status();
     let mut exited = None;
     match ran {
@@ -2358,4 +2365,31 @@ fn script(
         (None, RunStatus::Failed) => ExitCode::from(STOPPED),
         (None, RunStatus::Unreached) => ExitCode::from(UNREACHED),
     })
+}
+
+/// The console `gandr run` hands a program: each line it prints written to
+/// `out`, standard output, as one line.
+#[repr(transparent)]
+struct Lines<'out>
+{
+    /// Where the lines go.
+    out: &'out mut dyn std::io::Write,
+}
+
+impl Console for Lines<'_>
+{
+    /// Write `line` and a newline to `out`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn print(
+        &mut self,
+        line: Line<'_>,
+    ) -> Printed
+    {
+        match writeln!(self.out, "{}", line.as_ref()) {
+            Ok(()) => Printed::Written,
+            Err(_) => Printed::Failed,
+        }
+    }
 }

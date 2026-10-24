@@ -126,6 +126,7 @@ fragment/unmarked-self-reference.gandr:bare:9e32374e1e147d92
 fragment/unmarked-self-reference.gandr:idle:a8d7eb0e054a41fb
 fragment/unmarked-self-reference.gandr:marked:03b4239c420b04ac
 model/data/data-nested-type.gandr:import_declaration:e6bf8b86a1b96c18
+model/effects/hello.gandr:main:546eecfe4cd3e0c2
 model/programs/draft.gandr:import_declaration:b091045ddce865e4
 pathological/attributes/effectful-payload.gandr:<file>
 pathological/attributes/effectful-payload.gandr:f:6c7a03ac8be78ae4

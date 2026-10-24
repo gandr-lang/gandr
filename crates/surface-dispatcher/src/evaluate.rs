@@ -168,8 +168,11 @@ use gandr_core_term::hole::HoleId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_runtime_emitter::Declined;
 use gandr_runtime_emitter::Fuel;
+use gandr_runtime_emitter::HostOutcome;
 use gandr_runtime_emitter::Tier;
 use gandr_runtime_emitter::evaluate_on;
+use gandr_runtime_emitter::evaluate_on_with_host;
+use gandr_runtime_emitter::evaluate_with_host;
 use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
 use gandr_surface_diagnostics::Families;
@@ -190,9 +193,14 @@ use gandr_surface_pretty::present_type;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
+mod console;
 mod entry;
 mod hole;
 
+pub use console::Captured;
+pub use console::Console;
+pub use console::Line;
+pub use console::Printed;
 pub use entry::Entered;
 pub use entry::Entry;
 pub use entry::ExitStatus;
@@ -1173,7 +1181,42 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
-        self.tiered(constant, returned, forced, Choice::Policy)
+        self.tiered(constant, returned, forced, Choice::Policy, None)
+            .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
+    }
+
+    /// Run the declaration at `constant` as [`Self::evaluate`] does, each line
+    /// it prints handed to `console`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a position the program does not hold is an outcome
+    ///   of its own.
+    /// - ensures: what [`Self::evaluate`] gives, but a `Console.print` the run
+    ///   performs and no handler of its own claims writes its line to
+    ///   `console`, in order, and resumes with the unit, where
+    ///   [`Self::evaluate`] leaves the run stuck at it.
+    /// - provides: `gandr run`'s run of a source's target, and a `runs`
+    ///   expectation's run under a capturing console.
+    /// - fails: never; every failure is an outcome.
+    /// - panics: none.
+    /// - executable: none — the run's clauses are [`Self::evaluate`]'s.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration printing a line runs to its value with
+    ///   the line captured, and its `runs` expectation states both.
+    /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+    #[inline]
+    pub fn evaluate_printing(
+        &mut self,
+        constant: ConstantIndex,
+        console: &mut dyn Console,
+    ) -> Evaluation<'source>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return evaluation,
+        };
+        self.tiered(constant, returned, forced, Choice::Policy, Some(console))
             .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
 
@@ -1210,7 +1253,7 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
-        self.tiered(constant, returned, forced, Choice::Policy)
+        self.tiered(constant, returned, forced, Choice::Policy, None)
             .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
 
@@ -1244,7 +1287,7 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return evaluation,
         };
-        self.tiered(constant, returned, forced, Choice::Policy)
+        self.tiered(constant, returned, forced, Choice::Policy, None)
             .unwrap_or_else(|declined| Evaluation::Unfinished(Unfinished::Declined(declined)))
     }
 
@@ -1281,7 +1324,53 @@ impl<'source> Program<'source>
             Ok(entries) => entries,
             Err(evaluation) => return Ok(evaluation),
         };
-        self.tiered(constant, returned, forced, Choice::Tier(engine.tier()))
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Tier(engine.tier()),
+            None,
+        )
+    }
+
+    /// Run the declaration at `constant` on `engine` alone, as
+    /// [`Self::evaluate_on`] does, each line it prints handed to `console`.
+    ///
+    /// # Specification
+    /// - ensures: what [`Self::evaluate_on`] gives, but a `Console.print` the
+    ///   run performs writes its line to `console` and resumes with the unit,
+    ///   as under [`Self::evaluate_printing`].
+    /// - provides: the engines apart under a console, so a differential holds
+    ///   each to a `runs` expectation that states printed lines.
+    /// - panics: none.
+    /// - executable: none — as [`Self::evaluate_on`].
+    ///
+    /// # Errors
+    /// As [`Self::evaluate_on`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration printing two lines runs on the executor
+    ///   as under [`Self::evaluate_printing`].
+    /// - witness: `evaluate::tests::a_printed_line_reaches_the_console_2279`
+    #[inline]
+    pub fn evaluate_printing_on(
+        &mut self,
+        constant: ConstantIndex,
+        engine: Engine,
+        console: &mut dyn Console,
+    ) -> Result<Evaluation<'source>, Declined>
+    {
+        let (returned, forced) = match self.prepare(constant, Start::Accepted, Reach::Value) {
+            Ok(entries) => entries,
+            Err(evaluation) => return Ok(evaluation),
+        };
+        self.tiered(
+            constant,
+            returned,
+            forced,
+            Choice::Tier(engine.tier()),
+            Some(console),
+        )
     }
 
     /// Run the declaration at `constant` on `engine` alone, as
@@ -1323,7 +1412,11 @@ impl<'source> Program<'source>
         };
         let mut store = Store::new();
         Ok(
-            match self.terminal((returned, forced), Choice::Tier(engine.tier()), &mut store)? {
+            match self.terminal(
+                (returned, forced),
+                Choice::Tier(engine.tier()),
+                (&mut store, None),
+            )? {
                 Ok(terminal) => match read_back_terminal(&self.arena, &store, terminal, into) {
                     Ok(read) => Terminal::Read(read),
                     Err(refusal) => {
@@ -1387,11 +1480,12 @@ impl<'source> Program<'source>
         returned: CommandId,
         forced: CommandId,
         choice: Choice,
+        console: Option<&mut dyn Console>,
     ) -> Result<Evaluation<'source>, Declined>
     {
         let mut store = Store::new();
         Ok(
-            match self.terminal((returned, forced), choice, &mut store)? {
+            match self.terminal((returned, forced), choice, (&mut store, console))? {
                 Ok(terminal) => self.finish(constant, &store, terminal),
                 Err(evaluation) => evaluation,
             },
@@ -1401,7 +1495,8 @@ impl<'source> Program<'source>
     /// Run the commands on a tier the choice names into `store`, forcing a
     /// suspended answer: the terminal value, or the evaluation that ends the
     /// run first, blaming the opaque constant it observed or answers outside
-    /// any suspension.
+    /// any suspension. With a console, each `Console.print` the run offers its
+    /// host writes its line there and resumes; without one it stops the run.
     ///
     /// # Specification
     /// trivial.
@@ -1418,17 +1513,46 @@ impl<'source> Program<'source>
         &self,
         (returned, forced): (CommandId, CommandId),
         choice: Choice,
-        store: &mut Store,
+        (store, mut console): (&mut Store, Option<&mut dyn Console>),
     ) -> Result<Result<HeapValueId, Evaluation<'source>>, Declined>
     {
         let fuel = Fuel::from(RUN_BUDGET);
-        let run = |root, store: &mut Store| match choice {
-            Choice::Policy => {
-                gandr_runtime_emitter::evaluate(&self.arena, &self.definitions, root, fuel, store)
-            },
-            Choice::Tier(tier) => {
-                evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
-            },
+        let mut run = |root, store: &mut Store| {
+            let Some(ref mut console) = console
+            else {
+                return match choice {
+                    Choice::Policy => gandr_runtime_emitter::evaluate(
+                        &self.arena,
+                        &self.definitions,
+                        root,
+                        fuel,
+                        store,
+                    ),
+                    Choice::Tier(tier) => {
+                        evaluate_on(tier, &self.arena, &self.definitions, root, fuel, store)
+                    },
+                };
+            };
+            let mut host = console::PrintingHost::new(&mut **console);
+            let hosted = match choice {
+                Choice::Policy => evaluate_with_host(
+                    &self.arena,
+                    &self.definitions,
+                    root,
+                    (fuel, store),
+                    &mut host,
+                ),
+                Choice::Tier(tier) => evaluate_on_with_host(
+                    tier,
+                    (&self.arena, &self.definitions, root),
+                    (fuel, store),
+                    &mut host,
+                ),
+            }?;
+            Ok(match hosted {
+                HostOutcome::Completed(outcome) => outcome,
+                HostOutcome::Aborted(never) => match never {},
+            })
         };
         let outcome = run(returned, store)?;
         let terminal = match self.halted(store, outcome) {
@@ -2031,7 +2155,9 @@ fn reaching(
 
 impl Runner for Program<'_>
 {
-    /// Spells the outcome of running the declaration at `constant`.
+    /// Spells the outcome of running the declaration at `constant` under a
+    /// capturing console: each line it printed, each followed by a newline,
+    /// then the outcome, as `gandr run` writes them.
     ///
     /// # Specification
     /// trivial.
@@ -2041,7 +2167,15 @@ impl Runner for Program<'_>
         constant: ConstantIndex,
     ) -> RunSpelling
     {
-        RunSpelling::from(self.evaluate(constant).to_string())
+        let mut captured = Captured::default();
+        let evaluation = self.evaluate_printing(constant, &mut captured);
+        let mut spelled = String::new();
+        for line in captured.lines() {
+            spelled.push_str(line);
+            spelled.push('\n');
+        }
+        spelled.push_str(&evaluation.to_string());
+        RunSpelling::from(spelled)
     }
 
     /// Spells the outcome of running the declaration at `constant` though
@@ -2394,6 +2528,7 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Captured;
     use super::Engine;
     use super::Evaluation;
     use super::Program;
@@ -2515,6 +2650,44 @@ def nested : +U (-F (+U (-F Integer))) ; def nested = thunk { return thunk { ret
                 "`{name}` is spelled as pinned"
             );
         }
+    }
+
+    /// A `Console.print` the run performs hands its line to the console and
+    /// resumes with the unit, in order; with no console the run is stuck at
+    /// the first (#2279).
+    #[test]
+    fn a_printed_line_reaches_the_console_2279()
+    {
+        let mut printing = program(
+            "def greet() -> -F [Console] Unit {\n  Console.print(\"a\") ;\n  \
+             Console.print(\"b\")\n}\n",
+        );
+        let greet = printing
+            .declarations
+            .iter()
+            .find(|&(_, declared)| declared.name == SurfaceName::from("greet"))
+            .map(|(&constant, _)| constant)
+            .expect("the program declares `greet`");
+        let mut console = Captured::default();
+        assert_eq!(
+            printing.evaluate_printing(greet, &mut console).to_string(),
+            "unit",
+            "the run returns the unit"
+        );
+        assert_eq!(console.lines(), ["a", "b"], "each line, in order");
+        let mut executed = Captured::default();
+        assert_eq!(
+            printing
+                .evaluate_printing_on(greet, Engine::Executor, &mut executed)
+                .map(|evaluation| evaluation.to_string()),
+            Ok(String::from("unit")),
+            "the executor alone runs it alike"
+        );
+        assert_eq!(executed.lines(), ["a", "b"], "and prints alike");
+        assert!(
+            matches!(printing.evaluate(greet), Evaluation::Stuck(_)),
+            "with no console the perform is stuck"
+        );
     }
 
     /// #782: a value is spelled in the program's spelling, Unicode until a

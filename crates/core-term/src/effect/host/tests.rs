@@ -2,6 +2,7 @@ use gandr_kernel_term::BaseType;
 use quenchant_shape::shape::Maybe;
 
 use super::AuthorityError;
+use super::CONSOLE;
 use super::DIV;
 use super::ENV;
 use super::EXEC;
@@ -97,6 +98,7 @@ fn host_interfaces_pin_names_payloads_and_replies()
             ("path", unit, strings)
         ]),
         (&host.div, DIV, alloc::vec![]),
+        (&host.console, CONSOLE, alloc::vec![("print", string, unit)]),
     ];
     for (signature, name, operations) in expected {
         assert_eq!(signature.name().as_ref(), name);

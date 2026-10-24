@@ -45,6 +45,7 @@ use gandr_runtime_emitter::lower;
 use gandr_runtime_emitter::lower_unfused;
 use gandr_runtime_emitter::replay;
 use gandr_surface_corpus::Stated;
+use gandr_surface_dispatcher::Captured;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Engine;
 use gandr_surface_dispatcher::Pool;
@@ -294,17 +295,27 @@ fn the_corpus_runs_items_agree_on_both_executors()
                 let constant = declaration.constant();
                 item.clear();
                 write!(item, "{} {}", path.display(), declaration.name()).expect("an item writes");
-                let expected = program.evaluate_on(constant, Engine::Executor);
+                let mut printed = Captured::default();
+                let expected =
+                    program.evaluate_printing_on(constant, Engine::Executor, &mut printed);
                 if PATCHER {
+                    let mut native = Captured::default();
                     assert_eq!(
-                        expected,
-                        program.evaluate_on(constant, Engine::Native),
+                        (&expected, printed.lines()),
+                        (
+                            &program.evaluate_printing_on(constant, Engine::Native, &mut native),
+                            native.lines()
+                        ),
                         "{item}: native code against the executor"
                     );
                 }
                 match expected {
                     Ok(ref evaluation) => {
                         rendered.clear();
+                        for line in printed.lines() {
+                            rendered.push_str(line);
+                            rendered.push('\n');
+                        }
                         write!(rendered, "{evaluation}").expect("an evaluation writes");
                         assert_eq!(
                             spelled.as_ref(),

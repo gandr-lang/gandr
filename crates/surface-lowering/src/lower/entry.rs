@@ -1,9 +1,10 @@
 //! A program's entry: the `main` a source declares at its top level. An entry
-//! is a computation returning the exit code, `U (F^e Integer)`, or a function
-//! of the arguments returning it, `U (List(String) → F^e Integer)`; the
-//! interfaces `e` it may perform are its own. A `main` at any other type is
-//! refused by name where it is declared, so a program never starts at an entry
-//! no run can read an exit code from.
+//! is a computation returning the exit code, `U (F^e Integer)`, or the unit,
+//! `U (F^e Unit)`, whose run exits with zero, or a function of the arguments
+//! returning either, `U (List(String) → F^e …)`; the interfaces `e` it may
+//! perform are its own. A `main` at any other type is refused by name where
+//! it is declared, so a program never starts at an entry no run can read an
+//! exit code from.
 
 use alloc::vec::Vec;
 
@@ -31,8 +32,8 @@ pub const ENTRY: &str = "main";
 quenchant_shape::reason_enum! {
     /// Why a type is no entry's.
     pub mod entry_shape {
-        /// The type is not the thunk of a computation returning an integer,
-        /// directly or after one argument list.
+        /// The type is not the thunk of a computation returning an integer or
+        /// the unit, directly or after one argument list.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// Another type.
@@ -56,18 +57,19 @@ pub enum Arguments
 ///
 /// # Specification
 /// - requires: `declared` is a value type of `arena`.
-/// - ensures: [`Arguments::Unread`] for `U (F^e Integer)`, [`Arguments::Read`]
-///   for `U (List(String) → F^e Integer)`, written as an arrow or a Pi, each
-///   under any row `e`; the misshapen absence for every other type, a type
-///   `arena` does not hold included.
+/// - ensures: [`Arguments::Unread`] for `U (F^e R)`, [`Arguments::Read`] for `U
+///   (List(String) → F^e R)`, written as an arrow or a Pi, each under any row
+///   `e`, where `R` is `Integer` or the unit; the misshapen absence for every
+///   other type, a type `arena` does not hold included.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the two entry types under the empty row and a row of one
-///   interface, beside a returner of a string, a function of an integer and a
-///   bare integer.
+///   interface, each returning an integer and the unit, beside a returner of a
+///   string, a function of an integer and a bare integer.
 /// - witness: `lower::entry::tests::an_entry_returns_an_integer_after_its_arguments_1881`
+/// - witness: `lower::entry::tests::an_entry_returns_the_unit_2279`
 #[spec(ensures: |ret| match ret {
     Maybe::Present(Arguments::Unread) => matches!(arena.value_type(declared), Some(&ValueType::Thunk(body))
         if matches!(arena.comp_type(body), Some(&CompType::Returner { .. }))),
@@ -88,7 +90,9 @@ pub fn entry_shape(
     };
     let returns_code = |computation: CompTypeId| {
         matches!(arena.comp_type(computation), Some(&CompType::Returner { result, .. })
-            if arena.value_type(result) == Some(&ValueType::Base(BaseType::Integer)))
+            if matches!(arena.value_type(result),
+                Some(&ValueType::Base(BaseType::Integer)))
+                || matches!(arena.value_type(result), Some(&ValueType::Product(ref fields)) if fields.is_empty()))
     };
     if returns_code(body) {
         return Maybe::Present(Arguments::Unread);

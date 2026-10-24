@@ -506,6 +506,61 @@ fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
     );
 }
 
+/// An operation selected off a host interface's name, no value in scope
+/// bearing that name, is performed by the interface: `Console.print(s)`
+/// lowers to a perform of `Console`'s `print` the checker admits under the
+/// row naming `Console`; an operation the named interface does not offer is
+/// refused by name (#2279).
+#[test]
+fn an_operation_is_performed_by_its_interface_s_name_2279()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def hello() -> -F [Console] Unit { Console.print(\"hello, world!\") }\n",
+            "def elsewhere() -> -F [Proc] Unit { Proc.print(\"x\") }\n",
+        )),
+        &mut arena,
+    );
+    let hello = tail_of(&module, &arena, "hello".into());
+    let Some(&Computation::Perform {
+        ref signature,
+        ref operation,
+        payload,
+    }) = arena.computation(hello)
+    else {
+        panic!(
+            "`Console.print(…)` is a perform: {:?}",
+            arena.computation(hello)
+        );
+    };
+    assert_eq!(
+        (signature.name().as_ref(), operation.as_ref()),
+        ("Console", "print")
+    );
+    assert!(
+        matches!(arena.value(payload), Some(&Value::Literal(_))),
+        "the one argument is the payload"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "elsewhere".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                if name == SurfaceName::from("print")
+        ),
+        "`Proc` offers no `print`"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "hello".into()),
+            Verdict::Checked { .. } | Verdict::Synthesised { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "hello".into())
+    );
+}
+
 #[test]
 fn an_exercise_s_head_answers_at_its_operation()
 {

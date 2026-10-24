@@ -224,11 +224,15 @@ pub use crate::compose::lower_unit_source;
 pub use crate::compose::tabled;
 pub use crate::entry::Entries;
 pub use crate::entry::entries;
+pub use crate::evaluate::Captured;
+pub use crate::evaluate::Console;
 pub use crate::evaluate::Engine;
 pub use crate::evaluate::Entered;
 pub use crate::evaluate::Entry;
 pub use crate::evaluate::Evaluation;
 pub use crate::evaluate::ExitStatus;
+pub use crate::evaluate::Line;
+pub use crate::evaluate::Printed;
 pub use crate::evaluate::Program;
 pub use crate::evaluate::RunStatus;
 pub use crate::evaluate::SealedRun;
@@ -721,7 +725,7 @@ mod tests
         else {
             panic!("run routes to a script");
         };
-        let ScriptRun::Fault { path, .. } = script.run()
+        let ScriptRun::Fault { path, .. } = script.run(&mut crate::Captured::default())
         else {
             panic!("an absent script faults");
         };

@@ -16,7 +16,11 @@ use super::Entry;
 use super::ExitStatus;
 use super::argument_list;
 use super::program_entry;
+use crate::evaluate::Captured;
+use crate::evaluate::Console;
 use crate::evaluate::Evaluation;
+use crate::evaluate::Line;
+use crate::evaluate::Printed;
 use crate::evaluate::tests::program;
 
 /// The entry is the `main` the source run declares at its top level, with
@@ -77,7 +81,7 @@ fn an_entry_runs_to_its_exit_status_1881()
             panic!("an entry: {source}");
         };
         assert_eq!(
-            ran.enter(entry, &arguments),
+            ran.enter(entry, &arguments, &mut Captured::default()),
             Entered::Exited(ExitStatus(wanted)),
             "{source}"
         );
@@ -89,7 +93,7 @@ fn an_entry_runs_to_its_exit_status_1881()
     };
     assert!(
         matches!(
-            goal.enter(entry, &[]),
+            goal.enter(entry, &[], &mut Captured::default()),
             Entered::Ended(Evaluation::Holed { .. })
         ),
         "a goal reached ends the run short of a status, at the goal"
@@ -162,12 +166,12 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
         panic!("an entry: {source}");
     };
     assert_eq!(
-        ran.enter(entry, &[]),
+        ran.enter(entry, &[], &mut Captured::default()),
         Entered::Exited(ExitStatus(2)),
         "the branch holding the hole is not taken"
     );
     let written = source.find("?todo").expect("the hole is written");
-    match ran.enter(entry, &[String::from("a")]) {
+    match ran.enter(entry, &[String::from("a")], &mut Captured::default()) {
         Entered::Ended(Evaluation::Holed {
             at: Maybe::Present(span),
             ..
@@ -179,5 +183,59 @@ fn a_hole_reached_stops_the_entry_by_name_1881()
         other @ (Entered::Exited(_) | Entered::Ended(_)) => {
             panic!("the run stops at the hole: {other:?}")
         },
+    }
+}
+
+/// An entry performing `Console.print` hands each line to the console it
+/// runs under, in order, and one returning the unit exits with 0; a line the
+/// console fails to write stops the run there (#2279).
+#[test]
+fn an_entry_prints_through_its_console_2279()
+{
+    let source = "def main() -> -F [Console] Unit {\n  Console.print(\"hello\") ;\n  Console.print(\"world\")\n}\n";
+    let mut ran = program(source);
+    let Maybe::Present(entry) = ran.entry()
+    else {
+        panic!("an entry: {source}");
+    };
+    let mut console = Captured::default();
+    assert_eq!(
+        ran.enter(entry, &[], &mut console),
+        Entered::Exited(ExitStatus(0)),
+        "the unit exits with 0"
+    );
+    assert_eq!(console.lines(), ["hello", "world"], "each line, in order");
+    let mut refusing = Refusing { asked: 0 };
+    assert!(
+        matches!(
+            ran.enter(entry, &[], &mut refusing),
+            Entered::Ended(Evaluation::Stuck(_))
+        ),
+        "a line the console fails to write stops the run"
+    );
+    assert_eq!(refusing.asked, 1, "nothing runs past the failed line");
+}
+
+/// A console failing every line it is handed, counting them.
+#[repr(transparent)]
+struct Refusing
+{
+    /// The lines handed to it.
+    asked: usize,
+}
+
+impl Console for Refusing
+{
+    /// Count the line and fail it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn print(
+        &mut self,
+        _line: Line<'_>,
+    ) -> Printed
+    {
+        self.asked = self.asked.saturating_add(1);
+        Printed::Failed
     }
 }
