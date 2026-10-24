@@ -167,6 +167,7 @@ use gandr_surface_lowering::Role;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SplitComponent;
 use gandr_surface_lowering::Unit;
+use gandr_surface_lowering::WrittenModel;
 use gandr_surface_lowering::coincide::CallText;
 use gandr_surface_lowering::described::DescribedRole;
 use gandr_surface_lowering::documentation;
@@ -176,6 +177,7 @@ use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Presentation;
@@ -776,8 +778,8 @@ fn labelled<'names>(
 
 /// What a reprint's own lowering keeps beside the types it read, at their
 /// images in the table's arena: the name each dependent arrow binds, the
-/// labels each dependent pair was written with and the relation each type
-/// was written as.
+/// labels each dependent pair was written with, the relation each type
+/// was written as and the model type each was written as.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Read
 {
@@ -789,6 +791,9 @@ struct Read
     seconds: Vec<(ValueTypeId, String)>,
     /// Each related type's image with the relation it was written as.
     relations: Vec<(ValueTypeId, Relation)>,
+    /// Each model type's image with the theory and sorts it was written
+    /// with, each carrier at its image.
+    models: Vec<(ValueTypeId, WrittenModel)>,
 }
 
 /// What the table keeps for a declaration: its type node, a refusal of it as
@@ -3460,8 +3465,10 @@ impl TypeTable
     /// `node` of `arena` spelled as [`Self::spell`] spells a node of the
     /// table's own arena: `arena` holds the table's nodes at their ids, so the
     /// constants and constructors are named alike, each dependent arrow
-    /// `read` names past them binds the name it holds, and each type `read`
-    /// relates spells as the relation it was written as.
+    /// `read` names past them binds the name it holds, each type `read`
+    /// relates spells as the relation it was written as, and each model type
+    /// the local naming or `read` records spells as the `Model(T) with sort C
+    /// = A` it was written as.
     ///
     /// # Specification
     /// trivial.
@@ -3516,12 +3523,32 @@ impl TypeTable
             .copied()
             .collect();
         relations.sort_by_key(|&(related, _)| related);
+        let mut models: Vec<(ValueTypeId, Modelled<'_>)> = self
+            .naming
+            .models()
+            .iter()
+            .chain(&read.models)
+            .map(|&(modelled, ref model)| {
+                (modelled, Modelled {
+                    theory: Name::from(model.theory.as_ref()),
+                    sorts: model
+                        .sorts
+                        .iter()
+                        .map(|&(ref sort, carrier)| {
+                            (Name::from(sort.as_ref()), CoreNode::ValueType(carrier))
+                        })
+                        .collect(),
+                })
+            })
+            .collect();
+        models.sort_by_key(|&(modelled, _)| modelled);
         let constructors = self.families.naming(&names);
         let printer = CoreSource::new(arena, &names)
             .naming(&constructors)
             .naming_arrows(&arrows)
             .naming_pairs(&pairs, &seconds)
             .relating(&relations)
+            .modeling(&models)
             .within(&binders)
             .scoped(&regions);
         present_type(&printer, root(node), page, style)
@@ -3767,9 +3794,10 @@ impl TypeTable
     ///   protocol's behaviour from its state; [`RoundTrip::Different`]
     ///   otherwise; and [`RoundTrip::Refused`] with the refusal when the
     ///   lowering refused a closed signature or the whole source. Each type
-    ///   read is printed again under the same binders, with the names, labels
-    ///   and relations the reread recorded for it, standing also at every copy
-    ///   the put-back binders made of it.
+    ///   read is printed again under the same binders, with the names, labels,
+    ///   relations and model types the reread recorded for it, standing also at
+    ///   every copy the put-back binders made of it, a model type's carriers at
+    ///   their copies.
     /// - provides: the read-back half of the hover's content guarantee.
     /// - fails: never; a type that does not read back says why.
     /// - panics: none.
@@ -4014,6 +4042,24 @@ impl TypeTable
                         read_back.relations.push((image, relation));
                     }
                 }
+                for &(modelled, ref model) in module.origins().models() {
+                    let image = importer.value_type_image(modelled);
+                    let sorts: Option<Vec<_>> = model
+                        .sorts
+                        .iter()
+                        .map(|&(ref sort, carrier)| {
+                            importer
+                                .value_type_image(carrier)
+                                .map(|carrier| (sort.clone(), carrier))
+                        })
+                        .collect();
+                    if let (Some(image), Some(sorts)) = (image, sorts) {
+                        read_back.models.push((image, WrittenModel {
+                            theory: model.theory.clone(),
+                            sorts,
+                        }));
+                    }
+                }
             },
             Ok(Lowered::Refused(refusal)) => {
                 for name in appended.values() {
@@ -4084,16 +4130,23 @@ impl TypeTable
             *read = last_parameter(&mut arena, declared, count, &mut carried)
                 .ok_or_else(|| String::from("the declaration is no function of its parameters"));
         }
-        // A type the lowering recorded as written as a relation, a pair it
-        // recorded labels for, or a dependent arrow it recorded its binder's
-        // name for, stands at each copy a shift made of it, so a type read
-        // under a dropped binder reprints as written (#674, #1655, #1751). The
-        // copies are taken in the order the shifts made them, so a copy of a
-        // copy finds its source's; a type recorded twice keeps its first.
+        // A type the lowering recorded as written as a relation or a model
+        // type, a pair it recorded labels for, or a dependent arrow it
+        // recorded its binder's name for, stands at each copy a shift made of
+        // it, so a type read under a dropped binder reprints as written (#674,
+        // #1655, #1751, #2254). The copies are taken in the order the shifts
+        // made them, so a copy of a copy finds its source's; a type recorded
+        // twice keeps its first. A shift copies a model type's carriers before
+        // the type, so each carrier stands at its latest copy.
         let mut related: BTreeMap<ValueTypeId, Relation> = BTreeMap::new();
         for &(ty, relation) in &read_back.relations {
             related.entry(ty).or_insert(relation);
         }
+        let mut modelled: BTreeMap<ValueTypeId, WrittenModel> = BTreeMap::new();
+        for &(ty, ref model) in &read_back.models {
+            modelled.entry(ty).or_insert_with(|| model.clone());
+        }
+        let mut latest: BTreeMap<ValueTypeId, ValueTypeId> = BTreeMap::new();
         let mut named: BTreeMap<CompTypeId, String> = BTreeMap::new();
         for &(arrow, ref name) in &read_back.arrows {
             named.entry(arrow).or_insert_with(|| name.clone());
@@ -4128,6 +4181,24 @@ impl TypeTable
                 read_back.relations.push((image, relation));
                 related.entry(image).or_insert(relation);
             }
+            if let Some(model) = modelled.get(&source) {
+                let copied = WrittenModel {
+                    theory: model.theory.clone(),
+                    sorts: model
+                        .sorts
+                        .iter()
+                        .map(|&(ref sort, carrier)| {
+                            (
+                                sort.clone(),
+                                latest.get(&carrier).copied().unwrap_or(carrier),
+                            )
+                        })
+                        .collect(),
+                };
+                read_back.models.push((image, copied.clone()));
+                modelled.entry(image).or_insert(copied);
+            }
+            let _previous = latest.insert(source, image);
             for (labels, copied) in [
                 (&mut binders, &mut copied_binders),
                 (&mut seconds, &mut copied_seconds),
@@ -7069,11 +7140,15 @@ mod tests
         ));
         let table = table(source);
         for (needle, subject, ty) in [
-            ("a.C, c", Subject::Binder, "#{a : Type, b : a}"),
-            ("a.C) ->", Subject::Binder, "#{a : Type, b : a}"),
-            ("f.C)", Subject::Binder, "#{zero : x}"),
+            ("a.C, c", Subject::Binder, "Model(Counter)"),
+            ("a.C) ->", Subject::Binder, "Model(Counter)"),
+            ("f.C)", Subject::Binder, "Model(Counter) with sort C = x"),
             (".C) -> -F x", Subject::Type, "Type"),
-            ("g.C)", Subject::Binder, "#{zero : Integer}"),
+            (
+                "g.C)",
+                Subject::Binder,
+                "Model(Counter) with sort C = Integer",
+            ),
             (".C) -> -F Integer { c", Subject::Type, "Type"),
         ] {
             assert_eq!(

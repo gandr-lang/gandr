@@ -29,6 +29,7 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::Provenance;
 use gandr_surface_lowering::SplitComponent;
+use gandr_surface_lowering::WrittenModel;
 use gandr_surface_pretty::BinderIndex;
 use gandr_surface_pretty::ChildSlot;
 use gandr_surface_pretty::CoreNode;
@@ -93,6 +94,9 @@ pub struct Naming
     /// Each type written as a relation between types, with the relation,
     /// ascending by id.
     relations: Vec<(ValueTypeId, Relation)>,
+    /// Each type written as a model type, `Model(T)` or `Model(T) with sort
+    /// C = A …`, with the theory and sorts written, ascending by id.
+    models: Vec<(ValueTypeId, WrittenModel)>,
     /// Each written use of a variable with where a name for its binder is
     /// written: first where the origin table records the binder a use
     /// resolves to, then the use itself, which a type's variables have and no
@@ -108,8 +112,8 @@ impl Naming
     /// - requires: `module` was lowered from `source`.
     /// - ensures: the source text, each value declaration's roots by its
     ///   constant, the origin table's binders, split components, dependent
-    ///   arrows, dependent record pairs and their second labels, and relations,
-    ///   and its bindings then its written values as uses.
+    ///   arrows, dependent record pairs and their second labels, relations and
+    ///   model types, and its bindings then its written values as uses.
     /// - provides: the input of [`Self::scoped`].
     /// - fails: never.
     /// - panics: none.
@@ -201,6 +205,8 @@ impl Naming
             .collect();
         let mut relations = origins.relations().to_vec();
         relations.sort_by_key(|&(related, _)| related);
+        let mut models = origins.models().to_vec();
+        models.sort_by_key(|&(modelled, _)| modelled);
         Self {
             text: String::from(<&str>::from(source)),
             roots,
@@ -210,6 +216,7 @@ impl Naming
             pairs,
             seconds,
             relations,
+            models,
             uses,
         }
     }
@@ -315,6 +322,18 @@ impl Naming
     pub fn relations(&self) -> &[(ValueTypeId, Relation)]
     {
         &self.relations
+    }
+
+    /// Each type written as a model type, with the theory and sorts written,
+    /// ascending by type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn models(&self) -> &[(ValueTypeId, WrittenModel)]
+    {
+        &self.models
     }
 
     /// The binders of one declaration, whose declared type and body are
