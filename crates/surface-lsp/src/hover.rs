@@ -2532,6 +2532,34 @@ mod tests
         );
     }
 
+    /// #2407: a model's `law refl admitted;` hovers the law it admits, at the
+    /// model's carrier and with its truth endpoint written as its word, not
+    /// the module that holds it; the theory's law hovers its statement.
+    #[test]
+    fn an_admitted_law_hovers_the_law_it_admits_2407()
+    {
+        let text = SourceText::from(
+            "theory Lawful {\n  sort Carrier : Type;\n  oper alike : (a : Carrier, b : Carrier) \
+             --> Bool;\n  law refl : (a : Carrier) => Path(Bool, alike(a, a), true);\n}\nmodule \
+             Host : Model(Lawful) with sort Carrier = Integer {\n  def alike(a : Integer, b : \
+             Integer) -> Bool { true }\n  law refl admitted;\n}\n",
+        );
+        assert_eq!(
+            shown(text, (7.into(), 7.into())),
+            Ok(String::from(
+                "```gandr\nrefl : +U ((a : Integer) -> -F Path(Bool, Host.alike(a, a), true))\n```"
+            )),
+            "the admitted law"
+        );
+        assert_eq!(
+            shown(text, (3.into(), 7.into())),
+            Ok(String::from(
+                "```gandr\nrefl : +U ((a : Carrier) -> -F Path(Bool, alike(a, a), true))\n```"
+            )),
+            "the theory's law"
+        );
+    }
+
     #[test]
     fn a_documented_module_hovers_its_documentation_1135()
     {

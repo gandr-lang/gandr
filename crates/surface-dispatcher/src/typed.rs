@@ -1167,9 +1167,10 @@ impl TypeTable
     ///   nowhere; each binder the origin table records for a typed use is one
     ///   entry at the binder's span, at that use's type; each written value or
     ///   computation type whose level the checker reads is an entry at its
-    ///   universe; each declaration is keyed by each form key it carries, at
-    ///   its declared type, its body's synthesised type, its data universe, or
-    ///   a sealed abstract type's kind, or holding the lowering's refusal of it
+    ///   universe; each declaration is keyed by each form key it carries, an
+    ///   admitted law, which writes no half, by the member admitting it, at its
+    ///   declared type, its body's synthesised type, its data universe, or a
+    ///   sealed abstract type's kind, or holding the lowering's refusal of it
     ///   as text, a `data` family's operations leaving the family's key its
     ///   own; each node a `theory` block or a `data` family's constructors,
     ///   operations and rules write is an entry at the type its member states
@@ -2321,14 +2322,22 @@ impl TypeTable
             // and has no form of its own: the block's key is the theory's, so a
             // derived declaration never displaces what another placed there.
             let derived = declaration.role() == Role::Derived;
+            // An admitted law writes no half: the member `law x admitted;`
+            // that introduces it is its form.
+            let admitted = (declaration.role() == Role::Admitted).then(|| declaration.introduced());
             for key in [
                 declaration.signature(),
                 declaration.definition(),
                 declaration.refused_form(),
-            ] {
-                if let Maybe::Present(key) = key
-                    && key.source() == own_source
-                {
+            ]
+            .into_iter()
+            .filter_map(|key| match key {
+                Maybe::Present(key) => Some(key),
+                Maybe::Absent(_) => None,
+            })
+            .chain(admitted)
+            {
+                if key.source() == own_source {
                     if derived {
                         let _kept = declared.entry(key.form()).or_insert_with(|| held.clone());
                     }

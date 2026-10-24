@@ -692,7 +692,7 @@ fn folded(
 }
 
 /// What a declaration named by a tile of `role` declares, after its first
-/// keyword `keyword`.
+/// keyword `keyword`: a law for `law`, a model's admitted law.
 ///
 /// # Specification
 /// trivial.
@@ -702,6 +702,7 @@ fn kind_of(
 ) -> SymbolKind
 {
     match (role, keyword.map(<&str>::from)) {
+        (_, Some("law")) => SymbolKind::PROPERTY,
         (HlRole::FunctionDef, _) => SymbolKind::FUNCTION,
         (HlRole::VariableDef, _) => SymbolKind::VARIABLE,
         (_, Some("world")) => SymbolKind::CONSTANT,
@@ -921,7 +922,7 @@ fn member(
 }
 
 /// What a member named by a tile of `role` declares, after its keyword
-/// `keyword`: a law for `rule`, an observation for `obs` or a codata
+/// `keyword`: a law for `rule` and `law`, an observation for `obs` or a codata
 /// declaration's member, a constructor for `data` or a family's constructor, a
 /// type the theory is over for a sort, a shape or an extension, an operation
 /// for any other definition.
@@ -934,7 +935,7 @@ fn member_kind(
 ) -> SymbolKind
 {
     match (role, keyword.map(<&str>::from)) {
-        (_, Some("rule")) => SymbolKind::PROPERTY,
+        (_, Some("rule" | "law")) => SymbolKind::PROPERTY,
         (_, Some("obs")) | (HlRole::Member, _) => SymbolKind::FIELD,
         (_, Some("data")) | (HlRole::Constructor, _) => SymbolKind::CONSTRUCTOR,
         (HlRole::Type, _) => SymbolKind::TYPE_PARAMETER,

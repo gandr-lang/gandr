@@ -1423,6 +1423,40 @@ fn an_ascribed_truth_value_spells_as_its_word_2168()
     }
 }
 
+/// A path type's endpoint that is a truth value at its carrier `Bool` spells
+/// as its word, `Path(Bool, true, false)`: the checked type holds the bare
+/// injection the source's word lowered to, so a hover and a law's statement
+/// read as written (#2407). An endpoint at another carrier keeps the
+/// injection.
+#[test]
+fn a_truth_value_at_a_path_endpoint_spells_as_its_word_2407()
+{
+    let mut core = CoreArena::new();
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let unit_type = core.value_type_product(&[]);
+    let boolean = core.value_type_sum(&[unit_type, unit_type]);
+    let not_bool = core.value_type_sum(&[unit_type, integer_type]);
+    let unit = core.value_unit();
+    let first = core.value_injection(Side::Left.into(), unit);
+    let second = core.value_injection(Side::Right.into(), unit);
+    let between = core.value_type_path(boolean, first, second);
+    let elsewhere = core.value_type_path(not_bool, first, first);
+    let source = CoreSource::new(&core, &[]);
+    for (ty, expected) in [
+        (between, "Path(Bool, true, false)"),
+        (
+            elsewhere,
+            "Path(+{Unit, Integer}, +{.0 = unit}, +{.0 = unit})",
+        ),
+    ] {
+        assert_eq!(
+            spelled(&source, Root::Type(CoreNode::ValueType(ty))),
+            faithful(Written(expected)),
+            "{expected} spells as written"
+        );
+    }
+}
+
 /// Every value-type and computation-type former of the core spells as the
 /// grammar parses it: the two bridges with their operand parenthesized
 /// unless atomic, a product, a sum or a lazy product between its braces with
