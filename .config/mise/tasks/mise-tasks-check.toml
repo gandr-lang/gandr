@@ -786,12 +786,19 @@ echo 'workflow hashing check OK: no hashFiles over a tarball'
 """
 
 # The crate map (#2290, `.config/crate-map/map.jq`): `ledger/crates.dot` and
-# the category graph in `crates/README.md` are what `cargo metadata` gives
-# now, no crate lies outside the layering's categories, and no edge points to
-# a category listed after its own. Each case in `.config/crate-map/cases.json`
-# holds the program's arguments, an input and the raw output it must give.
+# the category graph in `crates/README.md` are what `cargo metadata` and
+# `ledger/concerns.sql` give now, no crate lies outside the layering's
+# categories, and no edge points to a category listed after its own. Each
+# case in `.config/crate-map/cases.json` holds the program's arguments, an
+# input and the raw output it must give.
+#
+# The concerns ledger is its own re-dump and keeps its keys. Every concern has
+# a site, and every site names a module its crate has. A sharing mechanism has
+# a site unless it is banned, and has none if it is. Where a concern names its
+# interface trait, every implementation of that trait outside a test is
+# a site of the concern.
 ["check:crate-map"]
-description = "The crate map is the manifests' and keeps the layering"
+description = "The crate map is the manifests' and the concerns', and keeps the layering"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
@@ -807,8 +814,49 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/crate-map/cases.json)
+db="$fresh/concerns.db"
+sqlite3 -bail "$db" < ledger/concerns.sql
+sqlite3 "$db" .dump > "$fresh/concerns.sql"
+if ! cmp -s "$fresh/concerns.sql" ledger/concerns.sql; then
+  diff -u ledger/concerns.sql "$fresh/concerns.sql" >&2 || true
+  echo 'ledger/concerns.sql is not its own re-dump; normalize it with `mise run ledger:concerns`' >&2
+  failed=1
+fi
+concerns() { sqlite3 -separator '|' "$db" "$1"; }
+while IFS='|' read -r finding; do
+  echo "$finding" >&2
+  failed=1
+done < <(concerns "
+  SELECT 'site of ' || concern || ' in ' || crate || ': no concern ' || concern FROM site WHERE concern NOT IN (SELECT id FROM concern)
+  UNION ALL SELECT 'site in ' || crate || '::' || module || ': no mechanism ' || mechanism FROM site WHERE mechanism IS NOT NULL AND mechanism NOT IN (SELECT mechanism FROM descent)
+  UNION ALL SELECT id || ': a concern with no site' FROM concern WHERE id NOT IN (SELECT concern FROM site)
+  UNION ALL SELECT mechanism || ': a ' || status || ' mechanism with no site' FROM descent WHERE status <> 'banned' AND mechanism NOT IN (SELECT mechanism FROM site WHERE mechanism IS NOT NULL)
+  UNION ALL SELECT mechanism || ': a banned mechanism with a site' FROM descent WHERE status = 'banned' AND mechanism IN (SELECT mechanism FROM site WHERE mechanism IS NOT NULL);")
+while IFS='|' read -r concern crate module; do
+  path=crates/$crate/src/${module//:://}
+  if [[ -z $module ]]; then [[ -f crates/$crate/src/lib.rs ]]; else [[ -f $path.rs || -f $path/mod.rs ]]; fi \
+    || { echo "$concern: a site in $crate::$module, a module $crate does not have" >&2; failed=1; }
+done < <(concerns 'SELECT concern, crate, module FROM site ORDER BY concern, crate, module;')
+while IFS='|' read -r concern interface; do
+  trait=${interface##*::}
+  while IFS=: read -r file _; do
+    crate=${file#crates/}
+    crate=${crate%%/*}
+    module=${file#crates/"$crate"/src/}
+    module=${module%.rs}
+    module=${module%/mod}
+    [[ $module == lib || $module == main ]] && module=
+    module=${module//\//::}
+    named=$(concerns "SELECT count(*) FROM site WHERE concern = '$concern' AND crate = '$crate' AND module = '$module' AND role IN ('defines', 'implements');")
+    if (( named == 0 )); then
+      echo "$concern: $file implements $interface, and no site names $crate::$module" >&2
+      failed=1
+    fi
+  done < <(git grep -lE "impl(<[^>]*>)?[[:space:]]+([A-Za-z_]+::)*$trait[[:space:]]+for" -- 'crates/*/src/**.rs' ':(exclude,glob)crates/*/src/**/tests.rs' ':(exclude,glob)crates/*/src/**/tests/**' ':(exclude,glob)crates/*/src/tests.rs' ':(exclude,glob)crates/*/src/tests/**')
+done < <(concerns 'SELECT id, interface FROM concern WHERE interface IS NOT NULL ORDER BY id;')
 cargo metadata --locked --no-deps --format-version 1 > "$fresh/metadata.json"
-map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md -f .config/crate-map/map.jq "$fresh/metadata.json"; }
+sites=$(sqlite3 -json "$db" 'SELECT DISTINCT concern, crate FROM site ORDER BY concern, crate;')
+map() { jq "$1" --arg form "$2" --rawfile readme crates/README.md --argjson concerns "${sites:-[]}" -f .config/crate-map/map.jq "$fresh/metadata.json"; }
 findings=$(map -r findings)
 if [[ -n "$findings" ]]; then
   printf '%s\n' "$findings" >&2
@@ -823,7 +871,7 @@ if (( failed )); then
   echo 'crate map check FAILED' >&2
   exit 1
 fi
-echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, the map current"
+echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, $(concerns 'SELECT count(*) FROM concern;') concerns on $(concerns 'SELECT count(*) FROM site;') sites, the map current"
 '''
 
 # The stacking rule's readings (#1264): `chain.jq` reads a pull request's
