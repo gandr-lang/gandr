@@ -8193,12 +8193,14 @@ impl Walk<'_, '_>
     ///   the call writes, and the spine is read whole, the join is instead the
     ///   form `f[x = a, …](b, …)`: the head, then each such argument after its
     ///   implicit's name in the telescope's order, then the rest in place, each
-    ///   visited in that order. A forced thunk literal of at least as many
-    ///   abstractions as the call has arguments, whose body then returns, is
-    ///   scheduled instead as the value it returns, under one binder per
-    ///   argument standing for the argument, the first outermost: the type
-    ///   grammar has no call of a literal, and the reading back compares such a
-    ///   call as what it returns (#675).
+    ///   visited in that order. A forced function literal — a thunk, or a
+    ///   computation nested where a value is read, which a force decides as a
+    ///   thunk — of at least as many abstractions as the call has arguments,
+    ///   whose body then returns, is scheduled instead as the value it returns,
+    ///   and one whose body is itself a call of a forced head as that call,
+    ///   under one binder per argument standing for the argument, the first
+    ///   outermost: the type grammar has no call of a literal, and the reading
+    ///   back compares such a call as what it returns (#675).
     /// - provides: the one spelling the surface writes a call in.
     /// - fails: never.
     /// - panics: none.
@@ -8223,6 +8225,7 @@ impl Walk<'_, '_>
     /// - witness: `tests::goldens::an_elaborated_body_prints_with_its_exits_elided`
     /// - witness: `tests::goldens::a_call_collects_its_arguments_up_to_the_depth_limit`
     /// - witness: `tests::goldens::a_called_function_literal_prints_as_what_it_returns_675`
+    /// - witness: `tests::goldens::a_called_nested_literal_prints_as_what_it_returns_2325`
     /// - witness: `tests::goldens::a_uniform_parameter_is_passed_by_each_call_941`
     /// - witness: `tests::goldens::a_call_leaves_out_the_implicits_it_omits_1216`
     /// - witness: `tests::goldens::a_call_writes_the_wildcards_it_holds_528`
@@ -8288,7 +8291,7 @@ impl Walk<'_, '_>
             head = inner;
         }
         if let Former::Force(thunk) = source.read(head)
-            && let Former::Thunk(body) = source.read(thunk)
+            && let Former::Thunk(body) | Former::Nested(body) = source.read(thunk)
         {
             let mut reduct = body;
             let mut consumed = 0_usize;
@@ -8300,15 +8303,30 @@ impl Walk<'_, '_>
                 reduct = inner;
                 consumed = consumed.saturating_add(1_usize);
             }
+            let mut callee = reduct;
+            let mut calls = false;
+            while let Former::Application(inner, _) = source.read(callee) {
+                callee = inner;
+                calls = true;
+            }
+            let reduced = if let Former::Return(result) = source.read(reduct) {
+                Some((result, Admits::Value))
+            }
+            else if calls && let Former::Force(_) = source.read(callee) {
+                Some((reduct, Admits::Computation(Tail::Continues)))
+            }
+            else {
+                None
+            };
             if consumed == arguments.len()
-                && let Former::Return(result) = source.read(reduct)
+                && let Some((result, admits)) = reduced
             {
                 for _ in 0_usize .. consumed {
                     tasks.push(Task::Unbind);
                 }
                 tasks.push(Task::Visit {
                     node: result,
-                    admits: Admits::Value,
+                    admits,
                     depth,
                 });
                 tasks.push(Task::Substitute(Arity(consumed)));
