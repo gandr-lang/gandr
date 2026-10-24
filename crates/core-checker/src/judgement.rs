@@ -9439,6 +9439,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::MissingRecordField { .. }
                     | CheckRefusal::UnknownOperation { .. }
                     | CheckRefusal::HandlerCoverage { .. }
+                    | CheckRefusal::HandlerUnlawful { .. }
                     | CheckRefusal::ShiftWithoutReset { .. }
                     | CheckRefusal::DependentStack { .. }
                     | CheckRefusal::PathCode(_)

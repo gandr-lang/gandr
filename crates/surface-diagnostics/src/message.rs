@@ -816,6 +816,11 @@ fn checked(
         CheckRefusal::HandlerCoverage { .. } => {
             f.write_str("the handler must handle every operation of its interface exactly once")
         },
+        CheckRefusal::HandlerUnlawful { rule, .. } => write!(
+            f,
+            "this handler is not shown to satisfy law {} of the theory it handles",
+            usize::from(rule)
+        ),
         CheckRefusal::ShiftWithoutReset { .. } => f.write_str("`shift` needs an enclosing `reset`"),
         CheckRefusal::DependentStack { .. } => {
             f.write_str("the stack's result type depends on the value it consumes")
@@ -1734,6 +1739,12 @@ mod tests
             },
             CheckRefusal::UnknownOperation { at: computation },
             CheckRefusal::HandlerCoverage { at: computation },
+            CheckRefusal::HandlerUnlawful {
+                at: computation,
+                rule: gandr_kernel_term::RuleIndex::from(0_usize),
+                left: computation,
+                right: computation,
+            },
             CheckRefusal::ShiftWithoutReset { at: computation },
             CheckRefusal::DependentStack {
                 at: value,

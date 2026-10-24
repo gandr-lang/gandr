@@ -4003,6 +4003,60 @@ fn a_traced_instantiation_replaces_its_binder()
     );
 }
 
+/// A clause read through the continuation it resumes (#2272): beneath its
+/// stack binder `k`, `resume(k, return ())` runs as `x ← return (); N`,
+/// `abandon(k)` returns the unit, `return k` returns the function `λx. N`,
+/// and an index past `k` is lowered by one.
+#[test]
+fn a_clause_resumes_through_its_continuation_2272()
+{
+    let mut arena = CoreArena::new();
+    // N, beneath the fed value: `return (x, #1)`, #1 the context's first.
+    let [fed, outer] = [0_u32, 1].map(|index| variable(&mut arena, DeBruijnIndex::from(index)));
+    let pair = arena.value_tuple(&[fed, outer]);
+    let continuation = arena.computation_return(pair);
+    let unit = arena.value_unit();
+    let returned_unit = arena.computation_return(unit);
+    let stack = fed;
+    let resumed = arena.computation_resume(stack, returned_unit);
+    let abandoned = arena.computation_abandon(stack);
+    let escaped = arena.computation_return(stack);
+    let past = arena.computation_return(outer);
+    let [ran, ended, held, lowered] = [resumed, abandoned, escaped, past]
+        .map(|body| super::resume_through(&mut arena, body, continuation));
+    let returned = |arena: &CoreArena, id| match arena.computation(id) {
+        Some(&Computation::Return(value)) => arena.value(value).cloned(),
+        Some(_) | None => None,
+    };
+    assert_eq!(
+        arena.computation(ran),
+        Some(&Computation::Bind(returned_unit, continuation)),
+        "a resumption runs the continuation at what it is fed"
+    );
+    assert_eq!(
+        returned(&arena, ended).as_ref().and_then(Value::components),
+        Some(&[][..]),
+        "an abandonment returns the unit"
+    );
+    let Some(Value::Thunk(suspended)) = returned(&arena, held)
+    else {
+        panic!("the stack used as a value is a suspended function");
+    };
+    assert_eq!(
+        arena.computation(suspended),
+        Some(&Computation::Lambda(continuation)),
+        "the stack used as a value is the continuation's function"
+    );
+    assert_eq!(
+        returned(&arena, lowered),
+        Some(Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        }),
+        "an index past the stack is lowered by one"
+    );
+}
+
 #[test]
 fn a_traced_instantiation_reports_no_computation_or_type_it_kept()
 {

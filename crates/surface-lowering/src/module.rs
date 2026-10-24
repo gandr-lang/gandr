@@ -9743,6 +9743,9 @@ pub struct LoweredModule<'source>
     /// Each stage a call supplies its callee's binder at, `f[i = s]`, by the
     /// declaration whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
+    /// The laws each capability scope over a theory owes it, read through the
+    /// scope's clauses, by the declaration whose body holds the scope.
+    handler_laws: BTreeMap<ConstantIndex, Vec<gandr_core_term::handler::HandlerLaw>>,
     /// Each model slot a call omits, its candidates minted, by the
     /// declaration whose body makes the call.
     models: BTreeMap<ConstantIndex, Vec<gandr_core_term::model::ModelSlot>>,
@@ -9804,6 +9807,7 @@ impl<'source> LoweredModule<'source>
             implicits: BTreeMap::new(),
             model_slots: BTreeMap::new(),
             supplies: BTreeMap::new(),
+            handler_laws: BTreeMap::new(),
             models: BTreeMap::new(),
             qualified: BTreeMap::new(),
             reducts: Vec::new(),
@@ -10004,6 +10008,22 @@ impl<'source> LoweredModule<'source>
     ) -> Self
     {
         self.supplies = supplies;
+        self
+    }
+
+    /// This module, carrying `laws`, the laws each declaration's capability
+    /// scopes owe the theories they handle, by the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_handler_laws(
+        mut self,
+        laws: BTreeMap<ConstantIndex, Vec<gandr_core_term::handler::HandlerLaw>>,
+    ) -> Self
+    {
+        self.handler_laws = laws;
         self
     }
 
@@ -11074,6 +11094,37 @@ impl<'source> LoweredModule<'source>
     ) -> &[gandr_core_term::staged::Supply]
     {
         self.supplies
+            .get(&declaration.constant())
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// The laws `declaration`'s capability scopes owe the theories they
+    /// handle, each read through its scope's clauses: what the checker's
+    /// declaration carries to decide each scope a model, and the kernel never
+    /// reads.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: the laws filed under the declaration's constant; the empty
+    ///   slice for a declaration holding no scope over a theory with laws.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the module's own map, read at the declaration's
+    ///   constant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over a theory with two laws files both at its
+    ///   declaration, and a scope over one with none files nothing.
+    /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
+    #[inline]
+    #[must_use]
+    pub fn handler_laws(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> &[gandr_core_term::handler::HandlerLaw]
+    {
+        self.handler_laws
             .get(&declaration.constant())
             .map(Vec::as_slice)
             .unwrap_or_default()

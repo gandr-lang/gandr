@@ -492,6 +492,10 @@ pub struct Declaration
     /// models in scope that may answer it; none for every other declaration.
     /// The kernel never reads them: each is resolved before the body crosses.
     models: Vec<gandr_core_term::model::ModelSlot>,
+    /// The laws a value declaration's capability scopes owe the theories they
+    /// handle, each read through its scope's clauses; none for every other
+    /// declaration. The kernel never reads them: no handler crosses.
+    handler_laws: Vec<gandr_core_term::handler::HandlerLaw>,
     /// The entry a value declaration states, or why none.
     entry: Maybe<Entry, entry::Absent>,
 }
@@ -536,6 +540,7 @@ impl Declaration
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
+            handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -586,6 +591,7 @@ impl Declaration
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
+            handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -611,6 +617,7 @@ impl Declaration
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
+            handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -636,6 +643,7 @@ impl Declaration
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
+            handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -660,6 +668,7 @@ impl Declaration
             stages: Vec::new(),
             supplies: Vec::new(),
             models: Vec::new(),
+            handler_laws: Vec::new(),
             entry: Maybe::Absent(entry::Absent::Unstated),
         }
     }
@@ -733,6 +742,18 @@ impl Declaration
     pub fn models(&self) -> &[gandr_core_term::model::ModelSlot]
     {
         &self.models
+    }
+
+    /// The laws the declaration's capability scopes owe, each read through
+    /// its scope's clauses.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn handler_laws(&self) -> &[gandr_core_term::handler::HandlerLaw]
+    {
+        &self.handler_laws
     }
 
     /// The entry the declaration states, or why none.
@@ -930,6 +951,45 @@ impl Declaration
     {
         match self.content {
             DeclarationContent::Value { .. } => Self { models, ..self },
+            DeclarationContent::Data(_)
+            | DeclarationContent::Codata(_)
+            | DeclarationContent::Abstract(_)
+            | DeclarationContent::World => self,
+        }
+    }
+
+    /// This value declaration whose capability scopes owe `laws`, everything
+    /// else unchanged; any other declaration unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — the judgement decides each law's sides once the
+    ///   body is judged.
+    /// - ensures: a value declaration carries exactly `laws`; any other
+    ///   declaration is returned unchanged.
+    /// - provides: how a producer attaches the laws a scope over a theory owes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a law whose sides convert admits the declaration, and
+    ///   one whose sides are apart refuses it.
+    /// - witness: `module::tests::a_scope_is_checked_as_a_model_of_its_theory_2272`
+    #[spec(
+        captures: entry = (self.constant, self.origin, matches!(self.content, DeclarationContent::Value { .. }), self.handler_laws.len(), laws.len()),
+        ensures: |ret| ret.constant == entry.0 && ret.origin == entry.1
+            && ret.handler_laws.len() == if entry.2 { entry.4 } else { entry.3 },
+    )]
+    #[inline]
+    #[must_use]
+    pub fn obliged(
+        self,
+        laws: Vec<gandr_core_term::handler::HandlerLaw>,
+    ) -> Self
+    {
+        match self.content {
+            DeclarationContent::Value { .. } => Self {
+                handler_laws: laws,
+                ..self
+            },
             DeclarationContent::Data(_)
             | DeclarationContent::Codata(_)
             | DeclarationContent::Abstract(_)

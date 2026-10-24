@@ -3321,6 +3321,9 @@ struct Lowerer<'run, 'source>
     /// Each stage a call supplies, at the value it forces, by the declaration
     /// whose body makes the call.
     supplies: BTreeMap<ConstantIndex, Vec<gandr_core_term::staged::Supply>>,
+    /// The laws each capability scope over a theory owes it, read through the
+    /// scope's clauses, by the declaration whose body holds the scope.
+    handler_laws: BTreeMap<ConstantIndex, Vec<gandr_core_term::handler::HandlerLaw>>,
     /// The model slots a call omits, by the node of the call, each with the
     /// declaration making the call, its holes and its candidates.
     planned_models: BTreeMap<NodeIndex, Vec<model::PlannedModel<'source>>>,
@@ -4554,6 +4557,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             mut resolutions,
             stage_bounds,
             supplies,
+            handler_laws,
             models,
             region_binders,
             ..
@@ -4721,6 +4725,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         .with_implicits(implicits)
         .with_model_slots(model_slots)
         .with_supplies(supplies)
+        .with_handler_laws(handler_laws)
         .with_models(models)
         .with_qualified(qualified)
         .with_reducts(reducts)
@@ -4979,6 +4984,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ended_views: BTreeSet::new(),
             planned_supplies: BTreeMap::new(),
             supplies: BTreeMap::new(),
+            handler_laws: BTreeMap::new(),
             planned_models: BTreeMap::new(),
             model_candidates: BTreeMap::new(),
             models: BTreeMap::new(),
@@ -14148,6 +14154,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             stage,
                         }),
                 );
+        }
+        if let Plan::Scope(ref scoped) = *plan
+            && let Maybe::Present(Lowered::Computation(scope)) = minted
+            && let Some((owner, laws)) = Self::scope_laws(scoped, scope, sink, origin)
+        {
+            self.handler_laws.entry(owner).or_default().extend(laws);
         }
         if let Maybe::Present(_) = minted
             && let Some(planned) = self.planned_models.remove(&position)

@@ -1250,6 +1250,7 @@ impl Machine<'_, '_>
             | CheckRefusal::MissingRecordField { .. }
             | CheckRefusal::UnknownOperation { .. }
             | CheckRefusal::HandlerCoverage { .. }
+            | CheckRefusal::HandlerUnlawful { .. }
             | CheckRefusal::ShiftWithoutReset { .. }
             | CheckRefusal::DependentStack { .. }
             | CheckRefusal::PathCode(_)

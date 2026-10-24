@@ -726,6 +726,21 @@ pub enum CheckRefusal
         /// The handler with a missing, repeated or unknown clause.
         at: ComputationId,
     },
+    /// A capability scope over a theory is not shown to be a model of it:
+    /// read through the scope's clauses, the two sides of one of the
+    /// theory's laws do not convert.
+    HandlerUnlawful
+    {
+        /// The scope.
+        at: ComputationId,
+        /// The first law its clauses are not shown to satisfy.
+        rule: gandr_kernel_term::RuleIndex,
+        /// The law's left side read through the clauses, beneath its
+        /// metavariables.
+        left: ComputationId,
+        /// Its right side, beneath the same metavariables.
+        right: ComputationId,
+    },
     /// A shift has no enclosing reset answer type.
     ShiftWithoutReset
     {
@@ -1369,7 +1384,7 @@ impl CheckRefusal
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
         | Self::TypeMismatch(_)
         | Self::EffectSignatureConflict { .. }
-        | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. }
+        | Self::UnknownOperation { .. } | Self::HandlerCoverage { .. } | Self::HandlerUnlawful { .. }
         | Self::ShiftWithoutReset { .. } | Self::DependentStack { .. }
         | Self::ShapeMismatch { .. }
         | Self::NotSynthesisable { .. }
@@ -1421,6 +1436,7 @@ impl CheckRefusal
             | Self::EffectSignatureConflict { .. }
             | Self::UnknownOperation { .. }
             | Self::HandlerCoverage { .. }
+            | Self::HandlerUnlawful { .. }
             | Self::ShiftWithoutReset { .. }
             | Self::DependentStack { .. }
             | Self::ShapeMismatch { .. }
@@ -1636,6 +1652,7 @@ impl CheckRefusal
             | Self::MissingRecordField { .. }
             | Self::UnknownOperation { .. }
             | Self::HandlerCoverage { .. }
+            | Self::HandlerUnlawful { .. }
             | Self::ShiftWithoutReset { .. }
             | Self::PathCode(_)
             | Self::EndpointMismatch { .. }

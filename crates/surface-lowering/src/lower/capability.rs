@@ -151,6 +151,7 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_core_term::ComponentCount;
+use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -167,7 +168,10 @@ use gandr_core_term::effect::capability::CapabilityGrade;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::effect::host::HostSignatures;
+use gandr_core_term::handler;
+use gandr_core_term::handler::HandlerLaw;
 use gandr_core_term::session::SessionAction;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
@@ -1922,7 +1926,8 @@ impl<'source> Lowerer<'_, 'source>
     ///   for a name neither the host nor a theory answers; an unadmitted form
     ///   for a theory whose value codes no presentation;
     ///   [`LoweringRefusal::UninterfacedMember`] at the theory's name, for its
-    ///   first member out of shape.
+    ///   first member out of shape or first law no clause reads; an unadmitted
+    ///   form for a scope over a theory no declaration owns.
     /// - panics: none.
     ///
     /// # Errors
@@ -1986,22 +1991,42 @@ impl<'source> Lowerer<'_, 'source>
             let _first = first.insert(key.clone(), sort);
             let _fixed = fixed.insert(key, ty);
         }
-        match theory::operations(&members, &fixed) {
-            Ok(operations) => Ok(Interface::Theory(Arc::new(TheoryInterface {
-                scope: site.at.node,
-                name: EffectName::from(handled.as_ref()),
-                operations,
-                manifest: manifest
-                    .iter()
-                    .map(|&(sort, ty)| (Name::from(self.name_at(sort).as_ref()), ty))
-                    .collect(),
-            }))),
-            Err((member, fault)) => Err(LoweringRefusal::UninterfacedMember {
-                span: written.span,
-                name: self.name_at(member),
-                fault,
-            }),
-        }
+        let read = theory::operations(&members, &fixed).and_then(|operations| {
+            theory::laws(&members, &operations).map(|laws| (operations, laws))
+        });
+        let (operations, laws) = match read {
+            Ok(read) => read,
+            Err((member, fault)) => {
+                return Err(LoweringRefusal::UninterfacedMember {
+                    span: written.span,
+                    name: self.name_at(member),
+                    fault,
+                });
+            },
+        };
+        let owner = match self.collected.owner_of(site.at.node) {
+            Maybe::Present(owner) => self
+                .collected
+                .slots
+                .get(usize::from(owner))
+                .map(|slot| slot.constant),
+            Maybe::Absent(_) => None,
+        };
+        let Some(owner) = owner
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UnownedScope)));
+        };
+        Ok(Interface::Theory(Arc::new(TheoryInterface {
+            scope: site.at.node,
+            name: EffectName::from(handled.as_ref()),
+            operations,
+            laws,
+            owner,
+            manifest: manifest
+                .iter()
+                .map(|&(sort, ty)| (Name::from(self.name_at(sort).as_ref()), ty))
+                .collect(),
+        })))
     }
 
     /// Read a return clause's `(x) =>` and its body, past its `pure`.
@@ -2638,6 +2663,70 @@ impl<'source> Lowerer<'_, 'source>
                 }
                 scope
             })
+    }
+
+    /// The laws the minted scope `scope` owes the theory `scoped` handles,
+    /// each read through the scope's clauses, beside the declaration holding
+    /// the scope.
+    ///
+    /// # Specification
+    /// - requires: `scope` is the scope [`Self::mint_scope`] minted for
+    ///   `scoped`.
+    /// - ensures: for a scope over a theory, its owner and one law per law of
+    ///   the theory whose operations each have a clause, in the theory's order,
+    ///   both sides read by [`handler::obligation`] and every node they mint at
+    ///   `origin`; nothing for a scope over a host interface. A law naming an
+    ///   operation the scope has no clause for is left to the coverage refusal
+    ///   the scope meets first.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a scope over a theory with two laws owes both, and a
+    ///   scope over one with none owes nothing.
+    /// - witness: `lower::capability::tests::a_scope_owes_its_theory_s_laws_2272`
+    #[spec(ensures: |ret| ret.as_ref().is_none_or(|&(_, ref laws)| laws.iter().all(|law| law.scope == scope)))]
+    pub(super) fn scope_laws(
+        scoped: &Scoped,
+        scope: ComputationId,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Option<(ConstantIndex, Vec<HandlerLaw>)>
+    {
+        let Interface::Theory(ref theory) = scoped.interface
+        else {
+            return None;
+        };
+        let Some(&Computation::Scope { ref clauses, .. }) = sink.arena.computation(scope)
+        else {
+            return None;
+        };
+        let bodies: BTreeMap<OperationName, ComputationId> = clauses
+            .iter()
+            .map(|clause| (clause.operation.clone(), clause.body))
+            .collect();
+        let mark = sink.arena.watermark();
+        let laws = theory
+            .laws
+            .iter()
+            .filter_map(|law| {
+                let left = handler::obligation(sink.arena, (&law.read, &law.read.left), &bodies)?;
+                let right = handler::obligation(sink.arena, (&law.read, &law.read.right), &bodies)?;
+                Some(HandlerLaw {
+                    scope,
+                    rule: law.rule,
+                    left,
+                    right,
+                })
+            })
+            .collect();
+        native::record_since(
+            sink,
+            mark,
+            origin,
+            Maybe::Absent(native::rooted::Absent::Unminted),
+        );
+        Some((theory.owner, laws))
     }
 }
 

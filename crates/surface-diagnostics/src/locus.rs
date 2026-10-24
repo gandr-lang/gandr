@@ -789,6 +789,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
                 span: declaration, label,
             }) && ret.context == UNNAMED,
         CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } | CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
+        CheckRefusal::HandlerUnlawful { .. } |
         CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
@@ -944,6 +945,7 @@ fn checked(
         ]),
         CheckRefusal::UnknownOperation { at }
         | CheckRefusal::HandlerCoverage { at }
+        | CheckRefusal::HandlerUnlawful { at, .. }
         | CheckRefusal::ShiftWithoutReset { at }
         | CheckRefusal::NotSynthesisable {
             form:
@@ -1250,6 +1252,7 @@ impl fmt::Display for Checked
             CheckRefusal::MissingRecordField {..} => f.write_str("the record omits a required field"),
             | CheckRefusal::UnknownOperation { .. } => f.write_str("the operation is absent from its inline interface"),
             | CheckRefusal::HandlerCoverage { .. } => f.write_str("handler clauses must cover their interface exactly once"),
+            | CheckRefusal::HandlerUnlawful { rule, .. } => write!(f, "the handler is not shown to satisfy law {} of its theory", usize::from(rule)),
             | CheckRefusal::ShiftWithoutReset { .. } => f.write_str("shift requires an enclosing reset answer type"),
             | CheckRefusal::DependentStack { .. } => f.write_str("the stack frame's result type mentions its discharged value binder"),
             | CheckRefusal::EffectSignatureConflict { .. } => f.write_str("two accumulated effect rows disagree on the operation types of a shared interface"),
@@ -2947,6 +2950,12 @@ mod tests
             },
             CheckRefusal::UnknownOperation { at: computation },
             CheckRefusal::HandlerCoverage { at: computation },
+            CheckRefusal::HandlerUnlawful {
+                at: computation,
+                rule: RuleIndex::from(1_usize),
+                left: computation,
+                right: computation,
+            },
             CheckRefusal::ShiftWithoutReset { at: computation },
             CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Handle(computation),
@@ -3384,6 +3393,7 @@ mod tests
                         | CheckRefusal::DependentBind { .. }
                         | CheckRefusal::UnknownOperation { .. }
                         | CheckRefusal::HandlerCoverage { .. }
+                        | CheckRefusal::HandlerUnlawful { .. }
                         | CheckRefusal::ShiftWithoutReset { .. }
                         | CheckRefusal::CapabilityOutsideAuthority { .. }
                         | CheckRefusal::NonExhaustiveDataCase(_)

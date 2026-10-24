@@ -26,6 +26,7 @@ use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::memory::MemoryForm;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::RuleIndex;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
@@ -118,12 +119,10 @@ fn judged(
                 | DeclarationOutcome::World
                 | DeclarationOutcome::Refused(_) => return None,
             };
-            Some(Declaration::new(
-                declaration.constant(),
-                declared,
-                defined,
-                origin,
-            ))
+            Some(
+                Declaration::new(declaration.constant(), declared, defined, origin)
+                    .obliged(module.handler_laws(declaration).to_vec()),
+            )
         })
         .collect();
 
@@ -1048,6 +1047,76 @@ fn a_scope_s_manifest_names_only_its_theory_s_sorts_2272()
             outcome_of(&module, name.into())
         );
     }
+}
+
+/// The theory `StatePutLaws`: `State` with put-get and put-put stated.
+const PUT_LAWS: &str = concat!(
+    "theory StatePutLaws {\n",
+    "  sort S : Type+;\n",
+    "  sort C : Type;\n",
+    "  oper get : (k : pi+ (s : S) . C) --> C;\n",
+    "  oper put : (s : S, k : C) --> C;\n",
+    "  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));\n",
+    "  rule putPut : put(s, put(u, k)) <=> put(u, k);\n",
+    "}\n",
+);
+
+/// A scope over a theory with laws owes each of them at the declaration
+/// holding it, in the theory's order, and a scope over a theory with none
+/// owes nothing. A handler answering every read with four and forgetting
+/// every store satisfies put-put but not put-get, and is refused at its scope
+/// naming put-get's place.
+#[test]
+fn a_scope_owes_its_theory_s_laws_2272()
+{
+    let mut arena = CoreArena::new();
+    let clauses = "with { pure(x) => pure x, oper get(k) => k(4), oper put(s, k) => k(unit) }";
+    let source = alloc::format!(
+        "{STATE}{PUT_LAWS}def lawless() -> -F Integer {{ handle st : State with sort S = Integer {{ st.put(1); st.get() }} {clauses} }}\ndef forgetful() -> -F Integer {{ handle st : StatePutLaws with sort S = Integer {{ st.put(1); st.get() }} {clauses} }}\n"
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let owed = |name: &str| -> Vec<(ComputationId, RuleIndex)> {
+        let Some(declaration) = module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == SurfaceName::from(name))
+        else {
+            panic!("`{name}` is declared");
+        };
+        module
+            .handler_laws(declaration)
+            .iter()
+            .map(|law| (law.scope, law.rule))
+            .collect()
+    };
+    let scope = tail_of(&module, &arena, "forgetful".into());
+    assert_eq!(
+        owed("forgetful"),
+        [
+            (scope, RuleIndex::from(0_usize)),
+            (scope, RuleIndex::from(1_usize))
+        ],
+        "put-get, then put-put, both at the scope"
+    );
+    assert_eq!(owed("lawless"), [], "a theory with no laws owes none");
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "lawless".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "lawless".into())
+    );
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "forgetful".into()),
+            Verdict::Refused(CheckRefusal::HandlerUnlawful { at, rule, .. })
+                if at == scope && rule == RuleIndex::from(0_usize)
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "forgetful".into())
+    );
 }
 
 /// A function stating a continuation's type resumes the continuation it is

@@ -2798,3 +2798,59 @@ fn an_omitted_implicit_is_typed_at_its_solution_1216()
         "the domain is the integers, the decode of the solution, not of the hole"
     );
 }
+
+/// A declaration owing a law whose sides its clauses identify checks; one
+/// owing a second law whose sides return different metavariables is refused
+/// at the scope, naming that law: a metavariable is held rigid, never solved
+/// to make the sides agree.
+#[test]
+fn a_scope_is_checked_as_a_model_of_its_theory_2272()
+{
+    use gandr_core_term::handler::HandlerLaw;
+    use gandr_kernel_term::RuleIndex;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let zero = arena.value_literal(integer_literal());
+    let returned = |arena: &mut CoreArena, index: u32| {
+        let value = arena.value_variable(
+            gandr_core_term::Zone::Intuitionistic,
+            DeBruijnIndex::from(index),
+        );
+        arena.computation_return(value)
+    };
+    let scope = returned(&mut arena, 0);
+    let same = HandlerLaw {
+        scope,
+        rule: RuleIndex::from(0_usize),
+        left: returned(&mut arena, 0),
+        right: returned(&mut arena, 0),
+    };
+    let apart = HandlerLaw {
+        scope,
+        rule: RuleIndex::from(1_usize),
+        left: returned(&mut arena, 0),
+        right: returned(&mut arena, 1),
+    };
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    let report = check_module(&mut context, &[
+        declaration(At(0), Maybe::Present(integer), Maybe::Present(zero))
+            .obliged(Vec::from([same])),
+        declaration(At(1), Maybe::Present(integer), Maybe::Present(zero))
+            .obliged(Vec::from([same, apart])),
+    ]);
+    assert!(
+        matches!(report.judged()[0].verdict(), Verdict::Checked { .. }),
+        "{:?}",
+        report.judged()[0].verdict()
+    );
+    assert_eq!(
+        report.judged()[1].verdict(),
+        Verdict::Refused(CheckRefusal::HandlerUnlawful {
+            at: scope,
+            rule: RuleIndex::from(1_usize),
+            left: apart.left,
+            right: apart.right,
+        })
+    );
+}

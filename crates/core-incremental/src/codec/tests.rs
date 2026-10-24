@@ -845,6 +845,10 @@ fn control_nodes_persist_names_frames_and_branch_order()
     for refusal in [
         super::Refusal::UnknownOperation { at },
         super::Refusal::HandlerCoverage { at },
+        super::Refusal::HandlerUnlawful {
+            at,
+            rule: gandr_kernel_term::RuleIndex::from(2_usize),
+        },
         super::Refusal::ShiftWithoutReset { at },
         super::Refusal::DependentStack {
             at,
@@ -2915,6 +2919,10 @@ fn every_refusal() -> Vec<Refusal>
         },
         Refusal::UnknownOperation { at },
         Refusal::HandlerCoverage { at },
+        Refusal::HandlerUnlawful {
+            at,
+            rule: gandr_kernel_term::RuleIndex::from(2_usize),
+        },
         Refusal::ShiftWithoutReset { at },
         Refusal::DependentStack {
             at,

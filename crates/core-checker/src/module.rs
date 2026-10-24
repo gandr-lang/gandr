@@ -1252,7 +1252,11 @@ fn decide(
             context.own_body(body);
             context.supply(declaration.supplies());
             context.worlds_mut().enter(entry);
-            let first = judge(context, body, (direction, reading));
+            // A scope over a theory owes the theory's laws, read through its
+            // clauses where it was lowered, so on the body as lowered.
+            let first = judge(context, body, (direction, reading)).and_then(|verdict| {
+                crate::handler::lawful(context, declaration.handler_laws()).map(|()| verdict)
+            });
             let (solved, first, solutions) = implicits(
                 context,
                 body,
