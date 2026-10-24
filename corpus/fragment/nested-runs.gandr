@@ -55,3 +55,24 @@ def armed_three() -> -F Nat { armed(Succ(Succ(Succ(Zero)))) }
 
 @[ runs("Succ(Zero)") ]
 def kept_three() -> -F Nat { run k <- kept(Succ(Succ(Zero))) ; force k }
+
+/// The constant function at `n`, returned by a call.
+@[ checks ]
+def constantly(n : Nat) -> -F (+U (Nat -> -F Nat)) { return fn (_m) { n } }
+
+/// A function applied at zero.
+@[ checks ]
+def at_zero(g : +U (Nat -> -F Nat)) -> -F Nat { g(Zero) }
+
+/// A function applied at a point.
+@[ checks ]
+def at_point(g : +U (Nat -> -F Nat), x : Nat) -> -F Nat { g(x) }
+
+/// #2327: a call returning a function, passed where a function is read,
+/// runs before the call it is passed to, which applies what it returned.
+@[ runs("Succ(Zero)") ]
+def passed_alone() -> -F Nat { at_zero(constantly(Succ(Zero))) }
+
+/// #2327: the same call passed beside another argument.
+@[ runs("Succ(Succ(Zero))") ]
+def passed_beside() -> -F Nat { at_point(constantly(Succ(Succ(Zero))), Zero) }

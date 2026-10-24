@@ -195,6 +195,9 @@ pub enum FrameRole
     /// A computation written where a value is read, run, waits on its
     /// computation's type.
     Ran,
+    /// A call written where a thunk of no returner is read waits on its type,
+    /// which decides whether it runs or is suspended.
+    NestedCall,
     /// A transport waits on its element path's type.
     ElementTransportPath,
     /// A transport waits on its motive's formation.
@@ -420,6 +423,7 @@ impl fmt::Display for FrameRole
             Self::UnivalenceChecked => "UnivalenceChecked",
             Self::ReturnedEndpoint => "ReturnedEndpoint",
             Self::Ran => "Ran",
+            Self::NestedCall => "NestedCall",
             Self::ElementTransportPath => "ElementTransportPath",
             Self::ElementTransportMotive => "ElementTransportMotive",
             Self::TelescopePath => "TelescopePath",
