@@ -1927,6 +1927,135 @@ pub enum Checking<'closure>
     After(&'closure JudgedClosure),
 }
 
+/// Whether an untabled judgement answers from, and keeps, the judgement of a
+/// module's revision before.
+///
+/// # Specification
+/// trivial.
+#[derive(Debug)]
+pub enum Recording<'held>
+{
+    /// Every declaration is judged and nothing is kept.
+    Unrecorded,
+    /// A judgement whose inputs are those `held` was made over takes its
+    /// verdicts and arena; any other is judged and then held in its place.
+    Recorded(&'held mut Recorded),
+}
+
+/// The untabled judgement of a module's latest revision, held so that the
+/// next revision whose judgement reads the same inputs takes its verdicts
+/// rather than judging again.
+///
+/// A revision that moves no lowered node — a comment, a blank line, any edit
+/// the lowering reads past — reads what the one before read: the lowered arena,
+/// span-free, and the declarations, entry, pattern holes, reducts and forgets
+/// the arena's nodes make, under the same grant, root and closure. The checker
+/// is a function of those inputs, so the verdicts are the ones it would give.
+/// What reads a span — the settle, the origins, the spellings and the program
+/// — is made again over the revision's own module.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Default)]
+#[repr(transparent)]
+pub struct Recorded
+{
+    /// The judgement held, when one was made.
+    held: Option<Record>,
+}
+
+/// One judgement held: what it read and what it decided.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+struct Record
+{
+    /// The inputs the judgement read.
+    read: Read,
+    /// The arena the judgement left: the lowered nodes and each node it minted.
+    arena: CoreArena,
+    /// The verdicts, over `arena`.
+    verdicts: ModuleReport,
+}
+
+/// The inputs a module's judgement reads besides its own state: the lowered
+/// arena, the declarations and the module-wide tables the checker keeps,
+/// under a grant and root, after a closure of so many declarations or whole.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Read
+{
+    /// The lowered arena, before any judgement minted into it.
+    arena: CoreArena,
+    /// The declarations judged, the closure's leading.
+    declarations: Vec<Declaration>,
+    /// The entry the host grants.
+    entry: HostEntry,
+    /// The holes the patterns were written with.
+    holes: Vec<HoleId>,
+    /// The reducts the module declares.
+    reducts: Vec<ConstantIndex>,
+    /// The forgets the module declares.
+    forgets: Vec<ConstantIndex>,
+    /// The grant the judgement holds.
+    grant: HostGrant,
+    /// The corpus root it judges under.
+    root: CorpusRoot,
+    /// The declarations of the closure it continues, when it continues one.
+    resumed: Option<usize>,
+}
+
+impl Recorded
+{
+    /// The arena and verdicts of the judgement held, when it read `read`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: copies of the held judgement's arena and verdicts exactly
+    ///   when one is held and it read `read`; nothing otherwise.
+    /// - panics: none.
+    /// - economy: one comparison of the lowered nodes, which the closure's
+    ///   shared rows answer by identity; a copy of the held arena's own rows.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a revision moving no lowered node takes the verdicts
+    ///   of the one before and settles as a whole judgement of its own text; a
+    ///   revision changing a declaration is judged.
+    /// - witness: `compose::tests::a_revision_moving_no_lowered_node_is_not_judged_again_2102`
+    #[spec(ensures: |ret| ret.is_none() || self.held.is_some())]
+    fn answering(
+        &self,
+        read: &Read,
+    ) -> Option<(CoreArena, ModuleReport)>
+    {
+        self.held
+            .as_ref()
+            .filter(|record| record.read == *read)
+            .map(|record| (record.arena.clone(), record.verdicts.clone()))
+    }
+
+    /// Hold the judgement that read `read` and left `arena` and `verdicts`,
+    /// in place of the one held before.
+    ///
+    /// # Specification
+    /// trivial.
+    fn keep(
+        &mut self,
+        read: Read,
+        (arena, verdicts): (CoreArena, ModuleReport),
+    )
+    {
+        self.held = Some(Record {
+            read,
+            arena,
+            verdicts,
+        });
+    }
+}
+
 /// [`lower_resumed_unit`] over `parsed` after `judged`'s closure, minting the
 /// document's nodes after `onto`'s, so that the document is judged on a copy
 /// of `judged`'s state.
@@ -2176,13 +2305,14 @@ pub fn judge_member_after<'source>(
         arena,
         (grant, checking),
         base,
-        &Unretired,
+        (&Unretired, Recording::Unrecorded),
     )
     .whole()
 }
 
 /// [`judge_member_after`], polling `retirement` before each declaration it
-/// judges and once more before the module is tabled, built and settled.
+/// judges and once more before the module is tabled, built and settled, and
+/// answering from the judgement `recording` holds.
 ///
 /// Under [`Checking::Whole`] it is [`judge_member`] polled.
 ///
@@ -2190,7 +2320,10 @@ pub fn judge_member_after<'source>(
 /// - requires: as [`judge_member_after`].
 /// - ensures: [`Polled::Whole`] with what [`judge_member_after`] answers when
 ///   every poll answered wanted; otherwise [`Polled::Retired`] with what the
-///   first poll to answer retired named, nothing of the judgement kept.
+///   first poll to answer retired named, nothing of the judgement kept. Under
+///   [`Recording::Recorded`], a module whose judgement reads the inputs the
+///   held judgement read takes its arena and verdicts, judging and polling for
+///   no declaration; any other is judged, and held once it is.
 /// - fails: never; a settle fault is carried.
 /// - panics: none.
 ///
@@ -2198,8 +2331,12 @@ pub fn judge_member_after<'source>(
 /// - hypothesis: L3 — a judgement retired before its second declaration, or
 ///   after its last, answers retired; one never retired reads its poll once
 ///   before each declaration and once before the settle, and answers what
-///   [`judge_member_after`] answers.
+///   [`judge_member_after`] answers. A revision moving no lowered node, a
+///   comment above every declaration among them, reads its poll once and
+///   settles as a whole judgement of its own text does; one changing a
+///   declaration's value is judged.
 /// - witness: `compose::tests::a_retired_member_judgement_keeps_nothing_1663`
+/// - witness: `compose::tests::a_revision_moving_no_lowered_node_is_not_judged_again_2102`
 #[inline]
 #[must_use]
 #[spec(
@@ -2222,7 +2359,7 @@ pub fn judge_member_after_retiring<'source, Poll>(
     arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     base: ByteOffset,
-    retirement: &Poll,
+    (retirement, recording): (&Poll, Recording<'_>),
 ) -> Polled<Judged<'source>, Poll::Retired, ()>
 where
     Poll: Retirement,
@@ -2237,7 +2374,7 @@ where
         arena,
         (grant, checking),
         (&[], last),
-        (&mut SpellingCount::default(), Tabling::Untabled),
+        (&mut SpellingCount::default(), Tabling::Untabled, recording),
         retirement,
     ) {
         Polled::Whole((projected, admission, _untabled, _after)) => Polled::Whole(Judged {
@@ -2332,7 +2469,11 @@ where
         arena,
         (grant, checking),
         (&[], last),
-        (&mut SpellingCount::default(), Tabling::Tabled(unit)),
+        (
+            &mut SpellingCount::default(),
+            Tabling::Tabled(unit),
+            Recording::Unrecorded,
+        ),
         retirement,
     ) {
         Polled::Whole((projected, admission, table, _after)) => Polled::Whole((
@@ -2441,10 +2582,13 @@ type JudgedUnit<'source> = (
 ///   [`type_module`](gandr_core_checker::type_module) decides it, keeping the
 ///   first formation of every type the last source writes, and the table of the
 ///   last source is assembled from that run over copies of the module and the
-///   arena as the run left them; otherwise no table is. `retirement` is polled
-///   before each declaration judged and once more before the unit is tabled,
-///   built and settled; a poll that answers retired stops the judgement there,
-///   [`Polled::Retired`] with what it named and nothing kept.
+///   arena as the run left them; otherwise no table is. Untabled under
+///   [`Recording::Recorded`], a unit whose judgement reads the inputs the held
+///   judgement read takes that judgement's arena and verdicts and judges no
+///   declaration; any other is judged and held in its place. `retirement` is
+///   polled before each declaration judged and once more before the unit is
+///   tabled, built and settled; a poll that answers retired stops the judgement
+///   there, [`Polled::Retired`] with what it named and nothing kept.
 /// - fails: never; a settle fault is carried.
 /// - panics: none.
 /// - intension: one check, one program, one settle comparison and one spelling
@@ -2467,6 +2611,7 @@ type JudgedUnit<'source> = (
 /// - witness: `compose::tests::a_closure_judged_otherwise_is_not_continued`
 /// - witness: `compose::tests::each_source_of_a_component_reports_its_own_share`
 /// - witness: `compose::tests::a_retired_member_judgement_keeps_nothing_1663`
+/// - witness: `compose::tests::a_revision_moving_no_lowered_node_is_not_judged_again_2102`
 #[spec(ensures: |ref ret| if let Polled::Whole(ref whole) = *ret {
     whole.0.earlier.len() == earlier.len()
 } else {
@@ -2478,7 +2623,7 @@ fn judge_members<'source, Poll>(
     mut arena: CoreArena,
     (grant, checking): (&HostGrant, Checking<'source>),
     (earlier, last): (&[Member], Member),
-    (spelled, tabling): (&mut SpellingCount, Tabling<'_>),
+    (spelled, tabling, recording): (&mut SpellingCount, Tabling<'_>, Recording<'_>),
     retirement: &Poll,
 ) -> Polled<JudgedUnit<'source>, Poll::Retired, ()>
 where
@@ -2501,7 +2646,30 @@ where
         Tabling::Tabled(_) => Some(written_types(&module, &arena, last.start)),
         Tabling::Untabled => None,
     };
-    let (verdicts, read) = {
+    let recorded = match (recording, tabling) {
+        (Recording::Recorded(recorded), Tabling::Untabled) => Some(recorded),
+        (Recording::Recorded(_), Tabling::Tabled(_)) | (Recording::Unrecorded, _) => None,
+    };
+    let reading = recorded.as_ref().map(|_| Read {
+        arena: arena.clone(),
+        declarations: declarations.clone(),
+        entry: entry.clone(),
+        holes: holes.clone(),
+        reducts: module.reducts().to_vec(),
+        forgets: module.forgets().to_vec(),
+        grant: grant.clone(),
+        root,
+        resumed: after.map(|closure| closure.declarations.len()),
+    });
+    let answered = recorded
+        .as_deref()
+        .zip(reading.as_ref())
+        .and_then(|(recorded, reading)| recorded.answering(reading));
+    let (verdicts, read) = if let Some((judged, verdicts)) = answered {
+        arena = judged;
+        (verdicts, None)
+    }
+    else {
         let (mut context, mut run, judged) = if let Some(closure) = after {
             let context = CheckingContext::resume(&mut arena, closure.checkpoint.clone());
             let judged = declarations
@@ -2532,7 +2700,11 @@ where
             .take_typings()
             .zip(written)
             .map(|(typed, written)| TypedRun::read(&context, typed, written));
-        (run.finish(&mut context), read)
+        let verdicts = run.finish(&mut context);
+        if let (Some(recorded), Some(reading)) = (recorded, reading) {
+            recorded.keep(reading, (arena.clone(), verdicts.clone()));
+        }
+        (verdicts, read)
     };
     if let Demand::Retired(retired) = retirement.demand() {
         return Polled::Retired(retired, ());
@@ -3093,7 +3265,7 @@ pub fn judge_component<'source>(
                 arena,
                 (grant, checking),
                 (earlier, last),
-                (spelled, Tabling::Untabled),
+                (spelled, Tabling::Untabled, Recording::Unrecorded),
                 &Unretired,
             )
             .whole();
@@ -6776,6 +6948,7 @@ def delivered() -> -F Unit {
         use gandr_surface_syntax::ByteOffset;
 
         use super::Checking;
+        use super::Recording;
         use super::judge_member_after;
         use super::judge_member_after_retiring;
         use super::judge_member_tabled;
@@ -6806,7 +6979,7 @@ def delivered() -> -F Unit {
                 arena,
                 (&HostGrant::UNBOUNDED, Checking::Whole),
                 base,
-                &poll,
+                (&poll, Recording::Unrecorded),
             );
             (answer, poll.readings.get())
         };
@@ -6892,6 +7065,98 @@ def delivered() -> -F Unit {
             (polled.settled, polled_table),
             (whole.settled, whole_table),
             "and answers what the tabled judgement nobody polls answers"
+        );
+    }
+
+    /// #2102: a revision whose lowering moves no node — a comment above every
+    /// declaration — takes the verdicts the judgement before it holds, reading
+    /// its poll once rather than before each declaration, and settles as a
+    /// whole judgement of its own text, its spans moved; a revision changing a
+    /// value a later declaration reads is judged again and refused as a whole
+    /// judgement refuses it.
+    #[test]
+    fn a_revision_moving_no_lowered_node_is_not_judged_again_2102()
+    {
+        use gandr_surface_syntax::ByteOffset;
+
+        use super::Checking;
+        use super::Recorded;
+        use super::Recording;
+        use super::judge_member_after;
+        use super::judge_member_after_retiring;
+
+        let grammar = grammar();
+        let base = ByteOffset::from(0_usize);
+        let lowered = |source| {
+            let Lowered::Module { module, arena } =
+                lower_source(&grammar, source, &mut LoweringCount::default())
+                    .expect("the module lowers")
+                    .into_lowered()
+            else {
+                panic!("the module is read");
+            };
+            (module, arena)
+        };
+        let mut recorded = Recorded::default();
+        let mut judged = |source: SourceText<'static>| {
+            let poll = RetireAt {
+                at: usize::MAX,
+                readings: core::cell::Cell::new(0),
+            };
+            let (module, arena) = lowered(source);
+            let Polled::Whole(answer) = judge_member_after_retiring(
+                CorpusRoot::Strict,
+                (module, source),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                base,
+                (&poll, Recording::Recorded(&mut recorded)),
+            )
+            else {
+                panic!("a poll never retired answers whole");
+            };
+            let (module, arena) = lowered(source);
+            let whole = judge_member_after(
+                CorpusRoot::Strict,
+                (module, source),
+                arena,
+                (&HostGrant::UNBOUNDED, Checking::Whole),
+                base,
+            );
+            assert_eq!(
+                answer.settled, whole.settled,
+                "{source:?} settles as a whole judgement of its text"
+            );
+            (answer.settled, poll.readings.get())
+        };
+        let (first, read) = judged(SourceText::from(
+            "def one : Integer = 1 ;\ndef two : Path(Integer, one, 1) = here(1) ;\n",
+        ));
+        assert_eq!(
+            read, 3,
+            "a first revision is judged, polled before each declaration"
+        );
+        let (commented, read) = judged(SourceText::from(
+            "// one, then a path through it\ndef one : Integer = 1 ;\ndef two : Path(Integer, \
+             one, 1) = here(1) ;\n",
+        ));
+        assert_eq!(
+            read, 1,
+            "a comment moves no lowered node: the verdicts are taken, polled before the \
+             settle alone"
+        );
+        assert_ne!(
+            commented, first,
+            "and the settle is made again at the spans the comment moved"
+        );
+        let (changed, read) = judged(SourceText::from(
+            "// one, then a path through it\ndef one : Integer = 2 ;\ndef two : Path(Integer, \
+             one, 1) = here(1) ;\n",
+        ));
+        assert_eq!(read, 3, "a value changed is judged again");
+        assert_ne!(
+            changed, commented,
+            "and the path reading it is refused, as the whole judgement refuses it"
         );
     }
 }

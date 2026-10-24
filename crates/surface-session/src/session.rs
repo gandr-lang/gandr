@@ -189,7 +189,10 @@
 //! half of the composition `gandr check` runs, over the module `lower_source`
 //! read — so a submission and a walk step agree by construction, and the corpus
 //! agreement suite checks it source by source. The resume runs beside it over a
-//! copy of the arena.
+//! copy of the arena. An untabled revision whose lowering moves no node of the
+//! one judged before it — a comment, a blank line — takes that judgement's
+//! verdicts and arena (`Recorded`), and makes again only what reads a span:
+//! the settle, the origins, the spellings and the program.
 //!
 //! The alternative was a report assembled from the resume's own verdicts. The
 //! incremental checker keeps typings, not the checker's verdicts, and a settle
@@ -334,6 +337,8 @@ use gandr_surface_dispatcher::HostGrant;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Program;
+use gandr_surface_dispatcher::Recorded;
+use gandr_surface_dispatcher::Recording;
 use gandr_surface_dispatcher::Resumption;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
@@ -1575,6 +1580,9 @@ pub struct Session<Store, Blocks>
     runs: closures::Runs<{ closures::SESSION_RUNS_HELD }>,
     /// Whether each judgement keeps the type table of its revision.
     tables: Tables,
+    /// The latest untabled judgement, which a revision moving no lowered node
+    /// takes rather than judging again.
+    recorded: Recorded,
 }
 
 /// Whether a session's judgements keep the type table of each revision.
@@ -1829,6 +1837,7 @@ impl<Store, Blocks> Session<Store, Blocks>
             admitted: Vec::new(),
             runs: closures::Runs::new(),
             tables: Tables::Unkept,
+            recorded: Recorded::default(),
         }
     }
 
@@ -1999,6 +2008,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 admitted: Vec::new(),
                 runs: closures::Runs::new(),
                 tables: Tables::Unkept,
+                recorded: Recorded::default(),
             },
             restored,
         })
@@ -2484,11 +2494,12 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   ([`Closure::led`]), once per process and root; the document is lowered
     ///   onto the arena that pass left, which extends the judgement's
     ///   ([`lower_onto_closure`]), judged on a copy of the judgement's state
-    ///   ([`judge_member_after_retiring`]) and submitted after the pass's state
-    ///   ([`IncrementalSession::submit_after`]) — onto the judgement's own
-    ///   arena and submitted whole when the pass holds no state — and otherwise
-    ///   the module is the closure's lowering resumed over the tree
-    ///   ([`lower_resumed_unit`]), judged whole.
+    ///   ([`judge_member_after_retiring`]), or, untabled, handed the session's
+    ///   last judgement when that one lowered to the same nodes, and submitted
+    ///   after the pass's state ([`IncrementalSession::submit_after`]) — onto
+    ///   the judgement's own arena and submitted whole when the pass holds no
+    ///   state — and otherwise the module is the closure's lowering resumed
+    ///   over the tree ([`lower_resumed_unit`]), judged whole.
     /// - provides: an editor's judgement of a document that imports a sibling,
     ///   whose diagnostics are those `gandr check` gives the file.
     /// - fails: as [`judge`](Self::judge).
@@ -2743,7 +2754,7 @@ impl<Store, Blocks> Session<Store, Blocks>
                 arena,
                 (&HostGrant::UNBOUNDED, checking),
                 base,
-                retirement,
+                (retirement, Recording::Recorded(&mut self.recorded)),
             ) {
                 Polled::Whole(judged) => {
                     Polled::Whole((judged.into_parts(), Maybe::Absent(tabled::Absent::Untabled)))

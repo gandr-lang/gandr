@@ -310,6 +310,13 @@ impl<Node: PartialEq> PartialEq for Family<Node>
         other: &Self,
     ) -> bool
     {
+        // Two families frozen over one shared base hold its rows alike, so
+        // only the rows minted since are read.
+        if let (Some(mine), Some(theirs)) = (self.frozen.as_ref(), other.frozen.as_ref())
+            && Arc::ptr_eq(mine, theirs)
+        {
+            return self.own == other.own;
+        }
         self.len() == other.len() && self.iter().eq(other.iter())
     }
 }
