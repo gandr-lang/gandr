@@ -634,6 +634,14 @@ jobs:
       CI_BUILD_STATE: cargo-test-plain-only
       CI_ON_MAIN: ${{ github.event_name == 'push' }}
       CI_RECOVERY: ${{ needs.prepare.outputs.parser }}
+      # The lane runs three Cargo commands over three package selections: the
+      # parser's tests, the driver the corpus roots run, and the comments
+      # suite. Each resolves its own features, so each compiled the changed
+      # crates again (#2148). Resolving every command's features as the whole
+      # workspace's lets them share units. No test this lane runs reads Cargo's
+      # resolution, which the environment would change for it.
+      CARGO_UNSTABLE_FEATURE_UNIFICATION: "true"
+      CARGO_RESOLVER_FEATURE_UNIFICATION: workspace
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace

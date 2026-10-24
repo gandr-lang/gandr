@@ -979,12 +979,17 @@ features = ["macos_fsevent"]
 
 # Exact, dynamically sized integers for native arithmetic.
 # features:
-# - none: allocation works without std or optional integrations
+# - std: num-traits' `std`, which proptest's `std` turns on in every test
+#   build. Without it a test build and the driver's build resolve num-traits
+#   apart, and every crate above core-term compiles twice, once per feature
+#   set (#2148). Nothing in the workspace builds for a target without std;
+#   one that does reverses this.
 # consumers:
 # - core-term
 [workspace.dependencies.num-bigint]
 version = "0.5.1"
 default-features = false
+features = ["std"]
 
 # Object-file reading for the emitter's build script: the stencil object's
 # sections, symbols and relocations, Mach-O and ELF. Chosen over goblin for
