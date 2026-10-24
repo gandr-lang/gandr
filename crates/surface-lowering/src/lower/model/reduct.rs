@@ -278,6 +278,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - hypothesis: L3 — a monoid's model restricted to its semigroup's, which
     ///   the checker accepts and inserts.
     /// - witness: `tests::modules::models::a_model_of_an_extension_stands_where_the_included_model_is_asked`
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
     pub(in crate::lower) fn mint_reducts(
         &mut self,
         sink: &mut Sink<'_>,

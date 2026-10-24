@@ -914,6 +914,7 @@ default-features = false
 # consumers:
 # - core-checker
 # - storage-schema
+# - surface-dispatcher
 # - surface-driver
 # - surface-lowering
 # - surface-lsp

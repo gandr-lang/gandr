@@ -336,6 +336,7 @@ impl<'source> Lowerer<'_, 'source>
     ///   mint and check; a declaration with a function field is refused.
     /// - witness: `lower::generic::tests::a_generic_equality_lowers_to_the_derived_declaration_2302`
     /// - witness: `lower::generic::tests::an_uncovered_declaration_is_refused_at_its_name_2302`
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
     pub(super) fn mint_generics(
         &mut self,
         sink: &mut Sink<'_>,

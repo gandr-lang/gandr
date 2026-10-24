@@ -1,0 +1,42 @@
+// The prelude's instance machinery in one component (#2395): `==` and `<`
+// resolved at the integers and the strings through the prelude's `Eq` and
+// `Ord` models, and `==` at a point through a model whose member is derived
+// (`Eq.generic`). The hotpath series checks this source as its `prelude
+// resolve` workload, so every site here is a resolution it measures.
+
+/// A point in the plane.
+@[ checks ]
+data Point : Type {
+  Point : (x : Integer, y : Integer) --> Point;
+}
+
+/// Points under `==`, compared field by field.
+module EqPoint : Model(Eq) with sort Carrier = Point {
+  /// Both coordinates, in order.
+  @[ checks ]
+  def eq = Eq.generic(Point) ;
+}
+
+/// Two integers alike.
+@[ runs("+{.0 = unit}") ]
+def sameCount() -> Bool { 3 == 3 }
+
+/// One integer below another.
+@[ runs("+{.0 = unit}") ]
+def fewer() -> Bool { 2 < 3 }
+
+/// Two names alike.
+@[ runs("+{.0 = unit}") ]
+def sameLabel() -> Bool { "here" == "here" }
+
+/// One name below another.
+@[ runs("+{.1 = unit}") ]
+def laterLabel() -> Bool { "there" < "here" }
+
+/// Two points alike, through the derived member.
+@[ runs("+{.0 = unit}") ]
+def samePlace() -> Bool { Point(1, 2) == Point(1, 2) }
+
+/// Two points apart in one coordinate.
+@[ runs("+{.1 = unit}") ]
+def movedPlace() -> Bool { Point(1, 2) == Point(1, 3) }

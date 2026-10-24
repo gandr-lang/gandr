@@ -2724,6 +2724,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `tests::modules::models::a_manifest_module_packs_as_the_record_of_its_members`
     /// - witness: `lower::implicit::tests::an_omitted_model_implicit_plans_each_module_of_its_theory_739`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |packed| packed.theories.len() == packed.modules.len()))]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Lowerer"))]
     pub(in crate::lower) fn packed_structure(
         &mut self,
         site: Site,

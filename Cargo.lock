@@ -929,6 +929,7 @@ dependencies = [
  "gandr-theory-coherent-resolutions",
  "gandr-theory-levitation",
  "gandr-workflow-sweep",
+ "hotpath",
  "memmap2",
  "quenchant-anodized",
  "quenchant-shape",

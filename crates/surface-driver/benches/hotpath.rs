@@ -7,6 +7,7 @@
 //! | `stage readmission` | `gandr stage pow:0..8 double:0..8` | the kernel's readmission of each staged certificate |
 //! | `rule completion` | `gandr check` of the corpus's completion sources: the group laws, a completed block, and a block whose completion never ends | each rule block's decision, and the completion's overlap queries and normalization |
 //! | `component walk` | `gandr check` of a directory of twenty sources in sixteen components, each laid after the prelude | the prelude's lowering and judgement, once per walk, and each component's own |
+//! | `prelude resolve` | `gandr check` of one component whose `==` and `<` resolve at the integers, the strings and a point whose `Eq` member is derived | the prelude's lowering and judgement (`lower_closure`, `judge_closure`), the candidates a model slot collects (`Lowerer::model_candidates`), each candidate's packing, an include's among them (`Lowerer::packed_structure`), the include's reduct maps (`Lowerer::mint_reducts`), the checker's trial of each candidate (`Deferrals::resolve`) and the derived equality (`Lowerer::mint_generics`) |
 //! | `lsp keystroke` | a language-server session that opens the same source and erases one line | the server's recheck |
 //! | `lsp burst` | the same session, erasing the end of that line one character per change, every change read in one frame | the server's recheck, once per burst |
 //! | `lsp comment edit` | a language-server session that opens the group laws and adds a comment line before their first, outside the rule block | the server's recheck and each rule block's decision, which no change of the block's own text asks for |
@@ -76,6 +77,10 @@ const COMPLETION: [&str; 3] = [
 /// import siblings, in sixteen components, each laid after the prelude.
 const COMPONENTS: &str = "../../corpus/model/control";
 
+/// The component the prelude resolve checks: `==` and `<` at the integers and
+/// the strings, and `==` at a point through a derived member.
+const RESOLVE: &str = "../../corpus/model/modules/prelude-resolve.gandr";
+
 /// The path of a corpus source from the driver's manifest directory.
 ///
 /// # Specification
@@ -144,6 +149,15 @@ fn rule_completion()
 fn component_walk()
 {
     check(vec![corpus(COMPONENTS)]);
+}
+
+/// Check [`RESOLVE`], every comparison resolved through the prelude.
+///
+/// # Specification
+/// trivial.
+fn prelude_resolve()
+{
+    check(vec![corpus(RESOLVE)]);
 }
 
 /// Stage [`PROGRAMS`] and readmit every certificate they produce.
@@ -304,6 +318,7 @@ fn main()
     hotpath::measure_block!("stage readmission", stage_readmission());
     hotpath::measure_block!("rule completion", rule_completion());
     hotpath::measure_block!("component walk", component_walk());
+    hotpath::measure_block!("prelude resolve", prelude_resolve());
     hotpath::measure_block!("lsp keystroke", lsp_keystroke());
     hotpath::measure_block!("lsp burst", lsp_burst());
     hotpath::measure_block!("lsp comment edit", lsp_comment_edit());

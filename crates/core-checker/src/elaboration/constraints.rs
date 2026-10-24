@@ -777,6 +777,7 @@ impl Deferrals
         | Err((at, refusal)) => refusal == CheckRefusal::ModelUnanswered { at },
         | Ok(()) => true,
     })]
+    #[cfg_attr(feature = "hotpath", hotpath::measure(impl_type = "Deferrals"))]
     pub fn resolve(
         &mut self,
         arena: &mut CoreArena,
