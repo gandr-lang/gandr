@@ -2,7 +2,7 @@
 // function holding one states `Div` in its row, `-F [Div] T`: the host
 // interface with no operation, which nothing handles (#1481). A caller holds
 // it in its own row, and an entry runs at `+U (-F [Div] T)`. A `for` over a
-// list descends on the list and needs no entry.
+// list descends on the list and needs no entry; each `become` is an exit.
 
 @[ checks ]
 data Nat : Type {

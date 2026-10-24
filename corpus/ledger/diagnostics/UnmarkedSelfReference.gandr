@@ -9,6 +9,6 @@ data Nat : Type {
 def rec bare(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
-    Succ(p) => become bare(p)
+    Succ(p) => bare(p)
   }
 }

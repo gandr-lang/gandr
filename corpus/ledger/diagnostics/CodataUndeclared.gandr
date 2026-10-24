@@ -6,5 +6,5 @@ codata Scaled : Type {
 
 @[ refuses("CodataUndeclared") ]
 def read(s : +U Scaled) -> -F Integer {
-  become s.doubled
+  s.doubled
 }

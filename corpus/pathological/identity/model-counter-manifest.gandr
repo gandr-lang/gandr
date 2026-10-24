@@ -28,7 +28,7 @@ theory Ticker {
 /// asked: forgetting its carrier makes a ticker, which has no reading.
 @[ refuses("TypeMismatch") ]
 def tickerObserved(m : Model(Ticker) with sort C = Integer) -> -F Integer {
-  become observe(m)
+  observe(m)
 }
 
 /// A counter with its counts manifest at the integers where one with its
@@ -44,7 +44,7 @@ def countsForReadings(m : Model(ReadCounter) with sort C = Integer) -> -F (Model
 @[ refuses("TypeMismatch") ]
 def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> -F Integer {
   case b {
-    #{.zero = z, .incr = i, .read = r} => become r(i(c))
+    #{.zero = z, .incr = i, .read = r} => r(i(c))
   }
 }
 
@@ -52,7 +52,7 @@ def unshared(a : Model(Counter), b : Model(Counter), c : a.C) -> -F Integer {
 /// asked: counting up counts modulo three, not in the integers (#2131).
 @[ refuses("TypeMismatch") ]
 def integersShared(m : Model(Counter) with sort C = Integer) -> -F Integer {
-  become observeShared(upModel, m)
+  observeShared(upModel, m)
 }
 
 /// A count of a sort the counter does not have.
@@ -67,6 +67,6 @@ def rightApart(
   n : Model(Pairing) with sort A = Integer
 ) -> -F Integer {
   case n {
-    #{.left = l, .right = r} => become leftBeside(m, r)
+    #{.left = l, .right = r} => leftBeside(m, r)
   }
 }

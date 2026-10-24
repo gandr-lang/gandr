@@ -7,4 +7,4 @@ module Origin {
 /// The member called through its module's name.
 @[ runs("0") ]
 def started : () => Integer ;
-def started = thunk { become Origin.zero() } ;
+def started = thunk { Origin.zero() } ;

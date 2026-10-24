@@ -8,7 +8,7 @@
 def leak(p: package [ T ] +U[ω] (-F #{ seed: T })) -> -F Integer {
   unpack m : package [ T ] +U[ω] (-F #{ seed: T }) = p;
   run r <- force m;
-  become r.seed
+  r.seed
 }
 
 /// A counter over integers, packed (#1108).

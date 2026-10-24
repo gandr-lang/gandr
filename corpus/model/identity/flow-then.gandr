@@ -37,22 +37,22 @@ module Versions {
   /// The stationary flow, then the first.
   @[ checks ]
   def early() -> -F Flow(Type, V1, V2) {
-    become kept then first
+    kept then first
   }
   /// Both translations in sequence.
   @[ checks ]
   def both() -> -F Flow(Type, V1, V3) {
     run start <- early() ;
-    become start then second
+    start then second
   }
   /// A record ridden along the composite.
   @[ checks ]
   def moved(record : V1) -> -F V3 {
     run along <- both() ;
-    become ride(\X. X, along, record)
+    ride(\X. X, along, record)
   }
   /// A first-version record migrated to the third by a run.
   @[ runs("(+{.1 = unit}, 30, \"ada\")") ]
   def latest : () => V3 ;
-  def latest = thunk { become moved(("ada", 30)) } ;
+  def latest = moved(("ada", 30)) ;
 }

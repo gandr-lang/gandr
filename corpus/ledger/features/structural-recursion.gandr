@@ -17,4 +17,4 @@ def rec plus(n : Nat, m : Nat) -> -F Nat {
 /// One plus two.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
 def three : () => Nat ;
-def three = thunk { become plus(Succ(Zero), Succ(Succ(Zero))) } ;
+def three = thunk { plus(Succ(Zero), Succ(Succ(Zero))) } ;

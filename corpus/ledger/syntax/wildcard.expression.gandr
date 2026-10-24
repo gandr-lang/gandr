@@ -5,4 +5,4 @@ def idAt(a : Type, y : a) -> -F a { y }
 
 /// `3` forces the wildcard to `Integer`.
 @[ runs("3") ]
-def forced() -> -F Integer { become idAt(_, 3) }
+def forced() -> -F Integer { idAt(_, 3) }

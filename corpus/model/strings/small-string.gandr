@@ -32,7 +32,7 @@ def store(bs : List(Integer)) -> -F Repr {
 /// The string of the code points `cs`: their bytes and the zero, stored.
 @[ checks ]
 def own(cs : List(Integer)) -> -F Repr {
-  become store(terminated(cs))
+  store(terminated(cs))
 }
 
 /// Where a string's bytes live.
@@ -60,30 +60,30 @@ def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> -F [Div] List(
 
 /// `hi`, two bytes and the zero: inline.
 @[ runs("Inside") ]
-def hiPlace() -> -F Place { become place(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
+def hiPlace() -> -F Place { place(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
 
 /// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
 @[ runs("Inside") ]
 def fullPlace() -> -F [Div] Place {
   run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
-  become place(own(cs))
+  place(own(cs))
 }
 
 /// One byte more and the string's bytes go to the heap.
 @[ runs("OnHeap") ]
 def spilledPlace() -> -F [Div] Place {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
-  become place(own(cs))
+  place(own(cs))
 }
 
 /// Inline or on the heap, a string reads as its owned bytes.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hiBytes() -> -F List(Integer) { become bytes(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
+def hiBytes() -> -F List(Integer) { bytes(own((Cons(104, Cons(105, Nil)) : List(Integer)))) }
 
 /// The spilled string's twenty-four bytes and the zero.
 @[ runs("25") ]
 def spilledCount() -> -F [Div] Integer {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   run s <- own(cs) ;
-  become count(bytes(s))
+  count(bytes(s))
 }

@@ -5,4 +5,4 @@ def use(f : Type -> Type) -> -F Unit { return unit }
 @[ refuses("StaticLambdaArgument") ]
 def at_a_dynamic_parameter : +U (-F Unit) ;
 
-def at_a_dynamic_parameter = thunk { become use(\X. #{X, X}) } ;
+def at_a_dynamic_parameter = thunk { use(\X. #{X, X}) } ;

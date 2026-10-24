@@ -30,10 +30,10 @@ module Roster {
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> -F New {
-    become ride(\X. X, upgrade, old)
+    ride(\X. X, upgrade, old)
   }
   /// A record of two scores migrated by a run.
   @[ runs("(cons(90, cons(85, nil)), \"ada\")") ]
   def one : () => New ;
-  def one = thunk { become moved(("ada", cons(90, cons(85, nil)))) } ;
+  def one = moved(("ada", cons(90, cons(85, nil)))) ;
 }

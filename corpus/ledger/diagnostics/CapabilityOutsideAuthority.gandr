@@ -1,5 +1,5 @@
 /// `CapabilityOutsideAuthority`: an operation exercised through a capability that does not grant it.
 @[ refuses("CapabilityOutsideAuthority") ]
 def save(c : Cap {read}) -> -F [Fs] Unit {
-  become c.write("notes", "draft")
+  c.write("notes", "draft")
 }

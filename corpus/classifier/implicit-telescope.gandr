@@ -15,11 +15,11 @@ def same @[a : Type] (y : a) -> -F a { y }
 
 /// `same` at the integers, supplied by name.
 @[ runs("3") ]
-def sameRun() -> -F Integer { become same[a = Integer](3) }
+def sameRun() -> -F Integer { same[a = Integer](3) }
 
 /// `same` with its implicit omitted: the argument `3` determines `a`.
 @[ runs("3") ]
-def sameInferred() -> -F Integer { become same(3) }
+def sameInferred() -> -F Integer { same(3) }
 
 /// The first of two values of two types, both implicit.
 @[ checks ]
@@ -27,12 +27,12 @@ def first @[a : Type, b : Type] (x : a, y : b) -> -F a { x }
 
 /// `first` supplied with its implicits in the written order.
 @[ runs("5") ]
-def firstRun() -> -F Integer { become first[a = Integer, b = Unit](5, unit) }
+def firstRun() -> -F Integer { first[a = Integer, b = Unit](5, unit) }
 
 /// `first` supplied with its implicits the other way round: a resident names
 /// its implicit, so the order the slot writes them in is free.
 @[ runs("5") ]
-def firstSwapped() -> -F Integer { become first[b = Unit, a = Integer](5, unit) }
+def firstSwapped() -> -F Integer { first[b = Unit, a = Integer](5, unit) }
 
 /// `first` with both implicits omitted, each determined by its own argument.
 @[ runs("5") ]
@@ -45,7 +45,7 @@ def chosen @[x : t] (t : Type) -> -F t { x }
 
 /// `chosen` at the integers, its implicit supplied by name.
 @[ runs("7") ]
-def chosenRun() -> -F Integer { become chosen[x = 7](Integer) }
+def chosenRun() -> -F Integer { chosen[x = 7](Integer) }
 
 /// A stage and an implicit in one telescope: the stage quantifies the
 /// signature and binds no value, the implicit binds the first parameter.
@@ -54,7 +54,7 @@ def kept @[i : Size, a : Type] (n : Integer, y : a) -> -F a { y }
 
 /// `kept` with its implicit supplied by name.
 @[ runs("4") ]
-def keptRun() -> -F Integer { become kept[a = Integer](0, 4) }
+def keptRun() -> -F Integer { kept[a = Integer](0, 4) }
 
 /// `kept` with its implicit omitted: the stage binds no value, and the second
 /// argument determines `a`.
@@ -78,12 +78,12 @@ def konstInferred() -> -F Integer { become konst(fn (t) { fn (y) { 0 } }) }
 
 /// A function applied to the integer it is passed.
 @[ checks ]
-def apply(f : Integer => Integer, x : Integer) -> -F Integer { become f(x) }
+def apply(f : Integer => Integer, x : Integer) -> -F Integer { f(x) }
 
 /// `same` passed as a value, its implicit supplied where it is taken: the
 /// function applied to its implicits alone is a function of the rest.
 @[ runs("3") ]
-def passedRun() -> -F Integer { become apply(same[a = Integer], 3) }
+def passedRun() -> -F Integer { apply(same[a = Integer], 3) }
 
 /// The integers' addition, a member of a module.
 module Adding {
@@ -94,12 +94,12 @@ module Adding {
 
 /// A value combined with itself, the combination and its carrier implicit.
 @[ checks ]
-def twice @[m : Type, combine : (m, m) => m] (x : m) -> -F m { become combine(x, x) }
+def twice @[m : Type, combine : (m, m) => m] (x : m) -> -F m { combine(x, x) }
 
 /// `twice` with its combination supplied by a module path: a resident's value
 /// runs to the slot's next `,` or its `]` (#1188).
 @[ runs("6") ]
-def twiceRun() -> -F Integer { become twice[m = Integer, combine = Adding.plus](3) }
+def twiceRun() -> -F Integer { twice[m = Integer, combine = Adding.plus](3) }
 
 /// The explicit twin of `same`: the function `same`'s implicit makes explicit
 /// runs as the same curried function.

@@ -8,6 +8,6 @@ data Nat : Type {
 def rec countdown(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
-    Succ(p) => become countdown[<](p)
+    Succ(p) => countdown[<](p)
   }
 }

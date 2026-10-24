@@ -23,19 +23,19 @@ module Schema {
   /// One record ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> -F New {
-    become ride(\X. X, upgrade, old)
+    ride(\X. X, upgrade, old)
   }
   /// A list of records ridden along the flow in the family of lists.
   @[ checks ]
   def everyone(olds : List(Old)) -> -F List(New) {
-    become ride(\X. List(X), upgrade, olds)
+    ride(\X. List(X), upgrade, olds)
   }
   /// One old record migrated by a run.
   @[ runs("(30, \"ada\", +{.0 = unit})") ]
   def one : () => New ;
-  def one = thunk { become moved(("ada", 30)) } ;
+  def one = moved(("ada", 30)) ;
   /// Two old records migrated by a run.
   @[ runs("cons((30, \"ada\", +{.0 = unit}), cons((41, \"grace\", +{.0 = unit}), nil))") ]
   def many : () => List(New) ;
-  def many = thunk { become everyone(cons(("ada", 30), cons(("grace", 41), nil))) } ;
+  def many = everyone(cons(("ada", 30), cons(("grace", 41), nil))) ;
 }

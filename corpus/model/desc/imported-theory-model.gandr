@@ -17,6 +17,6 @@ module Counting : Model(Nat) {
   @[ runs("2") ]
   def two() -> -F Integer {
     run z <- zero() ;
-    become succ(succ(z))
+    succ(succ(z))
   }
 }

@@ -9,14 +9,14 @@ rec {
   def rec even(n : Nat) -> -F Integer {
     case n {
       Zero => return 1,
-      Succ(p) => become odd[<](p)
+      Succ(p) => odd[<](p)
     }
   }
   @[ checks ]
   def rec odd(n : Nat) -> -F Integer {
     case n {
       Zero => return 0,
-      Succ(p) => become even[<](p)
+      Succ(p) => even[<](p)
     }
   }
 }

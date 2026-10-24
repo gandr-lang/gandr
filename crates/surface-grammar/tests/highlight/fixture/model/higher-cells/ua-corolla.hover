@@ -16,14 +16,14 @@
 15:20-15:20 ( ⇒ -F Bool @15:12-15:23
 15:21-15:21 b ⇒ b : Bool @15:21-15:22
 15:22-15:22 ) ⇒ -F Bool @15:12-15:23
-15:23-16:8 ;⏎  become ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
-16:10-16:17 exchange ⇒ exchange : Bool => Bool @16:10-16:18
-16:18-16:18 ( ⇒ -F Bool @16:10-16:31
-16:19-16:26 exchange ⇒ exchange : Bool => Bool @16:19-16:27
-16:27-16:27 ( ⇒ -F Bool @16:19-16:30
-16:28-16:28 c ⇒ c : Bool @16:28-16:29
-16:29-16:29 ) ⇒ -F Bool @16:19-16:30
-16:30-16:30 ) ⇒ -F Bool @16:10-16:31
+15:23-15:23 ; ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
+16:3-16:10 exchange ⇒ exchange : Bool => Bool @16:3-16:11
+16:11-16:11 ( ⇒ -F Bool @16:3-16:24
+16:12-16:19 exchange ⇒ exchange : Bool => Bool @16:12-16:20
+16:20-16:20 ( ⇒ -F Bool @16:12-16:23
+16:21-16:21 c ⇒ c : Bool @16:21-16:22
+16:22-16:22 ) ⇒ -F Bool @16:12-16:23
+16:23-16:23 ) ⇒ -F Bool @16:3-16:24
 17:1-17:1 } ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
 20:1-20:11 @[ checks ] ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @20:1-21:1
 21:1-21:3 def ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @21:1-24:84

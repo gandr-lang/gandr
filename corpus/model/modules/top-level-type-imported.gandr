@@ -10,7 +10,7 @@ def innerBand : Band = #{low = 400000, high = 600000} ;
 
 /// The imported width reads the band built here: two tenths.
 @[ runs("200000") ]
-def innerWidth() -> -F Integer { become width(innerBand) }
+def innerWidth() -> -F Integer { width(innerBand) }
 
 /// The imported synonym with a parameter, applied here.
 @[ checks ]

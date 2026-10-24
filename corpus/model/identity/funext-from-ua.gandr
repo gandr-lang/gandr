@@ -38,7 +38,7 @@ def diagSource(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> -F Path(
   w
 ) {
   case w {
-    #{.x = u, .y = v, .p = q} => become transport(
+    #{.x = u, .y = v, .p = q} => transport(
       +U ((y : b) -> (z : Path(b, u, y)) -> -F Path(
         #{ x : b, y : b, p : Path(b, x, y) },
         diag(b, u),

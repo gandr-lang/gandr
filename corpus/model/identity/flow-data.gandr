@@ -47,12 +47,12 @@ module Rename {
   /// One value ridden along the flow.
   @[ checks ]
   def moved(old : Old) -> -F Other {
-    become ride(\X. X, renamed, old)
+    ride(\X. X, renamed, old)
   }
   /// A value migrated by a run.
   @[ runs("Make(3)") ]
   def one : () => Other ;
-  def one = thunk { become moved(Mk(3)) } ;
+  def one = moved(Mk(3)) ;
 }
 
 /// Each constructor moved to its twin, a constructor's fields swapped.
@@ -72,10 +72,10 @@ module Shapes {
   /// A list of shapes ridden along the flow in the family of lists.
   @[ checks ]
   def all(shapes : List(Shape)) -> -F List(Figure) {
-    become ride(\X. List(X), redrawn, shapes)
+    ride(\X. List(X), redrawn, shapes)
   }
   /// Two shapes migrated by a run.
   @[ runs("cons(Round(1), cons(Box(3, 2), nil))") ]
   def two : () => List(Figure) ;
-  def two = thunk { become all(cons(Circle(1), cons(Rect(2, 3), nil))) } ;
+  def two = all(cons(Circle(1), cons(Rect(2, 3), nil))) ;
 }

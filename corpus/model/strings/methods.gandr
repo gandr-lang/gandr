@@ -21,8 +21,8 @@ module Str {
   @[ checks ]
   def len(self : shared Repr) -> -F Integer {
     case self {
-      Inline(bs) => become count(bs),
-      Shared(n, bs) => become count(bs)
+      Inline(bs) => count(bs),
+      Shared(n, bs) => count(bs)
     }
   }
   /// A byte written before the zero of a string lent to the write, which

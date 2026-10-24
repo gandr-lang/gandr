@@ -12,5 +12,5 @@ module NatAdd : #{ type M = Integer, zero : M, add : (M, M) => M } {
   def zero = 0;
   /// The sum.
   @[ checks ]
-  def add(x: Integer, y: Integer) -> -F Integer { become x + y }
+  def add(x: Integer, y: Integer) -> -F Integer { x + y }
 }

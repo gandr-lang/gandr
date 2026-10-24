@@ -14,33 +14,33 @@ import "../../classifier/implicit-telescope.gandr" ;
 /// `twice` with its implicits omitted: the argument determines `m`, and
 /// nothing determines the combination.
 @[ refuses("ImplicitUnsolved") ]
-def undetermined() -> -F Integer { become twice(3) }
+def undetermined() -> -F Integer { twice(3) }
 
 /// `chosen` with its implicit omitted: `x` is a value of `t`, and nothing
 /// determines which.
 @[ refuses("ImplicitUnsolved") ]
-def unchosen() -> -F Integer { become chosen(Integer) }
+def unchosen() -> -F Integer { chosen(Integer) }
 
 /// `konst` with its implicit omitted where the lambda returns its own
 /// argument: the only solution for `b` is the lambda's binder `t`, which the
 /// call does not stand under.
 @[ refuses("ImplicitUnsolved") ]
-def escaping() -> -F Integer { become konst(fn (t) { fn (y) { y } }) }
+def escaping() -> -F Integer { konst(fn (t) { fn (y) { y } }) }
 
 /// `same(3)` where a unit is expected: the argument solves `a` as `Integer`,
 /// and the returned type then disagrees with `Unit`.
 @[ refuses("TypeMismatch") ]
-def disagreeing() -> -F Unit { become same(3) }
+def disagreeing() -> -F Unit { same(3) }
 
 /// The implicit written among the parentheses, as for `sameExplicit`.
 @[ refuses("ImplicitInParentheses") ]
 def inParentheses : () => Integer ;
-def inParentheses = thunk { become same(Integer, 3) } ;
+def inParentheses = thunk { same(Integer, 3) } ;
 
 /// A resident naming no implicit of `same`.
 @[ refuses("UnresolvedName") ]
 def strayResident : () => Integer ;
-def strayResident = thunk { become same[b = Integer](3) } ;
+def strayResident = thunk { same[b = Integer](3) } ;
 
 /// `same` named as a value, its implicit unsupplied.
 @[ refuses("ImplicitUnsupplied") ]

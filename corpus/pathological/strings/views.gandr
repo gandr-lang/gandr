@@ -40,7 +40,7 @@ def keptPastRegion() -> -F Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { run bs <- bytes(w) ; become count(bs) }
+      pure thunk { run bs <- bytes(w) ; count(bs) }
     } ;
     run j : () => Integer <- pure thunk { force k } ;
     force j
@@ -57,7 +57,7 @@ def writtenWhileKept() -> -F Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { run bs <- bytes(w) ; become count(bs) }
+      pure thunk { run bs <- bytes(w) ; count(bs) }
     } ;
     access s as v { resume(v, v) };
     force k

@@ -26,13 +26,13 @@ module AtStratum {
   /// The statement over the user universe, at the stratum code.
   @[ checks ]
   def atTel() -> -F (Path(Type, Tel, Tel) ≃ (Tel ≃ Tel)) {
-    become univalence(Tel, Tel)
+    univalence(Tel, Tel)
   }
 
   /// The stratum path packaged as an equivalence.
   @[ checks ]
   def swapped() -> -F (Tel ≃ Tel) {
-    become idtoequiv(Tel, Tel, opposite)
+    idtoequiv(Tel, Tel, opposite)
   }
 
   /// Transport along `ua` of the packaged stratum path is transport along the

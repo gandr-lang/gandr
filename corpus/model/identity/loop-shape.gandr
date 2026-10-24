@@ -33,14 +33,14 @@ def rec laws(chain : Theory) -> -F Integer {
 @[ checks ]
 def law_count(presented : Theory) -> -F Integer {
   case presented {
-    Presents(sorts, opers, rules) => become laws(rules),
+    Presents(sorts, opers, rules) => laws(rules),
     _ => 0
   }
 }
 
 /// The shape's laws join, so its `Theory` value carries both as `Rule` entries.
 @[ runs("2") ]
-def shape_laws() -> -F Integer { become law_count(CircleShape) }
+def shape_laws() -> -F Integer { law_count(CircleShape) }
 
 /// The presented integers as a model of the shape: `base` zero, a value, as
 /// the theory's `base : Pt` is a constant; `turn` the successor and `unturn`
@@ -68,7 +68,7 @@ module Winding : Model(CircleShape) {
 
   @[ runs("S(S(Z))") ]
   def wound() -> -F Int {
-    become turn(turn(base))
+    turn(turn(base))
   }
 }
 
@@ -93,6 +93,6 @@ module NativeWinding : Model(CircleShape) {
   @[ runs("2") ]
   def wound() -> -F Integer {
     run n <- turn(base) ;
-    become turn(n)
+    turn(n)
   }
 }

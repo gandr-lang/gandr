@@ -15,11 +15,11 @@ def banded(low : Integer, high : Integer) -> -F Bool {
 
 /// A band whose bounds are inverted is not one.
 @[ runs("+{.1 = unit}") ]
-def inverted() -> -F Bool { become banded(750000, 250000) }
+def inverted() -> -F Bool { banded(750000, 250000) }
 
 /// A band low below high, the high one under one, is one.
 @[ runs("+{.0 = unit}") ]
-def ordered() -> -F Bool { become banded(200000, 800000) }
+def ordered() -> -F Bool { banded(200000, 800000) }
 
 /// `true` at a stated `Bool`.
 @[ checks ]

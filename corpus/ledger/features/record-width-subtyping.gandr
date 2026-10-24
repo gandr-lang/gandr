@@ -7,4 +7,4 @@ def first(p : #{x : Integer}) -> -F Integer {
 /// A record with a label `first` never asks for, passed where it asks for `x` alone.
 @[ runs("3") ]
 def wide : () => Integer ;
-def wide = thunk { become first(#{x = 3, y = 4}) } ;
+def wide = thunk { first(#{x = 3, y = 4}) } ;

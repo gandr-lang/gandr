@@ -22,5 +22,5 @@ data Nat : Type {
 
 @[ refuses("NotOver") ]
 def astray(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
-  become transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, here(a), here(here(a)), v)
+  transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, here(a), here(here(a)), v)
 }

@@ -12,7 +12,7 @@ module Bytes {
   /// The number of bytes in the list, read from a list lent for reading.
   @[ checks ]
   def len(self : shared List(Integer)) -> -F Integer {
-    become count(self)
+    count(self)
   }
 }
 

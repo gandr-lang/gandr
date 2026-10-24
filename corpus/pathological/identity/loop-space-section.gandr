@@ -51,7 +51,7 @@ def unaround(c : Circle) -> -F Circle {
 def rec forged(c : Circle) -> -F Path(Circle, spin(wind(c)), c) {
   case c {
     Base => here(Base),
-    Loop(x) => become forged[<](x),
-    Unloop(x) => { run p <- forged[<](x); become cong(unaround, p) }
+    Loop(x) => forged[<](x),
+    Unloop(x) => { run p <- forged[<](x); cong(unaround, p) }
   }
 }

@@ -1,5 +1,5 @@
 /// `StageNotBelow`: a value does not stand below the stage its structural recursion wants.
 @[ refuses("StageNotBelow") ]
 def rec fact(n: Integer) -> -F Integer {
-  become fact[<](n)
+  fact[<](n)
 }

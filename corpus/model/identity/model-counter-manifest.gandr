@@ -29,12 +29,12 @@ def upManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
 /// The manifest counter where a counter is asked: the checker applies the
 /// forgetting map at the counts.
 @[ runs("1") ]
-def observedManifest() -> -F Integer { become observe(upManifest) }
+def observedManifest() -> -F Integer { observe(upManifest) }
 
 /// The manifest counter stated at the counter's models: the ascription is
 /// the crossing, and the checker applies the map at it.
 @[ runs("1") ]
-def observedAscribed() -> -F Integer { become observe((upManifest : Model(Counter))) }
+def observedAscribed() -> -F Integer { observe((upManifest : Model(Counter))) }
 
 /// The manifest counter carried along negation.
 @[ checks ]
@@ -47,7 +47,7 @@ def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = transp
 /// The carried counter where a counter is asked: forgetting at the far end
 /// reads it as counting up reads.
 @[ runs("1") ]
-def observedCarried() -> -F Integer { become observe(negatedManifest) }
+def observedCarried() -> -F Integer { observe(negatedManifest) }
 
 /// A counter whose reading has a sort of its own: the counts and the
 /// readings, a zero, a step, a reading and the reading shown as an integer.
@@ -66,7 +66,7 @@ theory ReadCounter {
 @[ checks ]
 def observeShown(m : Model(ReadCounter)) -> -F Integer {
   case m {
-    #{.zero = z, .incr = i, .read = r, .shown = s} => become s(r(i(z)))
+    #{.zero = z, .incr = i, .read = r, .shown = s} => s(r(i(z)))
   }
 }
 
@@ -86,7 +86,7 @@ def upReadings : Model(ReadCounter) with sort R = Integer = (
 /// The counter with its readings manifest where any such counter is asked:
 /// the checker applies the map putting back the readings alone.
 @[ runs("1") ]
-def observedReadings() -> -F Integer { become observeShown(upReadings) }
+def observedReadings() -> -F Integer { observeShown(upReadings) }
 
 /// Counting up modulo three, both its sorts manifest: neither is a field.
 @[ checks ]
@@ -100,7 +100,7 @@ def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R =
 /// The counter with both sorts manifest where any such counter is asked: the
 /// map putting back both is another than the one putting back the readings.
 @[ runs("1") ]
-def observedBoth() -> -F Integer { become observeShown(upBoth) }
+def observedBoth() -> -F Integer { observeShown(upBoth) }
 
 /// The counter with both sorts manifest carried along negation of its
 /// counts, its readings fixed as they are.
@@ -114,32 +114,32 @@ def negatedBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sor
 /// The carried counter where any such counter is asked: the map is a family
 /// in the counts, so forgetting at the far end reads it as counting up reads.
 @[ runs("1") ]
-def observedNegatedBoth() -> -F Integer { become observeShown(negatedBoth) }
+def observedNegatedBoth() -> -F Integer { observeShown(negatedBoth) }
 
 /// A count of one counter stepped and read by a second sharing its counts:
 /// `b`'s carrier is `a`'s, so a count of `a` is one `b` takes.
 @[ checks ]
 def stepShared(a : Model(Counter), b : Model(Counter) with sort C = a.C, c : a.C) -> -F Integer {
   case b {
-    #{.zero = z, .incr = i, .read = r} => become r(i(c))
+    #{.zero = z, .incr = i, .read = r} => r(i(c))
   }
 }
 
 /// Counting up and its manifest twin share their counts: counting up's
 /// zero, stepped and read by the twin.
 @[ runs("1") ]
-def sharedUp() -> -F Integer { become stepShared(upModel, upManifest, Up.zero) }
+def sharedUp() -> -F Integer { stepShared(upModel, upManifest, Up.zero) }
 
 /// The counter sharing `a`'s counts where any counter is asked: the checker
 /// solves the carrier as `a`'s.
 @[ checks ]
 def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> -F Integer {
-  become observe(b)
+  observe(b)
 }
 
 /// The twin read as any counter, its carrier solved as counting up's.
 @[ runs("1") ]
-def observedSharedUp() -> -F Integer { become observeShared(upModel, upManifest) }
+def observedSharedUp() -> -F Integer { observeShared(upModel, upManifest) }
 
 /// A count of a counter whose counts are manifest at the integers is an
 /// integer: the carrier its type fixes is the type it names.
@@ -186,7 +186,7 @@ def leftBeside(m : Model(Pairing) with sort A = Integer, b : m.B) -> -F Integer 
 
 /// The pairing of one and the unit beside the unit, its second carrier.
 @[ runs("1") ]
-def leftOfOne() -> -F Integer { become leftBeside(firstManifest, unit) }
+def leftOfOne() -> -F Integer { leftBeside(firstManifest, unit) }
 
 /// A pairing sharing another's second carrier: its right is a value of it.
 @[ checks ]
@@ -195,11 +195,11 @@ def rightBeside(
   n : Model(Pairing) with sort A = Integer with sort B = m.B
 ) -> -F Integer {
   case n {
-    #{.left = l, .right = r} => become leftBeside(m, r)
+    #{.left = l, .right = r} => leftBeside(m, r)
   }
 }
 
 /// The pairing with both carriers manifest shares the first manifest one's
 /// second carrier, the unit.
 @[ runs("1") ]
-def rightOfOne() -> -F Integer { become rightBeside(firstManifest, bothManifest) }
+def rightOfOne() -> -F Integer { rightBeside(firstManifest, bothManifest) }

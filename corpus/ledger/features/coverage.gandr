@@ -22,4 +22,4 @@ def weight(s : Shape) -> -F Integer {
 /// The match run on a pair whose left part is a line of seven.
 @[ runs("7") ]
 def heavy : () => Integer ;
-def heavy = thunk { become weight(Pair(Line(7), Dot)) } ;
+def heavy = thunk { weight(Pair(Line(7), Dot)) } ;

@@ -17,13 +17,13 @@ module Sealed :> Model(Counter) {
 
   def start() -> -F Integer { 0 }
 
-  def step(n : Integer) -> -F Integer { become n + 1 }
+  def step(n : Integer) -> -F Integer { n + 1 }
 }
 
 /// An integer where the sealed carrier is asked.
 @[ refuses("TypeMismatch") ]
-def stepOne() -> -F (Sealed.C) { become Sealed.step(1) }
+def stepOne() -> -F (Sealed.C) { Sealed.step(1) }
 
 /// The sealed start read as an integer.
 @[ refuses("TypeMismatch") ]
-def leaked() -> -F Integer { become Sealed.start() }
+def leaked() -> -F Integer { Sealed.start() }

@@ -15,4 +15,4 @@ data NatAdd : Type {
 
 /// Two plus one runs to three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def two_plus_one() -> -F NatAdd { become add(Succ(Succ(Zero)), Succ(Zero)) }
+def two_plus_one() -> -F NatAdd { add(Succ(Succ(Zero)), Succ(Zero)) }

@@ -9467,8 +9467,8 @@ mod tests
                 "20:9 `w` variable declaration+value",
                 "20:15 `m` variable value",
                 "26:4 `tag` function declaration",
-                "26:33 `tag_of` function computation",
-                "26:40 `tagged` function value",
+                "26:26 `tag_of` function computation",
+                "26:33 `tagged` function value",
             ],
             "a dependent pair's labels bind; the called `tag_of` is run as a computation and \
              the `tagged` passed to it is a value; `tag`, one function form, declares once"

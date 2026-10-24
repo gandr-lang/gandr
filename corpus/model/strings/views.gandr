@@ -23,7 +23,7 @@ import "./copy-on-write.gandr" ;
 def readThrough() -> -F Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { resume(v, v) };
-  become count(bytes(s))
+  count(bytes(s))
 }
 
 /// `!` appended through a view and written back: after the access the held
@@ -32,7 +32,7 @@ def readThrough() -> -F Integer {
 def writeThrough() -> -F List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { run w <- push(v, 33) ; run t <- written(w) ; resume(v, t) };
-  become bytes(s)
+  bytes(s)
 }
 
 /// An access that aborts writes nothing back: the held string's bytes are as
@@ -41,7 +41,7 @@ def writeThrough() -> -F List(Integer) {
 def abandoned() -> -F List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { abort(v) } unwind { pure unit };
-  become bytes(s)
+  bytes(s)
 }
 
 /// Two accesses in turn, each seeing the write the one before left.
@@ -50,7 +50,7 @@ def twiceThrough() -> -F List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   access s as v { run w <- push(v, 33) ; run t <- written(w) ; resume(v, t) };
   access s as v { run w <- push(v, 33) ; run t <- written(w) ; resume(v, t) };
-  become bytes(s)
+  bytes(s)
 }
 
 /// A view kept past its access in the region of the scope around it: it lives
@@ -62,7 +62,7 @@ def keptInRegion() -> -F Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { become count(bytes(w)) }
+      pure count(bytes(w))
     } ;
     force k
   } with {

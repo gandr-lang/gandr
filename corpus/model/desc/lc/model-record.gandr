@@ -110,5 +110,5 @@ def lcModel : Model(LC) = lcSyntax ;
 def betaIdentity() -> -F Term {
   run q <- LCSyntax.qTm(Z);
   run identity <- LCSyntax.lam(Z, q);
-  become LCSyntax.subTm(S(Z), Z, q, LCSyntax.singleTm(Z, identity))
+  LCSyntax.subTm(S(Z), Z, q, LCSyntax.singleTm(Z, identity))
 }

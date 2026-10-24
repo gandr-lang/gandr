@@ -36,8 +36,8 @@ def rec abstracted(chain : Theory) -> -F Integer {
       run r <- abstracted[<](rest);
       return r + 1
     },
-    Port(name, sort, indices, rest) => become abstracted[<](rest),
-    Bound(name, sort, indices, binders, rest) => become abstracted[<](rest),
+    Port(name, sort, indices, rest) => abstracted[<](rest),
+    Bound(name, sort, indices, binders, rest) => abstracted[<](rest),
     _ => 0
   }
 }
@@ -59,6 +59,6 @@ def rec abstracting(chain : Theory) -> -F Integer {
 /// Of the restriction signature's three operations, `nu` alone abstracts.
 @[ runs("1") ]
 def abstractions() -> -F Integer { case Restriction {
-  Presents(sorts, opers, rules) => become abstracting(opers),
+  Presents(sorts, opers, rules) => abstracting(opers),
   _ => 0
 } }

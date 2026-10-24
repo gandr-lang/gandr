@@ -19,7 +19,7 @@ module Hidden :> Model(Counter) {
   def zero = 0;
   /// One count more.
   @[ checks ]
-  def incr(n : Integer) -> -F Integer { become n + 1 }
+  def incr(n : Integer) -> -F Integer { n + 1 }
 }
 
 /// The sealed counter packed at its models (#1108).

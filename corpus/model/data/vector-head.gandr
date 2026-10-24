@@ -24,4 +24,4 @@ def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> -F Integer {
 
 /// The first element of the vector two long.
 @[ runs("1") ]
-def pairHead() -> -F Integer { become vhead(Succ(Zero), pair()) }
+def pairHead() -> -F Integer { vhead(Succ(Zero), pair()) }

@@ -9,4 +9,4 @@ theory Pointed {
 def zero : Model(Pointed) with sort P = Integer ;
 def zero = #{.point = 0} ;
 @[ checks ]
-def forgotten() -> -F Model(Pointed) { become forget[sort P = Integer](zero) at Model(Pointed) }
+def forgotten() -> -F Model(Pointed) { forget[sort P = Integer](zero) at Model(Pointed) }

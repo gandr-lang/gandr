@@ -39,13 +39,13 @@ def multiplies(s : Model(Semigroup)) -> -F Integer {
 
 /// The monoid where a semigroup is asked: the checker applies the reduct.
 @[ runs("0") ]
-def asSemigroup() -> -F Integer { become multiplies(endoMonoid) }
+def asSemigroup() -> -F Integer { multiplies(endoMonoid) }
 
 /// Both extensions' model where a semigroup is asked: the two ways round the
 /// diamond, through the monoid and through the left zero, are one reduct.
 @[ checks ]
 def throughTheDiamond(m : Model(UnitAndZero)) -> -F Integer {
-  become multiplies(m)
+  multiplies(m)
 }
 
 /// The endomorphism monoid with its carrier written: the carrier is no field,
@@ -60,12 +60,12 @@ def endoManifest : Model(Monoid) with sort M = (Integer => Integer) = (
 /// The manifest monoid where a semigroup is asked: the checker applies the
 /// map that puts the carrier back and keeps the semigroup's members.
 @[ runs("0") ]
-def manifestAsSemigroup() -> -F Integer { become multiplies(endoManifest) }
+def manifestAsSemigroup() -> -F Integer { multiplies(endoManifest) }
 
 /// Both extensions' model with its carrier written, where a semigroup is
 /// asked: the two ways round the diamond compose to one inclusion, so one map
 /// puts the carrier back and restricts.
 @[ checks ]
 def manifestDiamond(u : Model(UnitAndZero) with sort M = Unit) -> -F Integer {
-  become multiplies(u)
+  multiplies(u)
 }

@@ -12,10 +12,10 @@ def join(
   q : Path(Integer, a, b),
   r : Path(Integer, b, c)
 ) -> -F Path(Integer, a, c) {
-  become q then r
+  q then r
 }
 
 /// Reflexivity composed with itself by a run.
 @[ checks ]
 def joined : () => Path(Integer, 4, 4) ;
-def joined = thunk { become join(4, 4, 4, four_eq_four, four_eq_four) } ;
+def joined = thunk { join(4, 4, 4, four_eq_four, four_eq_four) } ;

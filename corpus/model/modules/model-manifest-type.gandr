@@ -49,7 +49,7 @@ def oneSharing() -> -F Path(
   Type,
   Model(Counter) with sort C = Unit + (Unit + Unit),
   Model(Counter) with sort C = (Unit + Unit) + Unit
-) { become cong(countersOn, nestings) }
+) { cong(countersOn, nestings) }
 
 /// One state on, modulo three, nested to the right.
 @[ checks ]
@@ -87,19 +87,19 @@ def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = transport(
 @[ checks ]
 def stepOnce(m : Model(Counter) with sort C = Unit + (Unit + Unit)) -> -F (Unit + (Unit + Unit)) {
   case m {
-    #{.start = s, .step = t} => become t(s())
+    #{.start = s, .step = t} => t(s())
   }
 }
 
 /// Counting modulo three stepped once: the second state.
 @[ runs("+{.1 = +{.0 = unit}}") ]
-def second() -> -F (Unit + (Unit + Unit)) { become stepOnce(rightward) }
+def second() -> -F (Unit + (Unit + Unit)) { stepOnce(rightward) }
 
 /// A counter over the left nesting stepped once from its start.
 @[ checks ]
 def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> -F ((Unit + Unit) + Unit) {
   case m {
-    #{.start = s, .step = t} => become t(s())
+    #{.start = s, .step = t} => t(s())
   }
 }
 
@@ -107,11 +107,11 @@ def stepOnceLeft(m : Model(Counter) with sort C = (Unit + Unit) + Unit) -> -F ((
 /// state carried along: the transport moves the record field by field, each
 /// field a function moved along the path.
 @[ runs("+{.0 = +{.1 = unit}}") ]
-def secondLeft() -> -F ((Unit + Unit) + Unit) { become stepOnceLeft(leftward) }
+def secondLeft() -> -F ((Unit + Unit) + Unit) { stepOnceLeft(leftward) }
 
 /// #2129: the same transport written as the call's argument, not bound by a
 /// definition first, runs to the same state.
 @[ runs("+{.0 = +{.1 = unit}}") ]
 def inlineLeft() -> -F ((Unit + Unit) + Unit) {
-  become stepOnceLeft(transport(\x. Model(Counter) with sort C = x, nestings, rightward))
+  stepOnceLeft(transport(\x. Model(Counter) with sort C = x, nestings, rightward))
 }

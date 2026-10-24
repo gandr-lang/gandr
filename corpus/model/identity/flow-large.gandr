@@ -30,13 +30,13 @@ def packedKept : Flow(Type[+, 1], Packed, Packed) = stay(Packed) ;
 /// stated at.
 @[ checks ]
 def packedTwice() -> -F Flow(Type[+, 1], Packed, Packed) {
-  become packedKept then packedKept
+  packedKept then packedKept
 }
 
 /// A given flow from one large code to the other, after the stationary one.
 @[ checks ]
 def after(f : Flow(Type[+, 1], Packed, Boxed)) -> -F Flow(Type[+, 1], Packed, Boxed) {
-  become packedKept then f
+  packedKept then f
 }
 
 /// The stationary flow at the smallest universe itself, read one level up.
@@ -56,20 +56,20 @@ def packedSame : Path(Type[+, 1], Packed, Packed) = here(Packed) ;
 /// binder ranges over `Type[+, 1]`, so its body decodes a code there.
 @[ checks ]
 def packedMoved(p : Packed) -> -F Packed {
-  become transport(\X. X, packedSame, p)
+  transport(\X. X, packedSame, p)
 }
 
 /// A packed list ridden along the stationary flow at its large type.
 @[ checks ]
 def packedRode(p : Packed) -> -F Packed {
-  become ride(\X. X, packedKept, p)
+  ride(\X. X, packedKept, p)
 }
 
 /// A list of packed lists carried along reflexivity: the decode under the
 /// list reads at the carrier's level as well.
 @[ checks ]
 def packedLists(ps : List(Packed)) -> -F List(Packed) {
-  become transport(\X. List(X), packedSame, ps)
+  transport(\X. List(X), packedSame, ps)
 }
 
 /// A packed list ridden into a box along a given flow between the two large
@@ -77,12 +77,12 @@ def packedLists(ps : List(Packed)) -> -F List(Packed) {
 /// read at the flow's level.
 @[ checks ]
 def packedCarried(f : Flow(Type[+, 1], Packed, Boxed), p : Packed) -> -F Boxed {
-  become ride(\X. X, f, p)
+  ride(\X. X, f, p)
 }
 
 /// A list of packed lists ridden into a list of boxes along the same flow:
 /// the list row carries the decode beneath it.
 @[ checks ]
 def boxedLists(f : Flow(Type[+, 1], Packed, Boxed), ps : List(Packed)) -> -F List(Boxed) {
-  become ride(\X. List(X), f, ps)
+  ride(\X. List(X), f, ps)
 }

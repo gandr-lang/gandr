@@ -17,7 +17,7 @@ def negation : Path(Type, Bool, Bool) = equiv(not, not) ;
 /// A list of booleans transported along negation, in the family of lists.
 @[ checks ]
 def moved_list(xs : List(Bool)) -> -F List(Bool) {
-  become transport(\X. List(X), negation, xs)
+  transport(\X. List(X), negation, xs)
 }
 
 /// Truth then falsity.
@@ -35,7 +35,7 @@ def flipped_beta : Path(
 
 /// `both` transported along negation by a run, which negates every element.
 @[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
-def flipped_list() -> -F List(Bool) { become moved_list(both) }
+def flipped_list() -> -F List(Bool) { moved_list(both) }
 
 /// #1480: `both` transported along negation as a value, whose computation
 /// runs the first time a run reads it. A declaration computed by a transport
@@ -48,12 +48,12 @@ def flipped_value : List(Bool) = transport(\X. List(X), negation, both) ;
 /// `Path_U(Bool, Bool)`, as no path and refused the transport by shape.
 @[ checks ]
 def moved_inline(xs : List(Bool)) -> -F List(Bool) {
-  become transport(\X. List(X), equiv(not, not), xs)
+  transport(\X. List(X), equiv(not, not), xs)
 }
 
 /// #1064: `both` transported along negation written in place, by a run.
 @[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
-def flipped_inline() -> -F List(Bool) { become moved_inline(both) }
+def flipped_inline() -> -F List(Bool) { moved_inline(both) }
 
 /// Negation and the identity are no equivalence: their round trips differ.
 @[ refuses("RoundTripDistinct") ]

@@ -23,7 +23,7 @@ def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 
 /// The tag of `tagged`.
 @[ runs("3") ]
-def tag() -> -F Integer { become tag_of(tagged) }
+def tag() -> -F Integer { tag_of(tagged) }
 
 /// The first component of a dependent pair, selected by its label.
 @[ checks ]
@@ -33,7 +33,7 @@ def index_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 
 /// The index of `tagged`.
 @[ runs("3") ]
-def index() -> -F Integer { become index_of(tagged) }
+def index() -> -F Integer { index_of(tagged) }
 
 /// A pair whose second component is a loop at its first.
 @[ checks ]

@@ -1,6 +1,6 @@
 @[ checks ]
 def dbl(x: Integer) -> -F Integer {
-  become x + x
+  x + x
 }
 
 @[ refuses("TypeMismatch") ]
