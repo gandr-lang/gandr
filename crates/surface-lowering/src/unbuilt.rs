@@ -123,9 +123,6 @@ pub enum Unbuilt
     /// A recursive call's claim the lowering does not read: two claims at once,
     /// a resident that is no claim, a measure, a stage or a cost.
     RecursiveClaim,
-    /// A function standing as a value with only some of its implicits supplied,
-    /// or with an implicit after an explicit parameter.
-    PartialSupply,
     /// A `fork` in a match arm that continues its block.
     JoinedFork,
     /// A `hold` in a match arm that continues its block.
@@ -275,7 +272,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 84_usize] = [
+    pub const ALL: [Self; 83_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -293,7 +290,6 @@ impl Unbuilt
         Self::Union,
         Self::OperatorDeclaration,
         Self::RecursiveClaim,
-        Self::PartialSupply,
         Self::JoinedFork,
         Self::JoinedHold,
         Self::SharedFork,
@@ -401,7 +397,6 @@ impl Unbuilt
             Self::Union => "union_type",
             Self::OperatorDeclaration => "operator_declaration",
             Self::RecursiveClaim => "instantiation_expression.computation",
-            Self::PartialSupply => "instantiation_expression.value",
             Self::JoinedFork => "fork_statement",
             Self::JoinedHold => "hold_statement",
             Self::SharedFork => "fork_shared_statement",
@@ -504,7 +499,6 @@ impl Unbuilt
             Self::Union => TrackingIssue::UNION,
             Self::OperatorDeclaration => TrackingIssue::OPERATOR_DECLARATION,
             Self::RecursiveClaim => TrackingIssue::RECURSIVE_CLAIM,
-            Self::PartialSupply => TrackingIssue::PARTIAL_SUPPLY,
             Self::JoinedFork | Self::JoinedHold => TrackingIssue::JOINED_SCOPE,
             Self::SharedFork | Self::Dup | Self::Acquire | Self::Release => {
                 TrackingIssue::SHARED_SESSIONS

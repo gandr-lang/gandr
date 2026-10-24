@@ -1100,12 +1100,6 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::RECURSIVE_CLAIM),
             ),
             (
-                "instantiation_expression",
-                FragmentSort::Value,
-                FragmentBoundary::Unadmitted(Unbuilt::PartialSupply),
-                FailureClass::Unimplemented(TrackingIssue::PARTIAL_SUPPLY),
-            ),
-            (
                 "fork_statement",
                 FragmentSort::Computation,
                 FragmentBoundary::Unadmitted(Unbuilt::JoinedFork),

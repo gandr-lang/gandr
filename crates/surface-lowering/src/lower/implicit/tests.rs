@@ -14,7 +14,6 @@ use gandr_core_term::hole::HoleOrigin;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::lower::native::tests::body_named;
 use crate::lower::native::tests::judged;
@@ -433,19 +432,57 @@ fn a_supplied_function_stands_as_a_value()
 }
 
 #[test]
-fn a_standing_supply_takes_only_leading_implicits()
+fn a_standing_supply_opens_a_lambda_per_explicit_before_it_1498()
 {
-    let source = "def chosen @[x : t] (t : Type) -> -F t { return x }\ndef standing : +U (Type -> -F Integer) ;\ndef standing = chosen[x = 3] ;\n";
+    // `g`'s type names `s`, so `swapAt[g = …]` opens `λ s. λ t.`, `s`
+    // outermost: the supply stands at the type binding `s` first and `v` at
+    // `s`, and not at the one whose `v` is at `t`.
+    let swap =
+        "def swapAt @[g : (y : s) => s] (s : Type, t : Type, v : s) -> -F s { become g(v) }\n";
+    // Whether every declaration checks with `standing` stated at `v : result`.
+    let all_check = |result: &str| {
+        let source = format!(
+            "{swap}def standing : +U ((s : Type) -> (t : Type) -> (v : {result}) -> -F {result}) ;\ndef standing = swapAt[g = fn (y) {{ y }}] ;\n"
+        );
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from(source.as_str()), &mut arena);
+        let report = judged(&module, &mut arena);
+        report.judged().len() == module.declarations().len()
+            && report
+                .judged()
+                .iter()
+                .all(|verdict| matches!(verdict.verdict(), Verdict::Checked { .. }))
+    };
+    assert!(
+        all_check("s"),
+        "the supply abstracts `s` and `t` in written order"
+    );
+    assert!(
+        !all_check("t"),
+        "the lambdas bind `s` before `t`, so `v` is at `s`"
+    );
+}
+
+#[test]
+fn a_standing_stage_supply_stands_as_its_call_1498()
+{
+    // A stage crosses only at a call's head: `applyAt[i = k]` passed as a
+    // value is `λ f. λ x. applyAt[i = k](f, x)`.
+    let source = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\ndef applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> -F Nat { f(x) }\ndef apply2 @[j : Size] (g : (f : Nat[<j] => Nat, x : Nat[<j]) => Nat, f : Nat[<j] => Nat, x : Nat[<j]) -> -F Nat { become g(f, x) }\ndef passAt @[k : Size] (f : Nat[<k] => Nat, x : Nat[<k]) -> -F Nat { become apply2[j = k](applyAt[i = k], f, x) }\n";
     let mut arena = CoreArena::new();
     let module = lowered(SourceText::from(source), &mut arena);
+    let report = judged(&module, &mut arena);
+    assert_eq!(
+        report.judged().len(),
+        module.declarations().len(),
+        "nothing is refused: {:?}",
+        module.declarations()
+    );
     assert!(
-        matches!(
-            refusal_of(&module, SurfaceName::from("standing")),
-            LoweringRefusal::OutOfFragment {
-                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::PartialSupply),
-                ..
-            }
-        ),
-        "`x` stands after `t`, whose value its type names"
+        report
+            .judged()
+            .iter()
+            .all(|verdict| matches!(verdict.verdict(), Verdict::Checked { .. } | Verdict::Data)),
+        "the naturals are data and every function checks, `passAt` among them: {report:?}"
     );
 }

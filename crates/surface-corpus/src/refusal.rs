@@ -272,7 +272,7 @@ impl fmt::Display for Tag
 pub enum Qualifier
 {
     /// A form out of the fragment named by the unbuilt feature it carries:
-    /// `projection_expression`, `instantiation_expression.value`.
+    /// `projection_expression`, `grade.declaration`.
     Unbuilt(Unbuilt),
     /// A named reading: a boundary, the run target, or a checker former.
     Named(Tag),
@@ -2960,7 +2960,6 @@ mod tests
         }
         for text in [
             "OutOfFragment.projection_expression",
-            "OutOfFragment.instantiation_expression.value",
             "OutOfFragment.grade.declaration",
             "OutOfFragment.operator_declaration",
             "OutOfFragment.WrongSort.declaration",
