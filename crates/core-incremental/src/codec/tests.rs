@@ -2472,6 +2472,7 @@ fn a_modelled_value_root_round_trips_and_its_candidates_are_content_739()
         let models = if models {
             vec![crate::content::ModelRoots {
                 holes: vec![NodeIndex::from(3_usize)],
+                fixed: Vec::new(),
                 candidates: vec![vec![NodeIndex::from(1_usize)], vec![NodeIndex::from(
                     2_usize,
                 )]],

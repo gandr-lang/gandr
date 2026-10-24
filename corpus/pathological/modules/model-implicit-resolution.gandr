@@ -1,7 +1,7 @@
 // An omitted model implicit no module answers, or more than one (#739): a call
 // leaving the slot out is refused when no module in scope is a model of its
-// theory at the types its arguments force, and when two are, naming both. An
-// omitted slot at a manifest model type is not resolved yet (#2317).
+// theory at the types its arguments force, or at the sorts its model type
+// fixes (#2317), and when two are, naming both.
 
 /// A tally: a carrier, a zero, a step and a reading.
 @[ checks ]
@@ -66,6 +66,16 @@ def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
   s.read(s.incr(s.zero))
 }
 
-/// A manifest slot is not resolved yet (#2317).
-@[ refuses("ImplicitUnsolved") ]
+/// Both fix the carrier to the integers, as the slot does.
+@[ refuses("ModelAmbiguous") ]
 def manifest() -> Integer { fromZero() }
+
+/// The reading from zero over a tally of text.
+@[ checks ]
+def fromText @[s : Model(Tally) with sort C = String] () -> Integer {
+  s.read(s.incr(s.zero))
+}
+
+/// No tally in scope counts text.
+@[ refuses("ModelUnanswered") ]
+def textTally() -> Integer { fromText() }

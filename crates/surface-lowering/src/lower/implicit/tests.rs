@@ -885,6 +885,46 @@ def flipped() -> -F Integer { stepped((false : Bool)) }
 }
 
 #[test]
+fn an_omitted_manifest_model_implicit_files_its_fixed_sorts_2317()
+{
+    // `fromZero()` over `Model(Counter) with sort C = Integer`, with `Up` over
+    // the integers and `Flips` over flags in scope: the slot binds no hole for
+    // `C`, so it files the integers' code and each candidate its own
+    // carrier's, and the call checks as `Up` alone answers it.
+    let source = "\
+theory Counter { sort C : Type; oper zero : C; oper incr : (c : C) --> C; oper read : (c : C) --> Integer; }
+module Up : Model(Counter) {
+  type C = Integer;
+  def zero = 0;
+  def incr(c : Integer) -> -F Integer { c + 1 }
+  def read(c : Integer) -> -F Integer { c }
+}
+module Flips : Model(Counter) {
+  type C = Bool;
+  def zero = false;
+  def incr(c : Bool) -> -F Bool { case c { true => false, false => true } }
+  def read(c : Bool) -> -F Integer { case c { true => 1, false => 0 } }
+}
+def fromZero @[s : Model(Counter) with sort C = Integer] () -> -F Integer { s.read(s.incr(s.zero)) }
+def counted() -> -F Integer { fromZero() }
+";
+    let mut arena = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut arena);
+    let counted = declaration_named(&module, SurfaceName::from("counted"));
+    let slots = module.models(counted);
+    let quoted = |id| matches!(arena.value(id), Some(Value::Quote(_)));
+    assert!(
+        matches!(slots, [slot] if slot.holes.len() == 3
+            && matches!(slot.fixed.as_slice(), [code] if quoted(*code))
+            && slot.candidates.len() == 2
+            && slot.candidates.iter().all(|candidate| candidate.components.len() == 3
+                && matches!(candidate.fixed.as_slice(), [code] if quoted(*code)))),
+        "three holes, the integers' code, and each candidate's own carrier: {slots:?}"
+    );
+    assert_checked(&module, &mut arena);
+}
+
+#[test]
 fn a_model_implicit_named_alone_is_refused_739()
 {
     // `s` is its components: passed where a model value is asked, it is

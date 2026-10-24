@@ -5,9 +5,12 @@
 //! omitting the slot nominates one hole per component. [`ModelSlot`] keeps
 //! those holes together with every model in scope whose theory is `S` or
 //! includes it, each as the values it passes for the components, in the holes'
-//! order. The checker resolves the slot to the one candidate its constraints
-//! leave and fills the holes with that candidate's components, or refuses the
-//! call.
+//! order. A manifest model type, `Model(S) with sort C = A`, binds no
+//! parameter for a sort it fixes: the slot holds the code of each type it fixes
+//! a sort to, and each candidate the code of its own sort of that name, so a
+//! candidate of another sort is refuted. The checker resolves the slot to the
+//! one candidate its constraints leave and fills the holes with that
+//! candidate's components, or refuses the call.
 //!
 //! # Items
 //!
@@ -27,26 +30,36 @@ use crate::hole::HoleId;
 #[cfg(test)]
 mod tests;
 
-/// One model that may answer a slot: the value it passes for each component,
-/// in signature order, each closed — the member or nested record of a module.
-#[repr(transparent)]
+/// One model that may answer a slot.
+///
+/// It holds the value it passes for each component, in signature order, each
+/// closed — the member or nested record of a module — and the code of each
+/// sort the slot fixes, in the slot's order.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Candidate
 {
     /// The value passed for each component, in signature order.
     pub components: Vec<ValueId>,
+    /// The code of the candidate's own sort for each sort the slot fixes, in
+    /// the order of [`ModelSlot::fixed`].
+    pub fixed: Vec<ValueId>,
 }
 
 /// A model slot a call omits, with the models in scope that may answer it.
 ///
-/// It holds the hole nominated for each component, in signature order, and
-/// each candidate holds one component per hole in the same order. The kernel
-/// never reads it: the checker resolves the slot before the body crosses.
+/// It holds the hole nominated for each component, in signature order, the
+/// code of each type a manifest model type fixes a sort to, in the order of
+/// the sorts' names, and the candidates, each holding one component per hole
+/// and one code per fixed sort in the same orders. The kernel never reads it:
+/// the checker resolves the slot before the body crosses.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ModelSlot
 {
     /// The hole the call nominated for each component, in signature order.
     pub holes: Vec<HoleId>,
+    /// The code of the type the slot's model type fixes each fixed sort to, in
+    /// the order of the sorts' names; empty for `Model(S)`.
+    pub fixed: Vec<ValueId>,
     /// The models in scope that may answer the slot, in the order the lowering
     /// met them.
     pub candidates: Vec<Candidate>,

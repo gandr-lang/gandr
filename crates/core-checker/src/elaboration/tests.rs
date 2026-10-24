@@ -1326,6 +1326,7 @@ fn candidate(
 {
     gandr_core_term::model::Candidate {
         components: Vec::from([code, arena.value_constant(step)]),
+        fixed: Vec::new(),
     }
 }
 
@@ -1343,6 +1344,7 @@ fn a_model_slot_resolves_to_the_candidate_its_sort_admits_739()
     let up_step = up.components[1];
     let slot = gandr_core_term::model::ModelSlot {
         holes: Vec::from(holes),
+        fixed: Vec::new(),
         candidates: Vec::from([flag, up]),
     };
     assert_eq!(deferrals.resolve(&mut arena, &[slot]), Ok(()));
@@ -1370,6 +1372,7 @@ fn a_model_slot_two_candidates_answer_is_ambiguous_739()
     ]);
     let slot = gandr_core_term::model::ModelSlot {
         holes: Vec::from(holes),
+        fixed: Vec::new(),
         candidates,
     };
     let survivors = [0_usize, 2]
@@ -1397,9 +1400,74 @@ fn a_model_slot_no_candidate_answers_is_refused_739()
     let [refuted, empty] = [Vec::from([flag]), Vec::new()].map(|candidates| {
         deferrals.resolve(&mut arena, &[gandr_core_term::model::ModelSlot {
             holes: Vec::from(holes),
+            fixed: Vec::new(),
             candidates,
         }])
     });
     assert_eq!(refuted, Err((at, CheckRefusal::ModelUnanswered { at })));
     assert_eq!(empty, Err((at, CheckRefusal::ModelUnanswered { at })));
+}
+
+#[test]
+fn a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317()
+{
+    // `fromZero()` over `@[s : Model(Tally) with sort C = Integer]`: the slot
+    // binds the step alone, nothing forces it, and the sort is fixed, so only
+    // the fixed sort tells `Up`, over the integers, from `Flips`, over the
+    // unit type. A fixed type reading a binder of the callee tests nothing.
+    let mut arena = CoreArena::new();
+    let step = gandr_core_term::hole::HoleId::nominated(
+        gandr_core_term::hole::NominationIndex::from(0_u32),
+    )
+    .expect("a nominated name");
+    let at = arena.value_hole(step);
+    let collecting = || {
+        let mut deferrals = super::Deferrals::default();
+        deferrals.open(super::Collecting::On);
+        deferrals.nominate(at, step, Binders::NONE);
+        deferrals
+    };
+    let mut deferrals = collecting();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let [integer, unit] = [integer, unit].map(|ty| arena.value_quote(ty));
+    let [up_step, flips_step] =
+        [1_usize, 2].map(|constant| arena.value_constant(ConstantIndex::from(constant)));
+    let candidates = Vec::from([
+        gandr_core_term::model::Candidate {
+            components: Vec::from([flips_step]),
+            fixed: Vec::from([unit]),
+        },
+        gandr_core_term::model::Candidate {
+            components: Vec::from([up_step]),
+            fixed: Vec::from([integer]),
+        },
+    ]);
+    let slot = |fixed| gandr_core_term::model::ModelSlot {
+        holes: Vec::from([step]),
+        fixed: Vec::from([fixed]),
+        candidates: candidates.clone(),
+    };
+    let mut open = collecting();
+    assert_eq!(deferrals.resolve(&mut arena, &[slot(integer)]), Ok(()));
+    let solutions = deferrals.solutions(&arena);
+    assert!(
+        solutions.as_ref().is_ok_and(|solved| solved
+            .get(&step)
+            .is_some_and(|&(solved, _)| solved == up_step)),
+        "the step is `Up`'s: {solutions:?}"
+    );
+    let bound = arena.value_variable(gandr_core_term::Zone::Intuitionistic, 0_u32.into());
+    let survivors = [0_usize, 1]
+        .into_iter()
+        .map(gandr_core_term::model::CandidatePlace::from)
+        .fold(
+            gandr_core_term::model::Survivors::default(),
+            gandr_core_term::model::Survivors::with,
+        );
+    assert_eq!(
+        open.resolve(&mut arena, &[slot(bound)]),
+        Err((at, CheckRefusal::ModelAmbiguous { at, survivors })),
+        "a fixed type reading the callee's binder refutes neither"
+    );
 }

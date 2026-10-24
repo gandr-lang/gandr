@@ -5113,7 +5113,8 @@ where
             // supply stages takes its own, with the laws, the rules and the
             // bounds, however many, then each supply; one whose calls omit a
             // model slot takes its own, with the laws, the rules, the bounds
-            // and the supplies, however many, then each slot.
+            // and the supplies, however many, then each slot: its holes, the
+            // codes it fixes, and each candidate's components and codes.
             writer.tag(Tag(if !models.is_empty() {
                 10
             }
@@ -5185,6 +5186,7 @@ where
                 writer.count(Count(models.len()))?;
                 for slot in models {
                     write_indices(writer, &slot.holes)?;
+                    write_indices(writer, &slot.fixed)?;
                     writer.count(Count(slot.candidates.len()))?;
                     for components in &slot.candidates {
                         for &component in components {
@@ -5484,15 +5486,21 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
                     if holes.is_empty() {
                         return Err(CodecError::NonCanonical);
                     }
+                    let fixed = read_indices(reader)?;
+                    let width = holes.len().saturating_add(fixed.len());
                     let mut candidates = Vec::new();
                     for _candidate in 0 .. reader.count()?.0 {
-                        let mut components = Vec::with_capacity(holes.len());
-                        for _component in 0 .. holes.len() {
-                            components.push(read_index(reader)?);
+                        let mut roots = Vec::with_capacity(width);
+                        for _root in 0 .. width {
+                            roots.push(read_index(reader)?);
                         }
-                        candidates.push(components);
+                        candidates.push(roots);
                     }
-                    models.push(crate::content::ModelRoots { holes, candidates });
+                    models.push(crate::content::ModelRoots {
+                        holes,
+                        fixed,
+                        candidates,
+                    });
                 }
             }
             crate::content::DeclarationRoots::Value {

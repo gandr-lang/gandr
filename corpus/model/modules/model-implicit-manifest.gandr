@@ -1,0 +1,63 @@
+// An omitted model implicit at a manifest model type resolved (#2317):
+// `@[s : Model(Dial) with sort C = Integer]` binds no parameter for `C`, so
+// no argument forces it, and the sort the type fixes is what tells the
+// modules in scope apart. `Up` counts integers and `Flips` flags; only `Up`'s
+// carrier is the one the slot fixes, so a call leaving the slot out passes
+// `Up`.
+
+/// A dial: a carrier, a zero, a turn and a reading.
+@[ checks ]
+theory Dial {
+  sort C : Type;
+  oper zero : C;
+  oper incr : (c : C) --> C;
+  oper read : (c : C) --> Integer;
+}
+
+/// Counting up by one.
+module Up : Model(Dial) {
+  type C = Integer;
+  /// Zero.
+  @[ checks ]
+  def zero = 0;
+  /// One count more.
+  @[ checks ]
+  def incr(c : Integer) -> Integer { c + 1 }
+  /// The count as it is.
+  @[ checks ]
+  def read(c : Integer) -> Integer { c }
+}
+
+/// Flipping a flag.
+module Flips : Model(Dial) {
+  type C = Bool;
+  /// Down.
+  @[ checks ]
+  def zero = (false : Bool);
+  /// The other flag.
+  @[ checks ]
+  def incr(c : Bool) -> Bool { if c { false } else { true } }
+  /// One for up, zero for down.
+  @[ checks ]
+  def read(c : Bool) -> Integer { if c { 1 } else { 0 } }
+}
+
+/// The reading after one turn from zero, over any dial of integers.
+@[ checks ]
+def upOnce @[s : Model(Dial) with sort C = Integer] () -> Integer {
+  s.read(s.incr(s.zero))
+}
+
+/// The reading after one turn from zero, over any dial of flags.
+@[ checks ]
+def flipOnce @[s : Model(Dial) with sort C = Bool] () -> Integer {
+  s.read(s.incr(s.zero))
+}
+
+/// The slot fixes the integers: `Up` answers it, one count from zero.
+@[ runs("1") ]
+def turnedUp() -> Integer { upOnce() }
+
+/// The slot fixes the flags: `Flips` answers it, up after one flip.
+@[ runs("1") ]
+def turnedOver() -> Integer { flipOnce() }

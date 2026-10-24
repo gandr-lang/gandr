@@ -1032,7 +1032,6 @@ impl<'source> Lowerer<'_, 'source>
             Maybe::Absent(_) => None,
         };
         if supplied.is_none()
-            && slot.fixed().is_empty()
             && !holes.is_empty()
             && let Some(caller) = caller
         {
@@ -1050,6 +1049,11 @@ impl<'source> Lowerer<'_, 'source>
                 .push(model::PlannedModel {
                     caller,
                     holes,
+                    fixed: slot
+                        .fixed()
+                        .iter()
+                        .map(|(name, &stated)| (name.clone(), stated))
+                        .collect(),
                     candidates,
                 });
         }
