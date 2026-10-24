@@ -64,10 +64,9 @@ use gandr_surface_syntax::SyntaxTree;
 use gandr_theory_graphs::Bound;
 
 use super::ParseResult;
-use super::Repair;
 use super::molded;
 use super::ordered;
-use super::repair;
+use super::unrepaired;
 use crate::MeldState;
 use crate::Molder;
 use crate::TokenIndex;
@@ -372,10 +371,7 @@ fn headed<'source>(
         let tile = SourceText::from(written_keyword.as_str());
         let copied = written(source, form, place, tile)?;
         let copied = SourceText::from(copied.as_str());
-        if repair(pbg, copied) != Repair::Unneeded {
-            return None;
-        }
-        let (declaration, _none) = molded(pbg, copied).commit_with_obligations(copied).ok()?;
+        let declaration = unrepaired(pbg, copied)?;
         if !bool::from(declared(pbg, &declaration)) {
             return None;
         }
@@ -486,16 +482,6 @@ fn heads(
         .collect()
 }
 
-/// What a copy's molding shows before the whole of it is read.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Resumed
-{
-    /// A push leaves a repair, which stays: the copy needs one.
-    Repaired,
-    /// No push leaves one: whether the copy needs one is its whole parse's.
-    Unrepaired,
-}
-
 /// A top-level form's own molding, which every copy of it the search tries
 /// shares up to where the copy's tokens part from the form's.
 ///
@@ -503,7 +489,9 @@ enum Resumed
 /// [`lookahead_reach`], so a copy's tokens before the latest position whose
 /// reach stops short of the first token the copy changes mold as the form's
 /// own. The form is molded once, as far as the copies need it, and a copy
-/// molds only from there, its pushes rolled back after it.
+/// molds only from there: a copy that halts at a repair has its pushes rolled
+/// back, and one that molds whole is committed from the molding, which then
+/// starts over.
 ///
 /// # Specification
 /// - requires: `state` holds `tokens` up to `molded`, molded from a fresh state
@@ -554,14 +542,13 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
         }
     }
 
-    /// Whether molding `copy`, the form with one tile written in, leaves a
-    /// repair, read from the form's own molding as far as the copy shares it.
+    /// The tree `copy`, the form with one tile written in, parses to when it
+    /// parses with no repair, read from the form's own molding as far as the
+    /// copy shares it and committed from it when the copy molds whole.
     ///
     /// # Specification
     /// - requires: `copy` is the form's text with a tile written in.
-    /// - ensures: [`Resumed::Repaired`] exactly when
-    ///   [`Molder::mold_stream_until_repair`] over `copy` from a fresh state
-    ///   halts.
+    /// - ensures: what [`unrepaired`] answers of `copy`.
     /// - fails: never.
     /// - panics: none.
     /// - executable: none — the clause restates a fresh molding of `copy`.
@@ -571,10 +558,10 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
     ///   placement's witnesses read, and over every one-token drop of a corpus
     ///   source, answers as its fresh molding.
     /// - witness: `parse::place::tests::a_resumed_copy_answers_as_a_fresh_one`
-    fn copy(
+    fn copy<'copy>(
         &mut self,
-        copy: SourceText<'_>,
-    ) -> Resumed
+        copy: SourceText<'copy>,
+    ) -> Option<SyntaxTree<'copy>>
     {
         let copied = label(SourceFragment::from(<&str>::from(copy)));
         let form = <&str>::from(self.text).as_bytes();
@@ -613,7 +600,7 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
             self.molded = next;
         }
         if self.halted == Molding::Halted {
-            return Resumed::Repaired;
+            return None;
         }
         let mark = self.state.mark();
         let molding = self.molder.mold_run_until_repair(
@@ -622,11 +609,17 @@ impl<'pbg, 'text> Shared<'pbg, 'text>
             TokenRun::new(self.molded, TokenIndex::from(copied.len())),
             copy,
         );
-        self.state.rollback_to(&mark);
-        match molding {
-            Molding::Halted => Resumed::Repaired,
-            Molding::Whole => Resumed::Unrepaired,
+        if molding == Molding::Halted {
+            self.state.rollback_to(&mark);
+            return None;
         }
+        // The molding holds the whole copy: commit it, and mold the form
+        // afresh for the next copy.
+        let whole = core::mem::replace(&mut self.state, MeldState::new(self.molder.pbg()));
+        self.molded = TokenIndex::from(0_usize);
+        self.halted = Molding::Whole;
+        let (tree, obligations) = whole.commit_with_obligations(copy).ok()?;
+        obligations.is_empty().then_some(tree)
     }
 }
 
@@ -744,21 +737,16 @@ fn settled<'source>(
             });
             written(source, top, place, closer).is_some_and(|copy| {
                 let copy = SourceText::from(copy.as_str());
-                shared.copy(copy) == Resumed::Unrepaired
-                    && repair(pbg, copy) == Repair::Unneeded
-                    && molded(pbg, copy).commit_with_obligations(copy).is_ok_and(
-                        |(copied, _repairs)| {
-                            tile.is_some_and(|(at, end)| bool::from(tiled(&copied, at, end)))
-                                && (target.class.is_some()
-                                    || (bool::from(declared(pbg, &copied))
-                                        && enclosing(&copied, repair_start, repair_end)
-                                            <= target.depth
-                                        && tile.is_some_and(|(at, _end)| {
-                                            kept(tree, top.start(), place)
-                                                == kept(&copied, ByteOffset::from(0_usize), at)
-                                        })))
-                        },
-                    )
+                shared.copy(copy).is_some_and(|copied| {
+                    tile.is_some_and(|(at, end)| bool::from(tiled(&copied, at, end)))
+                        && (target.class.is_some()
+                            || (bool::from(declared(pbg, &copied))
+                                && enclosing(&copied, repair_start, repair_end) <= target.depth
+                                && tile.is_some_and(|(at, _end)| {
+                                    kept(tree, top.start(), place)
+                                        == kept(&copied, ByteOffset::from(0_usize), at)
+                                })))
+                })
             })
         })?;
     let place = past(source, place, closer);
@@ -1109,10 +1097,7 @@ mod tests
     use gandr_surface_syntax::SourceFragment;
     use gandr_surface_syntax::SourceText;
 
-    use crate::MeldState;
-    use crate::Molder;
     use crate::label::label;
-    use crate::mold::Molding;
     use crate::oblig::Oblig;
     use crate::parse;
     use crate::testing::reconstruct;
@@ -1354,10 +1339,10 @@ mod tests
     }
 
     /// A try that stops molding at its first repair answers as the whole
-    /// molding and commit do, over every prefix of sources whole, missing a
-    /// closer and carrying one too many: each prefix leaves its forms open
-    /// at another point, so repairs stream early, late and only at the
-    /// close.
+    /// molding and commit do, the same tree when it needs none, over every
+    /// prefix of sources whole, missing a closer and carrying one too many:
+    /// each prefix leaves its forms open at another point, so repairs stream
+    /// early, late and only at the close.
     #[test]
     fn a_try_stopped_at_its_first_repair_answers_as_a_whole_parse()
     {
@@ -1376,14 +1361,15 @@ mod tests
                 let prefix = SourceText::from(source.get(.. end).unwrap());
                 let whole = super::molded(&pbg, prefix)
                     .commit_with_obligations(prefix)
-                    .is_ok_and(|(_tree, obligations)| obligations.is_empty());
+                    .ok()
+                    .and_then(|(tree, obligations)| obligations.is_empty().then_some(tree));
                 assert_eq!(
-                    super::repair(&pbg, prefix) == super::Repair::Unneeded,
+                    super::unrepaired(&pbg, prefix),
                     whole,
                     "{:?}: the stopped molding and the whole one disagree",
                     <&str>::from(prefix)
                 );
-                if whole {
+                if whole.is_some() {
                     clean = clean.saturating_add(1);
                 }
                 else {
@@ -1398,10 +1384,11 @@ mod tests
     }
 
     /// A copy read from its form's shared molding answers as a fresh molding
-    /// of it does: a closer, a member's `;`, an arm's `=>` and an `else`
-    /// written at every token end of sources whole and missing a tile, tried
-    /// in source order and then backwards, so the shared molding both
-    /// resumes and starts again.
+    /// of it does, the same tree when it needs no repair: a closer, a member's
+    /// `;`, an arm's `=>` and an `else` written at every token end of sources
+    /// whole and missing a tile, tried in source order and then backwards, so
+    /// the shared molding resumes, starts again, and starts over after a copy
+    /// it committed.
     #[test]
     fn a_resumed_copy_answers_as_a_fresh_one()
     {
@@ -1432,18 +1419,15 @@ mod tests
                     ]
                     .concat();
                     let copy = SourceText::from(copy.as_str());
-                    let mut state = MeldState::new(&pbg);
-                    let tokens = label(SourceFragment::from(<&str>::from(copy)));
-                    let fresh =
-                        Molder::new(&pbg).mold_stream_until_repair(&mut state, &tokens, copy);
+                    let fresh = super::unrepaired(&pbg, copy);
                     let resumed = shared.copy(copy);
                     assert_eq!(
-                        resumed == super::Resumed::Repaired,
-                        fresh == Molding::Halted,
+                        resumed,
+                        fresh,
                         "{:?}: the resumed molding and the fresh one disagree",
                         <&str>::from(copy)
                     );
-                    if let Some(count) = answers.get_mut(usize::from(fresh == Molding::Halted)) {
+                    if let Some(count) = answers.get_mut(usize::from(fresh.is_some())) {
                         *count = count.saturating_add(1);
                     }
                 }

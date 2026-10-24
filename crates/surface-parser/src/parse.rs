@@ -623,53 +623,38 @@ fn molded<'pbg>(
     state
 }
 
-/// Whether a parse needs a repair.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Repair
-{
-    /// The source parses with none.
-    Unneeded,
-    /// The source parses with at least one.
-    Needed,
-}
-
-/// Whether `source` parses with a repair, molded only as far as it takes to
-/// tell.
+/// The tree `source` parses to when it parses with no repair, molded only as
+/// far as it takes to tell.
 ///
 /// The molding stops at the first tile whose push leaves a repair
 /// ([`Molder::mold_stream_until_repair`]). A source that molds whole without
-/// one is closed, which may add the completion's. No tree is kept.
+/// one is committed from the same molding, which may add the completion's.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: [`Repair::Unneeded`] exactly when [`molded`]'s state over
-///   `source` commits with no obligation.
+/// - ensures: the tree [`molded`]'s state over `source` commits to when the
+///   commit owes no obligation; `None` otherwise.
 /// - provides: the test a left-out tile's placement runs over each copy it
-///   tries ([`place::placed`]).
+///   tries, and the tree it then reads, from one molding ([`place::placed`]).
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`Molder::mold_stream_until_repair`].
 /// - witness: `parse::place::tests::a_try_stopped_at_its_first_repair_answers_as_a_whole_parse`
-#[spec(ensures: |ret| (ret == Repair::Unneeded) == molded(pbg, source).commit_with_obligations(source).is_ok_and(|(_tree, obligations)| obligations.is_empty()))]
-fn repair(
+#[spec(ensures: |ret| ret.is_some() == molded(pbg, source).commit_with_obligations(source).is_ok_and(|(_tree, obligations)| obligations.is_empty()))]
+fn unrepaired<'source>(
     pbg: &Pbg,
-    source: SourceText<'_>,
-) -> Repair
+    source: SourceText<'source>,
+) -> Option<SyntaxTree<'source>>
 {
     let mut molder = Molder::new(pbg);
     let mut state = MeldState::new(pbg);
     let tokens = label(SourceFragment::from(<&str>::from(source)));
-    let unneeded = molder.mold_stream_until_repair(&mut state, &tokens, source) == Molding::Whole
-        && state
-            .commit_with_obligations(source)
-            .is_ok_and(|(_tree, obligations)| obligations.is_empty());
-    if unneeded {
-        Repair::Unneeded
+    if molder.mold_stream_until_repair(&mut state, &tokens, source) == Molding::Halted {
+        return None;
     }
-    else {
-        Repair::Needed
-    }
+    let (tree, obligations) = state.commit_with_obligations(source).ok()?;
+    obligations.is_empty().then_some(tree)
 }
 
 /// Commit a molded state over `source` as a parse result.
