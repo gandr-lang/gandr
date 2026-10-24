@@ -685,7 +685,9 @@ fn a_tuple_of_paths_inhabits_the_identity_of_a_product()
     let motive = arena.value_type_product(&[decode, decode]);
     let moved = arena.computation_path_transport(motive, path, pair);
     let moved = arena.value_returned(moved);
-    let components = tuple_components(&mut arena, &[], moved, &[boolean.ty, boolean.ty]);
+    let components = tuple_components(&mut arena, &crate::env::NO_ENTRIES, moved, &[
+        boolean.ty, boolean.ty,
+    ]);
     let transports: Vec<ComputationId> = components
         .iter()
         .map(|&component| match arena.value(component) {
@@ -714,7 +716,9 @@ fn a_tuple_of_paths_inhabits_the_identity_of_a_product()
             KernelVerdict::Convertible
         );
     }
-    let unmoved = tuple_components(&mut arena, &[], pair, &[boolean.ty, boolean.ty]);
+    let unmoved = tuple_components(&mut arena, &crate::env::NO_ENTRIES, pair, &[
+        boolean.ty, boolean.ty,
+    ]);
     assert_eq!(
         unmoved,
         [truth, falsity],
@@ -2553,7 +2557,7 @@ fn a_pair_s_components_stop_at_a_body_naming_its_own_position()
     let itself = arena.value_constant(ConstantIndex::from(0_usize));
     let declaration = staging.def(LevelSignature::monomorphic(), declared, itself);
     environment.add_decl_unchecked(declaration);
-    let entries = environment.entries().to_vec();
+    let entries = environment.entries().clone();
     let mut arena = environment.arena().clone();
     let itself = arena.value_constant(ConstantIndex::from(0_usize));
     let components = super::pair_components(&mut arena, &entries, itself);

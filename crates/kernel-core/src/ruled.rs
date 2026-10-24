@@ -23,7 +23,7 @@ use gandr_kernel_term::TermArena;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::KernelError;
 
 mod link;
@@ -42,7 +42,7 @@ const CONVERGENCE_FUEL: u64 = 1 << 22;
 /// # Specification
 /// trivial.
 #[repr(transparent)]
-struct Admitted<'entries>(&'entries [AdmittedDeclaration]);
+struct Admitted<'entries>(&'entries Entries);
 
 impl RuleScope for Admitted<'_>
 {
@@ -141,7 +141,7 @@ impl RuleScope for Admitted<'_>
 )]
 pub fn admit(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     position: ConstantIndex,
     (declared, body): (ValueTypeId, ValueId),
     rules: &OperationRules,

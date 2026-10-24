@@ -298,6 +298,7 @@ use crate::conv::convertible_comp_types;
 use crate::conv::pending_endpoints;
 use crate::encoding::SupportGoal;
 use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::env::projected_atoms;
 use crate::error::ExpectedComputationShape;
 use crate::error::ExpectedValueShape;
@@ -686,7 +687,7 @@ pub struct Judgement<'session>
 {
     /// The environment's admitted declarations, for constant and atom
     /// resolution.
-    entries: &'session [AdmittedDeclaration],
+    entries: &'session Entries,
     /// This declaration's admitted level context.
     levels: &'session LevelContext,
     /// The atoms this declaration reads as their representations, because
@@ -772,7 +773,7 @@ impl<'session> Judgement<'session>
     #[inline]
     #[must_use]
     pub const fn new(
-        entries: &'session [AdmittedDeclaration],
+        entries: &'session Entries,
         levels: &'session LevelContext,
     ) -> Self
     {
@@ -1765,7 +1766,7 @@ where
 #[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind, .. }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), ValueType::Data { .. } | ValueType::Record(_) | ValueType::Session { .. } | ValueType::PathUniverse(..) | ValueType::FlowUniverse(..) | ValueType::Path { .. } | ValueType::Flow { .. } | ValueType::Bridge { .. } | ValueType::Base(_) | ValueType::Product(_) | ValueType::Sigma { .. } | ValueType::Sum(_) | ValueType::List(_) | ValueType::Thunk(_) | ValueType::Universe { .. } | ValueType::Lift { .. } | ValueType::Element { .. } | ValueType::Abstract(_) | ValueType::StaticPi { .. } | ValueType::Staged { .. } => ret.is_err() }), _ => ret.is_err() })]
 fn abstract_atom_level(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     atom: ConstantIndex,
 ) -> Result<Level, KernelError>
 {
@@ -4381,7 +4382,9 @@ where
                                     .and_then(|index| u32::try_from(index).ok())
                                     .map_or(Maybe::Absent(recursion::Unowned::Outside), |index| {
                                         Maybe::Present((
-                                            ConstantIndex::from(judgement.entries.len()),
+                                            ConstantIndex::from(usize::from(
+                                                judgement.entries.len(),
+                                            )),
                                             DeBruijnIndex::from(index),
                                         ))
                                     })
@@ -6150,7 +6153,7 @@ where
                 (judgement, accessibility)
             },
             Block::Outside | Block::Inside { .. } | Block::Codata { .. } => {
-                let position = ConstantIndex::from(judgement.entries.len());
+                let position = ConstantIndex::from(usize::from(judgement.entries.len()));
                 let accessibility = occurrence::occurrences(
                     arena,
                     (occurrence::Block::lone(position), &[], judgement.entries),
@@ -6177,7 +6180,7 @@ where
             ref parameters,
             ref observations,
         } => {
-            let position = ConstantIndex::from(judgement.entries.len());
+            let position = ConstantIndex::from(usize::from(judgement.entries.len()));
             (
                 judgement.within_codata(position, codata::Signature {
                     parameters,
@@ -6329,7 +6332,7 @@ where
                 arena,
                 judgement.entries,
                 (
-                    ConstantIndex::from(judgement.entries.len()),
+                    ConstantIndex::from(usize::from(judgement.entries.len())),
                     parameters.as_slice(),
                 ),
                 constructors,
@@ -6350,7 +6353,7 @@ where
             if observations.is_empty() {
                 return Err(KernelError::CodataWithoutObservations);
             }
-            let position = ConstantIndex::from(judgement.entries.len());
+            let position = ConstantIndex::from(usize::from(judgement.entries.len()));
             let mut context = Vec::new();
             for parameter in parameters {
                 let _formed = type_level(
@@ -6497,7 +6500,7 @@ where
             crate::ruled::admit(
                 arena,
                 judgement.entries,
-                ConstantIndex::from(judgement.entries.len()),
+                ConstantIndex::from(usize::from(judgement.entries.len())),
                 (declared, body),
                 declaration.operation_rules(),
             )?;
@@ -6888,7 +6891,7 @@ pub(crate) fn check_closed_value(
 ) -> Result<(), KernelError>
 {
     let levels = LevelContext::admit(gandr_kernel_term::LevelParamCount::from(0_u32), Vec::new())?;
-    let judgement = Judgement::new(&[], &levels);
+    let judgement = Judgement::new(&crate::env::NO_ENTRIES, &levels);
     let mut memo = DefaultMemo::new();
     let mut session = SupportContext::new();
     let mut census = ExpansionCensus::new();
@@ -6952,7 +6955,7 @@ pub(crate) fn synth_closed_value(
 ) -> Result<ValueTypeId, KernelError>
 {
     let levels = LevelContext::admit(gandr_kernel_term::LevelParamCount::from(0_u32), Vec::new())?;
-    let judgement = Judgement::new(&[], &levels);
+    let judgement = Judgement::new(&crate::env::NO_ENTRIES, &levels);
     let mut memo = DefaultMemo::new();
     let mut session = SupportContext::new();
     let mut census = ExpansionCensus::new();
@@ -7012,7 +7015,6 @@ mod tests
     use super::run;
     use super::type_level;
     use crate::census::ExpansionCensus;
-    use crate::env::AdmittedDeclaration;
     use crate::env::Environment;
     use crate::error::ExpectedValueShape;
     use crate::error::KernelError;
@@ -7166,9 +7168,9 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn no_entries() -> Vec<AdmittedDeclaration>
+    fn no_entries() -> crate::env::Entries
     {
-        Vec::new()
+        crate::env::Entries::new()
     }
 
     /// An unconstrained level context over `params` prenex parameters.

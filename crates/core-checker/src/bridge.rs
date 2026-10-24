@@ -1133,8 +1133,8 @@ pub struct Readmission
     /// The union of the admitted declarations' audits.
     audit: ArtifactAudit,
     /// The declarations the kernel admitted, as they were staged, in kernel
-    /// admission order.
-    admitted: Vec<KernelDeclaration>,
+    /// admission order; those a record froze are shared with it.
+    admitted: gandr_kernel_term::Family<KernelDeclaration>,
     /// How many leading entries were resumed from an earlier readmission's
     /// [`Crossed`] rather than crossed again.
     resumed: usize,
@@ -1314,7 +1314,8 @@ impl Readmission
             };
         };
         let marked = self.marked(&mut names, ConstantIndex::from(0_usize));
-        if let Some((leading, after)) = marked.split_at_checked(record.positions.exports.len())
+        if let Some((leading, after)) =
+            marked.split_at_checked(usize::from(record.positions.exports.len()))
             && let Maybe::Present(prefix) = encode_prefix(arena, leading)
         {
             let artifact = encode_after(&prefix, arena, after);
@@ -1346,7 +1347,7 @@ impl Readmission
     ///   [`export_resuming`](Self::export_resuming).
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
     /// - witness: `bridge::tests::a_resumed_readmission_answers_as_a_whole_one_776`
-    #[spec(ensures: |ret| ret.len() == self.admitted.len().saturating_sub(usize::from(from)))]
+    #[spec(ensures: |ret| ret.len() == usize::from(self.admitted.len()).saturating_sub(usize::from(from)))]
     fn marked(
         &self,
         names: &mut BTreeMap<ConstantIndex, StructuredName>,
@@ -1575,7 +1576,13 @@ impl Crossed
                 admitted: positions.admitted.clone(),
                 definitions: CodeDefinitions::new(),
                 unfoldings: positions.unfoldings.clone(),
-                exports: positions.exports.clone(),
+                exports: {
+                    // Every resume clones the record's positions; frozen,
+                    // the clones share its exports rather than copy them.
+                    let mut exports = positions.exports.clone();
+                    exports.freeze();
+                    exports
+                },
                 open: Vec::new(),
                 withheld: BTreeSet::new(),
                 presentations: positions.presentations.clone(),
@@ -2567,15 +2574,15 @@ enum Erased
     captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len())],
     ensures: |ret| match ret.0 {
         | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
-            environment.entries().len().checked_sub(entries) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
-            && positions.exports.len().checked_sub(exports) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
+            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
+            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
             && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
         | Outcome::Refused(_) | Outcome::Rejected(_) =>
-            environment.entries().len().checked_sub(entries) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
-            && positions.exports.len().checked_sub(exports) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
+            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
+            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
             && positions.admitted.len() == crossed,
         | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
     },
@@ -3023,7 +3030,7 @@ fn settle(
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(captures: [entries = environment.entries().len(), axioms = positions.assumed.len().saturating_add(positions.native.len())], ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
-        || environment.entries().len().checked_sub(entries) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)))]
+        || usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)))]
 fn cross_block<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -3036,7 +3043,7 @@ where
     Vouch: Fn(Certificate) -> Certificate,
 {
     let staged = 'block: loop {
-        let next = environment.entries().len();
+        let next = usize::from(environment.entries().len());
         let crossing = members
             .iter()
             .enumerate()
@@ -3235,7 +3242,7 @@ quenchant_shape::reason_enum! {
 #[spec(
     captures: [entries = environment.entries().len(), assumed = positions.assumed.len()],
     ensures: |ret| matches!(ret, Maybe::Present(_)) == (positions.assumed.len() > assumed)
-        && environment.entries().len().checked_sub(entries) == positions.assumed.len().checked_sub(assumed),
+        && usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().checked_sub(assumed),
 )]
 fn assumed_for<Vouch>(
     environment: &mut Environment,
@@ -3269,7 +3276,7 @@ where
     };
     let returner = arena.comp_type_returner(result);
     let declared = arena.value_type_thunk(returner);
-    let base = ConstantIndex::from(environment.entries().len().saturating_add(1));
+    let base = ConstantIndex::from(usize::from(environment.entries().len()).saturating_add(1));
     let Ok(staged) = stage(
         environment,
         arena,
@@ -3321,7 +3328,7 @@ struct Positions
     /// The declarations the kernel admitted, as they were staged — an
     /// abstract type's scope closed once its seal ends — in kernel admission
     /// order.
-    exports: Vec<KernelDeclaration>,
+    exports: gandr_kernel_term::Family<KernelDeclaration>,
     /// The atoms admitted whose seals have not ended, in minting order.
     open: Vec<OpenSeal>,
     /// The atoms whose abstract types were withheld: refused by the

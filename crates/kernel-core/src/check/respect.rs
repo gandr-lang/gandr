@@ -65,7 +65,7 @@ use gandr_kernel_term::build_side;
 use quenchant_shape::shape::Maybe;
 
 use crate::encoding::ContentTable;
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::KernelError;
 use crate::presented::Presentations;
 use crate::replay::KernelVerdict;
@@ -225,7 +225,7 @@ pub(super) fn fold_root(
 #[spec(ensures: |ret| match ret { Maybe::Present(owed) => owed == reading, Maybe::Absent(_) => true })]
 pub(super) fn obliged(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     datatype: ValueTypeId,
     reading: Reading,
 ) -> Maybe<Reading, obligation::Absent>
@@ -285,7 +285,7 @@ pub(super) fn obliged(
 )]
 pub(super) fn respected(
     arena: &mut TermArena,
-    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
+    (entries, unfoldings): (&Entries, &Unfoldings),
     case: ComputationId,
     reading: Reading,
     laws: &[ConstantIndex],
@@ -551,7 +551,7 @@ fn pattern_binder(
 )]
 fn parallel_in_a_set(
     arena: &mut TermArena,
-    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
+    (entries, unfoldings): (&Entries, &Unfoldings),
     (arrow, variables): (CompTypeId, VariableCount),
     (left, right): (ValueId, ValueId),
 ) -> Related
@@ -658,7 +658,7 @@ enum Sethood
 #[spec(ensures: |ret| ret == Sethood::Unread || matches!(arena.value_type(carrier), Some(&ValueType::Data { ref arguments, .. }) if arguments.is_empty()))]
 fn sethood(
     arena: &TermArena,
-    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
+    (entries, unfoldings): (&Entries, &Unfoldings),
     carrier: ValueTypeId,
 ) -> Sethood
 {
@@ -743,7 +743,7 @@ fn sethood(
 #[spec(ensures: |ret| ret.is_ok() || matches!(ret, Err(KernelError::ArenaFault | KernelError::DataArgumentArity)))]
 fn lawful(
     arena: &mut TermArena,
-    (entries, unfoldings): (&[AdmittedDeclaration], &Unfoldings),
+    (entries, unfoldings): (&Entries, &Unfoldings),
     (obliged, arrow): (Obliged, CompTypeId),
     (rule, signature, declaration): (&PresentedRule, super::former::Signature<'_>, ConstantIndex),
     law: ConstantIndex,

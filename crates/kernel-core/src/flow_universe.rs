@@ -210,7 +210,7 @@ use gandr_kernel_term::ValueTypeId;
 use crate::conv::Convertibility;
 use crate::conv::convert_values;
 use crate::conv::convertible_value_types;
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
 
@@ -355,7 +355,7 @@ pub struct FlowType
 #[inline]
 pub fn endpoints(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<FlowType, FlowError>
@@ -417,7 +417,7 @@ fn universe_codes(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |flow| matches!(arena.value_type(classifier), Some(&ValueType::FlowUniverse(..))) && arena.value_type(flow.source).is_some()))]
 pub(crate) fn forward_type(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<FlowType, FlowError>
@@ -566,7 +566,7 @@ pub(crate) fn ends(
 #[spec(ensures: |ret| ret.as_ref().map_or(true, |flow| arena.value_type(flow.source).is_some() && arena.value_type(flow.target).is_some()))]
 pub(crate) fn universe_reading(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<FlowType, FlowError>

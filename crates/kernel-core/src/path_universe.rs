@@ -137,7 +137,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use crate::check::check_closed_value;
-use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::KernelError;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -389,7 +389,7 @@ impl Allowance
 #[inline]
 pub fn code(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     code: ValueId,
     budget: ReplayBudget,
 ) -> Result<ValueTypeId, PathError>
@@ -422,7 +422,7 @@ pub fn code(
 #[inline]
 pub fn endpoints(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     classifier: ValueTypeId,
     budget: ReplayBudget,
 ) -> Result<PathType, PathError>
@@ -907,7 +907,8 @@ fn replay_checked(
         .charge()
         .map_err(KernelError::Path)?;
     let classifier = crate::check::synth_closed_value(arena, term.path)?;
-    let endpoints = endpoints(arena, &[], classifier, budget).map_err(KernelError::Path)?;
+    let endpoints =
+        endpoints(arena, &crate::env::NO_ENTRIES, classifier, budget).map_err(KernelError::Path)?;
     let returner = arena.comp_type_returner(endpoints.target);
     let thunk_type = arena.value_type_thunk(returner);
     let transport = arena.computation_transport(term.path, term.value);

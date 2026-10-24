@@ -143,13 +143,15 @@ pub fn form_certificate(
     }
     match expected {
         Family::Path => {
-            let classifier = crate::path_universe::endpoints(arena, &[], classifier, budget)
-                .map_err(KernelError::Path)?;
+            let classifier =
+                crate::path_universe::endpoints(arena, &crate::env::NO_ENTRIES, classifier, budget)
+                    .map_err(KernelError::Path)?;
             Ok(CertificateType::Path(classifier))
         },
         Family::Flow => {
-            let classifier = super::universe_reading(arena, &[], classifier, budget)
-                .map_err(KernelError::Flow)?;
+            let classifier =
+                super::universe_reading(arena, &crate::env::NO_ENTRIES, classifier, budget)
+                    .map_err(KernelError::Flow)?;
             Ok(CertificateType::Flow(classifier))
         },
     }
@@ -271,7 +273,7 @@ pub fn oriented(
     budget: ReplayBudget,
 ) -> Result<(), FlowError>
 {
-    let flow = super::universe_reading(arena, &[], classifier, budget)?;
+    let flow = super::universe_reading(arena, &crate::env::NO_ENTRIES, classifier, budget)?;
     boundary(arena, position, flow, arrows)
 }
 

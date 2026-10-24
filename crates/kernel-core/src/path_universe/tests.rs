@@ -953,7 +953,7 @@ fn equivalence(
 /// # Adequacy
 /// - hypothesis: L3 — a forged equivalence cannot acquire an admission receipt.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
-#[spec(captures: before = environment.entries().len(), ensures: |ret| ret.as_ref().map_or_else(|_| environment.entries().len() == before, |id| environment.entries().len() == before.saturating_add(1) && usize::from(id.position()) == before))]
+#[spec(captures: before = environment.entries().len(), ensures: |ret| ret.as_ref().map_or_else(|_| environment.entries().len() == before, |id| environment.entries().len() == usize::from(before).saturating_add(1) && usize::from(id.position()) == before))]
 fn offer<Build>(
     environment: &mut Environment,
     build: Build,
@@ -979,7 +979,7 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — both Boolean inputs compute through the admitted path.
 /// - witness: `path_universe::tests::transport_computes`
-#[spec(captures: before = environment.entries().len(), ensures: |ret| environment.entries().len() == before.saturating_add(1) && matches!(environment.arena().value(ret.1), Some(&Value::PathEquiv { forward, backward, .. }) if forward == ret.0.not && backward == ret.0.not))]
+#[spec(captures: before = environment.entries().len(), ensures: |ret| environment.entries().len() == usize::from(before).saturating_add(1) && matches!(environment.arena().value(ret.1), Some(&Value::PathEquiv { forward, backward, .. }) if forward == ret.0.not && backward == ret.0.not))]
 fn admit_negation(environment: &mut Environment) -> (Boolean, ValueId)
 {
     let mut staging = environment.stage();
@@ -1006,7 +1006,7 @@ fn admit_negation(environment: &mut Environment) -> (Boolean, ValueId)
 /// # Adequacy
 /// - hypothesis: L3 — a wrong target value remains distinguishable by replay.
 /// - witness: `path_universe::tests::a_wrong_answer_is_caught`
-#[spec(captures: [before = environment.entries().len(), expected_input = expected], ensures: |ret| environment.entries().len() == before.saturating_add(1) && matches!(environment.arena().computation(ret.0), Some(&Computation::Transport(path, value)) if path == term.path && value == term.value) && matches!(environment.arena().computation(ret.1), Some(&Computation::Return(value)) if value == expected_input))]
+#[spec(captures: [before = environment.entries().len(), expected_input = expected], ensures: |ret| environment.entries().len() == usize::from(before).saturating_add(1) && matches!(environment.arena().computation(ret.0), Some(&Computation::Transport(path, value)) if path == term.path && value == term.value) && matches!(environment.arena().computation(ret.1), Some(&Computation::Return(value)) if value == expected_input))]
 fn admit_transport(
     environment: &mut Environment,
     term: Transport,
@@ -1587,7 +1587,7 @@ fn a_list_code_covers_one_cell_over_a_rigid_tail()
     let pair = arena.value_type_product(&[bools.ty, list]);
     let code = arena.value_quote(pair);
     assert_eq!(
-        super::code(&arena, &[], code, ReplayBudget::DEFAULT),
+        super::code(&arena, &crate::env::NO_ENTRIES, code, ReplayBudget::DEFAULT),
         Ok(pair)
     );
 

@@ -73,6 +73,7 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use crate::env::AdmittedDeclaration;
+use crate::env::Entries;
 use crate::error::KernelError;
 
 /// A node the substitution walk visits.
@@ -198,7 +199,7 @@ quenchant_shape::reason_enum! {
     _ => matches!(ret, quenchant_shape::shape::Maybe::Absent(unfolding::Absent::Opaque)),
 })]
 fn representation(
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     manifest: &[ConstantIndex],
     atom: ConstantIndex,
 ) -> quenchant_shape::shape::Maybe<ValueTypeId, unfolding::Absent>
@@ -246,7 +247,7 @@ fn representation(
 #[spec(ensures: |ret| !manifest.is_empty() || ret.as_ref().ok() == Some(&root))]
 pub(crate) fn unseal(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     manifest: &[ConstantIndex],
     root: ValueTypeId,
 ) -> Result<ValueTypeId, KernelError>
@@ -292,7 +293,7 @@ pub(crate) fn unseal(
 #[spec(captures: entry = steps.len(), ensures: |ret| ret.is_err() || steps.len() >= entry)]
 fn enter(
     arena: &TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     manifest: &[ConstantIndex],
     done: &Unsealed,
     node: Node,
@@ -394,7 +395,7 @@ fn enter(
 #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|rebuilt| arena.value_type(*rebuilt).is_some()))]
 fn exit_value_type(
     arena: &mut TermArena,
-    entries: &[AdmittedDeclaration],
+    entries: &Entries,
     manifest: &[ConstantIndex],
     done: &Unsealed,
     id: ValueTypeId,

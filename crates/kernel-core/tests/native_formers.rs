@@ -57,7 +57,7 @@ use gandr_kernel_term::encode;
 /// - hypothesis: L3 — equal carrier tables do not identify independently
 ///   admitted heads.
 /// - witness: `tests::native_formers::nominal_identity_and_constructor_refusals`
-#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position && position.checked_add(1) == Some(environment.entries().len()))]
+#[spec(captures: position = environment.entries().len(), ensures: |ret| usize::from(ret.position()) == position && usize::from(position).checked_add(1) == Some(usize::from(environment.entries().len())))]
 fn mono(environment: &mut Environment) -> CheckedId
 {
     let mut staging = environment.stage();
