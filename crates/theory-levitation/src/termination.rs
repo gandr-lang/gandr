@@ -98,8 +98,18 @@
 use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use anodized::spec;
+use gandr_theory_path_orders::Former;
+use gandr_theory_path_orders::Place;
+use gandr_theory_path_orders::Status;
+use gandr_theory_path_orders::Term;
+use gandr_theory_path_orders::Valuation;
+use gandr_theory_path_orders::Valued;
+use gandr_theory_path_orders::lpo;
+use gandr_theory_path_orders::lpo::Buffers;
+use gandr_theory_path_orders::lpo::Orientation;
 
 use crate::arity::SortRef;
 use crate::boundary::EmbeddingStatus;
@@ -462,12 +472,15 @@ impl From<Rank> for usize
 }
 
 /// Whether the higher-order recursive path order over `precedence` puts
-/// `left` above `right`: the lexicographic path order, with the variables
-/// `right` instantiates read as metavariables.
+/// `left` above `right`.
+///
+/// The order is the lexicographic path order of
+/// [`gandr_theory_path_orders::lpo`], with the variables `right` instantiates
+/// read as metavariables.
 ///
 /// # Specification
 /// - ensures: negative when `right` is a metavariable. Otherwise positive
-///   exactly when `left` is an application and some argument of it is equal to
+///   exactly when `left` applies a symbol and some argument of it is equal to
 ///   or above `right`; or `right` is an application every argument of which
 ///   `left` covers, and either `left`'s symbol precedes `right`'s or the two
 ///   share a symbol and the first argument pair that differs, left to right, is
@@ -481,7 +494,8 @@ impl From<Rank> for usize
 ///   input port of a sort no declared operation returns, so only constructors
 ///   and variables build what it stands for: instantiating at it selects a
 ///   branch of the abstraction `left` holds and calls no operation.
-/// - ensures: a variable is above nothing, and no term is above itself.
+/// - ensures: a variable and an instantiation are above nothing, and no term is
+///   above itself.
 /// - panics: none.
 /// - intension: one table of every argument pair of the two terms, filled from
 ///   the leaves up, so no comparison recurses.
@@ -507,7 +521,7 @@ impl From<Rank> for usize
 /// - witness: `termination::tests::an_instantiation_is_below_the_application_that_binds_its_metavariable`
 /// - witness: `termination::tests::a_pattern_under_its_abstraction_holds_its_metavariable_2115`
 /// - witness: `termination::tests::an_instantiation_at_a_value_selects_a_branch_2272`
-#[spec(ensures: |ret| !bool::from(ret) || (left != right && !matches!(left.view(), TermView::Var(_))))]
+#[spec(ensures: |ret| !bool::from(ret) || (left != right && !matches!(left.view(), TermView::Var(_) | TermView::Inst { .. })))]
 #[inline]
 #[must_use]
 pub fn path_greater(
@@ -518,96 +532,24 @@ pub fn path_greater(
 {
     let above = flatten(left);
     let below = flatten(right);
-    let metavariables = metavariables(&below);
     let values = values(precedence, &above);
-    let higher =
-        |node: &Node<'_>| matches!(node.symbol, Symbol::Var(name) if metavariables.contains(name));
-    let value = |argument: At| {
-        below
-            .get(argument.0)
-            .is_some_and(|node| matches!(node.symbol, Symbol::Var(name) if values.contains(name)))
+    let none = BTreeSet::new();
+    let left = Side {
+        nodes: &above,
+        values: &values,
     };
-    let mut table: Table<Comparison> = Table::new(&above, &below);
-    let precedes = |above: Symbol<'_>, below: Symbol<'_>| match (above, below) {
-        (Symbol::Op(_), Symbol::Ctor(_) | Symbol::Results | Symbol::Abs | Symbol::Atom(_)) => true,
-        (Symbol::Op(left), Symbol::Op(right)) => precedence.rank(left) > precedence.rank(right),
-        _ => false,
+    let right = Side {
+        nodes: &below,
+        values: &none,
     };
-    // The first argument pair that differs, left to right, decides two
-    // applications of one symbol.
-    let lexicographic = |table: &Table<Comparison>, node: &Node<'_>, other: &Node<'_>| {
-        node.arguments()
-            .zip(other.arguments())
-            .map(|(left, right)| table.at(left, right))
-            .find(|pair| !pair.equal)
-            .is_some_and(|pair| pair.greater)
+    let ranks = Ranks {
+        precedence,
+        symbols: PhantomData,
     };
-    // A node covers a right-side node it is above, or one of its own
-    // arguments is equal to or above: the comparison a metavariable passed
-    // bare takes, which no base term is above.
-    let covers = |table: &Table<Comparison>, node: &Node<'_>, row: At, column: At| {
-        table.at(row, column).greater
-            || node.arguments().any(|argument| {
-                let pair = table.at(argument, column);
-                pair.equal || pair.greater
-            })
-    };
-    // An argument holds a metavariable it is, or one it applies under the
-    // abstractions of the names it is applied to, read up to η.
-    let holds = |argument: At, name: &Name| {
-        let mut at = argument;
-        while let Some(node) = above.get(at.0)
-            && node.symbol == Symbol::Abs
-            && let Some(body) = node.arguments().next()
-        {
-            at = body;
-        }
-        above.get(at.0).is_some_and(|bound| {
-            bound.symbol == Symbol::Var(name) || bound.symbol == Symbol::Inst(name)
-        })
-    };
-    for (row, node) in above.iter().enumerate().rev() {
-        for (column, other) in below.iter().enumerate().rev() {
-            let (row, column) = (At(row), At(column));
-            let same = node.symbol == other.symbol && node.arity == other.arity;
-            let equal = same
-                && node
-                    .arguments()
-                    .zip(other.arguments())
-                    .all(|(left, right)| table.at(left, right).equal);
-            let greater = !matches!(node.symbol, Symbol::Var(_))
-                && !higher(other)
-                && (node.arguments().any(|argument| {
-                    let pair = table.at(argument, column);
-                    pair.equal || pair.greater
-                }) || match other.symbol {
-                    Symbol::Var(_) => false,
-                    Symbol::Inst(name) => {
-                        node.arguments().any(|argument| holds(argument, name))
-                            && other.arguments().all(|argument| {
-                                value(argument) || covers(&table, node, row, argument)
-                            })
-                    },
-                    Symbol::Ctor(_)
-                    | Symbol::Op(_)
-                    | Symbol::Results
-                    | Symbol::Abs
-                    | Symbol::Atom(_) => {
-                        other
-                            .arguments()
-                            .all(|argument| covers(&table, node, row, argument))
-                            && if same {
-                                lexicographic(&table, node, other)
-                            }
-                            else {
-                                precedes(node.symbol, other.symbol)
-                            }
-                    },
-                });
-            table.set(row, column, Comparison { equal, greater });
-        }
-    }
-    PathOrderStatus::from(table.at(At(0), At(0)).greater)
+    PathOrderStatus::from(matches!(
+        lpo::orient(&left, &right, &ranks, &mut Buffers::default()),
+        Orientation::Oriented(_)
+    ))
 }
 
 /// Whether `small` embeds homeomorphically in `big`, variables read up to
@@ -673,34 +615,6 @@ pub fn embeds(
         }
     }
     EmbeddingStatus::from(table.at(At(0), At(0)))
-}
-
-/// The variables `nodes` instantiates: the metavariables of a rule whose right
-/// side `nodes` is.
-///
-/// # Specification
-/// - ensures: exactly the names of the instantiations among `nodes`.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`path_greater`]: reading no metavariable orients β,
-///   which the witness refuses.
-/// - witness: `termination::tests::an_instantiation_is_below_the_application_that_binds_its_metavariable`
-#[spec(ensures: |ret| ret.iter().all(|name| nodes.iter().any(|node| node.symbol == Symbol::Inst(name))))]
-fn metavariables<'term>(nodes: &[Node<'term>]) -> BTreeSet<&'term Name>
-{
-    nodes
-        .iter()
-        .filter_map(|node| match node.symbol {
-            Symbol::Inst(name) => Some(name),
-            Symbol::Var(_)
-            | Symbol::Ctor(_)
-            | Symbol::Op(_)
-            | Symbol::Results
-            | Symbol::Abs
-            | Symbol::Atom(_) => None,
-        })
-        .collect()
 }
 
 /// The values of the left side `nodes`: the variables every occurrence of
@@ -844,7 +758,7 @@ impl Node<'_>
     ///
     /// # Specification
     /// trivial.
-    fn arguments(&self) -> impl Iterator<Item = At>
+    fn arguments(&self) -> impl Iterator<Item = At> + Clone
     {
         (self.first .. self.first.saturating_add(self.arity)).map(At)
     }
@@ -855,14 +769,149 @@ impl Node<'_>
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct At(usize);
 
-/// How one node of the left term compares with one of the right.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct Comparison
+/// A flattened side as the path order reads it: a pattern variable a
+/// variable, an instantiation an application of its metavariable, an
+/// abstraction and an atom the binding formers, every other node a symbol.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Side<'term, 'nodes>
 {
-    /// The two subterms are equal.
-    equal: bool,
-    /// The left subterm is above the right in the order.
-    greater: bool,
+    /// The side's nodes, breadth first.
+    nodes: &'nodes [Node<'term>],
+    /// The variables the side values.
+    values: &'nodes BTreeSet<&'term Name>,
+}
+
+impl<'term> Term for Side<'term, '_>
+{
+    type Bound = &'term Name;
+    type Symbol = Symbol<'term>;
+    type Variable = &'term Name;
+
+    /// The side's node count.
+    ///
+    /// # Specification
+    /// trivial.
+    fn end(&self) -> gandr_theory_path_orders::Node
+    {
+        gandr_theory_path_orders::Node::from(self.nodes.len())
+    }
+
+    /// The node at `node` by its symbol; a position past the side reads as an
+    /// empty results tuple, which is above nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    fn former(
+        &self,
+        node: gandr_theory_path_orders::Node,
+    ) -> Former<Symbol<'term>, &'term Name, &'term Name>
+    {
+        match self
+            .nodes
+            .get(usize::from(node))
+            .map_or(Symbol::Results, |node| node.symbol)
+        {
+            Symbol::Var(name) => Former::Variable(name),
+            Symbol::Inst(name) => Former::Application(name),
+            Symbol::Abs => Former::Abstraction,
+            Symbol::Atom(name) => Former::Bound(name),
+            symbol @ (Symbol::Ctor(_) | Symbol::Op(_) | Symbol::Results) => Former::Symbol(symbol),
+        }
+    }
+
+    /// The positions of the node's arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    fn arguments(
+        &self,
+        node: gandr_theory_path_orders::Node,
+    ) -> impl Iterator<Item = gandr_theory_path_orders::Node> + Clone
+    {
+        self.nodes
+            .get(usize::from(node))
+            .map(Node::arguments)
+            .into_iter()
+            .flatten()
+            .map(|At(at)| gandr_theory_path_orders::Node::from(at))
+    }
+}
+
+impl Valued for Side<'_, '_>
+{
+    /// A value exactly when the side values the variable.
+    ///
+    /// # Specification
+    /// trivial.
+    fn valuation(
+        &self,
+        variable: &Name,
+    ) -> Valuation
+    {
+        if self.values.contains(variable) {
+            Valuation::Value
+        }
+        else {
+            Valuation::Term
+        }
+    }
+}
+
+/// A [`Precedence`] as the path order reads it: an operation at its rank,
+/// every other symbol ground, every status lexicographic.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug)]
+struct Ranks<'order, 'desc, 'term>
+{
+    /// The precedence.
+    precedence: &'order Precedence<'desc>,
+    /// The terms whose symbols it places.
+    symbols: PhantomData<Symbol<'term>>,
+}
+
+impl<'term> gandr_theory_path_orders::Precedence for Ranks<'_, '_, 'term>
+{
+    type Symbol = Symbol<'term>;
+
+    /// An operation's rank, the lowest for one the description does not
+    /// declare; every other symbol ground.
+    ///
+    /// # Specification
+    /// trivial.
+    fn place(
+        &self,
+        symbol: Symbol<'term>,
+    ) -> Place
+    {
+        match symbol {
+            Symbol::Op(name) => Place::Ranked(gandr_theory_path_orders::Rank::from(
+                u64::try_from(usize::from(self.precedence.rank(name))).unwrap_or(u64::MAX),
+            )),
+            Symbol::Var(_)
+            | Symbol::Ctor(_)
+            | Symbol::Results
+            | Symbol::Inst(_)
+            | Symbol::Abs
+            | Symbol::Atom(_) => Place::Ground,
+        }
+    }
+
+    /// Lexicographic, for every symbol.
+    ///
+    /// # Specification
+    /// trivial.
+    fn status(
+        &self,
+        _symbol: Symbol<'term>,
+    ) -> Status
+    {
+        Status::Lexicographic
+    }
 }
 
 /// A table of two flattened terms: one cell per node of the first and node of
