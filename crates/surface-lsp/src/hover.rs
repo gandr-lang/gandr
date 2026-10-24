@@ -390,7 +390,13 @@ pub fn hovering<Store, Blocks>(
         path,
         session,
         (
-            &lay_out_shadowed(session.grammar(), path, classify(path), text, shadows),
+            &Maybe::Present(lay_out_shadowed(
+                session.grammar(),
+                path,
+                classify(path),
+                text,
+                shadows,
+            )),
             None,
         ),
     )

@@ -1,9 +1,10 @@
 // One builtin of each namespace over its simplest values: negation, division
-// and remainder, a list's length and element, and string append and length.
-// Each is reached by projection from its namespace, which the lowering admits
-// for the native primitives alone (#1170) and for no other builtin yet
+// and remainder, a list's length and element, and string append, equality and
+// length. Each is reached by projection from its namespace, which the lowering
+// admits for the native primitives alone (#1170) and for no other builtin yet
 // (#1106), but where the definition's value is first a computation with no
-// stated type. Division and append with their types stated check and run.
+// stated type. Division, append and equality with their types stated check
+// and run.
 
 /// Negation of a comparison. A comparison is a computation, and a definition
 /// with no stated type reads its value where nothing infers that type.
@@ -46,8 +47,16 @@ def stated() -> String {
   joined
 }
 
+/// Two strings compared with the type stated, which checks and runs: equal
+/// exactly when their bytes are, which these are not.
+@[ runs("+{.1 = unit}") ]
+def compared() -> Bool {
+  run equal <- string.eq("types are ", "machines");
+  equal
+}
+
 /// The appended string's length. The native `string` namespace holds
-/// `append` alone, so `length` is no member of it (#1106).
+/// `append` and `eq`, so `length` is no member of it (#1106).
 @[ refuses("UnknownMember") ]
 def letters = string.length(stated);
 

@@ -1,8 +1,9 @@
 // The string operations of the `string` namespace: containment, equality,
 // prefix and suffix, escaping and splitting. The native `string` namespace
-// holds `append` alone (`simple-builtins.gandr`), so each of these names no
-// member of it; scanning and escaping are planned text primitives (#318), and
-// comparison is #1832.
+// holds `append` and `eq` (`simple-builtins.gandr`), so the others name no
+// member of it; scanning and escaping are planned text primitives (#318).
+// Equality is written `==`, which resolves the prelude's `Eq` model of
+// strings (#1832).
 
 /// A string, named.
 @[ checks ]
@@ -13,9 +14,19 @@ def slogan = "types are machines";
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 string.contains(slogan, "machine");
 
-/// A second stray, equality.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
-string.eq(slogan, "types are machines");
+/// Equality: `==` between strings resolves the prelude's `EqString`, and a
+/// slogan is itself.
+@[ runs("+{.0 = unit}") ]
+def same() -> Bool { slogan == "types are machines" }
+
+/// A slogan is not another.
+@[ runs("+{.1 = unit}") ]
+def different() -> Bool { slogan == "types are types" }
+
+/// Equality across types: the integer fixes the carrier `==` compares at, and
+/// the string is not one.
+@[ refuses("TypeMismatch") ]
+def across() -> Bool { 3 == "three" }
 
 /// Whether the string starts with a word.
 @[ refuses("UnknownMember") ]

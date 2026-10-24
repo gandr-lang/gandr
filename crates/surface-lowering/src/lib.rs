@@ -371,6 +371,7 @@ mod module;
 pub mod namespace;
 mod operation;
 mod origin;
+pub mod prelude;
 mod resolve;
 pub mod unbuilt;
 mod unit;

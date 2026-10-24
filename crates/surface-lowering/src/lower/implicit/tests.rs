@@ -789,6 +789,70 @@ fn an_omitted_model_implicit_plans_each_module_of_its_theory_739()
     );
 }
 
+/// `text`, which `unit` lays out after the prelude, lowered.
+///
+/// # Specification
+/// trivial.
+fn preluded<'source>(
+    text: SourceText<'source>,
+    unit: &crate::unit::Unit,
+    arena: &mut CoreArena,
+) -> LoweredModule<'source>
+{
+    let pbg = crate::fixture::grammar();
+    let tree = crate::fixture::parsed(&pbg, text);
+    crate::lower::lower_unit(
+        &pbg,
+        &tree,
+        unit,
+        arena,
+        crate::lower::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+        &mut crate::coincide::Decisions::none(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn equality_calls_the_prelude_s_eq_2302()
+{
+    // `==` calls the prelude's `eq`, its model of `Eq` omitted: one slot of
+    // two holes, the carrier and the operation, `EqInteger` and `EqString`
+    // its candidates, and the operands force one. A source's own `eq` does
+    // not capture its `==`; a unit with no prelude keeps the primitive.
+    let source = "\
+def integers() -> Bool { 3 == 3 }
+def strings() -> Bool { \"types\" == \"types\" }
+def eq(a : Bool) -> Bool { a }
+def own() -> Bool { 3 == 4 }
+";
+    let (text, unit) = crate::prelude::lay(
+        gandr_surface_syntax::SourceText::from(source),
+        &crate::unit::Unit::single(),
+    )
+    .unwrap();
+    let mut arena = CoreArena::new();
+    let module = preluded(SourceText::from(text.as_str()), &unit, &mut arena);
+    for name in ["integers", "strings", "own"] {
+        let slots = module.models(declaration_named(&module, SurfaceName::from(name)));
+        assert!(
+            matches!(slots, [slot] if slot.holes.len() == 2
+                && slot.candidates.len() == 2
+                && slot.candidates.iter().all(|candidate| candidate.components.len() == 2)),
+            "`{name}`'s `==` resolves a model of `Eq`: {slots:?}"
+        );
+    }
+    assert_checked(&module, &mut arena);
+    let mut alone = CoreArena::new();
+    let module = lowered(SourceText::from(source), &mut alone);
+    assert!(
+        module
+            .models(declaration_named(&module, SurfaceName::from("integers")))
+            .is_empty(),
+        "with no prelude, `==` is the integer primitive"
+    );
+}
+
 #[test]
 fn a_model_slot_one_module_answers_checks_as_supplied_739()
 {

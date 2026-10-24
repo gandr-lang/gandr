@@ -292,7 +292,8 @@ impl UnitSource
 /// - requires: the sources start in ascending order, the first at zero, and
 ///   every [`ImportTarget::Source`] names a source before its importer.
 /// - ensures: [`Unit::source_at`] answers the source whose text holds an
-///   offset.
+///   offset; [`Unit::prelude`] answers the first source exactly when the unit
+///   was laid by [`Unit::preluded`].
 /// - provides: the layout the lowering scopes top-level names by.
 /// - executable: none — a data type; [`Unit::new`] states its check.
 ///
@@ -300,12 +301,15 @@ impl UnitSource
 /// - hypothesis: L3 — a unit of two sources resolves an offset in each to its
 ///   source and its boundary to the second.
 /// - witness: `unit::tests::an_offset_belongs_to_the_source_that_holds_it`
-#[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Unit
 {
     /// The sources, in admission order; never empty.
     sources: Vec<UnitSource>,
+    /// The source holding [`crate::prelude::TEXT`], which every other source
+    /// imports unqualified without writing it: the first, when the unit lays
+    /// one.
+    prelude: Option<SourceIndex>,
 }
 
 impl Default for Unit
@@ -328,7 +332,8 @@ pub enum UnitFault
     /// No source was given.
     Empty,
     /// A source does not start after the one before it, or the first does
-    /// not start at zero.
+    /// not start at zero, or, after the prelude, at
+    /// [`crate::prelude::base`].
     Unordered(SourceIndex),
     /// An import names a source at or after its importer.
     Forward(SourceIndex),
@@ -347,6 +352,7 @@ impl Unit
     {
         Self {
             sources: Vec::from([UnitSource::new(ByteOffset::from(0_usize), Vec::new())]),
+            prelude: None,
         }
     }
 
@@ -396,7 +402,99 @@ impl Unit
             }
         }
 
-        Ok(Self { sources })
+        Ok(Self {
+            sources,
+            prelude: None,
+        })
+    }
+
+    /// The unit of the prelude, then `sources` in admission order: the
+    /// prelude's text first, at zero, each of `sources` after it.
+    ///
+    /// # Specification
+    /// - requires: `sources` are laid after [`crate::prelude::TEXT`] and its
+    ///   separating newline, and each [`ImportTarget::Source`] among their
+    ///   imports counts the prelude as the unit's first source.
+    /// - ensures: the unit holds the prelude, starting at zero and importing
+    ///   nothing, then exactly `sources`; [`Unit::prelude`] answers the first
+    ///   source.
+    /// - provides: the layout every program is lowered in, the prelude the
+    ///   implicit first import of each of its sources.
+    /// - fails: [`UnitFault::Empty`] for no source; [`UnitFault::Unordered`]
+    ///   for a first source not starting at [`crate::prelude::base`] and as
+    ///   [`Unit::new`] otherwise; [`UnitFault::Forward`] as [`Unit::new`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`UnitFault`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two sources laid after the prelude keep their offsets
+    ///   and the first's import of the second's predecessor, and a source laid
+    ///   over the prelude's bytes is refused.
+    /// - witness: `unit::tests::a_preluded_unit_lays_the_prelude_first`
+    #[spec(captures: offered = sources.len(), ensures: |ret| ret.as_ref().map_or(true, |unit| unit.sources.len() == offered.saturating_add(1_usize) && unit.prelude == Some(SourceIndex(0_usize))))]
+    #[inline]
+    pub fn preluded(sources: Vec<UnitSource>) -> Result<Self, UnitFault>
+    {
+        let Some(first) = sources.first()
+        else {
+            return Err(UnitFault::Empty);
+        };
+        if first.start != crate::prelude::base() {
+            return Err(UnitFault::Unordered(SourceIndex(1_usize)));
+        }
+        let mut laid = Vec::with_capacity(sources.len().saturating_add(1_usize));
+        laid.push(UnitSource::new(ByteOffset::from(0_usize), Vec::new()));
+        laid.extend(sources);
+        let mut unit = Self::new(laid)?;
+        unit.prelude = Some(SourceIndex(0_usize));
+
+        Ok(unit)
+    }
+
+    /// The source holding the prelude, when the unit lays one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn prelude(&self) -> Option<SourceIndex>
+    {
+        self.prelude
+    }
+
+    /// The unit of every source but the last, the prelude kept: the closure a
+    /// document laid last is judged after.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the sources before the last, in order, and the prelude when
+    ///   the unit lays one and it stands among them.
+    /// - provides: the unit an editor lowers a document's closure in once.
+    /// - fails: [`UnitFault::Empty`] for a unit of one source.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`UnitFault::Empty`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a preluded unit of a document alone leaves the
+    ///   prelude, still marked, and a unit of one source leaves nothing.
+    /// - witness: `unit::tests::a_preluded_unit_lays_the_prelude_first`
+    #[spec(ensures: |ret| ret.as_ref().map_or(self.sources.len() <= 1_usize, |closure| closure.sources.len() == self.sources.len().saturating_sub(1_usize)))]
+    #[inline]
+    pub fn before_last(&self) -> Result<Self, UnitFault>
+    {
+        let kept = self.sources.len().saturating_sub(1_usize);
+        let sources = self.sources.get(.. kept).unwrap_or_default();
+        if sources.is_empty() {
+            return Err(UnitFault::Empty);
+        }
+        Ok(Self {
+            sources: sources.to_vec(),
+            prelude: self.prelude.filter(|prelude| prelude.0 < kept),
+        })
     }
 
     /// The sources, in admission order.
@@ -556,5 +654,50 @@ mod tests
             Unit::single().target(SourceIndex::from(0_usize), first),
             ImportTarget::Unresolved
         );
+    }
+
+    #[test]
+    fn a_preluded_unit_lays_the_prelude_first()
+    {
+        let text = "0123456789second";
+        let (laid, unit) =
+            crate::prelude::lay(gandr_surface_syntax::SourceText::from(text), &two()).unwrap();
+        let base = usize::from(crate::prelude::base());
+        assert_eq!(
+            laid.get(.. base),
+            Some(alloc::format!("{}\n", crate::prelude::TEXT).as_str())
+        );
+        assert_eq!(laid.get(base ..), Some(text));
+        assert_eq!(unit.prelude(), Some(SourceIndex::from(0_usize)));
+        assert_eq!(unit.sources().len(), 3_usize);
+        for (offset, source) in [(0_usize, 0_usize), (base - 1, 0), (base, 1), (base + 10, 2)] {
+            assert_eq!(
+                unit.source_at(ByteOffset::from(offset)),
+                SourceIndex::from(source),
+                "offset {offset}"
+            );
+        }
+        assert_eq!(
+            unit.target(SourceIndex::from(2_usize), PathImportOrdinal::from(0_usize)),
+            ImportTarget::Source(SourceIndex::from(1_usize)),
+            "the import of the first source moves with it"
+        );
+        assert_eq!(two().prelude(), None, "a unit laid alone has no prelude");
+        assert_eq!(
+            Unit::preluded(Vec::from([UnitSource::new(
+                ByteOffset::from(1_usize),
+                Vec::new()
+            )])),
+            Err(UnitFault::Unordered(SourceIndex::from(1_usize))),
+            "a source over the prelude's bytes"
+        );
+        assert_eq!(Unit::preluded(Vec::new()), Err(UnitFault::Empty));
+        let closure = unit.before_last().unwrap();
+        assert_eq!(
+            (closure.sources().len(), closure.prelude()),
+            (2_usize, Some(SourceIndex::from(0_usize))),
+            "the closure before the importer keeps the prelude"
+        );
+        assert_eq!(Unit::single().before_last(), Err(UnitFault::Empty));
     }
 }

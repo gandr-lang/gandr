@@ -623,17 +623,18 @@ pub(super) fn sweep(
     let ControlFlow::Continue(_run) = Walk::new(vec![folder.clone()]).visit(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
-            if let Step::Source { path, base, .. } = step {
+            if let Step::Source { path, .. } = step {
                 let index = path
                     .file_stem()
                     .and_then(std::ffi::OsStr::to_str)
                     .and_then(|stem| stem.parse::<usize>().ok());
+                // An entry's span is measured from the source's own first
+                // byte, past the prelude laid before it.
                 let first = entries(&step, Verb::Check(Goals::Gated))
                     .find(|diagnostic| diagnostic.severity == Severity::Error);
                 if let (Some(slot), Some(diagnostic)) =
                     (index.and_then(|index| reported.get_mut(index)), first)
                 {
-                    let base = usize::from(base);
                     *slot = Some(Reported {
                         name: match diagnostic.identifier {
                             Maybe::Present(ref identifier) => Some(identifier.to_string()),
@@ -642,8 +643,8 @@ pub(super) fn sweep(
                         message: diagnostic.message.text.clone(),
                         span: match diagnostic.span {
                             Maybe::Present(span) => Some(Site {
-                                start: usize::from(span.start()).saturating_sub(base),
-                                end: usize::from(span.end()).saturating_sub(base),
+                                start: usize::from(span.start()),
+                                end: usize::from(span.end()),
                             }),
                             Maybe::Absent(_) => None,
                         },

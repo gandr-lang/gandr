@@ -2231,9 +2231,16 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
     scratch.file(Path::new("strict/base.gandr"), SourceText::from(base));
     scratch.file(Path::new("strict/user.gandr"), SourceText::from(user));
     let mut found = Vec::new();
+    let mut unit = String::new();
     let ControlFlow::Continue(_report) = Walk::new(vec![scratch.0.clone()]).visit(
         &Pool::new(Width::SERIAL),
         |step| -> ControlFlow<Infallible> {
+            if let Step::Source { path, ref text, .. } = step
+                && path.ends_with("user.gandr")
+            {
+                let laid: &str = text.as_ref();
+                laid.clone_into(&mut unit);
+            }
             found.extend(
                 entries(&step, Verb::Check(Goals::Reported))
                     .filter(|diagnostic| diagnostic.path.ends_with("user.gandr")),
@@ -2249,13 +2256,14 @@ fn an_importer_keeps_the_marks_its_import_holds_1199()
         matches!(refusal.primary(), Maybe::Absent(_)),
         "the refused payload is the import's, so the importer's own text marks none"
     );
-    // The base is laid first in the unit, so its bytes are the unit's.
+    // A mark elsewhere keeps its bytes in the unit the importer was judged in,
+    // which lays the prelude and the base before it.
     let marked: Vec<&str> = refusal
         .elsewhere
         .iter()
-        .map(|mark| base.get(usize::from(mark.span.start()) .. usize::from(mark.span.end())))
+        .map(|mark| unit.get(usize::from(mark.span.start()) .. usize::from(mark.span.end())))
         .collect::<Option<_>>()
-        .expect("every mark lies in the base");
+        .expect("every mark lies in the unit");
     assert_eq!(
         marked,
         ["Cap[1] {write}"],

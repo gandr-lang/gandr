@@ -37,7 +37,6 @@ use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_dispatcher::Width;
 use gandr_surface_dispatcher::lay_out;
-use gandr_surface_dispatcher::lower_source;
 use gandr_surface_dispatcher::lower_unit_source;
 use gandr_surface_grammar::MoldDef;
 use gandr_surface_grammar::Pbg;
@@ -804,39 +803,22 @@ mod sweeps
                 if path.components().any(|part| part.as_os_str() == "pending") {
                     return ControlFlow::Continue(());
                 }
-                // An importer is typed over its closure, as the hover types it:
-                // the table and the tree are its own text's, the lowering the
-                // closure's. The walk judged it in its component, so a judged
-                // declaration is matched to the closure's by where it starts in
-                // the source's own text.
+                // A source is typed over the prelude and its closure, as the
+                // hover types it: the table and the tree are its own text's,
+                // the lowering the closure's. The walk judged it in its
+                // component, so a judged declaration is matched to the
+                // closure's by where it starts in the source's own text.
                 let Some(own) = <&str>::from(text).get(usize::from(base) ..)
                 else {
                     return ControlFlow::Continue(());
                 };
                 let laid = lay_out(&grammar, path, root, SourceText::from(own));
-                let (table, lowering, laid_base) = match laid {
-                    Maybe::Present(ref laid) => {
-                        let unit = SourceText::from(laid.text.as_str());
-                        (
-                            TypeTable::of_unit(&grammar, unit, &laid.unit, laid.base),
-                            lower_unit_source(
-                                &grammar,
-                                unit,
-                                &laid.unit,
-                                &mut LoweringCount::default(),
-                            ),
-                            usize::from(laid.base),
-                        )
-                    },
-                    Maybe::Absent(_) => {
-                        let alone = SourceText::from(own);
-                        (
-                            TypeTable::of(&grammar, alone),
-                            lower_source(&grammar, alone, &mut LoweringCount::default()),
-                            0_usize,
-                        )
-                    },
-                };
+                let unit = SourceText::from(laid.text.as_str());
+                let (table, lowering, laid_base) = (
+                    TypeTable::of_unit(&grammar, unit, &laid.unit, laid.base),
+                    lower_unit_source(&grammar, unit, &laid.unit, &mut LoweringCount::default()),
+                    usize::from(laid.base),
+                );
                 let text = SourceText::from(own);
                 let (Ok(table), Ok(parsed)) = (table, parse(&grammar, text))
                 else {

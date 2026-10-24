@@ -5,15 +5,15 @@
 //! The sources a walk is given, with every source they reach through path
 //! imports, form a graph whose edges are the imports that resolve. Each
 //! connected part of it holding a given source is a component, and a component
-//! is one unit: its sources laid end to end, one newline apart, each after
-//! every source it imports, parsed as one tree, lowered into one arena,
-//! checked against one environment and admitted once. Every source of the
-//! component is therefore lowered and checked exactly once, however many of
-//! its siblings import it, and what the walk reports at a source is the
-//! component's verdict projected onto that source's own bytes
-//! ([`Component::members`]). A source that imports nothing and that no given
-//! source imports is a component of one, lowered exactly as a source always
-//! has been.
+//! is one unit: the prelude (`gandr_surface_lowering::prelude`) first, then its
+//! sources laid end to end, one newline apart, each after every source it
+//! imports, parsed as one tree, lowered into one arena, checked against one
+//! environment and admitted once. Every source of the component is therefore
+//! lowered and checked exactly once, however many of its siblings import it,
+//! and what the walk reports at a source is the component's verdict projected
+//! onto that source's own bytes ([`Component::members`]), the prelude's among
+//! none. A source that imports nothing and that no given source imports is a
+//! component of one, laid after the prelude as every component is.
 //!
 //! - Recorded design: one arena and one kernel environment per import-connected
 //!   component, its members in topological order of the import graph, level by
@@ -29,8 +29,9 @@
 //!
 //! A source given alone — a document an editor holds, `gandr check` of one
 //! path — makes the component its import closure makes: [`lay_out`] lays that
-//! closure out with the source last, the unit the session judges a document
-//! over.
+//! closure out after the prelude with the source last, the unit the session
+//! judges a document over; a source importing nothing is laid after the
+//! prelude alone.
 //!
 //! **A path stays in its root.** An address with no scheme is a path relative
 //! to the importer's directory. It resolves when it names a readable source
@@ -130,6 +131,7 @@ use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
+use gandr_surface_lowering::prelude;
 use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
@@ -232,13 +234,16 @@ impl ParsedBytes
 /// A source's import closure laid out as one unit.
 ///
 /// # Specification
-/// - requires: constructed by [`lay_out`].
-/// - ensures: `text` is the closure's sources in dependency order, one newline
-///   apart, the importer last and starting at `base`; `unit` says where each
-///   starts and what each path import resolved to; `paths` holds each source's
-///   canonical path by its position in the unit.
+/// - requires: constructed by [`lay_out`], or by [`Laid::alone`] for a source
+///   laid after the prelude alone.
+/// - ensures: `text` is the prelude's text, then the closure's sources in
+///   dependency order, one newline apart, the importer last and starting at
+///   `base`; `unit` says where each starts and what each path import resolved
+///   to, the prelude its first source; `paths` holds each source's canonical
+///   path by its position in the unit, the prelude's named [`prelude::NAME`].
 /// - panics: none.
-/// - executable: none — a data type; [`lay_out`] carries the clauses.
+/// - executable: none — a data type; [`lay_out`] and [`Laid::alone`] carry the
+///   clauses.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a two-source closure, a cycle and an unresolved path are
@@ -254,7 +259,8 @@ pub struct Laid
     pub unit: Unit,
     /// Where the importer's own text starts in `text`.
     pub base: ByteOffset,
-    /// Each source's canonical path, by its position in the unit.
+    /// Each source's canonical path, by its position in the unit; the
+    /// prelude's, first, is [`prelude::NAME`].
     pub paths: Vec<PathBuf>,
     /// Every path an import of a source the closure read names, resolved or
     /// not, sorted, as [`lay_out`] states.
@@ -267,8 +273,9 @@ quenchant_shape::reason_enum! {
         /// The reason no closure is laid out.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The source writes no path import, or does not parse, which its
-            /// own composition reports.
+            /// No unit could be laid: the grammar a caller lays under did not
+            /// build, or a laying the unit refuses, which
+            /// [`group`](super::group) never makes.
             Alone,
         }
     }
@@ -290,11 +297,12 @@ pub struct Given
 ///
 /// # Specification
 /// - requires: constructed by [`group`].
-/// - ensures: `text` is the component's sources in admission order, one newline
-///   apart, each after every source it imports; `unit` says where each starts
-///   and what each of its path imports resolved to; `members` holds the bytes
-///   each source's own text covers in `text`, and `sources` each source's path,
-///   root and the path imports read for it, by its position in the unit;
+/// - ensures: `text` is the prelude's text, then the component's sources in
+///   admission order, one newline apart, each after every source it imports;
+///   `unit` says where each starts and what each of its path imports resolved
+///   to, the prelude its first source; `members` holds the bytes each source's
+///   own text covers in `text`, and `sources` each source's path, root and the
+///   path imports read for it, in admission order, the prelude among neither;
 ///   `reading` is how those imports were read.
 /// - panics: none.
 /// - executable: none — a data type; [`group`] carries the clauses.
@@ -589,7 +597,7 @@ impl Shadows for Unshadowed
 struct Laying(Vec<Position>);
 
 /// The import closure of the source at `path`, read as `text` under `root`,
-/// laid out as one unit, every import read from its file.
+/// laid out after the prelude as one unit, every import read from its file.
 ///
 /// # Specification
 /// - requires: `text` is the source at `path`, classified under `root`.
@@ -606,14 +614,15 @@ struct Laying(Vec<Position>);
 /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
 /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
 /// - witness: `component::tests::a_closure_names_every_path_its_imports_name_844`
-/// - witness: `component::tests::a_source_importing_nothing_is_alone`
+/// - witness: `component::tests::a_source_importing_nothing_is_laid_after_the_prelude_alone`
 #[inline]
+#[must_use]
 pub fn lay_out(
     grammar: &Pbg,
     path: &Path,
     root: SourceRoot,
     text: SourceText<'_>,
-) -> Maybe<Laid, laid::Absent>
+) -> Laid
 {
     lay_out_shadowed(grammar, path, root, text, &Unshadowed)
 }
@@ -625,22 +634,24 @@ pub fn lay_out(
 /// - requires: `text` is the source at `path`, classified under `root`; the
 ///   file at `path` need not exist, the importer being named as [`named_path`]
 ///   names it.
-/// - ensures: a source that writes a path import is laid out with every source
-///   it reaches through path imports: each import's path is joined to its
-///   importer's directory and resolves when it names a source classified under
-///   `root` that parses, read as `shadows` holds it, else from the file at the
-///   path; an import that is an edge of a cycle resolves to
-///   [`ImportTarget::Cycle`] and any other import that does not resolve to
-///   [`ImportTarget::Unresolved`]. The sources stand in dependency order, each
-///   after every source it imports, the importer last at [`Laid::base`], one
-///   newline apart; a source no resolved import reaches is not laid out. With
-///   [`Unshadowed`], this is the component [`group`] lays out for the source
-///   given alone. [`Laid::named`] holds, sorted and once each, every path an
-///   import of a source the closure read names, resolved or not, as
-///   [`named_path`] names it.
+/// - ensures: the prelude's text first, as the unit's first source; then a
+///   source that writes a path import is laid out with every source it reaches
+///   through path imports: each import's path is joined to its importer's
+///   directory and resolves when it names a source classified under `root` that
+///   parses, read as `shadows` holds it, else from the file at the path; an
+///   import that is an edge of a cycle resolves to [`ImportTarget::Cycle`] and
+///   any other import that does not resolve to [`ImportTarget::Unresolved`].
+///   The sources stand in dependency order, each after every source it imports,
+///   the importer last at [`Laid::base`], one newline apart; a source no
+///   resolved import reaches is not laid out. A source that writes no path
+///   import, does not parse, or whose imports resolve to no source is laid
+///   after the prelude alone, its imports unresolved. With [`Unshadowed`], this
+///   is the component [`group`] lays out for the source given alone.
+///   [`Laid::named`] holds, sorted and once each, every path an import of a
+///   source the closure read names, resolved or not, as [`named_path`] names
+///   it.
 /// - provides: the unit the session judges a document in.
-/// - fails: never; a source that writes no path import, or does not parse, is
-///   [`laid::Absent::Alone`].
+/// - fails: never.
 /// - panics: none.
 /// - intension: a source whose text does not spell `import` is not parsed; each
 ///   source of the closure is read and parsed once; recursion-free.
@@ -652,60 +663,104 @@ pub fn lay_out(
 /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
 /// - witness: `component::tests::a_cycle_and_a_missing_path_leave_their_imports_unresolved`
 /// - witness: `component::tests::a_closure_names_every_path_its_imports_name_844`
-/// - witness: `component::tests::a_source_importing_nothing_is_alone`
+/// - witness: `component::tests::a_source_importing_nothing_is_laid_after_the_prelude_alone`
 /// - witness: `component::tests::a_shadowed_import_is_read_as_its_editor_holds_it`
 /// - witness: `component::tests::an_importer_not_yet_on_disk_is_laid_after_what_it_imports_1443`
-#[spec(ensures: |ref ret| match *ret {
-    Maybe::Present(ref laid) => laid.text.get(usize::from(laid.base) ..) == Some(text.as_ref())
-        && laid.paths.len() == laid.unit.sources().len()
-        && laid.named.windows(2).all(|pair| matches!(*pair, [ref first, ref second] if first < second)),
-    Maybe::Absent(_) => true,
-})]
+#[spec(ensures: |ref ret| ret.text.get(usize::from(ret.base) ..) == Some(text.as_ref())
+    && ret.paths.len() == ret.unit.sources().len()
+    && ret.unit.prelude().is_some()
+    && ret.named.windows(2).all(|pair| matches!(*pair, [ref first, ref second] if first < second)))]
 #[inline]
+#[must_use]
 pub fn lay_out_shadowed(
     grammar: &Pbg,
     path: &Path,
     root: SourceRoot,
     text: SourceText<'_>,
     shadows: &dyn Shadows,
-) -> Maybe<Laid, laid::Absent>
+) -> Laid
 {
     if !text.as_ref().contains(IMPORT) {
-        return Maybe::Absent(laid::Absent::Alone);
+        return Laid::alone(path, text, Vec::new());
     }
     let mut graph = Graph::default();
     let importer = graph.admit(named_path(path), root, String::from(text.as_ref()));
     graph.expand(grammar, shadows);
+    let named: Vec<PathBuf> = core::mem::take(&mut graph.named).into_iter().collect();
     match graph.read.get(importer.0) {
         Some(read) if read.parse == Parse::Parsed && !read.edges.is_empty() => {},
-        Some(_) | None => return Maybe::Absent(laid::Absent::Alone),
+        Some(_) | None => return Laid::alone(path, text, named),
     }
     let mut layings = graph.layings(&[importer]);
     let Some(laying) = layings.pop()
     else {
-        return Maybe::Absent(laid::Absent::Alone);
+        return Laid::alone(path, text, named);
     };
-    let paths = laying
-        .0
-        .iter()
-        .filter_map(|position| graph.read.get(position.0).map(|read| read.path.clone()))
+    let paths = core::iter::once(PathBuf::from(prelude::NAME))
+        .chain(
+            laying
+                .0
+                .iter()
+                .filter_map(|position| graph.read.get(position.0).map(|read| read.path.clone())),
+        )
         .collect();
-    let named = core::mem::take(&mut graph.named).into_iter().collect();
     match graph.lay(&laying) {
         Maybe::Present(component) => {
             let base = component
                 .members
                 .last()
-                .map_or_else(|| ByteOffset::from(0_usize), |member| member.start);
-            Maybe::Present(Laid {
+                .map_or_else(prelude::base, |member| member.start);
+            Laid {
                 text: component.text,
                 unit: component.unit,
                 base,
                 paths,
                 named,
-            })
+            }
         },
-        Maybe::Absent(absent) => Maybe::Absent(absent),
+        Maybe::Absent(_) => Laid::alone(path, text, named),
+    }
+}
+
+impl Laid
+{
+    /// The source at `path`, read as `text`, laid after the prelude alone,
+    /// its imports unresolved, the paths its imports name `named`.
+    ///
+    /// # Specification
+    /// - requires: `named` is sorted, each path once.
+    /// - ensures: the prelude's text, a newline, then `text` from
+    ///   [`prelude::base`]; a unit of the prelude and the source, whose path
+    ///   imports answer unresolved; the prelude's name and the source's path,
+    ///   as [`named_path`] names it.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source importing nothing is laid so, and a script
+    ///   is run so.
+    /// - witness: `component::tests::a_source_importing_nothing_is_laid_after_the_prelude_alone`
+    /// - witness: `tests::run::a_script_compares_through_the_prelude_s_eq_2302`
+    #[spec(ensures: |ret| ret.text.get(usize::from(ret.base) ..) == Some(text.as_ref()) && ret.unit.sources().len() == 2_usize)]
+    pub(crate) fn alone(
+        path: &Path,
+        text: SourceText<'_>,
+        named: Vec<PathBuf>,
+    ) -> Self
+    {
+        let base = prelude::base();
+        let mut laid = String::with_capacity(usize::from(base).saturating_add(text.as_ref().len()));
+        laid.push_str(prelude::TEXT);
+        laid.push('\n');
+        laid.push_str(text.as_ref());
+        Self {
+            text: laid,
+            unit: Unit::preluded(Vec::from([UnitSource::new(base, Vec::new())]))
+                .unwrap_or_default(),
+            base,
+            paths: Vec::from([PathBuf::from(prelude::NAME), named_path(path)]),
+            named,
+        }
     }
 }
 
@@ -721,16 +776,17 @@ pub fn lay_out_shadowed(
 ///   exactly when a chain of resolved imports joins them, whichever way each
 ///   import points; a source reached only through an import that does not
 ///   resolve stands in no component. Each component is laid out as [`lay_out`]
-///   lays a closure out — its sources in dependency order, one newline apart,
-///   each import's target recorded — the depth-first walk starting at its
-///   sources in the order they were given; a component of one source keeps that
-///   source's text as it was read. Under [`Reading::Whole`] each importer's
-///   imports are those [`lay_out`] reads; under [`Reading::ImportForms`] they
-///   are those its import forms alone write, an importer whose forms write a
-///   path import taken to parse, which [`Component::confirms`] checks. A source
-///   at a path of `apart` is set apart: no import of it or by it joins a
-///   component, each import naming it is unresolved, and a given one is laid
-///   out alone, its own imports unresolved.
+///   lays a closure out — the prelude first, then its sources in dependency
+///   order, one newline apart, each import's target recorded — the depth-first
+///   walk starting at its sources in the order they were given; a component of
+///   one source is that source laid after the prelude alone. Under
+///   [`Reading::Whole`] each importer's imports are those [`lay_out`] reads;
+///   under [`Reading::ImportForms`] they are those its import forms alone
+///   write, an importer whose forms write a path import taken to parse, which
+///   [`Component::confirms`] checks. A source at a path of `apart` is set
+///   apart: no import of it or by it joins a component, each import naming it
+///   is unresolved, and a given one is laid out alone, its own imports
+///   unresolved.
 /// - provides: the units a walk lowers, each once.
 /// - fails: never.
 /// - panics: none.
@@ -1290,15 +1346,16 @@ impl Graph
         }
     }
 
-    /// Lay the sources of `laying` out as one unit, taking their texts.
+    /// Lay the sources of `laying` out as one unit after the prelude, taking
+    /// their texts.
     ///
     /// # Specification
     /// - requires: `laying` is one of [`Graph::layings`], whose texts have not
     ///   been taken.
-    /// - ensures: the sources' texts in order, one newline apart, each source's
-    ///   own bytes recorded as its member and each of its imports' targets by
-    ///   position in the unit; a laying of one source keeps its text without
-    ///   copying it.
+    /// - ensures: the prelude's text, then the sources' texts in order, one
+    ///   newline apart, each source's own bytes recorded as its member and each
+    ///   of its imports' targets by position in the unit, the prelude the
+    ///   unit's first source and no member.
     /// - fails: never; [`laid::Absent::Alone`] only for a laying the unit
     ///   refuses, which [`Graph::layings`] never makes.
     /// - panics: none.
@@ -1309,7 +1366,7 @@ impl Graph
     /// - witness: `component::tests::a_component_lays_each_source_once`
     #[spec(ensures: |ref ret| match *ret {
         Maybe::Present(ref component) => component.members.len() == laying.0.len()
-            && component.unit.sources().len() == laying.0.len(),
+            && component.unit.sources().len() == laying.0.len().saturating_add(1_usize),
         Maybe::Absent(_) => true,
     })]
     fn lay(
@@ -1322,12 +1379,14 @@ impl Graph
             .0
             .iter()
             .enumerate()
-            .map(|(index, &position)| (position.0, SourceIndex::from(index)))
+            .map(|(index, &position)| {
+                (position.0, SourceIndex::from(index.saturating_add(1_usize)))
+            })
             .collect();
         let mut sources = Vec::with_capacity(laying.0.len());
         let mut members = Vec::with_capacity(laying.0.len());
         let mut origins = Vec::with_capacity(laying.0.len());
-        let mut text = String::new();
+        let mut text = String::from(prelude::TEXT);
         for &position in &laying.0 {
             let targets = self.read.get(position.0).map_or_else(Vec::new, |read| {
                 read.edges
@@ -1346,17 +1405,10 @@ impl Graph
             else {
                 continue;
             };
-            if !sources.is_empty() {
-                text.push('\n');
-            }
+            text.push('\n');
             let start = ByteOffset::from(text.len());
-            if laying.0.len() == 1_usize {
-                text = core::mem::take(&mut read.text);
-            }
-            else {
-                text.push_str(&read.text);
-                read.text = String::new();
-            }
+            text.push_str(&read.text);
+            read.text = String::new();
             members.push(Member {
                 start,
                 end: ByteOffset::from(text.len()),
@@ -1369,7 +1421,7 @@ impl Graph
             sources.push(UnitSource::new(start, targets));
         }
         let reading = self.reading;
-        Unit::new(sources).map_or(Maybe::Absent(laid::Absent::Alone), |unit| {
+        Unit::preluded(sources).map_or(Maybe::Absent(laid::Absent::Alone), |unit| {
             Maybe::Present(Component {
                 text,
                 unit,
@@ -1380,31 +1432,37 @@ impl Graph
         })
     }
 
-    /// The source at `position` laid out alone, its imports unresolved.
+    /// The source at `position` laid out alone after the prelude, its imports
+    /// unresolved.
     ///
     /// # Specification
     /// - requires: `position`'s text has not been taken.
-    /// - ensures: a unit of the one source, starting at zero, each of its path
-    ///   imports unresolved; its text taken.
+    /// - ensures: a unit of the prelude and the one source, starting at
+    ///   [`prelude::base`], each of its path imports unresolved; its text
+    ///   taken.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — reached only for a laying the unit refuses, which
-    ///   [`Graph::layings`] never makes; the shape is [`Unit::single`]'s with
-    ///   its imports kept unresolved.
+    ///   [`Graph::layings`] never makes; the shape is [`prelude::lay`]'s over
+    ///   [`Unit::single`] with its imports kept unresolved.
     /// - witness: `component::tests::a_component_lays_each_source_once`
-    #[spec(ensures: |ref ret| ret.members.len() == 1_usize && ret.unit.sources().len() == 1_usize)]
+    #[spec(ensures: |ret| ret.members.len() == 1_usize && ret.unit.sources().len() == 2_usize)]
     fn alone(
         &mut self,
         position: Position,
     ) -> Component
     {
-        let (text, imports, origin) = self.read.get_mut(position.0).map_or_else(
-            || (String::new(), Vec::new(), Vec::new()),
+        let mut text = String::from(prelude::TEXT);
+        text.push('\n');
+        let start = ByteOffset::from(text.len());
+        let (imports, origin) = self.read.get_mut(position.0).map_or_else(
+            || (Vec::new(), Vec::new()),
             |read| {
+                text.push_str(&read.text);
+                read.text = String::new();
                 (
-                    core::mem::take(&mut read.text),
                     read.edges
                         .iter()
                         .map(|_| ImportTarget::Unresolved)
@@ -1417,10 +1475,9 @@ impl Graph
                 )
             },
         );
-        let start = ByteOffset::from(0_usize);
         let end = ByteOffset::from(text.len());
         Component {
-            unit: Unit::new(Vec::from([UnitSource::new(start, imports)])).unwrap_or_default(),
+            unit: Unit::preluded(Vec::from([UnitSource::new(start, imports)])).unwrap_or_default(),
             members: Vec::from([Member { start, end }]),
             text,
             sources: origin,
@@ -2153,6 +2210,7 @@ mod tests
     use gandr_surface_lowering::PathImportOrdinal;
     use gandr_surface_lowering::SourceIndex;
     use gandr_surface_lowering::Unit;
+    use gandr_surface_lowering::prelude;
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::SourceText;
@@ -2166,7 +2224,6 @@ mod tests
     use super::Shadows;
     use super::group;
     use super::imports_named;
-    use super::laid;
     use super::lay_out;
     use super::lay_out_shadowed;
     use super::named_path;
@@ -2271,32 +2328,33 @@ mod tests
             ),
             (Path::new("main.gandr"), importer),
         ]);
-        let Maybe::Present(laid) = lay_out(
+        let laid = lay_out(
             &grammar,
             &tree.0.join("main.gandr"),
             SourceRoot::Strict,
             importer,
-        )
-        else {
-            panic!("an importer of a sibling is laid out");
-        };
+        );
 
         assert_eq!(
             laid.text,
             format!(
-                "def one : Integer ;\ndef one = 1 ;\n{}",
+                "{}\ndef one : Integer ;\ndef one = 1 ;\n{}",
+                prelude::TEXT,
                 <&str>::from(importer)
             ),
-            "the sibling stands first, one newline before the importer"
+            "the prelude stands first, then the sibling, one newline before the importer"
         );
-        assert_eq!(laid.base, ByteOffset::from(34_usize));
+        assert_eq!(
+            laid.base,
+            ByteOffset::from(usize::from(prelude::base()).saturating_add(34_usize))
+        );
         assert_eq!(
             laid.unit
-                .target(SourceIndex::from(1_usize), PathImportOrdinal::from(0_usize)),
-            ImportTarget::Source(SourceIndex::from(0_usize)),
+                .target(SourceIndex::from(2_usize), PathImportOrdinal::from(0_usize)),
+            ImportTarget::Source(SourceIndex::from(1_usize)),
             "the path import names the sibling; the scheme import is no path import"
         );
-        assert_eq!(laid.paths.len(), 2_usize);
+        assert_eq!(laid.paths.len(), 3_usize);
     }
 
     /// #1443: an importer an editor holds before it is written to disk lays
@@ -2312,24 +2370,25 @@ mod tests
             Path::new("base.gandr"),
             SourceText::from("def one : Integer ;\ndef one = 1 ;"),
         )]);
-        let Maybe::Present(laid) = lay_out(
+        let laid = lay_out(
             &grammar,
             &tree.0.join("main.gandr"),
             SourceRoot::Strict,
             importer,
-        )
-        else {
-            panic!("an importer not on disk is laid out with its sibling");
-        };
+        );
         assert_eq!(
             laid.unit
-                .target(SourceIndex::from(1_usize), PathImportOrdinal::from(0_usize)),
-            ImportTarget::Source(SourceIndex::from(0_usize)),
+                .target(SourceIndex::from(2_usize), PathImportOrdinal::from(0_usize)),
+            ImportTarget::Source(SourceIndex::from(1_usize)),
             "the path import names the sibling beside the importer's path"
         );
         assert_eq!(
             laid.paths,
-            [tree.0.join("base.gandr"), tree.0.join("main.gandr")],
+            [
+                PathBuf::from(prelude::NAME),
+                tree.0.join("base.gandr"),
+                tree.0.join("main.gandr")
+            ],
             "the importer is named by its directory's canonical path and its file name"
         );
     }
@@ -2354,19 +2413,16 @@ mod tests
             ),
             (Path::new("sibling.gandr"), SourceText::from(sibling)),
         ]);
-        let Maybe::Present(laid) = lay_out(
+        let laid = lay_out(
             &grammar,
             &tree.0.join("first.gandr"),
             SourceRoot::Strict,
             first,
-        )
-        else {
-            panic!("an importer is laid out, whatever its imports came to");
-        };
+        );
 
         assert_eq!(
             laid.text,
-            format!("{sibling}\n{}", <&str>::from(first)),
+            format!("{}\n{sibling}\n{}", prelude::TEXT, <&str>::from(first)),
             "a source reached only through a cycle is not laid out; the sibling is"
         );
         let targets = |unit: &Unit, importer: usize| {
@@ -2378,11 +2434,11 @@ mod tests
             })
         };
         assert_eq!(
-            targets(&laid.unit, 1_usize),
+            targets(&laid.unit, 2_usize),
             [
                 ImportTarget::Cycle,
                 ImportTarget::Unresolved,
-                ImportTarget::Source(SourceIndex::from(0_usize)),
+                ImportTarget::Source(SourceIndex::from(1_usize)),
             ],
             "the edge of the cycle, the missing path and the sibling"
         );
@@ -2412,8 +2468,8 @@ mod tests
                 panic!("{reading:?}: one component: {:?}", grouped.components);
             };
             assert_eq!(
-                (alone.text.as_str(), targets(&alone.unit, 0_usize)),
-                (<&str>::from(first), [
+                (alone.text.clone(), targets(&alone.unit, 1_usize)),
+                (format!("{}\n{}", prelude::TEXT, <&str>::from(first)), [
                     ImportTarget::Cycle,
                     ImportTarget::Unresolved,
                     ImportTarget::Unresolved,
@@ -2440,19 +2496,16 @@ mod tests
                 SourceText::from("import \"./first.gandr\" ;\ndef two : Integer ;\ndef two = 2 ;"),
             ),
         ]);
-        let Maybe::Present(laid) = lay_out(
+        let laid = lay_out(
             &grammar,
             &tree.0.join("first.gandr"),
             SourceRoot::Strict,
             first,
-        )
-        else {
-            panic!("an importer is laid out, whatever its imports came to");
-        };
+        );
         assert_eq!(
             laid.paths,
-            [tree.0.join("first.gandr")],
-            "the importer alone is laid out"
+            [PathBuf::from(prelude::NAME), tree.0.join("first.gandr")],
+            "the importer alone is laid out after the prelude"
         );
         assert_eq!(
             laid.named,
@@ -2521,8 +2574,11 @@ mod tests
         );
         assert_eq!(
             texts(&changed),
-            [format!("{floor}\n{rewritten}\n{importer}")],
-            "the closure is laid out as the sibling now reads"
+            [format!(
+                "{}\n{floor}\n{rewritten}\n{importer}",
+                prelude::TEXT
+            )],
+            "the closure is laid out after the prelude as the sibling now reads"
         );
     }
 
@@ -2718,10 +2774,11 @@ mod tests
         );
     }
 
-    /// A source that writes no path import is alone: one that never spells
-    /// `import`, and one that spells it only inside a name.
+    /// A source that writes no path import is laid after the prelude alone:
+    /// one that never spells `import`, and one that spells it only inside a
+    /// name.
     #[test]
-    fn a_source_importing_nothing_is_alone()
+    fn a_source_importing_nothing_is_laid_after_the_prelude_alone()
     {
         let grammar = built_in().expect("the grammar builds");
         for (written, reason) in [
@@ -2734,17 +2791,28 @@ mod tests
                 "spells `import` only inside a name",
             ),
         ] {
-            assert!(
-                matches!(
-                    lay_out(
-                        &grammar,
-                        &PathBuf::from("alone.gandr"),
-                        SourceRoot::Strict,
-                        SourceText::from(written)
-                    ),
-                    Maybe::Absent(laid::Absent::Alone)
+            let laid = lay_out(
+                &grammar,
+                &PathBuf::from("alone.gandr"),
+                SourceRoot::Strict,
+                SourceText::from(written),
+            );
+            assert_eq!(
+                (
+                    laid.text,
+                    laid.base,
+                    laid.unit.sources().len(),
+                    laid.unit.prelude(),
+                    laid.paths.first().cloned()
                 ),
-                "a source that {reason} is alone"
+                (
+                    format!("{}\n{written}", prelude::TEXT),
+                    prelude::base(),
+                    2_usize,
+                    Some(SourceIndex::from(0_usize)),
+                    Some(PathBuf::from(prelude::NAME))
+                ),
+                "a source that {reason} is laid after the prelude alone"
             );
         }
     }
@@ -2775,11 +2843,7 @@ mod tests
                 String::from("def three : Integer ;\ndef three = 3 ;"),
             ),
         ]));
-        let Maybe::Present(shadowed) =
-            lay_out_shadowed(&grammar, &main, SourceRoot::Strict, importer, &held)
-        else {
-            panic!("an importer of held siblings is laid out");
-        };
+        let shadowed = lay_out_shadowed(&grammar, &main, SourceRoot::Strict, importer, &held);
         assert!(
             shadowed.text.contains("def one = 2 ;") && !shadowed.text.contains("def one = 1 ;"),
             "the sibling on disk is read as the editor holds it: {}",
@@ -2790,17 +2854,14 @@ mod tests
             "a sibling only the editor holds is laid out: {}",
             shadowed.text
         );
-        assert_eq!(shadowed.paths.len(), 3_usize);
-        let Maybe::Present(unshadowed) = lay_out(&grammar, &main, SourceRoot::Strict, importer)
-        else {
-            panic!("an importer of a sibling on disk is laid out");
-        };
+        assert_eq!(shadowed.paths.len(), 4_usize);
+        let unshadowed = lay_out(&grammar, &main, SourceRoot::Strict, importer);
         assert!(
             unshadowed.text.contains("def one = 1 ;") && !unshadowed.text.contains("def three"),
             "unshadowed, the file is read and the unwritten sibling is unresolved: {}",
             unshadowed.text
         );
-        assert_eq!(unshadowed.paths.len(), 2_usize);
+        assert_eq!(unshadowed.paths.len(), 3_usize);
     }
 
     #[test]
@@ -2841,11 +2902,16 @@ mod tests
             else {
                 panic!("{reading:?}: two components: {:?}", grouped.components);
             };
-            assert_eq!(alone.text, apart, "a source no import joins stands alone");
+            assert_eq!(
+                alone.text,
+                format!("{}\n{apart}", prelude::TEXT),
+                "a source no import joins stands after the prelude alone"
+            );
             assert_eq!(
                 diamond.text,
-                format!("{base}\n{left}\n{right}\n{top}"),
-                "{reading:?}: the base laid once, before both sides, the top after both"
+                format!("{}\n{base}\n{left}\n{right}\n{top}", prelude::TEXT),
+                "{reading:?}: the prelude first, the base laid once, before both sides, the top \
+                 after both"
             );
             let own: Vec<&str> = diamond
                 .members
@@ -2870,8 +2936,8 @@ mod tests
             assert_eq!(
                 diamond
                     .unit
-                    .target(SourceIndex::from(3_usize), PathImportOrdinal::from(1_usize)),
-                ImportTarget::Source(SourceIndex::from(2_usize)),
+                    .target(SourceIndex::from(4_usize), PathImportOrdinal::from(1_usize)),
+                ImportTarget::Source(SourceIndex::from(3_usize)),
                 "{reading:?}: the top's second import names the right side's place"
             );
         }
@@ -2944,10 +3010,10 @@ mod tests
             whole
                 .components
                 .iter()
-                .map(|component| component.text.as_str())
+                .map(|component| component.text.clone())
                 .collect::<Vec<_>>(),
-            [nested],
-            "read whole, the nested source imports nothing and stands alone"
+            [format!("{}\n{nested}", prelude::TEXT)],
+            "read whole, the nested source imports nothing and stands after the prelude alone"
         );
     }
 

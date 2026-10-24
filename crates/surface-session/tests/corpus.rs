@@ -166,21 +166,18 @@ fn submits_as_composed(
         backend(),
     )
     .with_width(three());
-    // An importer is submitted over the siblings it imports.
+    // A source is submitted over the prelude and the siblings it imports.
     let own = <&str>::from(text)
         .get(usize::from(base) ..)
         .unwrap_or_default();
     let laid = lay_out(grammar, path, root, SourceText::from(own));
     let slot = ClosureSlot::new();
-    let submitted = match laid {
-        Maybe::Present(ref laid) => session.submit_unit(
-            SourceText::from(laid.text.as_str()),
-            &laid.unit,
-            laid.base,
-            &slot,
-        ),
-        Maybe::Absent(_) => session.submit(SourceText::from(own)),
-    };
+    let submitted = session.submit_unit(
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+        &slot,
+    );
     let submission = match submitted {
         Ok(submission) => submission,
         Err(fault) => panic!("{}: the session faulted: {fault}", path.display()),

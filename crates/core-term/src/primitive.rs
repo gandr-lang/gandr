@@ -327,6 +327,13 @@ pub const PRELUDE: &[Primitive] = &[
         operation: Operation::Mod,
     }),
     Primitive(&Definition {
+        name: "int.eq",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Integer, PrimitiveType::Integer],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Eq,
+    }),
+    Primitive(&Definition {
         name: "neg",
         operator: Operator::Prefix("-"),
         arguments: &[PrimitiveType::Integer],
@@ -402,6 +409,13 @@ pub const PRELUDE: &[Primitive] = &[
         arguments: &[PrimitiveType::Text, PrimitiveType::Text],
         result: PrimitiveType::Text,
         operation: Operation::Append,
+    }),
+    Primitive(&Definition {
+        name: "string.eq",
+        operator: Operator::Named,
+        arguments: &[PrimitiveType::Text, PrimitiveType::Text],
+        result: PrimitiveType::Boolean,
+        operation: Operation::Eq,
     }),
     Primitive(&Definition {
         name: "float64.add",
@@ -674,9 +688,10 @@ impl Primitive
     /// - requires: nothing; unchecked callers receive typed refusals.
     /// - ensures: exact integer arithmetic; division truncates toward zero,
     ///   remainder has the dividend's sign; booleans use left for true; an
-    ///   append is the first string's characters followed by the second's;
-    ///   floating-point rows are IEEE 754 binary64, ties to even, with `exp`
-    ///   from `libm` and every NaN canonical.
+    ///   append is the first string's characters followed by the second's, and
+    ///   two strings are equal when their bytes are; floating-point rows are
+    ///   IEEE 754 binary64, ties to even, with `exp` from `libm` and every NaN
+    ///   canonical.
     /// - fails: arity before argument classifiers, then zero division; invalid
     ///   decimal conversion is named separately; a floating-point number with
     ///   no nearest integer is not finite.
@@ -689,11 +704,13 @@ impl Primitive
     ///
     /// # Adequacy
     /// - hypothesis: L3 — asymmetric signed operands, zero divisors, integers
-    ///   beyond machine width, every boolean pair and two strings appended in
-    ///   both orders distinguish operation and error drift.
+    ///   beyond machine width, every boolean pair, two strings appended in both
+    ///   orders and two strings equal only byte for byte distinguish operation
+    ///   and error drift.
     /// - witness: `primitive::tests::exact_arithmetic_and_errors`
     /// - witness: `primitive::tests::comparisons_and_booleans`
     /// - witness: `primitive::tests::an_append_writes_the_first_string_then_the_second`
+    /// - witness: `primitive::tests::a_string_equality_compares_the_texts_byte_for_byte`
     /// - witness: `primitive::tests::floating_point_rows_are_ieee_binary64`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |value| value.classifier() == self.0.result))]
     #[inline]
@@ -721,18 +738,47 @@ impl Primitive
                 Scalar::Float64(float) => Scalar::Float64(float),
             });
         }
-        // Only `string.append` takes text, the classifiers say: a text
-        // operand is its first.
+        // Only the `string` rows take text, the classifiers say: a text
+        // operand is their first, and the second is text too.
         if let Scalar::Text(left) = *first {
             let Some(&Scalar::Text(right)) = arguments.get(1)
             else {
                 return Err(PrimitiveError::ArgumentType);
             };
             let (left, right): (&str, &str) = (left.as_ref(), right.as_ref());
-            let mut appended = String::with_capacity(left.len().saturating_add(right.len()));
-            appended.push_str(left);
-            appended.push_str(right);
-            return Ok(Scalar::Text(StringLiteral::new(appended)));
+            return match self.0.operation {
+                Operation::Append => {
+                    let mut appended =
+                        String::with_capacity(left.len().saturating_add(right.len()));
+                    appended.push_str(left);
+                    appended.push_str(right);
+                    Ok(Scalar::Text(StringLiteral::new(appended)))
+                },
+                Operation::Eq => Ok(Scalar::Boolean(if left == right {
+                    Side::Left
+                }
+                else {
+                    Side::Right
+                })),
+                Operation::First
+                | Operation::Add
+                | Operation::Sub
+                | Operation::Mul
+                | Operation::Div
+                | Operation::Mod
+                | Operation::Neg
+                | Operation::Ne
+                | Operation::Lt
+                | Operation::Le
+                | Operation::Gt
+                | Operation::Ge
+                | Operation::And
+                | Operation::Or
+                | Operation::Not
+                | Operation::Exp
+                | Operation::FromInteger
+                | Operation::Round => Err(PrimitiveError::ArgumentType),
+            };
         }
         if let Scalar::Float64(left) = *first {
             return float64(self.0.operation, left, arguments);

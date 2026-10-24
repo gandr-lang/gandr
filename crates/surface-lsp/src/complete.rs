@@ -840,8 +840,10 @@ mod tests
                 ("Succ", Kind::CONSTRUCTOR),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
+                ("eq", Kind::FUNCTION),
             ]),
-            "a value: the binders in scope, innermost first, then the values and constructors"
+            "a value: the binders in scope, innermost first, then the values and constructors, \
+             the prelude's among them"
         );
         assert!(
             has(&value, "thunk") && !has(&value, "def") && !has(&value, "Type"),
@@ -858,6 +860,7 @@ mod tests
                 ("Succ", Kind::CONSTRUCTOR),
                 ("Zero", Kind::CONSTRUCTOR),
                 ("double", Kind::FUNCTION),
+                ("eq", Kind::FUNCTION),
             ]),
             "a body: the parameters, never a pattern's binder"
         );
@@ -869,8 +872,8 @@ mod tests
         let ty = at("Nat) ;");
         assert_eq!(
             ty.names,
-            named!([("Nat", Kind::ENUM)]),
-            "a type: the families alone"
+            named!([("Eq", Kind::ENUM), ("Nat", Kind::ENUM)]),
+            "a type: the families alone, the prelude's `Eq` among them"
         );
         assert!(has(&ty, "Type") && !has(&ty, "return"), "{ty:?}");
 
@@ -1274,6 +1277,7 @@ mod tests
                 name("Z"),
                 name("Zero"),
                 call("down", "down(${1:n})$0"),
+                call("eq", "eq(${1:a}, ${2:b})$0"),
                 call("invLooper", "invLooper(${1:x})$0"),
                 name("loop"),
                 call("loopOn", "loopOn(${1:p})$0"),

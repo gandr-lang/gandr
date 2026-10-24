@@ -15221,8 +15221,9 @@ mod tests
         assert!(
             admitted.to_string().contains("at version 2: ")
                 && admitted.to_string().contains(", admitted in ")
-                && admitted.to_string().ends_with(", 2/2 declarations crossed"),
-            "the change's admission crosses the revision whole: {admitted}"
+                && admitted.to_string().ends_with(", 9/9 declarations crossed"),
+            "the change's admission crosses the revision whole, the prelude's seven among \
+             them: {admitted}"
         );
         assert!(matches!(
             blocking.wait(),
@@ -15901,12 +15902,12 @@ mod tests
         let lone = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = a ;\n";
         assert_eq!(
             judged(&mut first, &mut workspace, &open(lone)),
-            ["2/2"],
-            "a first open judges every item"
+            ["2/9"],
+            "a first open judges every item of its own, the prelude's adopted"
         );
         assert_eq!(
             judged(&mut second, &mut workspace, &open(lone)),
-            ["0/2"],
+            ["0/9"],
             "a second connection's copy resumes from the first's"
         );
         let _closed = judged(&mut first, &mut workspace, &close);
@@ -15914,14 +15915,14 @@ mod tests
         assert!(workspace.documents.is_empty(), "the last close forgets it");
         assert_eq!(
             judged(&mut first, &mut workspace, &open(lone)),
-            ["0/2"],
+            ["0/9"],
             "a copy opened again resumes from what the last one let go recorded"
         );
         let _closed = judged(&mut first, &mut workspace, &close);
         let edited = "def a : Integer ;\ndef a = 1 ;\ndef b : Integer ;\ndef b = 2 ;\n";
         assert_eq!(
             judged(&mut first, &mut workspace, &open(edited)),
-            ["1/2"],
+            ["1/9"],
             "an edited text adopts its unchanged item and judges the changed one"
         );
     }
@@ -17314,7 +17315,11 @@ mod tests
 
         let mut first = saving(&saves);
         let (_, opened) = notified(&mut first, &open("lone.gandr", lone));
-        assert_eq!(judged(&opened), ["2/2"], "a first open judges every item");
+        assert_eq!(
+            judged(&opened),
+            ["2/9"],
+            "a first open judges every item of its own, the prelude's adopted"
+        );
         assert_eq!(
             notified(&mut first, &save("lone.gandr")),
             (Vec::new(), Vec::new()),
@@ -17324,26 +17329,30 @@ mod tests
         let (_, reopened) = notified(&mut saving(&saves), &open("lone.gandr", lone));
         assert_eq!(
             judged(&reopened),
-            ["0/2"],
+            ["0/9"],
             "an open of the saved text adopts what the save judged"
         );
         let (_, other) = notified(
             &mut saving(&saves),
             &open("lone.gandr", "def a : Integer ;\ndef a = 2 ;\n"),
         );
-        assert_eq!(judged(&other), ["1/1"], "another text restores nothing");
+        assert_eq!(
+            judged(&other),
+            ["1/8"],
+            "another text restores nothing of its own"
+        );
 
         let (_, laid) = notified(&mut first, &open("importer.gandr", importer));
         assert_eq!(
             judged(&laid),
-            ["1/2"],
+            ["1/9"],
             "an importer judges its own item after its closure"
         );
         let _kept = notified(&mut first, &save("importer.gandr"));
         let (_, relaid) = notified(&mut saving(&saves), &open("importer.gandr", importer));
         assert_eq!(
             judged(&relaid),
-            ["0/2"],
+            ["0/9"],
             "a reopened importer adopts its own item after a closure laid anew"
         );
 
@@ -17359,7 +17368,7 @@ mod tests
             "a save read while the judgement is due is kept once it is published"
         );
         let (_, owed) = notified(&mut saving(&saves), &open("lone.gandr", edited));
-        assert_eq!(judged(&owed), ["0/1"]);
+        assert_eq!(judged(&owed), ["0/8"]);
         let _saved = handled(&mut owing, &save("lone.gandr"));
         let _changed = handled(
             &mut owing,

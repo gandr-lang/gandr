@@ -245,7 +245,8 @@ fn signed(
     found
 }
 
-/// The type table of `written`, typed beside the siblings it imports.
+/// The type table of `written`, typed beside the prelude and the siblings it
+/// imports.
 ///
 /// # Specification
 /// trivial.
@@ -254,17 +255,14 @@ fn typed(
     written: Written<'_>,
 ) -> Option<TypeTable>
 {
-    let text = written.text;
-    match lay_out(grammar, written.path, classify(written.path), text) {
-        Maybe::Present(laid) => TypeTable::of_unit(
-            grammar,
-            SourceText::from(laid.text.as_str()),
-            &laid.unit,
-            laid.base,
-        )
-        .ok(),
-        Maybe::Absent(_) => TypeTable::of(grammar, text).ok(),
-    }
+    let laid = lay_out(grammar, written.path, classify(written.path), written.text);
+    TypeTable::of_unit(
+        grammar,
+        SourceText::from(laid.text.as_str()),
+        &laid.unit,
+        laid.base,
+    )
+    .ok()
 }
 
 /// `written` formatted into `form` through the rewrites `rewrites` selects,
@@ -282,12 +280,9 @@ fn formatted(
     let text = written.text;
     let parsed = parse(grammar, text).map_err(|error| format!("does not parse: {error}"))?;
     let laid = lay_out(grammar, written.path, classify(written.path), text);
-    let beside = match laid {
-        Maybe::Present(ref laid) => Beside::Imports {
-            before: SourceText::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
-            unit: &laid.unit,
-        },
-        Maybe::Absent(_) => Beside::Alone,
+    let beside = Beside::Imports {
+        before: SourceText::from(laid.text.get(.. usize::from(laid.base)).unwrap_or_default()),
+        unit: &laid.unit,
     };
     let options = FormatOptions {
         form,
@@ -820,8 +815,9 @@ fn unfaithful(
     }
 }
 
-/// The text `written` lays out — its import closure, then the source — the
-/// unit that lowers it and where the source starts in that text.
+/// The text `written` lays out — the prelude, its import closure, then the
+/// source — the unit that lowers it and where the source starts in that
+/// text.
 ///
 /// # Specification
 /// trivial.
@@ -830,14 +826,8 @@ fn laid(
     written: Written<'_>,
 ) -> (String, Unit, ByteOffset)
 {
-    match lay_out(grammar, written.path, classify(written.path), written.text) {
-        Maybe::Present(laid) => (laid.text.clone(), laid.unit.clone(), laid.base),
-        Maybe::Absent(_) => (
-            String::from(<&str>::from(written.text)),
-            Unit::single(),
-            0_usize.into(),
-        ),
-    }
+    let laid = lay_out(grammar, written.path, classify(written.path), written.text);
+    (laid.text, laid.unit, laid.base)
 }
 
 /// What the body parity reads of a source: each declaration it spells

@@ -1252,7 +1252,7 @@ fn laid_out(
 ) -> Maybe<Laid, laid::Absent>
 {
     grammar().map_or(Maybe::Absent(laid::Absent::Alone), |grammar| {
-        lay_out_shadowed(grammar, &uri.path(), root, text, shadows)
+        Maybe::Present(lay_out_shadowed(grammar, &uri.path(), root, text, shadows))
     })
 }
 
@@ -1732,7 +1732,11 @@ mod tests
                     continue;
                 };
                 kept = kept.saturating_add(1);
-                if let Maybe::Present(_) = rechecked.laid {
+                // Laid after a closure: the unit holds more than the prelude
+                // and the document.
+                if let Maybe::Present(ref laid_out) = rechecked.laid
+                    && laid_out.paths.len() > 2
+                {
                     laid = laid.saturating_add(1);
                 }
                 let session = session.expect("the grammar builds");

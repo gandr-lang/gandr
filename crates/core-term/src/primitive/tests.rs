@@ -109,6 +109,7 @@ fn comparisons_and_booleans()
     let more = integer(Digits("9"));
     for (name, expected) in [
         ("eq", Side::Right),
+        ("int.eq", Side::Right),
         ("ne", Side::Left),
         ("lt", Side::Left),
         ("le", Side::Left),
@@ -123,6 +124,7 @@ fn comparisons_and_booleans()
     }
     for (name, expected) in [
         ("eq", Side::Left),
+        ("int.eq", Side::Left),
         ("ne", Side::Right),
         ("lt", Side::Right),
         ("le", Side::Left),
@@ -203,6 +205,39 @@ fn an_append_writes_the_first_string_then_the_second()
         arena.value(minted),
         Some(Value::Literal(Literal::Text(content))) if content.as_ref() == "types are "
     ));
+}
+
+#[test]
+fn a_string_equality_compares_the_texts_byte_for_byte()
+{
+    let equal = named(PrimitiveName("string.eq"));
+    let text = |content: &str| Scalar::Text(StringLiteral::new(String::from(content)));
+    let (machines, machine) = (text("machines"), text("machine"));
+    assert_eq!(
+        equal.evaluate(&[machines.borrowed(), text("machines").borrowed()]),
+        Ok(Scalar::Boolean(Side::Left)),
+        "two equal texts"
+    );
+    assert_eq!(
+        equal.evaluate(&[machines.borrowed(), machine.borrowed()]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "a prefix is not the text"
+    );
+    assert_eq!(
+        equal.evaluate(&[text("").borrowed(), text("").borrowed()]),
+        Ok(Scalar::Boolean(Side::Left)),
+        "the empty text is itself"
+    );
+    assert_eq!(
+        equal.evaluate(&[text("é").borrowed(), text("e\u{301}").borrowed()]),
+        Ok(Scalar::Boolean(Side::Right)),
+        "bytes, not a normal form"
+    );
+    assert_eq!(
+        equal.evaluate(&[machines.borrowed(), integer(Digits("1")).borrowed()]),
+        Err(PrimitiveError::ArgumentType),
+        "a text row refuses an integer"
+    );
 }
 
 #[test]

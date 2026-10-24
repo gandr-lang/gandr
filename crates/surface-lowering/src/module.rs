@@ -1730,7 +1730,9 @@ impl<'source> Collected<'source>
     ///   answering two slots are [`Ambiguity`], naming both imports; an import
     ///   whose address did not resolve to a source of the unit answers nothing.
     ///   Imports are not re-exported: only the imported source's own
-    ///   declarations answer.
+    ///   declarations answer. Where no import answers, the unit's prelude does,
+    ///   for every source but the prelude itself, with the empty bytes at its
+    ///   start, which no written import covers.
     /// - provides: the import fallback of every top-level name lookup.
     /// - fails: [`Ambiguity`] for two imports binding one name.
     /// - panics: none.
@@ -1740,9 +1742,12 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a name one import binds, a name two bind, and a name
-    ///   only an import of the imported source binds, each answered exactly.
+    ///   only an import of the imported source binds, each answered exactly; a
+    ///   name the prelude declares answers where nothing written does, and a
+    ///   source's own declaration of it shadows it.
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present((slot, _))) => self.slots.get(usize::from(slot)).is_some(),
         Ok(Maybe::Absent(_)) => true,
@@ -1766,10 +1771,10 @@ impl<'source> Collected<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the slot of the unit's `Theory` when `source`, or a source
-    ///   one of its unqualified imports resolves to, stands among
-    ///   [`Self::theory_sources`]; [`theory_slot::Absent::Unminted`] when the
-    ///   unit holds no code; [`theory_slot::Absent::Unseen`] otherwise. The
+    /// - ensures: the slot of the unit's `Theory` when `source`, a source one
+    ///   of its unqualified imports resolves to, or the unit's prelude, stands
+    ///   among [`Self::theory_sources`]; [`theory_slot::Absent::Unminted`] when
+    ///   the unit holds no code; [`theory_slot::Absent::Unseen`] otherwise. The
     ///   answer does not depend on which of those sources minted the code, so a
     ///   source names `Theory` alike whatever the unit lays before it.
     /// - provides: the fallback that resolves `Theory` in a source whose block
@@ -1801,7 +1806,7 @@ impl<'source> Collected<'source>
                 (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target)))
                     if holds(target)
             )
-        });
+        }) || self.unit.prelude().is_some_and(holds);
         if holds(source) || imported {
             Maybe::Present(theory.slot)
         }
@@ -1816,7 +1821,11 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::imported_slot`], over the constructors each
-    ///   imported source declares.
+    ///   imported source declares; the prelude answers none of the
+    ///   presentation's, which its `theory` block enters as any block does but
+    ///   which are no part of what it offers, so a source names `Shape` or
+    ///   `Var` for its own type unless it, or a source it imports, writes a
+    ///   theory.
     /// - provides: the import fallback of constructor lookup.
     /// - fails: [`Ambiguity`] for two imports binding one constructor name.
     /// - panics: none.
@@ -1826,10 +1835,14 @@ impl<'source> Collected<'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an imported family's constructor in a case arm and a
-    ///   value, answered exactly.
+    ///   value, answered exactly; a type of a presentation constructor's name
+    ///   in a source laid after the prelude, read as itself.
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
+    /// - witness: `tests::namespace::the_prelude_offers_no_presentation_constructor_2302`
     #[spec(ensures: |ref ret| match *ret {
-        Ok(_) => true,
+        Ok(Maybe::Present((constructor, import))) => constructor.form != Generators::Presentation
+            || import.start() != import.end(),
+        Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
     pub fn imported_constructor(
@@ -1838,8 +1851,12 @@ impl<'source> Collected<'source>
         name: SurfaceName<'source>,
     ) -> Result<Maybe<(Constructor, ByteSpan), imported::Absent>, Ambiguity>
     {
+        let prelude = self.unit.prelude();
         self.through_imports(source, |target| {
-            self.constructors.get(&(target, name)).copied()
+            self.constructors
+                .get(&(target, name))
+                .copied()
+                .filter(|found| found.form != Generators::Presentation || prelude != Some(target))
         })
     }
 
@@ -1925,7 +1942,8 @@ impl<'source> Collected<'source>
         })
     }
 
-    /// What `lookup` answers in the sources `source` imports unqualified.
+    /// What `lookup` answers in the sources `source` imports unqualified, the
+    /// unit's prelude among them after every written import.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1938,8 +1956,9 @@ impl<'source> Collected<'source>
     /// [`Ambiguity`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the two entries above.
+    /// - hypothesis: L3 — the entries above.
     /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
+    /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
@@ -1975,6 +1994,14 @@ impl<'source> Collected<'source>
                 Maybe::Present(_) => {},
                 Maybe::Absent(_) => answered = Maybe::Present((found, import.span())),
             }
+        }
+        if let Maybe::Absent(_) = answered
+            && let Some(prelude) = self.unit.prelude()
+            && prelude != source
+            && let Some(found) = lookup(prelude)
+            && let Ok(start) = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(0_usize))
+        {
+            answered = Maybe::Present((found, start));
         }
         Ok(answered)
     }
@@ -3524,15 +3551,18 @@ pub fn written_imports<'source>(
 /// - ensures: for each source written under `roots`, the targets of its
 ///   unaliased path imports that `unit` resolves to a source; an import that
 ///   does not read, a scheme address and an unresolved path add nothing, the
-///   collection refusing or binding them as it does.
+///   collection refusing or binding them as it does. Every source of the unit
+///   but its prelude also imports the prelude, which no source writes.
 /// - provides: the sources whose `theory` blocks an `include` may name.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source importing one sibling unqualified and another
-///   under an alias sees the first alone.
+///   under an alias sees the first alone; a source writing no import sees the
+///   prelude's theories.
 /// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
+/// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
 #[spec(ensures: |ret| ret.values().all(|targets| !targets.is_empty()))]
 pub fn unqualified_imports(
     pbg: &Pbg,
@@ -3579,6 +3609,13 @@ pub fn unqualified_imports(
             *ordinal = ordinal.next();
             if let (Maybe::Absent(_), ImportTarget::Source(target)) = (written.alias, target) {
                 let _fresh = seen.entry(source).or_default().insert(target);
+            }
+        }
+    }
+    if let Some(prelude) = unit.prelude() {
+        for source in (0 .. unit.sources().len()).map(SourceIndex::from) {
+            if source != prelude {
+                let _fresh = seen.entry(source).or_default().insert(prelude);
             }
         }
     }

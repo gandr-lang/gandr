@@ -2234,12 +2234,18 @@ pub mod tests
         let ControlFlow::Continue(report) = walk.visit(
             &Pool::new(Width::SERIAL),
             |step| -> ControlFlow<Infallible> {
-                if let Step::Source { path, text, .. } = step {
+                if let Step::Source {
+                    path, text, base, ..
+                } = step
+                {
                     read.push((
                         path.strip_prefix(&root)
                             .expect("inside the tree")
                             .to_path_buf(),
-                        <&str>::from(text).to_owned(),
+                        <&str>::from(text)
+                            .get(usize::from(base) ..)
+                            .unwrap_or_default()
+                            .to_owned(),
                     ));
                 }
                 ControlFlow::Continue(())
@@ -2314,6 +2320,7 @@ pub mod tests
                     path,
                     root,
                     text,
+                    base,
                     standing,
                     ..
                 } = step
@@ -2322,7 +2329,10 @@ pub mod tests
                         path.to_path_buf(),
                         root,
                         standing,
-                        <&str>::from(text).to_owned(),
+                        <&str>::from(text)
+                            .get(usize::from(base) ..)
+                            .unwrap_or_default()
+                            .to_owned(),
                     ));
                 }
                 ControlFlow::Continue(())
@@ -2470,9 +2480,14 @@ pub mod tests
             );
             let &(_, (ref apart, own), ref declared, ref apart_segments) = find("apart");
             assert_eq!(
-                (usize::from(own), declared.as_slice(), apart_segments.len()),
-                (0_usize, ["apart".to_owned()].as_slice(), 1_usize),
-                "a source joined to no other is judged alone"
+                (own, declared.as_slice(), apart_segments.len()),
+                (
+                    gandr_surface_lowering::prelude::base(),
+                    ["apart".to_owned()].as_slice(),
+                    10_usize
+                ),
+                "a source joined to no other is judged after the prelude alone, its \
+                 certificate the prelude's nine segments and its own"
             );
             assert!(!apart.contains("data Point"));
         }
@@ -2687,7 +2702,8 @@ pub mod tests
     /// confirms them on its component's parse. An import inside a module is
     /// read from the forms but written by no root: the component's parse does
     /// not confirm it, and the walk lays the sources out again as each one's
-    /// own parse reads it — the nested source alone, judged over its own bytes.
+    /// own parse reads it — the nested source after the prelude alone, judged
+    /// over its own bytes.
     #[test]
     fn an_import_its_parse_does_not_read_is_grouped_again()
     {
@@ -2712,19 +2728,23 @@ pub mod tests
                         path.file_name()
                             .map(|name| name.to_string_lossy().into_owned())
                             .unwrap_or_default(),
-                        <&str>::from(text).to_owned(),
-                        usize::from(base),
+                        <&str>::from(text)
+                            .get(usize::from(base) ..)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        base,
                     ));
                     ControlFlow::Continue(())
                 },
             );
+            let after = gandr_surface_lowering::prelude::base();
             assert_eq!(
                 walked,
                 [
-                    (String::from("base.gandr"), String::from(base), 0_usize),
-                    (String::from("nested.gandr"), String::from(nested), 0_usize),
+                    (String::from("base.gandr"), String::from(base), after),
+                    (String::from("nested.gandr"), String::from(nested), after),
                 ],
-                "at {width:?}, each source is judged over its own bytes alone"
+                "at {width:?}, each source is judged over its own bytes after the prelude alone"
             );
             assert_eq!(
                 usize::from(report.lowerings()),

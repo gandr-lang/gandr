@@ -122,6 +122,9 @@ enum Use<'cursor>
     /// The head of a call, whose parentheses, at the cursor, write the
     /// explicit arguments.
     Called(Cursor<'cursor>),
+    /// The function an infix operator calls, its two operands the explicit
+    /// arguments.
+    Operands([NodeIndex; 2]),
     /// Standing where no call applies it, passed or returned as a value.
     Standing,
 }
@@ -636,7 +639,146 @@ impl<'source> Lowerer<'_, 'source>
         else {
             return Ok(arity::Planned(false));
         };
-        let slot = SlotIndex::from(usize::from(constant));
+        self.supply_declared(
+            site,
+            frame,
+            (inner, name),
+            SlotIndex::from(usize::from(constant)),
+            supplied,
+            used,
+        )
+    }
+
+    /// Plan the comparison `a == b` at `site`, read under `frame`, whose
+    /// operator tile is `tile` and operands `operands`, as the call of the
+    /// prelude's declaration of `name`, the name the native operator table
+    /// gives `==`'s row: its model of `Eq` omitted, so resolved by the sort
+    /// the operands force.
+    ///
+    /// # Specification
+    /// - requires: `site` is a binary operator form read as a computation under
+    ///   `frame`.
+    /// - ensures: [`arity::Planned`] true exactly when the unit lays a prelude,
+    ///   `site` stands outside it, and the prelude declares `name` at its top
+    ///   level: `tile` then planned as that declaration, read as the call's
+    ///   head, and `site` as the call [`Self::supply_declared`] plans with the
+    ///   operands as its explicit arguments and nothing supplied by name.
+    ///   False, with nothing changed, otherwise, whatever a source declares
+    ///   under `name`.
+    /// - fails: as [`Self::supply_declared`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two integers and two strings compare through the
+    ///   prelude's models, a source's own `eq` leaves its `==` the prelude's,
+    ///   and a unit with no prelude keeps the primitive.
+    /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| match ret {
+            Ok(arity::Planned(true)) => matches!(
+                self.plans.get(site.at.node),
+                Some(&Plan::Application(head, arguments)) if head == tile.node && arguments.start == start
+            ),
+            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Err(_) => true,
+        },
+    )]
+    pub(super) fn equality(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        (tile, name): (Placed, SurfaceName<'source>),
+        operands: [NodeIndex; 2],
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
+        let Some(prelude) = self.collected.unit.prelude()
+        else {
+            return Ok(arity::Planned(false));
+        };
+        if self.collected.unit.source_at(site.at.span.start()) == prelude {
+            return Ok(arity::Planned(false));
+        }
+        let Some(&slot) = self
+            .collected
+            .by_name
+            .get(&(crate::module::Container::TopLevel(prelude), name))
+        else {
+            return Ok(arity::Planned(false));
+        };
+        let Some(constant) = self
+            .collected
+            .slots
+            .get(usize::from(slot))
+            .map(|declared| declared.constant)
+        else {
+            return Ok(arity::Planned(false));
+        };
+        // The tile stands as the call's head, forced as a named head is; it is
+        // no form of its own, so it is planned here and left unread, which
+        // keeps the sweep from classifying it as the operator it belongs to.
+        let head = Site {
+            at: tile,
+            reading: Reading::Head(frame),
+            ..site
+        };
+        let _frame = self.require(head, Produced::Value)?;
+        self.plan(head, Plan::Constant(constant));
+        let planned = self.supply_declared(
+            site,
+            frame,
+            (tile, name),
+            slot,
+            BTreeMap::new(),
+            Use::Operands(operands),
+        )?;
+        self.read(tile.node, Reading::Unread);
+
+        Ok(planned)
+    }
+
+    /// Plan `site`, whose head `inner` names the declaration at `slot` as
+    /// `name`, as the supply `supplied` writes, applied as `used` says.
+    ///
+    /// # Specification
+    /// - requires: `inner` is the call's head, or the instantiation's, and
+    ///   names the declaration at `slot`; `supplied` maps each resident's
+    ///   implicit to its name tile and value.
+    /// - ensures: as [`Self::supplied_call`] for [`Use::Called`] and
+    ///   [`Self::supplied_value`] for [`Use::Standing`], from the head's
+    ///   resolution on; for [`Use::Operands`], as a call whose parentheses
+    ///   write the two operands.
+    /// - fails: as theirs.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exercised through every caller.
+    /// - witness: `lower::implicit::tests::supply_by_name_is_order_free`
+    /// - witness: `lower::implicit::tests::a_supplied_function_stands_as_a_value`
+    /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| match ret {
+            Ok(arity::Planned(false)) => self.operands.len() == start,
+            Ok(arity::Planned(true)) | Err(_) => true,
+        },
+    )]
+    fn supply_declared(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        (inner, name): (Placed, SurfaceName<'source>),
+        slot: SlotIndex,
+        mut supplied: BTreeMap<SurfaceName<'source>, (Placed, NodeIndex)>,
+        used: Use<'_>,
+    ) -> Result<arity::Planned, LoweringRefusal<'source>>
+    {
         let staged = self.stage_supplies(site, slot, &mut supplied)?;
         let stage_supplied = !staged.is_empty();
         let entries = match self.collected.plicities.get(&slot).cloned() {
@@ -677,6 +819,10 @@ impl<'source> Lowerer<'_, 'source>
         let standing = match used {
             Use::Called(mut rest) => {
                 arguments(site, &mut rest, &mut written)?;
+                false
+            },
+            Use::Operands(operands) => {
+                written.extend(operands);
                 false
             },
             Use::Standing => true,

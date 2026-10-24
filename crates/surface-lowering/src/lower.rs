@@ -2260,6 +2260,10 @@ const STACK: &str = "Stack";
 /// earlier declaration at one argument.
 const MODEL: &str = "Model";
 
+/// The infix spelling that calls the prelude's equality, its model of `Eq`
+/// resolved from the operands (`crate::prelude`).
+const EQUALITY: &str = "==";
+
 /// What the mint sweep does for one node, decided by the classification.
 ///
 /// # Specification
@@ -10111,11 +10115,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - ensures: the table row selected by the operator receives value
-    ///   operands in source order; a prefix `-` before a number written with
-    ///   the `f64` suffix is `float64.neg`, so the printers' spelling of a
-    ///   negative float, `-0.5f64`, lowers back to that float; the infix `then`
-    ///   is the composite of two paths, or of two flows where a flow is
-    ///   answered, as [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
+    ///   operands in source order; `a == b` in a unit that lays the prelude is
+    ///   instead the call of the prelude's declaration of the row's name, its
+    ///   model of `Eq` resolved from the operands ([`Self::equality`]); a
+    ///   prefix `-` before a number written with the `f64` suffix is
+    ///   `float64.neg`, so the printers' spelling of a negative float,
+    ///   `-0.5f64`, lowers back to that float; the infix `then` is the
+    ///   composite of two paths, or of two flows where a flow is answered, as
+    ///   [`Self::derive`] plans it; the cons `g ∷ p` is a word, as
     ///   [`Self::cons`] plans it.
     /// - fails: malformed tiles or operators outside the admitted vocabulary
     ///   are refused; `then` refuses as [`Self::derive`] does, and the cons as
@@ -10135,7 +10142,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::native::tests::a_word_conses_its_letters_and_matches_them`
     /// - witness: `lower::tests::a_prefix_operator_takes_its_one_operand`
     /// - witness: `lower::tests::a_negated_float_literal_is_float64_negation_1830`
-    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
+    /// - witness: `lower::implicit::tests::equality_calls_the_prelude_s_eq_2302`
+    #[spec(ensures: |ret| ret.is_err() || matches!(self.plans.get(site.at.node), Some(Plan::PrimitiveCall(..) | Plan::Application(..) | Plan::Derived(_) | Plan::FlowThen(..) | Plan::Constructor(_))))]
     fn operator(
         &mut self,
         site: Site,
@@ -10155,15 +10163,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return self.cons(site, letter, rest);
         }
         let frame = self.require(site, Produced::Computation)?;
-        let (label, arguments) = match *pieces.pieces.as_slice() {
-            [Piece::Tile { label, .. }, Piece::Operand(argument)] => {
-                (label, Arguments::Unary(argument.node))
+        let (label, tile, arguments) = match *pieces.pieces.as_slice() {
+            [Piece::Tile { label, at }, Piece::Operand(argument)] => {
+                (label, at, Arguments::Unary(argument.node))
             },
             [
                 Piece::Operand(first),
-                Piece::Tile { label, .. },
+                Piece::Tile { label, at },
                 Piece::Operand(second),
-            ] => (label, Arguments::Binary([first.node, second.node])),
+            ] => (label, at, Arguments::Binary([first.node, second.node])),
             _ => return Err(site.fault(site.at.span, FormFault::MisplacedTile)),
         };
         if label == TileName::THEN
@@ -10204,6 +10212,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             return Err(site.out(FragmentBoundary::Unadmitted(feature)));
         };
+        if let Arguments::Binary(operands) = arguments
+            && primitive.operator() == Operator::Infix(EQUALITY)
+            && self.equality(
+                site,
+                frame,
+                (
+                    tile,
+                    SurfaceName::from(<&'static str>::from(primitive.name())),
+                ),
+                operands,
+            )? == arity::Planned(true)
+        {
+            return Ok(());
+        }
         for argument in arguments.iter() {
             self.read(*argument, Reading::Value(frame));
         }
