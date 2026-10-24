@@ -775,6 +775,7 @@ fn lowering_row(
             boundary:
                 FragmentBoundary::Unadmitted(_)
                 | FragmentBoundary::Misplaced
+                | FragmentBoundary::NotAtResult
                 | FragmentBoundary::WrongSort
                 | FragmentBoundary::Arity(_)
                 | FragmentBoundary::Indexed

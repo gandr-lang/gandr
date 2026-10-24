@@ -5,7 +5,7 @@
 
 /// The entry: it prints its greeting and returns the unit, which exits 0.
 @[ runs("hello, world!\nunit") ]
-def main() -> -F [Console] Unit {
+def main() -> [Console] Unit {
   Console.print("hello, world!")
 }
 

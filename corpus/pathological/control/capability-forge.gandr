@@ -1,8 +1,8 @@
-def peek(c : Cap {read}) -> -F [Fs] String {
+def peek(c : Cap {read}) -> [Fs] String {
   c.read("notes")
 }
 
 @[ refuses("CapabilityForged") ]
-def forged() -> -F [Fs] String {
+def forged() -> [Fs] String {
   peek("fs")
 }

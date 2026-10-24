@@ -3,7 +3,7 @@
 /// reads the slot it names inside a fixpoint (#1143). The loops may run
 /// forever, so the row states `Div` (#1481).
 @[ refuses("HeldCaptured") ]
-def nested() -> -F [Div] Integer {
+def nested() -> [Div] Integer {
   hold n = 0;
   hold i = 3;
   while i > 0 {

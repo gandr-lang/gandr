@@ -395,6 +395,7 @@ fn out_of_fragment(
         FragmentBoundary::Indexed => FailureClass::Unimplemented(TrackingIssue::INDEXED),
         FragmentBoundary::Endpoint => FailureClass::Unimplemented(TrackingIssue::DELEGATION),
         FragmentBoundary::Misplaced
+        | FragmentBoundary::NotAtResult
         | FragmentBoundary::Arity(_)
         | FragmentBoundary::Unannotated
         | FragmentBoundary::NonUniform
@@ -491,6 +492,7 @@ impl FragmentFeature
             },
             FragmentBoundary::WrongSort
             | FragmentBoundary::Misplaced
+            | FragmentBoundary::NotAtResult
             | FragmentBoundary::Arity(_)
             | FragmentBoundary::Indexed
             | FragmentBoundary::Unannotated
@@ -1286,6 +1288,7 @@ mod tests
         ];
         let crossings = [
             FragmentBoundary::Misplaced,
+            FragmentBoundary::NotAtResult,
             FragmentBoundary::WrongSort,
             FragmentBoundary::Arity(OperandCount::from(0_usize)),
             FragmentBoundary::Arity(OperandCount::from(2_usize)),

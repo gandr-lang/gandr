@@ -263,6 +263,10 @@ pub enum FragmentBoundary
     /// the universe of representable sorts, which classifies a theory's sort
     /// member, read anywhere else.
     Misplaced,
+    /// The form is a row written before a type, `[E] B`, standing anywhere
+    /// but a definition's result: only there is a returner inserted for the
+    /// row to belong to.
+    NotAtResult,
     /// The form is a former of the fragment, but not of the sort its position
     /// demands.
     WrongSort,
@@ -344,6 +348,10 @@ impl fmt::Display for FragmentBoundary
             Self::Misplaced => {
                 f.write_str("is admitted only where it classifies a theory's sort member")
             },
+            Self::NotAtResult => f.write_str(
+                "is a row before a type, admitted only at a definition's result, where the \
+                 returner it rows is inserted",
+            ),
             Self::WrongSort => f.write_str("is not a former of this sort"),
             Self::Arity(operands) => write!(f, "does not take {operands} operands"),
             Self::Indexed => {
@@ -2710,6 +2718,7 @@ mod tests
             &FragmentBoundary::Reserved(Unbuilt::Dup),
             &FragmentBoundary::Unadmitted(Unbuilt::Dup),
             &FragmentBoundary::Misplaced,
+            &FragmentBoundary::NotAtResult,
             &FragmentBoundary::WrongSort,
             &FragmentBoundary::Arity(OperandCount::from(2_usize)),
             &FragmentBoundary::Indexed,

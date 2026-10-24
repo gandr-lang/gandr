@@ -1,0 +1,5 @@
+/// `OutOfFragment.NotAtResult`: a row written before a parameter's type, where no returner is inserted for it to belong to.
+@[ refuses("OutOfFragment.NotAtResult") ]
+def rowed(k : +U ([Div] Unit)) -> Unit {
+  unit
+}

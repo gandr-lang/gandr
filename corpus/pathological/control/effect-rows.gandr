@@ -15,7 +15,7 @@ def namedTwice() -> -F [Fs, Fs] Integer { pure 1 }
 /// Sequencing joins the rows: the computation reads through `Fs`, which the
 /// row `[Div]` does not hold.
 @[ refuses("TypeMismatch") ]
-def narrowedRow(c : Cap {read}) -> -F [Div] Integer {
+def narrowedRow(c : Cap {read}) -> [Div] Integer {
   run _ <- peek(c) ;
   once(2)
 }

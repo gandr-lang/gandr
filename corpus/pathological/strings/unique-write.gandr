@@ -14,7 +14,7 @@ import "../../model/strings/unique-write.gandr" ;
 /// A copy held at grade one: the copy shares its buffer with the string it was
 /// copied from, so the hold would hold a string another string holds.
 @[ refuses("HeldShared") ]
-def heldCopy() -> -F [Div] Integer {
+def heldCopy() -> [Div] Integer {
   run s <- force long ;
   run c <- copy(s) ;
   hold[1] h = c;

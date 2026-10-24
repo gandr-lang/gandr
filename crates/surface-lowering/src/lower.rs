@@ -12379,21 +12379,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a type former written as its own keyword: `+U C` or `-F A`.
+    /// Classify a type former written as its own keyword: `+U C` or `-F A`,
+    /// or the row a definition's result writes before its type, `[E] A`.
     ///
     /// # Specification
     /// - requires: `site` is a thunk type or a returner type in type position.
     /// - ensures: the keyword resolves against the unary table, a thunk type's
     ///   grade `[ω]` reads as no grade written, a returner's bracket reads as
-    ///   its effect row, the form stands at the sort its former produces, reads
-    ///   its one operand at the sort the former takes, and is planned over it.
+    ///   its effect row, a row before a result's type reads as the inserted
+    ///   returner's, `-F [E] A`, the form stands at the sort its former
+    ///   produces, reads its one operand at the sort the former takes, and is
+    ///   planned over it.
     /// - provides: the keyword spelling of the two type formers.
     /// - fails: yields the unresolved-head refusal for a keyword no former
     ///   answers, [`LoweringRefusal::GradedBridge`] for a thunk type graded
-    ///   other than `ω`, the row's refusal for a returner's, the unadmitted
-    ///   refusal for a bracket on a list type, the wrong-sort refusal for a
-    ///   former whose sort does not suit the position, and the hole's own
-    ///   refusal.
+    ///   other than `ω`, the row's refusal for a returner's, the not-at-result
+    ///   refusal for a row before a type anywhere but a definition's result,
+    ///   the unadmitted refusal for a bracket on a list type, the wrong-sort
+    ///   refusal for a former whose sort does not suit the position, and the
+    ///   hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -12425,6 +12429,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
+        // `[E] B` at a definition's result: the row of the returner the
+        // lowering inserts there, `-F [E] B`; nowhere else is it a result.
+        if label == TileName::BRACKET_OPEN {
+            let Reading::Result(_) = site.reading
+            else {
+                return Err(site.out(FragmentBoundary::NotAtResult));
+            };
+            let _open = cursor.tile(TileName::BRACKET_OPEN);
+            let row = self.returner_row(site, &mut cursor)?;
+            let argument = site.one(cursor.operands())?;
+            exhausted(site, &cursor)?;
+            return self.effectful(site, row, argument.node);
+        }
         let _keyword = cursor.tile(label);
         let name = self.name_at(at);
         let Maybe::Present(former) = type_former(name)

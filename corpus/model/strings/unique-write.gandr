@@ -40,11 +40,11 @@ def holders(s : Repr) -> Integer {
 /// On a long string held once, the write that reads no count copies nothing,
 /// as copy-on-write does.
 @[ runs("0") ]
-def aloneCopies() -> -F [Div] Integer { run s <- force long ; copies(pushInPlace(s, 33)) }
+def aloneCopies() -> [Div] Integer { run s <- force long ; copies(pushInPlace(s, 33)) }
 
 /// And its written buffer has the one holder copy-on-write's has.
 @[ runs("1") ]
-def aloneHolders() -> -F [Div] Integer {
+def aloneHolders() -> [Div] Integer {
   run s <- force long ;
   run w <- pushInPlace(s, 33) ;
   holders(written(w))
@@ -54,7 +54,7 @@ def aloneHolders() -> -F [Div] Integer {
 /// still has two holders, so the original would see the write. This is the
 /// write a grade must keep from a shared string.
 @[ runs("2") ]
-def sharedHolders() -> -F [Div] Integer {
+def sharedHolders() -> [Div] Integer {
   run s <- force long ;
   run c <- copy(s) ;
   run w <- pushInPlace(c, 33) ;
@@ -64,7 +64,7 @@ def sharedHolders() -> -F [Div] Integer {
 /// Under a grade-one hold the string is made in place, so the write that reads
 /// no count, through the hold's exclusive view, copies nothing.
 @[ runs("0") ]
-def heldOnce() -> -F [Div] Integer {
+def heldOnce() -> [Div] Integer {
   run bs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   hold[1] s = Shared(1, bs);
   access s as v { run w <- pushInPlace(v, 33) ; run t <- written(w) ; resume(v, t) ; copies(w) }
@@ -72,7 +72,7 @@ def heldOnce() -> -F [Div] Integer {
 
 /// And the buffer it wrote back still has its one holder.
 @[ runs("1") ]
-def heldOnceHolders() -> -F [Div] Integer {
+def heldOnceHolders() -> [Div] Integer {
   run bs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   hold[1] s = Shared(1, bs);
   access s as v { run w <- pushInPlace(v, 33) ; run t <- written(w) ; resume(v, t) ; holders(t) }

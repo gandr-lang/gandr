@@ -9,7 +9,7 @@
 /// A loop that breaks only when one is below zero: it never returns, and its
 /// row says it may not.
 @[ checks ]
-def spin(x : Bool) -> -F [Div] Bool {
+def spin(x : Bool) -> [Div] Bool {
   run y <- loop {
     run below <- 1 < 0;
     case below {
@@ -22,21 +22,21 @@ def spin(x : Bool) -> -F [Div] Bool {
 
 /// A caller of `spin` holds `Div` in its own row.
 @[ checks ]
-def spinOn(x : Bool) -> -F [Div] Bool {
+def spinOn(x : Bool) -> [Div] Bool {
   spin(x)
 }
 
 /// A loop that breaks at once states `Div` all the same: the row records what
 /// the loop may do, not what one run of it does.
 @[ checks ]
-def once(x : Integer) -> -F [Div] Integer {
+def once(x : Integer) -> [Div] Integer {
   run y <- loop { break(x) };
   y
 }
 
 /// It runs, at a row holding `Div`.
 @[ runs("3") ]
-def onceThree() -> -F [Div] Integer {
+def onceThree() -> [Div] Integer {
   once(3)
 }
 

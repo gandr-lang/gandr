@@ -1307,17 +1307,28 @@ pub fn present_whole(
     }
     // Either form leaves the returner the lowering inserts unwritten, as
     // either leaves out the exit it infers: the result is its value type
-    // alone. A value at a world or a region keeps it: `-> A at w` reads as a
+    // alone, and a row the returner carries is written before it, `-> [E]
+    // A`. A value at a world or a region keeps it: `-> A at w` reads as a
     // computation placed at `w`.
-    let result = if let Former::Returner(value) = source.read(codomain)
-        && !matches!(
+    let inserted = |value| {
+        !matches!(
             source.read(value),
             Former::Located { .. } | Former::Kept { .. }
-        ) {
-        value
+        )
+    };
+    let read = source.read(codomain);
+    let (result, rowed) = if let Former::Returner(value) = read
+        && inserted(value)
+    {
+        (value, Rowed::No)
+    }
+    else if let Former::EffectfulReturner { result, .. } = read
+        && inserted(result)
+    {
+        (codomain, Rowed::Yes)
     }
     else {
-        codomain
+        (codomain, Rowed::No)
     };
     let returned = present_type(&source.within(&bound), result, page, style)?;
     let own = fixpoint.map(|recursive| usize::from(recursive.uniform));
@@ -1383,7 +1394,10 @@ pub fn present_whole(
         appended(&mut text, &mut written, typed);
     }
     text.push_str(") -> ");
-    appended(&mut text, &mut written, &returned);
+    match rowed {
+        Rowed::Yes => appended_unreturned(&mut text, &mut written, &returned),
+        Rowed::No => appended(&mut text, &mut written, &returned),
+    }
     text.push_str(" {");
     // The body is written a line at a time, two columns in: a name moves by
     // where its line lands.
@@ -1448,6 +1462,42 @@ fn appended(
     let before = written_bytes(Glyphs(text));
     names.extend(part.names.iter().map(|name| name.shifted(before)));
     text.push_str(part.as_ref());
+}
+
+/// Whether a definition's result is written as the row of the returner the
+/// lowering inserts and the type after it, `-> [E] A`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rowed
+{
+    /// `-> [E] A`, for `-> -F [E] A`.
+    Yes,
+    /// The result as it presents.
+    No,
+}
+
+/// Append `part`, a returner with its row, `-F [E] A`, to `text` as the row
+/// and the type the inserted returner leaves, `[E] A`, and its names, moved
+/// past what `text` held less the returner's tile, to `names`.
+///
+/// # Specification
+/// trivial.
+fn appended_unreturned(
+    text: &mut String,
+    names: &mut Vec<WrittenName>,
+    part: &Presentation,
+)
+{
+    let returner = "-F ";
+    let Some(rowed) = part.as_ref().strip_prefix(returner)
+    else {
+        appended(text, names, part);
+        return;
+    };
+    let before = u64::from(written_bytes(Glyphs(text)));
+    let moved =
+        OutputBytes::from(before.saturating_sub(u64::from(written_bytes(Glyphs(returner)))));
+    names.extend(part.names.iter().map(|name| name.shifted(moved)));
+    text.push_str(rowed);
 }
 
 /// Where a presentation is written: laid out at a page, or on as few lines
