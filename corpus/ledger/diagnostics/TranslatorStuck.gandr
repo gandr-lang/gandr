@@ -1,0 +1,21 @@
+/// `TranslatorStuck`: a translator that does not evaluate at an element of its corolla.
+theory Magma {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> (z : M);
+  oper one : () --> (z : M);
+}
+
+@[ checks ]
+def keep(e : +{Unit}) -> -F +{Unit} {
+  e
+}
+
+/// A translator declared and never defined, so no element evaluates through it.
+@[ owes(1) ]
+def opaque : Bool => Bool ;
+
+@[ refuses("TranslatorStuck") ]
+def postulated = ua[
+  1,
+  4
+](Magma, Magma, #{.mul = opaque, .one = keep}, #{.mul = opaque, .one = keep}) ;
