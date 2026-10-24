@@ -17,8 +17,7 @@ module AtStratum {
 
   /// The magma to itself by the swap, at degree one: a path in `Type`.
   @[ checks ]
-  def opposite : Path(Type, Tel, Tel) ;
-  def opposite = ua[
+  def opposite : Path(Type, Tel, Tel) = ua[
     1,
     4
   ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
@@ -42,6 +41,5 @@ module AtStratum {
     Tel => Tel,
     thunk { fn (x) { fwdAlong(Tel, Tel, ua(idtoequiv(Tel, Tel, opposite)), x) } },
     thunk { fn (x) { fwdAlong(Tel, Tel, opposite, x) } }
-  ) ;
-  def repackaged = here(thunk { fn (x) { fwdAlong(Tel, Tel, opposite, x) } }) ;
+  ) = here(thunk { fn (x) { fwdAlong(Tel, Tel, opposite, x) } }) ;
 }

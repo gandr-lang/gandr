@@ -500,7 +500,6 @@
 873 Operator module_declaration < L[identifier] R[identifier]
 874 Other module_declaration identifier L[<] R[, ]]
 875 Other module_declaration , L[<type> identifier] R[]]
-878 Other module_declaration = L[<type>] R[<expression>]
 884 TypeVariable module_declaration type_variable L[(] R[) , :]
 885 Type module_declaration type_identifier L[(] R[) , :]
 891 TypeVariable module_declaration type_variable L[,] R[) , :]

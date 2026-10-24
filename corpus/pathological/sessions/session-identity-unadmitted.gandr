@@ -5,8 +5,7 @@ module Evolution {
   };
   type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
   @[ checks ]
-  def keep : Flow(Type, SeatEnd, Kept) ;
-  def keep = sim(SeatEnd, Kept) ;
+  def keep : Flow(Type, SeatEnd, Kept) = sim(SeatEnd, Kept) ;
 }
 
 @[ checks ]

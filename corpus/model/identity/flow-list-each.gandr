@@ -18,8 +18,7 @@ module Cells {
   }
   /// The flow between the records, by their translator.
   @[ checks ]
-  def renamed : Flow(Type, Old, New) ;
-  def renamed = forward(swap) ;
+  def renamed : Flow(Type, Old, New) = forward(swap) ;
   /// The lists' translator: the list ridden along the records' flow.
   @[ checks ]
   def each(olds : List(Old)) -> -F List(New) {
@@ -28,8 +27,7 @@ module Cells {
   /// At one cell the image is the swapped head before the translator's own
   /// image of the tail, so the lists' flow forwards by it.
   @[ checks ]
-  def everyone : Flow(Type, List(Old), List(New)) ;
-  def everyone = forward(each) ;
+  def everyone : Flow(Type, List(Old), List(New)) = forward(each) ;
   /// A list ridden along the lists' flow.
   @[ checks ]
   def moved(olds : List(Old)) -> -F List(New) {
@@ -37,6 +35,5 @@ module Cells {
   }
   /// Two records migrated by a run.
   @[ runs("cons((36, \"ada\"), cons((41, \"alan\"), nil))") ]
-  def two : () => List(New) ;
-  def two = moved(cons(("ada", 36), cons(("alan", 41), nil))) ;
+  def two : () => List(New) = moved(cons(("ada", 36), cons(("alan", 41), nil))) ;
 }

@@ -46,10 +46,8 @@ module Fixed {
   type Positive = Path(Sign, Plus, Plus);
   /// The constant path at three.
   @[ checks ]
-  def three : Three ;
-  def three = here(3);
+  def three : Three = here(3);
   /// The constant path at the plus sign.
   @[ checks ]
-  def positive : Positive ;
-  def positive = here(Plus);
+  def positive : Positive = here(Plus);
 }

@@ -10,13 +10,15 @@
 //! x : T = e ;`, the definition directly after the signature with nothing
 //! but whitespace between them.
 //!
-//! Either reads two top-level forms, so it is not a respelling of one form
-//! as the other rewrites are: [`crate::format_beside`] offers each signature
-//! and the definition laid out after it, both respelled, to [`merged`] and
-//! then [`joined`], and lays out the one form returned in their place. The
-//! meaning check pairs declarations by name, which both keep; a declaration
-//! whose one form lowers or elaborates otherwise is laid out apart again,
-//! unreported ([`Apart`]).
+//! Either reads two forms, so it is not a respelling of one form as the
+//! other rewrites are: [`crate::format_beside`] offers each top-level
+//! signature and the definition laid out after it, both respelled, to
+//! [`merged`] and then [`joined`], and lays out the one form returned in
+//! their place; [`members`] does the same for each pair of a module's
+//! members, a nested module's among them. The meaning check pairs
+//! declarations by name, which both keep; a declaration whose one form lowers
+//! or elaborates otherwise is laid out apart again, unreported ([`Apart`]),
+//! a module member's with its whole module.
 
 use alloc::vec::Vec;
 
@@ -332,6 +334,204 @@ pub fn joined<'leaves, 'source>(
         leaf.owner = first.owner;
     }
     Some(out)
+}
+
+/// One member of a module: its node, the module it stands in, and the bytes
+/// its leaves cover, its documentation included.
+#[derive(Clone, Copy, Debug)]
+struct Member
+{
+    /// The member's form.
+    node: NodeIndex,
+    /// The module it stands in.
+    module: NodeIndex,
+    /// From its documentation's first byte, or its own, to its last.
+    extent: ByteSpan,
+}
+
+/// The members of the module `form` of `tree`, a nested module's among them,
+/// each module's in offset order.
+///
+/// # Specification
+/// trivial.
+fn members_of(
+    tree: &SyntaxTree<'_>,
+    form: NodeIndex,
+) -> Vec<Member>
+{
+    let mut found = Vec::new();
+    let mut modules = Vec::from([form]);
+    while let Some(module) = modules.pop() {
+        for child in tree.children(module) {
+            let Some(node) = tree.node(child)
+            else {
+                continue;
+            };
+            if !matches!(node.label(), NodeLabel::Meld(_)) {
+                continue;
+            }
+            let own = node.span();
+            let documented = tree
+                .children(child)
+                .filter_map(|inner| tree.node(inner))
+                .filter(|inner| matches!(inner.label(), NodeLabel::Doc))
+                .map(|inner| inner.span().start())
+                .fold(own.start(), Ord::min);
+            let Ok(extent) = ByteSpan::new(documented, own.end())
+            else {
+                continue;
+            };
+            let nested = tree.children(child).find(|&inner| {
+                tree.node(inner)
+                    .is_some_and(|inner| matches!(inner.label(), NodeLabel::Tile(_)))
+            });
+            if nested
+                .and_then(|tile| tree.fragment(tile))
+                .is_some_and(|text| <&str>::from(text) == "module")
+            {
+                modules.push(child);
+            }
+            found.push(Member {
+                node: child,
+                module,
+                extent,
+            });
+        }
+    }
+    found
+}
+
+/// The module `form` of `tree`, whose leaves are `written` as the source
+/// writes them and `own` respelled, with each member signature and the
+/// member definition directly after it written as one form — the function
+/// form where `pairing` is [`Pairing::Merged`] and the definition opens as
+/// one, else the joined form where `joining` is [`Joining::Join`] — or, where
+/// `joining` is [`Joining::Split`], each joined member written apart; beside
+/// the one forms it wrote.
+///
+/// # Specification
+/// - requires: `form` is a top-level form of `tree` the parser did not repair,
+///   and each slice is its leaves in offset order.
+/// - ensures: `None` when no member pair is written as one form and no joined
+///   member is split; otherwise the leaves with each such pair replaced by what
+///   [`merged`] or [`joined`] returns for it, the whitespace between them
+///   dropped, or each such member by what [`separated`] returns, a line break
+///   between its halves. A pair is offered only when nothing but whitespace
+///   stands between its forms in `own`, and a signature that defines already is
+///   never joined.
+/// - provides: the leaves [`crate::format_beside`] lays out for a module.
+/// - fails: never.
+/// - panics: none.
+/// - intension: one walk of the module's members, one pass over its leaves.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a member pair joins and a joined member splits, in a
+///   nested module too; a pair a comment parts stays apart.
+/// - witness: `tests::rewrite::a_module_member_pair_joins_as_a_top_level_one_2255`
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|&(ref leaves, ref ones)| !leaves.is_empty() && !ones.is_empty()))]
+#[must_use]
+pub fn members<'source>(
+    tree: &SyntaxTree<'source>,
+    form: NodeIndex,
+    (written, own): (&[Leaf<'source>], &[Leaf<'source>]),
+    (pairing, joining): (Pairing, Joining),
+) -> Option<(Vec<Leaf<'source>>, Vec<OneForm>)>
+{
+    if pairing == Pairing::Apart && joining == Joining::Keep {
+        return None;
+    }
+    let mut found = members_of(tree, form);
+    if found.is_empty() {
+        return None;
+    }
+    found.sort_unstable_by_key(|member| member.extent.start());
+    // Each member's leaves in `own` and in `written`: those from its extent's
+    // first byte to its last, the leaves standing in offset order.
+    let ranges = |leaves: &[Leaf<'source>]| {
+        found
+            .iter()
+            .map(|member| {
+                let start =
+                    leaves.partition_point(|leaf| leaf.span.start() < member.extent.start());
+                let end = leaves.partition_point(|leaf| leaf.span.start() < member.extent.end());
+                start .. end.max(start)
+            })
+            .collect::<Vec<_>>()
+    };
+    let respelled = ranges(own);
+    let source = ranges(written);
+    let mut out: Vec<Leaf<'source>> = Vec::with_capacity(own.len());
+    let mut ones = Vec::new();
+    let mut copied = 0_usize;
+    let mut index = 0_usize;
+    while let (Some(member), Some(range)) = (found.get(index), respelled.get(index)) {
+        index = index.saturating_add(1);
+        // A nested module's members stand inside it; one already written as
+        // part of a pair is passed.
+        let Some(leaves) = own.get(range.clone()).filter(|_| range.start >= copied)
+        else {
+            continue;
+        };
+        let split = (joining == Joining::Split)
+            .then(|| separated(leaves, defines(tree, member.node)?))
+            .flatten();
+        if let Some((signed, defined)) = split {
+            out.extend_from_slice(own.get(copied .. range.start)?);
+            out.extend(signed);
+            let first = leaves.first()?;
+            out.push(Leaf {
+                span: ByteSpan::new(first.span.start(), first.span.start()).unwrap_or(first.span),
+                text: SourceFragment::from("\n"),
+                material: Material::Whitespace,
+                owner: first.owner,
+                documentation: Documentation::Outside,
+            });
+            out.extend(defined);
+            copied = range.end;
+            ones.push(OneForm::Joined);
+            continue;
+        }
+        let (Some(next), Some(after), Some(written_after)) =
+            (found.get(index), respelled.get(index), source.get(index))
+        else {
+            continue;
+        };
+        if next.module != member.module
+            || own.get(range.end .. after.start).is_none_or(|between| {
+                between
+                    .iter()
+                    .any(|leaf| leaf.material != Material::Whitespace)
+            })
+        {
+            continue;
+        }
+        let definition = own.get(after.clone())?;
+        let pair = (written.get(written_after.clone())?, definition);
+        let one = (pairing == Pairing::Merged && candidate(pair.0) == Pairing::Merged)
+            .then(|| merged(leaves, pair))
+            .flatten()
+            .map(|leaves| (leaves, OneForm::Function))
+            .or_else(|| {
+                (joining == Joining::Join && defines(tree, member.node).is_none())
+                    .then(|| joined(leaves, pair))
+                    .flatten()
+                    .map(|leaves| (leaves, OneForm::Joined))
+            });
+        let Some((laid, one)) = one
+        else {
+            continue;
+        };
+        out.extend_from_slice(own.get(copied .. range.start)?);
+        out.extend(laid);
+        copied = after.end;
+        ones.push(one);
+        index = index.saturating_add(1);
+    }
+    if ones.is_empty() {
+        return None;
+    }
+    out.extend_from_slice(own.get(copied ..)?);
+    Some((out, ones))
 }
 
 /// The signature whose respelled leaves are `signature` and the definition

@@ -31,6 +31,5 @@ rec {
 
   /// The family, named by a definition of its block, refused with it.
   @[ refuses("NegativeOccurrence") ]
-  def hidden : Type ;
-  def hidden = Hidden ;
+  def hidden : Type = Hidden ;
 }

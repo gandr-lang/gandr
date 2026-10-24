@@ -30,8 +30,7 @@ module Repack {
   /// A field naming a parameter is covered at the parameters' instance only
   /// once #1835 takes it, so no flow forwards by it yet.
   @[ refuses("ForwardUnsupported") ]
-  def repacked : Flow(Type, Box(Integer), Box(Integer)) ;
-  def repacked = forward(rebox) ;
+  def repacked : Flow(Type, Box(Integer), Box(Integer)) = forward(rebox) ;
 }
 
 /// The naturals renumbered as themselves.
@@ -47,6 +46,5 @@ module Renumber {
   /// A type holding itself is covered as a list is, its own field a tail,
   /// only once #1835 takes it, so no flow forwards by it yet.
   @[ refuses("ForwardUnsupported") ]
-  def renumbered : Flow(Type, Nat, Nat) ;
-  def renumbered = forward(step) ;
+  def renumbered : Flow(Type, Nat, Nat) = forward(step) ;
 }

@@ -103,8 +103,7 @@ module SetoidCat : Model(CatShape) {
     (p => q),
     comp(p, p, q, id(p), f),
     f
-  ) ;
-  def unitLFromR = unitR ;
+  ) = unitR ;
 
   /// The left unit law by either law, chosen by a boolean.
   @[ checks ]
