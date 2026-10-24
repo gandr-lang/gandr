@@ -48,7 +48,7 @@ def place(s : Repr) -> Place {
 /// carries the list and the count left. The loop may run forever, so the row
 /// states `Div` (#1481).
 @[ checks ]
-def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> -F [Div] List(Integer) {
+def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Div] List(Integer) {
   hold acc = onto;
   hold left = n;
   while left > 0 {
@@ -64,14 +64,14 @@ def hiPlace() -> Place { place(own((Cons(104, Cons(105, Nil)) : List(Integer))))
 
 /// Twenty-three bytes and the zero fill the inline capacity exactly: inline.
 @[ runs("Inside") ]
-def fullPlace() -> -F [Div] Place {
+def fullPlace() -> [Div] Place {
   run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
   place(own(cs))
 }
 
 /// One byte more and the string's bytes go to the heap.
 @[ runs("OnHeap") ]
-def spilledPlace() -> -F [Div] Place {
+def spilledPlace() -> [Div] Place {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   place(own(cs))
 }
@@ -82,7 +82,7 @@ def hiBytes() -> List(Integer) { bytes(own((Cons(104, Cons(105, Nil)) : List(Int
 
 /// The spilled string's twenty-four bytes and the zero.
 @[ runs("25") ]
-def spilledCount() -> -F [Div] Integer {
+def spilledCount() -> [Div] Integer {
   run cs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
   run s <- own(cs) ;
   count(bytes(s))

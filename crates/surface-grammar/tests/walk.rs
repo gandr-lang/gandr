@@ -47,14 +47,14 @@ use gandr_theory_graphs::WalkChainLength;
 /// The built-in surface's fingerprint: the precedence DAG folded with every
 /// mold and context. Any change to a form, a tile occurrence or a precedence
 /// group moves it; a deliberate change re-pins it and says why. Last moved by
-/// a returner's row open through a tail, `-F [I | r] A` and `-F [r] A`.
-const BUILT_IN_FINGERPRINT: u64 = 0x7316_ad38_08ae_3af7;
+/// a definition's result read as its row before its type, `-> [E] B`.
+const BUILT_IN_FINGERPRINT: u64 = 0x12d2_64a3_512d_9266;
 
 /// The built-in surface's mold count: one mold per tile occurrence, so a form
 /// inlined at many sites (the statement alternation, inlined at every block
 /// position) costs one copy per site, while a form reached through a hole of
 /// its own sort (a nested module's members) costs nothing per level.
-const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3138);
+const BUILT_IN_MOLD_COUNT: MoldCount = MoldCount(3145);
 
 /// How many labels the walk index projects to more than one mold.
 const BUILT_IN_MULTI_MOLD_LABELS: usize = 89;
@@ -78,7 +78,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("+", 7),
     ("++", 1),
     ("+U", 1),
-    (",", 231),
+    (",", 233),
     ("-", 4),
     ("-->", 27),
     ("->", 14),
@@ -120,9 +120,9 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("Unit", 1),
     ("Unknown", 1),
     ("Void", 1),
-    ("[", 42),
+    ("[", 43),
     ("\\", 1),
-    ("]", 48),
+    ("]", 49),
     ("_", 44),
     ("abort", 1),
     ("access", 1),
@@ -224,7 +224,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("true", 2),
     ("type", 23),
     ("type(", 1),
-    ("type_identifier", 89),
+    ("type_identifier", 91),
     ("type_variable", 62),
     ("typed_number", 2),
     ("u32", 1),
@@ -239,7 +239,7 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
     ("with", 8),
     ("world", 1),
     ("{", 46),
-    ("|", 11),
+    ("|", 12),
     ("|&", 1),
     ("||", 1),
     ("}", 62),

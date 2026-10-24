@@ -1,8 +1,8 @@
-def save(c : Cap {read, write}) -> -F [Fs] Unit {
+def save(c : Cap {read, write}) -> [Fs] Unit {
   c.write("notes", "draft")
 }
 
 @[ refuses("CapabilityAmplified") ]
-def widen(c : Cap {read}) -> -F [Fs] Unit {
+def widen(c : Cap {read}) -> [Fs] Unit {
   save(c)
 }

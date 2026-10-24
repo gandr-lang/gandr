@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0x7316ad3808ae3af7`
-- Rules: 160 — 159 committed, 1 internal
-- Molds: 3138
+- Grammar fingerprint: `0x12d264a3512d9266`
+- Rules: 161 — 160 committed, 1 internal
+- Molds: 3145
 - Attributes: 14
 
 ## Reading a form
@@ -152,7 +152,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`redirection_operator`](../corpus/ledger/syntax/redirection_operator.gandr) | `<> ‖ <& ‖ >& ‖ >> ‖ < ‖ >` | `expression.atom` | `redirection_operator` | admitted | Operator |
 | [`forget_model_expression`](../corpus/ledger/syntax/forget_model_expression.gandr) | `forget [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] ( EXPRESSION ) at TYPE` | `expression.pure` | `forget_model_expression` * | admitted | Other, Keyword |
 
-## `type` — 38 rules
+## `type` — 39 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -171,6 +171,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`product_type`](../corpus/ledger/syntax/product_type.gandr) | `TYPE * TYPE` | `type.product` | `product_type` | admitted | Operator |
 | [`f_type.row`](../corpus/ledger/syntax/f_type.row.gandr) | `-F [ ⦅ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ‖ TYPE ⦆ ] TYPE` | `type.application` | `f_type` | admitted | Keyword, Other, Type, Operator |
 | [`f_type`](../corpus/ledger/syntax/f_type.gandr) | `-F TYPE` | `type.application` | `f_type` | admitted | Keyword |
+| [`f_type.result`](../corpus/ledger/syntax/f_type.result.gandr) | `[ ⦅ ‹type_identifier› ⦅ , ‹type_identifier› ⦆* ⦅ , ⦆? ⦅ \| TYPE ⦆? ‖ TYPE ⦆ ] TYPE` | `type.application` | `f_type` | admitted | Other, Type, Operator |
 | [`u_type`](../corpus/ledger/syntax/u_type.gandr) | `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ ω ⦆ ] ⦆? TYPE` or `+U ⦅ [ ⦅ ‹number› ‖ ‹identifier› ‖ inf ⦆ ] ⦆? TYPE` | `type.application` | `u_type` | admitted | Keyword, Other, Number |
 | [`universe_type`](../corpus/ledger/syntax/universe_type.gandr) | `Type ⦅ [ ⦅ + ‖ - ⦆ ⦅ , ‹number› ⦆? ] ⦆?` | `type.atom` | `universe_type` * | admitted | TypeBuiltin, Other, Keyword, Number |
 | [`representable_universe_type`](../corpus/ledger/syntax/representable_universe_type.gandr) | `Type+` | `type.atom` | `representable_universe_type` * | admitted | TypeBuiltin |

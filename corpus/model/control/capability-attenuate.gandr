@@ -11,18 +11,18 @@ def fs : Cap {read, write} ;
 
 /// A reader that asks only for reading.
 @[ checks ]
-def peek(c : Cap {read}) -> -F [Fs] String {
+def peek(c : Cap {read}) -> [Fs] String {
   c.read("notes")
 }
 
 /// The full capability passed where reading alone is asked.
 @[ checks ]
-def granted() -> -F [Fs] String {
+def granted() -> [Fs] String {
   peek(fs)
 }
 
 /// A holder of reading alone cannot write.
 @[ refuses("CapabilityOutsideAuthority") ]
-def save(c : Cap {read}) -> -F [Fs] Unit {
+def save(c : Cap {read}) -> [Fs] Unit {
   c.write("notes", "draft")
 }

@@ -92,7 +92,7 @@ def branch_one() -> Integer { become branch(1) }
 /// loop may run forever, so the row states `Div` (#1481), and the handler of
 /// `Proc` leaves it there.
 @[ runs("105") ]
-def looped() -> -F [Div] Integer {
+def looped() -> [Div] Integer {
   handle c : Proc {
     run v <- loop {
       break(5)
@@ -106,7 +106,7 @@ def looped() -> -F [Div] Integer {
 
 /// A `return` inside a loop leaves the loop and the handler.
 @[ runs("2") ]
-def looped_out() -> -F [Div] Integer {
+def looped_out() -> [Div] Integer {
   handle c : Proc {
     loop {
       return 2

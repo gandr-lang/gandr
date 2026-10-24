@@ -6,41 +6,41 @@
 
 /// Its argument when that is not zero, else zero.
 @[ checks ]
-def unlessZero(n : Integer) -> -F [Div] Integer {
+def unlessZero(n : Integer) -> [Div] Integer {
   while n != 0 { return n } ;
   0
 }
 
 /// Three is not zero, so the loop returns it.
 @[ runs("3") ]
-def unlessZeroThree() -> -F [Div] Integer { unlessZero(3) }
+def unlessZeroThree() -> [Div] Integer { unlessZero(3) }
 
 /// Zero is zero, so the loop never runs.
 @[ runs("0") ]
-def unlessZeroZero() -> -F [Div] Integer { unlessZero(0) }
+def unlessZeroZero() -> [Div] Integer { unlessZero(0) }
 
 /// Its argument when that is at most zero, else zero.
 @[ checks ]
-def atMostZero(n : Integer) -> -F [Div] Integer {
+def atMostZero(n : Integer) -> [Div] Integer {
   while n <= 0 { return n } ;
   0
 }
 
 /// Zero is at most zero, so the loop returns it.
 @[ runs("0") ]
-def atMostZeroZero() -> -F [Div] Integer { atMostZero(0) }
+def atMostZeroZero() -> [Div] Integer { atMostZero(0) }
 
 /// Its argument when that is at least one, else zero.
 @[ checks ]
-def atLeastOne(n : Integer) -> -F [Div] Integer {
+def atLeastOne(n : Integer) -> [Div] Integer {
   while n >= 1 { return n } ;
   0
 }
 
 /// One is at least one, so the loop returns it.
 @[ runs("1") ]
-def atLeastOneOne() -> -F [Div] Integer { atLeastOne(1) }
+def atLeastOneOne() -> [Div] Integer { atLeastOne(1) }
 
 /// Zero is not at least one, so the loop never runs.
 @[ runs("0") ]
-def atLeastOneZero() -> -F [Div] Integer { atLeastOne(0) }
+def atLeastOneZero() -> [Div] Integer { atLeastOne(0) }

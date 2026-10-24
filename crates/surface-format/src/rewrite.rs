@@ -204,7 +204,7 @@ pub struct Rewrite
 }
 
 /// Every rewrite, by name, then direction.
-pub const REWRITES: [Rewrite; 31] = [
+pub const REWRITES: [Rewrite; 32] = [
     Rewrite {
         name: RewriteName::Product,
         direction: Direction::Sugar,
@@ -363,6 +363,14 @@ pub const REWRITES: [Rewrite; 31] = [
         mold: MoldName("f_type"),
         from: Spelling("-> -F B"),
         to: Spelling("-> B"),
+        enabled: Enabled::On,
+    },
+    Rewrite {
+        name: RewriteName::InsertedReturner,
+        direction: Direction::Sugar,
+        mold: MoldName("f_type.row"),
+        from: Spelling("-> -F [E] B"),
+        to: Spelling("-> [E] B"),
         enabled: Enabled::On,
     },
     Rewrite {
@@ -632,7 +640,15 @@ impl Band
     ) -> Self
     {
         match (rule.0, position) {
-            ("u_type" | "f_type" | "f_type.row" | "at_type" | "binary_expression.then", _)
+            (
+                "u_type"
+                | "f_type"
+                | "f_type.row"
+                | "f_type.result"
+                | "at_type"
+                | "binary_expression.then",
+                _,
+            )
             | ("send_session_type" | "receive_session_type", Position::First) => Self::Atom,
             ("product_type", _) => Self::Bridge,
             ("sum_type", _) => Self::Product,
@@ -649,7 +665,7 @@ impl Band
     fn of(rule: MoldName) -> Self
     {
         match rule.0 {
-            "u_type" | "f_type" | "f_type.row" | "at_type" => Self::Bridge,
+            "u_type" | "f_type" | "f_type.row" | "f_type.result" | "at_type" => Self::Bridge,
             "product_type" => Self::Product,
             "sum_type" => Self::Sum,
             "lazy_product_type" => Self::Lazy,
@@ -2589,8 +2605,9 @@ impl<'source> Respelling<'_, 'source>
     }
 
     /// Write the returner whose parts are `parts`, `-F B`, as `B`, answering
-    /// `B`'s band, or nothing when an effect row, a grade or a comment stands
-    /// among its parts.
+    /// `B`'s band, and `-F [E] B` as `[E] B`, the row kept before the type it
+    /// rows, its tail among it, `[E | r] B` and `[r] B`; or nothing when a
+    /// comment stands among its parts.
     ///
     /// # Specification
     /// trivial.
@@ -2604,7 +2621,8 @@ impl<'source> Respelling<'_, 'source>
             return None;
         }
         let (owns, operands) = split(parts);
-        let (&[keyword], &[value]) = (owns.as_slice(), operands.as_slice())
+        let (Some((&keyword, row)), Some((&value, tail))) =
+            (owns.split_first(), operands.split_last())
         else {
             return None;
         };
@@ -2612,8 +2630,48 @@ impl<'source> Respelling<'_, 'source>
             return None;
         }
         let operand = self.operand(value);
-        out.place(&operand, Band::Loose);
-        Some(operand.band)
+        let Some((&open, names)) = row.split_first()
+        else {
+            if !tail.is_empty() {
+                return None;
+            }
+            out.place(&operand, Band::Loose);
+            return Some(operand.band);
+        };
+        let ([] | [_]) = *tail
+        else {
+            return None;
+        };
+        if <&str>::from(open) != "[" {
+            return None;
+        }
+        out.fragment(open);
+        let mut tail = tail.iter().map(|&rest| self.operand(rest));
+        for &tile in names {
+            match <&str>::from(tile) {
+                "|" => {
+                    out.gap(Spelling(" "));
+                    out.fragment(tile);
+                    out.gap(Spelling(" "));
+                    let rest = tail.next()?;
+                    out.place(&rest, Band::Loose);
+                },
+                "]" => {
+                    if let Some(rest) = tail.next() {
+                        out.place(&rest, Band::Loose);
+                    }
+                    out.fragment(tile);
+                },
+                "," => {
+                    out.fragment(tile);
+                    out.gap(Spelling(" "));
+                },
+                _ => out.fragment(tile),
+            }
+        }
+        out.gap(Spelling(" "));
+        out.place(&operand, Band::Atom);
+        Some(Band::Bridge)
     }
 
     /// Write the `thunk` whose parts are `parts` as the one expression its
@@ -3081,7 +3139,7 @@ impl<'source> Chain<'source>
 
 /// The grammar rules this module reads, so a rule's name is a
 /// [`MoldName`].
-const RULES: [MoldName; 31] = [
+const RULES: [MoldName; 32] = [
     MoldName("telescope_type"),
     MoldName("product_type"),
     MoldName("labelled_sum_type"),
@@ -3094,6 +3152,7 @@ const RULES: [MoldName; 31] = [
     MoldName("u_type"),
     MoldName("f_type"),
     MoldName("f_type.row"),
+    MoldName("f_type.result"),
     MoldName("at_type"),
     MoldName("function_type"),
     MoldName("value_function_type"),

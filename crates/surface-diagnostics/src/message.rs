@@ -263,6 +263,10 @@ fn lowered(
                     f,
                     "the {spoken} classifies a theory's sort member, and stands nowhere else"
                 ),
+                FragmentBoundary::NotAtResult => f.write_str(
+                    "a row written before a type belongs to the returner a definition's result \
+                     inserts, and stands nowhere else",
+                ),
                 FragmentBoundary::WrongSort => {
                     write!(f, "{indefinite} cannot stand where {sort} is expected")
                 },

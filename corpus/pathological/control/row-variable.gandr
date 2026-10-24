@@ -12,13 +12,13 @@ def ignored @[e : Row] (x : +U (-F [e] Unit)) -> Unit { pure unit }
 
 /// One of two suspended computations, run at the row both share.
 @[ checks ]
-def either @[e : Row] (x : +U (-F [e] Unit), y : +U (-F [e] Unit)) -> -F [e] Unit {
+def either @[e : Row] (x : +U (-F [e] Unit), y : +U (-F [e] Unit)) -> [e] Unit {
   force x
 }
 
 /// A computation at `Div`, the rest of its row left open.
 @[ checks ]
-def stall @[r : Row] (s : String) -> -F [Div | r] Unit { pure unit }
+def stall @[r : Row] (s : String) -> [Div | r] Unit { pure unit }
 
 /// `log` suspended and ignored: nothing reads its row, so nothing determines
 /// its `r`, and the call is refused naming the slot `log[r = …]`.
@@ -35,4 +35,4 @@ def undecided() -> Unit {
 
 /// A row without `Console` is not `log`'s row, whatever its `r`.
 @[ refuses("TypeMismatch") ]
-def narrowed() -> -F [Div] Unit { log("narrowed") }
+def narrowed() -> [Div] Unit { log("narrowed") }

@@ -1716,10 +1716,11 @@ const MEMBER_FAULTS: [MemberFault; 18_usize] = [
 /// - hypothesis: L3 — a crossed boundary named by no other producer, the
 ///   endpoint's, is minted and read back only through this list.
 /// - witness: `refusal::tests::every_qualified_spelling_reads_as_the_text_that_names_it`
-fn crossed() -> [FragmentBoundary; 15_usize]
+fn crossed() -> [FragmentBoundary; 16_usize]
 {
     [
         FragmentBoundary::Misplaced,
+        FragmentBoundary::NotAtResult,
         FragmentBoundary::WrongSort,
         FragmentBoundary::Arity(OperandCount::from(0_usize)),
         FragmentBoundary::Indexed,
@@ -1809,6 +1810,7 @@ const fn boundary_tag(boundary: FragmentBoundary) -> Tag
         FragmentBoundary::Reserved(_) => "Reserved",
         FragmentBoundary::Unadmitted(_) => "Unadmitted",
         FragmentBoundary::Misplaced => "Misplaced",
+        FragmentBoundary::NotAtResult => "NotAtResult",
         FragmentBoundary::WrongSort => "WrongSort",
         FragmentBoundary::Arity(_) => "Arity",
         FragmentBoundary::Indexed => "Indexed",

@@ -1,0 +1,6 @@
+/// `f_type.result`: a definition's result written as the row of the returner
+/// the lowering inserts and the value type after it, `-F [Div] Unit`.
+@[ checks ]
+def idle() -> [Div] Unit {
+  pure unit
+}

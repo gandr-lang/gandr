@@ -22,7 +22,7 @@ def rec node(nodes : List(Integer), i : Integer) -> Integer {
 /// the first land on the second (#1183). The walk is a loop, so the row
 /// states `Div` (#1481).
 @[ runs("1") ]
-def ring() -> -F [Div] Integer {
+def ring() -> [Div] Integer {
   hold i = 0;
   hold steps = 4;
   while steps > 0 {

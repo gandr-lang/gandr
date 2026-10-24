@@ -293,6 +293,64 @@ def asked(n : Nat) -> Nat {
     );
 }
 
+/// #2255: the sugared form writes a result row of several interfaces before
+/// its type, `[Div, Proc] B`, a row open through a tail as written, `[Div |
+/// r] B` and `[r] B`, and a type looser than an application parenthesised
+/// after it; a row under `+U` in a parameter's type is no result and keeps
+/// its returner.
+#[test]
+fn a_result_row_is_written_before_its_type_2255()
+{
+    let grammar = grammar();
+    let source = "\
+def both() -> -F [Div, Proc] Integer {
+  pure 1
+}
+
+def pair() -> -F [Div] (Integer * Integer) {
+  pure (1, 2)
+}
+
+def apply(k : +U (Unit -> -F [Div] Unit)) -> -F [Div] Unit {
+  k(unit)
+}
+
+def tailed @[r : Row] () -> -F [Div | r] Unit {
+  pure unit
+}
+
+def open @[r : Row] () -> -F [r] Unit {
+  pure unit
+}
+";
+    let sugared = "\
+def both() -> [Div, Proc] Integer {
+  pure 1
+}
+
+def pair() -> [Div] (Integer * Integer) {
+  pure (1, 2)
+}
+
+def apply(k : +U (Unit -> -F [Div] Unit)) -> [Div] Unit {
+  k(unit)
+}
+
+def tailed @[r : Row] () -> [Div | r] Unit {
+  pure unit
+}
+
+def open @[r : Row] () -> [r] Unit {
+  pure unit
+}
+";
+    assert_eq!(
+        spelled(&grammar, source, Form::Sugared, Selection::Every),
+        sugared,
+        "sugared"
+    );
+}
+
 /// #1327: the sugared form writes a value-function alias at its shortest:
 /// one domain unparenthesised however deeply written, nested aliases among
 /// them, and a binder nothing later reads left out; a list of domains, a
@@ -1990,8 +2048,9 @@ fn a_module_member_pair_joins_as_a_top_level_one_2255()
 
 /// A definition's result written `-F B` is written `B` in the sugared form,
 /// the returner the lowering inserts, a module member's and a merged function
-/// form's among them; a returner with an effect row and the explicit form keep
-/// theirs, and one in a parameter's type stays a type's (#2255).
+/// form's among them, and one with an effect row `[E] B`, its row before the
+/// type; the explicit form keeps them, and one in a parameter's type stays a
+/// type's (#2255).
 #[test]
 fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 {
@@ -2029,7 +2088,7 @@ fn a_definition_s_result_leaves_its_returner_unwritten_2255()
 
         def pair() -> Integer * Integer { (1, 2) }
 
-        def spin(x : Integer) -> -F [Div] Integer { x }
+        def spin(x : Integer) -> [Div] Integer { x }
 
         def call(f : () => Integer) -> Integer { force f }
 
