@@ -467,6 +467,62 @@ fn upstream<'step>(
         .map_or(Maybe::Absent(upstream::Absent::Own), Maybe::Present)
 }
 
+/// The refused declaration of `declaration`'s name, among `admitted`, when
+/// `declaration` is unsettled by what it owes: the half the lowering could not
+/// read.
+///
+/// A definition written with its keyword misspelt, `de pair = …;`, does not
+/// read as the half a signature `def pair : T;` pairs with: the lowering
+/// refuses the form, a run of declarations one of which is named `pair`, and
+/// the signature owes its body.
+/// What the signature owes is that refusal's consequence, so it is a note
+/// naming the refused form, and the first error is where the source went
+/// wrong (#2339). A refused form of the declaration's name is the evidence
+/// that ties the two; a signature owing its body beside no such form is its
+/// own error.
+///
+/// # Specification
+/// - requires: `admitted` is the source's declarations, by admission position.
+/// - ensures: the first declaration of `admitted` other than `declaration` that
+///   shares its name and produced a lowering refusal, when `unsettlement` is
+///   [`Unsettlement::Obligations`]; absent otherwise.
+/// - provides: the cascade cut between a declaration's two halves.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a signature whose definition's keyword is misspelt is a
+///   note, and the misspelt keyword the first error.
+/// - witness: `entry::tests::a_declaration_whose_other_half_is_refused_is_a_note_2339`
+#[spec(ensures: |ret| match ret {
+    Maybe::Present(found) => found.name() == declaration.name()
+        && matches!(found.produced().refusal(), Maybe::Present(Refusal::Lowering(_))),
+    Maybe::Absent(_) => true,
+})]
+fn unread_half<'step>(
+    declaration: &'step DeclarationReport<'step>,
+    unsettlement: Unsettlement,
+    admitted: &'step [DeclarationReport<'step>],
+) -> Maybe<&'step DeclarationReport<'step>, upstream::Absent>
+{
+    if unsettlement != Unsettlement::Obligations {
+        return Maybe::Absent(upstream::Absent::Own);
+    }
+    admitted
+        .iter()
+        .find(|other| {
+            !core::ptr::eq(
+                core::ptr::from_ref(*other),
+                core::ptr::from_ref(declaration),
+            ) && other.name() == declaration.name()
+                && matches!(
+                    other.produced().refusal(),
+                    Maybe::Present(Refusal::Lowering(_))
+                )
+        })
+        .map_or(Maybe::Absent(upstream::Absent::Own), Maybe::Present)
+}
+
 /// The shadowing warnings `verb` prints of `shadowed`: every one under
 /// `check`, none under `test`, whose ledger records settlements alone.
 ///
@@ -659,9 +715,8 @@ impl<'step> Entries<'step>
                             failure: held.failures.get(declaration.constant()),
                             upstream: upstream(refusal, held.admitted),
                         },
-                        Maybe::Absent(produced_refusal::Absent::Unrefused) => Subject::Unsettled {
-                            declaration,
-                            unsettlement: match (declaration.stated(), declaration.outcome()) {
+                        Maybe::Absent(produced_refusal::Absent::Unrefused) => {
+                            let unsettlement = match (declaration.stated(), declaration.outcome()) {
                                 (&Stated::Verdict(Outcome::Checks(_)), _)
                                 | (
                                     &Stated::Verdict(
@@ -694,7 +749,12 @@ impl<'step> Entries<'step>
                                     | Outcome::RefusesRunning(..),
                                 ) => Unsettlement::NormalForm,
                                 (&Stated::Malformed(_), _) => Unsettlement::Malformed,
-                            },
+                            };
+                            Subject::Unsettled {
+                                declaration,
+                                unsettlement,
+                                upstream: unread_half(declaration, unsettlement, held.admitted),
+                            }
                         },
                     })
                 },
@@ -1174,6 +1234,62 @@ mod tests
             ],
             "the refused declaration is the one error; the one calling it is a note at the call, \
              and the one calling a declaration that checks prints nothing"
+        );
+    }
+
+    /// A signature whose definition is written with its keyword misspelt owes
+    /// its body because the lowering refused that form: it is a note, and the
+    /// first error is the misspelt keyword (#2339). A signature beside no
+    /// refused form of its name stays an error.
+    #[test]
+    fn a_declaration_whose_other_half_is_refused_is_a_note_2339()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let written = "@[ checks ]\ndef pair : Integer ;\nde pair = 1 ;\n";
+        let unread = step(
+            Path::new("unread.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(written),
+            Standing::Unsettled,
+            &grammar,
+        );
+        let printed: Vec<_> = entries(&unread, Verb::Check(Goals::Gated))
+            .map(|diagnostic| {
+                (
+                    diagnostic.severity,
+                    diagnostic.span,
+                    diagnostic.message.text,
+                )
+            })
+            .collect();
+        let signature = written.find("def pair :").expect("the signature");
+        assert!(
+            matches!(printed.first(), Some(&(Severity::Note, Maybe::Present(span), _)) if usize::from(span.start()) == signature),
+            "the signature is a note: {printed:?}"
+        );
+        let first = printed
+            .iter()
+            .find(|&&(severity, ..)| severity == Severity::Error)
+            .map(|&(_, span, _)| span);
+        let at = written.find("de pair").expect("the definition");
+        assert!(
+            matches!(first, Some(Maybe::Present(span)) if usize::from(span.start()) == at),
+            "the first error is the misspelt keyword: {printed:?}"
+        );
+        let text = SourceText::from("@[ checks ]\ndef lone : Integer ;\n");
+        let lone = step(
+            Path::new("lone.gandr"),
+            SourceRoot::Strict,
+            text,
+            Standing::Unsettled,
+            &grammar,
+        );
+        assert_eq!(
+            entries(&lone, Verb::Check(Goals::Gated))
+                .map(|diagnostic| diagnostic.severity)
+                .collect::<Vec<_>>(),
+            [Severity::Error],
+            "a signature owing its body beside no refused form is its own error"
         );
     }
 

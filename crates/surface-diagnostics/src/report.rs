@@ -417,6 +417,10 @@ pub enum Subject<'step>
         declaration: &'step DeclarationReport<'step>,
         /// What its unsettlement rests on.
         unsettlement: Unsettlement,
+        /// A refused declaration of its name, when its source holds one: the
+        /// half the lowering could not read, so what the declaration owes
+        /// follows from that refusal and is a note, not an error of its own.
+        upstream: Maybe<&'step DeclarationReport<'step>, upstream::Absent>,
     },
     /// A declaration unsettled by its obligations alone, under
     /// `check --goals`.
@@ -601,6 +605,10 @@ impl Report<'_>
                 Subject::Refused {
                     upstream: Maybe::Present(_),
                     ..
+                }
+                | Subject::Unsettled {
+                    upstream: Maybe::Present(_),
+                    ..
                 } => Severity::Note,
                 Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
                     Severity::Error
@@ -652,6 +660,14 @@ impl Report<'_>
                 Subject::Refused { declaration, .. } => {
                     Maybe::Present(alloc::format!("{}", NoteText(declaration)))
                 },
+                Subject::Unsettled {
+                    declaration,
+                    upstream: Maybe::Present(upstream),
+                    ..
+                } => Maybe::Present(alloc::format!("{}", UnreadHalfNoteText {
+                    declaration,
+                    upstream,
+                })),
                 Subject::Unsettled { .. }
                 | Subject::Goal(_)
                 | Subject::Source(_)
@@ -898,7 +914,7 @@ impl Report<'_>
             Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok() && match self.subject {
                 Subject::Refused { refusal, .. } => annotation.label == Label::Culprit(Culprit::of(refusal)),
                 Subject::Source(refusal) => annotation.label == Label::Culprit(Culprit::of(Refusal::Lowering(refusal))),
-                Subject::Unsettled { declaration, unsettlement: Unsettlement::Obligations }
+                Subject::Unsettled { declaration, unsettlement: Unsettlement::Obligations, .. }
                     | Subject::Goal(declaration) => annotation.label == Label::Surviving(declaration.surviving()),
                 Subject::Unsettled { unsettlement, .. } => annotation.label == Label::Unsettled(unsettlement),
                 Subject::Shadowed(_) => annotation.label == Label::Shadows,
@@ -926,6 +942,7 @@ impl Report<'_>
             Subject::Unsettled {
                 declaration,
                 unsettlement: Unsettlement::Obligations,
+                ..
             }
             | Subject::Goal(declaration) => Annotations::at(
                 declaration.span(),
@@ -934,6 +951,7 @@ impl Report<'_>
             Subject::Unsettled {
                 declaration,
                 unsettlement: Unsettlement::Malformed,
+                ..
             } => Annotations::malformed(declaration.stated(), declaration.span()),
             Subject::Unsettled {
                 declaration,
@@ -941,6 +959,7 @@ impl Report<'_>
                     unsettlement @ (Unsettlement::Unproduced
                     | Unsettlement::RunOutcome
                     | Unsettlement::NormalForm),
+                ..
             } => Annotations::at(declaration.span(), Label::Unsettled(unsettlement)),
             Subject::Source(refusal) => Annotations::lowering(refusal),
             Subject::Shadowed(shadowed) => Annotations::at(shadowed.span, Label::Shadows),
@@ -1488,6 +1507,53 @@ impl fmt::Display for UpstreamNoteText<'_>
                 NoteText(self.declaration)
             ),
         }
+    }
+}
+
+/// The note a declaration closes with when a refused form of its name may be
+/// the half it lacks.
+#[derive(Clone, Copy, Debug)]
+struct UnreadHalfNoteText<'step>
+{
+    /// The unsettled declaration the note is about.
+    declaration: &'step DeclarationReport<'step>,
+    /// The refused declaration of its name.
+    upstream: &'step DeclarationReport<'step>,
+}
+
+impl fmt::Display for UnreadHalfNoteText<'_>
+{
+    /// Writes what the declaration states and produced, and that a form of
+    /// its name the lowering refused leaves it so.
+    ///
+    /// # Specification
+    /// - requires: `upstream` is refused and shares the declaration's name.
+    /// - ensures: names the declaration, its stated and produced outcomes and
+    ///   the refused form's name.
+    /// - provides: the note of a declaration whose other half the lowering
+    ///   could not read, which reads as the cause, not as a second error.
+    /// - fails: if the formatter rejects a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a signature whose definition is written with a
+    ///   misspelt `def` is noted as left unsettled by the refused form.
+    /// - witness: `tests::diagnostics::a_signature_whose_definition_is_refused_is_a_note_2339`
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        write!(
+            f,
+            "`{}` states {} and produced {}: a form of `{}` the lowering refused leaves it so",
+            self.declaration.name(),
+            self.declaration.stated(),
+            self.declaration.outcome(),
+            self.upstream.name()
+        )
     }
 }
 
