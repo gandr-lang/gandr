@@ -61,7 +61,7 @@ def backUnit : Path(
 /// reflexivity at the start carried to the end.
 @[ checks ]
 def reversed(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Nat, b, a) {
-  become transport(
+  transport(
     +U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Path(Nat, y, a)),
     q,
     here(a),
@@ -73,11 +73,11 @@ def reversed(a: Nat, b: Nat, q: Path(Nat, a, b)) -> -F Path(Nat, b, a) {
 /// A lift whose path is not over `q` is refused.
 @[ refuses("NotOver") ]
 def astray(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
-  become transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, here(a), here(here(a)), v)
+  transport(+U ((y : Nat) -> (z : Path(Nat, a, y)) -> -F Nat), q, here(a), here(here(a)), v)
 }
 
 /// A family that reads no path is the wrong shape for a dependent transport.
 @[ refuses("ShapeMismatch") ]
 def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> -F Nat {
-  become transport(+U ((y : Nat) -> -F Nat), q, v, v, v)
+  transport(+U ((y : Nat) -> -F Nat), q, v, v, v)
 }

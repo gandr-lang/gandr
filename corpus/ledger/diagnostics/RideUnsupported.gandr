@@ -13,4 +13,4 @@ module Evolution {
 @[ refuses("RideUnsupported") ]
 def listed : () => List(Evolution.Kept) ;
 
-def listed = thunk { become ride(\X. List(X), Evolution.keep, []) } ;
+def listed = thunk { ride(\X. List(X), Evolution.keep, []) } ;

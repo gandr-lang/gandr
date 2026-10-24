@@ -43,7 +43,7 @@ module Parity : Model(Group) {
   def a = One;
   def b = Zero;
   def inv(x : Bit) -> -F Bit { x }
-  def mul(x : Bit, y : Bit) -> -F Bit { become xor(x, y) }
+  def mul(x : Bit, y : Bit) -> -F Bit { xor(x, y) }
   @[ checks ]
   def unitL(x : Bit) -> -F Path(Bit, mul(e, x), x) { here(x) }
   @[ checks ]
@@ -88,5 +88,5 @@ def parityGroup : Model(Group) = pack Parity at Model(Group) ;
 @[ checks ]
 def invMulParity() -> -F Path(Bit, One, One) {
   run law <- Group.invMul(parityGroup);
-  become law(One, Zero)
+  law(One, Zero)
 }

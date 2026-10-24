@@ -4,4 +4,4 @@ import "./modules.gandr" ;
 /// The imported module's member, called here.
 @[ runs("0") ]
 def again : () => Integer ;
-def again = thunk { become Origin.zero() } ;
+def again = thunk { Origin.zero() } ;

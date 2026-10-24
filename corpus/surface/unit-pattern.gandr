@@ -12,4 +12,4 @@ def answer(u : Unit) -> -F Integer {
 
 /// The unit takes its arm.
 @[ runs("42") ]
-def answerOfUnit() -> -F Integer { become answer(unit) }
+def answerOfUnit() -> -F Integer { answer(unit) }

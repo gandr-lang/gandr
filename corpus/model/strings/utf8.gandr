@@ -53,13 +53,13 @@ def encode(c : Integer) -> -F List(Integer) {
 def rec encodeAll(cs : List(Integer)) -> -F List(Integer) {
   case cs {
     Nil => Nil,
-    Cons(c, rest) => become concat(encode(c), encodeAll[<](rest))
+    Cons(c, rest) => concat(encode(c), encodeAll[<](rest))
   }
 }
 
 /// `$`, below 128: one byte, itself.
 @[ runs("Cons(36, Nil)") ]
-def dollar() -> -F List(Integer) { become encode(36) }
+def dollar() -> -F List(Integer) { encode(36) }
 
 /// `é`, below 2048: two bytes.
 @[ runs("Cons(195, Cons(169, Nil))") ]
@@ -67,12 +67,12 @@ def eAcute() -> -F List(Integer) { become encode(233) }
 
 /// `€`, below 65536: three bytes.
 @[ runs("Cons(226, Cons(130, Cons(172, Nil)))") ]
-def euro() -> -F List(Integer) { become encode(8364) }
+def euro() -> -F List(Integer) { encode(8364) }
 
 /// `😀`, past 65536: four bytes.
 @[ runs("Cons(240, Cons(159, Cons(152, Cons(128, Nil))))") ]
-def grin() -> -F List(Integer) { become encode(128512) }
+def grin() -> -F List(Integer) { encode(128512) }
 
 /// `hé`: one byte, then two.
 @[ runs("Cons(104, Cons(195, Cons(169, Nil)))") ]
-def he() -> -F List(Integer) { become encodeAll((Cons(104, Cons(233, Nil)) : List(Integer))) }
+def he() -> -F List(Integer) { encodeAll((Cons(104, Cons(233, Nil)) : List(Integer))) }

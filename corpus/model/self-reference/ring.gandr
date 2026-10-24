@@ -13,7 +13,7 @@ def rec node(nodes : List(Integer), i : Integer) -> -F Integer {
     Nil => pure 0,
     Cons(n, rest) => {
       run here <- i == 0;
-      case here { true => pure n, false => become node[<](rest, i - 1) }
+      case here { true => pure n, false => node[<](rest, i - 1) }
     }
   }
 }

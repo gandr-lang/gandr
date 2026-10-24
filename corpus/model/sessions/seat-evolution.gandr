@@ -45,7 +45,7 @@ module Evolution {
   /// The stationary flow, then the simulation.
   @[ checks ]
   def widened() -> -F Flow(Type, SeatEnd, SeatEnd′) {
-    become kept then sub
+    kept then sub
   }
 }
 
@@ -62,7 +62,7 @@ def served : Run(Seat.SeatEnd) = recorded(
 /// A recorded run ridden forward along the simulation.
 @[ checks ]
 def forward(receipt : Run(Seat.SeatEnd)) -> -F Run(Evolution.SeatEnd′) {
-  become ride(\X. Run(X), Evolution.sub, receipt)
+  ride(\X. Run(X), Evolution.sub, receipt)
 }
 
 /// The old run ridden forward by a run: the record is unchanged.

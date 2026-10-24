@@ -24,7 +24,7 @@ module LCSyntax : Model(LC) {
   def empty() -> -F N { Z }
 
   /// A substitution applied to a term.
-  def subTm(g : N, d : N, t : Term, s : Env) -> -F Term { become subst(t, s) }
+  def subTm(g : N, d : N, t : Term, s : Env) -> -F Term { subst(t, s) }
 
   /// Context extension adds one variable.
   def extendTm(g : N) -> -F N { S(g) }
@@ -51,7 +51,7 @@ module LCSyntax : Model(LC) {
   /// Law 1, `subQSingle`.
   @[ checks ]
   def law1(g : N, b : Term) -> -F Path(Term, subTm(S(g), g, qTm(g), singleTm(g, b)), b) {
-    become subQSingle(b)
+    subQSingle(b)
   }
 
   /// Law 2, `subQLift`; its indices stand as `liftTm`'s do.
@@ -61,7 +61,7 @@ module LCSyntax : Model(LC) {
     subTm(S(g), S(d), qTm(g), liftTm(d, g, s)),
     qTm(d)
   ) {
-    become subQLift(s)
+    subQLift(s)
   }
 
   /// Law 3, `subWeakenLift`, by induction on `b`.
@@ -71,7 +71,7 @@ module LCSyntax : Model(LC) {
     subTm(S(g), S(d), subTm(g, S(g), b, pTm(g)), liftTm(d, g, s)),
     subTm(d, S(d), subTm(g, d, b, s), pTm(d))
   ) {
-    become subWeakenLift(b, s)
+    subWeakenLift(b, s)
   }
 
   /// Law 4, `subWeakenSingle`, by induction on `b`.
@@ -81,7 +81,7 @@ module LCSyntax : Model(LC) {
     subTm(S(g), g, subTm(g, S(g), b, pTm(g)), singleTm(g, a)),
     b
   ) {
-    become subWeakenSingle(b, a)
+    subWeakenSingle(b, a)
   }
 
   /// Law 5, `subLam`.
@@ -91,7 +91,7 @@ module LCSyntax : Model(LC) {
     subTm(g, d, lam(g, t), s),
     lam(d, subTm(S(g), S(d), t, liftTm(d, g, s)))
   ) {
-    become subLam(t, s)
+    subLam(t, s)
   }
 
   /// Law 6, `subApp`.
@@ -101,6 +101,6 @@ module LCSyntax : Model(LC) {
     subTm(g, d, app(g, t, u), s),
     app(d, subTm(g, d, t, s), subTm(g, d, u, s))
   ) {
-    become subApp(t, u, s)
+    subApp(t, u, s)
   }
 }

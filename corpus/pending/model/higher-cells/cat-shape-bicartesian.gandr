@@ -58,5 +58,5 @@ def mixed_elim(
 }
 
 def empty_probe() -> -F EmptyHom(Star, Star) {
-  become empty_id(Star)
+  empty_id(Star)
 }

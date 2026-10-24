@@ -6,4 +6,4 @@ def same @[a : Type] (x : a) -> -F a { return x }
 
 @[ refuses("ImplicitInParentheses") ]
 def inParentheses : () => Integer ;
-def inParentheses = thunk { become same(Integer, 3) } ;
+def inParentheses = thunk { same(Integer, 3) } ;

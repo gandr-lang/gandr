@@ -74,13 +74,13 @@ module ByHand {
   /// A telescope ridden along the directed twin.
   @[ checks ]
   def forth(t : Tel) -> -F Tel {
-    become ride(\X. X, opposite_dir_by_hand, t)
+    ride(\X. X, opposite_dir_by_hand, t)
   }
 
   /// A telescope ridden forward by a run.
   @[ runs("(unit, (+{.0 = unit}, +{.1 = unit}))") ]
   def ridden : () => Tel ;
-  def ridden = thunk { become forth((unit, (+{.0 = unit}, +{.0 = unit}))) } ;
+  def ridden = forth((unit, (+{.0 = unit}, +{.0 = unit}))) ;
 
   /// Riding moves the telescope as transport does.
   @[ checks ]
@@ -94,6 +94,6 @@ module ByHand {
   /// A ride that would reverse the flow reads it contravariantly, refused.
   @[ refuses("NonCovariantMotive") ]
   def reversed() -> -F Flow(Type, Tel, Tel) {
-    become ride(\X. Flow(Type, X, Tel), opposite_dir_by_hand, stay(Tel))
+    ride(\X. Flow(Type, X, Tel), opposite_dir_by_hand, stay(Tel))
   }
 }

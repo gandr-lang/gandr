@@ -13,7 +13,7 @@ import "./magma-base.gandr" ;
 @[ checks ]
 def flip(b : Bool) -> -F Bool {
   run c <- exchange(b);
-  become exchange(exchange(c))
+  exchange(exchange(c))
 }
 
 /// The magma to itself by the swap at the binary corolla.

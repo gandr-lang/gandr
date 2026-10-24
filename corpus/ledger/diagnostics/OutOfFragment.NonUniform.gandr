@@ -11,6 +11,6 @@ data Nat : Type {
 def rec shadowed(n : Nat, m : Nat) -> -F Nat {
   case m {
     Zero => return n,
-    Succ(n) => become shadowed[<](n, n)
+    Succ(n) => shadowed[<](n, n)
   }
 }

@@ -23,7 +23,7 @@ import "./copy-on-write.gandr" ;
 @[ checks ]
 def pushInPlace(s : Repr, b : Integer) -> -F Written {
   case s {
-    Inline(bs) => become push(s, b),
+    Inline(bs) => push(s, b),
     Shared(n, bs) => Written(Shared(n, beforeZero(bs, b)), 0)
   }
 }
@@ -40,14 +40,14 @@ def holders(s : Repr) -> -F Integer {
 /// On a long string held once, the write that reads no count copies nothing,
 /// as copy-on-write does.
 @[ runs("0") ]
-def aloneCopies() -> -F [Div] Integer { run s <- force long ; become copies(pushInPlace(s, 33)) }
+def aloneCopies() -> -F [Div] Integer { run s <- force long ; copies(pushInPlace(s, 33)) }
 
 /// And its written buffer has the one holder copy-on-write's has.
 @[ runs("1") ]
 def aloneHolders() -> -F [Div] Integer {
   run s <- force long ;
   run w <- pushInPlace(s, 33) ;
-  become holders(written(w))
+  holders(written(w))
 }
 
 /// On a copy it writes the buffer the original reads too: the written buffer
@@ -58,7 +58,7 @@ def sharedHolders() -> -F [Div] Integer {
   run s <- force long ;
   run c <- copy(s) ;
   run w <- pushInPlace(c, 33) ;
-  become holders(written(w))
+  holders(written(w))
 }
 
 /// Under a grade-one hold the string is made in place, so the write that reads

@@ -10,4 +10,4 @@ module ImportedSquared = Squaring(Times) ;
 
 /// Four squared, through the instance of the imported model.
 @[ runs("16") ]
-def sixteen() -> -F Integer { become ImportedSquared.square(4) }
+def sixteen() -> -F Integer { ImportedSquared.square(4) }

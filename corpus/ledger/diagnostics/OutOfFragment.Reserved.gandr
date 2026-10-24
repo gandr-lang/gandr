@@ -9,6 +9,6 @@ data Nat : Type {
 def rec both(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
-    Succ(p) => become both[<, >](p)
+    Succ(p) => both[<, >](p)
   }
 }

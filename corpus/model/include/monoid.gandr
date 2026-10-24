@@ -52,7 +52,7 @@ module Endo : Model(Monoid) {
     g : Integer => Integer,
     x : Integer
   ) -> -F Integer {
-    become g(f(x))
+    g(f(x))
   }
 
   /// The identity function.
@@ -62,7 +62,7 @@ module Endo : Model(Monoid) {
     f : Integer => Integer,
     g : Integer => Integer
   ) -> -F (Integer => Integer) {
-    thunk { become andThen(f, g) }
+    thunk { andThen(f, g) }
   }
 
   def one() -> -F (Integer => Integer) { ident }
@@ -74,7 +74,7 @@ module Endo : Model(Monoid) {
     g : Integer => Integer,
     h : Integer => Integer
   ) -> -F Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
-    here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
+    here(thunk { andThen(f, thunk { andThen(g, h) }) })
   }
 
   /// The left unit law.
@@ -101,6 +101,6 @@ module Endo : Model(Monoid) {
 /// The included multiplication, run at the model: add one, then double.
 @[ runs("8") ]
 def composed() -> -F Integer {
-  run h <- Endo.mul(fn (n) { become n + 1 }, fn (n) { become n * 2 }) ;
-  become h(3)
+  run h <- Endo.mul(fn (n) { n + 1 }, fn (n) { n * 2 }) ;
+  h(3)
 }

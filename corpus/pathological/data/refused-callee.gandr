@@ -19,4 +19,4 @@ def refused(xs : List(Integer)) -> -F List(Integer) {
 /// A bare constructor passed to the refused declaration takes no type from
 /// its parameter (#2126).
 @[ refuses("OutOfFragment.Unannotated") ]
-def calls() -> -F List(Integer) { become refused(Nil) }
+def calls() -> -F List(Integer) { refused(Nil) }

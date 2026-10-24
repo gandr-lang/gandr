@@ -22,7 +22,7 @@ data CView : Type {
 /// zero.
 @[ checks ]
 def terminated(cs : List(Integer)) -> -F List(Integer) {
-  become concat(encodeAll(cs), (Cons(0, Nil) : List(Integer)))
+  concat(encodeAll(cs), (Cons(0, Nil) : List(Integer)))
 }
 
 /// The C reading of a byte list: borrowed whole when the only zero is the
@@ -61,7 +61,7 @@ def rec cView(bs : List(Integer)) -> -F CView {
 
 /// `hi`, owned: its two bytes and the zero.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hi() -> -F List(Integer) { become terminated((Cons(104, Cons(105, Nil)) : List(Integer))) }
+def hi() -> -F List(Integer) { terminated((Cons(104, Cons(105, Nil)) : List(Integer))) }
 
 /// C reads `hi` as the bytes it is held in: it borrows them whole.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
@@ -73,9 +73,9 @@ def hiForC() -> -F List(Integer) { run bs <- force hi ; run v <- cView(bs) ; cas
 /// A zero inside the string: C would stop at it, so it has no C reading.
 @[ runs("Interior") ]
 def cut() -> -F CView {
-  become cView(terminated((Cons(104, Cons(0, Cons(105, Nil))) : List(Integer))))
+  cView(terminated((Cons(104, Cons(0, Cons(105, Nil))) : List(Integer))))
 }
 
 /// Bytes with no terminating zero have no C reading either.
 @[ runs("Interior") ]
-def unterminated() -> -F CView { become cView((Cons(104, Cons(105, Nil)) : List(Integer))) }
+def unterminated() -> -F CView { cView((Cons(104, Cons(105, Nil)) : List(Integer))) }

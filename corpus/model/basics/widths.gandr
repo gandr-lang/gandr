@@ -24,7 +24,7 @@ def same_i64(n : i64) -> -F i64 { n }
 
 /// A width literal passes through a function at its width unchanged.
 @[ runs("42i64") ]
-def same_i64_called() -> -F i64 { become same_i64(42i64) }
+def same_i64_called() -> -F i64 { same_i64(42i64) }
 
 /// A width is not the integers.
 @[ refuses("TypeMismatch") ]

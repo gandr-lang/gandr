@@ -59,7 +59,7 @@ module Additive : Model(Unital) {
   def e = 0;
   /// The sum.
   @[ checks ]
-  def mul(x : Integer, y : Integer) -> -F Integer { become x + y }
+  def mul(x : Integer, y : Integer) -> -F Integer { x + y }
   /// Zero is a left unit.
   @[ owes(1) ]
   def unitL : (x : Integer) => Path(Integer, mul(e, x), x) ;

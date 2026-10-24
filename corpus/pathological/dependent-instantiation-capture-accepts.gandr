@@ -7,7 +7,7 @@ def comp(
   g : b => c,
   x : a
 ) -> -F c {
-  become g(f(x))
+  g(f(x))
 }
 
 @[ refuses("TypeMismatch") ]
@@ -19,5 +19,5 @@ def captured(
   u : a => d,
   h : d => d
 ) -> -F (a => d) {
-  thunk { become comp(a, c, d, u, h) }
+  thunk { comp(a, c, d, u, h) }
 }

@@ -124,7 +124,7 @@ def joined_elided : () => List(Nat) = append_nat_elided(
 
 /// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped() -> -F List(Nat) { become map_nat(bump, small) }
+def bumped() -> -F List(Nat) { map_nat(bump, small) }
 
 /// The same map, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
@@ -140,7 +140,7 @@ def bumped_run : () => List(Nat) = map_nat_run(bump, small) ;
 
 /// The length of `small` at its element type, returned.
 @[ checks ]
-def lengthened() -> -F Nat { become length(Nat, small) }
+def lengthened() -> -F Nat { length(Nat, small) }
 
 /// The same length, the `return`s elided.
 @[ checks ]

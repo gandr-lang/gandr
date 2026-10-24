@@ -9,6 +9,6 @@ data Nat : Type {
 def rec ahead(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
-    Succ(p) => become ahead[>](p)
+    Succ(p) => ahead[>](p)
   }
 }

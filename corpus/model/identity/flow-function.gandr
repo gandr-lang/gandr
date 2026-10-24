@@ -35,10 +35,10 @@ module ReaderSchema {
   @[ checks ]
   def legacy(record : Old) -> -F Integer {
     run read <- ride(\X. X, reader, age) ;
-    become read(record)
+    read(record)
   }
   /// An old record's age, read through the ridden reader.
   @[ runs("30") ]
   def aged : () => Integer ;
-  def aged = thunk { become legacy(("ada", 30)) } ;
+  def aged = legacy(("ada", 30)) ;
 }

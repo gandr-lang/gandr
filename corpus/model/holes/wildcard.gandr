@@ -13,7 +13,7 @@ def idAt(a : Type, y : a) -> -F a { y }
 
 /// `idAt` with its type left to the argument: `3` forces `_` to `Integer`.
 @[ runs("3") ]
-def forced() -> -F Integer { become idAt(_, 3) }
+def forced() -> -F Integer { idAt(_, 3) }
 
 /// The first of two values, each of its own type, both types passed
 /// explicitly.
@@ -31,7 +31,7 @@ def same @[a : Type] (y : a) -> -F a { y }
 /// The implicit supplied by name as a wildcard: the slot asks the solver for
 /// what an omitted implicit would leave it.
 @[ runs("3") ]
-def slotForced() -> -F Integer { become same[a = _](3) }
+def slotForced() -> -F Integer { same[a = _](3) }
 
 /// A path's right end left in an ascription's type: checking `here(3)`
 /// against it forces the end to `3`, and the path runs as its two maps, both

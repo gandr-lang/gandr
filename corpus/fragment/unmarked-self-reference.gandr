@@ -8,7 +8,7 @@ data Nat : Type {
 def rec bare(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
-    Succ(p) => become bare(p)
+    Succ(p) => bare(p)
   }
 }
 
@@ -16,7 +16,7 @@ def rec bare(n : Nat) -> -F Nat {
 def rec marked(n : Nat) -> -F Nat {
   case n {
     Zero => n,
-    Succ(p) => become marked[<](p)
+    Succ(p) => marked[<](p)
   }
 }
 
@@ -29,7 +29,7 @@ def rec idle(n : Nat) -> -F Nat { n }
 def rec varied(n : Nat, m : Nat) -> -F Nat {
   case m {
     Zero => n,
-    Succ(p) => become varied[<](p, p)
+    Succ(p) => varied[<](p, p)
   }
 }
 
@@ -39,7 +39,7 @@ def rec varied(n : Nat, m : Nat) -> -F Nat {
 def rec ahead(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
-    Succ(p) => become ahead[>](p)
+    Succ(p) => ahead[>](p)
   }
 }
 
@@ -51,4 +51,4 @@ def rec constant() -> -F Nat { Zero }
 /// A descent claimed by a recursive definition of no parameter: its fixpoint
 /// stands at no arrow, so the call has nothing to descend on (#1499).
 @[ refuses("ShapeMismatch") ]
-def rec spin() -> -F Nat { become spin[<]() }
+def rec spin() -> -F Nat { spin[<]() }

@@ -29,7 +29,7 @@ def figureWidth(figure : Figure) -> -F Integer {
 /// A shape's width read off its figure, where the sides are swapped.
 @[ checks ]
 def throughFigure(shape : Shape) -> -F Integer {
-  become figureWidth(Shapes.toFigure(shape))
+  figureWidth(Shapes.toFigure(shape))
 }
 
 /// The two readings are one function: they agree at a circle and at a
@@ -71,7 +71,7 @@ def switch(light : Light) -> -F Light {
 /// A light switched twice.
 @[ checks ]
 def switchTwice(light : Light) -> -F Light {
-  become switch(switch(light))
+  switch(switch(light))
 }
 
 /// A light left as it is.

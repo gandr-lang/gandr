@@ -2,7 +2,8 @@
 // _Handling Algebraic Effects_ (doi:10.2168/LMCS-9(4:23)2013): an operation's
 // clause may resume the handled body through its continuation or discard it,
 // a body's `pure` value passes through the handler's `pure` clause, and a
-// `return` leaves the handler with its value as it stands.
+// `return` leaves the handler with its value as it stands. A tail call is an
+// exit too, so every `become` here is written: the exits are the subject.
 
 /// The operation's clause resumes the body, whose value passes through the
 /// `pure` clause.

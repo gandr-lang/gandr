@@ -15,20 +15,20 @@ data Nat : Type {
 def rec same(n : Nat) -> -F Nat {
   case n {
     Zero => n,
-    Succ(p) => become same[<](n)
+    Succ(p) => same[<](n)
   }
 }
 
 /// A recursion over a type with no constructors to open: nothing stands
 /// below the stage.
 @[ refuses("StageNotBelow") ]
-def rec counted(n : Integer) -> -F Integer { become counted[<](n) }
+def rec counted(n : Integer) -> -F Integer { counted[<](n) }
 
 /// The call at the field the case opened, one stage below the parameter's.
 @[ checks ]
 def rec down(n : Nat) -> -F Nat {
   case n {
     Zero => n,
-    Succ(p) => become down[<](p)
+    Succ(p) => down[<](p)
   }
 }

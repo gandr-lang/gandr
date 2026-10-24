@@ -8,7 +8,7 @@ def binary : +U (-F Integer & -F String) = &{.0 => 1, .1 => "s"} ;
 
 @[ checks ]
 def observe(m : +U &{get : -F Integer, put : -F String}) -> -F Integer {
-  become m.get
+  m.get
 }
 
 @[ checks ]
@@ -42,22 +42,22 @@ def chained : +U (-F Integer & -F String & -F Integer) = triple ;
 /// Each entry of a lazy product of three is one projection of it.
 @[ checks ]
 def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> -F Integer {
-  become m.c
+  m.c
 }
 
 /// The last entry of `triple`, observed.
 @[ runs("3") ]
-def tripled() -> -F Integer { become third(triple) }
+def tripled() -> -F Integer { third(triple) }
 
 /// The one entry of a lazy product of one is its one projection.
 @[ checks ]
 def only(m : +U &{get : -F Integer}) -> -F Integer {
-  become m.get
+  m.get
 }
 
 /// The only entry of `single`, observed.
 @[ runs("1") ]
-def singled() -> -F Integer { become only(single) }
+def singled() -> -F Integer { only(single) }
 
 /// A `co` bundle is the lazy record written over bare labels, its fields in
 /// any order (#1053).
@@ -68,37 +68,37 @@ def bundled() -> &{get : -F Integer, put : -F String} {
 
 /// The bundle's entry is the one its label names.
 @[ runs("7") ]
-def bundle_got() -> -F Integer { become observe(bundled) }
+def bundle_got() -> -F Integer { observe(bundled) }
 
 /// An entry observed by its position, counted from zero, is the entry its
 /// label names: `m.1` is `m.put`.
 @[ checks ]
 def placed(m : +U &{get : -F Integer, put : -F String}) -> -F String {
-  become m.1
+  m.1
 }
 
 /// A lazy product chain names no entry, so each is observed by its position.
 @[ checks ]
 def last(m : +U (-F Integer & -F String & -F Integer)) -> -F Integer {
-  become m.2
+  m.2
 }
 
 /// The last component of `chained`, observed by its position.
 @[ runs("3") ]
-def lasted() -> -F Integer { become last(chained) }
+def lasted() -> -F Integer { last(chained) }
 
 /// A positional lazy record names no entry either, so each is observed by its
 /// position (#1104).
 @[ checks ]
 def spread(m : +U (-F Integer & -F String)) -> -F String {
-  become m.1
+  m.1
 }
 
 /// A position past a lazy product's last entry names nothing, and is refused
 /// as the unresolved name it is (#1104).
 @[ refuses("UnresolvedName") ]
 def beyond(m : +U (-F Integer & -F String)) -> -F String {
-  become m.2
+  m.2
 }
 
 @[ refuses("OutOfFragment.WrongSort") ]

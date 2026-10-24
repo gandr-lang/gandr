@@ -87,9 +87,9 @@ def heardKept : Path(
 /// The carried run, computed.
 @[ checks ]
 def heardRun() -> -F Run(Ask.Decoded) {
-  become transport(\X. Run(?X. end), codes, heard)
+  transport(\X. Run(?X. end), codes, heard)
 }
 
 /// On the machine the carried run hears the yes, as it does by conversion.
 @[ runs("recorded(received(Yes), closed)") ]
-def decodedRun() -> -F Run(Ask.Decoded) { become heardRun() }
+def decodedRun() -> -F Run(Ask.Decoded) { heardRun() }

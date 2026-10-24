@@ -40,8 +40,8 @@ theory Alpha {
 @[ checks ]
 def rec derived(chain : Theory) -> -F Integer {
   case chain {
-    Rule(name, lhs, rhs, rest) => become derived[<](rest),
-    Turned(name, lhs, rhs, rest) => become derived[<](rest),
+    Rule(name, lhs, rhs, rest) => derived[<](rest),
+    Turned(name, lhs, rhs, rest) => derived[<](rest),
     Derived(outer, position, inner, lhs, rhs, rest) => {
       run r <- derived[<](rest);
       return r + 1
@@ -56,6 +56,6 @@ def rec derived(chain : Theory) -> -F Integer {
 /// derived.
 @[ runs("2") ]
 def derivations() -> -F Integer { case Alpha {
-  Presents(sorts, opers, rules) => become derived(rules),
+  Presents(sorts, opers, rules) => derived(rules),
   _ => 0
 } }

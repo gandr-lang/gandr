@@ -14,9 +14,9 @@ import "./seat-prefix.gandr" ;
 /// An open play ridden forward along the simulation (#1318).
 @[ checks ]
 def carried(play : Prefix(Seat.SeatEnd)) -> -F Prefix(Evolution.SeatEnd′) {
-  become ride(\X. Prefix(X), Evolution.sub, play)
+  ride(\X. Prefix(X), Evolution.sub, play)
 }
 
 /// The open play ridden forward: the record is unchanged, still open.
 @[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"))") ]
-def upgraded() -> -F Prefix(Evolution.SeatEnd′) { become carried(reporting) }
+def upgraded() -> -F Prefix(Evolution.SeatEnd′) { carried(reporting) }

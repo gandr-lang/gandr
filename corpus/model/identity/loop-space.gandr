@@ -90,8 +90,8 @@ def unaround(c : Words) -> -F Words {
 def rec sectWords(c : Words) -> -F Path(Words, spinWords(windWords(c)), c) {
   case c {
     Nil => here(Nil),
-    Loop(x) => { run p <- sectWords[<](x); become cong(around, p) },
-    Unloop(x) => { run p <- sectWords[<](x); become cong(unaround, p) }
+    Loop(x) => { run p <- sectWords[<](x); cong(around, p) },
+    Unloop(x) => { run p <- sectWords[<](x); cong(unaround, p) }
   }
 }
 
@@ -102,8 +102,8 @@ def rec sectWords(c : Words) -> -F Path(Words, spinWords(windWords(c)), c) {
 def rec retrWords(n : Int) -> -F Path(Int, windWords(spinWords(n)), n) {
   case n {
     Z => here(Z),
-    S(x) => { run p <- retrWords[<](x); become cong(Winding.turn, p) },
-    P(x) => { run p <- retrWords[<](x); become cong(Winding.unturn, p) }
+    S(x) => { run p <- retrWords[<](x); cong(Winding.turn, p) },
+    P(x) => { run p <- retrWords[<](x); cong(Winding.unturn, p) }
   }
 }
 

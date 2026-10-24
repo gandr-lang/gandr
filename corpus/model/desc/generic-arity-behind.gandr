@@ -14,9 +14,9 @@ import "./generic-arity.gandr" ;
 /// could not name it, so `arity` was refused at `Theory` and this count with
 /// it.
 @[ runs("2") ]
-def counted_behind() -> -F Integer { become arity(Monoid) }
+def counted_behind() -> -F Integer { arity(Monoid) }
 
 /// #1078: `Magma`'s two operations, counted by the program the other source
 /// declares: both blocks' presentations inhabit the one `Theory`.
 @[ runs("2") ]
-def counted_across() -> -F Integer { become arity(Magma) }
+def counted_across() -> -F Integer { arity(Magma) }

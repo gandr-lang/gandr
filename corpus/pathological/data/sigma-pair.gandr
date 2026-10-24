@@ -18,4 +18,4 @@ def tag_of(p : #{n : Integer, w : Ix(n)}) -> -F Integer {
 }
 
 @[ refuses("TypeMismatch") ]
-def unpaired() -> -F Integer { become tag_of(loose) }
+def unpaired() -> -F Integer { tag_of(loose) }

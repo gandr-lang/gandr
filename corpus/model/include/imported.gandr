@@ -25,7 +25,7 @@ module Successor : Model(PointedMonoid) {
     g : Integer => Integer,
     x : Integer
   ) -> -F Integer {
-    become g(f(x))
+    g(f(x))
   }
 
   /// The identity function.
@@ -38,7 +38,7 @@ module Successor : Model(PointedMonoid) {
     f : Integer => Integer,
     g : Integer => Integer
   ) -> -F (Integer => Integer) {
-    thunk { become andThen(f, g) }
+    thunk { andThen(f, g) }
   }
 
   def one() -> -F (Integer => Integer) { ident }
@@ -52,7 +52,7 @@ module Successor : Model(PointedMonoid) {
     g : Integer => Integer,
     h : Integer => Integer
   ) -> -F Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
-    here(thunk { become andThen(f, thunk { become andThen(g, h) }) })
+    here(thunk { andThen(f, thunk { andThen(g, h) }) })
   }
 
   /// The left unit law, included.
@@ -80,6 +80,6 @@ module Successor : Model(PointedMonoid) {
 @[ runs("8") ]
 def pointed() -> -F Integer {
   run p <- Successor.point() ;
-  run h <- Successor.mul(p, fn (n) { become n * 2 }) ;
-  become h(3)
+  run h <- Successor.mul(p, fn (n) { n * 2 }) ;
+  h(3)
 }

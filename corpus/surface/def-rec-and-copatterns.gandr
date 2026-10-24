@@ -1,6 +1,6 @@
 @[ refuses("StageNotBelow") ]
 def rec fact(n: Integer) -> -F Integer {
-  become fact[<](n)
+  fact[<](n)
 }
 
 @[ refuses("MalformedForm") ]

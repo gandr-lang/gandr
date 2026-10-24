@@ -19,7 +19,7 @@ def rec operations(chain : Theory) -> -F Integer {
 @[ checks ]
 def arity(presented : Theory) -> -F Integer {
   case presented {
-    Presents(sorts, opers, rules) => become operations(opers),
+    Presents(sorts, opers, rules) => operations(opers),
     _ => return 0
   }
 }
@@ -27,4 +27,4 @@ def arity(presented : Theory) -> -F Integer {
 /// `Monoid` declares two operations.
 @[ runs("2") ]
 def counted : () => Integer ;
-def counted = thunk { become arity(Monoid) } ;
+def counted = thunk { arity(Monoid) } ;

@@ -54,7 +54,7 @@ def rec fib(n : Nat) -> -F Nat {
 def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> -F List(a) {
   case xs {
     Nil => acc,
-    Cons(x, rest) => become reverseOnto[<](a, rest, Cons(x, acc))
+    Cons(x, rest) => reverseOnto[<](a, rest, Cons(x, acc))
   }
 }
 
@@ -67,7 +67,7 @@ def rec pairwise(xs : List(Integer), ys : List(Integer)) -> -F List(Integer) {
   case xs {
     Nil => Nil,
     Cons(x, rest) => case x == 0 {
-      true => become pairwise[<](rest, ys),
+      true => pairwise[<](rest, ys),
       false => case ys {
         Nil => Nil,
         Cons(y, more) => Cons(x + y, pairwise[<](rest, more))

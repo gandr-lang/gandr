@@ -41,7 +41,7 @@ def rec plus_run(n : Nat, m : Nat) -> -F Nat {
 
 /// Two and three, added with the call returned.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five() -> -F Nat { become plus_returned(two, three) }
+def five() -> -F Nat { plus_returned(two, three) }
 
 /// Two and three, added with the `return`s elided.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]

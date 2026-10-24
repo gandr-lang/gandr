@@ -23,7 +23,7 @@ module Cells {
   /// The lists' translator: the list ridden along the records' flow.
   @[ checks ]
   def each(olds : List(Old)) -> -F List(New) {
-    become ride(\X. List(X), renamed, olds)
+    ride(\X. List(X), renamed, olds)
   }
   /// At one cell the image is the swapped head before the translator's own
   /// image of the tail, so the lists' flow forwards by it.
@@ -33,10 +33,10 @@ module Cells {
   /// A list ridden along the lists' flow.
   @[ checks ]
   def moved(olds : List(Old)) -> -F List(New) {
-    become ride(\X. X, everyone, olds)
+    ride(\X. X, everyone, olds)
   }
   /// Two records migrated by a run.
   @[ runs("cons((36, \"ada\"), cons((41, \"alan\"), nil))") ]
   def two : () => List(New) ;
-  def two = thunk { become moved(cons(("ada", 36), cons(("alan", 41), nil))) } ;
+  def two = moved(cons(("ada", 36), cons(("alan", 41), nil))) ;
 }

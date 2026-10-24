@@ -118,21 +118,21 @@ def oneCounter : Path(Model(Counter), upModel, downModel) = (
 @[ checks ]
 def observe(m : Model(Counter)) -> -F Integer {
   case m {
-    #{.zero = z, .incr = i, .read = r} => become r(i(z))
+    #{.zero = z, .incr = i, .read = r} => r(i(z))
   }
 }
 
 /// The consumer reads counting up.
 @[ runs("1") ]
-def observedUp() -> -F Integer { become observe(upModel) }
+def observedUp() -> -F Integer { observe(upModel) }
 
 /// The consumer reads counting down alike.
 @[ runs("1") ]
-def observedDown() -> -F Integer { become observe(downModel) }
+def observedDown() -> -F Integer { observe(downModel) }
 
 /// The consumer reads both alike by construction, along the path between the
 /// models.
 @[ checks ]
 def observedAlike() -> -F Path(Integer, observe(upModel), observe(downModel)) {
-  become cong(observe, oneCounter)
+  cong(observe, oneCounter)
 }

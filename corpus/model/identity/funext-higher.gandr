@@ -6,7 +6,7 @@
 /// A function at truth.
 @[ checks ]
 def at_truth(f : Unit + Unit => Unit + Unit) -> -F (Unit + Unit) {
-  become f(+{.0 = unit})
+  f(+{.0 = unit})
 }
 
 /// A function at truth, its result bound and returned.
@@ -19,13 +19,13 @@ def through(f : Unit + Unit => Unit + Unit) -> -F (Unit + Unit) {
 /// A function at falsity.
 @[ checks ]
 def at_falsity(f : Unit + Unit => Unit + Unit) -> -F (Unit + Unit) {
-  become f(+{.1 = unit})
+  f(+{.1 = unit})
 }
 
 /// A function applied twice from truth, the second call in tail position.
 @[ checks ]
 def applied_twice(f : Unit + Unit => Unit + Unit) -> -F (Unit + Unit) {
-  become f(f(+{.0 = unit}))
+  f(f(+{.0 = unit}))
 }
 
 /// A function applied twice from truth, both results bound.

@@ -35,7 +35,7 @@ def rec ones() -> Stream(Integer) {
 /// The head of a stream: observing a thunk of it.
 @[ checks ]
 def first(s : +U Stream(Integer)) -> -F Integer {
-  become s.head
+  s.head
 }
 
 /// The head of a stream's tail.

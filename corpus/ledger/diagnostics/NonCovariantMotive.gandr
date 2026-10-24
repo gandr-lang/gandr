@@ -13,6 +13,6 @@ module Schema {
   def upgrade = forward(toNew) ;
   @[ refuses("NonCovariantMotive") ]
   def downgrade() -> -F Flow(Type, New, Old) {
-    become back(upgrade)
+    back(upgrade)
   }
 }

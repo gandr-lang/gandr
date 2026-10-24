@@ -5,6 +5,6 @@ def leak() -> -F Cap {exit} {
     return c
   } with {
     pure(x) => x,
-    oper exit(code, k) => become k(unit)
+    oper exit(code, k) => k(unit)
   }
 }

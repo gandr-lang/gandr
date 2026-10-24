@@ -42,8 +42,8 @@ def rec vcount(n : Nat, v : Vec(Integer, n)) -> -F Nat {
 
 /// The length of the vector two long, read off its index.
 @[ runs("Succ(Succ(Zero))") ]
-def pairRead() -> -F Nat { become vlength(Succ(Succ(Zero)), pair()) }
+def pairRead() -> -F Nat { vlength(Succ(Succ(Zero)), pair()) }
 
 /// The length of the vector two long, counted.
 @[ runs("Succ(Succ(Zero))") ]
-def pairCount() -> -F Nat { become vcount(Succ(Succ(Zero)), pair()) }
+def pairCount() -> -F Nat { vcount(Succ(Succ(Zero)), pair()) }

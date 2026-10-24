@@ -87,11 +87,11 @@ def written(w : Written) -> -F Repr {
 /// A long string, twenty-four bytes and the zero, held once. It is built by
 /// a loop, so it states `Div` (#1481), and so does each run that forces it.
 @[ checks ]
-def long() -> -F [Div] Repr { become own(repeatOnto(97, 24, (Nil : List(Integer)))) }
+def long() -> -F [Div] Repr { own(repeatOnto(97, 24, (Nil : List(Integer)))) }
 
 /// `!` appended to a long string held once: written in place, nothing copied.
 @[ runs("0") ]
-def alone() -> -F [Div] Integer { run s <- force long ; become copies(push(s, 33)) }
+def alone() -> -F [Div] Integer { run s <- force long ; copies(push(s, 33)) }
 
 /// The same write to a copy: the buffer has two holders, so the copy's write
 /// fills a buffer of its own.
@@ -99,7 +99,7 @@ def alone() -> -F [Div] Integer { run s <- force long ; become copies(push(s, 33
 def shared() -> -F [Div] Integer {
   run s <- force long ;
   run c <- copy(s) ;
-  become copies(push(c, 33))
+  copies(push(c, 33))
 }
 
 /// The copy's write leaves the original's bytes as they were.
@@ -108,7 +108,7 @@ def untouched() -> -F [Div] Integer {
   run s <- force long ;
   run c <- copy(s) ;
   run w <- push(c, 33) ;
-  become count(bytes(s))
+  count(bytes(s))
 }
 
 /// And the copy reads one byte more.
@@ -118,7 +118,7 @@ def grown() -> -F [Div] Integer {
   run c <- copy(s) ;
   run w <- push(c, 33) ;
   run t <- written(w) ;
-  become count(bytes(t))
+  count(bytes(t))
 }
 
 /// A short string written where its bytes are: `hi!` stays inline.
@@ -126,7 +126,7 @@ def grown() -> -F [Div] Integer {
 def shout() -> -F Place {
   run s <- own((Cons(104, Cons(105, Nil)) : List(Integer))) ;
   run w <- push(s, 33) ;
-  become place(written(w))
+  place(written(w))
 }
 
 /// A full inline string outgrows it: the write moves its bytes to the heap.
@@ -134,5 +134,5 @@ def shout() -> -F Place {
 def spill() -> -F [Div] Integer {
   run cs <- repeatOnto(97, 23, (Nil : List(Integer))) ;
   run s <- own(cs) ;
-  become copies(push(s, 33))
+  copies(push(s, 33))
 }

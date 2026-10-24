@@ -8,7 +8,7 @@ data Nat : Type {
 def rec down(n : Nat) -> -F Nat {
   case n {
     Zero => return n,
-    Succ(p) => become down[<](p)
+    Succ(p) => down[<](p)
   }
 }
 @[ checks ]
