@@ -252,9 +252,7 @@ pathological/modules/theory-sort-classified-by-a-keyword.gandr:Magma:8519b2157c7
 pathological/record-absent-label.gandr:<file>
 pathological/record-absent-label.gandr:absent:0978cbd2c04f6c24
 pathological/sessions/fragment.gandr:<file>
-pathological/sessions/fragment.gandr:Nat:7c8cfc5b76d8efd9
 pathological/sessions/fragment.gandr:branch_without_label:f12b4a32a26c46c0
-pathological/sessions/fragment.gandr:fork_past_an_exit:6a21352a1aae552d
 pathological/sessions/fragment.gandr:parameter_as_endpoint:0071a6269948530e
 pathological/sessions/fragment.gandr:recursion_before_any_action:b9456f142ed79f05
 pathological/sessions/fragment.gandr:value_type_as_continuation:f0a371025cca3866

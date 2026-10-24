@@ -259,6 +259,88 @@ fn a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319()
     );
 }
 
+/// `return (out, n) to _. abort(v) ; hold s = out ; { consume(s) to _.
+/// fork (e : Integer) { close(e) } as d ; close(c) ; return (s, c, n) }`,
+/// with `n` the innermost intuitionistic variable and `out`, `v` and `c` the
+/// free linear slots `0`, `1` and `0` counted from where each is read, each
+/// raised by `raised`.
+///
+/// # Specification
+/// trivial.
+fn held_and_forked(
+    arena: &mut CoreArena,
+    raised: Binders,
+) -> ComputationId
+{
+    use crate::memory::HoldGrade;
+    use crate::memory::MemoryForm;
+    use crate::session::SessionAction;
+    // A free slot `index` linear binders out past those the read stands under.
+    let free = |past: u32| DeBruijnIndex::from(past.saturating_add(raised.0));
+    let n = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    // Inside the fork's parent: `d` is #0, `s` #1, and `c` the free slot #2.
+    let s = arena.value_variable(Zone::Linear, DeBruijnIndex::from(1_u32));
+    let c = arena.value_variable(Zone::Linear, free(2));
+    let outcome = arena.value_tuple(&[s, c, n]);
+    let outcome = arena.computation_return(outcome);
+    let closed = arena.computation_session(SessionAction::Close { endpoint: free(2) });
+    let parent = arena.computation_bind(closed, outcome);
+    let child = arena.computation_session(SessionAction::Close {
+        endpoint: DeBruijnIndex::from(0_u32),
+    });
+    let protocol = arena.value_type_base(BaseType::Integer);
+    let fork = arena.computation_session(SessionAction::Fork {
+        protocol,
+        child,
+        parent,
+    });
+    let consumed = arena.computation_memory(MemoryForm::Consume {
+        held: DeBruijnIndex::from(0_u32),
+    });
+    let scope = arena.computation_bind(consumed, fork);
+    let out = arena.value_variable(Zone::Linear, free(0));
+    let held = arena.computation_memory(MemoryForm::Hold {
+        value: out,
+        body: scope,
+        grade: HoldGrade::Many,
+    });
+    let aborted = arena.computation_memory(MemoryForm::Abort { view: free(1) });
+    let rest = arena.computation_bind(aborted, held);
+    let pair = arena.value_tuple(&[out, n]);
+    let first = arena.computation_return(pair);
+    arena.computation_bind(first, rest)
+}
+
+/// #1500: a linear raise moves every free linear read — a variable, an
+/// endpoint, a resident — past the binders the subject opens above it, and
+/// leaves the hold's slot and the fork's end it binds, and every
+/// intuitionistic variable, as they stand.
+#[test]
+fn a_linear_raise_moves_only_the_free_linear_indices_1500()
+{
+    let mut arena = CoreArena::new();
+    let subject = held_and_forked(&mut arena, Binders::NONE);
+    let expected = held_and_forked(&mut arena, Binders::from(2_u32));
+    assert_ne!(subject, expected, "the raise moves something");
+    let mut carried = Vec::new();
+    let raised =
+        super::raise_linear_traced(&mut arena, subject, Binders::from(2_u32), &mut carried);
+    assert!(
+        carried.contains(&Carried::Computation(subject, raised)),
+        "the trace reports the subject's root rewritten: {carried:?}"
+    );
+    let (raised, expected) = (arena.value_thunk(raised), arena.value_thunk(expected));
+    assert_eq!(
+        crate::syntax::equal_certificate_syntax(&arena, raised, expected),
+        crate::syntax::CertificateEquality::Equal
+    );
+    assert_eq!(
+        super::raise_linear_traced(&mut arena, subject, Binders::NONE, &mut carried),
+        subject,
+        "a raise by nothing answers the subject"
+    );
+}
+
 #[test]
 fn native_motives_preserve_binder_and_field_order()
 {

@@ -112,8 +112,6 @@ impl TrackingIssue
     pub const UNDECIDED_CONDITION: Self = Self(1934);
     /// A recursive call's claim naming a measure, a stage or a cost.
     pub const RECURSIVE_CLAIM: Self = Self(1497);
-    /// A `fork` or a `hold` in a match arm that continues its block.
-    pub const JOINED_SCOPE: Self = Self(1500);
     /// Shared sessions: `fork !`, `dup`, `acquire` and `release`.
     pub const SHARED_SESSIONS: Self = Self(1501);
     /// A stage written under a form that places none, a path's carrier.

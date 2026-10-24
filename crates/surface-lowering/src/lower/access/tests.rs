@@ -315,10 +315,6 @@ fn an_exit_inside_an_access_is_refused()
         r"data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
 def leaves(n : Integer) -> -F Unit { hold c = 0; access c as v { return unit } }
 def unwinds(n : Integer) -> -F Unit { hold c = 0; access c as v { abort(v) } unwind { return unit } }
-def joined(n : Nat) -> -F Unit {
-  run m <- case n { Zero => return unit, Succ(p) => { hold c = 0; pure unit } } ;
-  return m
-}
 def early(n : Nat) -> -F Integer {
   hold c = 0;
   run m <- case n { Zero => return 5, Succ(p) => pure 1 } ;
@@ -354,20 +350,6 @@ def early_by_hand(n : Nat) -> -F Integer {
             refusal_of(&module, SurfaceName::from(name))
         );
     }
-    assert_eq!(
-        refusal_of(&module, SurfaceName::from("joined")),
-        LoweringRefusal::OutOfFragment {
-            span: spelled_within(
-                source,
-                SourceText::from("Succ(p) => { hold"),
-                SourceText::from("hold")
-            ),
-            form: FormName::HOLD_STATEMENT,
-            sort: FragmentSort::Computation,
-            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::JoinedHold),
-        },
-        "the rest an exit continues would sit under the held slot"
-    );
     assert_accepted(&judged(&module, &mut arena));
     assert!(
         matches!(
@@ -386,6 +368,38 @@ def early_by_hand(n : Nat) -> -F Integer {
         (
             SurfaceName::from("early"),
             SurfaceName::from("early_by_hand"),
+        ),
+    );
+}
+
+/// #1500: a hold in an arm whose ends continue the block leaves the rest
+/// reading the slot it named before the hold: the arm's own slot holds the
+/// unit, so a rest read off it would not check at `Integer`.
+#[test]
+fn a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
+{
+    let source = SourceText::from(
+        r"data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }
+def joined(n : Nat) -> -F Integer {
+  hold c = 100;
+  run m <- case n { Zero => return 7, Succ(p) => { hold c = unit; pure 1 } } ;
+  pure c
+}
+def joined_by_hand(n : Nat) -> -F Integer {
+  hold c = 100;
+  case n { Zero => return 7, Succ(p) => { hold d = unit; pure c } }
+}
+",
+    );
+    let mut arena = CoreArena::new();
+    let module = lowered(source, &mut arena);
+    assert_accepted(&judged(&module, &mut arena));
+    assert_same_body(
+        &module,
+        &arena,
+        (
+            SurfaceName::from("joined"),
+            SurfaceName::from("joined_by_hand"),
         ),
     );
 }

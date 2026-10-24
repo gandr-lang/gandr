@@ -20,17 +20,3 @@ def branch_without_label() -> -F Unit {
   fork (seat : !Integer. +{ end, end }) { close(seat) } as desk;
   close(desk)
 }
-
-data Nat : Type {
-  Zero : Nat;
-  Succ : (n : Nat) --> Nat;
-}
-
-@[ refuses("OutOfFragment.fork_statement") ]
-def fork_past_an_exit(rounds : Nat) -> -F Unit {
-  run settled <- case rounds {
-    Zero => return unit,
-    Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }
-  };
-  return settled
-}

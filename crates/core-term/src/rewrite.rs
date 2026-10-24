@@ -36,8 +36,13 @@
 //! decode's code into a quote yields the quoted type: instantiating `El x` at
 //! `⌜A⌝` answers `A`.
 //!
-//! Only the intuitionistic zone is rewritten. No former binds into the linear
-//! zone, so a linear index counts no binder these rewrites cross and stands.
+//! The binder machines rewrite the intuitionistic zone alone. A fork, a
+//! receive, a placement, a hold and an access bind into the linear zone, whose
+//! indices count no intuitionistic binder, so a linear index stands under
+//! every machine. Two rewrites count the linear binders: a delinearisation
+//! reads one of them as an intuitionistic binder, and a linear raise
+//! ([`raise_linear_traced`]) carries a computation under more of them, raising
+//! each free linear index.
 //!
 //! Three rewrites serve the hole surface rather than binding. A fill replaces
 //! every hole of one name by its filling, which is written in the hole's own
@@ -94,8 +99,8 @@
 //! `instantiate_comp_type` substitutes a value for the innermost index and
 //! lowers the rest in one walk. A replacement carried under a binder is
 //! shifted once per depth and recorded, so substitution avoids capture without
-//! renaming anything. The linear zone is left alone: no former in the
-//! vocabulary binds into it.
+//! renaming anything. The linear zone is left alone: no binder these machines
+//! cross is linear.
 //!
 //! Alternatives: recursive rewrites, which the workspace's recursion lint
 //! forbids and which a deep type would overflow; a relocation composed into
@@ -410,6 +415,12 @@ enum Rewrite
     /// linear index stands, the binder's own slot unread, so a session
     /// action's subject and a memory form's slot keep their names.
     Delinearise(Binders),
+    /// Raise every free linear index by the second count: an index at or past
+    /// the first, the linear binders the walk has crossed, rises, and one
+    /// below it names a binder inside the subject and stands, a session
+    /// action's subject and a memory form's slot among them. Every
+    /// intuitionistic index stands.
+    RaiseLinear(Binders, Binders),
 }
 
 impl Rewrite
@@ -417,17 +428,21 @@ impl Rewrite
     /// The rewrite a child standing past `binders` linear binders takes.
     ///
     /// # Specification
-    /// - ensures: a delinearisation counting `binders` more; every other
-    ///   rewrite, which reads no linear index, unchanged.
+    /// - ensures: a delinearisation counting `binders` more, and a linear raise
+    ///   whose cutoff stands `binders` further; every other rewrite, which
+    ///   reads no linear index, unchanged.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a payload read under a nested receive and under a
     ///   fork's halves is the one the count names, and a payload of the nested
-    ///   receive stays linear.
+    ///   receive stays linear; a linear index bound inside a raised subject
+    ///   stands.
     /// - witness: `rewrite::tests::a_delinearised_payload_reads_its_binder_past_nested_linear_binders_1319`
+    /// - witness: `rewrite::tests::a_linear_raise_moves_only_the_free_linear_indices_1500`
     #[spec(ensures: |ret| match self {
         | Self::Delinearise(linear) => ret == Self::Delinearise(linear.beyond(binders)),
+        | Self::RaiseLinear(cutoff, amount) => ret == Self::RaiseLinear(cutoff.beyond(binders), amount),
         | _ => ret == self,
     })]
     fn past_linear(
@@ -437,6 +452,7 @@ impl Rewrite
     {
         match self {
             Self::Delinearise(linear) => Self::Delinearise(linear.beyond(binders)),
+            Self::RaiseLinear(cutoff, amount) => Self::RaiseLinear(cutoff.beyond(binders), amount),
             Self::Relocate(_)
             | Self::Substitute(_)
             | Self::Instantiate(..)
@@ -643,6 +659,12 @@ impl<'arena> Engine<'arena>
                         continue;
                     }
                     let rewritten = self.wrapped(node, rewritten, step);
+                    let rewritten = if let Rewrite::RaiseLinear(cutoff, amount) = step {
+                        self.raised_subject(rewritten, cutoff, amount)
+                    }
+                    else {
+                        rewritten
+                    };
                     let _previous = self.memo.insert((node, depth, step), rewritten);
                     self.results.push(rewritten);
                 },
@@ -829,6 +851,23 @@ impl<'arena> Engine<'arena>
             self.results.push(read);
             return;
         }
+        if let (Rewrite::RaiseLinear(cutoff, amount), Node::Value(id)) = (rewrite, node)
+            && let Some(&Value::Variable {
+                zone: Zone::Linear,
+                index,
+            }) = self.arena.value(id)
+        {
+            let raised = raised_linear(index, cutoff, amount);
+            let read = if raised == index {
+                node
+            }
+            else {
+                Node::Value(self.arena.value_variable(Zone::Linear, raised))
+            };
+            let _previous = self.memo.insert((node, depth, rewrite), read);
+            self.results.push(read);
+            return;
+        }
         if let Node::Value(id) = node
             && let Some(&Value::Variable {
                 zone: Zone::Intuitionistic,
@@ -862,6 +901,88 @@ impl<'arena> Engine<'arena>
         }
         self.tasks.push(Task::Close(node, depth, rewrite));
         self.push_children(node, depth, rewrite);
+    }
+
+    /// `node`, closed under a linear raise, with the linear slot it names where
+    /// it stands raised too: a session action's endpoint and a memory form's
+    /// resident are indices the form stores rather than children it holds.
+    ///
+    /// # Specification
+    /// - requires: `cutoff` is the count of linear binders crossed to reach
+    ///   `node`.
+    /// - ensures: for a session action or a memory form whose subject is at or
+    ///   past `cutoff`, the same form with the subject raised by `amount`;
+    ///   `node` itself otherwise, a fork, a placement and a hold among them,
+    ///   which name no slot.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a free endpoint and a free resident rise, and one
+    ///   bound by a fork or a hold inside the subject stands.
+    /// - witness: `rewrite::tests::a_linear_raise_moves_only_the_free_linear_indices_1500`
+    #[spec(ensures: |ret| core::mem::discriminant(&ret) == core::mem::discriminant(&node))]
+    fn raised_subject(
+        &mut self,
+        node: Node,
+        cutoff: Binders,
+        amount: Binders,
+    ) -> Node
+    {
+        let Node::Computation(id) = node
+        else {
+            return node;
+        };
+        match self.arena.computation(id) {
+            Some(&Computation::Session(ref action)) => {
+                let mut action = action.clone();
+                match action {
+                    crate::session::SessionAction::Send {
+                        ref mut endpoint, ..
+                    }
+                    | crate::session::SessionAction::Receive {
+                        ref mut endpoint, ..
+                    }
+                    | crate::session::SessionAction::Select {
+                        ref mut endpoint, ..
+                    }
+                    | crate::session::SessionAction::Offer {
+                        ref mut endpoint, ..
+                    }
+                    | crate::session::SessionAction::Close { ref mut endpoint } => {
+                        let raised = raised_linear(*endpoint, cutoff, amount);
+                        if raised == *endpoint {
+                            return node;
+                        }
+                        *endpoint = raised;
+                    },
+                    crate::session::SessionAction::Fork { .. }
+                    | crate::session::SessionAction::Place { .. } => return node,
+                }
+                Node::Computation(self.arena.computation_session(action))
+            },
+            Some(&Computation::Memory(ref form)) => {
+                let mut form = form.clone();
+                match form {
+                    crate::memory::MemoryForm::Access {
+                        held: ref mut slot, ..
+                    }
+                    | crate::memory::MemoryForm::Consume { held: ref mut slot }
+                    | crate::memory::MemoryForm::Resume {
+                        view: ref mut slot, ..
+                    }
+                    | crate::memory::MemoryForm::Abort { view: ref mut slot } => {
+                        let raised = raised_linear(*slot, cutoff, amount);
+                        if raised == *slot {
+                            return node;
+                        }
+                        *slot = raised;
+                    },
+                    crate::memory::MemoryForm::Hold { .. } => return node,
+                }
+                Node::Computation(self.arena.computation_memory(form))
+            },
+            Some(_) | None => node,
+        }
     }
 
     /// The outermost free intuitionistic index `node`'s carried support
@@ -1279,7 +1400,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Rename
             | Rewrite::Abstract(..)
             | Rewrite::Relevel
-            | Rewrite::Delinearise(_) => Maybe::Absent(()),
+            | Rewrite::Delinearise(_)
+            | Rewrite::RaiseLinear(..) => Maybe::Absent(()),
         }
     }
 
@@ -1559,7 +1681,7 @@ impl<'arena> Engine<'arena>
                     Some(Value::Variable { zone: Zone::Intuitionistic, index: actual })
                         if Some(u32::from(*actual)) == u32::from(index).checked_add(1)))
             },
-            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel => {
+            | Rewrite::Fill(..) | Rewrite::Solve(..) | Rewrite::Wrap | Rewrite::Elaborate | Rewrite::Rename | Rewrite::Abstract(..) | Rewrite::Relevel | Rewrite::RaiseLinear(..) => {
                 ret == Occurrence::Answered(id)
             },
             | Rewrite::Environment => u32::from(index) >= depth.0 || ret == Occurrence::Answered(id),
@@ -1654,7 +1776,8 @@ impl<'arena> Engine<'arena>
             | Rewrite::Elaborate
             | Rewrite::Rename
             | Rewrite::Abstract(..)
-            | Rewrite::Relevel => Occurrence::Answered(id),
+            | Rewrite::Relevel
+            | Rewrite::RaiseLinear(..) => Occurrence::Answered(id),
             Rewrite::Environment => {
                 if position < depth {
                     return Occurrence::Answered(id);
@@ -4658,6 +4781,90 @@ pub fn delinearise(
         Node::Computation(id) => id,
         Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => body,
     }
+}
+
+/// Read `body` under `amount` more linear binders, outermost, reporting every
+/// node it rewrote beside the node it rewrote it from: every free linear index
+/// rises by `amount`.
+///
+/// A linear index counts the linear binders between its read and its slot, as
+/// an intuitionistic one counts its own, so a computation carried under a
+/// fork's parent, a receive's body, a placement's body, a hold's scope or an
+/// access's body reads its own slots that much further out. An index bound
+/// inside `body` stands, and the intuitionistic zone is left alone.
+///
+/// # Specification
+/// - requires: `body` names a computation of `arena`.
+/// - ensures: `body` with every free linear index raised by `amount`: a linear
+///   variable, a session action's endpoint and a memory form's resident each,
+///   when it counts past the linear binders `body` opens above it; every other
+///   index as it stands, and `body` itself when `amount` is none or nothing
+///   moves. `carried` gains one pair per node the raise changed, as
+///   [`substitute_environment_traced`] reports them.
+/// - provides: the raise a rest takes when it is carried under the linear
+///   binders of the end it continues, for a caller that keeps a table beside
+///   the arena.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a free linear variable, a free endpoint and a free
+///   resident rise by the amount; the endpoint a fork binds and the slot a hold
+///   binds inside the subject stand, and so does every intuitionistic variable.
+/// - witness: `rewrite::tests::a_linear_raise_moves_only_the_free_linear_indices_1500`
+#[spec(captures: before = carried.len(), ensures: |ret| carried.len() >= before && (ret == body || arena.computation(ret).is_some()))]
+#[inline]
+#[must_use]
+pub fn raise_linear_traced(
+    arena: &mut CoreArena,
+    body: ComputationId,
+    amount: Binders,
+    carried: &mut Vec<Carried>,
+) -> ComputationId
+{
+    if amount == Binders::NONE {
+        return body;
+    }
+    let mut engine = Engine::new(arena);
+    let raised = engine.run(
+        Node::Computation(body),
+        Binders::NONE,
+        Rewrite::RaiseLinear(Binders::NONE, amount),
+    );
+    report(&engine.memo, carried);
+    match raised {
+        Node::Computation(id) => id,
+        Node::Value(_) | Node::ValueType(_) | Node::CompType(_) => body,
+    }
+}
+
+/// The linear `index`, read past `cutoff` linear binders, raised by `amount`
+/// when it is free there.
+///
+/// # Specification
+/// - ensures: `index` plus `amount` when `index` is at or past `cutoff`,
+///   clamped at the representable ceiling; `index` otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an index below the cutoff and one at it separate the
+///   bound from the free.
+/// - witness: `rewrite::tests::a_linear_raise_moves_only_the_free_linear_indices_1500`
+#[spec(ensures: |ret| if u32::from(index) < cutoff.0 { ret == index } else { u32::from(ret) == u32::from(index).saturating_add(amount.0) })]
+fn raised_linear(
+    index: DeBruijnIndex,
+    cutoff: Binders,
+    amount: Binders,
+) -> DeBruijnIndex
+{
+    if u32::from(index) < cutoff.0 {
+        return index;
+    }
+    // reason: a raised index clamps at the representable ceiling.
+    DeBruijnIndex::from(u32::from(arith::saturating_add(
+        arith::Int::from(u32::from(index)),
+        arith::Int::from(amount.0),
+    )))
 }
 
 /// Shift a computation type `amount` binders deeper, as an update of the
