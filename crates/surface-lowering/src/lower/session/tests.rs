@@ -31,7 +31,6 @@ use crate::lower::native::tests::lowered;
 use crate::lower::native::tests::refusal_of;
 use crate::lower::native::tests::tail_of;
 use crate::module::DeclarationOutcome;
-use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
 use crate::origin::Labelled;
 use crate::resolve::SurfaceName;
@@ -776,47 +775,34 @@ fn sharing_is_reserved_by_name()
     );
 }
 
+/// #1500: a fork in an arm whose ends continue the block leaves the rest
+/// reading the slot it named before the fork, not the fork's parent end, which
+/// it would read as a value.
 #[test]
-fn a_fork_an_exit_would_continue_is_declined()
+fn a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500()
 {
     let source = SourceText::from(
         "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
-         def joined(n : Nat) -> -F Unit {\n\
-           run m <- case n { Zero => return unit, Succ(p) => { fork (c : end) { close(c) } as d ; close(d) } } ;\n\
-           return m\n\
+         def joined(n : Nat) -> -F Integer {\n\
+           hold c = 100;\n\
+           run m <- case n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; close(d) } } ;\n\
+           pure c\n\
          }\n\
-         def tail(n : Nat) -> -F Unit {\n\
-           case n { Zero => return unit, Succ(p) => { fork (c : end) { close(c) } as d ; close(d) } }\n\
+         def joined_by_hand(n : Nat) -> -F Integer {\n\
+           hold c = 100;\n\
+           case n { Zero => return 7, Succ(p) => { fork (e : end) { close(e) } as d ; run m <- close(d) ; pure c } }\n\
          }\n",
     );
     let mut arena = CoreArena::new();
     let module = lowered(source, &mut arena);
-    assert_eq!(
-        refusal_of(&module, SurfaceName::from("joined")),
-        LoweringRefusal::OutOfFragment {
-            span: spelled_within(
-                source,
-                SourceText::from("run m <- case n { Zero => return unit, Succ(p) => { fork"),
-                SourceText::from("fork")
-            ),
-            form: FormName::FORK_STATEMENT,
-            sort: FragmentSort::Computation,
-            boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::JoinedFork),
-        },
-        "the rest an exit continues would sit under the fork's parent end"
-    );
-    let report = judged(&module, &mut arena);
-    assert_accepted(&report);
-    assert!(
-        matches!(
-            module
-                .declarations()
-                .iter()
-                .find(|declaration| declaration.name() == SurfaceName::from("tail"))
-                .map(LoweredDeclaration::outcome),
-            Some(DeclarationOutcome::Completed { .. })
+    assert_accepted(&judged(&module, &mut arena));
+    assert_same_body(
+        &module,
+        &arena,
+        (
+            SurfaceName::from("joined"),
+            SurfaceName::from("joined_by_hand"),
         ),
-        "a fork in an arm no rest continues lowers"
     );
 }
 

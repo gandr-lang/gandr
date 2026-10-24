@@ -123,10 +123,6 @@ pub enum Unbuilt
     /// A recursive call's claim the lowering does not read: two claims at once,
     /// a resident that is no claim, a measure, a stage or a cost.
     RecursiveClaim,
-    /// A `fork` in a match arm that continues its block.
-    JoinedFork,
-    /// A `hold` in a match arm that continues its block.
-    JoinedHold,
     /// The shared fork `fork !(…) { … } ;`.
     SharedFork,
     /// The endpoint copy `dup(e)`.
@@ -273,7 +269,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 83_usize] = [
+    pub const ALL: [Self; 81_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -291,8 +287,6 @@ impl Unbuilt
         Self::Union,
         Self::OperatorDeclaration,
         Self::RecursiveClaim,
-        Self::JoinedFork,
-        Self::JoinedHold,
         Self::SharedFork,
         Self::Dup,
         Self::Acquire,
@@ -398,8 +392,6 @@ impl Unbuilt
             Self::Union => "union_type",
             Self::OperatorDeclaration => "operator_declaration",
             Self::RecursiveClaim => "instantiation_expression.computation",
-            Self::JoinedFork => "fork_statement",
-            Self::JoinedHold => "hold_statement",
             Self::SharedFork => "fork_shared_statement",
             Self::Dup => "dup_expression",
             Self::Acquire => "acquire_statement",
@@ -500,7 +492,6 @@ impl Unbuilt
             Self::Union => TrackingIssue::UNION,
             Self::OperatorDeclaration => TrackingIssue::OPERATOR_DECLARATION,
             Self::RecursiveClaim => TrackingIssue::RECURSIVE_CLAIM,
-            Self::JoinedFork | Self::JoinedHold => TrackingIssue::JOINED_SCOPE,
             Self::SharedFork | Self::Dup | Self::Acquire | Self::Release => {
                 TrackingIssue::SHARED_SESSIONS
             },

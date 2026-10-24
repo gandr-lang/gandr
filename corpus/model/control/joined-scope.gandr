@@ -1,0 +1,54 @@
+// A `hold` or a `fork` in a match arm whose ends continue the block. Another
+// arm exits early, so each local end of the match runs the rest of the block
+// itself, inside whatever scope its arm opened: the arm's held slot, or the
+// fork's parent end. The rest still reads the slots it named before the match,
+// past the one the arm opened.
+
+/// The naturals, for the matches below.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// The arm holds its own `c` and writes 2 back to it; the rest's `c` is the
+/// one held before the match.
+@[ checks ]
+def shadowed(rounds : Nat) -> -F Integer {
+  hold c = 100;
+  run settled <- case rounds {
+    Zero => return 7,
+    Succ(fewer) => { hold c = 1; access c as v { resume(v, v + 1) }; pure c }
+  };
+  pure c
+}
+
+/// Past the arm that holds, the rest reads the outer count.
+@[ runs("100") ]
+def shadowedHeld : () => Integer = shadowed(Succ(Zero)) ;
+
+/// The early exit leaves before the rest runs.
+@[ runs("7") ]
+def shadowedExited : () => Integer = shadowed(Zero) ;
+
+/// The arm forks, and its parent end closes before the rest: the rest reads
+/// the held count, not the end.
+@[ checks ]
+def forked(rounds : Nat) -> -F Integer {
+  hold c = 100;
+  run settled <- case rounds {
+    Zero => return 7,
+    Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }
+  };
+  pure c
+}
+
+/// A fork in an arm whose block ends at the unit the match settles.
+@[ checks ]
+def forkPastAnExit(rounds : Nat) -> -F Unit {
+  run settled <- case rounds {
+    Zero => return unit,
+    Succ(fewer) => { fork (seat : end) { close(seat) } as desk; close(desk) }
+  };
+  settled
+}

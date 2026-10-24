@@ -1217,8 +1217,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: the fixpoint, partial and recorded as a loop, alone, or
     ///   applied to the slots recorded for `body`'s last computation, read
     ///   where the loop stands; the fixpoint at `origin` and every node the
-    ///   threading adds marked as the loop's insertion; the caller records the
-    ///   answer at `origin`.
+    ///   threading adds marked as the loop's insertion, each hold it adds
+    ///   recorded as a re-hold; the caller records the answer at `origin`.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1259,6 +1259,7 @@ impl<'source> Lowerer<'_, 'source>
                 grade: gandr_core_term::memory::HoldGrade::Many,
             });
             sink.origins.record_computation(held, inserted);
+            let _first = sink.reholds.insert(held);
         }
         if count > 1 {
             let passed = sink

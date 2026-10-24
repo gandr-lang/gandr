@@ -1100,12 +1100,6 @@ mod tests
                 FailureClass::Unimplemented(TrackingIssue::RECURSIVE_CLAIM),
             ),
             (
-                "fork_statement",
-                FragmentSort::Computation,
-                FragmentBoundary::Unadmitted(Unbuilt::JoinedFork),
-                FailureClass::Unimplemented(TrackingIssue::JOINED_SCOPE),
-            ),
-            (
                 "dup_expression",
                 FragmentSort::Value,
                 FragmentBoundary::Reserved(Unbuilt::Dup),

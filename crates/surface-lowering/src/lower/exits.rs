@@ -362,8 +362,8 @@ struct Ends
 ///
 /// # Specification
 /// - requires: nothing to construct this data.
-/// - ensures: the rest is read under the statement's binder, `depth` binders
-///   below the body's root.
+/// - ensures: the rest is read under the statement's binder, `depth` below the
+///   body's root.
 /// - executable: none — the record holds no arena to check the depth against.
 ///
 /// # Adequacy
@@ -376,7 +376,7 @@ struct Pending
     /// The rest, under the statement's one binder.
     rest: ComputationId,
     /// The binders between the body's root and the statement.
-    depth: Binders,
+    depth: Depth,
     /// The statement's origin, which every bind of the rest carries.
     origin: Origin,
     /// What the statement's own position continues: the rest of the
@@ -385,18 +385,111 @@ struct Pending
     outer: Ends,
 }
 
+/// How far below the body's root a node stands, zone by zone: an end in a
+/// fork's parent, a receive's body or a hold's scope stands under a linear
+/// binder the rest it continues must be raised past, as it is raised past an
+/// intuitionistic one.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: each count is the binders of its zone crossed to reach the node,
+///   or, as an amount, the binders between two nodes one below the other.
+/// - executable: none — the record holds no arena to count against.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a rest continuing an end under a hold's slot or a fork's
+///   parent end reads the slots it named outside them.
+/// - witness: `lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+/// - witness: `lower::session::tests::a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Depth
+{
+    /// The intuitionistic binders.
+    intuitionistic: Binders,
+    /// The linear binders.
+    linear: Binders,
+}
+
+impl Depth
+{
+    /// The body's root, and the amount that raises nothing.
+    const NONE: Self = Self {
+        intuitionistic: Binders::NONE,
+        linear: Binders::NONE,
+    };
+
+    /// One intuitionistic binder deeper.
+    ///
+    /// # Specification
+    /// trivial.
+    fn deeper(self) -> Self
+    {
+        Self {
+            intuitionistic: self.intuitionistic.deeper(),
+            ..self
+        }
+    }
+
+    /// `count` intuitionistic binders deeper.
+    ///
+    /// # Specification
+    /// trivial.
+    fn deeper_by(
+        self,
+        count: ComponentCount,
+    ) -> Self
+    {
+        Self {
+            intuitionistic: self.intuitionistic.deeper_by(count),
+            ..self
+        }
+    }
+
+    /// One linear binder deeper.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under_linear(self) -> Self
+    {
+        Self {
+            linear: self.linear.deeper(),
+            ..self
+        }
+    }
+
+    /// The binders between `self` and `deeper`, which stands below it, zone by
+    /// zone.
+    ///
+    /// # Specification
+    /// trivial.
+    fn until(
+        self,
+        deeper: Self,
+    ) -> Self
+    {
+        // reason: a binder count uses u32::MAX as its conservative ceiling,
+        // and an end stands at least as deep as its statement in each zone.
+        Self {
+            intuitionistic: Binders::from(
+                u32::from(deeper.intuitionistic).saturating_sub(u32::from(self.intuitionistic)),
+            ),
+            linear: Binders::from(u32::from(deeper.linear).saturating_sub(u32::from(self.linear))),
+        }
+    }
+}
+
 /// One unit of the commuting's work.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Step
 {
     /// Commute a computation at a depth, under the rests it continues.
-    Open(ComputationId, Ends, Binders),
+    Open(ComputationId, Ends, Depth),
     /// Rebuild a computation over its children's commuted forms.
     Close(ComputationId),
     /// Keep the result on top as a rest's commuted form.
     Settle(RestAt),
     /// Bind a local end at a depth over a rest's commuted form.
-    Continue(ComputationId, RestAt, Binders),
+    Continue(ComputationId, RestAt, Depth),
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -1342,9 +1435,9 @@ impl<'source> Lowerer<'_, 'source>
 ///
 /// # Specification
 /// - requires: `carried` is what one rewrite reported.
-/// - ensures: every computation `carried` maps an exit, a `break` or a loop to
-///   is one; every one it maps a distributed bind to is distributed, at the
-///   original's origin.
+/// - ensures: every computation `carried` maps an exit, a `break`, a loop or a
+///   loop's re-hold to is one; every one it maps a distributed bind to is
+///   distributed, at the original's origin.
 /// - provides: what keeps a match leaf's copy of an arm body commutable.
 /// - fails: never.
 /// - panics: none.
@@ -1359,6 +1452,7 @@ impl<'source> Lowerer<'_, 'source>
     Carried::Computation(held, written) => (!sink.exits.contains(&held) || sink.exits.contains(&written))
         && (!sink.breaks.contains(&held) || sink.breaks.contains(&written))
         && (!sink.loops.contains(&held) || sink.loops.contains(&written))
+        && (!sink.reholds.contains(&held) || sink.reholds.contains(&written))
         && (!sink.distributed.contains_key(&held) || sink.distributed.contains_key(&written)),
     Carried::Value(..) | Carried::ValueType(..) | Carried::CompType(..) => true,
 }))]
@@ -1369,7 +1463,12 @@ pub(super) fn mark_copies(
 {
     for pair in carried {
         if let Carried::Computation(held, written) = *pair {
-            for marks in [&mut sink.exits, &mut sink.breaks, &mut sink.loops] {
+            for marks in [
+                &mut sink.exits,
+                &mut sink.breaks,
+                &mut sink.loops,
+                &mut sink.reholds,
+            ] {
                 if marks.contains(&held) {
                     let _first = marks.insert(written);
                 }
@@ -1391,22 +1490,28 @@ pub(super) fn mark_copies(
 /// - ensures: the body with each distributed bind `x ← M; N`, depth `d` below
 ///   the root, replaced by `M` with every local end of `M`, `d'` below the
 ///   root, continuing `N'`, where `N'` is `N`, itself commuted, with every
-///   index past its binder raised by `d' - d`: a returner `return v` is
-///   replaced by `N'[v/x]`, the beta step of the returner, so no producer the
-///   checker cannot synthesise is bound; any other end `e` by `x ← e; N'`. A
-///   local end is a node the walk through binds' rests, case branches, a data
-///   case's field functions, a split's body, an offer's arms, a fork's parent
-///   and a loop's fixpoint reaches that is none of those and no exit; an exit
-///   resets the rests it continues to none, so it stays where it stands. An
-///   offer's arm and a fork's parent bind no intuitionistic variable, so the
-///   rest reaches them at the depth it reaches the form. A loop's fixpoint is
-///   walked with no rest of its own, its `break`s continuing the rest its
-///   position continues, so a `break` is that rest's local end and every other
-///   end in the loop's body stays. The rest is copied once per depth it is
-///   carried to. Every rebuilt node takes its original's origin and match
-///   record, and a rebuilt loop stays one, every bind of a rest its statement's
-///   origin, and every copied node its source's; `body` itself when nothing was
-///   distributed in it.
+///   index past its binder raised by `d' - d`, intuitionistic and linear each
+///   by its own zone's count: a returner `return v` is replaced by `N'[v/x]`,
+///   the beta step of the returner, so no producer the checker cannot
+///   synthesise is bound; any other end `e` by `x ← e; N'`. A local end is a
+///   node the walk through binds' rests, case branches, a data case's field
+///   functions, a split's body, an offer's arms, a fork's parent, a receive's
+///   body, a hold's scope and a loop's fixpoint reaches that is none of those
+///   and no exit; an exit resets the rests it continues to none, so it stays
+///   where it stands. An offer's arm binds nothing, and a fork's parent, a
+///   receive's body and a hold's scope one linear binder, so the rest reaches
+///   them at the intuitionistic depth it reaches the form, and the last three
+///   one linear binder deeper: a rest continued there reads its own slots past
+///   the slot the form opens. A loop's re-hold, in `sink.reholds`, stands for
+///   the slot it holds again, so its scope opens no linear binder and a rest
+///   continued there reads the re-held slot. A loop's fixpoint is walked with
+///   no rest of its own, its `break`s continuing the rest its position
+///   continues, so a `break` is that rest's local end and every other end in
+///   the loop's body stays. The rest is copied once per depth it is carried to.
+///   Every rebuilt node takes its original's origin and match record, a rebuilt
+///   loop stays one and a rebuilt re-hold stays one, every bind of a rest its
+///   statement's origin, and every copied node its source's; `body` itself when
+///   nothing was distributed in it.
 /// - provides: the mint half of early exits: every exit focuses as the cut of
 ///   its value against the body's own return continuation.
 /// - fails: never.
@@ -1441,14 +1546,14 @@ pub(super) fn commute(
     // so the commuted body grows with the rest times its distinct end depths;
     // a join point would share it, at the cost of a typed binder the core
     // does not have.
-    let mut copies: BTreeMap<(RestAt, Binders), ComputationId> = BTreeMap::new();
+    let mut copies: BTreeMap<(RestAt, Depth), ComputationId> = BTreeMap::new();
     let mut carried: Vec<Carried> = Vec::new();
     let mut results: Vec<ComputationId> = Vec::new();
     let outermost = Ends {
         rests: Maybe::Absent(enclosing::Absent::Outermost),
         breaks: Maybe::Absent(enclosing::Absent::Outermost),
     };
-    let mut steps = Vec::from([Step::Open(body, outermost, Binders::NONE)]);
+    let mut steps = Vec::from([Step::Open(body, outermost, Depth::NONE)]);
     while let Some(step) = steps.pop() {
         match step {
             Step::Open(node, ends, depth) => {
@@ -1544,7 +1649,10 @@ pub(super) fn commute(
                     },
                     // A fork's parent, a receive's body and a hold's scope are
                     // the tail, under a linear binder, so no intuitionistic one
-                    // deeper.
+                    // deeper, and one linear one. A loop's re-hold stands in
+                    // for the slot it holds again: what a `break` continues
+                    // under it reads it in that slot's place, so it counts
+                    // none.
                     Some(
                         &Computation::Session(
                             SessionAction::Fork { parent: scope, .. }
@@ -1553,7 +1661,13 @@ pub(super) fn commute(
                         | &Computation::Memory(MemoryForm::Hold { body: scope, .. }),
                     ) => {
                         steps.push(Step::Close(node));
-                        steps.push(Step::Open(scope, ends, depth));
+                        let under = if sink.reholds.contains(&node) {
+                            depth
+                        }
+                        else {
+                            depth.under_linear()
+                        };
+                        steps.push(Step::Open(scope, ends, under));
                     },
                     // A `leta`'s body is its tail, one binder deeper; a
                     // migration's body is not, for what follows a migration
@@ -1636,11 +1750,11 @@ pub(super) fn commute(
 /// - requires: `rest` is the commuted rest of `continued`, held at `at`, and
 ///   `depth` is at least the statement's.
 /// - ensures: with `rest'` the rest with every index past its binder raised by
-///   the depth between the statement and the end, one copy per depth kept in
-///   `copies`: `rest'` instantiated at `v` for an end `return v`, its nodes at
-///   their sources' origins and each written use of the binder labelled with
-///   what replaced it; `x ← end; rest'` at the statement's origin for any other
-///   end.
+///   the depth between the statement and the end, intuitionistic and linear
+///   each by its own zone's count, one copy per depth kept in `copies`: `rest'`
+///   instantiated at `v` for an end `return v`, its nodes at their sources'
+///   origins and each written use of the binder labelled with what replaced it;
+///   `x ← end; rest'` at the statement's origin for any other end.
 /// - provides: the continuation half of [`commute`].
 /// - fails: never.
 /// - panics: none.
@@ -1651,21 +1765,20 @@ pub(super) fn commute(
 /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
 /// - witness: `lower::exits::tests::a_bound_match_continues_its_block_at_each_local_arm`
 /// - witness: `lower::exits::tests::a_use_a_local_end_replaces_keeps_its_bytes`
+/// - witness: `lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
 #[spec(captures: returned = matches!(sink.arena.computation(end.0), Some(&Computation::Return(_))),
     ensures: |ret| returned || matches!(sink.arena.computation(ret), Some(&Computation::Bind(bound, _)) if bound == end.0))]
 fn continue_end(
     sink: &mut Sink<'_>,
-    end: (ComputationId, Binders),
+    end: (ComputationId, Depth),
     continued: (RestAt, ComputationId, Pending),
-    copies: &mut BTreeMap<(RestAt, Binders), ComputationId>,
+    copies: &mut BTreeMap<(RestAt, Depth), ComputationId>,
     carried: &mut Vec<Carried>,
 ) -> ComputationId
 {
     let (node, depth) = end;
     let (at, rest, statement) = continued;
-    // reason: a binder count uses u32::MAX as its conservative ceiling, and an
-    // end stands at least as deep as its statement.
-    let amount = Binders::from(u32::from(depth).saturating_sub(u32::from(statement.depth)));
+    let amount = statement.depth.until(depth);
     let copy = if let Some(&copy) = copies.get(&(at, amount)) {
         copy
     }
@@ -1768,8 +1881,9 @@ pub(super) fn label_replaced(
     }
 }
 
-/// `rest`, under one binder, with every index past that binder raised by
-/// `amount`, every node it mints recorded at its source's origin.
+/// `rest`, under one intuitionistic binder, with every index past that binder
+/// raised by `amount`'s intuitionistic count and every free linear index by
+/// its linear count, every node it mints recorded at its source's origin.
 ///
 /// # Specification
 /// - requires: every node of `rest` has an origin, or `fallback` stands for it.
@@ -1782,22 +1896,33 @@ pub(super) fn label_replaced(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a rest carried under a match's field binder reads the
-///   function's parameter past it, and keeps its origins.
+///   function's parameter past it, a rest carried under a hold's slot reads the
+///   slot it named outside it, and each keeps its origins.
 /// - witness: `lower::exits::tests::an_exit_under_nesting_leaves_its_function`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
-#[spec(ensures: |ret| amount != Binders::NONE || ret == rest)]
+/// - witness: `lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+#[spec(ensures: |ret| amount != Depth::NONE || ret == rest)]
 fn carry(
     sink: &mut Sink<'_>,
     rest: ComputationId,
-    amount: Binders,
+    amount: Depth,
     fallback: Origin,
     carried: &mut Vec<Carried>,
 ) -> ComputationId
 {
     let mark = sink.arena.watermark();
     carried.clear();
-    let copy = gandr_core_term::shift_computation_under(sink.arena, rest, Binders::ONE, amount)
-        .settle_traced(sink.arena, carried);
+    let shifted = gandr_core_term::shift_computation_under(
+        sink.arena,
+        rest,
+        Binders::ONE,
+        amount.intuitionistic,
+    )
+    .settle_traced(sink.arena, carried);
+    record_copies(sink, mark, carried, fallback);
+    let mark = sink.arena.watermark();
+    carried.clear();
+    let copy = gandr_core_term::raise_linear_traced(sink.arena, shifted, amount.linear, carried);
     record_copies(sink, mark, carried, fallback);
 
     copy
@@ -2067,7 +2192,7 @@ fn eliminated(node: Option<&Computation>) -> Option<ValueId>
 /// - ensures: those results popped; `node` itself when each is the child it
 ///   stands for; else a node of the same former over them, recorded at `node`'s
 ///   origin, or `fallback`, and its match record, a loop's fixpoint keeping its
-///   evidence and staying a loop.
+///   evidence and staying a loop, a re-hold staying a re-hold.
 /// - provides: the close half of [`commute`].
 /// - fails: never.
 /// - panics: none.
@@ -2215,11 +2340,15 @@ fn rebuild(
         (Computation::Memory(MemoryForm::Hold { value, body, grade }), &[commuted])
             if commuted != body =>
         {
-            sink.arena.computation_memory(MemoryForm::Hold {
+            let held = sink.arena.computation_memory(MemoryForm::Hold {
                 value,
                 body: commuted,
                 grade,
-            })
+            });
+            if sink.reholds.contains(&node) {
+                let _first = sink.reholds.insert(held);
+            }
+            held
         },
         (Computation::World(WorldForm::Leta { value, body }), &[commuted]) if commuted != body => {
             sink.arena.computation_world(WorldForm::Leta {

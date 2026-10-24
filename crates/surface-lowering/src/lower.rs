@@ -3683,6 +3683,11 @@ struct Sink<'run>
     /// Every returner a `break` minted, and each copy a match leaf made of
     /// one: a local end of its loop's position rather than of its body.
     breaks: BTreeSet<ComputationId>,
+    /// Every hold a threading loop's pass minted to hold a slot again, and
+    /// each copy a rewrite made of one: it stands in for the slot it holds
+    /// again, so a rest a `break` continues under it reads it in that slot's
+    /// place rather than past it.
+    reholds: BTreeSet<ComputationId>,
     /// Every derived operation's transport, with the path type it returns an
     /// element of: what an operation over it reads where no type is answered.
     identities: BTreeMap<ComputationId, identity::Identity>,
@@ -4048,6 +4053,8 @@ struct SinkTables
     loops: BTreeSet<ComputationId>,
     /// [`Sink::breaks`].
     breaks: BTreeSet<ComputationId>,
+    /// [`Sink::reholds`].
+    reholds: BTreeSet<ComputationId>,
     /// [`Sink::identities`].
     identities: BTreeMap<ComputationId, identity::Identity>,
 }
@@ -4067,6 +4074,7 @@ impl SinkTables
             host: capability::Host::Unminted,
             loops: BTreeSet::new(),
             breaks: BTreeSet::new(),
+            reholds: BTreeSet::new(),
             identities: BTreeMap::new(),
         }
     }
@@ -4090,6 +4098,7 @@ impl<'run> Sink<'run>
             host,
             loops,
             breaks,
+            reholds,
             identities,
         } = tables;
         Self {
@@ -4100,6 +4109,7 @@ impl<'run> Sink<'run>
             host,
             loops,
             breaks,
+            reholds,
             identities,
         }
     }
@@ -4116,6 +4126,7 @@ impl<'run> Sink<'run>
             host,
             loops,
             breaks,
+            reholds,
             identities,
             ..
         } = self;
@@ -4125,6 +4136,7 @@ impl<'run> Sink<'run>
             host,
             loops,
             breaks,
+            reholds,
             identities,
         }
     }
@@ -9131,11 +9143,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   and nothing after it.
     /// - provides: the body reading of thunks, lambdas and function tails.
     /// - fails: yields the unadmitted or the reserved refusal for a statement
-    ///   the fragment does not read, by the statement's own name; the
-    ///   unadmitted refusal for a fork or a hold in a block whose ends continue
-    ///   an enclosing one past an early exit; the arity refusal, as a block,
-    ///   for a block with no last computation; and each statement's and hole's
-    ///   own refusal.
+    ///   the fragment does not read, by the statement's own name; the arity
+    ///   refusal, as a block, for a block with no last computation; and each
+    ///   statement's and hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -9150,8 +9160,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::session::tests::the_seat_exchange_lowers_both_ends`
-    /// - witness: `lower::session::tests::a_fork_an_exit_would_continue_is_declined`
-    /// - witness: `lower::access::tests::an_exit_inside_an_access_is_refused`
+    /// - witness: `lower::session::tests::a_fork_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
+    /// - witness: `lower::access::tests::a_hold_in_a_joined_arm_leaves_the_rest_its_own_slots_1500`
     /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
     #[spec(
         captures: before = (self.statements.len(), frame),
@@ -9284,24 +9294,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     }
                     else if label == TileName::LETA {
                         self.leta(cursor, at, frame)?
-                    }
-                    else if self.joined.contains(&site.at.node) {
-                        return Err(LoweringRefusal::OutOfFragment {
-                            span: at.span,
-                            form: if label == TileName::HOLD {
-                                FormName::HOLD_STATEMENT
-                            }
-                            else {
-                                FormName::FORK_STATEMENT
-                            },
-                            sort: FragmentSort::Computation,
-                            boundary: FragmentBoundary::Unadmitted(if label == TileName::HOLD {
-                                Unbuilt::JoinedHold
-                            }
-                            else {
-                                Unbuilt::JoinedFork
-                            }),
-                        });
                     }
                     else if label == TileName::HOLD {
                         self.hold(cursor, at, frame)?
@@ -22326,6 +22318,7 @@ mod tests
             host: super::capability::Host::Unminted,
             loops: super::BTreeSet::new(),
             breaks: super::BTreeSet::new(),
+            reholds: super::BTreeSet::new(),
             identities: super::BTreeMap::new(),
         };
         lowerer.mint(&mut sink).unwrap();
