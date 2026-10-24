@@ -177,6 +177,7 @@ use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
 use gandr_surface_pretty::Fidelity;
 use gandr_surface_pretty::Form;
+use gandr_surface_pretty::ModelSlot;
 use gandr_surface_pretty::Modelled;
 use gandr_surface_pretty::Name;
 use gandr_surface_pretty::PageWidth;
@@ -730,8 +731,9 @@ struct ContextSlot
 {
     /// The position of the first component's binder.
     at: usize,
-    /// How many binders its components are.
-    count: usize,
+    /// Each component's name in signature order, beside whether it is a
+    /// sort: one binder each.
+    components: Vec<(String, bool)>,
     /// The implicit's name, `s`.
     name: String,
     /// The theory its model type names, `S`.
@@ -931,6 +933,10 @@ pub struct TypeTable
     /// context whose binders bear those paths at the slot's positions
     /// declares the slot whole.
     slots: BTreeMap<ConstantIndex, Vec<(ContextSlot, Vec<String>)>>,
+    /// The telescope of each declaration that writes an implicit, by the
+    /// declaration: one entry per parameter in the order the core applies
+    /// them, an implicit's name and none for an explicit one.
+    telescopes: BTreeMap<ConstantIndex, Vec<Option<String>>>,
 }
 
 /// The printer's root for `node`.
@@ -1079,7 +1085,8 @@ pub fn wanted_types(written: &[(TypeNode, Origin, GroundSort)]) -> Vec<TypeNode>
 /// - executable: none — a data type; [`TypeTable::assemble`] reads it.
 pub struct TypedRun
 {
-    /// The types each declaration's run formed and judged, and its refusal.
+    /// The types each declaration's run formed and judged, the declared type
+    /// its judgement filled, and its refusal.
     typed: TypedModule,
     /// The data signatures the run formed, by admission position.
     signatures: BTreeMap<ConstantIndex, Arc<DataSignature>>,
@@ -2258,9 +2265,18 @@ impl TypeTable
                 continue;
             }
             let lowered = match declaration.outcome() {
+                // A signature whose omitted implicits the body's judgement
+                // resolved is held as the checker entered it, filled, as the
+                // terms' types are read with the same solutions.
                 DeclarationOutcome::Completed { declared_type, .. }
                 | DeclarationOutcome::Uncompleted { declared_type } => {
-                    Some(Held::Typed(TypeNode::Value(declared_type)))
+                    Some(Held::Typed(TypeNode::Value(
+                        typed
+                            .filled()
+                            .get(&declaration.constant())
+                            .copied()
+                            .unwrap_or(declared_type),
+                    )))
                 },
                 DeclarationOutcome::Bodied { body } => {
                     first_type(TermNode::Value(body)).map(Held::Typed)
@@ -2508,7 +2524,13 @@ impl TypeTable
                         (
                             ContextSlot {
                                 at: slot.at,
-                                count: slot.components.len(),
+                                components: slot
+                                    .components
+                                    .iter()
+                                    .map(|&(ref component, sort)| {
+                                        (String::from(component.as_ref()), sort)
+                                    })
+                                    .collect(),
                                 name: String::from(slot.name.as_ref()),
                                 theory: String::from(slot.theory.as_ref()),
                                 fixed: slot
@@ -2520,6 +2542,19 @@ impl TypeTable
                             paths,
                         )
                     })
+                    .collect();
+                (!held.is_empty()).then_some((constant, held))
+            })
+            .collect();
+        let telescopes = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                let constant = declaration.constant();
+                let held: Vec<Option<String>> = module
+                    .implicits(constant)
+                    .iter()
+                    .map(|name| name.as_ref().map(|name| String::from(name.as_ref())))
                     .collect();
                 (!held.is_empty()).then_some((constant, held))
             })
@@ -2550,6 +2585,7 @@ impl TypeTable
             runs,
             crossings,
             slots,
+            telescopes,
         }
     }
 
@@ -3643,12 +3679,60 @@ impl TypeTable
             .collect();
         models.sort_by_key(|&(modelled, _)| modelled);
         let constructors = self.families.naming(&names);
+        // A call supplies its callee's implicits by name, `f[x = a](b)`, and a
+        // model implicit by the path its components read under, `f[s = M]`:
+        // the core applies every argument in place.
+        let implicits: Vec<(ConstantIndex, Vec<Option<Name<'_>>>)> = self
+            .telescopes
+            .iter()
+            .map(|(&constant, telescope)| {
+                (
+                    constant,
+                    telescope
+                        .iter()
+                        .map(|name| name.as_deref().map(Name::from))
+                        .collect(),
+                )
+            })
+            .collect();
+        let flattened: Vec<(ConstantIndex, Vec<ModelSlot<'_, CoreNode>>)> = self
+            .slots
+            .iter()
+            .map(|(&constant, held)| {
+                (
+                    constant,
+                    held.iter()
+                        .map(|&(ref slot, _)| ModelSlot {
+                            at: slot.at,
+                            name: Name::from(slot.name.as_str()),
+                            theory: Name::from(slot.theory.as_str()),
+                            components: slot
+                                .components
+                                .iter()
+                                .map(|&(ref component, sort)| {
+                                    (Name::from(component.as_str()), sort)
+                                })
+                                .collect(),
+                            fixed: slot
+                                .fixed
+                                .iter()
+                                .map(|&(ref sort, ty)| {
+                                    (Name::from(sort.as_str()), CoreNode::ValueType(ty))
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
         let printer = CoreSource::new(arena, &names)
             .naming(&constructors)
             .naming_arrows(&arrows)
             .naming_pairs(&pairs, &seconds)
             .relating(&relations)
             .modeling(&models)
+            .naming_implicits(&implicits)
+            .flattening(&flattened)
             .within(&binders)
             .scoped(&regions);
         present_type(&printer, root(node), page, style)
@@ -3883,7 +3967,7 @@ impl TypeTable
                         format_args!(" with sort {sort} = {spelled}"),
                     );
                 }
-                let past = at.saturating_add(slot.count);
+                let past = at.saturating_add(slot.components.len());
                 names.extend(context.binders.get(at .. past)?.iter().cloned());
                 at = past;
                 continue;
@@ -8462,13 +8546,18 @@ mod tests
         );
     }
 
-    /// #2179: a type holding a wildcard the checker left unsolved is settled
-    /// as one before any read-back, since a signature written after the
-    /// source asks for another wildcard; no other printed type is.
+    /// #2179: a type holding a wildcard the checker left unsolved, a refused
+    /// declaration's, is settled as one before any read-back, since a
+    /// signature written after the source asks for another wildcard; no other
+    /// printed type is. A wildcard the checker solved prints its solution: the
+    /// declared type is the one it entered, filled (#2429).
     #[test]
     fn a_printed_wildcard_is_settled_before_its_read_back_2179()
     {
-        let source = SourceText::from(include_str!("../../../corpus/model/holes/wildcard.gandr"));
+        let source = SourceText::from(
+            "def endSigned = (here(3) : Path(Integer, 3, _)) ;\ndef endApart = (here(3) : \
+             Path(Integer, 4, _)) ;\n",
+        );
         let grammar = built_in().expect("the built-in grammar builds");
         let reads =
             table(source).read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into());
@@ -8479,15 +8568,19 @@ mod tests
         });
         assert!(
             !wild.is_empty()
-                && wild
-                    .iter()
-                    .all(|back| back.trip == super::RoundTrip::Wildcard),
-            "each type writing `_` is a wildcard's: {wild:?}"
+                && wild.iter().all(|back| back.spelled == "Path(Integer, 4, _)"
+                    && back.trip == super::RoundTrip::Wildcard),
+            "the refused declaration's type writes `_` and is a wildcard's: {wild:?}"
+        );
+        assert!(
+            tame.iter().any(|back| back.spelled == "Path(Integer, 3, 3)"
+                && back.trip == super::RoundTrip::Equal),
+            "the solved one prints its solution: {tame:?}"
         );
         assert!(
             tame.iter()
                 .all(|back| back.trip != super::RoundTrip::Wildcard),
-            "and no other type is: {tame:?}"
+            "and no other type is a wildcard's: {tame:?}"
         );
     }
 

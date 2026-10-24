@@ -911,6 +911,19 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a declaration's judgement carries no filled declared type.
+    mod filled {
+        /// The reason no filled type is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// No body was judged, or the declared type held no hole the
+            /// body's calls nominated for an omitted implicit.
+            Unfilled,
+        }
+    }
+}
+
 /// Whether a declaration's judgement also keeps the type of every term its
 /// body judges.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -1017,6 +1030,9 @@ struct Decision
     /// What elaborating the body did, when it held a computation written
     /// where a value is read and the first run accepted it.
     elaboration: Maybe<NestedElaboration, elaborated::Absent>,
+    /// The declared type the table took, filled with the solutions of the
+    /// implicits the body's calls omit, when the fill changed it.
+    filled: Maybe<ValueTypeId, filled::Absent>,
     /// What the judgement left undecided, when its verdict is
     /// [`Verdict::Suspended`]; empty otherwise.
     residue: Residue,
@@ -1032,10 +1048,11 @@ struct Decision
 ///   `context`; beside it, when a run of the body refused, the failure of that
 ///   run, whose refusal is the verdict's; when the body's calls omit implicits,
 ///   the verdict of the run over the body and the declared type both filled
-///   with their solutions ([`implicits`]); when the first run accepted a body
-///   holding a computation written where a value is read, a value the bridge
-///   carried by a reduct, or a record update, what elaborating it did, the
-///   verdict then being the second run's over the elaborated body at the
+///   with their solutions ([`implicits`]), and the declared type so filled
+///   beside the verdict when the fill changed it; when the first run accepted a
+///   body holding a computation written where a value is read, a value the
+///   bridge carried by a reduct, or a record update, what elaborating it did,
+///   the verdict then being the second run's over the elaborated body at the
 ///   declared type so filled; and, when `run` is [`Run::Typed`] and the body
 ///   was run, what [`type_value`] keeps for the body as written, each type read
 ///   with the solutions of the holes its calls nominated, read before the
@@ -1086,6 +1103,7 @@ fn decide(
         failure: Maybe::Absent(kept::Absent::Unrun),
         typings: Maybe::Absent(untyped),
         elaboration: Maybe::Absent(elaborated::Absent::Unnested),
+        filled: Maybe::Absent(filled::Absent::Unfilled),
         residue: Residue::default(),
     };
     let constant = declaration.constant();
@@ -1125,6 +1143,7 @@ fn decide(
             failure: Maybe::Absent(kept::Absent::Accepted),
             typings,
             elaboration: Maybe::Absent(elaborated::Absent::Unnested),
+            filled: Maybe::Absent(filled::Absent::Unfilled),
             residue: Residue::default(),
         },
         Err(refusal) => Decision {
@@ -1401,6 +1420,12 @@ fn decide(
             settled @ (Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_)),
         ) => settled,
     };
+    let filled = match (direction, entered) {
+        (Direction::Check(written), Direction::Check(entered)) if written != entered => {
+            Maybe::Present(entered.id())
+        },
+        (Direction::Check(_) | Direction::Synthesise, _) => Maybe::Absent(filled::Absent::Unfilled),
+    };
     // A definition quantified over stages enters the table at its plain type:
     // each call instantiates the stages its signature marks.
     let direction = match (entered, quantified) {
@@ -1456,6 +1481,7 @@ fn decide(
         failure,
         typings,
         elaboration,
+        filled,
         residue: match verdict {
             Verdict::Suspended(_) => residue,
             Verdict::Data
@@ -2307,6 +2333,9 @@ impl ModuleRun
                 if let Maybe::Present(typings) = decision.typings {
                     let _replaced = typed.typings.insert(declaration.constant(), typings);
                 }
+                if let Maybe::Present(filled) = decision.filled {
+                    let _replaced = typed.filled.insert(declaration.constant(), filled);
+                }
             }
             if let Maybe::Present(failure) = decision.failure {
                 self.failures.insert(declaration.constant(), failure);
@@ -2342,9 +2371,10 @@ impl ModuleRun
     }
 
     /// Keep, from here on, what [`type_module`] keeps of each declaration
-    /// judged: the types its typed run formed and judged, and its refusal.
-    /// Each declaration is then decided as [`type_module`] decides it, which
-    /// judges it as [`check_module`] does and then types its body as written.
+    /// judged: the types its typed run formed and judged, the declared type
+    /// its judgement filled, and its refusal. Each declaration is then decided
+    /// as [`type_module`] decides it, which judges it as [`check_module`] does
+    /// and then types its body as written.
     ///
     /// # Specification
     /// trivial.
@@ -2667,13 +2697,17 @@ pub fn elaborated_report(
 }
 
 /// What [`type_module`] keeps of a module's typed run: the types each
-/// declaration's run formed and judged, and the refusal of each declaration
-/// the run refused.
+/// declaration's run formed and judged, the declared type each judgement
+/// filled, and the refusal of each declaration the run refused.
 #[derive(Clone, Debug, Default)]
 pub struct TypedModule
 {
     /// What each declaration's run formed or judged, by its constant.
     typings: BTreeMap<ConstantIndex, Typings>,
+    /// The declared type each judgement filled with the solutions of the
+    /// implicits its body's calls omit, as the table took it, by its
+    /// constant.
+    filled: BTreeMap<ConstantIndex, ValueTypeId>,
     /// The refusal of each declaration the run refused, by its constant.
     refused: BTreeMap<ConstantIndex, CheckRefusal>,
 }
@@ -2689,6 +2723,19 @@ impl TypedModule
     pub const fn typings(&self) -> &BTreeMap<ConstantIndex, Typings>
     {
         &self.typings
+    }
+
+    /// The declared type each judgement filled with the solutions of the
+    /// implicits its body's calls omit, as the table took it, by its
+    /// constant.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn filled(&self) -> &BTreeMap<ConstantIndex, ValueTypeId>
+    {
+        &self.filled
     }
 
     /// The refusal of each declaration the run refused, by its constant.
@@ -2716,8 +2763,11 @@ impl TypedModule
 ///   the table: a judged body, a hole's formed signature, a data declaration's
 ///   formed kind and the components a refused signature formed before its
 ///   refusal; a declaration whose run formed nothing is not keyed. Each
-///   declaration the run refused is keyed in the refusals by its constant with
-///   the refusal its verdict carries, and no other is.
+///   declaration whose judgement filled its declared type with the solutions of
+///   the implicits its body's calls omit is keyed in the filled types by its
+///   constant with the type the table took, and no other is. Each declaration
+///   the run refused is keyed in the refusals by its constant with the refusal
+///   its verdict carries, and no other is.
 /// - provides: the type of every term a module's bodies judge, and the refusal
 ///   of every declaration refused, for a face answering a position inside a
 ///   declaration.
@@ -2734,7 +2784,7 @@ impl TypedModule
 ///   refusal, and no other declaration's, is kept.
 /// - witness: `module::tests::a_typed_module_keeps_each_judged_body_s_term_types`
 /// - witness: `module::tests::a_typed_module_keys_what_each_run_formed`
-#[spec(ensures: |ref ret| ret.typings.keys().chain(ret.refused.keys()).all(|constant|
+#[spec(ensures: |ref ret| ret.typings.keys().chain(ret.filled.keys()).chain(ret.refused.keys()).all(|constant|
     declarations.iter().any(|declaration| declaration.constant() == *constant)))]
 #[inline]
 #[must_use]
@@ -2757,6 +2807,9 @@ pub fn type_module(
         }
         if let Maybe::Present(typings) = decision.typings {
             let _replaced = typed.typings.insert(declaration.constant(), typings);
+        }
+        if let Maybe::Present(filled) = decision.filled {
+            let _replaced = typed.filled.insert(declaration.constant(), filled);
         }
     }
     if let Maybe::Present(_) = open {
