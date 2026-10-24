@@ -46,25 +46,12 @@ use crate::form::FormName;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Shape;
-use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::form::tile_label;
-
-/// How a tile takes part in bracket nesting.
-///
-/// # Specification
-/// trivial.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Nesting
-{
-    /// An opener: `(`, `[`, `{`, or a compound opener such as `@[` or `#{`.
-    Opens,
-    /// A closer of this family.
-    Closes(ClosingClass),
-    /// Any other tile.
-    Neither,
-}
+use crate::layout::Nesting;
+use crate::layout::bracket_form;
+use crate::layout::nesting;
 
 /// A tile of the stray's source, with how it nests.
 ///
@@ -140,39 +127,6 @@ pub(super) enum Tearing<'source>
     },
 }
 
-/// How `label` nests: an opener when it ends in `(`, `[` or `{`, a closer of
-/// its family when it is `)`, `]` or `}`.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: [`Nesting::Closes`] exactly for `)`, `]` and `}`, with their
-///   family; [`Nesting::Opens`] for any other label ending in `(`, `[` or `{`;
-///   [`Nesting::Neither`] otherwise.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — as [`Collector::closed_early`].
-/// - witness: `module::tests::a_doubled_closer_is_refused_where_it_was_written_2047`
-#[spec(ensures: |ret| ClosingClass::closing(DelimSpelling::from(label.as_ref())).map_or_else(
-    || (ret == Nesting::Opens) == label.as_ref().ends_with(['(', '[', '{']),
-    |close| ret == Nesting::Closes(close),
-))]
-fn nesting(label: TileName) -> Nesting
-{
-    let text = label.as_ref();
-    ClosingClass::closing(DelimSpelling::from(text)).map_or_else(
-        || {
-            if text.ends_with(['(', '[', '{']) {
-                Nesting::Opens
-            }
-            else {
-                Nesting::Neither
-            }
-        },
-        Nesting::Closes,
-    )
-}
-
 impl<'source> Collector<'_, 'source>
 {
     /// The refusal of `stray`, a root child that begins with a closer, at the
@@ -207,22 +161,7 @@ impl<'source> Collector<'_, 'source>
             return None;
         }
         let held = self.repeated_closer(stray.span.start())?;
-        let form = self
-            .tree
-            .positions()
-            .find(|&position| {
-                self.tree.children(position).any(|child| {
-                    self.tree.node(child).is_some_and(|node| {
-                        node.span() == held.opener && matches!(node.label(), NodeLabel::Tile(_))
-                    })
-                })
-            })
-            .and_then(|position| self.tree.node(position))
-            .and_then(|node| match shape_of(self.pbg, node) {
-                Ok(Shape::Form { name, .. }) => Some(name),
-                Ok(Shape::Root | Shape::Repair(_) | Shape::Layout) | Err(_) => None,
-            })
-            .unwrap_or(FormName::ROOT);
+        let form = bracket_form(self.pbg, self.tree, held.opener);
         Some(LoweringRefusal::MalformedForm {
             span: held.span,
             form,
@@ -300,7 +239,7 @@ impl<'source> Collector<'_, 'source>
             let indent = lead.get_or_insert(start).saturating_sub(line);
             let mut shifted = false;
             match tiled.nesting {
-                Nesting::Opens => opened.push(Opener {
+                Nesting::Opens(_) => opened.push(Opener {
                     span: tiled.span,
                     line,
                     indent,
