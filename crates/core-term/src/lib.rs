@@ -44,6 +44,10 @@
 //!   placing the edges from a root's support recovers the de Bruijn term. The
 //!   incremental content table keys and footprints its nodes by it; the kernel
 //!   term stays de Bruijn.
+//! - [`row`] holds the closed [`row::Row`]: a finite map from labels to
+//!   entries, each label once, in canonical order. The returner's
+//!   [`effect::EffectRow`] is its effects reading, the interfaces a computation
+//!   may perform.
 //! - [`FailureClass`] is the four-class vocabulary every refusal of the core
 //!   pipeline answers to, whichever crate produced it; an unimplemented one
 //!   names its [`TrackingIssue`].
@@ -206,6 +210,7 @@ pub mod pattern;
 pub mod primitive;
 mod relocation;
 mod rewrite;
+pub mod row;
 pub mod session;
 pub mod staged;
 pub mod support;

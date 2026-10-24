@@ -1,0 +1,21 @@
+// What `../../model/control/effect-rows.gandr` proves, refused: a row names
+// each interface once, and a row without an interface its computation
+// performs is not that computation's row (#2269).
+
+// `peek` reads through `Fs`; `once` states `Div`.
+import "../../model/control/capability-attenuate.gandr" ;
+import "../../model/control/divergence.gandr" ;
+
+/// `Fs` named twice: a row holds each interface once, so the second `Fs` is
+/// refused as a label defined twice, as a record's second field of one label
+/// is.
+@[ refuses("DuplicateDefinition") ]
+def namedTwice() -> -F [Fs, Fs] Integer { pure 1 }
+
+/// Sequencing joins the rows: the computation reads through `Fs`, which the
+/// row `[Div]` does not hold.
+@[ refuses("TypeMismatch") ]
+def narrowedRow(c : Cap {read}) -> -F [Div] Integer {
+  run _ <- peek(c) ;
+  once(2)
+}

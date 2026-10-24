@@ -63,9 +63,9 @@ use super::EffectOp;
 use super::EffectRow;
 use super::EffectSig;
 use super::OperationName;
-use super::RowInclusion;
 use super::Signature;
 use super::UnknownOperation;
+use crate::row::RowInclusion;
 
 /// How many capability scopes enclose a region, counting the one that
 /// introduced it.
@@ -394,21 +394,7 @@ impl EffectRow
     #[inline]
     pub fn authority(restrictions: &[EffectSig]) -> Result<Self, EffectConflict>
     {
-        let mut entries = BTreeMap::new();
-        for restricted in restrictions {
-            if entries
-                .insert(restricted.name().clone(), restricted.clone())
-                .is_some()
-            {
-                return Err(EffectConflict::Signature(restricted.name().clone()));
-            }
-        }
-        Ok(if entries.is_empty() {
-            Self::EMPTY
-        }
-        else {
-            Self(Some(Arc::new(entries)))
-        })
+        Self::from_signatures(restrictions.iter().cloned())
     }
 }
 

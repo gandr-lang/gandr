@@ -341,3 +341,102 @@ fn relocation_keeps_names_and_refuses_duplicate_interfaces()
         Ok(EffectRow::EMPTY)
     );
 }
+
+#[test]
+fn the_row_operations_are_the_set_arithmetic_of_their_names()
+{
+    use alloc::collections::BTreeSet;
+
+    let mut arena = crate::CoreArena::new();
+    let unit = arena.value_type_unit();
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let names = ["A", "B", "C"].map(EffectName::from);
+    let subsets = names.iter().fold(
+        alloc::vec![BTreeSet::<EffectName>::new()],
+        |subsets, name| {
+            subsets
+                .iter()
+                .flat_map(|subset| {
+                    let mut grown = subset.clone();
+                    let _added = grown.insert(name.clone());
+                    [subset.clone(), grown]
+                })
+                .collect()
+        },
+    );
+    let rows: alloc::vec::Vec<(BTreeSet<EffectName>, EffectRow)> = subsets
+        .into_iter()
+        .map(|subset| {
+            let row =
+                EffectRow::from_signatures(subset.iter().map(|name| signature(name.clone(), unit)))
+                    .unwrap();
+            (subset, row)
+        })
+        .collect();
+    let named = |row: &EffectRow| {
+        row.signatures()
+            .map(|held| held.name().clone())
+            .collect::<BTreeSet<_>>()
+    };
+    let apart = EffectName::from("B");
+    let disagreeing = EffectRow::singleton(signature(apart.clone(), integer));
+    for (left_names, left) in rows.iter().map(|held| (&held.0, &held.1)) {
+        for name in &names {
+            let removed = left.without(name);
+            assert!(
+                named(&removed)
+                    .iter()
+                    .eq(left_names.iter().filter(|held| *held != name)),
+                "{left:?} without {name:?}"
+            );
+            let present = if left_names.contains(name) {
+                EffectPresence::Present
+            }
+            else {
+                EffectPresence::Absent
+            };
+            assert_eq!(left.contains(name), present, "{name:?} in {left:?}");
+        }
+        for (right_names, right) in rows.iter().map(|held| (&held.0, &held.1)) {
+            let joined = left.union(right, &arena).unwrap();
+            assert_eq!(
+                named(&joined),
+                left_names | right_names,
+                "{left:?} with {right:?}"
+            );
+            let included = if left_names.is_subset(right_names) {
+                RowInclusion::Included
+            }
+            else {
+                RowInclusion::Excluded
+            };
+            assert_eq!(
+                left.is_subset(right, &arena),
+                included,
+                "{left:?} in {right:?}"
+            );
+        }
+        let refused = if left_names.contains(&apart) {
+            Err(EffectConflict::Signature(apart.clone()))
+        }
+        else {
+            Ok(())
+        };
+        assert_eq!(
+            left.union(&disagreeing, &arena).map(|_| ()),
+            refused,
+            "{left:?} with a `B` of another signature"
+        );
+        let empty = if left_names.is_empty() {
+            RowInclusion::Included
+        }
+        else {
+            RowInclusion::Excluded
+        };
+        assert_eq!(
+            left.is_subset(&disagreeing, &arena),
+            empty,
+            "{left:?} in a `B` of another signature"
+        );
+    }
+}

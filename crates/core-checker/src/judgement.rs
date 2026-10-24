@@ -3364,7 +3364,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
         if effects.signatures().any(|held| {
             held.name() == signature.name()
                 && held.inclusion(signature, self.context.arena())
-                    == gandr_core_term::effect::RowInclusion::Excluded
+                    == gandr_core_term::row::RowInclusion::Excluded
         }) {
             return Err(CheckRefusal::EffectSignatureConflict {
                 at,
@@ -7099,7 +7099,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     #[spec(ensures: |ret| ret.is_err() || match comp_type_view(self.context.arena(), bound) {
         Ok(CompTypeView::Returner { effects, .. }) if effects.purity() == gandr_core_term::effect::Purity::Pure => ret == Ok(continued),
         Ok(CompTypeView::Unknown) => ret == Ok(continued),
-        Ok(CompTypeView::Returner { effects, .. }) => ret.is_ok_and(|actual| matches!(comp_type_view(self.context.arena(), actual), Ok(CompTypeView::Returner { effects: actual, .. }) if effects.is_subset(actual, self.context.arena()) == gandr_core_term::effect::RowInclusion::Included)),
+        Ok(CompTypeView::Returner { effects, .. }) => ret.is_ok_and(|actual| matches!(comp_type_view(self.context.arena(), actual), Ok(CompTypeView::Returner { effects: actual, .. }) if effects.is_subset(actual, self.context.arena()) == gandr_core_term::row::RowInclusion::Included)),
         _ => false,
     })]
     fn accumulate_effects(

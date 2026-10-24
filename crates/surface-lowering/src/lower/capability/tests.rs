@@ -433,6 +433,44 @@ fn an_unknown_operation_or_interface_is_refused_by_name()
 }
 
 #[test]
+fn a_row_names_each_interface_once()
+{
+    let mut arena = CoreArena::new();
+    let module = lowered(
+        SourceText::from(concat!(
+            "def twice() -> -F [Fs, Fs] Integer { pure 1 }\n",
+            "def apart() -> -F [Fs, Div] Integer { pure 1 }\n",
+        )),
+        &mut arena,
+    );
+    let DeclarationOutcome::Refused(LoweringRefusal::DuplicateDefinition { span, name, first }) =
+        outcome_of(&module, "twice".into())
+    else {
+        panic!("a row naming `Fs` twice is refused");
+    };
+    assert_eq!(
+        (
+            name,
+            (usize::from(first.start()), usize::from(first.end())),
+            (usize::from(span.start()), usize::from(span.end()))
+        ),
+        (
+            SurfaceName::from("Fs"),
+            (19_usize, 21_usize),
+            (23_usize, 25_usize)
+        ),
+        "the second `Fs` is refused, pointing back at the first"
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "apart".into()),
+            DeclarationOutcome::Completed { .. }
+        ),
+        "two interfaces, each named once, make a row"
+    );
+}
+
+#[test]
 fn an_exercise_is_checked_against_the_authority_it_was_attenuated_to()
 {
     let mut arena = CoreArena::new();

@@ -102,12 +102,12 @@ use gandr_core_term::ValueTypeId;
 use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::EffectSig;
 use gandr_core_term::effect::OperationName;
-use gandr_core_term::effect::RowInclusion;
 use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionBinder;
 use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::effect::host::AuthorityError;
 use gandr_core_term::effect::host::HostSignatures;
+use gandr_core_term::row::RowInclusion;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 

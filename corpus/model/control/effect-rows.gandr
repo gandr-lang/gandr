@@ -1,0 +1,33 @@
+// A returner's row is a row of interfaces: each interface's name holds its
+// signature, no name twice, the names in no order of their own (#2269). Two
+// rows that list the same interfaces in different orders are one row,
+// sequencing joins the rows of the computations it runs, and a computation is
+// read where a row holding more is asked: the set operations of a row
+// (Hillerström and Lindley, "Liberating Effects with Rows and Handlers",
+// Type-Driven Development 2016, § 2). What refuses is in
+// `../../pathological/control/effect-rows.gandr`.
+
+// `peek` reads through `Fs`; `once` states `Div`.
+import "./capability-attenuate.gandr" ;
+import "./divergence.gandr" ;
+
+/// Reading a file, then a loop: the row joins `peek`'s `Fs` and `once`'s
+/// `Div`.
+@[ checks ]
+def performsBoth(c : Cap {read}) -> -F [Fs, Div] Integer {
+  run _ <- peek(c) ;
+  once(1)
+}
+
+/// The same interfaces listed the other way round are the same row:
+/// `performsBoth`'s call stands at it unchanged.
+@[ checks ]
+def listedSwapped(c : Cap {read}) -> -F [Div, Fs] Integer { performsBoth(c) }
+
+/// A suspended computation at one order is forced at the other.
+@[ checks ]
+def forcedAcross(t : +U (-F [Div, Fs] Integer)) -> -F [Fs, Div] Integer { force t }
+
+/// A computation at `[Div]` is read where `[Fs, Div]` is asked, and runs.
+@[ runs("3") ]
+def widenedRow() -> -F [Fs, Div] Integer { once(3) }

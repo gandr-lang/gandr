@@ -1,4 +1,4 @@
-//! Closed effect rows and inline operation signatures.
+//! The effects reading of a row, and inline operation signatures.
 //!
 //! A signature names an interface whose payload and reply types belong to the
 //! same core arena as its uses. Signatures are shared, not recursively owned.
@@ -10,6 +10,9 @@ use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::ValueTypeId;
+use crate::row::LabelTwice;
+use crate::row::Row;
+use crate::row::RowInclusion;
 
 pub mod capability;
 
@@ -410,13 +413,14 @@ impl EffectSig
     }
 }
 
-/// A closed finite set of interfaces in canonical name order.
+/// The effects reading of a [`Row`]: the closed set of interfaces a returner
+/// may perform, each under its name, in canonical name order.
 ///
 /// Empty rows allocate nothing; cloning a nonempty row shares its immutable
 /// map.
 #[repr(transparent)]
 #[derive(Clone, Eq, Hash, PartialEq)]
-pub struct EffectRow<Id = ValueTypeId>(Option<Arc<BTreeMap<EffectName, EffectSig<Id>>>>);
+pub struct EffectRow<Id = ValueTypeId>(Row<EffectName, EffectSig<Id>>);
 
 impl<Id: Copy + Eq + 'static> core::fmt::Debug for EffectRow<Id>
 {
@@ -451,7 +455,7 @@ impl<Id> Default for EffectRow<Id>
     #[inline]
     fn default() -> Self
     {
-        Self(None)
+        Self(Row::EMPTY)
     }
 }
 
@@ -475,23 +479,10 @@ pub enum Purity
     Effectful,
 }
 
-/// Inclusion between rows with the same definitions at shared names.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RowInclusion
-{
-    /// Every interface is permitted by the receiving row.
-    Included,
-    /// An interface is absent or differently defined.
-    Excluded,
-}
-
 impl<Id: Copy + Eq + 'static> EffectRow<Id>
 {
     /// The pure returner's empty row.
-    pub const EMPTY: Self = Self(None);
-
-    /// A shared empty map for this handle family.
-    const EMPTY_ENTRIES: &'static BTreeMap<EffectName, EffectSig<Id>> = &BTreeMap::new();
+    pub const EMPTY: Self = Self(Row::EMPTY);
 
     /// Borrow the canonical entries, including the allocation-free empty case.
     ///
@@ -500,7 +491,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[inline]
     fn entries(&self) -> &BTreeMap<EffectName, EffectSig<Id>>
     {
-        self.0.as_deref().unwrap_or(Self::EMPTY_ENTRIES)
+        self.0.entries()
     }
 
     /// The row permitting exactly one interface.
@@ -511,10 +502,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn singleton(signature: EffectSig<Id>) -> Self
     {
-        Self(Some(Arc::new(BTreeMap::from([(
-            signature.name().clone(),
-            signature,
-        )]))))
+        Self(Row::singleton(signature.name().clone(), signature))
     }
 
     /// Classify the empty row as pure.
@@ -525,7 +513,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     #[must_use]
     pub fn purity(&self) -> Purity
     {
-        if self.0.is_none() {
+        if self.entries().is_empty() {
             Purity::Pure
         }
         else {
@@ -565,25 +553,12 @@ impl EffectRow
         arena: &crate::CoreArena,
     ) -> Result<Self, EffectConflict>
     {
-        if self.purity() == Purity::Pure {
-            return Ok(other.clone());
-        }
-        let mut expanded = None;
-        for (name, signature) in other.entries() {
-            match self.entries().get(name) {
-                Some(existing) => {
-                    if existing.inclusion(signature, arena) == RowInclusion::Excluded {
-                        return Err(EffectConflict::Signature(name.clone()));
-                    }
-                },
-                None => {
-                    expanded
-                        .get_or_insert_with(|| self.entries().clone())
-                        .insert(name.clone(), signature.clone());
-                },
-            }
-        }
-        Ok(expanded.map_or_else(|| self.clone(), |entries| Self(Some(Arc::new(entries)))))
+        self.0
+            .union(&other.0, &|ours: &EffectSig, theirs: &EffectSig| {
+                ours.inclusion(theirs, arena)
+            })
+            .map(Self)
+            .map_err(|LabelTwice(name)| EffectConflict::Signature(name))
     }
 }
 
@@ -606,15 +581,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
         name: &EffectName,
     ) -> Self
     {
-        if !self.entries().contains_key(name) {
-            return self.clone();
-        }
-        if self.entries().len() == 1 {
-            return Self::EMPTY;
-        }
-        let mut signatures = self.entries().clone();
-        signatures.remove(name);
-        Self(Some(Arc::new(signatures)))
+        Self(self.0.without(name))
     }
 
     /// Decide name membership.
@@ -664,17 +631,10 @@ impl EffectRow
         arena: &crate::CoreArena,
     ) -> RowInclusion
     {
-        if self.entries().iter().all(|(name, signature)| {
-            other
-                .entries()
-                .get(name)
-                .is_some_and(|other| signature.inclusion(other, arena) == RowInclusion::Included)
-        }) {
-            RowInclusion::Included
-        }
-        else {
-            RowInclusion::Excluded
-        }
+        self.0
+            .is_subset(&other.0, &|ours: &EffectSig, theirs: &EffectSig| {
+                ours.inclusion(theirs, arena)
+            })
     }
 }
 
@@ -765,7 +725,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
                     );
             }
         }
-        Ok(rewritten.map_or_else(|| self.clone(), |entries| Self(Some(Arc::new(entries)))))
+        Ok(rewritten.map_or_else(|| self.clone(), |entries| Self(Row::from_map(entries))))
     }
 
     /// Relocate type edges to another handle family in canonical forward order.
@@ -796,12 +756,7 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
         for signature in self.signatures() {
             entries.insert(signature.name().clone(), signature.try_relocate(&mut map)?);
         }
-        Ok(if entries.is_empty() {
-            EffectRow::EMPTY
-        }
-        else {
-            EffectRow(Some(Arc::new(entries)))
-        })
+        Ok(EffectRow(Row::from_map(entries)))
     }
 
     /// Construct a canonical row while refusing duplicate interface names.
@@ -823,23 +778,13 @@ impl<Id: Copy + Eq + 'static> EffectRow<Id>
     where
         Signatures: IntoIterator<Item = EffectSig<Id>>,
     {
-        let mut entries = BTreeMap::new();
-        for signature in signatures {
-            match entries.entry(signature.name().clone()) {
-                alloc::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(signature);
-                },
-                alloc::collections::btree_map::Entry::Occupied(entry) => {
-                    return Err(EffectConflict::Signature(entry.key().clone()));
-                },
-            }
-        }
-        Ok(if entries.is_empty() {
-            Self::EMPTY
-        }
-        else {
-            Self(Some(Arc::new(entries)))
-        })
+        Row::from_entries(
+            signatures
+                .into_iter()
+                .map(|signature| (signature.name().clone(), signature)),
+        )
+        .map(Self)
+        .map_err(|LabelTwice(name)| EffectConflict::Signature(name))
     }
 }
 
