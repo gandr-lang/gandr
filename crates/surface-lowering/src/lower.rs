@@ -3091,6 +3091,10 @@ struct Lowerer<'run, 'source>
     /// signature writes a type no thunk is, and a field of a constructor with
     /// a classifier, with the classifier it takes.
     inherited: BTreeMap<NodeIndex, native::Classifier>,
+    /// Each operand a grouping wraps, `(e)`, `(T)` or `type(T)`, with the
+    /// outermost grouping around it: a form of the wrong sort there is refused
+    /// at the grouping, the form that stands in the position (#2341).
+    grouped: BTreeMap<NodeIndex, Placed>,
     /// Each label written against an entry, in the order planned.
     labels: Vec<LabelSite>,
     /// Each index a data constructor's result states, with the frame of the
@@ -4918,6 +4922,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             awaiting: BTreeSet::new(),
             thunked: BTreeMap::new(),
             inherited: BTreeMap::new(),
+            grouped: BTreeMap::new(),
             labels: Vec::new(),
             index_frames: Vec::new(),
             stand_ins: BTreeSet::new(),
@@ -6460,8 +6465,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `pieces` is the reading of the form at `site`.
     /// - ensures: a repair refuses the form; a former of the wrong family for
-    ///   the position refuses as the wrong sort, except a type standing where a
-    ///   value is read, which is quoted, and a term name or a capitalised name
+    ///   the position refuses as the wrong sort, at the outermost grouping
+    ///   around it ([`Self::standing`]), except a type standing where a value
+    ///   is read, which is quoted, and a term name or a capitalised name
     ///   standing where a type is read, which is read as the type head of that
     ///   spelling; a block's last computation written as a statement that is
     ///   not an exit and does not leave on every path is recorded as trailing,
@@ -6488,6 +6494,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::an_exit_lowers_where_a_path_passes_and_nowhere_else`
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
+    /// - witness: `lower::tests::a_grouped_form_of_the_wrong_sort_is_refused_at_its_parentheses_2341`
     #[spec(
         ensures: |ret| {
             if let Maybe::Present(repaired) = pieces.repair {
@@ -6497,7 +6504,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
                 && !(matches!(former, Former::Name | Former::Constructor) && site.reading.family() == Family::Type)
             {
-                ret == Err(site.out(FragmentBoundary::WrongSort))
+                ret == Err(self.standing(site).out(FragmentBoundary::WrongSort))
             }
             else if self.exits.contains(&site.at.node) && ending(former) == Ending::Inferred {
                 self.inferred.contains(&site.at.node) && self.leaving.contains(&site.at.node)
@@ -6531,7 +6538,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let headed = matches!(former, Former::Name | Former::Constructor)
             && site.reading.family() == Family::Type;
         if family != site.reading.family() && !quoted && !headed {
-            return Err(site.out(FragmentBoundary::WrongSort));
+            return Err(self.standing(site).out(FragmentBoundary::WrongSort));
         }
         // A block's last statement that is not an exit runs, its result
         // discarded, and the block returns the unit after it.
@@ -6986,7 +6993,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the sort check every former takes, and the six insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
-    ///   sort no bridge reaches.
+    ///   sort no bridge reaches, at the outermost grouping around the form
+    ///   ([`Self::standing`]).
     /// - panics: none.
     ///
     /// # Errors
@@ -7008,6 +7016,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::exits::tests::a_tail_without_an_exit_takes_the_one_its_polarity_names`
     /// - witness: `lower::loops::tests::a_while_tests_its_condition_on_every_pass`
     /// - witness: `lower::capability::tests::a_return_in_a_subject_leaves_past_the_handler`
+    /// - witness: `lower::tests::a_grouped_form_of_the_wrong_sort_is_refused_at_its_parentheses_2341`
     #[spec(
         ensures: |ret| {
             let expected = match (site.reading, produced) {
@@ -7060,7 +7069,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             || (self.inferred.contains(&site.at.node)
                                 && self.leaving.contains(&site.at.node)))
                 },
-                | None => ret == Err(site.out(FragmentBoundary::WrongSort)),
+                | None => ret == Err(self.standing(site).out(FragmentBoundary::WrongSort)),
             }
         },
     )]
@@ -7105,7 +7114,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let _exit = self.leaving.insert(site.at.node);
                 (frame, Bridge::Inserted(Insertion::Return))
             },
-            _ => return Err(site.out(FragmentBoundary::WrongSort)),
+            _ => return Err(self.standing(site).out(FragmentBoundary::WrongSort)),
         };
         if let Some(held) = self.bridges.get_mut(usize::from(site.at.node)) {
             *held = bridge;
@@ -8297,6 +8306,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(unit.out(FragmentBoundary::EmptyList));
         }
         let inner = site.one(run)?;
+        self.group(site, inner);
         self.read(inner.node, site.reading);
         if let Some(&answer) = self.answers.get(&site.at.node) {
             let _passed = self.answers.insert(inner.node, answer);
@@ -8309,6 +8319,66 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.plan(site, Plan::Transparent(inner.node));
 
         Ok(())
+    }
+
+    /// Record that the grouping at `site` wraps `inner`.
+    ///
+    /// # Specification
+    /// - requires: `inner` is the one operand of the grouping at `site`.
+    /// - ensures: `inner` is held against the outermost grouping around it: the
+    ///   one `site` is held against when `site` is itself grouped, else `site`.
+    /// - provides: the place [`Self::standing`] refuses a grouped form at.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a form under one grouping, under two nested ones and
+    ///   under a type quote is held against the outermost.
+    /// - witness: `lower::tests::a_grouped_form_of_the_wrong_sort_is_refused_at_its_parentheses_2341`
+    #[spec(ensures: |()| self.grouped.contains_key(&inner.node))]
+    fn group(
+        &mut self,
+        site: Site,
+        inner: Placed,
+    )
+    {
+        let outermost = self.grouped.get(&site.at.node).copied().unwrap_or(site.at);
+        let _held = self.grouped.insert(inner.node, outermost);
+    }
+
+    /// The form that stands in `site`'s position: the outermost grouping
+    /// around it, which is what the position reads, else the form itself.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `site` placed at the grouping [`Self::group`] held it
+    ///   against, its name and reading kept; `site` itself when no grouping
+    ///   wraps it.
+    /// - provides: where a form of the wrong sort is refused, so the refusal
+    ///   marks the bytes the position holds: `loop { (n) }`, its `break` left
+    ///   out, is refused at `(n)`, which touches where `break` stood.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a grouped value read as a computation and a grouped
+    ///   computation type read as a value type are refused at the parentheses,
+    ///   an ungrouped one at itself.
+    /// - witness: `lower::tests::a_grouped_form_of_the_wrong_sort_is_refused_at_its_parentheses_2341`
+    #[spec(ensures: |ret| ret.name == site.name && ret.reading == site.reading
+        && ret.at == self.grouped.get(&site.at.node).copied().unwrap_or(site.at))]
+    fn standing(
+        &self,
+        site: Site,
+    ) -> Site
+    {
+        match self.grouped.get(&site.at.node) {
+            Some(&outermost) => Site {
+                at: outermost,
+                ..site
+            },
+            None => site,
+        }
     }
 
     /// Classify a type quote, `type(T)`: the code of `T` where an expression
@@ -8348,6 +8418,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let _open = cursor.tile(TileName::TYPE_QUOTE_OPEN);
         let inner = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        self.group(site, inner);
         self.read(inner.node, site.reading);
 
         self.plan(site, Plan::Transparent(inner.node));
@@ -13307,6 +13378,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let inner = site.one(run)?;
         closed(site, &mut cursor, TileName::PAREN_CLOSE)?;
+        self.group(site, inner);
         self.read(inner.node, site.reading);
 
         self.plan(site, Plan::Transparent(inner.node));
@@ -23798,6 +23870,51 @@ mod tests
     }
 
     #[test]
+    fn a_grouped_form_of_the_wrong_sort_is_refused_at_its_parentheses_2341()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let value_as_computation = |span| LoweringRefusal::OutOfFragment {
+            span,
+            form: FormName::from(NamedKind("number")),
+            sort: FragmentSort::Computation,
+            boundary: FragmentBoundary::WrongSort,
+        };
+
+        assert_eq!(
+            refusal(SourceText::from("def b = thunk { return run (1) } ;")),
+            value_as_computation(at(27_usize, 30_usize)),
+            "the parentheses stand where the computation is read, so they are what is refused"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def b = thunk { return run ((1)) } ;")),
+            value_as_computation(at(27_usize, 32_usize)),
+            "nested groupings are refused at the outermost"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def a : (-F Integer & -F Integer) ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(8_usize, 33_usize),
+                form: FormName::from(NamedKind("lazy_product_type")),
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "a grouped computation type where a value type is read is refused at its parentheses"
+        );
+        assert!(
+            matches!(
+                refusal(SourceText::from("def b = thunk { return run type(Integer) } ;")),
+                LoweringRefusal::OutOfFragment {
+                    span,
+                    sort: FragmentSort::Computation,
+                    boundary: FragmentBoundary::WrongSort,
+                    ..
+                } if span == at(27_usize, 40_usize)
+            ),
+            "a type quote stands where the computation is read, so it is what is refused"
+        );
+    }
+
+    #[test]
     fn a_computation_codomain_of_a_static_pi_is_refused()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -23891,7 +24008,7 @@ mod tests
         assert_eq!(
             refusal(SourceText::from("def t : +U (Integer * Integer) ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(12_usize, 29_usize),
+                span: at(11_usize, 30_usize),
                 form: FormName::from(NamedKind("product_type")),
                 sort: FragmentSort::CompType,
                 boundary: FragmentBoundary::WrongSort,
