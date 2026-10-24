@@ -8848,11 +8848,12 @@ impl Walk<'_, '_>
     ///   in reading order: `Path(A, x, y)`; a family or a constructor as its
     ///   name, applied to its components when it has any, a parameterised
     ///   constructor written against its family as [`children`] reads its
-    ///   classifier; a primitive and an operation as a call of their name, but
-    ///   a string append as the interpolated string `"…${ v }…"` that lowers to
-    ///   it; `transport(…)` over its motive — `\a. M`, or `+U M` for a
-    ///   telescope — and operands; `v.l` and `v.i`; `case v { … }` with one arm
-    ///   per branch but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
+    ///   classifier; a primitive as a call of its name, an operation performed
+    ///   as the call `I.op(v)` through its interface's name, but a string
+    ///   append as the interpolated string `"…${ v }…"` that lowers to it;
+    ///   `transport(…)` over its motive — `\a. M`, or `+U M` for a telescope —
+    ///   and operands; `v.l` and `v.i`; `case v { … }` with one arm per branch
+    ///   but a pruned one, its pattern `+{.i = a}`, `#{a, b}` or a
     ///   constructor's applied to its field binders, its equations unwritten,
     ///   `?` for a constructor the source cannot name; `handle { c } with {
     ///   pure(x) => r, oper op(p, k) => b }`, the scope's head `handle c : I`;
@@ -9201,10 +9202,22 @@ impl Walk<'_, '_>
                     },
                 }
             },
-            Former::Perform { operation, .. } => {
-                let name = self.spelled(Some(operation), Unspelled::Missing);
-                let _ = parts.text(name).arguments(Arity(1_usize));
-                writes(Production("call_expression"), Binding::Atom)
+            Former::Perform {
+                interface,
+                operation,
+                ..
+            } => {
+                let interface = self.spelled(Some(interface), Unspelled::Missing);
+                let operation = self.spelled(Some(operation), Unspelled::Missing);
+                let _ = parts
+                    .text(interface)
+                    .text(".")
+                    .text(operation)
+                    .arguments(Arity(1_usize));
+                writes(
+                    Production("projection_expression"),
+                    writes(Production("call_expression"), Binding::Atom),
+                )
             },
             Former::Transport(..) => {
                 self.note(Unspelled::Notation(Notation::Transport));

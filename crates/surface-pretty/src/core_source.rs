@@ -1912,10 +1912,11 @@ impl<'arena> CoreSource<'arena>
                 cons: computation(on_cons),
             },
             Computation::Perform {
+                ref signature,
                 ref operation,
                 payload,
-                ..
             } => Former::Perform {
+                interface: Name::from(signature.name().as_ref()),
                 operation: Name::from(operation.as_ref()),
                 payload: value(payload),
             },

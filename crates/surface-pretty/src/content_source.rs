@@ -349,10 +349,11 @@ impl Source for ContentSource<'_>
                 arity: Arity::from(arguments.len()),
             },
             ContentNode::Perform {
+                ref signature,
                 ref operation,
                 payload,
-                ..
             } => Former::Perform {
+                interface: Name::from(signature.name().as_ref()),
                 operation: Name::from(operation.as_ref()),
                 payload,
             },
