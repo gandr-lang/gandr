@@ -31,6 +31,7 @@ use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::CrossedExit;
+use crate::error::FragmentBoundary;
 use crate::error::LoweringRefusal;
 use crate::fixture::grammar;
 use crate::fixture::parsed;
@@ -1116,6 +1117,193 @@ fn a_scope_owes_its_theory_s_laws_2272()
         ),
         "{:?}",
         verdict_of(&module, &report, "forgetful".into())
+    );
+}
+
+/// The theory `StatePutPut`: `State` with put-put stated.
+const PUT_PUT: &str = concat!(
+    "theory StatePutPut {\n",
+    "  sort S : Type+;\n",
+    "  sort C : Type;\n",
+    "  oper get : (k : pi+ (s : S) . C) --> C;\n",
+    "  oper put : (s : S, k : C) --> C;\n",
+    "  rule putPut : put(s, put(u, k)) <=> put(u, k);\n",
+    "}\n",
+);
+
+/// A state-passing model of `StatePutPut`, which proves put-put by
+/// conversion.
+const PASSING: &str = concat!(
+    "module Passing : Model(StatePutPut) with sort S = Integer {\n",
+    "  type C = Integer => Integer;\n",
+    "  def get(k : Integer => Integer => Integer) -> Integer => Integer {\n",
+    "    thunk { fn (s) { run after <- k(s); after(s) } }\n",
+    "  }\n",
+    "  def put(s : Integer, k : Integer => Integer) -> Integer => Integer {\n",
+    "    thunk { fn (_old) { k(s) } }\n",
+    "  }\n",
+    "  def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path(\n",
+    "    Integer => Integer,\n",
+    "    put(s, put(u, k)),\n",
+    "    put(u, k)\n",
+    "  ) {\n",
+    "    here(put(u, k))\n",
+    "  }\n",
+    "}\n",
+);
+
+/// A scope naming a model of the theory it handles takes each operation's
+/// clause from the module's component of its name, ascribed its type: `get`
+/// applies it to the thunk of the function resuming the continuation with the
+/// state it is handed, and `put` resumes the continuation at unit and applies
+/// it to the stored value and that answer. The return clause returns the
+/// result at the module's carrier. The scope owes none of the theory's laws,
+/// which the module's ascription states, where the same operations' clauses
+/// written out owe put-put; and it checks. A module no declaration names is
+/// refused by its name, and a module named for a host interface is refused
+/// at the name as a former of the wrong sort.
+#[test]
+fn a_scope_names_a_model_of_its_theory_2272()
+{
+    let mut arena = CoreArena::new();
+    let source = alloc::format!(
+        concat!(
+            "{state}{put_put}{passing}",
+            "def answered() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ st.put(4); run a <- st.get(); pure fn (_s) {{ pure a }} }} with Passing }}\n",
+            "def unnamed() -> Integer => Integer {{ handle st : StatePutPut with sort S = Integer {{ pure fn (s) {{ pure s }} }} with Stateless }}\n",
+            "def hosted() -> -F Unit {{ handle c : Proc {{ pure unit }} with Passing }}\n",
+        ),
+        state = STATE,
+        put_put = PUT_PUT,
+        passing = PASSING,
+    );
+    let module = lowered(SourceText::from(source.as_str()), &mut arena);
+    let answered = tail_of(&module, &arena, "answered".into());
+    let Some(&Computation::Scope {
+        on_return,
+        ref clauses,
+        ..
+    }) = arena.computation(answered)
+    else {
+        panic!("`handle … with Passing` is a capability scope");
+    };
+    let at = |index: u32| Some(variable(DeBruijnIndex::from(index)));
+    let returned = match arena.computation(on_return) {
+        Some(&Computation::Ascribe { body, .. }) => arena.computation(body),
+        other => panic!("the return clause is ascribed the carrier: {other:?}"),
+    };
+    assert!(
+        matches!(returned, Some(&Computation::Return(result)) if arena.value(result) == at(0).as_ref()),
+        "the return clause returns its result: {returned:?}"
+    );
+    // A component forced, ascribed its type.
+    let forced = |head: ComputationId| {
+        matches!(
+            arena.computation(head),
+            Some(&Computation::Force(ascribed))
+                if matches!(arena.value(ascribed), Some(&Value::Ascribe { .. }))
+        )
+    };
+    // The continuation at `index` resumed with `pure` of the value `replied`
+    // reads.
+    let resumed = |id: ComputationId, index: u32, replied: &dyn Fn(Option<&Value>) -> bool| {
+        matches!(
+            arena.computation(id),
+            Some(&Computation::Resume(continuation, reply))
+                if arena.value(continuation) == at(index).as_ref()
+                    && matches!(arena.computation(reply), Some(&Computation::Return(value)) if replied(arena.value(value)))
+        )
+    };
+    let bodies: Vec<(&str, ComputationId)> = clauses
+        .iter()
+        .map(|clause| (clause.operation.as_ref(), clause.body))
+        .collect();
+    let &[("get", get), ("put", put)] = bodies.as_slice()
+    else {
+        panic!("one clause per operation, in the theory's order: {bodies:?}");
+    };
+    // `get`: the component applied to `thunk (λx. resume(k, pure x))`.
+    let get_holds = match arena.computation(get) {
+        Some(&Computation::Application(head, argument)) => {
+            forced(head)
+                && match arena.value(argument) {
+                    Some(&Value::Thunk(function)) => match arena.computation(function) {
+                        Some(&Computation::Lambda(body)) => {
+                            resumed(body, 1, &|value| value == at(0).as_ref())
+                        },
+                        _ => false,
+                    },
+                    _ => false,
+                }
+        },
+        _ => false,
+    };
+    assert!(
+        get_holds,
+        "`get` hands the component the resumption as a function of the state"
+    );
+    // `put`: `r ← resume(k, pure unit); component(s, r)`.
+    let put_holds = match arena.computation(put) {
+        Some(&Computation::Bind(bound, body)) => {
+            resumed(bound, 0, &|value| value == Some(&Value::unit()))
+                && match arena.computation(body) {
+                    Some(&Computation::Application(applied, answer)) => {
+                        arena.value(answer) == at(0).as_ref()
+                            && matches!(
+                                arena.computation(applied),
+                                Some(&Computation::Application(head, stored))
+                                    if forced(head) && arena.value(stored) == at(2).as_ref()
+                            )
+                    },
+                    _ => false,
+                }
+        },
+        _ => false,
+    };
+    assert!(
+        put_holds,
+        "`put` hands the component the stored value and what runs after"
+    );
+    let Some(declaration) = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("answered"))
+    else {
+        panic!("`answered` is declared");
+    };
+    assert!(
+        module.handler_laws(declaration).is_empty(),
+        "the module's ascription states put-put, so the scope owes none"
+    );
+    let report = judged(&module, &mut arena);
+    assert!(
+        matches!(
+            verdict_of(&module, &report, "answered".into()),
+            Verdict::Checked { .. }
+        ),
+        "{:?}",
+        verdict_of(&module, &report, "answered".into())
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "unnamed".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName { name, .. })
+                if name == SurfaceName::from("Stateless")
+        ),
+        "{:?}",
+        outcome_of(&module, "unnamed".into())
+    );
+    assert!(
+        matches!(
+            outcome_of(&module, "hosted".into()),
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                boundary: FragmentBoundary::WrongSort,
+                ..
+            }) if source.get(usize::from(span.start()) .. usize::from(span.end())) == Some("Passing")
+        ),
+        "{:?}",
+        outcome_of(&module, "hosted".into())
     );
 }
 

@@ -50,8 +50,10 @@ fn one_rule(regex: Regex) -> Result<Pbg, Box<dyn Error>>
 /// stays interior, so a container member reaching `}` only after any number
 /// of further members still derives `Brace`. A form whose completions end at
 /// something that closes nothing derives nothing, which keeps `def name = E ;`
-/// unclassed. And every brace derives `Brace`, so a container family that
-/// stops deriving its class is caught.
+/// unclassed. And every brace derives `Brace` but a handle's body, so a
+/// container family that stops deriving its class is caught: a handle may end
+/// at the name of the model answering it, `handle c : T { M } with N`, which
+/// closes nothing.
 #[test]
 fn closing_class_is_form_level() -> Result<(), Box<dyn Error>>
 {
@@ -77,13 +79,17 @@ fn closing_class_is_form_level() -> Result<(), Box<dyn Error>>
     }
     assert!(module_bodies > 0);
 
-    // Every brace derives `Brace`.
-    let unclassed: Vec<Sort> = braces
+    // Every brace derives `Brace` but a handle's body.
+    let unclassed: Vec<RuleName> = braces
         .iter()
         .filter(|&&mold| pbg.closing_class(mold).is_none())
-        .map(|&mold| pbg.mold(mold).map(|def| def.sort))
+        .map(|&mold| pbg.rule_of(mold).map(Rule::name))
         .collect::<Result<_, _>>()?;
-    assert!(unclassed.is_empty(), "unclassed braces: {unclassed:?}");
+    assert_eq!(
+        unclassed,
+        [RuleName("handle_expression")],
+        "unclassed braces"
+    );
 
     // A module member's `=` reaches `}` across the member repeat; a
     // definition's `=` completes at `;`.

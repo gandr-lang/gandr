@@ -4005,13 +4005,15 @@ fn primary_expressions(
     // capability into a body's scope. `I` is a host interface or a theory,
     // whose value sorts follow it as a model type's do, `State with sort S =
     // Integer`; the manifest's `with` is followed by `sort`, the clauses' by
-    // the body, so the two never compete. The clauses follow the body: the
-    // return clause, spelled with the returner's own keyword `pure`, binds the
-    // body's result, and each operation clause, spelled with the keyword a
-    // signature declares an operation with, binds the operation's payload and
-    // its resumption. A clause is keyword-led after a `{` or `,` this rule
-    // owns, so no expression hole competes with it. The tree-sitter grammar
-    // has no handler, so the kind is in `PBG_ONLY_KINDS`.
+    // `{` or a module's name, so the three never compete. The clauses follow
+    // the body: the return clause, spelled with the returner's own keyword
+    // `pure`, binds the body's result, and each operation clause, spelled with
+    // the keyword a signature declares an operation with, binds the
+    // operation's payload and its resumption. A clause is keyword-led after a
+    // `{` or `,` this rule owns, so no expression hole competes with it. A
+    // theory's scope may name a model of the theory in place of the clauses,
+    // `with M`. The tree-sitter grammar has no handler, so the kind is in
+    // `PBG_ONLY_KINDS`.
     out.push(r(
         RuleName("handle_expression"),
         Provenance("handle_expression"),
@@ -4031,11 +4033,16 @@ fn primary_expressions(
             ])),
             block(),
             t(TileLabel("with")),
-            t(TileLabel("{")),
-            handler_clause(),
-            repeat(seq([t(TileLabel(",")), handler_clause()])),
-            opt(t(TileLabel(","))),
-            t(TileLabel("}")),
+            alt([
+                seq([
+                    t(TileLabel("{")),
+                    handler_clause(),
+                    repeat(seq([t(TileLabel(",")), handler_clause()])),
+                    opt(t(TileLabel(","))),
+                    t(TileLabel("}")),
+                ]),
+                t(TileLabel("type_identifier")),
+            ]),
         ]),
     ));
     let mut if_expression = r(

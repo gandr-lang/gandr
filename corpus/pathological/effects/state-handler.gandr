@@ -1,8 +1,10 @@
 // The twin of `model/effects/state-handler.gandr`: where a scope cannot take
-// a theory as its interface.
+// a theory as its interface, and where a model cannot answer it.
 
 // The theory `State`.
 import "../../model/effects/state.gandr" ;
+// `Passing`, the state-passing model of `State`.
+import "../../model/effects/state-model.gandr" ;
 
 /// The stored sort left unfixed: `get` would reply a value of no type the
 /// scope knows, so `S` is the member the scope cannot read.
@@ -20,7 +22,7 @@ def unfixed() -> Integer {
 /// The carrier fixed: the carrier is what the scope answers, chosen by its
 /// clauses, so a manifest fixing it is refused at `C`.
 @[ refuses("UninterfacedMember") ]
-def carried() -> Integer {
+def carrierFixed() -> Integer {
   handle st : State with sort S = Integer with sort C = Integer {
     st.get()
   } with {
@@ -40,4 +42,30 @@ def undeclared() -> Integer {
     oper get(k) => k(4),
     oper put(s, k) => k(unit)
   }
+}
+
+/// A model named that no module declares, refused by its name.
+@[ refuses("UnresolvedName") ]
+def answeredByNothing() -> Integer => Integer {
+  handle st : State with sort S = Integer {
+    pure fn (s) { pure s }
+  } with Stateless
+}
+
+/// The subject computing an integer where the scope answers the model's
+/// carrier, a function of the state.
+@[ refuses("TypeMismatch") ]
+def answeredAtInteger() -> Integer {
+  handle st : State with sort S = Integer {
+    pure 1
+  } with Passing
+}
+
+/// A host interface answered by a module: a host's operations are answered
+/// by clauses alone.
+@[ refuses("OutOfFragment.WrongSort") ]
+def answeredForConsole() -> Integer {
+  handle c : Console {
+    pure 1
+  } with Passing
 }
