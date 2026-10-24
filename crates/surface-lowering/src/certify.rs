@@ -38,7 +38,7 @@ use gandr_theory_levitation::SidePlace;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
-use gandr_theory_levitation::atom_port;
+use gandr_theory_levitation::naming_port;
 
 use crate::coincide::Coincidence;
 use crate::coincide::Joined;
@@ -112,7 +112,7 @@ where
         .map(|(name, rank)| (name.clone(), rank))
         .collect();
     let mut symbols = Symbols::new(&ranks);
-    let nameable = atom_port(description).is_some();
+    let nameable = naming_port(description).is_some();
     let written: Vec<TheoryRule> = cells
         .oriented
         .iter()
@@ -247,14 +247,11 @@ impl<'term> Symbols<'term>
                             u32::try_from(rank).unwrap_or(u32::MAX),
                         ))
                     },
-                    (Class::Operation, None)
-                    | (
-                        Class::Constructor
-                        | Class::Tuple
-                        | Class::Abstraction
-                        | Class::Occurrence(_),
-                        _,
-                    ) => SymbolKind::Constructor,
+                    (Class::Operation, None) | (Class::Constructor | Class::Tuple, _) => {
+                        SymbolKind::Constructor
+                    },
+                    (Class::Abstraction, _) => SymbolKind::Abstraction,
+                    (Class::Occurrence(_), _) => SymbolKind::Occurrence,
                 };
                 (kind, FieldCount::from(arity))
             })

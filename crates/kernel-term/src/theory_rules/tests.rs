@@ -294,14 +294,103 @@ fn a_let_rule_converges_and_beta_is_unoriented()
         "a second-order rule takes part in no critical pair, even one that would join"
     );
     assert_eq!(
-        decided(vec![rule(&[s!(0), v!(0), i!(0, 0)], &[v!(0)])]),
+        decided(vec![rule(&[s!(0), v!(0), i!(1, 1), s!(3)], &[v!(0)])]),
         refused!(0, TheoryRuleFault::Malformed),
-        "an instantiation on a left side"
+        "an instantiation on a left side at anything but bound names"
     );
     assert_eq!(
         decided(vec![rule(&[s!(0), v!(0), v!(1)], &[i!(2, 1), v!(0)])]),
         refused!(0, TheoryRuleFault::Unbound),
         "an instantiation of a variable the left side does not bind"
+    );
+}
+
+/// #2115: a metavariable applied on a left side to the names its
+/// abstractions bind is a pattern; the order holds it under the abstraction
+/// it is applied in, and an overlap through it is found.
+#[test]
+fn a_pattern_on_the_left_is_read_and_decided_2115()
+{
+    // run = 0, get = 1, abs = 2, the occurrences counting none and one
+    // abstraction = 3 and 4, zero = 5.
+    let symbols = vec![
+        operation!(1, 2),
+        operation!(1, 1),
+        (SymbolKind::Abstraction, FieldCount::from(1_usize)),
+        (SymbolKind::Occurrence, FieldCount::from(0_usize)),
+        (SymbolKind::Occurrence, FieldCount::from(0_usize)),
+        (SymbolKind::Constructor, FieldCount::from(0_usize)),
+    ];
+    let decided =
+        |rules: Vec<TheoryRule>| TheoryRules::new(symbols.clone(), rules).decide(&mut fuel());
+    // run(bind x . k(x), u) ==> k(u)
+    let applied = rule(&[s!(0), s!(2), i!(0, 1), s!(3), v!(1)], &[i!(0, 1), v!(1)]);
+    assert_eq!(
+        decided(vec![applied]),
+        Ok(()),
+        "`run` holds `k` under the abstraction it applies it in, and overlaps nothing"
+    );
+    // get(bind s . get(bind t . k(s, t))) ==> get(bind s . k(s, s))
+    let get_get = rule(&[s!(1), s!(2), s!(1), s!(2), i!(0, 2), s!(4), s!(3)], &[
+        s!(1),
+        s!(2),
+        i!(0, 2),
+        s!(3),
+        s!(3),
+    ]);
+    assert_eq!(
+        decided(vec![get_get]),
+        refused!(0, TheoryRuleFault::Overlaps(RuleIndex::from(0_usize))),
+        "get-get is oriented, and its inner `get` is an instance of its own left side through \
+         the pattern"
+    );
+    let malformed = refused!(0, TheoryRuleFault::Malformed);
+    assert_eq!(
+        decided(vec![rule(&[s!(0), s!(2), i!(0, 1), s!(5), v!(1)], &[
+            i!(0, 1),
+            v!(1)
+        ])]),
+        malformed,
+        "a metavariable applied to a constructor is no pattern"
+    );
+    assert_eq!(
+        decided(vec![rule(
+            &[s!(1), s!(2), s!(1), s!(2), i!(0, 2), s!(3), s!(3)],
+            &[s!(1), s!(2), i!(0, 2), s!(3), s!(3)]
+        )]),
+        malformed,
+        "nor one applied to one name twice"
+    );
+    // ext(m, bind x . n) ==> n, `n` leaving the abstraction, beside
+    // ret : (a : S) --> C and ext : (m : C, k : pi+ (x : V) . C) --> C.
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let rule_tag = ConstructorTag::from(super::tag::RULE);
+    let conditioned = |unit: &str| {
+        let mut code = Code::new();
+        let (m, n) = (code.var(literal("m")), code.var(literal("n")));
+        let over = code.abs(literal("x"), n);
+        let left = code.app(literal("ext"), &[m, over]);
+        let leak = code.text(literal("leak"));
+        let (sorts, operations) = code.monad(literal(unit));
+        let presentation =
+            code.presenting(sorts, operations, vec![(rule_tag, vec![leak, left, n])]);
+        TheoryRules::read(&code.arena, presentation).map(|read| {
+            read.rules()
+                .iter()
+                .map(|rule| rule.conditioned)
+                .collect::<Vec<_>>()
+        })
+    };
+    assert_eq!(
+        conditioned("V"),
+        Ok(vec![true]),
+        "`ret` takes a value at the sort `ext`'s continuation binds, so a term names a bound \
+         variable and `n` leaving `bind x .` fires only where its instance names no `x`"
+    );
+    assert_eq!(
+        conditioned("C"),
+        Ok(vec![false]),
+        "where no port takes a bound variable no term names one"
     );
 }
 
@@ -484,6 +573,57 @@ impl Code
         let operations = self.node(tag(super::tag::OPER), vec![out, inputs, end, end]);
         (sorts, operations)
     }
+
+    /// The sort chain declaring the representable sort `V` and the sort `C`,
+    /// and the operation chain declaring `ret : (a : unit) --> C` and
+    /// `ext : (m : C, k : pi+ (x : V) . C) --> C`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn monad(
+        &mut self,
+        unit: StringLiteral,
+    ) -> (ValueId, ValueId)
+    {
+        let literal = |text: &str| StringLiteral::new(String::from(text));
+        let tag = ConstructorTag::from;
+        let [
+            values,
+            computations_name,
+            ret,
+            ext,
+            argument,
+            monadic,
+            continuation_name,
+            bound,
+        ] = ["V", "C", "ret", "ext", "a", "m", "k", "x"].map(|text| self.text(literal(text)));
+        let unit = self.text(unit);
+        let end = self.end();
+        let computations = self.node(tag(super::tag::SORT), vec![computations_name, end, end]);
+        let sorts = self.node(tag(super::tag::REPRESENTABLE), vec![
+            values,
+            end,
+            computations,
+        ]);
+        let binder = self.node(tag(super::tag::PORT), vec![bound, values, end, end]);
+        let continuation = self.node(tag(super::tag::BOUND), vec![
+            continuation_name,
+            computations_name,
+            end,
+            binder,
+            end,
+        ]);
+        let extended = self.node(tag(super::tag::PORT), vec![
+            monadic,
+            computations_name,
+            end,
+            continuation,
+        ]);
+        let returned = self.node(tag(super::tag::PORT), vec![argument, unit, end, end]);
+        let extend = self.node(tag(super::tag::OPER), vec![ext, extended, end, end]);
+        let operations = self.node(tag(super::tag::OPER), vec![ret, returned, end, extend]);
+        (sorts, operations)
+    }
 }
 
 #[test]
@@ -590,8 +730,8 @@ fn an_abstraction_reads_as_one_symbol_whatever_its_atom()
     );
     assert_eq!(
         read.symbols().get(1),
-        Some(&(SymbolKind::Constructor, FieldCount::from(1_usize))),
-        "an abstraction is a constructor of one field"
+        Some(&(SymbolKind::Abstraction, FieldCount::from(1_usize))),
+        "an abstraction is a symbol of one field, its body"
     );
 }
 
@@ -674,7 +814,7 @@ fn an_occurrence_counts_to_its_abstraction()
     );
     assert_eq!(
         read.symbols().get(3),
-        Some(&(SymbolKind::Constructor, FieldCount::from(0_usize))),
+        Some(&(SymbolKind::Occurrence, FieldCount::from(0_usize))),
         "an occurrence is a constant"
     );
     let under_b = restricted(&mut code, "b", on_a);

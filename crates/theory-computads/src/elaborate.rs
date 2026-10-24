@@ -295,8 +295,8 @@ use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::WhiskeredCell;
-use gandr_theory_levitation::atom_port;
 use gandr_theory_levitation::elaborate_body;
+use gandr_theory_levitation::naming_port;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::AdmittedFaceIndex;
@@ -1001,7 +1001,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
         && ret.admitted_faces.len().saturating_add(ret.declined_faces.len()).saturating_add(match ret.presented {
             Maybe::Present(ref presented) => presented.faces.len().saturating_add(presented.conditioned.len()).saturating_sub(ret.admitted_faces.len()),
             Maybe::Absent(_) => 0,
-        }).saturating_add(desc.rules.iter().filter(|face| bool::from(face.rhs.instantiates())).count()) == desc.rules.len()
+        }).saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates())).count()) == desc.rules.len()
         && match ret.presented {
             Maybe::Present(ref presented) => presented.faces.iter().all(|&(index, cell)| desc.rules.get(usize::from(index))
                 .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if *stored == face_cell(face))))
@@ -1009,7 +1009,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
                     .is_some_and(|face| *cell == conditioned_cell(face)))
                 && presented.faces.iter().zip(presented.faces.iter().skip(1)).all(|(left, right)| left.0 < right.0),
             Maybe::Absent(presented_reading::Absent::NoTermFace) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len())
-                .saturating_add(desc.rules.iter().filter(|face| bool::from(face.rhs.instantiates())).count()) == desc.rules.len(),
+                .saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates())).count()) == desc.rules.len(),
         }
         && ret
             .admitted_faces
@@ -1070,7 +1070,7 @@ fn elaborate_desc<G>(
     let mut read: Vec<(AdmittedFaceIndex, &RuleFace)> = Vec::with_capacity(desc.rules.len());
     let mut presents = false;
     for (index, face) in desc.rules.iter().enumerate() {
-        if bool::from(face.rhs.instantiates()) {
+        if bool::from(face.instantiates()) {
             continue;
         }
         let outcome = if matches!(face.lhs.view(), TermView::Ctor { .. }) {
@@ -1099,7 +1099,7 @@ fn elaborate_desc<G>(
         }
     }
     let presented = if presents {
-        let nameable = atom_port(desc).is_some();
+        let nameable = naming_port(desc).is_some();
         let mut terms = CellStore::new();
         let mut faces = Vec::with_capacity(read.len());
         let mut conditioned = Vec::new();

@@ -200,6 +200,8 @@ use gandr_theory_levitation::ShapePoint;
 use gandr_theory_levitation::ShapeSize;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::SurfaceSpan;
+use gandr_theory_levitation::TermNode;
+use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryBinder;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::TheoryOperation;
@@ -1626,7 +1628,15 @@ impl Reader<'_, '_>
             }
             run.end()?;
             let (lhs, left) = self.free_term(lhs, &BTreeSet::new())?;
-            let (rhs, right) = self.free_term(rhs, &lhs.to_node().vars().collect())?;
+            let lhs = patterned(&lhs, |name| {
+                matches!(
+                    scope.get(&Written(name.as_ref())),
+                    Some(HeadKind::Operation | HeadKind::Observation | HeadKind::Rewrite)
+                )
+            });
+            let instantiable: BTreeSet<&Name> =
+                lhs.to_node().vars().chain(patterns(&lhs)).collect();
+            let (rhs, right) = self.free_term(rhs, &instantiable)?;
             return Ok(RuleMember::Face(
                 TheoryRule {
                     name: self.text(name).0.into(),
@@ -2253,6 +2263,174 @@ fn fresh_port(at: Placed) -> Name
     format!("{FRESH_PORT}{}", usize::from(at.span.start())).into()
 }
 mod extension;
+
+/// `term` with each application of a name no operation of the theory is, to
+/// distinct names its enclosing abstractions bind, read as that name's
+/// instantiation: a metavariable written as a pattern in Miller's sense,
+/// `k(s, t)` under `bind s .` and `bind t .`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the term node for node, each operation node whose head `declared`
+///   refuses and whose arguments are one or more pairwise distinct bound names
+///   read as an instantiation of the same head and arguments; every other node
+///   as it was.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the ensures clause is the rebuild itself; a predicate
+///   restating it would walk the term again.
+///
+/// # Termination
+/// Each node of the finite term is read once and rebuilt once.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `k(s, t)` under two abstractions reads as `k`'s
+///   instantiation; an operation the theory declares, applied to the same
+///   names, stays an operation, and an undeclared name applied to one name
+///   twice or to a variable stays an operation the description check refuses.
+/// - witness: `description::theory::tests::an_applied_bound_name_reads_as_a_pattern_2115`
+fn patterned(
+    term: &FreeTerm,
+    declared: impl Fn(&Name) -> bool,
+) -> FreeTerm
+{
+    /// A step of the rebuild: a node to read, or a head to apply to the
+    /// terms its arguments built.
+    enum Step<'term>
+    {
+        /// A node to read.
+        Read(TermNode<'term>),
+        /// An operation over its arguments, or a pattern when `true`.
+        Op(&'term Name, usize, bool),
+        /// A constructor over its arguments.
+        Ctor(&'term Name, usize),
+        /// A results tuple.
+        Results(usize),
+        /// An instantiation.
+        Inst(&'term Name, usize),
+        /// An abstraction over its body.
+        Abs(&'term Name),
+    }
+    let mut pending = vec![Step::Read(term.to_node())];
+    let mut built: Vec<FreeTerm> = Vec::new();
+    let mut names: Vec<&Name> = Vec::new();
+    let take = |built: &mut Vec<FreeTerm>, count: usize| {
+        built.split_off(built.len().saturating_sub(count))
+    };
+    while let Some(step) = pending.pop() {
+        match step {
+            Step::Read(node) => match node.view() {
+                TermView::Var(name) => built.push(FreeTerm::var(name.clone())),
+                TermView::Atom(name) => built.push(FreeTerm::atom(name.clone())),
+                TermView::Op { name, args } => {
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    names.clear();
+                    names.extend(args.iter().filter_map(|arg| bound_name(*arg)));
+                    names.sort_unstable();
+                    names.dedup();
+                    let pattern = !declared(name) && !args.is_empty() && names.len() == args.len();
+                    pending.push(Step::Op(name, args.len(), pattern));
+                    pending.extend(args.into_iter().rev().map(Step::Read));
+                },
+                TermView::Ctor { name, args } => {
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    pending.push(Step::Ctor(name, args.len()));
+                    pending.extend(args.into_iter().rev().map(Step::Read));
+                },
+                TermView::Results { args } => {
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    pending.push(Step::Results(args.len()));
+                    pending.extend(args.into_iter().rev().map(Step::Read));
+                },
+                TermView::Inst { name, args } => {
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    pending.push(Step::Inst(name, args.len()));
+                    pending.extend(args.into_iter().rev().map(Step::Read));
+                },
+                TermView::Abs { atom, args } => {
+                    pending.push(Step::Abs(atom));
+                    pending.extend(args.map(Step::Read));
+                },
+            },
+            Step::Op(name, count, pattern) => {
+                let args = take(&mut built, count);
+                built.push(if pattern {
+                    FreeTerm::inst(name.clone(), args)
+                }
+                else {
+                    FreeTerm::op(name.clone(), args)
+                });
+            },
+            Step::Ctor(name, count) => {
+                let args = take(&mut built, count);
+                built.push(FreeTerm::ctor(name.clone(), args));
+            },
+            Step::Results(count) => {
+                let args = take(&mut built, count);
+                built.push(FreeTerm::results(args));
+            },
+            Step::Inst(name, count) => {
+                let args = take(&mut built, count);
+                built.push(FreeTerm::inst(name.clone(), args));
+            },
+            Step::Abs(atom) => {
+                let body = built.pop().unwrap_or_else(|| FreeTerm::results([]));
+                built.push(FreeTerm::abs(atom.clone(), body));
+            },
+        }
+    }
+    built.pop().unwrap_or_else(|| term.clone())
+}
+
+/// The name `node` is when it is a name an enclosing abstraction binds.
+///
+/// # Specification
+/// trivial.
+fn bound_name(node: TermNode<'_>) -> Option<&Name>
+{
+    match node.view() {
+        TermView::Atom(name) => Some(name),
+        TermView::Var(_)
+        | TermView::Ctor { .. }
+        | TermView::Op { .. }
+        | TermView::Results { .. }
+        | TermView::Inst { .. }
+        | TermView::Abs { .. } => None,
+    }
+}
+
+/// The metavariables `term` writes as patterns: the heads of its
+/// instantiations, in pre-order with repeats.
+///
+/// # Specification
+/// - ensures: one name per instantiation node of `term`, its head.
+/// - panics: none.
+/// - executable: none — the ensures clause is the walk itself; a predicate
+///   restating it would walk the term again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`patterned`]: a right side may instantiate the
+///   metavariable its left side writes as a pattern.
+/// - witness: `description::theory::tests::an_applied_bound_name_reads_as_a_pattern_2115`
+fn patterns(term: &FreeTerm) -> Vec<&Name>
+{
+    let mut heads = Vec::new();
+    let mut pending = vec![term.to_node()];
+    while let Some(node) = pending.pop() {
+        match node.view() {
+            TermView::Inst { name, args } => {
+                heads.push(name);
+                pending.extend(args);
+            },
+            TermView::Ctor { args, .. }
+            | TermView::Op { args, .. }
+            | TermView::Results { args }
+            | TermView::Abs { args, .. } => pending.extend(args),
+            TermView::Var(_) | TermView::Atom(_) => {},
+        }
+    }
+    heads
+}
 
 #[cfg(test)]
 mod tests;

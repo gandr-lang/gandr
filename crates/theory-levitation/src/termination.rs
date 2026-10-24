@@ -445,10 +445,12 @@ impl From<Rank> for usize
 ///   or above `right`; or `right` is an application every argument of which
 ///   `left` covers, and either `left`'s symbol precedes `right`'s or the two
 ///   share a symbol and the first argument pair that differs, left to right, is
-///   in the order; or `right` instantiates a metavariable that is an argument
-///   of `left`, and `left` covers every argument of the instantiation. `left`
-///   covers a term it is above, or one of its own arguments is equal to or
-///   above.
+///   in the order; or `right` instantiates a metavariable an argument of `left`
+///   holds, and `left` covers every argument of the instantiation. An argument
+///   holds a metavariable it is, or one it applies under abstractions of the
+///   names it is applied to last, as `bind t . k(s, t)` is `k(s)` read up to η.
+///   `left` covers a term it is above, or one of its own arguments is equal to
+///   or above.
 /// - ensures: a variable is above nothing, and no term is above itself.
 /// - panics: none.
 /// - intension: one table of every argument pair of the two terms, filled from
@@ -464,9 +466,13 @@ impl From<Rank> for usize
 ///   dominance check changes one of them. A `let` instantiating its own
 ///   argument is above the instantiation and β is not; reading every variable
 ///   at base type orients β, and dropping the instantiation case refuses `let`.
+///   A get-get rule whose left side holds `k` under the abstraction it applies
+///   it in is above the instantiation, and reading only a bare argument as
+///   holding refuses it.
 /// - witness: `termination::tests::recursion_on_a_descending_argument_is_oriented`
 /// - witness: `termination::tests::the_order_is_irreflexive_and_reads_variables_by_occurrence`
 /// - witness: `termination::tests::an_instantiation_is_below_the_application_that_binds_its_metavariable`
+/// - witness: `termination::tests::a_pattern_under_its_abstraction_holds_its_metavariable_2115`
 #[spec(ensures: |ret| !bool::from(ret) || (left != right && !matches!(left.view(), TermView::Var(_))))]
 #[inline]
 #[must_use]
@@ -506,6 +512,20 @@ pub fn path_greater(
                 pair.equal || pair.greater
             })
     };
+    // An argument holds a metavariable it is, or one it applies under the
+    // abstractions of the names it is applied to, read up to η.
+    let holds = |argument: At, name: &Name| {
+        let mut at = argument;
+        while let Some(node) = above.get(at.0)
+            && node.symbol == Symbol::Abs
+            && let Some(body) = node.arguments().next()
+        {
+            at = body;
+        }
+        above.get(at.0).is_some_and(|bound| {
+            bound.symbol == Symbol::Var(name) || bound.symbol == Symbol::Inst(name)
+        })
+    };
     for (row, node) in above.iter().enumerate().rev() {
         for (column, other) in below.iter().enumerate().rev() {
             let (row, column) = (At(row), At(column));
@@ -523,13 +543,10 @@ pub fn path_greater(
                 }) || match other.symbol {
                     Symbol::Var(_) => false,
                     Symbol::Inst(name) => {
-                        node.arguments().any(|argument| {
-                            above
-                                .get(argument.0)
-                                .is_some_and(|bound| bound.symbol == Symbol::Var(name))
-                        }) && other
-                            .arguments()
-                            .all(|argument| covers(&table, node, row, argument))
+                        node.arguments().any(|argument| holds(argument, name))
+                            && other
+                                .arguments()
+                                .all(|argument| covers(&table, node, row, argument))
                     },
                     Symbol::Ctor(_)
                     | Symbol::Op(_)
@@ -1168,6 +1185,41 @@ mod tests
             orient_rules(&shadow),
             Termination::Oriented,
             "read with every variable at base type, β's first-order shadow orients"
+        );
+    }
+
+    /// #2115: a metavariable applied under the abstractions of the names it
+    /// is applied to is held by the argument those abstractions stand at,
+    /// read up to η, so the left side is above an instantiation of it.
+    #[test]
+    fn a_pattern_under_its_abstraction_holds_its_metavariable_2115()
+    {
+        let get = |k| FreeTerm::op("get", [k]);
+        let pattern = |names: [&str; 2]| FreeTerm::inst("k", names.map(FreeTerm::atom));
+        let get_get = nat([unary("get")], vec![(
+            get(FreeTerm::abs(
+                "s",
+                get(FreeTerm::abs("t", pattern(["s", "t"]))),
+            )),
+            get(FreeTerm::abs("s", pattern(["s", "s"]))),
+        )]);
+        assert_eq!(
+            orient_rules(&get_get),
+            Termination::Oriented,
+            "`get` holds `k` under `bind t .`, so `k(s, s)` is below it"
+        );
+        let run = |k, u| FreeTerm::op("run", [k, u]);
+        let applied = nat([binary("run")], vec![(
+            run(
+                FreeTerm::abs("x", FreeTerm::inst("k", [FreeTerm::atom("x")])),
+                var("u"),
+            ),
+            FreeTerm::inst("k", [var("u")]),
+        )]);
+        assert_eq!(
+            orient_rules(&applied),
+            Termination::Oriented,
+            "`run` holds `k` under the abstraction of the name it applies `k` to"
         );
     }
 
