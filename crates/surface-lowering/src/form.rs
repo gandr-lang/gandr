@@ -2194,28 +2194,36 @@ pub fn read_pieces<'source>(
 }
 
 /// The reading of the ghost end `ghost` the parser appended to the form at
-/// `form`, which never reached its last tile.
+/// `form`, which never reached its last tile, or minted where a left-out tile
+/// belongs.
 ///
 /// # Specification
 /// - requires: `ghost` is a postfix grout child of `form`; the melder mints
-///   that grout only as such a ghost end, at the end of the form's last written
-///   own tile.
+///   that grout as a ghost end, at the end of the form's last written own tile,
+///   and the parser where a tile it left out belongs, after the operand the
+///   tile follows.
 /// - ensures: [`Repair::Unended`] naming the tile every form-ending successor
-///   of that last tile carries. When the grammar names that tile, the point is
-///   just past the first written material after the last tile — the operand the
-///   end tile follows — or past the tile itself when nothing follows; when it
-///   does not, past the tile itself, since what follows is no part of the form.
-///   Trailing whitespace is excluded; `nested` is kept.
+///   of the form's last own tile before the ghost carries: the tile it ends, or
+///   failing that the last one before it — and then, when an own tile follows
+///   the ghost, the tile every successor of that last one the following tile
+///   may follow carries. When the grammar names that tile and an own tile ends
+///   at the ghost, the point is just past the first written material after the
+///   ghost — the operand the end tile follows — or past the tile itself when
+///   nothing follows; when it does not, past the tile itself, since what
+///   follows is no part of the form. With no own tile ending at the ghost, the
+///   point is the ghost's. Trailing whitespace is excluded; `nested` is kept.
 /// - provides: what a message says is missing, and where.
 /// - fails: never; an unknown tile is [`Ending::Unnamed`].
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a definition missing its `;` before the next definition
-///   is pointed past its value and names `;`; a string never closed is pointed
-///   past its text on its own line and names `"`; a declaration stopping at its
-///   name names nothing and is pointed past the name, not past a stray `;`
-///   after it.
+///   is pointed past its value and names `;`, which the parser mints there,
+///   after the `=` no tile ends at; a string never closed is pointed past its
+///   text on its own line and names `"`; a declaration stopping at its name
+///   names nothing and is pointed past the name, not past a stray `;` after it;
+///   a data member missing the separator before the next member is pointed at
+///   its end and names nothing, since a `;` or a `,` may stand there.
 /// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
 /// - witness: `lower::tests::a_repaired_declaration_is_refused`
 #[spec(ensures: |ret| ret.nested == ghost.nested && matches!(ret.repair, Repair::Unended(_)))]
@@ -2230,6 +2238,8 @@ fn unended(
     let mut frontier: Maybe<(MoldId, ByteSpan), nested::Absent> =
         Maybe::Absent(nested::Absent::Own);
     let mut written = Maybe::Absent(nested::Absent::Own);
+    let mut before = Maybe::Absent(nested::Absent::Own);
+    let mut after = Maybe::Absent(nested::Absent::Own);
     let rule = match tree.node(form).map(Node::label) {
         Some(NodeLabel::Meld(mold)) => pbg.rule_of(mold).ok().map(|rule| rule.name),
         _ => None,
@@ -2241,9 +2251,19 @@ fn unended(
             continue;
         };
         let span = held.span();
+        if let NodeLabel::Tile(mold) = held.label()
+            && span.start() >= point
+            && own(mold)
+            && matches!(after, Maybe::Absent(_))
+        {
+            after = Maybe::Present(mold);
+        }
         match held.label() {
             NodeLabel::Tile(mold) if span.end() == point && span.start() < point && own(mold) => {
                 frontier = Maybe::Present((mold, span));
+            },
+            NodeLabel::Tile(mold) if span.end() < point && own(mold) => {
+                before = Maybe::Present(mold);
             },
             NodeLabel::Tile(_) | NodeLabel::Meld(_) | NodeLabel::Wald
                 if span.start() >= point && matches!(written, Maybe::Absent(_)) =>
@@ -2259,24 +2279,27 @@ fn unended(
             | NodeLabel::Doc => {},
         }
     }
-    let ending = match frontier {
-        Maybe::Present((mold, _)) => {
-            let mut labels = pbg
-                .mold_successors(mold)
+    let ending = match (frontier, before, after) {
+        (Maybe::Present((mold, _)), ..)
+        | (Maybe::Absent(_), Maybe::Present(mold), Maybe::Absent(_)) => agreed(
+            pbg,
+            pbg.mold_successors(mold)
                 .iter()
-                .filter(|&&(_, next)| bool::from(pbg.mold_is_form_last(next)))
-                .filter_map(|&(_, next)| pbg.mold(next).ok().map(|def| def.label));
-            match labels.next() {
-                Some(first) if labels.all(|label| label == first) => Ending::Tile(TileName(first)),
-                Some(_) | None => Ending::Unnamed,
-            }
-        },
-        Maybe::Absent(_) => Ending::Unnamed,
+                .map(|&(_, next)| next)
+                .filter(|&next| bool::from(pbg.mold_is_form_last(next))),
+        ),
+        (Maybe::Absent(_), Maybe::Present(mold), Maybe::Present(following)) => agreed(
+            pbg,
+            pbg.mold_successors(mold)
+                .iter()
+                .map(|&(_, next)| next)
+                .filter(|&next| bool::from(pbg.molds_adjacent(next, following))),
+        ),
+        (Maybe::Absent(_), Maybe::Absent(_), _) => Ending::Unnamed,
     };
     let (floor, mut end) = match (ending, written, frontier) {
-        (Ending::Tile(_), Maybe::Present(span), _) | (_, _, Maybe::Present((_, span))) => {
-            (usize::from(span.start()), usize::from(span.end()))
-        },
+        (Ending::Tile(_), Maybe::Present(span), Maybe::Present(_))
+        | (_, _, Maybe::Present((_, span))) => (usize::from(span.start()), usize::from(span.end())),
         (_, _, Maybe::Absent(_)) => (usize::from(point), usize::from(point)),
     };
     let source = tree.source();
@@ -2295,6 +2318,38 @@ fn unended(
         span: ByteSpan::new(at, at).unwrap_or(ghost.span),
         repair: Repair::Unended(ending),
         nested: ghost.nested,
+    }
+}
+
+/// The tile every mold of `molds` is an occurrence of, when they agree on one.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`Ending::Tile`] naming the label of the first of `molds` when
+///   every one's label equals it; [`Ending::Unnamed`] when there is none, two
+///   differ, or one is unknown to `pbg`.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause restates the fold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`unended`].
+/// - witness: `lower::tests::an_unended_form_names_its_missing_tile_where_it_belongs`
+fn agreed(
+    pbg: &Pbg,
+    mut molds: impl Iterator<Item = MoldId>,
+) -> Ending
+{
+    let label = |mold: MoldId| pbg.mold(mold).ok().map(|def| def.label);
+    let Some(first) = molds.next().and_then(label)
+    else {
+        return Ending::Unnamed;
+    };
+    if molds.all(|mold| label(mold) == Some(first)) {
+        Ending::Tile(TileName(first))
+    }
+    else {
+        Ending::Unnamed
     }
 }
 
