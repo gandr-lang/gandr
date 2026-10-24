@@ -697,6 +697,11 @@ mod tests
     use crate::transport::read_frame;
     use crate::transport::write_frame;
 
+    /// How long a test waits for a message or a frame the hub owes before it
+    /// fails naming what was owed, inside the 30 seconds a test runs in, so a
+    /// read left unanswered is a failure and never a timeout (#2394).
+    const OWED: Duration = Duration::from_secs(20);
+
     /// A message, spelled as JSON text.
     #[repr(transparent)]
     #[derive(Clone, Copy)]
@@ -823,6 +828,9 @@ mod tests
         ) -> Self
         {
             let writing = UnixStream::connect(socket).expect("the hub accepts");
+            writing
+                .set_read_timeout(Some(OWED))
+                .expect("the stream takes a deadline");
             let reading = BufReader::new(writing.try_clone().expect("the stream clones"));
             let mut client = Self { writing, reading };
             let Json(params) = params;
@@ -864,7 +872,7 @@ mod tests
         fn receive(&mut self) -> Value
         {
             let Maybe::Present(body) =
-                read_frame(&mut self.reading).expect("the hub frames its messages")
+                read_frame(&mut self.reading).expect("the hub sends the message it owes in time")
             else {
                 panic!("the hub closed the connection");
             };
@@ -1106,7 +1114,9 @@ mod tests
     {
         let mut line = String::new();
         assert_ne!(
-            reading.read_line(&mut line).expect("the face writes lines"),
+            reading
+                .read_line(&mut line)
+                .expect("the face writes the frame it owes in time"),
             0_usize,
             "the face owes a frame"
         );
@@ -1128,6 +1138,8 @@ mod tests
         ));
         assert_eq!(editor.published(), Some(serde_json::json!(1_i32)));
         let mut view = UnixStream::connect(&socket).expect("the hub accepts");
+        view.set_read_timeout(Some(OWED))
+            .expect("the stream takes a deadline");
         view.write_all(RENDER_BUS_PREFACE.as_bytes())
             .expect("the hub reads");
         let mut reading = BufReader::new(view.try_clone().expect("the stream clones"));
