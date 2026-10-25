@@ -80,6 +80,16 @@
 //!   Science 1581, pages 228–243, 1999. `doi:10.1007/3-540-48959-2_17` — the
 //!   value/computation split the IL's two polarities carry, and the thunk as
 //!   the positive suspension of a computation.
+//! - David Binder, Marco Tzschentke, Marius Müller and Klaus Ostermann.
+//!   "Grokking the Sequent Calculus (Functional Pearl)." _Proceedings of the
+//!   ACM on Programming Languages_ 8 (ICFP), 2024. `doi:10.1145/3674639` — the
+//!   λμμ̃ command language as a compiler's intermediate language, which this
+//!   crate's IL is in its polarized System L form, each cut's polarity
+//!   resolving μ against μ̃.
+//! - Jean Caspar and Guillaume Munch-Maccagnoni. "S4 Modal Sequent Calculus as
+//!   Intermediate Logic and Intermediate Language (Short Paper)." PEPM 2026.
+//!   `arXiv:2601.08071` — the operational machine that separates a heap from a
+//!   stack, the two-region store read as residency.
 
 // Module documentation that predates the shape lint: 18 headings outside the
 // vocabulary, 3 decision records and 9 budgets exceeded. Each allow leaves with
