@@ -2509,8 +2509,6 @@ pub mod tabled
     {
         /// The judgement was not asked to keep one.
         Untabled,
-        /// The lowering refused the source whole, so nothing was typed.
-        RefusedWhole,
         /// The holder handed its table on.
         Taken,
     }

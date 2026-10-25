@@ -580,12 +580,20 @@ fn a_judged_revision_hands_its_tree_to_a_reader()
     let mut reading = session(SourceRoot::Strict);
     let mut read = Vec::new();
     let judged = reading
-        .judge_reading(text, |tree| read.push((tree.source(), tree.forms().len())))
+        .judge_reading(text, |parsed| {
+            read.push((
+                parsed.tree.source(),
+                parsed.tree.forms().len(),
+                parsed.own.is_some_and(|own| own == parsed.tree),
+                parsed.closure.is_none(),
+            ));
+        })
         .expect("judges");
     assert_eq!(
         read,
-        [(text, 3)],
-        "the reader reads the revision's own tree once, every form of it"
+        [(text, 3, true, true)],
+        "the reader reads the revision's own tree once, every form of it, as the \
+         document's own and laid after no closure"
     );
     let plain = session(SourceRoot::Strict).judge(text).expect("judges");
     assert_eq!(
@@ -1687,38 +1695,27 @@ fn an_importer_lowers_its_closure_once_1033()
         let before = usize::from(session.lowerings());
         let mut read = None;
         let submission = session
-            .judge_unit_reading(text, &laid.unit, laid.base, slot, |tree| {
-                read = Some(tree.clone());
+            .judge_unit_reading(text, &laid.unit, laid.base, slot, |parsed| {
+                read = Some((parsed.tree.clone(), parsed.closure));
             })
             .expect("the revision is judged");
         let lowered = usize::from(session.lowerings()).saturating_sub(before);
         let held = session
             .parse_held_unit(text, &laid.unit, laid.base)
             .expect("the revision parses held");
+        let (tree, key) = read.expect("the judgement hands its reader its parse");
         assert_eq!(
-            Some(held.tree()),
-            read.as_ref(),
+            held.tree(),
+            &tree,
             "the held parse is the tree the judgement read"
         );
-        let mut reread = None;
-        session
-            .read_held_unit(text, (&laid.unit, laid.base), |tree, key| {
-                reread = Some((tree.clone(), key));
-            })
-            .expect("the revision parses held");
         let mut typed = None;
         let _table = session.type_held_unit(text, (&laid.unit, laid.base), |_, key| {
             typed = Some(key);
         });
-        let (tree, key) = reread.expect("the reader is handed the held parse");
-        assert_eq!(
-            Some(&tree),
-            read.as_ref(),
-            "a read of the held parse reads the tree the judgement read"
-        );
         assert!(
             key.is_some() && typed == Some(key),
-            "beside the key of the closure's lowering a typing is handed"
+            "a typing is handed the key of the closure lowering the judgement read after"
         );
         (
             LoweringCount::from(lowered),

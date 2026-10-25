@@ -1408,21 +1408,12 @@ impl TypeTable
         base: ByteOffset,
     ) -> Self
     {
-        let refused = lowering.refused().map(|&refusal| {
-            diagnose(
-                Path::new(PATHLESS),
-                source,
-                DiagnosedSubject::Source(refusal),
-            )
-            .message
-            .text
-        });
+        let refused = lowering
+            .refused()
+            .map(|&refusal| Self::refused(source, refusal));
         let Lowered::Module { module, mut arena } = lowering.into_lowered()
         else {
-            return Self {
-                refused,
-                ..Self::default()
-            };
+            return refused.unwrap_or_default();
         };
         let declarations = adapt(&module);
         let written = written_types(&module, &arena, base);
@@ -1451,6 +1442,46 @@ impl TypeTable
             TypedRun::read(&context, typed, written)
         };
         Self::assemble(source, (module, arena), run, (unit, base))
+    }
+
+    /// The table of `source`, which its lowering refused whole with
+    /// `refusal`: it types nothing and keeps the refusal's message.
+    ///
+    /// # Specification
+    /// - requires: `refusal` is what the lowering of `source` refused it whole
+    ///   with.
+    /// - ensures: the table [`of_parsed_unit`](Self::of_parsed_unit) types of
+    ///   `source`: nothing typed, and the refusal's message as
+    ///   [`refused_whole`](Self::refused_whole) reads it.
+    /// - provides: the table a judgement keeping its tables hands its hovers
+    ///   when it refuses the source whole, without lowering it again.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the table of a source refused whole equals the one
+    ///   its typing answers.
+    /// - witness: `typed::tests::a_source_refused_whole_tables_as_its_typing_2440`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| matches!(ret.refused_whole(), Maybe::Present(_)) && ret.entries.is_empty())]
+    pub fn refused(
+        source: SourceText<'_>,
+        refusal: LoweringRefusal<'_>,
+    ) -> Self
+    {
+        Self {
+            refused: Some(
+                diagnose(
+                    Path::new(PATHLESS),
+                    source,
+                    DiagnosedSubject::Source(refusal),
+                )
+                .message
+                .text,
+            ),
+            ..Self::default()
+        }
     }
 
     /// The table of `module`, the source `unit` lays out with its last source
@@ -5424,6 +5455,37 @@ mod tests
     {
         let grammar = built_in().expect("the built-in grammar builds");
         TypeTable::of(&grammar, source).expect("the source parses")
+    }
+
+    /// #2440: a source its lowering refuses whole tables as its typing does —
+    /// nothing typed, the refusal's message kept — without typing it.
+    #[test]
+    fn a_source_refused_whole_tables_as_its_typing_2440()
+    {
+        let source = SourceText::from("def1 f(x : Integer) -> -F Integer {\n  return x\n}\n");
+        let grammar = built_in().expect("the built-in grammar builds");
+        let parsed = gandr_surface_parser::parse(&grammar, source).expect("the source parses");
+        let lowering = super::lower_parsed_unit(
+            &grammar,
+            parsed,
+            &gandr_surface_lowering::Unit::single(),
+            &mut super::LoweringCount::default(),
+            &mut gandr_surface_lowering::coincide::Decisions::none(),
+        )
+        .expect("the source lowers");
+        let &refusal = lowering
+            .refused()
+            .expect("the lowering refuses the source whole");
+        let refused = TypeTable::refused(source, refusal);
+        assert!(
+            matches!(refused.refused_whole(), Maybe::Present(_)),
+            "the table keeps the refusal's message"
+        );
+        assert_eq!(
+            refused,
+            table(source),
+            "and equals the table the source's typing answers"
+        );
     }
 
     /// #1743: a parameter nothing reads answers as a binder at its own type,

@@ -2425,8 +2425,9 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: what [`judge`](Self::judge) ensures of `revision`; `read` is
-    ///   called once with the revision's tree, whose source is `revision`, when
-    ///   the parse commits, and never when it faults.
+    ///   called once with the revision's tree, whose source is `revision`, as
+    ///   the document's own tree and laid after no closure ([`JudgedParse`]),
+    ///   when the parse commits, and never when it faults.
     /// - provides: the tree of a judged revision to a face, at no second parse.
     /// - fails: as [`judge`](Self::judge).
     /// - panics: only by propagating a panic of `read`.
@@ -2450,7 +2451,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Result<Submission<'text>, SessionFault<'text>>
     where
         Store: CheckpointStore,
-        Read: FnOnce(&SyntaxTree<'text>),
+        Read: FnOnce(JudgedParse<'_, 'text>),
     {
         self.judge_with(
             revision,
@@ -2499,7 +2500,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
     where
         Store: CheckpointStore,
-        Read: FnOnce(&SyntaxTree<'text>),
+        Read: FnOnce(JudgedParse<'_, 'text>),
         Poll: Retirement,
     {
         self.judge_with(
@@ -2529,18 +2530,20 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   starting at `base`; `slot` is the submission's own.
     /// - ensures: what [`judge_reading`](Self::judge_reading) ensures of a
     ///   revision, over the unit: `read` is called once with the tree of
-    ///   `revision`; the submission's text is `revision` and its base `base`;
-    ///   its composition reports the declarations, refusals, shadowed builtins,
-    ///   inferred exits and runs written from `base` on, as the dispatcher's
-    ///   [`judge_member`] projects it, and its completion obligations are those
-    ///   from `base` on; the import scope held is the revision's own. Exactly
-    ///   [`judge_reading`](Self::judge_reading) at offset zero of
-    ///   [`Unit::single`]. When the closure's text is one a document can be
-    ///   laid after, the tree is the document's parse laid after the closure's
-    ///   ([`ParseResult::after`]), the closure's lowering is held in `slot` and
-    ///   in the process's store, and the form census is the document's own;
-    ///   when the closure's lowering reached its end, its declarations are
-    ///   judged, and the incremental pass led over their items
+    ///   `revision`, the document's own tree when the document was parsed alone
+    ///   and the closure lowering the tree is laid after when it is
+    ///   ([`JudgedParse`]); the submission's text is `revision` and its base
+    ///   `base`; its composition reports the declarations, refusals, shadowed
+    ///   builtins, inferred exits and runs written from `base` on, as the
+    ///   dispatcher's [`judge_member`] projects it, and its completion
+    ///   obligations are those from `base` on; the import scope held is the
+    ///   revision's own. Exactly [`judge_reading`](Self::judge_reading) at
+    ///   offset zero of [`Unit::single`]. When the closure's text is one a
+    ///   document can be laid after, the tree is the document's parse laid
+    ///   after the closure's ([`ParseResult::after`]), the closure's lowering
+    ///   is held in `slot` and in the process's store, and the form census is
+    ///   the document's own; when the closure's lowering reached its end, its
+    ///   declarations are judged, and the incremental pass led over their items
     ///   ([`Closure::led`]), once per process and root; the document is lowered
     ///   onto the arena that pass left, which extends the judgement's
     ///   ([`lower_onto_closure`]), judged on a copy of the judgement's state
@@ -2577,7 +2580,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Result<Submission<'text>, SessionFault<'text>>
     where
         Store: CheckpointStore,
-        Read: FnOnce(&SyntaxTree<'text>),
+        Read: FnOnce(JudgedParse<'_, 'text>),
     {
         self.judge_with(revision, (unit, base), Some(slot), read, &Unretired)
             .map(Polled::whole)
@@ -2616,7 +2619,7 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
     where
         Store: CheckpointStore,
-        Read: FnOnce(&SyntaxTree<'text>),
+        Read: FnOnce(JudgedParse<'_, 'text>),
         Poll: Retirement,
     {
         self.judge_with(revision, (unit, base), Some(slot), read, retirement)
@@ -2657,34 +2660,41 @@ impl<Store, Blocks> Session<Store, Blocks>
     ) -> Result<Polled<Submission<'text>, Poll::Retired, ()>, SessionFault<'text>>
     where
         Store: CheckpointStore,
-        Read: FnOnce(&SyntaxTree<'text>),
+        Read: FnOnce(JudgedParse<'_, 'text>),
         Poll: Retirement,
     {
         let own = SourceIndex::from(unit.sources().len().saturating_sub(1_usize));
         self.admission = Maybe::Absent(admission::Absent::Idle);
         let parse_fault = |fault| SessionFault::Compose(ComposeFault::Parse(fault));
-        let closure = slot.and_then(|slot| match self.closure_lowering(revision, unit, base) {
+        let held = slot.and_then(|slot| match self.closure_lowering(revision, unit, base) {
             Held::Lowered(lowered) => {
                 let held = slot.0.get_or_init(|| Arc::clone(&lowered));
-                Arc::ptr_eq(held, &lowered).then_some(&**held)
+                Arc::ptr_eq(held, &lowered).then_some(held)
             },
             Held::Whole => None,
         });
-        let (lowering, checking, led, forms, written) = if let Some(closure) = closure {
+        let closure = held.map(|held| &**held);
+        let (lowering, checking, led, forms, written) = if let Some(held) = held {
+            let closure = &**held;
             let document = SourceText::from(
                 <&str>::from(revision)
                     .get(usize::from(base) ..)
                     .unwrap_or_default(),
             );
-            let (parsed, forms) = self
+            let (own, forms) = self
                 .forms
                 .parse(&self.grammar, document, self.threads)
                 .map_err(parse_fault)?;
-            let written = Maybe::Present(path_imports(&self.grammar, parsed.tree()));
-            let parsed = parsed
+            let written = Maybe::Present(path_imports(&self.grammar, own.tree()));
+            let parsed = own
                 .after(closure.lowering().tree(), revision)
                 .map_err(|fault| parse_fault(MeldError::Build(fault)))?;
-            read(parsed.tree());
+            read(JudgedParse {
+                tree: parsed.tree(),
+                own: Some(own.tree()),
+                closure: Some(ClosureKey(Arc::downgrade(held))),
+            });
+            drop(own);
             let root = self.root.corpus_root();
             let (lowering, checking, led) = match closure.judged(root) {
                 Some(judged) => {
@@ -2731,7 +2741,11 @@ impl<Store, Blocks> Session<Store, Blocks>
             else {
                 Maybe::Absent(imported::Absent::Joined)
             };
-            read(parsed.tree());
+            read(JudgedParse {
+                tree: parsed.tree(),
+                own: (usize::from(base) == 0).then(|| parsed.tree()),
+                closure: None,
+            });
             let lowering = lower_parsed_unit(
                 &self.grammar,
                 parsed,
@@ -2761,10 +2775,10 @@ impl<Store, Blocks> Session<Store, Blocks>
                     obligations,
                     forms,
                     written,
-                    table: Maybe::Absent(match self.tables {
-                        Tables::Kept => tabled::Absent::RefusedWhole,
-                        Tables::Unkept => tabled::Absent::Untabled,
-                    }),
+                    table: match self.tables {
+                        Tables::Kept => Maybe::Present(TypeTable::refused(revision, refusal)),
+                        Tables::Unkept => Maybe::Absent(tabled::Absent::Untabled),
+                    },
                 }));
             },
         };
@@ -3282,6 +3296,18 @@ impl<Store, Blocks> Session<Store, Blocks>
         self.tables = tables;
     }
 
+    /// Whether every judgement from here on keeps the type table of its
+    /// revision, as [`keep`](Self::keep) last said.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn tables(&self) -> Tables
+    {
+        self.tables
+    }
+
     /// The grammar every revision is parsed under.
     ///
     /// # Specification
@@ -3413,53 +3439,6 @@ impl<Store, Blocks> Session<Store, Blocks>
             Some(judged) => TypeTable::of_parsed_after(judged, parsed, unit, base).ok(),
             None => TypeTable::of_parsed_unit(&self.grammar, parsed, unit, base).ok(),
         }
-    }
-
-    /// Parse `revision` as [`type_held_unit`](Self::type_held_unit) does and
-    /// hand `read` its tree and closure key, typing nothing: what a reader
-    /// whose revision's table the judgement already kept
-    /// ([`Submission::take_table`]) parses.
-    ///
-    /// # Specification
-    /// - requires: as [`judge_unit_reading`](Self::judge_unit_reading).
-    /// - ensures: `read` is called once, with the tree and key
-    ///   [`type_held_unit`](Self::type_held_unit) hands it, when the text
-    ///   parses.
-    /// - fails: the parse's fault, `read` then not called.
-    /// - panics: only by propagating a panic of `read` or a molding thread's.
-    /// - executable: none — a parse handed to a reader.
-    ///
-    /// # Errors
-    /// The [`MeldError`] the parse faulted with.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — an importer's heads read off this parse are the heads
-    ///   read off the parse its table is typed from.
-    /// - witness: `tests::session::an_importer_lowers_its_closure_once_1033`
-    #[inline]
-    pub fn read_held_unit<'text, Read>(
-        &self,
-        revision: SourceText<'text>,
-        (unit, base): (&Unit, ByteOffset),
-        read: Read,
-    ) -> Result<(), MeldError>
-    where
-        Read: FnOnce(&SyntaxTree<'text>, Option<ClosureKey>),
-    {
-        let (parsed, _census, closure) = parse_held_laid(
-            &self.grammar,
-            &self.forms,
-            revision,
-            Some((unit, base)),
-            self.threads,
-        )?;
-        read(
-            parsed.tree(),
-            closure
-                .as_ref()
-                .map(|closure| ClosureKey(Arc::downgrade(closure))),
-        );
-        Ok(())
     }
 
     /// The lowering the process holds for `revision`'s closure — its text
@@ -3939,6 +3918,25 @@ impl ClosureKey
             Holding::Dropped
         }
     }
+}
+
+/// The parse a judgement hands its reader: the tree it lowers, the document's
+/// own tree when it parsed the document alone, and the closure lowering the
+/// tree is laid after.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+pub struct JudgedParse<'held, 'text>
+{
+    /// The tree the judgement lowers: the document's parse laid after its
+    /// closure's tree when it is laid after one, else the revision's parse.
+    pub tree: &'held SyntaxTree<'text>,
+    /// The document's own parse, over its text alone: none when the revision
+    /// joins the document to the siblings it imports and was parsed whole.
+    pub own: Option<&'held SyntaxTree<'text>>,
+    /// The closure lowering `tree` is laid after, when it is.
+    pub closure: Option<ClosureKey>,
 }
 
 impl PartialEq for ClosureKey
