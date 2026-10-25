@@ -41,6 +41,7 @@ use gandr_theory_levitation::TheoryParts;
 use gandr_theory_levitation::TheoryPort;
 use gandr_theory_levitation::TheoryRule;
 use gandr_theory_levitation::TheorySort;
+use gandr_theory_levitation::row_condition;
 use quenchant_shape::shape::Maybe;
 
 use super::super::DescriptionDiagnostic;
@@ -343,6 +344,7 @@ impl Reader<'_, '_>
                     left,
                     right,
                     fresh: Vec::new(),
+                    under: Maybe::Absent(row_condition::Absent::Unconditioned),
                 },
                 extension.keyword,
                 WrittenFace {

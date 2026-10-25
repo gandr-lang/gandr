@@ -252,7 +252,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
         LoweringRefusal::RulesOverlapSecondOrder { .. } => "parts from a rule that substitutes",
         LoweringRefusal::RulesOverlapCondition { .. } => {
-            "parts under the freshness its overlap composes"
+            "parts under the condition its overlap composes"
         },
         LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
         LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",
@@ -675,7 +675,7 @@ mod tests
             LoweringRefusal::RulesDiverge { .. } => "rewrites a term to another constructor term",
             LoweringRefusal::RulesOverlapSecondOrder { .. } => "parts from a rule that substitutes",
             LoweringRefusal::RulesOverlapCondition { .. } => {
-                "parts under the freshness its overlap composes"
+                "parts under the condition its overlap composes"
             },
             LoweringRefusal::RulesUncompleted { .. } => "rewrites a term two ways no rule joins",
             LoweringRefusal::RulesNeverComplete { .. } => "rules whose completion never ends",

@@ -197,6 +197,7 @@ use gandr_theory_levitation::NominalSerial;
 use gandr_theory_levitation::OperationKind;
 use gandr_theory_levitation::Representability;
 use gandr_theory_levitation::RewritePort;
+use gandr_theory_levitation::RowTail;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::ShapeFace;
 use gandr_theory_levitation::ShapePoint;
@@ -214,10 +215,12 @@ use gandr_theory_levitation::TheoryRule;
 use gandr_theory_levitation::TheoryShape;
 use gandr_theory_levitation::TheorySort;
 use gandr_theory_levitation::TheoryValue;
+use gandr_theory_levitation::Under;
 use gandr_theory_levitation::WfDiagnostic;
 use gandr_theory_levitation::WfKind;
 use gandr_theory_levitation::derive_boundaries;
 use gandr_theory_levitation::derive_cell_var_meta;
+use gandr_theory_levitation::row_condition;
 use quenchant_shape::shape::Maybe;
 
 use super::DescribedDeclaration;
@@ -687,7 +690,7 @@ impl Reader<'_, '_>
                     })
             }
             else if reading.eat(Spelling("rule")).0 {
-                self.signature_rule(&mut reading, &parts.sorts, &scope)
+                self.signature_rule(&mut reading, &parts.sorts, &scope, visible)
                     .map(|member| match member {
                         RuleMember::Circuit(rule, presented, wired) => {
                             circuits.push(rule);
@@ -831,47 +834,105 @@ impl Reader<'_, '_>
     {
         let named = run.take()?;
         let Written(name) = self.text(named);
-        let presents = |declaration: &'earlier Earlier| match declaration.presentation {
-            Maybe::Present(ref presented) if declaration.description.id.name.as_ref() == name => {
-                Some((declaration, presented))
+        let (declaration, presented) = match presenting(visible, Written(name)) {
+            Presenting::Found(declaration, presented) => (declaration, presented),
+            Presenting::Unknown => {
+                return Err(run.signature_fault(SignatureFault::UnknownInclude(Name::from(name))));
             },
-            Maybe::Present(_) | Maybe::Absent(_) => None,
-        };
-        let mut found = visible
-            .own
-            .iter()
-            .rev()
-            .find_map(|&declaration| presents(declaration));
-        if found.is_none() {
-            let mut answered: Option<SourceIndex> = None;
-            for &(source, declaration) in visible.imported.iter().rev() {
-                let Some(presented) = presents(declaration)
-                else {
-                    continue;
-                };
-                match answered {
-                    Some(held) if held != source => {
-                        return Err(
-                            run.signature_fault(SignatureFault::AmbiguousInclude(Name::from(name)))
-                        );
-                    },
-                    Some(_) => {},
-                    None => {
-                        answered = Some(source);
-                        found = Some(presented);
-                    },
-                }
-            }
-        }
-        let Some((declaration, presented)) = found
-        else {
-            return Err(run.signature_fault(SignatureFault::UnknownInclude(Name::from(name))));
+            Presenting::Ambiguous => {
+                return Err(run.signature_fault(SignatureFault::AmbiguousInclude(Name::from(name))));
+            },
         };
         let parts = presented
             .value
             .decode()
             .map_err(|_fault| run.fault(DescriptionFault::Malformed))?;
         Ok((declaration, presented, parts, named))
+    }
+
+    /// The row a rule's `under` clause states it fires under: each theory it
+    /// names, found as an `include` member's is, and whether the row stays
+    /// open through a tail.
+    ///
+    /// # Specification
+    /// - requires: `run` stands past the rule's sides and its `where` clause.
+    /// - ensures: absent when no `under` follows; otherwise the theories in
+    ///   written order, each under the name its block presents, open exactly
+    ///   when a `| r` tail follows them, and `run` past the `]`.
+    /// - fails: a row out of shape is malformed; at the name, a name no block
+    ///   of `visible` presents is [`SignatureFault::UnknownRowTheory`], one
+    ///   blocks of two imported sources present and none of its own
+    ///   [`SignatureFault::AmbiguousRowTheory`], and a theory named again
+    ///   [`SignatureFault::RepeatedRowTheory`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the located diagnostic of the first failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open and a closed row of two theories, an unknown
+    ///   theory and one named twice are told apart.
+    /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(ref under)) => !under.theories.is_empty(),
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn under(
+        &self,
+        run: &mut Run<'_>,
+        visible: &Visible<'_>,
+    ) -> Result<Maybe<Under, row_condition::Absent>, DescriptionDiagnostic>
+    {
+        if !run.eat(Spelling("under")).0 {
+            return Ok(Maybe::Absent(row_condition::Absent::Unconditioned));
+        }
+        if !run.eat(Spelling("[")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        let mut theories = Vec::new();
+        let mut named: BTreeMap<&str, ByteSpan> = BTreeMap::new();
+        let tail = loop {
+            let theory = run.take()?;
+            let Written(name) = self.text(theory);
+            let refused = |fault| DescriptionDiagnostic {
+                span: theory.span,
+                fault: DescriptionFault::Signature(fault),
+            };
+            let found = match presenting(visible, Written(name)) {
+                Presenting::Found(declaration, _) => declaration.description.id.name.clone(),
+                Presenting::Unknown => {
+                    return Err(refused(SignatureFault::UnknownRowTheory(Name::from(name))));
+                },
+                Presenting::Ambiguous => {
+                    return Err(refused(SignatureFault::AmbiguousRowTheory(Name::from(
+                        name,
+                    ))));
+                },
+            };
+            if let Some(&first) = named.get(name) {
+                return Err(refused(SignatureFault::RepeatedRowTheory {
+                    name: Name::from(name),
+                    first,
+                }));
+            }
+            let _first = named.insert(name, theory.span);
+            theories.push(found);
+            let more = run.eat(Spelling(",")).0;
+            if run.eat(Spelling("|")).0 {
+                let _tail = run.take()?;
+                break RowTail::Open;
+            }
+            if !more || run.at(Spelling("]")).0 {
+                break RowTail::Closed;
+            }
+        };
+        if !run.eat(Spelling("]")).0 {
+            return Err(run.fault(DescriptionFault::Malformed));
+        }
+        Ok(Maybe::Present(Under {
+            theories: theories.into(),
+            tail,
+        }))
     }
 
     /// Read a top-level `oper` declaration as the one operation it declares,
@@ -1903,6 +1964,7 @@ impl Reader<'_, '_>
         run: &mut Run<'_>,
         sorts: &[TheorySort],
         scope: &BTreeMap<Written<'_>, HeadKind>,
+        visible: &Visible<'_>,
     ) -> Result<RuleMember, DescriptionDiagnostic>
     {
         let name = run.take()?;
@@ -1946,6 +2008,7 @@ impl Reader<'_, '_>
                     }
                 }
             }
+            let under = self.under(run, visible)?;
             run.end()?;
             let (lhs, left) = self.free_term(lhs, &BTreeSet::new())?;
             let lhs = patterned(&lhs, |name| {
@@ -1963,6 +2026,7 @@ impl Reader<'_, '_>
                     left: lhs,
                     right: rhs,
                     fresh,
+                    under,
                 },
                 name,
                 run.span,
@@ -2644,6 +2708,79 @@ fn fresh_port(at: Placed) -> Name
 {
     format!("{FRESH_PORT}{}", usize::from(at.span.start())).into()
 }
+
+/// What a name among the `theory` blocks a source sees presents.
+enum Presenting<'earlier>
+{
+    /// The block, and its presentation.
+    Found(&'earlier Earlier, &'earlier Presentation),
+    /// No block presents the name.
+    Unknown,
+    /// Blocks of two imported sources present it, and none of the reading
+    /// source's own.
+    Ambiguous,
+}
+
+/// The `theory` block `name` names among `visible`: the last block of the
+/// reading source under that name, or else the one block of the sources it
+/// imports unqualified.
+///
+/// # Specification
+/// - ensures: a block found is named `name` and presents the presentation
+///   returned beside it; a block of the reading source shadows the imported
+///   ones, and a later block of one imported source an earlier.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one name presented by two imported sources is ambiguous
+///   where one presented by one is found, for an `include` member and an
+///   `under` row alike.
+/// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
+/// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
+#[spec(ensures: |ret| match ret {
+    | Presenting::Found(found, presented) => {
+        found.description.id.name.as_ref() == name.0
+            && matches!(found.presentation, Maybe::Present(ref own) if own == presented)
+    },
+    | Presenting::Unknown | Presenting::Ambiguous => true,
+})]
+fn presenting<'earlier>(
+    visible: &Visible<'earlier>,
+    name: Written<'_>,
+) -> Presenting<'earlier>
+{
+    let Written(name) = name;
+    let presents = |declaration: &'earlier Earlier| match declaration.presentation {
+        Maybe::Present(ref presented) if declaration.description.id.name.as_ref() == name => {
+            Some((declaration, presented))
+        },
+        Maybe::Present(_) | Maybe::Absent(_) => None,
+    };
+    if let Some((declaration, presented)) = visible
+        .own
+        .iter()
+        .rev()
+        .find_map(|&declaration| presents(declaration))
+    {
+        return Presenting::Found(declaration, presented);
+    }
+    let mut answered: Option<(SourceIndex, &'earlier Earlier, &'earlier Presentation)> = None;
+    for &(source, declaration) in visible.imported.iter().rev() {
+        let Some((declaration, presented)) = presents(declaration)
+        else {
+            continue;
+        };
+        match answered {
+            Some((held, ..)) if held != source => return Presenting::Ambiguous,
+            Some(_) => {},
+            None => answered = Some((source, declaration, presented)),
+        }
+    }
+    answered.map_or(Presenting::Unknown, |(_, declaration, presented)| {
+        Presenting::Found(declaration, presented)
+    })
+}
+
 mod extension;
 
 /// `term` with each application of a name no operation of the theory is, to

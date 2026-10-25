@@ -765,10 +765,10 @@ pub enum RefusalName
     /// Two rules of a block whose left sides overlap, one of which
     /// instantiates a variable a binding port binds.
     RulesOverlapSecondOrder,
-    /// Two rules of a block whose left sides overlap, one of which states a
-    /// freshness condition or moves a variable across an abstraction where a
-    /// term can name an atom, rewriting the overlap to two normal forms under
-    /// the condition it composes.
+    /// Two rules of a block whose left sides overlap, one of which fires under
+    /// a row, states a freshness condition or moves a variable across an
+    /// abstraction where a term can name an atom, rewriting the overlap to two
+    /// normal forms under the condition it composes.
     RulesOverlapCondition,
     /// Two rules of a block rewriting one term to two normal forms no rule
     /// the path order orients joins.

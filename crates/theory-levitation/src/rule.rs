@@ -1069,13 +1069,62 @@ impl Freshness
     }
 }
 
+/// The row a rule fires under, `under [State, Console | r]`: the theories the
+/// row holds, and whether it may hold others.
+///
+/// An open row is satisfied by every row holding its theories, a closed one by
+/// the row holding exactly them.
+///
+/// # Specification
+/// - requires: nothing to construct this data.
+/// - ensures: the theories as the rule writes them, and the row's tail.
+/// - executable: none — a data carrier with no invocation boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the theory value's round trip, which keeps each theory
+///   and the tail.
+/// - witness: `theory::tests::a_rule_keeps_the_row_it_fires_under_2448`
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Under
+{
+    /// The theories, in written order.
+    pub theories: Box<[Name]>,
+    /// Whether the row may hold theories it does not name.
+    pub tail: RowTail,
+}
+
+/// Whether a row may hold theories it does not name.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RowTail
+{
+    /// The row holds exactly the theories it names, `[State]`.
+    Closed,
+    /// The row holds the theories it names and possibly others, `[State | r]`.
+    Open,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a rule fires under no row condition.
+    pub mod row_condition {
+        /// The reason the row condition is absent.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The rule states no `under` clause: it fires under every row.
+            Unconditioned,
+        }
+    }
+}
+
 /// A 2-cell face `lhs ==> rhs`: the surface-to-cell intermediary a cell store
 /// elaborates through.
 ///
 /// The two [`FreeTerm`]s are open terms in `D⋆(V)`; `vars` is the derived
 /// [`RuleVarMeta`] per left-hand-side pattern variable; `fresh` the rule's
-/// freshness conditions, in written order; `provenance` is the surface span
-/// the rule was read from.
+/// freshness conditions, in written order; `under` the row it fires under;
+/// `provenance` is the surface span the rule was read from.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct RuleFace
 {
@@ -1087,6 +1136,8 @@ pub struct RuleFace
     pub vars: Box<[RuleVarMeta]>,
     /// The freshness conditions the rule states.
     pub fresh: Box<[Freshness]>,
+    /// The row the rule fires under.
+    pub under: Maybe<Under, row_condition::Absent>,
     /// The surface span this face was read from.
     pub provenance: SurfaceSpan,
 }
@@ -1114,6 +1165,7 @@ impl RuleFace
             rhs,
             vars: vars.into(),
             fresh: Box::default(),
+            under: Maybe::Absent(row_condition::Absent::Unconditioned),
             provenance,
         }
     }
@@ -1135,6 +1187,20 @@ impl RuleFace
             fresh: fresh.into(),
             ..self
         }
+    }
+
+    /// The face firing under `under`: the row it names, or every row.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn with_under(
+        self,
+        under: Maybe<Under, row_condition::Absent>,
+    ) -> Self
+    {
+        Self { under, ..self }
     }
 
     /// The first variable some occurrence of which stands under other

@@ -46,6 +46,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::btree_map::Entry;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 use core::slice;
 
 use super::Occurrence;
@@ -59,6 +60,7 @@ use super::ordinal;
 use crate::presented::Exhausted;
 use crate::presented::RewriteFuel;
 use crate::presented::RuleIndex;
+use crate::theory_rules::row::RuleRow;
 
 /// A count of subterms, parameters or binders, or an occurrence's distance
 /// to its binder.
@@ -206,6 +208,8 @@ struct Rule
     /// Each left position of an operation, a constructor or a results tuple
     /// in the rule's own reading, by its position in this one.
     places: BTreeMap<Position, Position>,
+    /// The rows the rule fires in.
+    row: RuleRow,
 }
 
 /// A presentation's rules read second-order.
@@ -250,15 +254,16 @@ impl Higher
     ///
     /// # Specification
     /// - requires: both rules well formed.
-    /// - ensures: [`Pair::Joins`] when `at` is not an operation's position, the
-    ///   two left sides do not unify there with `inner`'s metavariables applied
-    ///   to the binders above `at`, or their most general unifier's two reducts
-    ///   — `outer`'s right side, and `outer`'s left side with `inner`'s right
-    ///   side grafted at `at`, both instantiated — normalize to one η-short
-    ///   term under every rule; [`Pair::Parts`] when they normalize to two;
-    ///   [`Pair::Undecided`] when unification meets a metavariable applied to
-    ///   other than distinct occurrences, or either rule names a symbol outside
-    ///   the table.
+    /// - ensures: [`Pair::Joins`] when the two rules' rows share no row, `at`
+    ///   is not an operation's position, the two left sides do not unify there
+    ///   with `inner`'s metavariables applied to the binders above `at`, or
+    ///   their most general unifier's two reducts — `outer`'s right side, and
+    ///   `outer`'s left side with `inner`'s right side grafted at `at`, both
+    ///   instantiated — normalize to one η-short term under every rule firing
+    ///   in every row both rules' rows describe; [`Pair::Parts`] when they
+    ///   normalize to two; [`Pair::Undecided`] when unification meets a
+    ///   metavariable applied to other than distinct occurrences, or either
+    ///   rule names a symbol outside the table.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — the verdict is a comparison of two normal forms,
@@ -271,10 +276,13 @@ impl Higher
     /// - hypothesis: L3 — a `let` instantiating its argument joins a second
     ///   `let` rule at a constant and parts from one rewriting it apart;
     ///   get-get joins its own instance through its pattern; a relative monad's
-    ///   associativity joins with itself and both unit laws.
+    ///   associativity joins with itself and both unit laws; two rules under
+    ///   open rows join under their meet by a rule firing there, and two under
+    ///   distinct closed rows owe no join.
     /// - witness: `theory_rules::tests::a_let_rule_converges_and_beta_is_unoriented`
     /// - witness: `theory_rules::tests::a_pattern_on_the_left_is_read_and_decided_2115`
     /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
+    /// - witness: `theory_rules::tests::rules_under_rows_join_under_the_row_their_overlap_composes_2448`
     pub(super) fn pair(
         &self,
         outer: RuleIndex,
@@ -289,6 +297,10 @@ impl Higher
         )
         else {
             return Ok(Pair::Undecided);
+        };
+        let Some(row) = over.row.meet(&under.row)
+        else {
+            return Ok(Pair::Joins);
         };
         let Some(&place) = over.places.get(&at)
         else {
@@ -331,22 +343,23 @@ impl Higher
         else {
             return Ok(Pair::Parts);
         };
-        let by_outer = self.normalize(contracted(by_outer, fuel)?, fuel)?;
-        let by_inner = self.normalize(contracted(by_inner, fuel)?, fuel)?;
+        let by_outer = self.normalize(contracted(by_outer, fuel)?, &row, fuel)?;
+        let by_inner = self.normalize(contracted(by_inner, fuel)?, &row, fuel)?;
         Ok(match (by_outer, by_inner) {
             (Some(by_outer), Some(by_inner)) if by_outer == by_inner => Pair::Joins,
             (Some(_) | None, Some(_) | None) => Pair::Parts,
         })
     }
 
-    /// `term`'s normal form under every rule, rewriting the last
-    /// redex in pre-order first; [`None`] where a rule's instance is ill
-    /// formed.
+    /// `term`'s normal form under every rule firing in every row `row`
+    /// describes, rewriting the last redex in pre-order first; [`None`] where
+    /// a rule's instance is ill formed.
     ///
     /// # Specification
     /// - requires: `term` η-short.
-    /// - ensures: on [`Some`], an η-short term no rule matches at any position,
-    ///   reached from `term` by rewriting.
+    /// - ensures: on [`Some`], an η-short term no rule whose row lies above
+    ///   `row` matches at any position, reached from `term` by rewriting with
+    ///   those rules.
     /// - fails: [`Exhausted`] when `fuel` runs out first.
     /// - panics: none.
     /// - executable: none — a normal form is what this computes; checking one
@@ -358,9 +371,11 @@ impl Higher
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::pair`].
     /// - witness: `theory_rules::tests::a_relative_monads_laws_join_their_overlaps_2328`
+    /// - witness: `theory_rules::tests::rules_under_rows_join_under_the_row_their_overlap_composes_2448`
     fn normalize(
         &self,
         term: Term,
+        row: &RuleRow,
         fuel: &mut RewriteFuel,
     ) -> Result<Option<Term>, Exhausted>
     {
@@ -376,7 +391,9 @@ impl Higher
                     return Ok(None);
                 };
                 for rule in self.rules.iter().flatten() {
-                    if rule.left.first() != Some(&head) {
+                    if rule.left.first() != Some(&head)
+                        || row.partial_cmp(&rule.row).is_none_or(Ordering::is_gt)
+                    {
                         continue;
                     }
                     fuel.charge()?;
@@ -452,6 +469,7 @@ fn reading(
         right,
         metas: Count(metas),
         places,
+        row: rule.row.clone(),
     })
 }
 

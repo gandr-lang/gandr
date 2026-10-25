@@ -43,6 +43,9 @@ use crate::generic::DescValue;
 use crate::generic::Payload;
 use crate::rule::FreeTerm;
 use crate::rule::Freshness;
+use crate::rule::RowTail;
+use crate::rule::Under;
+use crate::rule::row_condition;
 use crate::termination::Rank;
 use crate::test_support::Grade;
 use crate::wellformed::check_desc;
@@ -182,12 +185,14 @@ fn cat_like() -> TheoryParts
                 ]),
                 right: FreeTerm::var("f"),
                 fresh: Vec::new(),
+                under: Maybe::Absent(row_condition::Absent::Unconditioned),
             },
             TheoryRule {
                 name: Name::from("halves"),
                 left: FreeTerm::op("split", [FreeTerm::ctor("Pair", [x(), x()])]),
                 right: FreeTerm::results([x(), x()]),
                 fresh: Vec::new(),
+                under: Maybe::Absent(row_condition::Absent::Unconditioned),
             },
         ],
         ..TheoryParts::default()
@@ -271,6 +276,8 @@ fn the_code_is_one_data_sort_of_the_tabled_constructors()
         ("Occ", vec!["String"]),
         ("Bind", vec!["String", "Theory"]),
         ("Bvar", vec!["String"]),
+        ("Under", vec!["String", "Theory"]),
+        ("Open", vec!["Theory"]),
     ]);
     let counted: Vec<(usize, usize)> = fields
         .iter()
@@ -846,6 +853,7 @@ fn semigroup() -> TheoryParts
             left: mul(mul(v("x"), v("y")), v("z")),
             right: mul(v("x"), mul(v("y"), v("z"))),
             fresh: Vec::new(),
+            under: Maybe::Absent(row_condition::Absent::Unconditioned),
         }],
         ..TheoryParts::default()
     }
@@ -873,6 +881,7 @@ fn unit_named(
             left: FreeTerm::op("mul", [FreeTerm::op(operation, []), FreeTerm::var("x")]),
             right: FreeTerm::var("x"),
             fresh: Vec::new(),
+            under: Maybe::Absent(row_condition::Absent::Unconditioned),
         },
     )
 }
@@ -1366,6 +1375,7 @@ fn a_rule_abstraction_takes_its_own_tag()
                 left: FreeTerm::op("nu", [FreeTerm::abs(atom, FreeTerm::op("nil", []))]),
                 right: FreeTerm::op("nil", []),
                 fresh: Vec::new(),
+                under: Maybe::Absent(row_condition::Absent::Unconditioned),
             }],
             ..TheoryParts::default()
         }
@@ -1417,6 +1427,7 @@ fn a_freshness_condition_follows_its_rule()
                 left: par(nu(FreeTerm::var("p")), FreeTerm::var("q")),
                 right: nu(par(FreeTerm::var("p"), FreeTerm::var("q"))),
                 fresh,
+                under: Maybe::Absent(row_condition::Absent::Unconditioned),
             }],
             ..TheoryParts::default()
         }
@@ -1466,6 +1477,69 @@ fn a_freshness_condition_follows_its_rule()
     );
 }
 
+/// #2448: a rule's `under` clause follows its freshness conditions, one
+/// `Under` per theory in written order and an `Open` for an open row.
+#[test]
+fn a_rule_keeps_the_row_it_fires_under_2448()
+{
+    let quiet = |under: Maybe<Under, row_condition::Absent>| TheoryParts {
+        sorts: vec![sort("C", Representability::Ordinary)],
+        operations: vec![TheoryOperation {
+            name: Name::from("log"),
+            kind: OperationKind::Operation,
+            inputs: vec![port("k", "C", [])],
+            outputs: vec![port("", "C", [])],
+        }],
+        rules: vec![TheoryRule {
+            name: Name::from("quiet"),
+            left: FreeTerm::op("log", [FreeTerm::var("k")]),
+            right: FreeTerm::var("k"),
+            fresh: Vec::new(),
+            under,
+        }],
+        ..TheoryParts::default()
+    };
+    let row = |tail: RowTail| {
+        Maybe::Present(Under {
+            theories: [Name::from("State"), Name::from("Console")].into(),
+            tail,
+        })
+    };
+    let open = quiet(row(RowTail::Open));
+    let closed = quiet(row(RowTail::Closed));
+    let unconditioned = quiet(Maybe::Absent(row_condition::Absent::Unconditioned));
+    for parts in [&open, &closed, &unconditioned] {
+        assert_eq!(
+            TheoryValue::encode(parts).decode(),
+            Ok(parts.clone()),
+            "the row reads back with its rule, its theories in written order"
+        );
+    }
+    let values = [&open, &closed, &unconditioned].map(TheoryValue::encode);
+    assert!(
+        values[0] != values[1] && values[1] != values[2] && values[0] != values[2],
+        "the row and its tail are part of the value"
+    );
+    assert_eq!(
+        (Tag::Under.constructor(), Tag::Open.constructor()),
+        (
+            ConstructorTag::from(29_usize),
+            ConstructorTag::from(30_usize)
+        ),
+        "appended, so a presentation whose rules fire under every row keeps its bytes"
+    );
+    let open_first = node(Tag::Open, end());
+    assert_eq!(
+        TheoryValue::from_value(node(
+            Tag::Presents,
+            Payload::pair(end(), Payload::pair(end(), Payload::rec(open_first))),
+        ))
+        .decode(),
+        Err(TheoryFault::Misplaced(Tag::Open.constructor())),
+        "an open tail follows the row it leaves open"
+    );
+}
+
 #[test]
 fn an_atom_occurrence_takes_its_own_tag()
 {
@@ -1496,6 +1570,7 @@ fn an_atom_occurrence_takes_its_own_tag()
                 )]),
                 right: FreeTerm::op("nil", []),
                 fresh: Vec::new(),
+                under: Maybe::Absent(row_condition::Absent::Unconditioned),
             }],
             ..TheoryParts::default()
         }
@@ -1548,6 +1623,7 @@ fn a_binding_field_takes_its_own_tags()
                 left: FreeTerm::op("ext", [FreeTerm::var("m"), field]),
                 right: FreeTerm::var("m"),
                 fresh: Vec::new(),
+                under: Maybe::Absent(row_condition::Absent::Unconditioned),
             }],
             ..TheoryParts::default()
         }

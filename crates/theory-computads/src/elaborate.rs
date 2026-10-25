@@ -939,7 +939,9 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 ///   whose right-hand side instantiates no variable once, in rule order; a face
 ///   applying a declined operation is declined with
 ///   [`ElaborateError::UnrepresentableOperation`] and never reaches either
-///   store, and a face instantiating a variable reaches neither.
+///   store, and a face instantiating a variable or firing under a row reaches
+///   neither: it fires where the kernel's second-order reading or a row says,
+///   which neither store knows.
 /// - ensures: a face calls for terms when it passed the operation gate and is
 ///   constructor-headed, or, under [`DescReading::Shape`] with every sort
 ///   unindexed, when its sequent elaboration fails with
@@ -985,6 +987,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
 /// - witness: `elaborate::tests::a_presented_types_rules_are_read_over_terms`
 /// - witness: `elaborate::tests::a_law_returning_a_nullary_operation_is_read_over_terms_909`
 /// - witness: `elaborate::tests::a_second_order_law_reaches_no_store`
+/// - witness: `elaborate::tests::a_law_under_a_row_reaches_no_store_2448`
 /// - witness: `elaborate::tests::a_conditioned_law_is_held_beside_the_store`
 #[spec(
     ensures: |ret| {
@@ -1001,7 +1004,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
         && ret.admitted_faces.len().saturating_add(ret.declined_faces.len()).saturating_add(match ret.presented {
             Maybe::Present(ref presented) => presented.faces.len().saturating_add(presented.conditioned.len()).saturating_sub(ret.admitted_faces.len()),
             Maybe::Absent(_) => 0,
-        }).saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates())).count()) == desc.rules.len()
+        }).saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_))).count()) == desc.rules.len()
         && match ret.presented {
             Maybe::Present(ref presented) => presented.faces.iter().all(|&(index, cell)| desc.rules.get(usize::from(index))
                 .is_some_and(|face| matches!(presented.store.get(cell), Maybe::Present(stored) if *stored == face_cell(face))))
@@ -1009,7 +1012,7 @@ pub fn elaborate_theory_desc<G>(desc: &TheoryDesc<G>) -> DescElaboration
                     .is_some_and(|face| *cell == conditioned_cell(face)))
                 && presented.faces.iter().zip(presented.faces.iter().skip(1)).all(|(left, right)| left.0 < right.0),
             Maybe::Absent(presented_reading::Absent::NoTermFace) => ret.admitted_faces.len().saturating_add(ret.declined_faces.len())
-                .saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates())).count()) == desc.rules.len(),
+                .saturating_add(desc.rules.iter().filter(|face| bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_))).count()) == desc.rules.len(),
         }
         && ret
             .admitted_faces
@@ -1070,7 +1073,7 @@ fn elaborate_desc<G>(
     let mut read: Vec<(AdmittedFaceIndex, &RuleFace)> = Vec::with_capacity(desc.rules.len());
     let mut presents = false;
     for (index, face) in desc.rules.iter().enumerate() {
-        if bool::from(face.instantiates()) {
+        if bool::from(face.instantiates()) || matches!(face.under, Maybe::Present(_)) {
             continue;
         }
         let outcome = if matches!(face.lhs.view(), TermView::Ctor { .. }) {
@@ -3993,6 +3996,48 @@ mod tests
             )],
             elaborate_data_desc(&laws).declined_faces,
             "a family declines the first-order law alone"
+        );
+    }
+
+    /// #2448: a law under a row fires only where a row holds, which neither
+    /// store knows, so it reaches neither; its neighbour is read as alone.
+    #[test]
+    fn a_law_under_a_row_reaches_no_store_2448()
+    {
+        let var = FreeTerm::var;
+        let laws = nat_with(
+            [
+                op("zero", []),
+                op("f", [SortRef::new("x", "Nat")]),
+                op("g", [SortRef::new("x", "Nat")]),
+            ],
+            [
+                face(FreeTerm::op("f", [var("x")]), FreeTerm::op("zero", [])).with_under(
+                    Maybe::Present(gandr_theory_levitation::Under {
+                        theories: [gandr_theory_levitation::Name::from("State")].into(),
+                        tail: gandr_theory_levitation::RowTail::Open,
+                    }),
+                ),
+                face(FreeTerm::op("g", [var("x")]), FreeTerm::op("zero", [])),
+            ],
+        );
+        let presentation = elaborate_theory_desc(&laws);
+        assert_eq!(
+            (presentation.admitted_faces, presentation.declined_faces),
+            (Vec::new(), Vec::new()),
+            "the law under a row is neither admitted nor declined"
+        );
+        let Maybe::Present(presented) = presentation.presented
+        else {
+            panic!("the unconditioned law is read over terms");
+        };
+        assert_eq!(
+            (presented.faces, presented.conditioned.len()),
+            (
+                vec![(AdmittedFaceIndex::from(1_usize), CellId::from(0_usize))],
+                0
+            ),
+            "the unconditioned law is the one term cell, and nothing is held beside it"
         );
     }
 

@@ -1275,3 +1275,247 @@ fn conditioned_rules_join_under_the_condition_their_overlap_composes_2448()
          sending on `a` names it: the overlap is vacuous and owes no join"
     );
 }
+
+/// #2448: rows are sets, ordered by the rows they describe, and two rows meet
+/// at their unifier.
+#[test]
+fn rows_compose_as_their_unifier_2448()
+{
+    use core::cmp::Ordering;
+
+    use super::row::RowExtent;
+    use super::row::RowLabel;
+    use super::row::RuleRow;
+
+    let [state, console, file] = [0_u32, 1, 2].map(RowLabel::from);
+    let open = |labels: &[RowLabel]| RuleRow::new(labels.iter().copied(), RowExtent::AtLeast);
+    let closed = |labels: &[RowLabel]| RuleRow::new(labels.iter().copied(), RowExtent::Exactly);
+    assert_eq!(
+        closed(&[console, state, state]),
+        closed(&[state, console]),
+        "a row names each theory once, in no order"
+    );
+    assert_eq!(
+        RuleRow::default(),
+        open(&[]),
+        "an unconditioned rule fires in every row"
+    );
+    assert_eq!(
+        open(&[state]).meet(&open(&[console])),
+        Some(open(&[state, console])),
+        "two open rows meet at the union of their theories"
+    );
+    assert_eq!(
+        open(&[state]).meet(&closed(&[state, console])),
+        Some(closed(&[state, console])),
+        "an open row meets a closed row holding its theories at the closed row"
+    );
+    assert_eq!(
+        closed(&[state, console]).meet(&open(&[file])),
+        None,
+        "a closed row without the open row's theory shares no row with it"
+    );
+    assert_eq!(
+        closed(&[state]).meet(&closed(&[console])),
+        None,
+        "two distinct closed rows share no row"
+    );
+    assert_eq!(
+        closed(&[state]).meet(&closed(&[state])),
+        Some(closed(&[state]))
+    );
+    assert_eq!(
+        [
+            closed(&[state, console]).partial_cmp(&open(&[state])),
+            open(&[state, console]).partial_cmp(&open(&[state])),
+            open(&[state]).partial_cmp(&RuleRow::default()),
+            open(&[state]).partial_cmp(&closed(&[state])),
+            closed(&[state]).partial_cmp(&closed(&[console])),
+            open(&[state]).partial_cmp(&open(&[console])),
+        ],
+        [
+            Some(Ordering::Less),
+            Some(Ordering::Less),
+            Some(Ordering::Less),
+            Some(Ordering::Greater),
+            None,
+            None,
+        ],
+        "a row lies below an open row when it holds that row's theories, and below a closed \
+         row only when it is that row"
+    );
+}
+
+/// #2448: rows under their meet are a semilattice, with no meet absorbing,
+/// so conditions composed along a chain of overlaps compose alike in any
+/// grouping: over every row three theories write, the meet commutes, is
+/// idempotent and associates, and a row lies below two rows exactly when it
+/// lies below their meet.
+#[test]
+fn rows_meet_as_a_semilattice_2448()
+{
+    use super::row::RowExtent;
+    use super::row::RowLabel;
+    use super::row::RuleRow;
+
+    let rows: Vec<RuleRow> = (0_u32 .. 8)
+        .flat_map(|set| {
+            let labels: Vec<RowLabel> = (0_u32 .. 3)
+                .filter(|label| set & (1 << label) != 0)
+                .map(RowLabel::from)
+                .collect();
+            [RowExtent::AtLeast, RowExtent::Exactly]
+                .map(|extent| RuleRow::new(labels.iter().copied(), extent))
+        })
+        .collect();
+    for a in &rows {
+        assert_eq!(a.meet(a).as_ref(), Some(a), "{a:?} meets itself at itself");
+        for b in &rows {
+            assert_eq!(
+                a.meet(b),
+                b.meet(a),
+                "{a:?} and {b:?} meet alike either way"
+            );
+            for c in &rows {
+                assert_eq!(
+                    a.meet(b).and_then(|ab| ab.meet(c)),
+                    b.meet(c).and_then(|bc| a.meet(&bc)),
+                    "{a:?}, {b:?} and {c:?} meet alike in either grouping"
+                );
+                assert_eq!(
+                    c <= a && c <= b,
+                    a.meet(b).is_some_and(|met| *c <= met),
+                    "{c:?} lies below {a:?} and {b:?} exactly when below their meet"
+                );
+            }
+        }
+    }
+}
+
+/// #2448: rules stated under rows join where the row their overlap composes
+/// holds, under the rules that fire in it, and an overlap of rows that share
+/// no row owes no join.
+#[test]
+fn rules_under_rows_join_under_the_row_their_overlap_composes_2448()
+{
+    use super::row::RowExtent;
+    use super::row::RowLabel;
+    use super::row::RuleRow;
+
+    let literal = |text: &str| StringLiteral::new(String::from(text));
+    let tag = ConstructorTag::from;
+    let (rule_tag, under, open, fresh, rank) = (
+        tag(super::tag::RULE),
+        tag(super::tag::UNDER),
+        tag(super::tag::OPEN),
+        tag(super::tag::FRESH),
+        tag(super::tag::RANK),
+    );
+    let mut code = Code::new();
+    let variable = code.var(literal("x"));
+    let gx = code.app(literal("g"), &[variable]);
+    let fgx = code.app(literal("f"), &[gx]);
+    let hx = code.app(literal("h"), &[variable]);
+    let [first, second, third, state, console, file, atom] =
+        ["r1", "r2", "r3", "State", "Console", "File", "a"].map(|name| code.text(literal(name)));
+    let [f_name, g_name, h_name, one, two] =
+        ["f", "g", "h", "1", "2"].map(|name| code.text(literal(name)));
+    let ranks = [
+        (rank, vec![f_name, two]),
+        (rank, vec![g_name, one]),
+        (rank, vec![h_name, one]),
+    ];
+    let stated = |name: ValueId,
+                  sides: [ValueId; 2],
+                  theories: &[ValueId],
+                  extent: RowExtent|
+     -> Vec<(ConstructorTag, Vec<ValueId>)> {
+        let [left, right] = sides;
+        let mut members = vec![(rule_tag, vec![name, left, right])];
+        members.extend(theories.iter().map(|&theory| (under, vec![theory])));
+        if extent == RowExtent::AtLeast {
+            members.push((open, Vec::new()));
+        }
+        members
+    };
+    let decided = |code: &mut Code,
+                   rules: &[&[(ConstructorTag, Vec<ValueId>)]]|
+     -> Result<(), TheoryRuleRefusal> {
+        let mut members = rules.concat();
+        members.extend(ranks.iter().cloned());
+        let presentation = code.presents(members);
+        TheoryRules::read(&code.arena, presentation)?.decide(&mut fuel())
+    };
+    let r1 = stated(first, [fgx, hx], &[state], RowExtent::AtLeast);
+    let r2 = stated(second, [fgx, variable], &[console], RowExtent::AtLeast);
+    let r3 = stated(third, [hx, variable], &[state, console], RowExtent::AtLeast);
+    let rowed = code.presents([r1.as_slice(), r3.as_slice()].concat());
+    let read = TheoryRules::read(&code.arena, rowed).expect("the rows read");
+    assert_eq!(
+        read.rules()
+            .iter()
+            .map(|rule| rule.row.clone())
+            .collect::<Vec<_>>(),
+        [
+            RuleRow::new([RowLabel::from(0_u32)], RowExtent::AtLeast),
+            RuleRow::new([0_u32, 1].map(RowLabel::from), RowExtent::AtLeast),
+        ],
+        "each theory a row names is numbered by its first naming"
+    );
+    assert_eq!(
+        decided(&mut code, &[&r1, &r2, &r3]),
+        Ok(()),
+        "the two rules on `f(g(x))` overlap in rows holding `State` and `Console`, and there \
+         `h(x)` rewrites to `x`"
+    );
+    assert_eq!(
+        decided(&mut code, &[&r1, &r2]),
+        refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "without the third rule `h(x)` and `x` stay apart"
+    );
+    let r3_more = stated(
+        third,
+        [hx, variable],
+        &[state, console, file],
+        RowExtent::AtLeast,
+    );
+    assert_eq!(
+        decided(&mut code, &[&r1, &r2, &r3_more]),
+        refused!(0, TheoryRuleFault::Diverges(RuleIndex::from(1_usize))),
+        "a rule needing `File` too does not fire in every row the overlap composes"
+    );
+    let r1_closed = stated(first, [fgx, hx], &[state], RowExtent::Exactly);
+    let r2_closed = stated(second, [fgx, variable], &[console], RowExtent::Exactly);
+    assert_eq!(
+        decided(&mut code, &[&r1_closed, &r2_closed]),
+        Ok(()),
+        "a row holding exactly `State` is never one holding exactly `Console`: the overlap is \
+         vacuous"
+    );
+    let malformed: [&[(ConstructorTag, Vec<ValueId>)]; 3] = [
+        &[(open, Vec::new())],
+        &[(rule_tag, vec![first, fgx, hx]), (open, Vec::new())],
+        &[
+            (rule_tag, vec![first, fgx, hx]),
+            (under, vec![state]),
+            (fresh, vec![atom, first]),
+        ],
+    ];
+    for (members, case) in malformed.into_iter().zip([
+        "an open tail before any rule",
+        "an open tail after no theory",
+        "a freshness condition after the row",
+    ]) {
+        let presentation = code.presents(members.to_vec());
+        assert!(
+            matches!(
+                TheoryRules::read(&code.arena, presentation),
+                Err(TheoryRuleRefusal {
+                    fault: TheoryRuleFault::Unreadable,
+                    ..
+                })
+            ),
+            "{case}"
+        );
+    }
+}

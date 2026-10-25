@@ -410,12 +410,16 @@ fn rule_judgment_tail() -> Regex
 ///
 /// A rule between two terms may close on a `where` clause of freshness
 /// conditions, `where a # q, …`: each names an atom the rule abstracts and a
-/// metavariable whose instance must not mention it.
+/// metavariable whose instance must not mention it. It may then close on an
+/// `under` clause, `under [State, Console | r]`, the row the rule fires
+/// under, spelt as a returner's row is: theories, then an optional tail that
+/// leaves the row open.
 ///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the direct-telescope and expression-endpoint signature
-///   alternatives, the second closing on an optional `where` clause.
+///   alternatives, the second closing on an optional `where` clause and then an
+///   optional `under` clause.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -427,7 +431,7 @@ fn rule_judgment_tail() -> Regex
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
 /// - witness: `tests::surface::circuit_arrows_stay_inside_complete_declarations`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 4 && sequence.get(3).is_some_and(|clause| matches!(clause.shape(), RegexShape::Optional(_)))))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 5 && sequence.get(3 ..).is_some_and(|clauses| clauses.iter().all(|clause| matches!(clause.shape(), RegexShape::Optional(_))))))))]
 fn rule_signature() -> Regex
 {
     alt([
@@ -447,6 +451,13 @@ fn rule_signature() -> Regex
                     t(TileLabel("#")),
                     t(TileLabel("identifier")),
                 ])),
+            ])),
+            opt(seq([
+                t(TileLabel("under")),
+                t(TileLabel("[")),
+                comma1(t(TileLabel("type_identifier"))),
+                opt(seq([t(TileLabel("|")), t(TileLabel("identifier"))])),
+                t(TileLabel("]")),
             ])),
         ]),
     ])

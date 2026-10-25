@@ -1483,10 +1483,11 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
-    /// Two rules of a block whose left sides overlap, one of which states a
-    /// freshness condition or moves a variable across an abstraction where a
-    /// term can name an atom, and whose critical pair does not join under the
-    /// condition the overlap composes: the block's rules are not confluent.
+    /// Two rules of a block whose left sides overlap, one of which fires under
+    /// a row, states a freshness condition or moves a variable across an
+    /// abstraction where a term can name an atom, and whose critical pair does
+    /// not join under the condition the overlap composes: the block's rules
+    /// are not confluent.
     RulesOverlapCondition
     {
         /// The bytes the later rule covers.
@@ -2092,9 +2093,9 @@ impl fmt::Display for LoweringRefusal<'_>
             ),
             Self::RulesOverlapCondition { .. } => f.write_str(
                 "this rule and an earlier one rewrite overlapping terms, one of them fires only \
-                 where its instance names no atom it may not, and under the condition the overlap \
-                 composes it rewrites to two different normal forms, so the block's rules are \
-                 refused",
+                 under a row or where its instance names no atom it may not, and under the \
+                 condition the overlap composes it rewrites to two different normal forms, so the \
+                 block's rules are refused",
             ),
             Self::RulesDiverge { .. } => f.write_str(
                 "this rule and an earlier one rewrite one term to two different constructor \

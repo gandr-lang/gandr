@@ -1177,7 +1177,8 @@ fn a_theory_block_defines_its_presentation()
             .map(alloc::vec::Vec::len)
             .collect::<alloc::vec::Vec<_>>(),
         [
-            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2, 3, 1, 2, 1
+            3, 0, 3, 4, 4, 4, 1, 2, 2, 1, 2, 3, 5, 4, 3, 4, 4, 6, 3, 4, 4, 2, 3, 6, 2, 3, 1, 2, 1,
+            2, 1
         ],
         "each constructor's names, then its recursions"
     );
@@ -2644,6 +2645,105 @@ fn a_where_clause_states_each_condition_on_its_rule()
         matches!(diagnostic.fault, DescriptionFault::IllFormed(ref ill) if ill.kind == WfKind::Capture
             && AsRef::<str>::as_ref(&ill.message).contains("where a # q")),
         "the rule capturing `a` is refused with the condition it lacks: {diagnostic:?}"
+    );
+}
+
+/// #2448: an `under` row names theories its source sees, each once, closed
+/// or open through a tail; the value, the face and the printed rule keep it.
+#[test]
+fn an_under_row_names_each_theory_in_scope_once_2448()
+{
+    let theories = "theory State { sort S : Type; }\ntheory Console { sort C : Type; }\n";
+    let signature =
+        "sort T : Type; oper f : (x : T) --> T; oper g : (x : T) --> T; oper h : (x : T) --> T;";
+    let report = described(
+        format!(
+            "{theories}theory Logged {{ {signature} rule r1 : f(g(x)) <=> h(x) under [State | r]; rule r2 : f(g(x)) <=> x under [Console, State]; }}"
+        )
+        .as_str(),
+    );
+    assert_eq!(report.diagnostics, [], "both rows read");
+    let theory = &report.declarations[2];
+    let row = |theories: &[&str], tail: RowTail| {
+        Maybe::Present(Under {
+            theories: theories.iter().map(|&theory| Name::from(theory)).collect(),
+            tail,
+        })
+    };
+    let stated = [
+        row(&["State"], RowTail::Open),
+        row(&["Console", "State"], RowTail::Closed),
+    ];
+    assert_eq!(
+        presented(theory)
+            .value
+            .decode()
+            .unwrap()
+            .rules
+            .iter()
+            .map(|rule| rule.under.clone())
+            .collect::<Vec<_>>(),
+        stated,
+        "the value keeps each row, its theories in written order"
+    );
+    assert_eq!(
+        theory
+            .description
+            .rules
+            .iter()
+            .map(|face| face.under.clone())
+            .collect::<Vec<_>>(),
+        stated,
+        "the faces its description reads off the value"
+    );
+    let printed: Vec<String> = theory
+        .rules()
+        .zip(["r1", "r2"])
+        .map(|(rule, name)| rule.print_theory(&Name::from(name)))
+        .collect();
+    assert_eq!(
+        printed,
+        [
+            "rule r1 : f(g(x)) <=> h(x) under [State | r]",
+            "rule r2 : f(g(x)) <=> x under [Console, State]",
+        ],
+        "the theory spelling closes on the row"
+    );
+    let source = format!(
+        "{theories}theory Unknown {{ {signature} rule r : f(x) <=> x under [State, Missing]; }}\ntheory Twice {{ {signature} rule r : f(x) <=> x under [State, Console, State | r]; }}\n"
+    );
+    let report = described(source.as_str());
+    let at = |span: ByteSpan| {
+        source
+            .get(usize::from(span.start()) .. usize::from(span.end()))
+            .unwrap_or_default()
+    };
+    let faults: Vec<(DescriptionFault, &str)> = report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| (diagnostic.fault.clone(), at(diagnostic.span)))
+        .collect();
+    let first_state = source
+        .find("[State, Console")
+        .and_then(|at| ByteSpan::new((at + 1).into(), (at + 6).into()).ok());
+    assert_eq!(
+        faults,
+        [
+            (
+                DescriptionFault::Signature(SignatureFault::UnknownRowTheory(Name::from(
+                    "Missing"
+                ))),
+                "Missing"
+            ),
+            (
+                DescriptionFault::Signature(SignatureFault::RepeatedRowTheory {
+                    name: Name::from("State"),
+                    first: first_state.expect("the row is written"),
+                }),
+                "State"
+            ),
+        ],
+        "a theory no block presents, and one named again, are refused at the name"
     );
 }
 
