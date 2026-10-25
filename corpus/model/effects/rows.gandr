@@ -1,0 +1,45 @@
+// Rules stated under a row of theories. A rule written `under [T | r]` fires
+// only where the row a program runs in holds `T` and possibly more; one
+// written `under [T]` only where the row holds exactly `T`. Two such rules
+// overlapping owe a join only in the rows both describe, the meet of their
+// rows, and there by the rules firing in each of those rows; two rules whose
+// rows share none owe nothing. A row is a set of theories, as an effect row
+// is a set of effects.
+
+// The theory `State`.
+import "./state.gandr" ;
+
+/// Writes that go nowhere: a theory of no operation, which a row holds where
+/// what is written is discarded.
+@[ checks ]
+theory Sink {
+  sort C : Type;
+}
+
+/// Marks on a computation, flushed at the end. Where writes go nowhere a
+/// flushed mark leaves nothing, and where the state is kept flushing a mark
+/// keeps it. The two overlap at `flush(mark(k))` in the rows holding both
+/// `State` and `Sink`; there marks and flushes are erased, so both reducts
+/// reach `k`.
+@[ checks ]
+theory Marks {
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  oper flush : (k : C) --> C;
+  rule dropped : flush(mark(k)) <=> k under [Sink | r];
+  rule kept : flush(mark(k)) <=> mark(k) under [State | r];
+  rule erased : mark(k) <=> k under [State, Sink | r];
+  rule flushed : flush(k) <=> k under [Sink, State | r];
+}
+
+/// The same two rules under closed rows: a row holding exactly `Sink` is
+/// never one holding exactly `State`, so the overlap owes no join and no
+/// rule erases anything.
+@[ checks ]
+theory ExactMarks {
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  oper flush : (k : C) --> C;
+  rule dropped : flush(mark(k)) <=> k under [Sink];
+  rule kept : flush(mark(k)) <=> mark(k) under [State];
+}

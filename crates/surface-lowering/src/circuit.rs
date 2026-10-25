@@ -91,6 +91,20 @@ pub enum SignatureFault
     /// A `law` member named as an operation, a rule or another law of the
     /// block is: a model's members share one namespace.
     LawName(Name),
+    /// An `under` row names no `theory` block its source reads before the
+    /// rule's or imports unqualified.
+    UnknownRowTheory(Name),
+    /// An `under` row names a `theory` block of two sources its source
+    /// imports unqualified, and none of its own.
+    AmbiguousRowTheory(Name),
+    /// An `under` row names one theory twice: a row holds each theory once.
+    RepeatedRowTheory
+    {
+        /// The theory named twice.
+        name: Name,
+        /// The bytes its first naming covers.
+        first: ByteSpan,
+    },
 }
 
 /// A pair of theories a block reaches with more than one join among the

@@ -22,6 +22,9 @@ use gandr_kernel_term::OperationRank;
 use gandr_kernel_term::PRESENTATION_FUEL;
 use gandr_kernel_term::PeakSearch;
 use gandr_kernel_term::RewriteFuel;
+use gandr_kernel_term::RowExtent;
+use gandr_kernel_term::RowLabel;
+use gandr_kernel_term::RuleRow;
 use gandr_kernel_term::RuleVariable;
 use gandr_kernel_term::SymbolKind;
 use gandr_kernel_term::TheoryNode;
@@ -35,6 +38,7 @@ use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Freshness;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::Precedence;
+use gandr_theory_levitation::RowTail;
 use gandr_theory_levitation::RuleCertificate;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::RuleIndex;
@@ -44,6 +48,7 @@ use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
 use gandr_theory_levitation::naming_port;
+use quenchant_shape::shape::Maybe;
 
 use crate::coincide::Coincidence;
 use crate::coincide::Joined;
@@ -266,6 +271,9 @@ struct Symbols<'term>
     interned: BTreeMap<SymbolKey<'term>, TheorySymbol>,
     /// Each ranked operation's rank, by its name.
     ranks: BTreeMap<&'term Name, gandr_theory_levitation::Rank>,
+    /// Each theory a row names, by its label: its place in first-naming
+    /// order, as the kernel labels them.
+    labels: BTreeMap<&'term Name, RowLabel>,
 }
 
 /// What a symbol is interned from.
@@ -305,6 +313,7 @@ impl<'term> Symbols<'term>
             keys: Vec::new(),
             interned: BTreeMap::new(),
             ranks: ranks.iter().map(|&(ref name, rank)| (name, rank)).collect(),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -362,8 +371,10 @@ impl<'term> Symbols<'term>
     }
 
     /// The kernel's reading of the written rule `face`: as [`Self::rule`]
-    /// reads its sides under the freshness conditions it states, and
-    /// conditioned exactly where a term can name an atom and the face is.
+    /// reads its sides under the freshness conditions it states, conditioned
+    /// exactly where a term can name an atom and the face is, and firing in
+    /// the rows its row describes, each theory labelled as the kernel labels
+    /// it off the value.
     ///
     /// # Specification
     /// trivial.
@@ -373,13 +384,27 @@ impl<'term> Symbols<'term>
         nameable: Nameable,
     ) -> TheoryRule
     {
-        let rule = self.rule(&face.lhs, &face.rhs, &face.fresh, nameable);
+        let mut rule = self.rule(&face.lhs, &face.rhs, &face.fresh, nameable);
         if nameable == Nameable(true) && bool::from(face.conditioned()) {
-            rule.conditioned()
+            rule = rule.conditioned();
         }
-        else {
-            rule
+        if let Maybe::Present(ref under) = face.under {
+            let labels = &mut self.labels;
+            let row: Vec<RowLabel> = under
+                .theories
+                .iter()
+                .map(|theory| {
+                    let next = RowLabel::from(u32::try_from(labels.len()).unwrap_or(u32::MAX));
+                    *labels.entry(theory).or_insert(next)
+                })
+                .collect();
+            let extent = match under.tail {
+                RowTail::Closed => RowExtent::Exactly,
+                RowTail::Open => RowExtent::AtLeast,
+            };
+            rule = rule.under(RuleRow::new(row, extent));
         }
+        rule
     }
 
     /// The kernel's reading of the rule `left` to `right`: its variables

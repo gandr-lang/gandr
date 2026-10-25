@@ -312,7 +312,7 @@ where
 }
 
 /// `face` with its sides ordered as `direction` says, its freshness
-/// conditions kept: a condition constrains the two sides alike.
+/// conditions and its row kept: both constrain the two sides alike.
 ///
 /// # Specification
 /// trivial.
@@ -332,6 +332,7 @@ fn facing(
                 face.provenance,
             )
             .with_fresh(face.fresh.clone())
+            .with_under(face.under.clone())
         },
     }
 }
@@ -467,11 +468,11 @@ pub enum CoherenceFault
         first: ByteSpan,
     },
     /// The rule and an earlier one, or the rule itself below its root,
-    /// overlap, one of them states a freshness condition or moves a variable
-    /// across an abstraction where a term can name an atom, and in the
-    /// second-order reading the overlap does not join under the condition it
-    /// composes: its two reducts normalize apart, or the decision's fuel runs
-    /// out first.
+    /// overlap, one of them fires under a row, states a freshness condition
+    /// or moves a variable across an abstraction where a term can name an
+    /// atom, and in the second-order reading the overlap does not join under
+    /// the condition it composes: its two reducts normalize apart, or the
+    /// decision's fuel runs out first.
     OverlapsCondition
     {
         /// The earlier rule's written interval.
@@ -666,9 +667,9 @@ impl fmt::Display for CoherenceFault
                  the second-order reading the overlap does not join",
             ),
             Self::OverlapsCondition { .. } => f.write_str(
-                "the two rules' left sides overlap where one of them fires only on an instance \
-                 naming no atom it may not, and under the condition the overlap composes the two \
-                 rewrites do not join",
+                "the two rules' left sides overlap where one of them fires only under a row or on \
+                 an instance naming no atom it may not, and under the condition the overlap \
+                 composes the two rewrites do not join",
             ),
             Self::Diverges {
                 ref peak,
@@ -773,18 +774,19 @@ impl fmt::Display for Spelled<'_>
 ///   its span; else each reading completed in turn, the sequent one first, as
 ///   [`Reading::complete`] completes it, its first fault at the later rule's
 ///   span naming the earlier one's; else the first critical pair of the written
-///   and derived rules, one of them instantiating a variable or, where some
-///   operation's input port takes an atom, stating a freshness condition or
-///   moving a variable across an abstraction, that the kernel's second-order
-///   reading does not join under the condition the overlap composes, as
-///   [`second_order_parts`] finds it: as [`CoherenceFault::OverlapsCondition`]
-///   where one of the two is so conditioned and
-///   [`CoherenceFault::OverlapsSecondOrder`] otherwise, at the later rule's
-///   span naming the earlier one's; else [`Coincidence::Orthogonal`] when no
-///   two cells overlap in either reading and [`Coincidence::Joined`] with every
-///   prime pair's certificate and every derived rule otherwise. Each derived
-///   rule's cell is appended to `store` or to the presented reading's store, in
-///   derivation order, so the store a reading rewrites with ends with them.
+///   and derived rules, one of them instantiating a variable, firing under a
+///   row or, where some operation's input port takes an atom, stating a
+///   freshness condition or moving a variable across an abstraction, that the
+///   kernel's second-order reading does not join under the condition the
+///   overlap composes, as [`second_order_parts`] finds it: as
+///   [`CoherenceFault::OverlapsCondition`] where one of the two is so
+///   conditioned and [`CoherenceFault::OverlapsSecondOrder`] otherwise, at the
+///   later rule's span naming the earlier one's; else
+///   [`Coincidence::Orthogonal`] when no two cells overlap in either reading
+///   and [`Coincidence::Joined`] with every prime pair's certificate and every
+///   derived rule otherwise. Each derived rule's cell is appended to `store` or
+///   to the presented reading's store, in derivation order, so the store a
+///   reading rewrites with ends with them.
 /// - panics: none.
 ///
 /// # Errors
@@ -826,7 +828,7 @@ impl fmt::Display for Spelled<'_>
     Err((span, CoherenceFault::Unoriented)) => matches!(orient_rules(description), Termination::Unoriented(_))
         && span.start() >= at.start() && span.end() <= at.end(),
     Err((_, CoherenceFault::OverlapsCondition { .. })) => orient_rules(description) == Termination::Oriented
-        && naming_port(description).is_some(),
+        && (naming_port(description).is_some() || description.rules.iter().any(|face| matches!(face.under, Maybe::Present(_)))),
     Err((_, CoherenceFault::OverlapsSecondOrder { .. } | CoherenceFault::Diverges { .. } | CoherenceFault::Uncompleted { .. } | CoherenceFault::NeverCompletes { .. } | CoherenceFault::Undecided { .. } | CoherenceFault::Unfinished { .. })) => orient_rules(description) == Termination::Oriented,
 })]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -914,11 +916,13 @@ pub(crate) fn decide<G>(
     };
     if let Some((later, earlier)) = second_order_parts(description, &derived) {
         let conditioned = |index: RuleIndex| {
-            nameable
-                && description
-                    .rules
-                    .get(usize::from(index))
-                    .is_some_and(|face| bool::from(face.conditioned()))
+            description
+                .rules
+                .get(usize::from(index))
+                .is_some_and(|face| {
+                    (nameable && bool::from(face.conditioned()))
+                        || matches!(face.under, Maybe::Present(_))
+                })
         };
         let first = rule_span(usize::from(earlier));
         return Err((

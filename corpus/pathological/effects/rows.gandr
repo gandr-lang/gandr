@@ -1,0 +1,50 @@
+// The twin of `model/effects/rows.gandr`: rules under rows whose overlap
+// parts in the rows both describe, and rows naming a theory no block
+// presents or one theory twice.
+
+// The theory `State`.
+import "../../model/effects/state.gandr" ;
+// The theories `Sink` and `Marks`.
+import "../../model/effects/rows.gandr" ;
+
+/// `Marks` without the rules a row holding `State` and `Sink` erases marks
+/// by: there `flush(mark(k))` reaches `k` one way and `mark(k)` the other,
+/// two normal forms, so the rules are refused (#2448).
+@[ refuses("RulesOverlapCondition") ]
+theory Unerased {
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  oper flush : (k : C) --> C;
+  rule dropped : flush(mark(k)) <=> k under [Sink | r];
+  rule kept : flush(mark(k)) <=> mark(k) under [State | r];
+}
+
+/// `Marks` with erasing rules that need a third theory: they fire in no row
+/// that holds only `State` and `Sink`, and in those rows the overlap still
+/// parts, so the rules are refused (#2448).
+@[ refuses("RulesOverlapCondition") ]
+theory Overreaching {
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  oper flush : (k : C) --> C;
+  rule dropped : flush(mark(k)) <=> k under [Sink | r];
+  rule kept : flush(mark(k)) <=> mark(k) under [State | r];
+  rule erased : mark(k) <=> k under [State, Sink, Marks | r];
+  rule flushed : flush(k) <=> k under [Sink, State, Marks | r];
+}
+
+/// A row naming a theory no block this source sees presents (#2448).
+@[ refuses("UnresolvedTypeHead") ]
+theory Unseen {
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  rule dropped : mark(k) <=> k under [Missing | r];
+}
+
+/// A row naming one theory twice: a row holds each theory once (#2448).
+@[ refuses("DuplicateDefinition") ]
+theory Twice {
+  sort C : Type;
+  oper mark : (k : C) --> C;
+  rule dropped : mark(k) <=> k under [Sink, State, Sink];
+}

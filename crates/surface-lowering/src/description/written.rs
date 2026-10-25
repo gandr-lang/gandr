@@ -14,6 +14,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::RowTail;
 use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::ValueTypeRef;
 use quenchant_shape::shape::Maybe;
@@ -163,20 +164,25 @@ impl SurfaceRule<'_>
     }
 
     /// The theory spelling, `rule name : lhs <=> rhs`, closed on the `where`
-    /// clause of its freshness conditions when it states any.
+    /// clause of its freshness conditions when it states any, then on the
+    /// `under` clause of its row when it fires under one.
     ///
     /// # Specification
     /// - ensures: `name`, then the written sides in written order, separated by
     ///   the arrow the orientation states, then each condition `a # q` in
-    ///   written order after `where`, separated by commas.
+    ///   written order after `where`, separated by commas, then the row's
+    ///   theories in written order after `under [`, separated by commas, with
+    ///   `| r` before the `]` when the row is open.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unpinned face prints `<=>` in the theory spelling,
-    ///   and a face stating two conditions prints both in order.
+    ///   a face stating two conditions prints both in order, and a face under
+    ///   an open row prints its theories and its tail.
     /// - witness: `description::tests::an_equation_states_no_direction`
     /// - witness: `description::theory::tests::a_where_clause_states_each_condition_on_its_rule`
-    #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")) && text.contains(" where ") != self.face.fresh.is_empty())]
+    /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
+    #[spec(ensures: |ref text| text.contains(name.as_ref()) && (text.contains("<=>") || text.contains("==>")) && text.contains(" where ") != self.face.fresh.is_empty() && text.contains(" under [") == matches!(self.face.under, Maybe::Present(_)))]
     #[inline]
     #[must_use]
     pub fn print_theory(
@@ -190,8 +196,18 @@ impl SurfaceRule<'_>
             .iter()
             .map(|condition| format!("{} # {}", condition.atom, condition.term))
             .collect();
+        let row = match self.face.under {
+            Maybe::Present(ref under) => {
+                let theories: Vec<&str> = under.theories.iter().map(AsRef::as_ref).collect();
+                format!(" under [{}{}]", theories.join(", "), match under.tail {
+                    RowTail::Closed => "",
+                    RowTail::Open => " | r",
+                })
+            },
+            Maybe::Absent(_) => String::new(),
+        };
         format!(
-            "rule {name} : {} {} {}{}{}",
+            "rule {name} : {} {} {}{}{}{row}",
             self.face.lhs,
             match self.written.orientation {
                 RuleOrientation::Unpinned => "<=>",

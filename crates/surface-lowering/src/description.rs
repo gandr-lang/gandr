@@ -363,8 +363,10 @@ impl DescriptionDiagnostic
     ///   are an undescribed member carrying their own fault, a feed no
     ///   observation guards its own refusal, a description the description
     ///   check refuses an ill-formed description carrying the check's kind and
-    ///   its first two subjects as `written` spells them, and every other fault
-    ///   a malformed form.
+    ///   its first two subjects as `written` spells them, a theory an `under`
+    ///   row names that no block presents an unresolved type head and one it
+    ///   names twice a duplicate definition, each named as `written` spells it,
+    ///   and every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -375,6 +377,7 @@ impl DescriptionDiagnostic
     /// - witness: `description::tests::member_refusals_keep_their_spans_and_other_declarations`
     /// - witness: `description::theory::tests::theory_declines_and_malformed_wiring_are_refused_apart`
     /// - witness: `description::theory::tests::an_ill_formed_theory_is_refused_with_the_checks_reason_1553`
+    /// - witness: `description::theory::tests::an_under_row_names_each_theory_in_scope_once_2448`
     #[spec(ensures: |result| result.span() == Maybe::Present(self.span))]
     pub(crate) fn lowering_refusal<'source>(
         &self,
@@ -384,6 +387,11 @@ impl DescriptionDiagnostic
         let undescribed = |fault| LoweringRefusal::UndescribedMember {
             span: self.span,
             fault,
+        };
+        let malformed = || LoweringRefusal::MalformedForm {
+            span: self.span,
+            form: crate::FormName::DECLARATION,
+            fault: crate::FormFault::MisplacedTile,
         };
         match self.fault {
             DescriptionFault::Repaired { repaired, form } => repaired.refusal(form),
@@ -406,6 +414,27 @@ impl DescriptionDiagnostic
             DescriptionFault::Signature(crate::circuit::SignatureFault::Reversible) => {
                 undescribed(MemberFault::Reversible)
             },
+            DescriptionFault::Signature(crate::circuit::SignatureFault::UnknownRowTheory(
+                ref name,
+            )) => match spelled(Some(name), written) {
+                Maybe::Present(name) => LoweringRefusal::UnresolvedTypeHead {
+                    span: self.span,
+                    name,
+                    arity: crate::resolve::HeadArity::Nullary,
+                },
+                Maybe::Absent(_) => malformed(),
+            },
+            DescriptionFault::Signature(crate::circuit::SignatureFault::RepeatedRowTheory {
+                ref name,
+                first,
+            }) => match spelled(Some(name), written) {
+                Maybe::Present(name) => LoweringRefusal::DuplicateDefinition {
+                    span: self.span,
+                    name,
+                    first,
+                },
+                Maybe::Absent(_) => malformed(),
+            },
             DescriptionFault::IllFormed(ref reason) => LoweringRefusal::IllFormedDescription {
                 span: self.span,
                 kind: reason.kind,
@@ -421,11 +450,7 @@ impl DescriptionDiagnostic
             | DescriptionFault::MemberPolarity
             | DescriptionFault::RetiredRuleArrow
             | DescriptionFault::RetiredOperation
-            | DescriptionFault::Signature(_) => LoweringRefusal::MalformedForm {
-                span: self.span,
-                form: crate::FormName::DECLARATION,
-                fault: crate::FormFault::MisplacedTile,
-            },
+            | DescriptionFault::Signature(_) => malformed(),
         }
     }
 }

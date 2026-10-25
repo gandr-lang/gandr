@@ -5,9 +5,10 @@
 //! A `theory` block's core definition is a value of the presentation code,
 //! `Theory`. Its rule chain carries, beside each written rule, what the
 //! decision replays rather than searches for: the rule's orientation (`Rule`
-//! as written, `Turned` right to left) and the freshness conditions it states
-//! (`Fresh`), the rules a completion derived (`Derived`, each naming the
-//! critical pair it joins) and each operation's rank (`Rank`).
+//! as written, `Turned` right to left), the freshness conditions it states
+//! (`Fresh`) and the row it fires under (`Under`, `Open`), the rules a
+//! completion derived (`Derived`, each naming the critical pair it joins) and
+//! each operation's rank (`Rank`).
 //! [`TheoryRules::read`] reads the chain and
 //! [`TheoryRules::decide`] decides it in four steps:
 //!
@@ -29,8 +30,8 @@
 //!    under the rules before it of the critical pair it names, so it is an
 //!    equation the rules before it prove;
 //! 4. every critical pair joins: a pair one of whose rules instantiates a
-//!    variable or is conditioned in the second-order reading of [`higher`],
-//!    every other first order.
+//!    variable, is conditioned or fires under a row in the second-order reading
+//!    of [`higher`], every other first order.
 //!
 //! By the critical pair lemma and Newman's lemma the rules are then confluent
 //! and terminating, and by step 3 they decide exactly the equations the
@@ -65,7 +66,11 @@
 //! occurrence is applied to the atoms it may name ([`TheoryRule::scoped`]):
 //! the condition is stated over the hole the variable stands for, pattern
 //! unification composes two rules' conditions at their overlap, and an
-//! overlap no instance satisfies owes no join.
+//! overlap no instance satisfies owes no join. A rule stated under a row of
+//! theories fires in the rows it describes alone, so in no first-order normal
+//! form either: a pair of two rules is decided in the rows both describe,
+//! their meet ([`RuleRow::meet`]), by the rules firing in every one of them,
+//! and two rows that share none owe no join.
 //! A variable standing under other abstractions at two occurrences on a left
 //! side is refused there. Where no port takes an atom no term names one, and
 //! a condition holds of every instance. A left side may repeat a variable,
@@ -130,6 +135,9 @@ use crate::term::ConstantIndex;
 use crate::term::ConstructorTag;
 use crate::theory_rules::higher::Higher;
 use crate::theory_rules::higher::Pair;
+use crate::theory_rules::row::RowExtent;
+use crate::theory_rules::row::RowLabel;
+use crate::theory_rules::row::RuleRow;
 
 /// The nodes one presentation's decision may scan or copy, at every caller:
 /// a bound on a pathological presentation, far above the few million a
@@ -139,7 +147,7 @@ pub const PRESENTATION_FUEL: u64 = 1 << 26;
 /// Each constructor of the presentation code, in tag order: its count of
 /// string fields, which come first, and its count of recursive fields after
 /// them.
-pub const PRESENTATION_CODE: [(usize, usize); 29] = [
+pub const PRESENTATION_CODE: [(usize, usize); 31] = [
     (0, 3),
     (0, 0),
     (1, 2),
@@ -169,6 +177,8 @@ pub const PRESENTATION_CODE: [(usize, usize); 29] = [
     (1, 0),
     (1, 1),
     (1, 0),
+    (1, 1),
+    (0, 1),
 ];
 
 /// The presentation code's constructor tags this module reads.
@@ -230,6 +240,10 @@ mod tag
     pub(super) const BIND: usize = 27;
     /// A variable named inside a binding field of it.
     pub(super) const BVAR: usize = 28;
+    /// A theory the row the written rule before it fires under holds.
+    pub(super) const UNDER: usize = 29;
+    /// The row the written rule before it fires under may hold others.
+    pub(super) const OPEN: usize = 30;
 }
 
 /// Whether a data declaration's constructor table is the presentation code's.
@@ -498,6 +512,10 @@ pub struct TheoryRule
     /// as [`Self::scoped`] reads them: what the second-order reading applies
     /// the variable to.
     holes: Holes,
+    /// The rows the rule fires in: every row unless it states one, and then
+    /// it rewrites no first-order term and its critical pairs are decided in
+    /// the second-order reading, under the row they compose.
+    row: RuleRow,
 }
 
 /// A binder above an occurrence of a rule's variable, as
@@ -602,7 +620,22 @@ impl TheoryRule
             conditioned: false,
             values: Box::default(),
             holes: Holes::default(),
+            row: RuleRow::default(),
         }
+    }
+
+    /// The rule, firing in the rows `row` describes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn under(
+        self,
+        row: RuleRow,
+    ) -> Self
+    {
+        Self { row, ..self }
     }
 
     /// The rule, stating a freshness condition or moving a variable across an
@@ -778,13 +811,13 @@ impl TheoryRule
     }
 
     /// How the rule's critical pairs are decided: second-order when it
-    /// instantiates a variable or is conditioned.
+    /// instantiates a variable, is conditioned or fires under a row.
     ///
     /// # Specification
     /// trivial.
     fn reading(&self) -> Reading
     {
-        if self.instantiates || self.conditioned {
+        if self.instantiates || self.conditioned || self.row != RuleRow::default() {
             Reading::SecondOrder
         }
         else {
@@ -1010,33 +1043,37 @@ impl TheoryRules
     /// - ensures: the root is `Presents` and its rule chain reads, in order,
     ///   written rules (`Rule` as written, `Turned` with its sides exchanged),
     ///   each followed by its freshness conditions (`Fresh`, an atom's and a
-    ///   variable's names), then derived rules (`Derived`, its peak's three
-    ///   numerals), then ranks (`Rank`, an operation's name and a numeral),
-    ///   then `End`. Each term is a `Var`, or an `App`, `Con`, `Tuple`, `Inst`,
-    ///   `Abs` or `Bind` over its `Arg` chain, or an `Occ` naming an atom an
-    ///   enclosing `Abs` abstracts, or a `Bvar` naming a variable an enclosing
-    ///   `Bind` binds; a symbol is interned by kind, name and argument count,
-    ///   an `Abs` or a `Bind` without its name and an `Occ` or a `Bvar` by the
-    ///   number of binders between it and the innermost of its kind naming it,
-    ///   an `App` symbol taking the rank its name is given and every other
-    ///   symbol a constructor's place. A rule's variables are numbered by first
+    ///   variable's names), then the theories of the row it fires under
+    ///   (`Under`, a theory's name), open when `Open` follows them, then
+    ///   derived rules (`Derived`, its peak's three numerals), then ranks
+    ///   (`Rank`, an operation's name and a numeral), then `End`. Each term is
+    ///   a `Var`, or an `App`, `Con`, `Tuple`, `Inst`, `Abs` or `Bind` over its
+    ///   `Arg` chain, or an `Occ` naming an atom an enclosing `Abs` abstracts,
+    ///   or a `Bvar` naming a variable an enclosing `Bind` binds; a symbol is
+    ///   interned by kind, name and argument count, an `Abs` or a `Bind`
+    ///   without its name and an `Occ` or a `Bvar` by the number of binders
+    ///   between it and the innermost of its kind naming it, an `App` symbol
+    ///   taking the rank its name is given and every other symbol a
+    ///   constructor's place. A rule's variables are numbered by first
     ///   occurrence on its left side, then on its right. Where some operation's
     ///   input port is at a sort the sort chain states an atom sort (`Atom`), a
     ///   rule followed by a condition, or whose variable stands under other
     ///   binders at one occurrence than at another — atom abstractions alone
     ///   for a rule with an `Inst` — is conditioned; where none is, no term
-    ///   names an atom, a condition holds of every instance, and no rule is.
+    ///   names an atom, a condition holds of every instance, and no rule is. A
+    ///   rule followed by `Under` fires in the rows it describes, each theory
+    ///   labelled by its first naming in the chain.
     /// - fails: [`TheoryRuleFault::Unreadable`] at the rule the chain stops
     ///   being readable at: a member out of that order, a condition before
-    ///   every written rule, a term position holding no term, a field that is
-    ///   no string where a name or numeral stands, a numeral not in its one
-    ///   decimal spelling, an `Occ` no enclosing `Abs` binds, a `Bvar` no
-    ///   enclosing `Bind` binds, or a second rank for one name, and at the
-    ///   first rule when the sort or operation chain holds a member the code
-    ///   does not write there; [`TheoryRuleFault::UndecidedCondition`] at the
-    ///   first rule whose variable stands under other binders at one occurrence
-    ///   on its left side than at another there, when some input port is at an
-    ///   atom sort.
+    ///   every written rule or after a row, an `Open` after no `Under`, a term
+    ///   position holding no term, a field that is no string where a name or
+    ///   numeral stands, a numeral not in its one decimal spelling, an `Occ` no
+    ///   enclosing `Abs` binds, a `Bvar` no enclosing `Bind` binds, or a second
+    ///   rank for one name, and at the first rule when the sort or operation
+    ///   chain holds a member the code does not write there;
+    ///   [`TheoryRuleFault::UndecidedCondition`] at the first rule whose
+    ///   variable stands under other binders at one occurrence on its left side
+    ///   than at another there, when some input port is at an atom sort.
     /// - panics: none.
     /// - intension: the chain walked in a loop and each term read from a
     ///   worklist, so no step recurses.
@@ -1057,6 +1094,7 @@ impl TheoryRules
     ///   refused undecided; an occurrence no abstraction binds is unreadable.
     /// - witness: `theory_rules::tests::a_presentation_value_reads_as_its_oriented_rules`
     /// - witness: `theory_rules::tests::an_occurrence_counts_to_its_abstraction`
+    /// - witness: `theory_rules::tests::rules_under_rows_join_under_the_row_their_overlap_composes_2448`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |rules| rules.peaks.len() <= rules.rules.len()))]
     #[inline]
     pub fn read(
@@ -2925,6 +2963,20 @@ enum Stands
     Elsewhere,
 }
 
+/// Whether the row of the rule being read has met its tail.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum Tail
+{
+    /// Not yet: the row holds exactly the theories read so far.
+    #[default]
+    Unseen,
+    /// The row stays open through a tail.
+    Seen,
+}
+
 /// The buffers a rule's terms are read through, reused across rules.
 ///
 /// # Specification
@@ -2969,6 +3021,11 @@ struct ReadBuffers<'arena>
     fresh: Vec<(&'arena StringLiteral, RuleVariable)>,
     /// Whether the rule read last still waits for its atoms to be read off.
     pending: bool,
+    /// The theories the row of the written rule read last names, each by its
+    /// label.
+    row: Vec<RowLabel>,
+    /// Whether that row has met its tail.
+    tail: Tail,
 }
 
 /// How far a rule moves a variable: whether some occurrence stands under
@@ -3017,6 +3074,9 @@ struct Reader<'arena>
     split: Option<RuleIndex>,
     /// The input ports of a sort no operation returns.
     value_ports: BTreeSet<InputPort<'arena>>,
+    /// Each theory a row names, by its label: its place in first-naming
+    /// order.
+    labels: BTreeMap<&'arena StringLiteral, RowLabel>,
 }
 
 impl<'arena> Reader<'arena>
@@ -3037,6 +3097,7 @@ impl<'arena> Reader<'arena>
             naming: Naming::Unnamed,
             split: None,
             value_ports: BTreeSet::new(),
+            labels: BTreeMap::new(),
         }
     }
 
@@ -3089,7 +3150,9 @@ impl<'arena> Reader<'arena>
                     self.rule(right, left, &mut buffers).map(|()| rest)
                 },
                 Some((tag::FRESH, &[atom, term, rest]))
-                    if stage == Stage::Written && !self.rules.is_empty() =>
+                    if stage == Stage::Written
+                        && !self.rules.is_empty()
+                        && buffers.row.is_empty() =>
                 {
                     if self.naming == Naming::Named
                         && let Some(stated) = self.rules.last_mut()
@@ -3104,6 +3167,26 @@ impl<'arena> Reader<'arena>
                         buffers.fresh.push((atom, RuleVariable::from(place)));
                     }
                     atom.and(term).map(|_| rest)
+                },
+                Some((tag::UNDER, &[theory, rest]))
+                    if stage == Stage::Written
+                        && !self.rules.is_empty()
+                        && buffers.tail == Tail::Unseen =>
+                {
+                    self.text(theory).map(|theory| {
+                        let next =
+                            RowLabel::from(u32::try_from(self.labels.len()).unwrap_or(u32::MAX));
+                        buffers.row.push(*self.labels.entry(theory).or_insert(next));
+                        rest
+                    })
+                },
+                Some((tag::OPEN, &[rest]))
+                    if stage == Stage::Written
+                        && !buffers.row.is_empty()
+                        && buffers.tail == Tail::Unseen =>
+                {
+                    buffers.tail = Tail::Seen;
+                    Some(rest)
                 },
                 Some((tag::DERIVED, &[outer, position, inner, left, right, rest]))
                     if stage <= Stage::Derived =>
@@ -3481,8 +3564,8 @@ impl<'arena> Reader<'arena>
 
     /// Read off the atoms each variable occurrence of the rule read last may
     /// name, as [`TheoryRule::scoped`] reads them, where a term can name an
-    /// atom and that rule still waits for them; then clear what its reading
-    /// kept for it.
+    /// atom and that rule still waits for them, and the row it fires under
+    /// where it names one; then clear what its reading kept for it.
     ///
     /// # Specification
     /// trivial.
@@ -3492,25 +3575,36 @@ impl<'arena> Reader<'arena>
     )
     {
         if buffers.pending
-            && self.naming == Naming::Named
-            && let Some(rule) = self.rules.pop()
+            && let Some(mut rule) = self.rules.pop()
         {
-            let mut start = 0;
-            let above: Vec<&[Above<&StringLiteral>]> = buffers
-                .held_ends
-                .iter()
-                .map(|&end| {
-                    let binders = buffers.held.get(start .. end).unwrap_or_default();
-                    start = end;
-                    binders
-                })
-                .collect();
-            self.rules.push(rule.scoped(&above, &buffers.fresh));
+            if self.naming == Naming::Named {
+                let mut start = 0;
+                let above: Vec<&[Above<&StringLiteral>]> = buffers
+                    .held_ends
+                    .iter()
+                    .map(|&end| {
+                        let binders = buffers.held.get(start .. end).unwrap_or_default();
+                        start = end;
+                        binders
+                    })
+                    .collect();
+                rule = rule.scoped(&above, &buffers.fresh);
+            }
+            if !buffers.row.is_empty() {
+                let extent = match buffers.tail {
+                    Tail::Seen => RowExtent::AtLeast,
+                    Tail::Unseen => RowExtent::Exactly,
+                };
+                rule = rule.under(RuleRow::new(buffers.row.drain(..), extent));
+            }
+            self.rules.push(rule);
         }
         buffers.pending = false;
         buffers.held.clear();
         buffers.held_ends.clear();
         buffers.fresh.clear();
+        buffers.row.clear();
+        buffers.tail = Tail::Unseen;
     }
 
     /// Read the term `root` in pre-order into `out`.
@@ -3763,6 +3857,7 @@ fn scoped<'arena>(
 }
 
 mod higher;
+pub mod row;
 
 #[cfg(test)]
 mod tests;
