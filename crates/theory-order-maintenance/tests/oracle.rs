@@ -9,9 +9,9 @@
 //! mutant that perturbs a label, a link, or the comparison direction
 //! diverges from it.
 //!
-//! The narrow-universe relabel and capacity paths are exercised by the
+//! The narrow-circle rebalance and capacity paths are exercised by the
 //! crate's in-module unit tests, which reach the test-only narrow
-//! constructor. This target complements them with a full-universe relabel
+//! constructor. This target complements them with a production-width split
 //! stress test and the broad randomized cross-check.
 
 use alloc::collections::VecDeque;
@@ -390,10 +390,10 @@ fn every_edit_variant_matches_the_reference_model()
 #[test]
 fn relabel_stress_at_full_universe()
 {
-    // Inserting many elements after one fixed anchor halves the local
-    // label gap each time, so even the full 2^62 universe relabels
-    // after a few dozen insertions — this drives the relabel path
-    // without the test-only narrow constructor.
+    // Inserting many elements after one fixed anchor halves the labels
+    // between it and its successor each time, so the anchor's group fills
+    // after a few insertions and splits again and again — this drives the
+    // split on the production widths without the test-only constructors.
     let mut order: OrderMaintenance<OracleValue> =
         OrderMaintenance::new().expect("structure id allocation succeeds in oracle test");
     let anchor = order.push_back(OracleValue(0)).expect("push_back succeeds");
