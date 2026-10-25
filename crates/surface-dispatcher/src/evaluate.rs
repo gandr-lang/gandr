@@ -178,8 +178,10 @@ use gandr_surface_corpus::RunSpelling;
 use gandr_surface_corpus::Runner;
 use gandr_surface_diagnostics::Families;
 use gandr_surface_diagnostics::constant_names;
+use gandr_surface_lowering::Container;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::LoweredStructure;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_pretty::CoreNode;
 use gandr_surface_pretty::CoreSource;
@@ -2132,7 +2134,10 @@ impl<'source> Program<'source>
 ///   path joined by `.`; a member hidden by two modules keeps the first.
 /// - fails: never.
 /// - panics: none.
-/// - intension: a module no signature coerced is skipped without a walk.
+/// - intension: a module with no coerced structure is skipped without a walk;
+///   otherwise each declaration's container path is read once, in place, and
+///   compared with each coerced module's path, allocating nothing per
+///   declaration.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a model whose helpers stand outside its signature, and
@@ -2143,6 +2148,30 @@ impl<'source> Program<'source>
 fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
 {
     let mut hidden = BTreeMap::new();
+    if !module
+        .structures()
+        .iter()
+        .any(|structure| structure.coerced().0)
+    {
+        return hidden;
+    }
+    // Each declaration's container path, as `LoweredModule::path_of` spells
+    // it before the declaration's own name: a derived rule's theory, else the
+    // path of the module it is declared in.
+    let containers: Vec<(ConstantIndex, Option<SurfaceName<'_>>, &[SurfaceName<'_>])> = module
+        .declarations()
+        .iter()
+        .map(|declaration| {
+            let path = match declaration.container() {
+                Container::TopLevel(_) => &[][..],
+                Container::Module(index) => module
+                    .structures()
+                    .get(usize::from(index))
+                    .map_or(&[][..], LoweredStructure::path),
+            };
+            (declaration.constant(), module.theory_of(declaration), path)
+        })
+        .collect();
     let mut exported: BTreeSet<ConstantIndex> = BTreeSet::new();
     let mut at = String::new();
     for structure in module.structures() {
@@ -2163,16 +2192,13 @@ fn hidden_members(module: &LoweredModule<'_>) -> BTreeMap<ConstantIndex, String>
             }
             at.push_str(AsRef::<str>::as_ref(segment));
         }
-        for declaration in module.declarations() {
-            let path = module.path_of(declaration);
-            if path
-                .split_last()
-                .is_some_and(|(_, container)| container == structure.path())
-                && !exported.contains(&declaration.constant())
-            {
-                let _first = hidden
-                    .entry(declaration.constant())
-                    .or_insert_with(|| at.clone());
+        for &(constant, theory, path) in &containers {
+            let within = theory.map_or_else(
+                || path == structure.path(),
+                |theory| structure.path() == [theory],
+            );
+            if within && !exported.contains(&constant) {
+                let _first = hidden.entry(constant).or_insert_with(|| at.clone());
             }
         }
     }
