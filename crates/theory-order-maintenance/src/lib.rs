@@ -7,13 +7,11 @@
 //! lookup, per-node mark and dirty-bit layout, syntax-tree resync — has its own
 //! invariants and lives in the consumer.
 //!
-//! Comparison is one integer comparison because every element carries a label
-//! strictly increasing in list order. An insertion takes the midpoint label of
-//! its neighbours' gap; when the gap is exhausted it relabels the smallest
-//! power-of-two-aligned window around the insertion point that is at most half
-//! full and redistributes the window's elements evenly. The density cap keeps
-//! that window sparse enough for the redistribution to succeed, so insertion is
-//! O(log² n) amortized and the structure is total.
+//! Comparison is O(1) because every element carries a key strictly increasing
+//! in list order, in two levels: its group's label on a circle of `2^64`
+//! labels, then its own label within the group. Insertion is O(1) amortized
+//! and the structure is total up to the `u32` slot ceiling; [`order`] states
+//! the procedure.
 //!
 //! Handles are generation- and structure-checked: a stale handle to a removed
 //! element, or a foreign handle from another structure, is detected rather than
@@ -57,6 +55,7 @@ pub mod interval;
 pub mod order;
 
 pub use crate::interval::Interval;
+pub use crate::order::GroupWidth;
 pub use crate::order::HandleMembership;
 pub use crate::order::IntervalContainment;
 pub use crate::order::Iter;

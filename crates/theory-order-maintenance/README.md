@@ -22,18 +22,19 @@ An order-maintenance structure: a total order over payload-carrying elements in 
 
 **Why.** An incremental checker schedules re-checking from a dirty-step priority queue ordered by position in the term, and it asks one question constantly: does this term enclose that one. Pre- and post-order timestamps drawn from an order-maintenance structure answer it with two integer comparisons. Binder lookup, the per-node mark and dirty-bit layout, and any binding of order points to the concrete-syntax tree's identity carry invariants of their own and live in the consumer.
 
-**How.** Every element carries an integer label strictly increasing in list order, so comparison is one integer comparison. Labels come from list-labeling over a sparse integer universe: an insertion takes the midpoint of its neighbours' gap, and an exhausted gap relabels a window around the insertion point (see [List labeling](#list-labeling)). Elements live in a flat, id-addressed arena with a free list; a handle names its slot, the slot's generation and the structure's identity, so a stale or foreign handle is detected rather than resolved against an unrelated element.
+**How.** Every element carries a key strictly increasing in list order, in two levels: its group's label on a circle of `2^64` labels and its own label within the group, so comparison is at most two integer comparisons. An insertion takes the midpoint of its neighbours' labels in their group, and a full group splits (see [List labeling](#list-labeling)). Elements live in a flat, id-addressed arena with a free list, and their groups in a second one; a handle names its slot, the slot's generation and the structure's identity, so a stale or foreign handle is detected rather than resolved against an unrelated element.
 
 ## References
 
-- Paul F. Dietz and Daniel D. Sleator. "Two Algorithms for Maintaining Order in a List." In _Proceedings of the Nineteenth Annual ACM Symposium on Theory of Computing (STOC '87)_, pages 365–372, 1987. `doi:10.1145/28395.28434` — the order-maintenance problem this crate solves.
-- Alon Itai, Alan G. Konheim, and Michael Rodeh. "A Sparse Table Implementation of Priority Queues." In _Automata, Languages and Programming (ICALP 1981)_, edited by Shimon Even and Oded Kariv, Lecture Notes in Computer Science 115, pages 417–431, 1981. `doi:10.1007/3-540-10843-2_34` — the list-labeling scheme the relabel rule refines.
-- Michael A. Bender, Richard Cole, Erik D. Demaine, Martin Farach-Colton, and Jack Zito. "Two Simplified Algorithms for Maintaining Order in a List." In _Algorithms — ESA 2002_, edited by Rolf H. Möhring and Rajeev Raman, Lecture Notes in Computer Science 2461, pages 152–164, 2002. `doi:10.1007/3-540-45749-6_17` — the simplified algorithm and amortized analysis the density cap comes from.
+- Paul F. Dietz and Daniel D. Sleator. "Two Algorithms for Maintaining Order in a List." In _Proceedings of the Nineteenth Annual ACM Symposium on Theory of Computing (STOC '87)_, pages 365–372, 1987. `doi:10.1145/28395.28434` — the order-maintenance problem this crate solves, the relabel walk around the circle of group labels, and the two-level structure.
+- Michael A. Bender, Richard Cole, Erik D. Demaine, Martin Farach-Colton, and Jack Zito. "Two Simplified Algorithms for Maintaining Order in a List." In _Algorithms — ESA 2002_, edited by Rolf H. Möhring and Rajeev Raman, Lecture Notes in Computer Science 2461, pages 152–164, 2002. `doi:10.1007/3-540-45749-6_17` — the two-level structure's amortized analysis.
+- Bin Guo and Emil Sekerinski. "New Concurrent Order Maintenance Data Structure." _Journal of Parallel and Distributed Computing_ 211 (2026), 105238. `doi:10.1016/j.jpdc.2026.105238` — the two-level structure as built here: groups at the midpoint of the room after the full one, a split into groups of half the label width, and the rebalance and relabel procedures, with the concurrent operations a later structure takes from it.
 - Thomas J. Porter, Marisa Kirisame, Ivan Wei, Pavel Panchekha, and Cyrus Omar. "Incremental Bidirectional Typing via Order Maintenance." _Proceedings of the ACM on Programming Languages_ 9, OOPSLA2 (October 2025), pages 1865–1892. `doi:10.1145/3763117`; preprint `arXiv:2504.08946` — the incremental typing algorithm this crate serves, and the pre/post-order interval test.
 
 ## Provided features
 
-- `OrderMaintenance<T>`: a payload-carrying total order over opaque handles. `push_front`, `push_back`, `insert_after` and `insert_before` insert; `remove` removes; `cmp` compares; `first`, `last`, `next`, `prev`, `get`, `contains`, `len`, `is_empty` and `iter` observe.
+- `OrderMaintenance<T>`: a payload-carrying total order over opaque handles. `push_front`, `push_back`, `insert_after` and `insert_before` insert; `remove` removes; `cmp` compares; `first`, `last`, `next`, `prev`, `get`, `contains`, `len`, `is_empty` and `iter` observe. `new` builds one with the default group width, `with_group_width` with another.
+- `GroupWidth`: the width of a group's labels, built `From` a `u32` clamped to `[4, 31]`; a full group splits into groups of half of it.
 - `Interval` and `OrderMaintenance::interval_contains`: the pre/post-order containment test in constant time.
 - `Pos`: the handle, opaque, generation-checked and structure-checked. It stays valid across relabels.
 - `Iter`: in-order iteration as an explicit state machine over slot indices.
@@ -72,9 +73,11 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-order-mainten
 
 ## List labeling
 
-Insertion is single-level list-labeling over a fixed label universe. An insertion takes the midpoint label of the gap between its neighbours when one exists. When the gap is exhausted, it relabels the smallest power-of-two-aligned window around the insertion point that is at most half full and spreads the window's elements evenly across it. The density cap keeps that window sparse enough for the spread to succeed, so insertion is total and O(log² n) amortized. The window buffer is allocated once per relabel and reused across the widening steps.
+Insertion is two-level list labeling. Consecutive elements share a group. A group's label is a point on a circle of `2^64` labels, and its place in the order is its distance around the circle from the first group's label. An element's label lies in `[0, 2^w)` within its group, `w` the group width. An insertion takes the midpoint of its neighbours' labels in their group: the predecessor's group, or the successor's at the front, the group's ends standing in for a neighbour in another group.
 
-The two-level refinement that makes insertion O(1) amortized is absent by choice: comparison, the operation consumers need, is O(1) under either scheme, and the single-level relabel rule stays fully inspectable. Revisit the refinement when a real edit-trace profile shows insertion cost dominates.
+When a group has no label between the neighbours, it splits. Its last `w/2` elements become a new group after it, placed at the midpoint of the room between it and the next group around the circle, and the cut is repeated until `w/2` or fewer remain; each group the split makes, and the one it cut, spreads its elements evenly over its labels. When the room after the full group is under two labels, the groups after it are relabelled first: the walk takes successors around the circle until the `j`th lies more than `j²` labels on, and spreads the `j - 1` it passed evenly over that room. Past the last group the walk continues from the first, so the first group's label may move; every distance from it keeps its order. Insertion is O(1) amortized: a split is paid for by the `w/2` insertions that filled the group, and a group's insertion on the circle by the walk's own amortization. The structure is total up to the `u32` slot ceiling, because a circle of `2^64` labels holds the square of the most groups a structure can have.
+
+The group width is a parameter. `GroupWidth::DEFAULT` is the widest, 31, which the crate's bench (`cargo bench -p gandr-theory-order-maintenance`) measures fastest, or within a few nanoseconds of the fastest, at every size from a thousand elements to a million. Its workloads are appends, insertion behind one element, random insertion, comparison, removal and a churn of the two.
 
 Labels are internal and never exposed, so no caller depends on a numeric encoding a relabel is free to change. `Pos` is the only identity.
 
@@ -90,17 +93,18 @@ The `# Specification` prose states the obligation. Executable `#[spec(...)]` cla
 
 Handle liveness remains a returned classification, never an asserted prerequisite. Public predicates check membership, comparison, inclusive interval bounds, insertion adjacency and removal's stale handle and repaired neighbours. Arena predicates distinguish occupied, free, retired and absent slots, including the identity of returned borrows. The shared identity counter is bounded by monotone observations; a deterministic concurrent batch and the final-identity refusal witness its cross-call obligations.
 
-The relabel predicates check density, exact checked spread arithmetic and rebuilt links. Window collection carries a linear certificate of its bounds and adjacency without walking the rest of the list. Allocation and relabel insertion capture the old length and check the returned handle without cloning its moved payload. Iterator predicates bind the owner and cursor and check each state transition; the independent sequence model witnesses the complete walk. Numeric witnesses cover rounding, wide multiplication, final representability and refusal rather than inferring exact arithmetic from sorted labels alone.
+The relabel predicates check the room a rebalance leaves, the groups a split leaves and their order, the exact spread labels, and every group's bookkeeping as each insertion and removal changes it. Allocation captures the old length and checks the returned handle without cloning its moved payload. Iterator predicates bind the owner and cursor and check each state transition; the independent sequence models, one over the default widths and one over a narrow circle whose groups split, rebalance and wrap past the last group, witness the complete walk. Numeric witnesses cover rounding, wide multiplication and the wrapped distance around the circle rather than inferring exact arithmetic from sorted keys alone.
 
-Three items retain explicit executable boundaries:
+Four items retain explicit executable boundaries:
 
 | Item | Boundary |
 | ---- | -------- |
 | `Interval::new` | The datum does not hold the owning order. Its opaque `Pos` endpoints expose neither fields to this module nor a const value-equality observer. Const functions themselves are supported; this is an observer boundary. |
 | `OrderError::fmt` | A formatter exposes a write-only sink, not independently readable output or its write outcome. Distinct failure classes and a bounded sink witness rendering without pinning wording. |
 | `oracle::op_strategy` | The attribute backend cannot instrument the opaque returned strategy. A deterministic bounded census witnesses all five edit variants, not every numeric value or seed. |
+| `order::tests::model::edit` | The same opaque-strategy boundary. The narrow sequence model's replay observes every edit it is handed. |
 
-Revisit the interval boundary when a const-readable endpoint observer is available, and the strategy boundary when the backend supports opaque returns. The sequence oracle, narrow-universe fixtures and negative observer cases remain necessary: executable local certificates do not establish amortized cost, complete machine-sized arithmetic coverage or the behaviour of malformed cyclic arenas.
+Revisit the interval boundary when a const-readable endpoint observer is available, and the strategy boundaries when the backend supports opaque returns. The sequence oracles, narrow-circle fixtures and negative observer cases remain necessary: executable local certificates do not establish amortized cost, complete machine-sized arithmetic coverage or the behaviour of malformed cyclic arenas.
 
 ## License
 

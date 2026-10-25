@@ -1,10 +1,20 @@
 //! The order-maintenance structure ([`OrderMaintenance`]) and its handle
-//! ([`Pos`]) — see the crate-root documentation for the problem statement, the
-//! labeling algorithm, and the complexity claims.
+//! ([`Pos`]).
 //!
-//! The structure is a flat arena of [`Slot`]s addressed by [`SlotIndex`]; list
-//! order is carried by index links, never by owning pointers, and every walk
-//! over those links is an explicit loop.
+//! The structure is two flat arenas: the elements, in [`Slot`]s addressed by
+//! [`SlotIndex`], and the groups that label them, in [`GroupSlot`]s addressed
+//! by [`GroupIndex`]. List order is carried by index links, never by owning
+//! pointers, and every walk over those links is an explicit loop.
+//!
+//! An element's key is its group's label, a point on a circle of `2^64` labels
+//! measured from the first group's, then its own label in `[0, 2^w)` for the
+//! group width `w` ([`GroupWidth`]). An insertion takes the midpoint of its
+//! neighbours' labels in their group. A group with no label left there splits
+//! from its back into groups of `w/2` elements, each placed at the midpoint of
+//! the room after it and spread over its own labels. When that room is spent,
+//! the groups after the full one are spread over the first room the walk finds
+//! holding more than the square of their number, the walk continuing past the
+//! last group to the first.
 
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -105,88 +115,222 @@ impl StructureIdCounter
     }
 }
 
-/// The number of bits in a label universe: labels live in `[0, 2^bits)`.
+/// The width of a group's label universe, the `log N` of the two-level
+/// scheme.
 ///
-/// [`Self::MAX`] sits below 64 with headroom so that the relabel arithmetic (an
-/// aligned window of size `2^h` for `h <= MAX`, and label offsets bounded by
-/// that window) never approaches `u64::MAX`, and so the resulting density cap
-/// `2^61` dwarfs the `u32` slot-index ceiling that binds first in practice.
+/// An element carries a bottom label in `[0, 2^width)` within its group, and
+/// a group left with no label between two neighbours splits into groups of
+/// `width / 2` elements. A wider group absorbs more insertions before it
+/// splits and relabels more elements when it does. [`Self::DEFAULT`] is the
+/// width [`OrderMaintenance::new`] selects.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct LabelBits(u32);
+pub struct GroupWidth(u32);
 
-impl LabelBits
+impl GroupWidth
 {
-    /// The narrowest supported label-universe width.
-    const MIN: Self = Self(1);
-    /// The widest supported label-universe width: labels live in `[0, 2^62)`.
-    const MAX: Self = Self(62);
+    /// The narrowest width: sixteen bottom labels, and two elements in each
+    /// group a split makes.
+    pub const MIN: Self = Self(4);
+    /// The widest width: bottom labels fill a `u32` below its top bit.
+    pub const MAX: Self = Self(31);
+    /// The width [`OrderMaintenance::new`] selects: the widest, which the
+    /// crate's bench measures fastest, or within a few nanoseconds of the
+    /// fastest, in every workload from a thousand elements to a million.
+    pub const DEFAULT: Self = Self::MAX;
 
-    /// This width clamped into `[MIN, MAX]`.
+    /// The size of a group's label universe, `2^width`.
     ///
     /// # Specification
-    /// - requires: nothing; any width may be offered.
-    /// - ensures: returns this width unchanged when it already lies in `[MIN,
-    ///   MAX]`, and the nearer endpoint otherwise.
-    /// - provides: the only width the universe-size computation accepts, so a
-    ///   caller-chosen width can never name an unrepresentable universe.
+    /// - requires: nothing; every width lies in `[MIN, MAX]` by construction.
+    /// - ensures: returns `2^width`.
+    /// - provides: the exclusive upper bound of a group's bottom labels.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — widths below, at and above both clamp endpoints
-    ///   separate clamping from representable widening.
-    /// - witness: `order::tests::label_widths_distinguish_clamping_from_widening`
-    #[spec(ensures: |ret| ret.0 == self.0.clamp(Self::MIN.0, Self::MAX.0))]
+    /// - hypothesis: L3 — the exact spread labels of the narrowest group and
+    ///   the largest label the widest group holds pin the power.
+    /// - witness: `order::tests::a_group_spreads_its_elements_evenly`
     #[inline]
-    fn clamped(self) -> Self
+    #[spec(ensures: |ret| Some(ret.0) == 1_u64.checked_shl(self.0))]
+    fn universe(self) -> BottomUniverse
     {
-        Self(self.0.clamp(Self::MIN.0, Self::MAX.0))
+        BottomUniverse(1_u64.checked_shl(self.0).unwrap_or(u64::MAX))
     }
 
-    /// The next wider width, or `None` at the representable ceiling.
+    /// How many elements each group a split makes holds: `width / 2`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: returns the width one bit wider than this one, or `None` when
-    ///   that successor is not representable.
-    /// - provides: the widening step; the absence is the representable ceiling
-    ///   rather than a failure.
+    /// - ensures: returns `width / 2`, at least two for every width.
+    /// - provides: the size a full group is cut into, from its back.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the supported-universe ceiling still widens, whereas
-    ///   the backing integer ceiling refuses instead of wrapping.
-    /// - witness: `order::tests::label_widths_distinguish_clamping_from_widening`
-    #[spec(ensures: |ret| ret.map(|width| width.0) == self.0.checked_add(1))]
+    /// - hypothesis: L3 — a split group of the width eight leaves groups of
+    ///   four elements behind a remainder of three.
+    /// - witness: `order::tests::a_full_group_splits_from_its_back`
     #[inline]
-    fn wider(self) -> Option<Self>
+    #[spec(ensures: |ret| ret.0 == self.0.div_euclid(2))]
+    fn split_len(self) -> GroupLen
     {
-        self.0.checked_add(1).map(Self)
+        GroupLen(self.0.div_euclid(2))
     }
 }
 
-/// An element's order label; strictly increasing in list order.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Label(u64);
-
-impl Label
+impl From<GroupWidth> for u32
 {
-    /// The smallest representable label.
-    const ZERO: Self = Self(0);
+    /// The width as a plain count of bits.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: GroupWidth) -> Self
+    {
+        value.0
+    }
 }
 
-/// The label-universe size `2^label_bits`, cached from a structure's
-/// [`LabelBits`].
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct LabelCapacity(u64);
+impl From<u32> for GroupWidth
+{
+    /// The width `bits`, clamped into `[MIN, MAX]`.
+    ///
+    /// # Specification
+    /// - requires: nothing; any width may be offered.
+    /// - ensures: returns `bits` unchanged when it lies in `[MIN, MAX]`, and
+    ///   the nearer endpoint otherwise.
+    /// - provides: the only way to name a width, so a group's universe is
+    ///   always representable and a split always leaves two elements a group or
+    ///   more.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — widths below, at and above both endpoints separate
+    ///   clamping from passing a width through.
+    /// - witness: `order::tests::group_widths_clamp_into_their_range`
+    #[inline]
+    #[spec(ensures: |ret| ret.0 == bits.clamp(Self::MIN.0, Self::MAX.0))]
+    fn from(bits: u32) -> Self
+    {
+        Self(bits.clamp(Self::MIN.0, Self::MAX.0))
+    }
+}
 
-/// The size of a relabel window: a power-of-two count of consecutive label
-/// values, redistributed evenly when the window is relabeled.
+/// The width of the top-label universe: group labels are points on a circle
+/// of `2^width` labels, and a group's place in the order is its label's
+/// distance from the base group's label, measured forward around the circle.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct LabelRangeSize(u64);
+struct TopWidth(u32);
+
+impl TopWidth
+{
+    /// The full circle, `2^64` labels: the square of the `u32` slot ceiling,
+    /// so the rebalance walk finds room for every group a structure can hold.
+    const FULL: Self = Self(64);
+
+    /// The circle's last label, `2^width - 1`: the mask that reduces a label
+    /// difference onto the circle.
+    ///
+    /// # Specification
+    /// - requires: the width lies in `[1, 64]`.
+    /// - ensures: returns `2^width - 1`.
+    /// - provides: the reduction every label sum and difference takes, so
+    ///   arithmetic on the circle never leaves it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a circle of eight labels measures a wrapped distance
+    ///   exactly, and the full circle wraps at `2^64`.
+    /// - witness: `order::tests::top_labels_are_measured_around_the_circle`
+    #[inline]
+    #[spec(
+        requires: (1 ..= 64).contains(&self.0),
+        ensures: |ret| 1_u128.checked_shl(self.0).and_then(|span| span.checked_sub(1)) == Some(u128::from(ret.0)),
+    )]
+    fn last(self) -> TopLabel
+    {
+        TopLabel(
+            64_u32
+                .checked_sub(self.0)
+                .and_then(|shift| u64::MAX.checked_shr(shift))
+                .unwrap_or(u64::MAX),
+        )
+    }
+
+    /// The number of labels on the circle, `2^width`.
+    ///
+    /// # Specification
+    /// - requires: the width lies in `[1, 64]`.
+    /// - ensures: returns `2^width`.
+    /// - provides: the room a group has when it is the only one: the whole
+    ///   circle.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the room from a group to itself is the whole circle
+    ///   of eight labels; a circle of two labels holds two groups and refuses a
+    ///   third.
+    /// - witness: `order::tests::top_labels_are_measured_around_the_circle`
+    /// - witness: `order::tests::capacity_exhausts_on_a_circle_of_two_labels`
+    #[inline]
+    #[spec(
+        requires: (1 ..= 64).contains(&self.0),
+        ensures: |ret| Some(ret.0) == 1_u128.checked_shl(self.0),
+    )]
+    fn universe(self) -> TopGap
+    {
+        TopGap(1_u128.checked_shl(self.0).unwrap_or(u128::MAX))
+    }
+}
+
+/// A group's label: a point on the top circle.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct TopLabel(u64);
+
+/// The room between two group labels, measured forward around the top circle:
+/// in `(0, 2^width]`, the whole circle from a group to itself.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct TopGap(u128);
+
+/// An element's label within its group: strictly increasing along the group.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct BottomLabel(u32);
+
+/// The size of a group's label universe, `2^width`: every bottom label lies
+/// below it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct BottomUniverse(u64);
+
+/// An element's place among the elements a group spreads, counting from one.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct SpreadPosition(u64);
+
+/// A group's slot index in the group arena.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct GroupIndex(u32);
+
+/// The number of elements a group holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct GroupLen(u32);
+
+/// An element's place in the order: its group's label measured from the base
+/// group's, then its own label. Keys compare as the elements they belong to.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct OrderKey
+{
+    /// The group's label's distance from the base group's label.
+    top: TopLabel,
+    /// The element's label within its group.
+    bottom: BottomLabel,
+}
 
 /// An element's slot index in the arena.
 #[repr(transparent)]
@@ -289,18 +433,6 @@ impl SlotGeneration
         self.0.checked_add(1).map(Self)
     }
 }
-
-/// The number of elements a relabel window must hold, counting the element
-/// being inserted.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct OccupantCount(usize);
-
-/// An element's position within the sequence spread evenly across a relabel
-/// window.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct SequencePosition(usize);
 
 /// A test-only ceiling on the number of arena slots a structure may create.
 #[cfg(test)]
@@ -459,8 +591,8 @@ pub enum OrderError
     /// reusing an identifier that could alias an extant [`Pos`].
     StructureIdExhausted,
     /// The structure has reached the maximum number of live, free, or retired
-    /// slots representable by [`Pos`], or the label-universe density cap, so no
-    /// fresh element can be admitted.
+    /// slots representable by [`Pos`], or no room is left on the circle of
+    /// group labels, so no fresh element can be admitted.
     CapacityExhausted,
     /// An internal invariant of the arena was violated: a live element's link
     /// or label did not resolve. No sequence of public operations produces
@@ -524,8 +656,10 @@ struct Occupied<T>
 {
     /// The slot's current generation (matched against a [`Pos`]).
     generation: SlotGeneration,
-    /// The element's order label; strictly increasing in list order.
-    label: Label,
+    /// The group the element is labelled in.
+    group: GroupIndex,
+    /// The element's label within its group; strictly increasing along it.
+    label: BottomLabel,
     /// The previous element in list order, if any.
     prev: Option<SlotIndex>,
     /// The next element in list order, if any.
@@ -541,6 +675,51 @@ struct Free
     generation: SlotGeneration,
     /// The next free slot on the free list, if any.
     next_free: Option<SlotIndex>,
+}
+
+/// A group: a run of consecutive elements sharing one top label.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Group
+{
+    /// The group's point on the top circle.
+    label: TopLabel,
+    /// The group before this one in list order, if any.
+    prev: Option<GroupIndex>,
+    /// The group after this one in list order, if any.
+    next: Option<GroupIndex>,
+    /// The group's first element.
+    first: SlotIndex,
+    /// The group's last element.
+    last: SlotIndex,
+    /// How many elements the group holds; never zero for a live group.
+    len: GroupLen,
+}
+
+/// One group-arena slot: a live group, or a freed one threaded onto the free
+/// list.
+enum GroupSlot
+{
+    /// A live group.
+    Live(Group),
+    /// A freed group slot, and the next free one, if any.
+    Free(Option<GroupIndex>),
+}
+
+/// Where an insertion between two adjacent elements lands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Room
+{
+    /// The group the new element joins, and the label between its neighbours
+    /// that it takes.
+    Free
+    {
+        /// The group the new element joins.
+        group: GroupIndex,
+        /// The new element's label.
+        label: BottomLabel,
+    },
+    /// The group the new element joins has no label between its neighbours.
+    Full(GroupIndex),
 }
 
 /// A total order over payload-carrying elements with O(1) comparison.
@@ -564,10 +743,17 @@ pub struct OrderMaintenance<T>
     tail: Option<SlotIndex>,
     /// The number of live elements.
     len: LiveLen,
-    /// The label-universe width: labels live in `[0, 2^label_bits)`.
-    label_bits: LabelBits,
-    /// The label-universe size `2^label_bits`, cached from `label_bits`.
-    capacity: LabelCapacity,
+    /// The group arena, addressed by [`GroupIndex`].
+    groups: Vec<GroupSlot>,
+    /// The head of the group free list, if any.
+    free_group: Option<GroupIndex>,
+    /// The base group: the first element's group, from whose label every
+    /// group's place is measured; `None` exactly when the structure is empty.
+    base: Option<GroupIndex>,
+    /// The width of every group's label universe.
+    width: GroupWidth,
+    /// The width of the top circle.
+    top: TopWidth,
     /// This structure's process-unique identity, stamped into every [`Pos`] it
     /// mints (see [`NEXT_STRUCTURE_ID`]).
     structure_id: StructureId,
@@ -575,7 +761,7 @@ pub struct OrderMaintenance<T>
 
 impl<T> OrderMaintenance<T>
 {
-    /// Creates an empty structure over the default `[0, 2^62)` label universe.
+    /// Creates an empty structure whose groups have [`GroupWidth::DEFAULT`].
     ///
     /// # Specification
     /// - requires: nothing.
@@ -601,24 +787,18 @@ impl<T> OrderMaintenance<T>
     #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|order| order.len() == LiveLen::ZERO))]
     pub fn new() -> Result<Self, OrderError>
     {
-        Self::with_label_bits(LabelBits::MAX)
+        Self::with_group_width(GroupWidth::DEFAULT)
     }
 
-    /// Creates an empty structure over the `[0, 2^label_bits)` label universe,
-    /// clamping the requested width into the supported range.
-    ///
-    /// The narrow-universe form exists for tests that provoke relabeling and
-    /// capacity exhaustion without inserting `2^61` elements; in production
-    /// [`Self::new`] selects the full universe.
+    /// Creates an empty structure whose groups have `width`.
     ///
     /// # Specification
-    /// - requires: nothing; the requested width is clamped into the supported
-    ///   range before the universe size is computed.
-    /// - ensures: on `Ok`, the structure is empty over the clamped universe and
-    ///   carries an identity distinct from every other structure this process
+    /// - requires: nothing; every width lies in range by construction.
+    /// - ensures: on `Ok`, the structure is empty, its groups have `width`, and
+    ///   its identity is distinct from every other structure this process
     ///   built.
-    /// - provides: the narrow-universe constructor the relabel and capacity
-    ///   tests drive. The clause checks emptiness and the clamped width;
+    /// - provides: the group width as a parameter, for a consumer or a bench
+    ///   that measures it. The clause checks emptiness and the installed width;
     ///   identity distinctness stays prose, because it is a law over every
     ///   structure this process built before this call.
     /// - fails: [`OrderError::StructureIdExhausted`] when no distinct structure
@@ -630,73 +810,105 @@ impl<T> OrderMaintenance<T>
     /// id remains.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — empty construction and narrow-universe relabeling
-    ///   distinguish the requested width from the default; the clamp boundaries
-    ///   are exercised independently.
-    /// - witness: `order::tests::new_is_empty`
-    /// - witness: `order::tests::label_widths_distinguish_clamping_from_widening`
-    /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
+    /// - hypothesis: L3 — a structure built at a clamped width carries that
+    ///   width, and the narrowest width's splits are observed group by group.
+    /// - witness: `order::tests::group_widths_clamp_into_their_range`
+    /// - witness: `order::tests::a_full_group_splits_from_its_back`
     #[inline]
     #[spec(ensures: |ret| ret.is_err()
         || ret
             .as_ref()
-            .is_ok_and(|order| order.len() == LiveLen::ZERO
-                && order.label_bits == label_bits.clamped()))]
-    fn with_label_bits(label_bits: LabelBits) -> Result<Self, OrderError>
+            .is_ok_and(|order| order.len() == LiveLen::ZERO && order.width == width))]
+    pub fn with_group_width(width: GroupWidth) -> Result<Self, OrderError>
     {
-        Self::with_label_bits_from_counter(label_bits, &NEXT_STRUCTURE_ID)
+        Self::with_widths_from_counter(TopWidth::FULL, width, &NEXT_STRUCTURE_ID)
     }
 
-    /// Creates an empty structure over the clamped `[0, 2^label_bits)` label
-    /// universe, drawing its identity from `counter` instead of the
-    /// process-wide [`NEXT_STRUCTURE_ID`].
+    /// Creates an empty structure over a top circle of `2^top` labels whose
+    /// groups have `width`.
     ///
-    /// The injectable counter exists for tests that exercise structure-id
-    /// exhaustion without minting `u64::MAX` structures.
+    /// The narrow circle exists for tests that provoke the rebalance and
+    /// capacity exhaustion without inserting `2^32` groups; in production the
+    /// circle is [`TopWidth::FULL`].
     ///
     /// # Specification
-    /// - requires: nothing; the width is clamped into the supported range
-    ///   before the universe size is computed.
-    /// - ensures: on `Ok`, the structure is empty over the clamped universe and
-    ///   its identity is minted from `counter`.
-    /// - provides: the constructor the exhaustion tests drive against a bounded
-    ///   counter. The clause checks emptiness and the clamped width; the
-    ///   identity's provenance stays prose, because `counter` is shared across
-    ///   threads and has already advanced when the postcondition runs.
+    /// - requires: `top` lies in `[1, 64]`.
+    /// - ensures: on `Ok`, the structure is empty over the two widths.
+    /// - provides: the narrow-circle constructor the rebalance and capacity
+    ///   tests drive.
+    /// - fails: [`OrderError::StructureIdExhausted`] when no distinct structure
+    ///   id remains.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::StructureIdExhausted`] when no distinct structure
+    /// id remains.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a circle of two labels refuses its third group, and a
+    ///   circle of sixteen relabels the groups after a full one.
+    /// - witness: `order::tests::capacity_exhausts_on_a_circle_of_two_labels`
+    /// - witness: `order::tests::a_crowded_circle_spreads_the_groups_after_the_full_one`
+    #[cfg(test)]
+    #[inline]
+    #[spec(
+        requires: (1 ..= 64).contains(&top.0),
+        ensures: |ret| ret.is_err()
+            || ret
+                .as_ref()
+                .is_ok_and(|order| order.len() == LiveLen::ZERO && order.top == top && order.width == width),
+    )]
+    fn with_widths(
+        top: TopWidth,
+        width: GroupWidth,
+    ) -> Result<Self, OrderError>
+    {
+        Self::with_widths_from_counter(top, width, &NEXT_STRUCTURE_ID)
+    }
+
+    /// Creates an empty structure over the two widths, drawing its identity
+    /// from `counter` instead of the process-wide [`NEXT_STRUCTURE_ID`].
+    ///
+    /// The injectable counter exists for tests that exercise structure-id
+    /// exhaustion without minting `usize::MAX` structures.
+    ///
+    /// # Specification
+    /// - requires: `top` lies in `[1, 64]`.
+    /// - ensures: on `Ok`, the structure is empty over the two widths and its
+    ///   identity is minted from `counter`.
+    /// - provides: the constructor every other one routes through. The clause
+    ///   checks emptiness and the widths; the identity's provenance stays
+    ///   prose, because `counter` is shared across threads and has already
+    ///   advanced when the postcondition runs.
     /// - fails: [`OrderError::StructureIdExhausted`] when `counter` has no
-    ///   fresh id; [`OrderError::CapacityExhausted`] on a clamped universe size
-    ///   that is not representable, which the clamp range precludes.
+    ///   fresh id.
     /// - panics: none.
     ///
     /// # Errors
     /// Returns [`OrderError::StructureIdExhausted`] when `counter` has no fresh
-    /// id to issue, or [`OrderError::CapacityExhausted`] when the clamped
-    /// universe size is not representable.
+    /// id to issue.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a bounded counter admits exactly its final structure
-    ///   and then returns the typed exhaustion error; fresh and narrow
-    ///   structures expose the installed universe.
+    ///   and then returns the typed exhaustion error; fresh structures expose
+    ///   the installed widths.
     /// - witness: `order::tests::structure_id_exhaustion_is_typed`
     /// - witness: `order::tests::new_is_empty`
-    /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err()
-        || ret
-            .as_ref()
-            .is_ok_and(|order| order.len() == LiveLen::ZERO
-                && order.label_bits == label_bits.clamped()))]
-    fn with_label_bits_from_counter(
-        label_bits: LabelBits,
+    #[spec(
+        requires: (1 ..= 64).contains(&top.0),
+        ensures: |ret| ret.is_err()
+            || ret
+                .as_ref()
+                .is_ok_and(|order| order.len() == LiveLen::ZERO && order.top == top && order.width == width),
+    )]
+    fn with_widths_from_counter(
+        top: TopWidth,
+        width: GroupWidth,
         counter: &StructureIdCounter,
     ) -> Result<Self, OrderError>
     {
         let structure_id = counter.allocate()?;
-        let bits = label_bits.clamped();
-        let capacity = 1u64
-            .checked_shl(bits.0)
-            .map(LabelCapacity)
-            .ok_or(OrderError::CapacityExhausted)?;
         Ok(Self {
             slots: Vec::new(),
             free_head: None,
@@ -705,8 +917,11 @@ impl<T> OrderMaintenance<T>
             head: None,
             tail: None,
             len: LiveLen::ZERO,
-            label_bits: bits,
-            capacity,
+            groups: Vec::new(),
+            free_group: None,
+            base: None,
+            width,
+            top,
             structure_id,
         })
     }
@@ -714,7 +929,7 @@ impl<T> OrderMaintenance<T>
     /// Creates a structure whose arena may never exceed `slot_limit` slots.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `top` lies in `[1, 64]`.
     /// - ensures: on `Ok`, the structure is empty and its arena may never
     ///   exceed `slot_limit` slots.
     /// - provides: the bounded-arena constructor the retirement tests drive.
@@ -735,17 +950,21 @@ impl<T> OrderMaintenance<T>
     /// - witness: `order::tests::retired_slot_capacity_exhaustion_is_typed`
     #[cfg(test)]
     #[inline]
-    #[spec(ensures: |ret| ret.is_err()
-        || ret
-            .as_ref()
-            .is_ok_and(|order| order.len() == LiveLen::ZERO
-                && order.slot_limit == Some(slot_limit)))]
-    fn with_label_bits_and_slot_limit(
-        label_bits: LabelBits,
+    #[spec(
+        requires: (1 ..= 64).contains(&top.0),
+        ensures: |ret| ret.is_err()
+            || ret
+                .as_ref()
+                .is_ok_and(|order| order.len() == LiveLen::ZERO
+                    && order.slot_limit == Some(slot_limit)),
+    )]
+    fn with_widths_and_slot_limit(
+        top: TopWidth,
+        width: GroupWidth,
         slot_limit: SlotLimit,
     ) -> Result<Self, OrderError>
     {
-        let mut order = Self::with_label_bits(label_bits)?;
+        let mut order = Self::with_widths(top, width)?;
         order.slot_limit = Some(slot_limit);
         Ok(order)
     }
@@ -906,29 +1125,36 @@ impl<T> OrderMaintenance<T>
     ///   the two elements; `Some(Equal)` exactly when both handles refer to the
     ///   same live element, so distinct live elements never compare `Equal`.
     /// - provides: the total order the structure exists to maintain. The clause
-    ///   checks the resolved label comparison and reflexivity; stale or foreign
-    ///   handles are answered with `None`, never assumed live.
+    ///   checks the answer against the two elements' keys, its presence against
+    ///   both handles' liveness, and reflexivity; stale or foreign handles are
+    ///   answered with `None`, never assumed live.
     /// - fails: returns `None` if either handle is stale or foreign.
     /// - panics: none.
-    /// - intension: one integer comparison of the two labels, independent of
-    ///   the number of elements between them.
+    /// - intension: two label comparisons at most — the groups' labels measured
+    ///   from the base group's, then the elements' own — independent of the
+    ///   number of elements between them.
     ///
     /// # Adequacy
     /// - hypothesis: L2 for the ordering itself — every pair of handles is
     ///   compared against the rank pair in a naive `Vec` model at the end of
-    ///   every generated edit sequence, so label or comparison perturbations
-    ///   diverge; L3 residue for the reflexive and failure arms, pinned by
-    ///   exact `Ordering` variants and a foreign handle.
+    ///   every generated edit sequence, on the default widths and on a narrow
+    ///   circle whose groups split, rebalance and wrap past the base, so label
+    ///   or comparison perturbations diverge; L3 residue for the reflexive and
+    ///   failure arms, pinned by exact `Ordering` variants and a foreign
+    ///   handle.
     /// - witness: `tests::oracle::matches_reference_model`
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
     /// - witness: `order::tests::comparison_is_reflexive_and_total`
     /// - witness: `order::tests::foreign_handle_is_rejected`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret
-        == self
-            .resolve(left)
-            .zip(self.resolve(right))
-            .map(|(first, second)| first.label.cmp(&second.label))
+    #[spec(ensures: |ret| ret.is_none_or(|ordering| Some(ordering)
+            == self
+                .resolve(left)
+                .and_then(|occupied| self.key(occupied))
+                .zip(self.resolve(right).and_then(|occupied| self.key(occupied)))
+                .map(|(first, second)| first.cmp(&second)))
+        && ret.is_some() == (bool::from(self.contains(left)) && bool::from(self.contains(right)))
         && (ret == Some(Ordering::Equal))
             == (left == right && bool::from(self.contains(left))))]
     pub fn cmp(
@@ -939,7 +1165,12 @@ impl<T> OrderMaintenance<T>
     {
         let left_occupied = self.resolve(left)?;
         let right_occupied = self.resolve(right)?;
-        Some(left_occupied.label.cmp(&right_occupied.label))
+        if left_occupied.group == right_occupied.group {
+            return Some(left_occupied.label.cmp(&right_occupied.label));
+        }
+        let left_key = self.key(left_occupied)?;
+        let right_key = self.key(right_occupied)?;
+        Some(left_key.cmp(&right_key))
     }
 
     /// The element immediately after `pos` in order, or `None` at the end (or
@@ -1060,11 +1291,11 @@ impl<T> OrderMaintenance<T>
     /// # Adequacy
     /// - hypothesis: L2 — the reference model inserts at index 0 and the whole
     ///   handle and payload sequence is compared after every generated edit; L3
-    ///   residue for the front relabel arm, where the predecessor is absent, on
-    ///   a narrow universe whose front gap is exhausted.
+    ///   residue for the front split, where the predecessor is absent, on a
+    ///   narrow group whose front labels are exhausted.
     /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::push_front_reverses`
-    /// - witness: `order::tests::relabel_at_front_preserves_order`
+    /// - witness: `order::tests::a_full_front_group_splits_before_its_head`
     #[inline]
     #[spec(ensures: |ret| ret.is_err() || self.first() == ret.ok())]
     pub fn push_front(
@@ -1093,11 +1324,14 @@ impl<T> OrderMaintenance<T>
     /// # Adequacy
     /// - hypothesis: L2 — the reference model appends and the whole handle and
     ///   payload sequence is compared after every generated edit; L3 residue
-    ///   for the capacity boundary, where a two-bit universe admits exactly two
-    ///   elements and refuses the third with the exact error variant.
+    ///   for the capacity boundary, where a circle of two labels admits exactly
+    ///   six elements of the narrowest width and refuses the seventh with the
+    ///   exact error variant, and for appends whose rebalance wraps past the
+    ///   last group to the base.
     /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::push_back_preserves_order`
-    /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
+    /// - witness: `order::tests::capacity_exhausts_on_a_circle_of_two_labels`
+    /// - witness: `order::tests::appends_wrap_the_rebalance_past_the_last_group`
     /// - witness: `order::tests::retired_slot_capacity_exhaustion_is_typed`
     #[inline]
     #[spec(ensures: |ret| ret.is_err() || self.last() == ret.ok())]
@@ -1132,11 +1366,11 @@ impl<T> OrderMaintenance<T>
     /// - hypothesis: L2 for placement — the reference model inserts at `index +
     ///   1` and the whole sequence is compared after every generated edit; L3
     ///   residue for the stale-handle and foreign-handle arms, pinned by the
-    ///   exact error variant, and for the relabel arm, driven by repeated
+    ///   exact error variant, and for the split arm, driven by repeated
     ///   insertion behind one fixed anchor.
     /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::insert_after_and_before_place_correctly`
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
+    /// - witness: `order::tests::a_full_group_splits_behind_its_anchor`
     /// - witness: `order::tests::stale_handle_insert_errors`
     /// - witness: `order::tests::foreign_handle_is_rejected`
     /// - witness: `order::tests::corrupt_link_insert_is_typed`
@@ -1206,9 +1440,10 @@ impl<T> OrderMaintenance<T>
     /// # Specification
     /// - requires: nothing; any handle may be offered.
     /// - ensures: on `Ok(Some(value))` the element is unlinked, its slot is
-    ///   freed for reuse (or retired when its generation space is spent), and
-    ///   `pos` together with every copy of it is thereafter stale; the
-    ///   remaining elements keep their relative order and their handles.
+    ///   freed for reuse (or retired when its generation space is spent), its
+    ///   group is freed when it held nothing else, and `pos` together with
+    ///   every copy of it is thereafter stale; the remaining elements keep
+    ///   their relative order, their labels and their handles.
     /// - provides: the removed payload by value. The clause checks, on
     ///   `Ok(Some(_))`, that `pos` is stale, that its slot is on the free list
     ///   or retired, that its former neighbours are now adjacent, and that an
@@ -1221,18 +1456,20 @@ impl<T> OrderMaintenance<T>
     ///
     /// # Errors
     /// Returns [`OrderError::Inconsistent`] when a neighbour link of the
-    /// removed element does not resolve to a live slot.
+    /// removed element, or its group, does not resolve.
     ///
     /// # Adequacy
     /// - hypothesis: L2 for the unlinking — the reference model removes at the
     ///   same index and the whole handle and payload sequence is compared after
     ///   every generated edit; L3 residue for the three link arms (interior,
-    ///   head, tail), the sole-element arm, the repeat-removal arm, and the
-    ///   generation-exhaustion arm that retires a slot instead of freeing it.
+    ///   head, tail), the sole-element arm, the repeat-removal arm, the arm
+    ///   that frees a group and moves the base, and the generation-exhaustion
+    ///   arm that retires a slot instead of freeing it.
     /// - witness: `tests::oracle::matches_reference_model`
     /// - witness: `order::tests::remove_middle_unlinks_and_invalidates`
     /// - witness: `order::tests::remove_head_and_tail`
     /// - witness: `order::tests::remove_only_element_empties`
+    /// - witness: `order::tests::emptying_the_base_group_frees_it_and_moves_the_base`
     /// - witness: `order::tests::exhausted_generation_retires_slot_and_allocates_another`
     /// - witness: `order::tests::corrupt_link_removal_is_typed`
     #[inline]
@@ -1259,6 +1496,7 @@ impl<T> OrderMaintenance<T>
         let prev_index = occupied.prev;
         let next_index = occupied.next;
         let generation = occupied.generation;
+        let group = occupied.group;
         let len = self.len.decremented().ok_or(OrderError::Inconsistent)?;
         // Unlink from the neighbours and the head/tail before freeing the slot.
         match prev_index {
@@ -1269,6 +1507,7 @@ impl<T> OrderMaintenance<T>
             Some(next) => self.set_prev(next, prev_index)?,
             None => self.tail = prev_index,
         }
+        self.leave_group(group, pos.index, prev_index, next_index)?;
         let slot_position =
             usize::try_from(pos.index).map_err(|_ignored| OrderError::Inconsistent)?;
         let slot = self
@@ -1313,7 +1552,7 @@ impl<T> OrderMaintenance<T>
     ///   established where its endpoints are minted.
     /// - fails: returns `None` if any endpoint is stale or foreign.
     /// - panics: none.
-    /// - intension: two label comparisons, independent of interval width.
+    /// - intension: two comparisons, independent of interval width.
     ///
     /// # Adequacy
     /// - hypothesis: L3 only — the two conjoined bounds and their inclusivity
@@ -1506,31 +1745,6 @@ impl<T> OrderMaintenance<T>
         (occupied.generation == pos.generation).then_some(occupied)
     }
 
-    /// The label of the occupied slot at `index`, if any.
-    ///
-    /// # Specification
-    /// - requires: nothing.
-    /// - ensures: returns the live element's order label, and `None` when the
-    ///   slot is absent, free, or retired.
-    /// - provides: the label read the relabel and comparison paths take without
-    ///   borrowing the payload.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — the live slot returns its exact label, and the same
-    ///   index ceases to have a label when freed or retired.
-    /// - witness: `order::tests::arena_observers_distinguish_slot_states`
-    #[spec(ensures: |ret| ret == self.occupied(index).map(|occupied| occupied.label))]
-    #[inline]
-    fn label_of(
-        &self,
-        index: SlotIndex,
-    ) -> Option<Label>
-    {
-        let occupied = self.occupied(index)?;
-        Some(occupied.label)
-    }
-
     /// Sets the `prev` link of the occupied slot at `index`.
     ///
     /// # Specification
@@ -1606,60 +1820,779 @@ impl<T> OrderMaintenance<T>
         Ok(())
     }
 
-    /// Sets the `label` of the occupied slot at `index`.
+    /// The live group at `index`, if the group arena has one.
     ///
     /// # Specification
-    /// - requires: nothing; a dead slot is a typed refusal.
-    /// - ensures: the `label` is written when it can resolve, and an
-    ///   unresolvable write is reported rather than dropped, so the
-    ///   strictly-increasing label invariant cannot be violated silently.
-    /// - provides: the checked label write the relabel path uses.
-    /// - fails: [`OrderError::Inconsistent`] when `index` does not name a live
+    /// - requires: nothing.
+    /// - ensures: returns the live group at `index`, and `None` when the index
+    ///   is past the arena's end or names a freed group slot.
+    /// - provides: the bounds- and liveness-checked group read every label
+    ///   lookup routes through.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a live group reads as itself, a freed group slot and
+    ///   an index past the arena read as absent.
+    /// - witness: `order::tests::emptying_the_base_group_frees_it_and_moves_the_base`
+    #[spec(ensures: |ret| ret.map(core::ptr::from_ref) == usize::try_from(index.0)
+        .ok()
+        .and_then(|position| self.groups.get(position))
+        .and_then(|slot| match *slot {
+            GroupSlot::Live(ref group) => Some(core::ptr::from_ref(group)),
+            GroupSlot::Free(_) => None,
+        }))]
+    #[inline]
+    fn group(
+        &self,
+        index: GroupIndex,
+    ) -> Option<&Group>
+    {
+        let position = usize::try_from(index.0).ok()?;
+        match *self.groups.get(position)? {
+            GroupSlot::Live(ref group) => Some(group),
+            GroupSlot::Free(_) => None,
+        }
+    }
+
+    /// The mutable live group at `index`, if the group arena has one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a unique borrow of the live group at `index`, and
+    ///   `None` when the index is past the arena's end or names a freed group
     ///   slot.
+    /// - provides: the mutable counterpart of [`Self::group`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the split and the rebalance write group links and
+    ///   labels only through this borrow; the sequence models observe every
+    ///   write.
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    #[spec(
+        captures: expected = self.group(index).map(core::ptr::from_ref),
+        ensures: |ret| ret.as_deref().map(core::ptr::from_ref) == expected,
+    )]
+    #[inline]
+    fn group_mut(
+        &mut self,
+        index: GroupIndex,
+    ) -> Option<&mut Group>
+    {
+        let position = usize::try_from(index.0).ok()?;
+        match *self.groups.get_mut(position)? {
+            GroupSlot::Live(ref mut group) => Some(group),
+            GroupSlot::Free(_) => None,
+        }
+    }
+
+    /// The place of a live element in the order: its group's label measured
+    /// forward from the base group's label, then its own label.
+    ///
+    /// # Specification
+    /// - requires: nothing; an unresolvable group or base is an absence.
+    /// - ensures: returns the element's group's distance from the base group
+    ///   around the circle, beside the element's own label, and `None` when the
+    ///   group or the base does not resolve.
+    /// - provides: the key two elements of different groups compare by.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the sequence models compare every pair of elements by
+    ///   their keys after generated edits that move the base; L3 for a wrapped
+    ///   group label, whose distance from the base is exact.
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    /// - witness: `order::tests::top_labels_are_measured_around_the_circle`
+    #[spec(ensures: |ret| ret.is_none_or(|key| key.bottom == occupied.label && key.top <= self.top.last()))]
+    #[inline]
+    fn key(
+        &self,
+        occupied: &Occupied<T>,
+    ) -> Option<OrderKey>
+    {
+        let group = self.group(occupied.group)?;
+        let base = self.group(self.base?)?;
+        Some(OrderKey {
+            top: TopLabel(group.label.0.wrapping_sub(base.label.0) & self.top.last().0),
+            bottom: occupied.label,
+        })
+    }
+
+    /// The group after `index` around the circle: its successor in list
+    /// order, or the base group after the last one.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dead group is a typed refusal.
+    /// - ensures: returns the group's successor, or the base when it has none.
+    /// - provides: the step the rebalance walk and the split's gap take, so a
+    ///   walk past the last group continues from the base.
+    /// - fails: [`OrderError::Inconsistent`] when `index` does not name a live
+    ///   group or the structure has no base.
     /// - panics: none.
     ///
     /// # Errors
     /// Returns [`OrderError::Inconsistent`] when `index` does not name a live
-    /// slot, rather than dropping the write and leaving a label that violates
-    /// the strictly-increasing invariant.
+    /// group or the structure has no base.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a changed live label is observed exactly; relabeling
-    ///   preserves order and dead indices refuse the write.
-    /// - witness: `order::tests::arena_observers_distinguish_slot_states`
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-    /// - witness: `order::tests::slot_writes_refuse_dead_indices`
+    /// - hypothesis: L3 — a rebalance from the last group but one walks past
+    ///   the last group to the base and relabels it.
+    /// - witness: `order::tests::a_crowded_circle_spreads_the_groups_after_the_full_one`
+    #[spec(ensures: |ret| ret.ok() == self.group(index).and_then(|group| group.next.or(self.base)))]
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok()
-        == self
-            .occupied(index)
-            .is_some_and(|occupied| occupied.label == label))]
-    fn set_label(
+    fn successor(
+        &self,
+        index: GroupIndex,
+    ) -> Result<GroupIndex, OrderError>
+    {
+        let group = self.group(index).ok_or(OrderError::Inconsistent)?;
+        group.next.or(self.base).ok_or(OrderError::Inconsistent)
+    }
+
+    /// The room from group `from` forward to group `to` around the circle:
+    /// the difference of their labels, and the whole circle when they are one
+    /// group.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dead group is a typed refusal.
+    /// - ensures: on `Ok`, returns `(L(to) - L(from)) mod 2^width` for two
+    ///   groups, and `2^width` for one.
+    /// - provides: the measure the split's placement and the rebalance's
+    ///   density test read.
+    /// - fails: [`OrderError::Inconsistent`] when either index does not name a
+    ///   live group.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::Inconsistent`] when either index does not name a
+    /// live group.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — on a circle of eight labels, a wrapped room and the
+    ///   room from a group to itself are exact.
+    /// - witness: `order::tests::top_labels_are_measured_around_the_circle`
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|room| room.0 > 0 && room.0 <= self.top.universe().0))]
+    #[inline]
+    fn distance(
+        &self,
+        from: GroupIndex,
+        to: GroupIndex,
+    ) -> Result<TopGap, OrderError>
+    {
+        if from == to {
+            return Ok(self.top.universe());
+        }
+        let start = self.group(from).ok_or(OrderError::Inconsistent)?.label;
+        let end = self.group(to).ok_or(OrderError::Inconsistent)?.label;
+        Ok(TopGap(u128::from(
+            end.0.wrapping_sub(start.0) & self.top.last().0,
+        )))
+    }
+
+    /// Takes a group slot for `group`, reusing a freed one when there is one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on `Ok`, the returned index names a live group equal to
+    ///   `group`.
+    /// - provides: the group every split and first insertion creates. Linking
+    ///   it among the other groups is the caller's.
+    /// - fails: [`OrderError::CapacityExhausted`] when no `u32` group index is
+    ///   available; [`OrderError::Inconsistent`] when the free list threads a
+    ///   live group.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::CapacityExhausted`] when no `u32` group index is
+    /// available, and [`OrderError::Inconsistent`] when the free list threads
+    /// a live group.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a freed group slot is taken by the next split before
+    ///   the arena grows.
+    /// - witness: `order::tests::emptying_the_base_group_frees_it_and_moves_the_base`
+    #[spec(
+        captures: wanted = group,
+        ensures: |ret| ret.as_ref().is_err()
+            || ret.as_ref().is_ok_and(|&index| self.group(index) == Some(&wanted)),
+    )]
+    #[inline]
+    fn alloc_group(
         &mut self,
-        index: SlotIndex,
-        label: Label,
+        group: Group,
+    ) -> Result<GroupIndex, OrderError>
+    {
+        if let Some(free) = self.free_group {
+            let position = usize::try_from(free.0).map_err(|_ignored| OrderError::Inconsistent)?;
+            let slot = self
+                .groups
+                .get_mut(position)
+                .ok_or(OrderError::Inconsistent)?;
+            let GroupSlot::Free(next_free) = *slot
+            else {
+                return Err(OrderError::Inconsistent);
+            };
+            *slot = GroupSlot::Live(group);
+            self.free_group = next_free;
+            return Ok(free);
+        }
+        let index = u32::try_from(self.groups.len())
+            .map(GroupIndex)
+            .map_err(|_ignored| OrderError::CapacityExhausted)?;
+        self.groups.push(GroupSlot::Live(group));
+        Ok(index)
+    }
+
+    /// Frees the group slot at `index` onto the group free list.
+    ///
+    /// # Specification
+    /// - requires: no element and no group link names the group any more.
+    /// - ensures: on `Ok`, the slot is free and heads the group free list.
+    /// - provides: the release a group that has emptied, or a first group whose
+    ///   element was refused, takes.
+    /// - fails: [`OrderError::Inconsistent`] when the index is past the arena.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::Inconsistent`] when the index is past the arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an emptied group's slot is freed and taken again by
+    ///   the next split.
+    /// - witness: `order::tests::emptying_the_base_group_frees_it_and_moves_the_base`
+    /// - witness: `order::tests::retired_slot_capacity_exhaustion_is_typed`
+    #[spec(ensures: |ret| ret.is_err() || (self.free_group == Some(index) && self.group(index).is_none()))]
+    #[inline]
+    fn release_group(
+        &mut self,
+        index: GroupIndex,
     ) -> Result<(), OrderError>
     {
-        let occupied = self.occupied_mut(index).ok_or(OrderError::Inconsistent)?;
-        occupied.label = label;
+        let position = usize::try_from(index.0).map_err(|_ignored| OrderError::Inconsistent)?;
+        let slot = self
+            .groups
+            .get_mut(position)
+            .ok_or(OrderError::Inconsistent)?;
+        *slot = GroupSlot::Free(self.free_group);
+        self.free_group = Some(index);
         Ok(())
     }
 
-    /// Allocates a slot holding `value` with the given label and links, reusing
-    /// a freed slot when one is available and appending otherwise.
-    ///
-    /// The neighbours' links and the structure's head/tail are *not* patched
-    /// here — the caller wires them — but `len` is incremented for the new
-    /// element.
+    /// Records that the element at `element` joined group `index` between
+    /// `prev` and `next`: the group counts it, and it opens or closes the
+    /// group's run when its neighbour on that side lies outside the group.
     ///
     /// # Specification
-    /// - requires: nothing; links may be absent while a relabel is rebuilt.
-    /// - ensures: on `Ok`, a slot holding `value` with `label` is threaded
-    ///   between the two, `len` is incremented, and the returned handle
-    ///   resolves to the new element.
+    /// - requires: the element is linked between `prev` and `next` and labelled
+    ///   in the group.
+    /// - ensures: on `Ok`, the group counts one more element, and names it
+    ///   first or last where a neighbour is absent or in another group.
+    /// - provides: the group bookkeeping every insertion beside an existing
+    ///   element ends with.
+    /// - fails: [`OrderError::Inconsistent`] when a neighbour or the group does
+    ///   not resolve, or the count would overflow.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::Inconsistent`] when a neighbour or the group does
+    /// not resolve, or the count would overflow.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the sequence models check every group's first, last
+    ///   and count after every generated edit through the structural invariant.
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    #[spec(
+        captures: before = self.group(index).map(|group| group.len),
+        ensures: |ret| ret.is_err()
+            || self.group(index).is_some_and(|group| before.and_then(|len| len.0.checked_add(1)) == Some(group.len.0)
+                && (prev.is_some() || group.first == element)
+                && (next.is_some() || group.last == element)),
+    )]
+    #[inline]
+    fn join_group(
+        &mut self,
+        index: GroupIndex,
+        element: SlotIndex,
+        prev: Option<SlotIndex>,
+        next: Option<SlotIndex>,
+    ) -> Result<(), OrderError>
+    {
+        let opens = match prev {
+            Some(before) => self.occupied(before).ok_or(OrderError::Inconsistent)?.group != index,
+            None => true,
+        };
+        let closes = match next {
+            Some(after) => self.occupied(after).ok_or(OrderError::Inconsistent)?.group != index,
+            None => true,
+        };
+        let group = self.group_mut(index).ok_or(OrderError::Inconsistent)?;
+        group.len = GroupLen(group.len.0.checked_add(1).ok_or(OrderError::Inconsistent)?);
+        if opens {
+            group.first = element;
+        }
+        if closes {
+            group.last = element;
+        }
+        Ok(())
+    }
+
+    /// Records that the element at `element`, linked between `prev` and
+    /// `next` until now, left group `index`: the group stops counting it, a
+    /// group left empty is unlinked and freed, and otherwise the group's run
+    /// starts or ends at the neighbour when the element opened or closed it.
+    ///
+    /// # Specification
+    /// - requires: the element has just been unlinked from between `prev` and
+    ///   `next`, and was labelled in the group.
+    /// - ensures: on `Ok`, the group counts one element fewer, or is freed and
+    ///   unlinked among the groups when it held only this one, the base moving
+    ///   to the next group when the base emptied.
+    /// - provides: the group bookkeeping every removal ends with; no other
+    ///   label changes.
+    /// - fails: [`OrderError::Inconsistent`] when the group does not resolve,
+    ///   counts nothing, or names an end whose neighbour is absent.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::Inconsistent`] when the group does not resolve,
+    /// counts nothing, or names an end whose neighbour is absent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the sequence models remove at every rank and check
+    ///   every group through the structural invariant; L3 for the base group
+    ///   emptying, freeing its slot and moving the base.
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    /// - witness: `order::tests::emptying_the_base_group_frees_it_and_moves_the_base`
+    #[spec(
+        captures: before = self.group(index).map(|group| group.len),
+        ensures: |ret| ret.is_err()
+            || before.is_some_and(|len| match self.group(index) {
+                Some(group) => len.0.checked_sub(1) == Some(group.len.0),
+                None => len.0 == 1 && self.free_group == Some(index),
+            }),
+    )]
+    #[inline]
+    fn leave_group(
+        &mut self,
+        index: GroupIndex,
+        element: SlotIndex,
+        prev: Option<SlotIndex>,
+        next: Option<SlotIndex>,
+    ) -> Result<(), OrderError>
+    {
+        let group = self.group_mut(index).ok_or(OrderError::Inconsistent)?;
+        let len = group.len.0.checked_sub(1).ok_or(OrderError::Inconsistent)?;
+        if len == 0 {
+            let emptied = *group;
+            match emptied.prev {
+                Some(before) => {
+                    self.group_mut(before).ok_or(OrderError::Inconsistent)?.next = emptied.next;
+                },
+                None => self.base = emptied.next,
+            }
+            if let Some(after) = emptied.next {
+                self.group_mut(after).ok_or(OrderError::Inconsistent)?.prev = emptied.prev;
+            }
+            return self.release_group(index);
+        }
+        group.len = GroupLen(len);
+        if group.first == element {
+            group.first = next.ok_or(OrderError::Inconsistent)?;
+        }
+        if group.last == element {
+            group.last = prev.ok_or(OrderError::Inconsistent)?;
+        }
+        Ok(())
+    }
+
+    /// The label of the `position`th of `len` elements spread evenly over a
+    /// group's universe, counting from one: `position * universe / (len + 1)`.
+    ///
+    /// # Specification
+    /// - requires: `1 <= position <= len`.
+    /// - ensures: on `Some`, returns `position * universe / (len + 1)`, which
+    ///   increases strictly with `position` and stays below `universe`.
+    /// - provides: the label a split or a first insertion writes.
+    /// - fails: returns `None` when an intermediate or the label is not
+    ///   representable, which the widths preclude.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact vectors over the narrowest universe pin the
+    ///   numerator, the divisor and the rounding down; the widest universe's
+    ///   largest group pins the wide product.
+    /// - witness: `order::tests::a_group_spreads_its_elements_evenly`
+    #[spec(
+        requires: position.0 >= 1 && position.0 <= u64::from(len.0),
+        ensures: |ret| ret.map(|label| u64::from(label.0))
+            == position
+                .0
+                .checked_mul(universe.0)
+                .zip(u64::from(len.0).checked_add(1))
+                .and_then(|(scaled, divisor)| scaled.checked_div(divisor))
+                .filter(|&label| u32::try_from(label).is_ok()),
+    )]
+    #[inline]
+    fn spread_label(
+        universe: BottomUniverse,
+        len: GroupLen,
+        position: SpreadPosition,
+    ) -> Option<BottomLabel>
+    {
+        let scaled = position.0.checked_mul(universe.0)?;
+        let divisor = u64::from(len.0).checked_add(1)?;
+        let label = scaled.checked_div(divisor)?;
+        u32::try_from(label).ok().map(BottomLabel)
+    }
+
+    /// Spreads group `index`'s elements evenly over its universe, labelling
+    /// each in the group: the paper's `AssignLabel` over a group.
+    ///
+    /// # Specification
+    /// - requires: the group's run of `len` elements starts at its `first`.
+    /// - ensures: on `Ok`, the `k`th element of the run is in the group and
+    ///   carries the `k`th of `len` spread labels.
+    /// - provides: the relabel that closes a split, for each group it makes and
+    ///   the group it cut. The clause checks the run's first element; the whole
+    ///   run is checked by the structural invariant the split witnesses assert
+    ///   after every insertion.
+    /// - fails: [`OrderError::Inconsistent`] when the group or an element of
+    ///   its run does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::Inconsistent`] when the group or an element of
+    /// its run does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split of a group of seven at the width eight leaves
+    ///   exact spread labels in both groups, observed through the structural
+    ///   invariant and the comparison oracle.
+    /// - witness: `order::tests::a_full_group_splits_from_its_back`
+    #[spec(ensures: |ret| ret.is_err()
+        || self.group(index).is_some_and(|group| self.occupied(group.first).is_some_and(|first|
+            first.group == index
+                && Some(first.label) == Self::spread_label(self.width.universe(), group.len, SpreadPosition(1)))))]
+    #[inline]
+    fn spread(
+        &mut self,
+        index: GroupIndex,
+    ) -> Result<(), OrderError>
+    {
+        let group = self.group(index).ok_or(OrderError::Inconsistent)?;
+        let (first, len) = (group.first, group.len);
+        let universe = self.width.universe();
+        let mut cursor = Some(first);
+        let mut position = SpreadPosition(1);
+        while position.0 <= u64::from(len.0) {
+            let at = cursor.ok_or(OrderError::Inconsistent)?;
+            let label =
+                Self::spread_label(universe, len, position).ok_or(OrderError::Inconsistent)?;
+            let occupied = self.occupied_mut(at).ok_or(OrderError::Inconsistent)?;
+            occupied.group = index;
+            occupied.label = label;
+            cursor = occupied.next;
+            position = SpreadPosition(position.0.checked_add(1).ok_or(OrderError::Inconsistent)?);
+        }
+        Ok(())
+    }
+
+    /// Makes room on the circle after group `index` by relabelling the groups
+    /// that follow it: the paper's Rebalance, after Dietz and Sleator. The
+    /// walk takes successors around the circle until the `j`th one lies more
+    /// than `j²` labels on, then spreads the `j - 1` groups before it evenly
+    /// over that room. Past the last group the walk continues from the base,
+    /// so the base and the groups after it may be relabelled; every group's
+    /// distance from the base keeps its order.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dead group is a typed refusal.
+    /// - ensures: on `Ok`, the group's successor lies two labels on or more,
+    ///   and the groups' order around the circle is unchanged.
+    /// - provides: the room a split's new group takes.
+    /// - fails: [`OrderError::CapacityExhausted`] when the walk returns to the
+    ///   group itself with no room `j²` admits: the circle holds too many
+    ///   groups; [`OrderError::Inconsistent`] when a group does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::CapacityExhausted`] when the circle holds too
+    /// many groups, and [`OrderError::Inconsistent`] when a group does not
+    /// resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact labels after a rebalance that stops short of
+    ///   the base and after one that wraps past it and relabels the base; a
+    ///   circle of two labels refuses a third group; L2 through the sequence
+    ///   model on a narrow circle.
+    /// - witness: `order::tests::a_crowded_circle_spreads_the_groups_after_the_full_one`
+    /// - witness: `order::tests::capacity_exhausts_on_a_circle_of_two_labels`
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    #[spec(ensures: |ret| ret.is_err()
+        || self
+            .successor(index)
+            .and_then(|after| self.distance(index, after))
+            .is_ok_and(|room| room.0 >= 2))]
+    #[inline]
+    fn rebalance(
+        &mut self,
+        index: GroupIndex,
+    ) -> Result<(), OrderError>
+    {
+        // How many groups share the room, counting the one that ends it.
+        let mut count: u128 = 1;
+        let mut cursor = self.successor(index)?;
+        let mut room = self.distance(index, cursor)?;
+        while room.0 <= count.checked_mul(count).ok_or(OrderError::Inconsistent)? {
+            if cursor == index {
+                return Err(OrderError::CapacityExhausted);
+            }
+            cursor = self.successor(cursor)?;
+            count = count.checked_add(1).ok_or(OrderError::Inconsistent)?;
+            room = self.distance(index, cursor)?;
+        }
+        let origin = self.group(index).ok_or(OrderError::Inconsistent)?.label;
+        let mask = self.top.last().0;
+        let mut walked = self.successor(index)?;
+        let mut position: u128 = 1;
+        while position < count {
+            let offset = room
+                .0
+                .checked_mul(position)
+                .and_then(|scaled| scaled.checked_div(count))
+                .and_then(|offset| u64::try_from(offset).ok())
+                .ok_or(OrderError::Inconsistent)?;
+            let after = self.successor(walked)?;
+            self.group_mut(walked)
+                .ok_or(OrderError::Inconsistent)?
+                .label = TopLabel(origin.0.wrapping_add(offset) & mask);
+            walked = after;
+            position = position.checked_add(1).ok_or(OrderError::Inconsistent)?;
+        }
+        Ok(())
+    }
+
+    /// Cuts the last `keep` elements of group `index` into a new group placed
+    /// halfway to the group's successor on the circle, and returns it. The
+    /// cut elements keep their labels until the caller spreads the new group.
+    ///
+    /// # Specification
+    /// - requires: the group holds more than `keep` elements, and its successor
+    ///   lies two labels on or more.
+    /// - ensures: on `Ok`, the returned group follows `index`, holds its last
+    ///   `keep` elements, and sits strictly between it and its old successor.
+    /// - provides: one step of the paper's Relabel.
+    /// - fails: [`OrderError::Inconsistent`] when a group or an element does
+    ///   not resolve or the group holds no more than `keep`;
+    ///   [`OrderError::CapacityExhausted`] when no group index is available.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::Inconsistent`] when a group or an element does
+    /// not resolve, and [`OrderError::CapacityExhausted`] when no group index
+    /// is available.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group of seven at the width eight is cut into three
+    ///   and four, the four following.
+    /// - witness: `order::tests::a_full_group_splits_from_its_back`
+    #[spec(ensures: |ret| ret.as_ref().is_err()
+        || ret.as_ref().is_ok_and(|&peeled| self.group(index).is_some_and(|group| group.next == Some(peeled))
+            && self.group(peeled).is_some_and(|group| group.prev == Some(index) && group.len == keep)))]
+    #[inline]
+    fn peel(
+        &mut self,
+        index: GroupIndex,
+        keep: GroupLen,
+    ) -> Result<GroupIndex, OrderError>
+    {
+        let room = self.distance(index, self.successor(index)?)?;
+        let group = *self.group(index).ok_or(OrderError::Inconsistent)?;
+        let remaining = group
+            .len
+            .0
+            .checked_sub(keep.0)
+            .filter(|&left| left > 0)
+            .ok_or(OrderError::Inconsistent)?;
+        let offset = room
+            .0
+            .checked_div(2)
+            .and_then(|half| u64::try_from(half).ok())
+            .ok_or(OrderError::Inconsistent)?;
+        let mut first = group.last;
+        let mut walked = 1_u32;
+        while walked < keep.0 {
+            first = self
+                .occupied(first)
+                .and_then(|occupied| occupied.prev)
+                .ok_or(OrderError::Inconsistent)?;
+            walked = walked.checked_add(1).ok_or(OrderError::Inconsistent)?;
+        }
+        let kept_last = self
+            .occupied(first)
+            .and_then(|occupied| occupied.prev)
+            .ok_or(OrderError::Inconsistent)?;
+        let peeled = self.alloc_group(Group {
+            label: TopLabel(group.label.0.wrapping_add(offset) & self.top.last().0),
+            prev: Some(index),
+            next: group.next,
+            first,
+            last: group.last,
+            len: keep,
+        })?;
+        if let Some(after) = group.next {
+            self.group_mut(after).ok_or(OrderError::Inconsistent)?.prev = Some(peeled);
+        }
+        let cut = self.group_mut(index).ok_or(OrderError::Inconsistent)?;
+        cut.next = Some(peeled);
+        cut.last = kept_last;
+        cut.len = GroupLen(remaining);
+        Ok(peeled)
+    }
+
+    /// Splits the full group `index`: the paper's Relabel. While the group
+    /// holds more than half its width, its last half-width elements are cut
+    /// into a new group after it, the circle rebalanced first when the group's
+    /// successor lies fewer than two labels on, and each new group spread;
+    /// then the group itself is spread.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dead group is a typed refusal.
+    /// - ensures: on `Ok`, the group holds at most half its width, every group
+    ///   the split made holds exactly half, and the order of every element is
+    ///   unchanged.
+    /// - provides: the room an insertion into a full group takes: every group
+    ///   the split leaves has a label between any two of its elements.
+    /// - fails: [`OrderError::CapacityExhausted`] when the circle has no room
+    ///   for another group or no group index is available;
+    ///   [`OrderError::Inconsistent`] when a group or an element does not
+    ///   resolve. A refusal leaves the groups already cut in place, each one a
+    ///   valid group of the order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::CapacityExhausted`] when the circle has no room
+    /// for another group, and [`OrderError::Inconsistent`] when a group or an
+    /// element does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a group of seven at the width eight splits into three
+    ///   and four; repeated insertion behind one anchor and before the head
+    ///   splits again and again; L2 through the sequence models.
+    /// - witness: `order::tests::a_full_group_splits_from_its_back`
+    /// - witness: `order::tests::a_full_group_splits_behind_its_anchor`
+    /// - witness: `order::tests::a_full_front_group_splits_before_its_head`
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    #[spec(ensures: |ret| ret.is_err()
+        || self.group(index).is_some_and(|group| group.len <= self.width.split_len()))]
+    #[inline]
+    fn split(
+        &mut self,
+        index: GroupIndex,
+    ) -> Result<(), OrderError>
+    {
+        let keep = self.width.split_len();
+        while self.group(index).ok_or(OrderError::Inconsistent)?.len > keep {
+            if self.distance(index, self.successor(index)?)?.0 < 2 {
+                self.rebalance(index)?;
+            }
+            let peeled = self.peel(index, keep)?;
+            self.spread(peeled)?;
+        }
+        self.spread(index)
+    }
+
+    /// Where an element inserted between the adjacent `prev_index` and
+    /// `next_index` lands: in the predecessor's group, or the successor's at
+    /// the front, at the midpoint of the labels between its neighbours in
+    /// that group — or nowhere, when the group has no label there.
+    ///
+    /// # Specification
+    /// - requires: at least one of the two is `Some`, and they are adjacent.
+    /// - ensures: on `Ok`, returns the group and a label strictly between the
+    ///   predecessor's and the successor's labels in that group (`0` and the
+    ///   universe standing for an absent one), or `Full` with the group when
+    ///   none lies between.
+    /// - provides: the placement every insertion beside an existing element
+    ///   starts from.
+    /// - fails: [`OrderError::Inconsistent`] when a neighbour does not resolve
+    ///   or both are absent.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::Inconsistent`] when a neighbour does not resolve
+    /// or both are absent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every generated insertion lands where the sequence
+    ///   model puts it; L3 for the full arms behind an anchor and before the
+    ///   head.
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    /// - witness: `order::tests::a_full_group_splits_behind_its_anchor`
+    /// - witness: `order::tests::a_full_front_group_splits_before_its_head`
+    #[spec(ensures: |ret| !matches!(
+        ret,
+        Ok(Room::Free { label, .. }) if u64::from(label.0) >= self.width.universe().0
+    ))]
+    #[inline]
+    fn room(
+        &self,
+        prev_index: Option<SlotIndex>,
+        next_index: Option<SlotIndex>,
+    ) -> Result<Room, OrderError>
+    {
+        let universe = self.width.universe();
+        let (group, lower) = if let Some(prev) = prev_index {
+            let occupied = self.occupied(prev).ok_or(OrderError::Inconsistent)?;
+            let above = u64::from(occupied.label.0)
+                .checked_add(1)
+                .ok_or(OrderError::Inconsistent)?;
+            (occupied.group, above)
+        }
+        else {
+            let next = next_index.ok_or(OrderError::Inconsistent)?;
+            let occupied = self.occupied(next).ok_or(OrderError::Inconsistent)?;
+            (occupied.group, 0)
+        };
+        let upper = match next_index {
+            Some(next) => {
+                let occupied = self.occupied(next).ok_or(OrderError::Inconsistent)?;
+                if occupied.group == group {
+                    u64::from(occupied.label.0)
+                }
+                else {
+                    universe.0
+                }
+            },
+            None => universe.0,
+        };
+        if lower < upper {
+            let label = u32::try_from(u64::midpoint(lower, upper))
+                .map_err(|_ignored| OrderError::Inconsistent)?;
+            return Ok(Room::Free {
+                group,
+                label: BottomLabel(label),
+            });
+        }
+        Ok(Room::Full(group))
+    }
+
+    /// Allocates a slot holding `value` in `group` with the given label and
+    /// links, reusing a freed slot when one is available and appending
+    /// otherwise.
+    ///
+    /// The neighbours' links, the structure's head/tail and the group's
+    /// bookkeeping are *not* patched here — the caller wires them — but `len`
+    /// is incremented for the new element.
+    ///
+    /// # Specification
+    /// - requires: nothing; links may be absent while an insertion is wired.
+    /// - ensures: on `Ok`, a slot holding `value` with `group` and `label` is
+    ///   threaded between the two, `len` is incremented, and the returned
+    ///   handle resolves to the new element.
     /// - provides: the fresh handle every insertion returns. The predicate
-    ///   checks the new length, handle, label and links without copying the
-    ///   moved payload; payload identity is checked by the sequence oracle.
+    ///   checks the new length, handle, group, label and links without copying
+    ///   the moved payload; payload identity is checked by the sequence oracle.
     /// - fails: [`OrderError::CapacityExhausted`] when no `u32` slot index is
     ///   available; [`OrderError::Inconsistent`] when the free list threads a
     ///   slot that is not free.
@@ -1683,13 +2616,15 @@ impl<T> OrderMaintenance<T>
         ensures: |ret| ret.as_ref().map_or_else(
             |error| matches!(error, OrderError::CapacityExhausted | OrderError::Inconsistent),
             |pos| Some(self.len.0) == length.checked_add(1)
-                && self.resolve(*pos).is_some_and(|occupied| occupied.label == label
+                && self.resolve(*pos).is_some_and(|occupied| occupied.group == group
+                    && occupied.label == label
                     && occupied.prev == prev && occupied.next == next)),
     )]
     #[inline]
     fn alloc(
         &mut self,
-        label: Label,
+        group: GroupIndex,
+        label: BottomLabel,
         prev: Option<SlotIndex>,
         next: Option<SlotIndex>,
         value: T,
@@ -1715,6 +2650,7 @@ impl<T> OrderMaintenance<T>
             };
             *slot = Slot::Occupied(Occupied {
                 generation: free.generation,
+                group,
                 label,
                 prev,
                 next,
@@ -1739,6 +2675,7 @@ impl<T> OrderMaintenance<T>
             .map_err(|_ignored| OrderError::CapacityExhausted)?;
         self.slots.push(Slot::Occupied(Occupied {
             generation: SlotGeneration::FIRST,
+            group,
             label,
             prev,
             next,
@@ -1752,24 +2689,87 @@ impl<T> OrderMaintenance<T>
         })
     }
 
+    /// Inserts `value` into the empty structure: one group, the base, at the
+    /// circle's zero, holding the element at the middle of its universe.
+    ///
+    /// # Specification
+    /// - requires: the structure is empty.
+    /// - ensures: on `Ok`, the structure holds the one element, in the base
+    ///   group, and the returned handle resolves to it; on a refused element
+    ///   the group slot taken for it is freed again.
+    /// - provides: the insertion every operation on an empty structure routes
+    ///   through.
+    /// - fails: [`OrderError::CapacityExhausted`] when no slot or group index
+    ///   is available; [`OrderError::Inconsistent`] on a corrupted arena.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns [`OrderError::CapacityExhausted`] when no slot or group index
+    /// is available, and [`OrderError::Inconsistent`] on a corrupted arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a first insertion and one into a bounded arena whose
+    ///   only slot is retired, which frees the group it took.
+    /// - witness: `order::tests::push_back_preserves_order`
+    /// - witness: `order::tests::retired_slot_capacity_exhaustion_is_typed`
+    #[spec(
+        requires: self.len == LiveLen::ZERO && self.base.is_none(),
+        ensures: |ret| ret.as_ref().map_or_else(|_| self.base.is_none(), |pos| self.first() == Some(*pos)
+            && self.last() == Some(*pos)
+            && self.resolve(*pos).is_some_and(|occupied| Some(occupied.group) == self.base)),
+    )]
+    #[inline]
+    fn insert_first(
+        &mut self,
+        value: T,
+    ) -> Result<Pos, OrderError>
+    {
+        let label = Self::spread_label(self.width.universe(), GroupLen(1), SpreadPosition(1))
+            .ok_or(OrderError::Inconsistent)?;
+        // The group's run is named once the element has its slot.
+        let group = self.alloc_group(Group {
+            label: TopLabel(0),
+            prev: None,
+            next: None,
+            first: SlotIndex(0),
+            last: SlotIndex(0),
+            len: GroupLen(1),
+        })?;
+        match self.alloc(group, label, None, None, value) {
+            Ok(pos) => {
+                let created = self.group_mut(group).ok_or(OrderError::Inconsistent)?;
+                created.first = pos.index;
+                created.last = pos.index;
+                self.base = Some(group);
+                self.head = Some(pos.index);
+                self.tail = Some(pos.index);
+                Ok(pos)
+            },
+            Err(error) => {
+                self.release_group(group)?;
+                Err(error)
+            },
+        }
+    }
+
     /// Inserts `value` between the adjacent elements `prev_index` and
     /// `next_index` (either may be `None` at a list end; both `None` only for
     /// an empty structure).
     ///
-    /// Takes the midpoint of the neighbours' label gap when one exists,
-    /// otherwise relabels a minimal aligned window to open room (see
-    /// [`Self::relabel_insert`]).
+    /// Takes the midpoint of the neighbours' labels in the group the element
+    /// joins when one lies between, otherwise splits that group first (see
+    /// [`Self::split`]).
     ///
     /// # Specification
     /// - requires: `prev_index` and `next_index` are adjacent in list order,
     ///   either `None` at a list end; both `None` only for an empty structure.
-    /// - ensures: on `Ok`, `value` sits between the two, labels remain strictly
+    /// - ensures: on `Ok`, `value` sits between the two, keys remain strictly
     ///   increasing in list order, and the returned handle resolves to the new
     ///   element.
     /// - provides: the insertion every public insert routes through. The clause
     ///   checks the adjacency each call site reads — the predecessor's own
     ///   `next` link, or the end the structure records — while the
-    ///   postcondition stays prose, because strict label increase is a property
+    ///   postcondition stays prose, because strict key increase is a property
     ///   of the whole list and `value` is moved into the slot.
     /// - fails: [`OrderError::CapacityExhausted`] when no element can be
     ///   admitted; [`OrderError::Inconsistent`] when a neighbour index does not
@@ -1782,13 +2782,14 @@ impl<T> OrderMaintenance<T>
     /// not name a live slot.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the sequence model checks placement and surviving
-    ///   values; L3 separates a direct gap, a front or anchored relabel,
-    ///   capacity refusal and a dangling neighbour.
+    /// - hypothesis: L2 — the sequence models check placement and surviving
+    ///   values; L3 separates a direct gap, a front or anchored split, capacity
+    ///   refusal and a dangling neighbour.
     /// - witness: `tests::oracle::matches_reference_model`
-    /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-    /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
+    /// - witness: `order::tests::model::narrow_structures_match_a_sequence_model`
+    /// - witness: `order::tests::a_full_front_group_splits_before_its_head`
+    /// - witness: `order::tests::a_full_group_splits_behind_its_anchor`
+    /// - witness: `order::tests::capacity_exhausts_on_a_circle_of_two_labels`
     /// - witness: `order::tests::corrupt_link_insert_is_typed`
     #[inline]
     #[spec(requires: match (prev_index, next_index) {
@@ -1806,52 +2807,47 @@ impl<T> OrderMaintenance<T>
         value: T,
     ) -> Result<Pos, OrderError>
     {
-        // The lowest admissible label sits just above the predecessor (or at
-        // zero); the exclusive upper bound is the successor's label (or the
-        // universe size).
-        let mut lower = Label::ZERO;
-        if let Some(prev) = prev_index {
-            let prev_label = self.label_of(prev).ok_or(OrderError::Inconsistent)?;
-            let above = prev_label
-                .0
-                .checked_add(1)
-                .ok_or(OrderError::CapacityExhausted)?;
-            lower = Label(above);
+        if prev_index.is_none() && next_index.is_none() {
+            return self.insert_first(value);
         }
-        let mut upper = Label(self.capacity.0);
-        if let Some(next) = next_index {
-            upper = self.label_of(next).ok_or(OrderError::Inconsistent)?;
-        }
-        if lower < upper {
-            let label = Label(u64::midpoint(lower.0, upper.0));
-            return self.link_new(prev_index, next_index, label, value);
-        }
-        self.relabel_insert(prev_index, next_index, value)
+        let (group, label) = match self.room(prev_index, next_index)? {
+            Room::Free { group, label } => (group, label),
+            Room::Full(full) => {
+                self.split(full)?;
+                match self.room(prev_index, next_index)? {
+                    Room::Free { group, label } => (group, label),
+                    Room::Full(_) => return Err(OrderError::Inconsistent),
+                }
+            },
+        };
+        self.link_new(prev_index, next_index, group, label, value)
     }
 
-    /// Allocates `value` with `label` and wires it between `prev_index` and
-    /// `next_index`, updating the neighbours' links and the head/tail.
+    /// Allocates `value` in `group` with `label` and wires it between
+    /// `prev_index` and `next_index`, updating the neighbours' links, the
+    /// head/tail and the group's bookkeeping.
     ///
     /// # Specification
     /// - requires: `prev_index` and `next_index` are adjacent in list order,
-    ///   either `None` at a list end.
-    /// - ensures: on `Ok`, `value` with `label` is wired between the two, the
-    ///   neighbours' links and the head/tail are updated, and the returned
-    ///   handle resolves to the new element.
+    ///   either `None` at a list end, and `label` lies between their labels in
+    ///   `group`.
+    /// - ensures: on `Ok`, `value` with `group` and `label` is wired between
+    ///   the two, the neighbours' links and the head/tail are updated, and the
+    ///   returned handle resolves to the new element.
     /// - provides: the linked element's handle. The clauses check the caller's
-    ///   adjacency and the whole wiring — the new element's label and links,
-    ///   both neighbours' back-links, and the head or tail an absent neighbour
-    ///   moves — while the payload identity stays prose, because `value` is
-    ///   moved into the slot.
+    ///   adjacency and the whole wiring — the new element's group, label and
+    ///   links, both neighbours' back-links, and the head or tail an absent
+    ///   neighbour moves — while the payload identity stays prose, because
+    ///   `value` is moved into the slot.
     /// - fails: [`OrderError::CapacityExhausted`] when no slot is available;
-    ///   [`OrderError::Inconsistent`] when a neighbour index does not name a
-    ///   live slot.
+    ///   [`OrderError::Inconsistent`] when a neighbour index or the group does
+    ///   not name a live slot.
     /// - panics: none.
     ///
     /// # Errors
     /// Returns [`OrderError::CapacityExhausted`] when no slot is available, and
-    /// [`OrderError::Inconsistent`] when a neighbour index does not name a live
-    /// slot.
+    /// [`OrderError::Inconsistent`] when a neighbour index or the group does
+    /// not name a live slot.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the independent sequence model detects lost, repeated
@@ -1868,11 +2864,12 @@ impl<T> OrderMaintenance<T>
                 .is_some_and(|occupied| occupied.next == Some(next)),
             (Some(prev), None) => self.tail == Some(prev),
             (None, Some(next)) => self.head == Some(next),
-            (None, None) => self.head.is_none() && self.tail.is_none(),
+            (None, None) => false,
         },
         ensures: |ret| ret.as_ref().ok().is_none_or(|pos| self
             .resolve(*pos)
-            .is_some_and(|occupied| occupied.label == label
+            .is_some_and(|occupied| occupied.group == group
+                && occupied.label == label
                 && occupied.prev == prev_index
                 && occupied.next == next_index)
             && prev_index.is_none_or(|prev| self
@@ -1888,11 +2885,12 @@ impl<T> OrderMaintenance<T>
         &mut self,
         prev_index: Option<SlotIndex>,
         next_index: Option<SlotIndex>,
-        label: Label,
+        group: GroupIndex,
+        label: BottomLabel,
         value: T,
     ) -> Result<Pos, OrderError>
     {
-        let pos = self.alloc(label, prev_index, next_index, value)?;
+        let pos = self.alloc(group, label, prev_index, next_index, value)?;
         match prev_index {
             Some(prev) => self.set_next(prev, Some(pos.index))?,
             None => self.head = Some(pos.index),
@@ -1901,504 +2899,8 @@ impl<T> OrderMaintenance<T>
             Some(next) => self.set_prev(next, Some(pos.index))?,
             None => self.tail = Some(pos.index),
         }
+        self.join_group(group, pos.index, prev_index, next_index)?;
         Ok(pos)
-    }
-
-    /// Opens room for a new element between `prev_index` and `next_index` by
-    /// relabeling the smallest power-of-two-aligned label window around the
-    /// insertion point that is at most half full, then inserting `value` into
-    /// the evenly-redistributed window.
-    ///
-    /// At least one neighbour is `Some` here — the empty and gap-available
-    /// cases are handled by [`Self::insert_between`]. The widening loop is
-    /// bounded by the universe width, and the density cap guarantees the
-    /// whole-universe window is sparse enough whenever the structure is below
-    /// that cap.
-    ///
-    /// One `Vec` is allocated for the window and reused across the widening
-    /// steps, so a relabel allocates once regardless of how far it widens.
-    ///
-    /// # Specification
-    /// - requires: at least one of `prev_index` and `next_index` is `Some`, and
-    ///   the walked segment's links and labels all resolve.
-    /// - ensures: on `Ok`, `value` sits between the two and the relabeled
-    ///   window's labels are distinct, strictly increasing, and strictly inside
-    ///   the window.
-    /// - provides: the inserted handle. The predicate checks its adjacency and
-    ///   the exact length increment; the local window and moved payload remain
-    ///   covered by the independent sequence model and relabel witnesses.
-    /// - fails: [`OrderError::CapacityExhausted`] when even the whole-universe
-    ///   window cannot hold the new element at density one half, or when no
-    ///   slot is available; [`OrderError::Inconsistent`] when a link or label
-    ///   in the walked segment does not resolve.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// Returns [`OrderError::CapacityExhausted`] when even the whole-universe
-    /// window cannot accommodate the new element at density one half, or when
-    /// no slot is available; [`OrderError::Inconsistent`] when a link or label
-    /// in the walked segment does not resolve.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — full-universe insertion is checked against the
-    ///   explicit expected sequence; L3 separates front and anchored widening
-    ///   from whole-universe capacity refusal. The exit certificate observes
-    ///   adjacency, not the discarded minimal-window search.
-    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
-    /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-    /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
-    #[spec(
-        captures: length = self.len.0,
-        ensures: |ret| ret.as_ref().ok().is_none_or(|pos| Some(self.len.0) == length.checked_add(1)
-            && self.resolve(*pos).is_some_and(|occupied| occupied.prev == prev_index
-                && occupied.next == next_index)),
-    )]
-    #[inline]
-    fn relabel_insert(
-        &mut self,
-        prev_index: Option<SlotIndex>,
-        next_index: Option<SlotIndex>,
-        value: T,
-    ) -> Result<Pos, OrderError>
-    {
-        let anchor = prev_index.or(next_index).ok_or(OrderError::Inconsistent)?;
-        let anchor_label = self.label_of(anchor).ok_or(OrderError::Inconsistent)?;
-        let mut window: Vec<SlotIndex> = Vec::new();
-        let mut height = LabelBits::MIN;
-        while height <= self.label_bits {
-            let range_size = 1u64
-                .checked_shl(height.0)
-                .map(LabelRangeSize)
-                .ok_or(OrderError::CapacityExhausted)?;
-            // The aligned window `[start, start + range_size)` containing the
-            // anchor: clear the low `height` bits of the anchor's label.
-            let start = anchor_label
-                .0
-                .checked_shr(height.0)
-                .and_then(|shifted| shifted.checked_shl(height.0))
-                .map(Label)
-                .ok_or(OrderError::CapacityExhausted)?;
-            let end = start
-                .0
-                .checked_add(range_size.0)
-                .map(Label)
-                .ok_or(OrderError::CapacityExhausted)?;
-            self.collect_window(&mut window, anchor, start, end)?;
-            // The new element plus the window's existing elements must fit at
-            // density at most one half, so the even redistribution leaves gaps:
-            // `2 * occupants <= range_size`.
-            let occupants = window
-                .len()
-                .checked_add(1)
-                .map(OccupantCount)
-                .ok_or(OrderError::CapacityExhausted)?;
-            let doubled = u64::try_from(occupants.0)
-                .ok()
-                .and_then(|count| count.checked_mul(2));
-            if doubled.is_some_and(|value| value <= range_size.0) {
-                return self.redistribute(&window, prev_index, start, range_size, occupants, value);
-            }
-            height = height.wider().ok_or(OrderError::CapacityExhausted)?;
-        }
-        Err(OrderError::CapacityExhausted)
-    }
-
-    /// Fills `window` with, in list order, every element whose label lies in
-    /// `[start, end)` around `anchor` (whose own label is in the range).
-    ///
-    /// The result is a contiguous list segment because labels increase in list
-    /// order. `window` is cleared first, so one buffer serves every widening
-    /// step of a relabel.
-    ///
-    /// # Specification
-    /// - requires: the anchor label lies in `[start, end)`; broken links are
-    ///   reported rather than assumed to resolve.
-    /// - ensures: `window` holds, in list order, exactly the elements whose
-    ///   labels lie in `[start, end)`.
-    /// - provides: the contiguous segment one redistribution consumes. A linear
-    ///   certificate checks its labels, adjacency, anchor and two outer
-    ///   boundaries without walking the rest of the list.
-    /// - fails: [`OrderError::Inconsistent`] when a link in the walked segment
-    ///   points at a slot that is not live.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// Returns [`OrderError::Inconsistent`] when a link in the walked segment
-    /// points at a slot that is not live.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — an interior singleton includes the lower bound and
-    ///   excludes the upper bound, a full range includes both ends, stale
-    ///   buffer contents are replaced, and a dangling link yields the exact
-    ///   refusal.
-    /// - witness: `order::tests::window_collection_respects_contiguous_bounds`
-    #[cfg_attr(
-        dylint_lib = "quenchant_dylints",
-        expect(
-            spec_clause_traversal,
-            reason = "parity: the check walks the window this call cleared and refilled, a constant number of reads per element the body pushed"
-        )
-    )]
-    #[spec(ensures: |ret| ret.map_or_else(
-        |error| error == OrderError::Inconsistent,
-        |()| window.contains(&anchor)
-            && window.iter().all(|&index| self.label_of(index).is_some_and(|label| start <= label && label < end))
-            && window.iter().zip(window.iter().skip(1)).all(|(&left, &right)| self.occupied(left)
-                .is_some_and(|occupied| occupied.next == Some(right)))
-            && window.first().is_some_and(|&index| self.occupied(index).is_some_and(|occupied|
-                occupied.prev.is_none_or(|previous| self.label_of(previous).is_some_and(|label| label < start))))
-            && window.last().is_some_and(|&index| self.occupied(index).is_some_and(|occupied|
-                occupied.next.is_none_or(|next| self.label_of(next).is_some_and(|label| label >= end))))))]
-    #[inline]
-    fn collect_window(
-        &self,
-        window: &mut Vec<SlotIndex>,
-        anchor: SlotIndex,
-        start: Label,
-        end: Label,
-    ) -> Result<(), OrderError>
-    {
-        window.clear();
-        // Walk left to the first in-range element.
-        let mut leftmost = anchor;
-        loop {
-            let occupied = self.occupied(leftmost).ok_or(OrderError::Inconsistent)?;
-            let Some(prev) = occupied.prev
-            else {
-                break;
-            };
-            let prev_label = self.label_of(prev).ok_or(OrderError::Inconsistent)?;
-            if prev_label < start {
-                break;
-            }
-            leftmost = prev;
-        }
-        // Walk right from the leftmost, collecting while in range.
-        let mut cursor = Some(leftmost);
-        while let Some(index) = cursor {
-            let occupied = self.occupied(index).ok_or(OrderError::Inconsistent)?;
-            if occupied.label >= end {
-                break;
-            }
-            window.push(index);
-            cursor = occupied.next;
-        }
-        Ok(())
-    }
-
-    /// Redistributes the `window` elements plus the new `value` evenly across
-    /// the aligned label range `[start, start + range_size)` and wires the
-    /// resulting contiguous segment back into the list.
-    ///
-    /// `occupants == window.len() + 1` and `2 * occupants <= range_size` (the
-    /// caller's density check), so the assigned labels are distinct, strictly
-    /// increasing, and strictly inside the range — which preserves the global
-    /// order against the un-relabeled neighbours just outside it.
-    ///
-    /// # Specification
-    /// - requires: `occupants == window.len() + 1` and `2 * occupants <=
-    ///   range_size` (the caller's density check).
-    /// - ensures: on `Ok`, the `window` elements plus `value` occupy
-    ///   `occupants` evenly spaced labels inside the range, wired back as one
-    ///   contiguous segment.
-    /// - provides: the handle of the new element. The clause checks the
-    ///   caller's density arithmetic; the postcondition stays prose here,
-    ///   because [`Self::assign_labels`] and [`Self::relink_segment`] carry the
-    ///   spread and the wiring as their own clauses, and `value` is moved into
-    ///   the slot.
-    /// - fails: [`OrderError::CapacityExhausted`] when no slot is available for
-    ///   the new element; [`OrderError::Inconsistent`] when the window does not
-    ///   contain the predecessor or does not cover `occupants` positions.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// Returns [`OrderError::CapacityExhausted`] when no slot is available for
-    /// the new element, and [`OrderError::Inconsistent`] when the window does
-    /// not contain the predecessor or does not cover `occupants` positions.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — the independent insertion sequence checks the rebuilt
-    ///   segment and unchanged outer values; L3 distinguishes front placement
-    ///   from insertion after the anchor. The moved payload is not cloned into
-    ///   a contract snapshot.
-    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
-    /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-    #[inline]
-    #[spec(requires: window.len().checked_add(1) == Some(occupants.0)
-        && u64::try_from(occupants.0)
-            .ok().and_then(|count| count.checked_mul(2)).is_some_and(|doubled| doubled <= range_size.0))]
-    fn redistribute(
-        &mut self,
-        window: &[SlotIndex],
-        prev_index: Option<SlotIndex>,
-        start: Label,
-        range_size: LabelRangeSize,
-        occupants: OccupantCount,
-        value: T,
-    ) -> Result<Pos, OrderError>
-    {
-        // The new element's position within the rebuilt sequence: immediately
-        // after its predecessor, which is the anchor and therefore always in
-        // the window, or at the front when there is no predecessor.
-        let insert_at = match prev_index {
-            Some(prev) => {
-                let found = window
-                    .iter()
-                    .position(|&index| index == prev)
-                    .ok_or(OrderError::Inconsistent)?;
-                found.checked_add(1).ok_or(OrderError::Inconsistent)?
-            },
-            None => 0,
-        };
-        // The elements just outside the window keep their labels and bound the
-        // rebuilt segment.
-        let left_outer = window
-            .first()
-            .and_then(|&first| self.occupied(first))
-            .and_then(|occupied| occupied.prev);
-        let right_outer = window
-            .last()
-            .and_then(|&last| self.occupied(last))
-            .and_then(|occupied| occupied.next);
-        // Allocate the new element; its label and links are set below.
-        let new_pos = self.alloc(start, None, None, value)?;
-        // Build the rebuilt ordered sequence: the window with the new element
-        // spliced in at `insert_at`.
-        let mut sequence: Vec<SlotIndex> = Vec::with_capacity(occupants.0);
-        for slot_position in 0 .. occupants.0 {
-            if slot_position == insert_at {
-                sequence.push(new_pos.index);
-                continue;
-            }
-            // Window positions before `insert_at` map directly; positions after
-            // it shift down by one to skip the inserted slot.
-            let window_position = if slot_position < insert_at {
-                slot_position
-            }
-            else {
-                slot_position
-                    .checked_sub(1)
-                    .ok_or(OrderError::Inconsistent)?
-            };
-            let index = window
-                .get(window_position)
-                .copied()
-                .ok_or(OrderError::Inconsistent)?;
-            sequence.push(index);
-        }
-        self.assign_labels(&sequence, start, range_size, occupants)?;
-        self.relink_segment(&sequence, left_outer, right_outer)?;
-        Ok(new_pos)
-    }
-
-    /// Assigns evenly-spaced labels in `(start, start + range_size)` to the
-    /// `sequence`, in order.
-    ///
-    /// # Specification
-    /// - requires: `2 * occupants <= range_size` and every sequence index names
-    ///   a live slot.
-    /// - ensures: on `Ok`, each element of `sequence` carries the evenly spaced
-    ///   label of its position, strictly increasing in order.
-    /// - provides: the relabeled segment the link rewrite consumes. The clauses
-    ///   check the caller's density and every index's liveness, then that each
-    ///   element carries the spread label of its position and that the labels
-    ///   strictly increase.
-    /// - fails: [`OrderError::Inconsistent`] when a spread label is not
-    ///   representable or a sequence index does not name a live slot; the
-    ///   caller's density check precludes both.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// Returns [`OrderError::Inconsistent`] when a spread label is not
-    /// representable or a sequence index does not name a live slot; the
-    /// caller's density check precludes both.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — narrow-universe and full-universe relabels preserve
-    ///   strict order and every payload; exact spread vectors distinguish
-    ///   rounding and wide multiplication. The precondition limits this routine
-    ///   to live sequence indices.
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-    /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
-    /// - witness: `order::tests::spread_labels_match_exact_rounding_and_wide_products`
-    #[inline]
-    #[spec(
-        requires: u64::try_from(occupants.0)
-            .ok().and_then(|count| count.checked_mul(2)).is_some_and(|doubled| doubled <= range_size.0)
-            && sequence.iter().all(|&index| self.occupied(index).is_some()),
-        ensures: |ret| ret.is_err()
-            || (sequence.iter().enumerate().all(|(position, &index)| self.label_of(index)
-                == Self::spread_label(start, range_size, occupants, SequencePosition(position)))
-                && sequence
-                    .iter()
-                    .zip(sequence.iter().skip(1))
-                    .all(|(&before, &after)| self
-                        .label_of(before)
-                        .zip(self.label_of(after))
-                        .is_some_and(|(earlier, later)| earlier < later))),
-    )]
-    fn assign_labels(
-        &mut self,
-        sequence: &[SlotIndex],
-        start: Label,
-        range_size: LabelRangeSize,
-        occupants: OccupantCount,
-    ) -> Result<(), OrderError>
-    {
-        for (position, &index) in sequence.iter().enumerate() {
-            let label =
-                Self::spread_label(start, range_size, occupants, SequencePosition(position))
-                    .ok_or(OrderError::Inconsistent)?;
-            self.set_label(index, label)?;
-        }
-        Ok(())
-    }
-
-    /// The evenly-spaced label for sequence position `position` of `occupants`
-    /// within `[start, start + range_size)`.
-    ///
-    /// # Specification
-    /// - requires: `position < occupants` and `2 * occupants <= range_size`.
-    /// - ensures: on `Some`, returns `start + offset`, where the offset is
-    ///   `((position + 1) * range_size) / (occupants + 1)`. The result
-    ///   increases strictly with valid positions and stays inside the
-    ///   mathematical range.
-    /// - provides: the label written into the relabeled slot.
-    /// - fails: returns `None` when a checked intermediate or final label
-    ///   cannot be represented, including addition past `u64::MAX`.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — exact rounded vectors distinguish the numerator,
-    ///   divisor and offset; a product wider than `u64` separates wide scaling
-    ///   from truncation, and the final representable label is paired with
-    ///   overflow refusal. Structural witnesses cover relabel use, not all
-    ///   machine-sized arithmetic inputs.
-    /// - witness: `order::tests::spread_labels_match_exact_rounding_and_wide_products`
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-    /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `tests::oracle::relabel_stress_at_full_universe`
-    #[inline]
-    #[spec(
-        requires: position.0 < occupants.0
-            && u64::try_from(occupants.0).ok().and_then(|count| count.checked_mul(2))
-                .is_some_and(|doubled| doubled <= range_size.0),
-        ensures: |ret| ret.map(|label| label.0) == position.0.checked_add(1)
-            .zip(occupants.0.checked_add(1))
-            .and_then(|(numerator, divisor)| u128::try_from(numerator).ok().zip(u128::try_from(divisor).ok()))
-            .and_then(|(numerator, divisor)| numerator.checked_mul(u128::from(range_size.0))?.checked_div(divisor))
-            .and_then(|offset| u64::try_from(offset).ok())
-            .and_then(|offset| start.0.checked_add(offset)),
-    )]
-    fn spread_label(
-        start: Label,
-        range_size: LabelRangeSize,
-        occupants: OccupantCount,
-        position: SequencePosition,
-    ) -> Option<Label>
-    {
-        let numerator_position = position.0.checked_add(1)?;
-        let numerator = u128::try_from(numerator_position).ok()?;
-        let divisor_occupants = occupants.0.checked_add(1)?;
-        let divisor = u128::try_from(divisor_occupants).ok()?;
-        let scaled = numerator.checked_mul(u128::from(range_size.0))?;
-        let offset_wide = scaled.checked_div(divisor)?;
-        let offset = u64::try_from(offset_wide).ok()?;
-        let label = start.0.checked_add(offset)?;
-        Some(Label(label))
-    }
-
-    /// Re-links the `sequence` into a contiguous list segment bounded by
-    /// `left_outer` before it and `right_outer` after it, updating the
-    /// structure's head/tail when a bound is absent.
-    ///
-    /// # Specification
-    /// - requires: every sequence index and bound names a live slot.
-    /// - ensures: on `Ok`, `sequence` is one contiguous list segment bounded by
-    ///   `left_outer` and `right_outer`, and the structure's head/tail move
-    ///   with an absent bound.
-    /// - provides: the re-wired segment the relabel relies on. The clauses
-    ///   check every index's liveness, then the segment's internal links, its
-    ///   two boundary links, and the head or tail an absent bound moves.
-    /// - fails: [`OrderError::Inconsistent`] when a sequence or bound index
-    ///   does not name a live slot.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// Returns [`OrderError::Inconsistent`] when a sequence or bound index does
-    /// not name a live slot.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L2 — the model observes the complete handle and value
-    ///   sequence after relabeling; L3 checks front, anchored and endpoint link
-    ///   rewrites. Only live sequence indices and bounds belong to this
-    ///   routine's precondition.
-    /// - witness: `tests::oracle::matches_reference_model`
-    /// - witness: `order::tests::relabel_at_front_preserves_order`
-    /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-    #[inline]
-    #[spec(
-        requires: sequence.iter().all(|&index| self.occupied(index).is_some())
-            && left_outer.is_none_or(|index| self.occupied(index).is_some())
-            && right_outer.is_none_or(|index| self.occupied(index).is_some()),
-        ensures: |ret| ret.is_err()
-            || (sequence.iter().enumerate().all(|(position, &index)| self
-                .occupied(index)
-                .is_some_and(|occupied| occupied.prev
-                    == position
-                        .checked_sub(1)
-                        .map_or(left_outer, |before| sequence.get(before).copied())
-                    && occupied.next
-                        == position
-                            .checked_add(1)
-                            .and_then(|after| sequence.get(after).copied())
-                            .or(right_outer)))
-                && sequence.first().copied().is_none_or(|first| match left_outer {
-                    Some(outer) => self
-                        .occupied(outer)
-                        .is_some_and(|occupied| occupied.next == Some(first)),
-                    None => self.head == Some(first),
-                })
-                && sequence.last().copied().is_none_or(|last| match right_outer {
-                    Some(outer) => self
-                        .occupied(outer)
-                        .is_some_and(|occupied| occupied.prev == Some(last)),
-                    None => self.tail == Some(last),
-                })),
-    )]
-    fn relink_segment(
-        &mut self,
-        sequence: &[SlotIndex],
-        left_outer: Option<SlotIndex>,
-        right_outer: Option<SlotIndex>,
-    ) -> Result<(), OrderError>
-    {
-        for (position, &index) in sequence.iter().enumerate() {
-            let prev_link = position
-                .checked_sub(1)
-                .map_or(left_outer, |before| sequence.get(before).copied());
-            let successor = position
-                .checked_add(1)
-                .and_then(|after| sequence.get(after))
-                .copied();
-            let next_link = successor.map_or(right_outer, Some);
-            self.set_prev(index, prev_link)?;
-            self.set_next(index, next_link)?;
-        }
-        match (left_outer, sequence.first()) {
-            (Some(outer), Some(&first)) => self.set_next(outer, Some(first))?,
-            (None, Some(&first)) => self.head = Some(first),
-            (_, None) => {},
-        }
-        match (right_outer, sequence.last()) {
-            (Some(outer), Some(&last)) => self.set_prev(outer, Some(last))?,
-            (None, Some(&last)) => self.tail = Some(last),
-            (_, None) => {},
-        }
-        Ok(())
     }
 }
 
@@ -2480,1084 +2982,4 @@ impl<'order, T> Iterator for Iter<'order, T>
 }
 
 #[cfg(test)]
-mod tests
-{
-    use alloc::vec;
-    use alloc::vec::Vec;
-    use core::cmp::Ordering;
-
-    use anodized::spec;
-
-    use super::Label;
-    use super::LabelBits;
-    use super::LabelRangeSize;
-    use super::LiveLen;
-    use super::OccupantCount;
-    use super::OrderError;
-    use super::OrderMaintenance;
-    use super::Pos;
-    use super::SequencePosition;
-    use super::Slot;
-    use super::SlotGeneration;
-    use super::SlotIndex;
-    use super::SlotLimit;
-    use super::StructureIdCounter;
-    use crate::interval::Interval;
-
-    /// Fixtures and structural oracles shared by the unit tests.
-    mod support
-    {
-        use super::*;
-
-        /// A structure over the production label universe.
-        ///
-        /// # Specification
-        /// - requires: nothing.
-        /// - ensures: returns an empty structure over the full label universe.
-        /// - provides: the fixture the focused tests build on.
-        /// - panics: panics when no distinct structure identity remains, which
-        ///   a focused test run cannot reach.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — the fresh fixture has empty ends, zero length and
-        ///   the full universe; insertion then distinguishes it from a
-        ///   permanently empty facade.
-        /// - witness: `order::tests::new_is_empty`
-        /// - witness: `order::tests::push_back_preserves_order`
-        #[spec(ensures: |ret| ret.len == LiveLen::ZERO && ret.head.is_none() && ret.tail.is_none() && ret.label_bits == LabelBits::MAX)]
-        pub(super) fn new_order<T>() -> OrderMaintenance<T>
-        {
-            OrderMaintenance::new().expect("structure id allocation succeeds in focused tests")
-        }
-
-        /// A structure over a deliberately narrow label universe, so relabeling
-        /// and capacity exhaustion are reachable in a handful of insertions.
-        ///
-        /// # Specification
-        /// - requires: nothing; the requested width is clamped into the
-        ///   supported range by the constructor.
-        /// - ensures: returns an empty structure over the clamped `[0,
-        ///   2^label_bits)` universe.
-        /// - provides: the fixture that puts relabeling and capacity exhaustion
-        ///   within a handful of insertions.
-        /// - panics: panics when no distinct structure identity remains, which
-        ///   a focused test run cannot reach.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — narrow-universe relabeling and exact capacity
-        ///   refusal distinguish the requested clamped width from the
-        ///   production default.
-        /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-        /// - witness: `order::tests::capacity_exhausts_in_a_tiny_universe`
-        #[spec(ensures: |ret| ret.len == LiveLen::ZERO && ret.label_bits == label_bits.clamped())]
-        pub(super) fn narrow_order<T>(label_bits: LabelBits) -> OrderMaintenance<T>
-        {
-            OrderMaintenance::with_label_bits(label_bits)
-                .expect("structure id allocation succeeds in focused tests")
-        }
-
-        /// Asserts the structural invariant: labels strictly increase along the
-        /// list and stay inside the universe, the forward and backward link
-        /// chains agree on length, and head/tail bound the chain.
-        ///
-        /// # Specification
-        /// - requires: `order` is any structure, sound or corrupted.
-        /// - ensures: returns only when every part of the invariant holds —
-        ///   labels strictly increase along the forward chain and stay below
-        ///   the universe size, both chains have length `len`, and head and
-        ///   tail are the chain's ends.
-        /// - provides: the structural oracle every mutating test asserts
-        ///   through, so a broken link or a repeated label is caught where it
-        ///   is introduced.
-        /// - panics: panics naming the part of the invariant that failed.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — finite empty and nonempty chains, mutations at
-        ///   both ends and an out-of-universe label separate the observer's
-        ///   assertions. The constant-time exit certificate covers the ends;
-        ///   the body checks both whole chains and their labels. Cyclic
-        ///   corruptions are outside this terminating-walk domain.
-        /// - witness: `order::tests::new_is_empty`
-        /// - witness: `order::tests::remove_head_and_tail`
-        /// - witness: `order::tests::invariant_observer_rejects_an_out_of_universe_label`
-        #[spec(ensures: |()| order.head.is_none() == (order.len.0 == 0)
-            && order.tail.is_none() == (order.len.0 == 0)
-            && order.head.is_none_or(|index| order.occupied(index).is_some_and(|occupied| occupied.prev.is_none()))
-            && order.tail.is_none_or(|index| order.occupied(index).is_some_and(|occupied| occupied.next.is_none())))]
-        pub(super) fn assert_invariant<T>(order: &OrderMaintenance<T>)
-        {
-            let universe = Label(order.capacity.0);
-            let mut count: usize = 0;
-            let mut previous_label = None;
-            let mut cursor = order.head;
-            let mut last_seen = None;
-            while let Some(index) = cursor {
-                let occupied = order.occupied(index).expect("listed slot is occupied");
-                if let Some(label) = previous_label {
-                    assert!(
-                        occupied.label > label,
-                        "labels strictly increase in list order"
-                    );
-                }
-                assert!(
-                    occupied.label < universe,
-                    "labels stay inside the label universe"
-                );
-                previous_label = Some(occupied.label);
-                last_seen = Some(index);
-                count = count.saturating_add(1);
-                cursor = occupied.next;
-            }
-            assert_eq!(count, usize::from(order.len), "forward length matches len");
-            assert_eq!(last_seen, order.tail, "tail is the last listed element");
-
-            let mut back_count: usize = 0;
-            let mut back_cursor = order.tail;
-            let mut first_seen = None;
-            while let Some(index) = back_cursor {
-                let occupied = order.occupied(index).expect("listed slot is occupied");
-                first_seen = Some(index);
-                back_count = back_count.saturating_add(1);
-                back_cursor = occupied.prev;
-            }
-            assert_eq!(
-                back_count,
-                usize::from(order.len),
-                "backward length matches len"
-            );
-            assert_eq!(first_seen, order.head, "head is the first listed element");
-        }
-
-        /// Asserts O(1) comparison agrees with list order for every pair, and
-        /// that each element compares equal only to itself.
-        ///
-        /// # Specification
-        /// - requires: `order` has resolvable links, since the pairs are drawn
-        ///   by walking it.
-        /// - ensures: returns only when every ordered pair of handles compares
-        ///   as their list ranks do, so each element compares equal to itself
-        ///   alone.
-        /// - provides: the comparison oracle — the constant-time answer checked
-        ///   against the linear rank it must agree with.
-        /// - panics: panics on the first pair whose comparison disagrees with
-        ///   its rank pair.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — resolvable ordered links pass the rank
-        ///   comparison, while reversed labels on the same links are rejected.
-        ///   The linear exit predicate certifies adjacent ordering; the body
-        ///   also checks every rank pair and reflexivity.
-        /// - witness: `order::tests::relabel_after_anchor_preserves_order`
-        /// - witness: `order::tests::comparison_observer_rejects_reversed_labels`
-        #[spec(ensures: |()| order.iter().map(|(pos, _value)| pos)
-            .is_sorted_by(|left, right| order.cmp(*left, *right) == Some(Ordering::Less)))]
-        pub(super) fn assert_cmp_consistent<T>(order: &OrderMaintenance<T>)
-        {
-            let handles = positions(order);
-            for (left_rank, &left) in handles.iter().enumerate() {
-                for (right_rank, &right) in handles.iter().enumerate() {
-                    assert_eq!(
-                        Some(left_rank.cmp(&right_rank)),
-                        order.cmp(left, right),
-                        "cmp matches list order for every pair"
-                    );
-                }
-            }
-        }
-
-        /// The handles in list order.
-        ///
-        /// # Specification
-        /// trivial.
-        pub(super) fn positions<T>(order: &OrderMaintenance<T>) -> Vec<Pos>
-        {
-            order.iter().map(|(pos, _value)| pos).collect()
-        }
-
-        /// The payloads in list order.
-        ///
-        /// # Specification
-        /// trivial.
-        pub(super) fn ordered<T>(order: &OrderMaintenance<T>) -> Vec<T>
-        where
-            T: Copy,
-        {
-            order.iter().map(|(_pos, &value)| value).collect()
-        }
-
-        /// Points the `next` link of the element at `index` at a slot the arena
-        /// does not have, so the next walk over that link must report
-        /// [`OrderError::Inconsistent`].
-        ///
-        /// # Specification
-        /// - requires: `index` names a live element of `order`.
-        /// - ensures: the element's `next` link names a slot the arena does not
-        ///   have, and every other field is untouched.
-        /// - provides: the one corruption that makes
-        ///   [`OrderError::Inconsistent`] reachable, which no public operation
-        ///   produces.
-        /// - panics: panics when `index` does not name a live element.
-        ///
-        /// # Adequacy
-        /// - hypothesis: L3 — bounded live fixtures acquire a dangling
-        ///   successor that causes typed insertion and removal refusal. Scalar
-        ///   captures preserve the target's generation, label and predecessor;
-        ///   generic payload identity remains a fixture observation.
-        /// - witness: `order::tests::corrupt_link_insert_is_typed`
-        /// - witness: `order::tests::corrupt_link_removal_is_typed`
-        /// - witness: `order::tests::iterator_follows_links_and_preserves_terminal_absence`
-        #[spec(
-            requires: order.occupied(index).is_some(),
-            captures: unchanged = order.occupied(index).map(|occupied| (occupied.generation, occupied.label, occupied.prev)),
-            ensures: |()| order.occupied(index).is_some_and(|occupied|
-                unchanged == Some((occupied.generation, occupied.label, occupied.prev))
-                    && occupied.next.is_some_and(|next| order.slot(next).is_none())),
-        )]
-        pub(super) fn corrupt_next_link<T>(
-            order: &mut OrderMaintenance<T>,
-            index: SlotIndex,
-        )
-        {
-            let dangling = SlotIndex(u32::MAX);
-            let occupied = order.occupied_mut(index).expect("slot is occupied");
-            occupied.next = Some(dangling);
-        }
-    }
-
-    use support::assert_cmp_consistent;
-    use support::assert_invariant;
-    use support::corrupt_next_link;
-    use support::narrow_order;
-    use support::new_order;
-    use support::ordered;
-    use support::positions;
-
-    #[test]
-    fn label_widths_distinguish_clamping_from_widening()
-    {
-        for (offered, expected) in [(0, 1), (1, 1), (2, 2), (61, 61), (62, 62), (63, 62)] {
-            assert_eq!(LabelBits(offered).clamped(), LabelBits(expected));
-        }
-        assert_eq!(LabelBits::MAX.wider(), Some(LabelBits(63)));
-        assert_eq!(
-            LabelBits(u32::MAX.wrapping_sub(1)).wider(),
-            Some(LabelBits(u32::MAX))
-        );
-        assert_eq!(LabelBits(u32::MAX).wider(), None);
-    }
-
-    #[test]
-    fn slot_indices_preserve_numeric_bounds()
-    {
-        for value in [0_u32, u32::MAX] {
-            let position = usize::try_from(value).expect("supported host holds a slot index");
-            let index = SlotIndex::try_from(position).expect("index fits");
-            assert_eq!(index, SlotIndex(value));
-            assert_eq!(usize::try_from(index), Ok(position));
-        }
-        #[cfg(target_pointer_width = "64")]
-        {
-            let first_excess = usize::try_from(u64::from(u32::MAX).saturating_add(1))
-                .expect("wide host holds the first excess");
-            assert!(SlotIndex::try_from(first_excess).is_err());
-        }
-    }
-
-    #[test]
-    fn generation_and_length_refuse_wraparound()
-    {
-        assert_eq!(SlotGeneration::FIRST.successor(), Some(SlotGeneration(1)));
-        assert_eq!(
-            SlotGeneration(u32::MAX.wrapping_sub(1)).successor(),
-            Some(SlotGeneration::LAST)
-        );
-        assert_eq!(SlotGeneration::LAST.successor(), None);
-        assert_eq!(LiveLen::ZERO.incremented(), Some(LiveLen(1)));
-        assert_eq!(
-            LiveLen(usize::MAX.wrapping_sub(1)).incremented(),
-            Some(LiveLen(usize::MAX))
-        );
-        assert_eq!(LiveLen(usize::MAX).incremented(), None);
-        assert_eq!(LiveLen(1).decremented(), Some(LiveLen::ZERO));
-        assert_eq!(
-            LiveLen(usize::MAX).decremented(),
-            Some(LiveLen(usize::MAX.wrapping_sub(1)))
-        );
-        assert_eq!(LiveLen::ZERO.decremented(), None);
-    }
-
-    #[test]
-    fn concurrent_identity_allocation_is_disjoint()
-    {
-        extern crate std;
-
-        let counter = StructureIdCounter(core::sync::atomic::AtomicUsize::new(0));
-        let mut issued = std::thread::scope(|scope| {
-            let workers = core::iter::repeat_with(|| {
-                scope.spawn(|| {
-                    core::iter::repeat_with(|| {
-                        counter.allocate().expect("bounded counter has room").0
-                    })
-                    .take(32)
-                    .collect::<Vec<_>>()
-                })
-            })
-            .take(4)
-            .collect::<Vec<_>>();
-            workers
-                .into_iter()
-                .flat_map(|worker| worker.join().expect("identity worker succeeds"))
-                .collect::<Vec<_>>()
-        });
-        issued.sort_unstable();
-        assert_eq!(issued, (0 .. 128).collect::<Vec<_>>());
-    }
-
-    #[test]
-    fn navigation_rejects_stale_and_foreign_handles()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let stale = order.push_back(10).expect("insert initial value");
-        assert_eq!(order.remove(stale), Ok(Some(10)));
-        let replacement = order.push_back(20).expect("reuse slot");
-        let mut other: OrderMaintenance<u64> = new_order();
-        let foreign = other.push_back(30).expect("insert foreign value");
-        assert_eq!(order.get(replacement), Some(&20));
-        assert!(!bool::from(order.is_empty()));
-        for rejected in [stale, foreign] {
-            assert_eq!(order.next(rejected), None);
-            assert_eq!(order.prev(rejected), None);
-        }
-    }
-
-    #[test]
-    fn arena_observers_distinguish_slot_states()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let live = order.push_back(11).expect("insert live slot");
-        let original_label = order.label_of(live.index).expect("live label");
-        assert_eq!(order.pos_at(live.index), Some(live));
-        assert_eq!(order.resolve(live).map(|occupied| occupied.value), Some(11));
-        order
-            .occupied_mut(live.index)
-            .expect("live mutable payload")
-            .value = 17;
-        assert_eq!(order.get(live), Some(&17));
-        assert_eq!(order.label_of(live.index), Some(original_label));
-        order
-            .set_label(live.index, Label(7))
-            .expect("change live fixture label");
-        assert_eq!(order.label_of(live.index), Some(Label(7)));
-        assert_eq!(order.remove(live), Ok(Some(17)));
-        assert!(matches!(order.slot(live.index), Some(&Slot::Free(_))));
-        assert_eq!(order.pos_at(live.index), None);
-        assert_eq!(order.label_of(live.index), None);
-        assert!(order.occupied(live.index).is_none());
-        assert!(order.occupied_mut(live.index).is_none());
-        let position = usize::try_from(live.index).expect("slot position fits");
-        *order
-            .slots
-            .get_mut(position)
-            .expect("retire freed fixture slot") = Slot::Retired;
-        assert_eq!(order.pos_at(live.index), None);
-        assert_eq!(order.label_of(live.index), None);
-        assert!(order.occupied(live.index).is_none());
-        assert!(order.occupied_mut(live.index).is_none());
-        let absent = SlotIndex(u32::MAX);
-        assert!(order.slot(absent).is_none());
-        assert!(order.occupied(absent).is_none());
-        assert!(order.occupied_mut(absent).is_none());
-        assert_eq!(order.pos_at(absent), None);
-        assert_eq!(order.label_of(absent), None);
-        assert!(
-            order
-                .resolve(Pos {
-                    index: absent,
-                    ..live
-                })
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn slot_writes_refuse_dead_indices()
-    {
-        let mut order = new_order();
-        let removed = order.push_back(()).expect("insert fixture");
-        assert_eq!(order.remove(removed), Ok(Some(())));
-        for index in [removed.index, SlotIndex(u32::MAX)] {
-            assert_eq!(order.set_prev(index, None), Err(OrderError::Inconsistent));
-            assert_eq!(order.set_next(index, None), Err(OrderError::Inconsistent));
-            assert_eq!(
-                order.set_label(index, Label(3)),
-                Err(OrderError::Inconsistent)
-            );
-        }
-    }
-
-    #[test]
-    fn allocation_refuses_a_broken_free_list()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let live = order.push_back(11).expect("insert live value");
-        order.free_head = Some(live.index);
-        assert_eq!(order.push_back(22), Err(OrderError::Inconsistent));
-        assert_eq!(order.get(live), Some(&11));
-        assert_eq!(usize::from(order.len()), 1);
-        assert_eq!(order.first(), Some(live));
-        assert_eq!(order.last(), Some(live));
-    }
-
-    #[test]
-    fn window_collection_respects_contiguous_bounds()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let first = order.push_back(1).expect("insert first");
-        let middle = order.push_back(2).expect("insert middle");
-        let last = order.push_back(3).expect("insert last");
-        let start = order.label_of(middle.index).expect("middle label");
-        let end = order.label_of(last.index).expect("last label");
-        let mut window = vec![SlotIndex(u32::MAX)];
-        assert_eq!(
-            order.collect_window(&mut window, middle.index, start, end),
-            Ok(())
-        );
-        assert_eq!(window, [middle.index]);
-        let upper = Label(order.capacity.0);
-        assert_eq!(
-            order.collect_window(&mut window, middle.index, Label::ZERO, upper),
-            Ok(())
-        );
-        assert_eq!(window, [first.index, middle.index, last.index]);
-        corrupt_next_link(&mut order, middle.index);
-        assert_eq!(
-            order.collect_window(&mut window, middle.index, Label::ZERO, upper),
-            Err(OrderError::Inconsistent)
-        );
-    }
-
-    #[test]
-    fn spread_labels_match_exact_rounding_and_wide_products()
-    {
-        for (position, expected) in [102_u64, 105].into_iter().enumerate() {
-            assert_eq!(
-                OrderMaintenance::<()>::spread_label(
-                    Label(100),
-                    LabelRangeSize(8),
-                    OccupantCount(2),
-                    SequencePosition(position)
-                ),
-                Some(Label(expected))
-            );
-        }
-        assert_eq!(
-            OrderMaintenance::<()>::spread_label(
-                Label::ZERO,
-                LabelRangeSize(0x8000_0000_0000_0000),
-                OccupantCount(3),
-                SequencePosition(2)
-            ),
-            Some(Label(0x6000_0000_0000_0000))
-        );
-        assert_eq!(
-            OrderMaintenance::<()>::spread_label(
-                Label(u64::MAX.wrapping_sub(1)),
-                LabelRangeSize(2),
-                OccupantCount(1),
-                SequencePosition(0)
-            ),
-            Some(Label(u64::MAX))
-        );
-        assert_eq!(
-            OrderMaintenance::<()>::spread_label(
-                Label(u64::MAX),
-                LabelRangeSize(2),
-                OccupantCount(1),
-                SequencePosition(0)
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn iterator_follows_links_and_preserves_terminal_absence()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let first = order.push_back(1).expect("insert first");
-        let second = order.push_back(2).expect("insert second");
-        {
-            let mut walk = order.iter();
-            assert_eq!(walk.next(), Some((first, &1)));
-            assert_eq!(walk.next(), Some((second, &2)));
-            assert_eq!(walk.next(), None);
-            assert_eq!(walk.next(), None);
-        }
-        corrupt_next_link(&mut order, first.index);
-        let mut walk = order.iter();
-        assert_eq!(walk.next(), Some((first, &1)));
-        assert_eq!(walk.next(), None);
-        assert_eq!(walk.next(), None);
-    }
-
-    #[test]
-    fn invariant_observer_rejects_an_out_of_universe_label()
-    {
-        extern crate std;
-
-        let mut order = new_order();
-        let live = order.push_back(()).expect("insert live slot");
-        let outside = Label(order.capacity.0);
-        order.occupied_mut(live.index).expect("live slot").label = outside;
-        assert!(std::panic::catch_unwind(|| assert_invariant(&order)).is_err());
-    }
-
-    #[test]
-    fn comparison_observer_rejects_reversed_labels()
-    {
-        extern crate std;
-
-        let mut order = new_order();
-        let first = order.push_back(()).expect("insert first");
-        let second = order.push_back(()).expect("insert second");
-        let higher = order
-            .label_of(second.index)
-            .expect("second label")
-            .0
-            .saturating_add(1);
-        order
-            .set_label(first.index, Label(higher))
-            .expect("reverse fixture labels");
-        assert!(std::panic::catch_unwind(|| assert_cmp_consistent(&order)).is_err());
-    }
-
-    #[test]
-    fn formatter_refusal_is_propagated()
-    {
-        extern crate std;
-        use std::io::Write as _;
-
-        let mut bytes = [0_u8; 1];
-        let mut output = bytes.as_mut_slice();
-        assert!(write!(&mut output, "{}", OrderError::CapacityExhausted).is_err());
-    }
-
-    #[test]
-    fn new_is_empty()
-    {
-        let order: OrderMaintenance<u64> = new_order();
-        assert!(bool::from(order.is_empty()), "a fresh structure is empty");
-        assert_eq!(
-            0,
-            usize::from(order.len()),
-            "a fresh structure has no elements"
-        );
-        assert_eq!(None, order.first(), "no first element");
-        assert_eq!(None, order.last(), "no last element");
-        assert_eq!(Vec::<u64>::new(), ordered(&order), "iteration is empty");
-    }
-
-    #[test]
-    fn push_back_preserves_order()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        for value in 0 .. 6 {
-            order.push_back(value).expect("push_back succeeds");
-        }
-        assert_eq!(
-            vec![0, 1, 2, 3, 4, 5],
-            ordered(&order),
-            "push_back appends in order"
-        );
-        assert_eq!(6, usize::from(order.len()), "length tracks insertions");
-        let handles = positions(&order);
-        assert_eq!(order.first(), handles.first().copied(), "first is the head");
-        assert_eq!(order.last(), handles.last().copied(), "last is the tail");
-        assert_invariant(&order);
-        assert_cmp_consistent(&order);
-    }
-
-    #[test]
-    fn push_front_reverses()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        for value in 0 .. 6 {
-            order.push_front(value).expect("push_front succeeds");
-        }
-        assert_eq!(
-            vec![5, 4, 3, 2, 1, 0],
-            ordered(&order),
-            "push_front prepends"
-        );
-        assert_invariant(&order);
-        assert_cmp_consistent(&order);
-    }
-
-    #[test]
-    fn insert_after_and_before_place_correctly()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let first = order.push_back(0).expect("push_back succeeds");
-        let last = order.push_back(9).expect("push_back succeeds");
-        let middle = order.insert_after(first, 5).expect("insert_after succeeds");
-        order
-            .insert_before(middle, 3)
-            .expect("insert_before succeeds");
-        order
-            .insert_before(last, 7)
-            .expect("insert_before succeeds");
-        assert_eq!(
-            vec![0, 3, 5, 7, 9],
-            ordered(&order),
-            "inserts land at the right spots"
-        );
-        assert_invariant(&order);
-        assert_cmp_consistent(&order);
-    }
-
-    #[test]
-    fn remove_middle_unlinks_and_invalidates()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        order.push_back(0).expect("push_back succeeds");
-        let middle = order.push_back(1).expect("push_back succeeds");
-        order.push_back(2).expect("push_back succeeds");
-        assert_eq!(
-            Ok(Some(1)),
-            order.remove(middle),
-            "remove returns the payload"
-        );
-        assert_eq!(vec![0, 2], ordered(&order), "the element is unlinked");
-        assert!(
-            !bool::from(order.contains(middle)),
-            "the removed handle is stale"
-        );
-        assert_eq!(None, order.get(middle), "get on a stale handle is None");
-        assert_eq!(Ok(None), order.remove(middle), "double remove is Ok(None)");
-        assert_invariant(&order);
-        assert_cmp_consistent(&order);
-    }
-
-    #[test]
-    fn remove_head_and_tail()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let head = order.push_back(0).expect("push_back succeeds");
-        order.push_back(1).expect("push_back succeeds");
-        let tail = order.push_back(2).expect("push_back succeeds");
-        assert_eq!(Ok(Some(0)), order.remove(head), "remove head");
-        assert_eq!(Ok(Some(2)), order.remove(tail), "remove tail");
-        assert_eq!(vec![1], ordered(&order), "only the middle survives");
-        assert_invariant(&order);
-    }
-
-    #[test]
-    fn remove_only_element_empties()
-    {
-        const SOLE_ELEMENT_VALUE: u64 = 42;
-
-        let mut order: OrderMaintenance<u64> = new_order();
-        let only = order
-            .push_back(SOLE_ELEMENT_VALUE)
-            .expect("push_back succeeds");
-        assert_eq!(
-            Ok(Some(SOLE_ELEMENT_VALUE)),
-            order.remove(only),
-            "remove the sole element"
-        );
-        assert!(bool::from(order.is_empty()), "structure is empty again");
-        order.push_back(7).expect("reuse after emptying");
-        assert_eq!(vec![7], ordered(&order), "can insert after emptying");
-    }
-
-    #[test]
-    fn relabel_after_anchor_preserves_order()
-    {
-        const RELABEL_SENTINEL_VALUE: u64 = 100;
-
-        // A narrow universe forces relabeling after only a few insertions; the
-        // repeated insert-after-the-same-anchor stacks elements in reverse.
-        let mut order: OrderMaintenance<u64> = narrow_order(LabelBits(4));
-        let anchor = order.push_back(0).expect("push_back succeeds");
-
-        order
-            .push_back(RELABEL_SENTINEL_VALUE)
-            .expect("push_back succeeds");
-        for value in 1 ..= 6 {
-            order
-                .insert_after(anchor, value)
-                .expect("insert_after succeeds under relabel");
-            assert_invariant(&order);
-            assert_cmp_consistent(&order);
-        }
-        assert_eq!(
-            vec![0, 6, 5, 4, 3, 2, 1, 100],
-            ordered(&order),
-            "relabeling preserves the list order"
-        );
-    }
-
-    #[test]
-    fn relabel_at_front_preserves_order()
-    {
-        // Exhaust the front gap so a push_front must relabel with no
-        // predecessor (the absent-predecessor relabel branch).
-        let mut order: OrderMaintenance<u64> = narrow_order(LabelBits(4));
-        for value in 0 .. 7 {
-            order
-                .push_front(value)
-                .expect("push_front succeeds under relabel");
-            assert_invariant(&order);
-            assert_cmp_consistent(&order);
-        }
-        assert_eq!(
-            vec![6, 5, 4, 3, 2, 1, 0],
-            ordered(&order),
-            "front relabeling preserves order"
-        );
-    }
-
-    #[test]
-    fn capacity_exhausts_in_a_tiny_universe()
-    {
-        // With two label bits the universe is `{0, 1, 2, 3}`; a third append
-        // has no gap, and the whole-universe window cannot fit three elements
-        // at density one half, so the relabel reports exhaustion.
-        let mut order: OrderMaintenance<u64> = narrow_order(LabelBits(2));
-        order.push_back(0).expect("first append fits");
-        order.push_back(1).expect("second append fits");
-        assert_eq!(
-            Err(OrderError::CapacityExhausted),
-            order.push_back(2),
-            "a relabel that cannot reach density one half reports exhaustion"
-        );
-        // The structure is still well-formed and usable after the rejection.
-        assert_eq!(
-            vec![0, 1],
-            ordered(&order),
-            "the rejected element left no trace"
-        );
-        assert_eq!(2, usize::from(order.len()), "the rejection did not count");
-        assert_invariant(&order);
-    }
-
-    #[test]
-    fn structure_id_exhaustion_is_typed()
-    {
-        let counter = StructureIdCounter::nearly_exhausted();
-        let mut first: OrderMaintenance<u64> =
-            OrderMaintenance::with_label_bits_from_counter(LabelBits(4), &counter)
-                .expect("the last distinct structure id is available");
-        let old = first.push_back(1).expect("insertion succeeds");
-
-        let exhausted =
-            OrderMaintenance::<u64>::with_label_bits_from_counter(LabelBits(4), &counter);
-
-        assert_eq!(
-            Err(OrderError::StructureIdExhausted),
-            exhausted.map(|_ignored: OrderMaintenance<u64>| ()),
-            "structure id exhaustion is typed"
-        );
-        assert_eq!(
-            Some(&1),
-            first.get(old),
-            "an extant position is not aliased by a wrapped structure id"
-        );
-    }
-
-    #[test]
-    fn exhausted_generation_retires_slot_and_allocates_another()
-    {
-        let mut order: OrderMaintenance<u64> = narrow_order(LabelBits(4));
-        let first = order.push_back(0).expect("initial insert succeeds");
-        let exhausted = Pos {
-            generation: SlotGeneration::LAST,
-            ..first
-        };
-        let occupied = order.occupied_mut(first.index).expect("slot is occupied");
-        occupied.generation = SlotGeneration::LAST;
-
-        assert_eq!(
-            Ok(Some(0)),
-            order.remove(exhausted),
-            "remove the exhausted slot"
-        );
-        assert!(
-            matches!(order.slot(exhausted.index), Some(&Slot::Retired)),
-            "the exhausted slot is retired permanently"
-        );
-        let replacement = order.push_back(1).expect("a fresh slot is allocated");
-        assert_ne!(
-            exhausted.index, replacement.index,
-            "the retired slot index is not reused"
-        );
-        assert_eq!(
-            None,
-            order.get(exhausted),
-            "the stale exhausted-generation handle does not alias the replacement"
-        );
-        assert_eq!(Some(&1), order.get(replacement), "the replacement resolves");
-    }
-
-    #[test]
-    fn retired_slot_capacity_exhaustion_is_typed()
-    {
-        let mut order: OrderMaintenance<u64> =
-            OrderMaintenance::with_label_bits_and_slot_limit(LabelBits(4), SlotLimit(1))
-                .expect("bounded test structure can be constructed");
-        let first = order
-            .push_back(0)
-            .expect("initial insert consumes the slot");
-        let exhausted = Pos {
-            generation: SlotGeneration::LAST,
-            ..first
-        };
-        let occupied = order.occupied_mut(first.index).expect("slot is occupied");
-        occupied.generation = SlotGeneration::LAST;
-
-        assert_eq!(Ok(Some(0)), order.remove(exhausted), "retire the only slot");
-        assert_eq!(
-            Err(OrderError::CapacityExhausted),
-            order.push_back(1),
-            "when every representable slot is retired, insertion reports typed exhaustion"
-        );
-        assert_eq!(
-            None,
-            order.get(exhausted),
-            "the retired slot remains unavailable to stale handles"
-        );
-    }
-
-    #[test]
-    fn corrupt_link_removal_is_typed()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let head = order.push_back(0).expect("push_back succeeds");
-        order.push_back(1).expect("push_back succeeds");
-        corrupt_next_link(&mut order, head.index);
-        assert_eq!(
-            Err(OrderError::Inconsistent),
-            order.remove(head),
-            "a dangling successor link surfaces as a typed inconsistency"
-        );
-    }
-
-    #[test]
-    fn corrupt_link_insert_is_typed()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let head = order.push_back(0).expect("push_back succeeds");
-        order.push_back(1).expect("push_back succeeds");
-        corrupt_next_link(&mut order, head.index);
-        assert_eq!(
-            Err(OrderError::Inconsistent),
-            order.insert_after(head, 2),
-            "an insertion beside a dangling successor link is a typed inconsistency"
-        );
-    }
-
-    #[test]
-    fn navigation_walks_both_ways()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let first = order.push_back(0).expect("push_back succeeds");
-        let second = order.push_back(1).expect("push_back succeeds");
-        let third = order.push_back(2).expect("push_back succeeds");
-        assert_eq!(Some(second), order.next(first), "next walks forward");
-        assert_eq!(None, order.next(third), "next at the tail is None");
-        assert_eq!(Some(second), order.prev(third), "prev walks backward");
-        assert_eq!(None, order.prev(first), "prev at the head is None");
-        assert_eq!(Some(&1), order.get(second), "get returns the payload");
-    }
-
-    #[test]
-    fn slot_reuse_distinguishes_generation()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let first = order.push_back(0).expect("push_back succeeds");
-        order.push_back(1).expect("push_back succeeds");
-        assert_eq!(Ok(Some(0)), order.remove(first), "free the first slot");
-        // The next allocation reuses the freed slot with a bumped generation.
-        let reused = order.push_back(2).expect("push_back reuses the slot");
-        assert_eq!(reused.index, first.index, "the freed slot index is reused");
-        assert_ne!(
-            first.generation, reused.generation,
-            "the generation is bumped"
-        );
-        assert_eq!(
-            None,
-            order.get(first),
-            "the stale handle does not alias the reuse"
-        );
-        assert_eq!(Some(&2), order.get(reused), "the fresh handle resolves");
-    }
-
-    #[test]
-    fn stale_handle_insert_errors()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let only = order.push_back(0).expect("push_back succeeds");
-        order.remove(only).expect("remove succeeds");
-        assert_eq!(
-            Err(OrderError::UnknownPosition),
-            order.insert_after(only, 1),
-            "insert_after a stale handle errors"
-        );
-        assert_eq!(
-            Err(OrderError::UnknownPosition),
-            order.insert_before(only, 1),
-            "insert_before a stale handle errors"
-        );
-    }
-
-    #[test]
-    fn foreign_handle_is_rejected()
-    {
-        let mut one: OrderMaintenance<u64> = new_order();
-        let mut two: OrderMaintenance<u64> = new_order();
-        let foreign = one.push_back(0).expect("push_back succeeds");
-        let native = two.push_back(1).expect("push_back succeeds");
-        assert_eq!(None, two.get(foreign), "a foreign handle does not resolve");
-        assert_eq!(
-            None,
-            two.cmp(foreign, native),
-            "comparing across structures is None"
-        );
-        assert_eq!(
-            None,
-            two.cmp(native, foreign),
-            "comparing across structures is None in either argument"
-        );
-        assert_eq!(
-            Err(OrderError::UnknownPosition),
-            two.insert_after(foreign, 2),
-            "inserting at a foreign handle errors"
-        );
-        assert_eq!(
-            Ok(None),
-            two.remove(foreign),
-            "removing a foreign handle is Ok(None)"
-        );
-        assert!(
-            !bool::from(two.contains(foreign)),
-            "a foreign handle is not contained"
-        );
-    }
-
-    #[test]
-    fn interval_containment()
-    {
-        // Pre/post-order points for a tree: outer `[a_lo, a_hi]` wraps inner
-        // `[b_lo, b_hi]`; a third point `c` sits after both.
-        let mut order: OrderMaintenance<&'static str> = new_order();
-        let a_lo = order.push_back("a_lo").expect("push_back succeeds");
-        let b_lo = order.push_back("b_lo").expect("push_back succeeds");
-        let b_hi = order.push_back("b_hi").expect("push_back succeeds");
-        let a_hi = order.push_back("a_hi").expect("push_back succeeds");
-        let c = order.push_back("c").expect("push_back succeeds");
-        let outer = Interval::new(a_lo, a_hi);
-        let inner = Interval::new(b_lo, b_hi);
-        let disjoint = Interval::new(c, c);
-        assert_eq!(
-            Some(true),
-            order.interval_contains(outer, inner).map(bool::from),
-            "outer contains inner"
-        );
-        assert_eq!(
-            Some(false),
-            order.interval_contains(inner, outer).map(bool::from),
-            "inner does not contain outer"
-        );
-        assert_eq!(
-            Some(false),
-            order.interval_contains(outer, disjoint).map(bool::from),
-            "outer does not contain a later point"
-        );
-        assert_eq!(
-            Some(false),
-            order.interval_contains(disjoint, outer).map(bool::from),
-            "a later point does not contain outer"
-        );
-        assert_eq!(
-            Some(true),
-            order.interval_contains(outer, outer).map(bool::from),
-            "an interval contains itself"
-        );
-        assert_eq!(
-            Some(true),
-            order
-                .interval_contains(outer, Interval::new(a_lo, b_hi))
-                .map(bool::from),
-            "a shared lower endpoint still counts as containment"
-        );
-        assert_eq!(
-            Some(true),
-            order
-                .interval_contains(outer, Interval::new(b_lo, a_hi))
-                .map(bool::from),
-            "a shared upper endpoint still counts as containment"
-        );
-    }
-
-    #[test]
-    fn interval_with_stale_endpoint_is_none()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let lo = order.push_back(0).expect("push_back succeeds");
-        let hi = order.push_back(1).expect("push_back succeeds");
-        let gone = order.push_back(2).expect("push_back succeeds");
-        order.remove(gone).expect("remove succeeds");
-        let live = Interval::new(lo, hi);
-        let stale = Interval::new(gone, gone);
-        assert_eq!(
-            None,
-            order.interval_contains(live, stale),
-            "a stale inner endpoint yields None"
-        );
-        assert_eq!(
-            None,
-            order.interval_contains(stale, live),
-            "a stale outer endpoint yields None"
-        );
-    }
-
-    #[test]
-    fn comparison_is_reflexive_and_total()
-    {
-        let mut order: OrderMaintenance<u64> = new_order();
-        let first = order.push_back(0).expect("push_back succeeds");
-        let second = order.push_back(1).expect("push_back succeeds");
-        assert_eq!(
-            Some(Ordering::Equal),
-            order.cmp(first, first),
-            "an element equals itself"
-        );
-        assert_eq!(
-            Some(Ordering::Less),
-            order.cmp(first, second),
-            "earlier is Less"
-        );
-        assert_eq!(
-            Some(Ordering::Greater),
-            order.cmp(second, first),
-            "later is Greater"
-        );
-    }
-
-    #[test]
-    fn error_display_is_distinct_per_variant()
-    {
-        use alloc::string::String;
-
-        let messages: [String; 4] = [
-            alloc::string::ToString::to_string(&OrderError::UnknownPosition),
-            alloc::string::ToString::to_string(&OrderError::StructureIdExhausted),
-            alloc::string::ToString::to_string(&OrderError::CapacityExhausted),
-            alloc::string::ToString::to_string(&OrderError::Inconsistent),
-        ];
-        for (left_rank, left) in messages.iter().enumerate() {
-            for right in messages.iter().skip(left_rank.saturating_add(1)) {
-                assert_ne!(left, right, "distinct failures remain distinguishable");
-            }
-        }
-    }
-}
+mod tests;

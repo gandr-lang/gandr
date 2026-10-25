@@ -18,6 +18,13 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
+# The measurement: a `harness = false` bench timing insertion, removal and
+# comparison from a thousand to a million elements, for each group width.
+[[bench]]
+harness = false
+name = "order"
+path = "benches/order.rs"
+
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled in this no_std library.
 [dependencies]
