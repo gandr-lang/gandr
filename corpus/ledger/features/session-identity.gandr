@@ -1,0 +1,81 @@
+/// `session-identity`: Session identity (Path_U and Flow_U at sessions).
+/// Implemented: a protocol's evolution as a certified path or flow between session types, a recorded run transported along it by conversion and on the machine, and `bisim(A, B, p)` paying differing payloads with paths.
+/// Not implemented: a run of a recursive session on the machine, refused by name, and a univalence over a record a parameter binds; #1734 owes it.
+// A seat's protocol evolved: session subtyping as a flow and equi-recursive
+// unfolding as a path (Gay and Hole, _Subtyping for Session Types in the Pi
+// Calculus_, doi:10.1007/s00236-005-0177-z). A protocol that adds a choice
+// the seat may take is a supertype, so a recorded run of the old protocol
+// rides forward to the new one; a run that takes the new choice is no run of
+// the old.
+
+// The seat's protocol and its messages.
+import "../../model/sessions/seat-base.gandr" ;
+
+/// The seat's protocol, the protocol with a pause added, and the protocol
+/// unrolled once, related by simulation and bisimulation.
+module Evolution {
+  type Dispatch = Seat.Dispatch;
+  type Report = Seat.Report;
+  type Handoff = Seat.Handoff;
+  type SeatEnd = Seat.SeatEnd;
+  type SeatEnd′ = ?Dispatch. mu turn. +{
+    report : !Report. &{ next : turn, retire : end },
+    handoff : !Handoff. end,
+    pause : !Report. turn
+  };
+  type SeatEnd2 = ?Dispatch. +{
+    report : !Report. &{
+      next : mu again. +{
+        report : !Report. &{ next : again, retire : end },
+        handoff : !Handoff. end
+      },
+      retire : end
+    },
+    handoff : !Handoff. end
+  };
+  /// The old protocol flows to the one with the pause, by simulation.
+  @[ checks ]
+  def sub : Flow(Type, SeatEnd, SeatEnd′) = sim(SeatEnd, SeatEnd′) ;
+  /// The protocol and its one-step unrolling are one type, by bisimulation.
+  @[ checks ]
+  def eq : Path(Type, SeatEnd, SeatEnd2) = bisim(SeatEnd, SeatEnd2) ;
+  /// The stationary flow at the old protocol.
+  @[ checks ]
+  def kept : Flow(Type, SeatEnd, SeatEnd) = stay(SeatEnd) ;
+  /// The stationary flow, then the simulation.
+  @[ checks ]
+  def widened() -> Flow(Type, SeatEnd, SeatEnd′) {
+    kept then sub
+  }
+}
+
+/// A recorded run of the old protocol: a task received, one report, retired.
+@[ checks ]
+def served : Run(Seat.SeatEnd) = recorded(
+  received(Seat.task),
+  selected(report),
+  sent(Seat.progress),
+  offered(retire),
+  closed
+) ;
+
+/// A recorded run ridden forward along the simulation.
+@[ checks ]
+def forward(receipt : Run(Seat.SeatEnd)) -> Run(Evolution.SeatEnd′) {
+  ride(\X. Run(X), Evolution.sub, receipt)
+}
+
+/// The old run ridden forward by a run: the record is unchanged.
+@[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"), offered(retire), closed)") ]
+def moved() -> Run(Evolution.SeatEnd′) { become forward(served) }
+
+/// A run of the new protocol that takes the pause.
+@[ checks ]
+def paused : Run(Evolution.SeatEnd′) = recorded(
+  received(Seat.task),
+  selected(pause),
+  sent(Seat.progress),
+  selected(handoff),
+  sent(Seat.notes),
+  closed
+) ;

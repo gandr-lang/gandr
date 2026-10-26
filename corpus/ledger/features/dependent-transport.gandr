@@ -1,0 +1,74 @@
+/// `dependent-transport`: Transport in path-dependent motives.
+/// Implemented: a motive depending on the identification itself, path induction derived in the singleton, and transport along a closed path of native evidence at the unit type or at a sealed atom.
+/// Not implemented: transport into a product fibre or along a computed relation, which #2053 owes, and univalence in full generality (#312); #2053 owes it.
+// Transport in a family over a point and a path to it from a fixed one, the
+// motive of based path induction (the HoTT book's § 1.12.1): at reflexivity
+// it computes to the element given, along the unit type's evidence it
+// computes into the unit fibre, it reverses a path when the family is the
+// paths back, and it refuses a family not over the path's own endpoints or
+// one that reads no path.
+
+// The free naturals.
+import "../../model/identity/circle-base.gandr" ;
+
+/// Transport along reflexivity at zero returns the element given.
+@[ checks ]
+def reduced : Path(
+  Nat,
+  transport(
+    (y : Nat, Path(Nat, Zero, y)) => Nat,
+    here(Zero),
+    here(Zero),
+    here(here(Zero)),
+    Succ(Zero)
+  ),
+  Succ(Zero)
+) = here(Succ(Zero));
+
+/// The unit type's evidence between its point and itself, a closed path
+/// that is no reflexivity.
+@[ checks ]
+def unitPath : Path(Unit, unit, unit) = unit;
+
+/// Transport along that evidence, in a family that reads neither the point
+/// nor the path, returns the element given (#1854).
+@[ checks ]
+def carriedUnit : Path(
+  Nat,
+  transport(
+    (y : Unit, Path(Unit, unit, y)) => Nat,
+    unitPath,
+    here(unit),
+    here(unitPath),
+    Succ(Zero)
+  ),
+  Succ(Zero)
+) = here(Succ(Zero));
+
+/// Transport along that evidence in the family of paths back to the point
+/// returns the unit, the one inhabitant of the unit fibre (#1886).
+@[ checks ]
+def backUnit : Path(
+  Path(Unit, unit, unit),
+  transport(
+    (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit),
+    unitPath,
+    here(unit),
+    here(unitPath),
+    here(unit)
+  ),
+  unit
+) = here(unit);
+
+/// A path reversed by transport in the family of paths back to its start,
+/// reflexivity at the start carried to the end.
+@[ checks ]
+def reversed(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
+  transport(
+    (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a),
+    q,
+    here(a),
+    here(q),
+    here(a)
+  )
+}

@@ -1,0 +1,57 @@
+/// `directed-paths`: Directed paths (Flow).
+/// Implemented: `Flow(A, a, b)` with `stay`, `then` and covariant `ride`, certified on readmission, and `forward(f)` decided for a closed translator at its finitely many patterns.
+/// Not implemented: a forward the rule does not decide, which is refused; #1835 owes it.
+// Flows compose, after directed univalence (Gratzer, Weinberger and
+// Buchholtz, _Directed univalence in simplicial homotopy type theory_,
+// arXiv:2407.09146): the stationary flow is a unit, and two translations in
+// sequence ride a record of the first schema to the third.
+
+/// Three versions of a record schema and the flows between them.
+module Versions {
+  type V1 = String * Integer;
+  type V2 = Integer * String;
+  type V3 = (Unit + Unit) * Integer * String;
+  /// The first translator: the fields swapped.
+  @[ checks ]
+  def toV2(record : V1) -> V2 {
+    case record {
+      #{name, age} => (age, name)
+    }
+  }
+  /// The second translator: a flag added.
+  @[ checks ]
+  def toV3(record : V2) -> V3 {
+    case record {
+      #{age, name} => (+{.1 = unit}, age, name)
+    }
+  }
+  /// The flow from the first version to the second.
+  @[ checks ]
+  def first : Flow(Type, V1, V2) = forward(toV2) ;
+  /// The flow from the second version to the third.
+  @[ checks ]
+  def second : Flow(Type, V2, V3) = forward(toV3) ;
+  /// The stationary flow at the first version.
+  @[ checks ]
+  def kept : Flow(Type, V1, V1) = stay(V1) ;
+  /// The stationary flow, then the first.
+  @[ checks ]
+  def early() -> Flow(Type, V1, V2) {
+    kept then first
+  }
+  /// Both translations in sequence.
+  @[ checks ]
+  def both() -> Flow(Type, V1, V3) {
+    run start <- early() ;
+    start then second
+  }
+  /// A record ridden along the composite.
+  @[ checks ]
+  def moved(record : V1) -> V3 {
+    run along <- both() ;
+    ride(\X. X, along, record)
+  }
+  /// A first-version record migrated to the third by a run.
+  @[ runs("(+{.1 = unit}, 30, \"ada\")") ]
+  def latest : () => V3 = moved(("ada", 30)) ;
+}

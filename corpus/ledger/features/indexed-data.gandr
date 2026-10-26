@@ -1,0 +1,35 @@
+/// `indexed-data`: Indexed data families.
+/// Implemented: data families indexed by values, a case checking each arm at its constructor's fields with one equation per index, and at a family of one index an arm whose constructor stands apart left out.
+/// Not implemented: pruning at several indices and refinement by unification at a match; #1314 owes it.
+// Vectors: lists indexed by their length, a family whose constructors each
+// state the index their value stands at (Dybjer, _Inductive families_,
+// doi:10.1007/BF01211308). The kind `Nat -> Type` reads the length's type
+// before the universe; `VNil` stands at zero and `VCons` at the successor of
+// its tail's length, so a vector's type says how long it is. What a vector
+// refuses is in the pathological twin.
+
+// The naturals the lengths count in.
+import "../../model/data/data-base.gandr" ;
+
+/// Vectors of elements of `a`, indexed by their length.
+@[ checks ]
+data Vec(a : Type) : Nat -> Type {
+  VNil : Vec(a, Zero);
+  VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n));
+}
+
+/// The vector of one integer, one long.
+@[ checks ]
+def single() -> Vec(Integer, Succ(Zero)) {
+  VCons(Zero, 3, (VNil : Vec(Integer, Zero)))
+}
+
+/// A vector of two integers, two long: each `VCons` one past its tail.
+@[ checks ]
+def pair() -> Vec(Integer, Succ(Succ(Zero))) {
+  VCons(
+    Succ(Zero),
+    1,
+    (VCons(Zero, 2, (VNil : Vec(Integer, Zero))) : Vec(Integer, Succ(Zero)))
+  )
+}

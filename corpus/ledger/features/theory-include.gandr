@@ -1,0 +1,109 @@
+/// `theory-include`: Theory inclusion.
+/// Implemented: a theory including another with the morphism kept, imported includes, manifest sorts, and the reduct `T.S` applied by the checker where a model of `S` is asked.
+/// Not implemented: the printer writing the sugared reduct and hover naming it; the union's critical pairs are refused by name; #2714 owes it.
+// Theory inclusion (#738): `include` extends a presentation by another's
+// members, the included ones first, and keeps the inclusion beside the
+// value. A monoid is a semigroup with a unit; two extensions of the
+// semigroup included together meet along it, so the result has one carrier
+// and one multiplication (the pushout over what they share). The union's
+// rules are completed as the block's own: the included associativity and
+// the unit laws join.
+
+/// A semigroup: one carrier and an associative multiplication.
+@[ checks ]
+theory Semigroup {
+  sort M : Type;
+  oper mul : (x : M, y : M) --> M;
+  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
+}
+
+/// A monoid: the semigroup with a two-sided unit. Its rules are the
+/// semigroup's associativity, then the unit laws, and they join.
+@[ checks ]
+theory Monoid {
+  include Semigroup;
+  oper one : () --> M;
+  rule unitL : mul(one(), x) ==> x;
+  rule unitR : mul(x, one()) ==> x;
+}
+
+/// The semigroup with a zero that absorbs on the left.
+@[ checks ]
+theory LeftZero {
+  include Semigroup;
+  oper zero : () --> M;
+  rule absorb : mul(zero(), x) ==> zero();
+}
+
+/// Both extensions at once: one carrier, one multiplication, its unit and
+/// its zero.
+@[ checks ]
+theory UnitAndZero {
+  include Monoid;
+  include LeftZero;
+}
+
+/// The functions on the integers under composition: every law holds by
+/// conversion, and the members it gives for the included semigroup are its
+/// multiplication and associativity.
+module Endo : Model(Monoid) {
+  type M = Integer => Integer;
+
+  /// `f` then `g`, applied.
+  def andThen(
+    f : Integer => Integer,
+    g : Integer => Integer,
+    x : Integer
+  ) -> Integer {
+    g(f(x))
+  }
+
+  /// The identity function.
+  def ident(x : Integer) -> Integer { x }
+
+  def mul(
+    f : Integer => Integer,
+    g : Integer => Integer
+  ) -> Integer => Integer {
+    thunk { andThen(f, g) }
+  }
+
+  def one() -> Integer => Integer { ident }
+
+  /// Associativity, the included law.
+  @[ checks ]
+  def assoc(
+    f : Integer => Integer,
+    g : Integer => Integer,
+    h : Integer => Integer
+  ) -> Path(Integer => Integer, mul(mul(f, g), h), mul(f, mul(g, h))) {
+    here(thunk { andThen(f, thunk { andThen(g, h) }) })
+  }
+
+  /// The left unit law.
+  @[ checks ]
+  def unitL(f : Integer => Integer) -> Path(
+    Integer => Integer,
+    mul(one(), f),
+    f
+  ) {
+    here(f)
+  }
+
+  /// The right unit law.
+  @[ checks ]
+  def unitR(f : Integer => Integer) -> Path(
+    Integer => Integer,
+    mul(f, one()),
+    f
+  ) {
+    here(f)
+  }
+}
+
+/// The included multiplication, run at the model: add one, then double.
+@[ runs("8") ]
+def composed() -> Integer {
+  run h <- Endo.mul(fn (n) { n + 1 }, fn (n) { n * 2 }) ;
+  h(3)
+}

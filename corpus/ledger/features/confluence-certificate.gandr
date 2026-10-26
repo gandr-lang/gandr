@@ -1,0 +1,45 @@
+/// `confluence-certificate`: Confluence as a certificate.
+/// Implemented: the overlap enumeration as a convex pre-critical-pair criterion and the coincidence verdict as a replayable certificate, a path from a critical pair's peak to its join in the presented type.
+/// Not implemented: the enumerator as the criterion over every rule block and the verdict as a certificate wherever a coincidence is decided; #525 owes it.
+// Rules that overlap are admitted when their critical pairs join (Knuth and
+// Bendix's completion; Baader and Nipkow, _Term Rewriting and All That_,
+// Cambridge University Press, 1998, § 6.2): zero a unit of addition on both
+// sides overlaps the recursion on the first argument at `add(Zero, Zero)` and
+// at `add(Succ(m), Zero)`, and both pairs rewrite to one term; associativity
+// overlaps itself, and its one pair joins too.
+
+/// The naturals with addition, zero stated a unit on both sides.
+@[ normalizes("add(Zero, Zero) ~> Zero") ]
+data NatUnits : Type {
+  Zero : NatUnits;
+  Succ : (n : NatUnits) --> NatUnits;
+  oper add(m : NatUnits, n : NatUnits) -> NatUnits;
+  rule add(Zero, n) <=> n;
+  rule add(m, Zero) <=> m;
+  rule add(Succ(m), n) <=> Succ(add(m, n));
+}
+
+/// Zero plus zero, where the two unit rules overlap.
+@[ runs("Zero") ]
+def zero_plus_zero() -> NatUnits { add(Zero, Zero) }
+
+/// One plus zero, where the right unit overlaps the recursion.
+@[ runs("Succ(Zero)") ]
+def one_plus_zero() -> NatUnits { add(Succ(Zero), Zero) }
+
+/// Two plus one, by the recursion alone.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def two_plus_one_overlapping() -> NatUnits { add(Succ(Succ(Zero)), Succ(Zero)) }
+
+/// A semigroup's one law: associativity overlaps itself at
+/// `mul(mul(mul(a, b), c), d)`, and both ways round reach `mul(a, mul(b,
+/// mul(c, d)))`. The rewrite at the peak matches the rule's `z` against a
+/// subterm holding the peak's own `z`, which stays the peak's (#654).
+@[ checks ]
+theory Semigroup {
+  sort S : Type;
+
+  oper mul : (x : S, y : S) --> S;
+
+  rule assoc : mul(mul(x, y), z) <=> mul(x, mul(y, z));
+}

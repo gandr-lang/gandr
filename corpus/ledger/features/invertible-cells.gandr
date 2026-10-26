@@ -1,0 +1,90 @@
+/// `invertible-cells`: Invertible cells between distinct points.
+/// Implemented: a free invertible cell at a point, its loop space the words over the cell and its inverse with the cancellations as rules (the circle).
+/// Not implemented: a cell between two distinct points, which would present a segment and is refused by name; #2712 owes it.
+// The circle as the book states it: one point, one loop at it, and the loops
+// at the point equivalent to the integers, `Path(Circle, Base, Base) ≃ Int`.
+// The loop is a free invertible cell at the point, so the paths from the
+// point to itself are the words over the loop and its inverse, with the two
+// cancellations as rules: the lowering mints them, and `Path(Circle, Base,
+// Base)` is that presented type. The integers are presented the same way, so
+// the winding number folds the words into them, spinning folds them back, and
+// both round trips are proved by induction over each presented type, with no
+// interval and nothing owed. `loop-space.gandr` states the same mechanism one
+// stratum down, on terms.
+//
+// The operations on paths are the book's own: `p then q`, `back(p)` and
+// `cong(f, p)` stand bare, in a body and in a type, each reading its path's
+// type off the words it acts on — the loop, a word, or another operation over
+// one — and `cong` its codomain off the function's written result. Nothing
+// here defines them or annotates them. The alternative, each operation
+// written where a path type is stated, repeats what the words already say.
+// Reversal: a cell between two distinct points, whose words spell neither
+// endpoint, would need its operations' path type written again.
+
+// The circle, the presented integers, the winding number and spinning with
+// their round trips.
+import "../../model/identity/circle-base.gandr" ;
+// The quasi-inverse made bi-invertible, which the equivalence is.
+import "../../model/identity/equivalence.gandr" ;
+
+/// The loop's word: one letter before the empty word.
+@[ runs("loop ∷ here(Base)") ]
+def once() -> Path(Circle, Base, Base) { loop }
+
+/// The inverse of the loop is the letter `back(loop)`, by conversion.
+@[ checks ]
+def unwound : Path(
+  Path(Circle, Base, Base),
+  back(loop),
+  back(loop) ∷ here(Base)
+) = here(back(loop) ∷ here(Base)) ;
+
+/// The loop then its inverse is the empty word: the minted cancellation, read
+/// by conversion.
+@[ checks ]
+def cancelled : Path(
+  Path(Circle, Base, Base),
+  loop then back(loop),
+  here(Base)
+) = here(here(Base)) ;
+
+/// Winding twice around and spinning the count back gives the word the
+/// composite is, by conversion.
+@[ checks ]
+def round : Path(
+  Path(Circle, Base, Base),
+  spin(wind(loop then loop)),
+  loop ∷ loop ∷ here(Base)
+) = here(loop ∷ loop ∷ here(Base)) ;
+
+/// The composite the round trip gives: the loop twice, by conversion.
+@[ checks ]
+def twice : Path(
+  Path(Circle, Base, Base),
+  loop then loop,
+  loop ∷ loop ∷ here(Base)
+) = here(loop ∷ loop ∷ here(Base)) ;
+
+/// Spinning two successors and winding the word counts two.
+@[ runs("S(S(Z))") ]
+def counted : () => Int = wind(spin(S(S(Z)))) ;
+
+/// The loops at the point and the presented integers are a quasi-inverse, by
+/// `wind` and `spin` with the two round trips at a variable, nothing owed.
+@[ checks ]
+def windingIso : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (sect, retr))) ;
+
+/// The loops at the point and the presented integers are equivalent: the
+/// book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made
+/// bi-invertible, `spin` serving as both inverses. A value is a record, never
+/// a call, so the equivalence is written as the record `isoToEquiv` builds.
+@[ checks ]
+def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr))) ;
+
+/// The equivalence is `isoToEquiv` at the quasi-inverse, by conversion.
+@[ checks ]
+def windingByIso : Path(
+  Path(Circle, Base, Base) ≃ Int,
+  winding,
+  isoToEquiv(Path(Circle, Base, Base), Int, windingIso)
+) = here(winding) ;

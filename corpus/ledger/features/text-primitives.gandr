@@ -1,0 +1,34 @@
+/// `text-primitives`: Text, pattern and path primitives.
+/// Implemented: `string.append`, interpolation `"…${ e }…"`, `string.eq` behind `EqString`, and `string.lt` behind `OrdString`, run on both executors.
+/// Not implemented: string escaping and scanning, regular-expression extraction and path primitives; #318 owes it.
+// One builtin of each namespace over its simplest values: negation, division
+// and remainder, a list's length and element, and string append, equality and
+// length. Each is reached by projection from its namespace, which the lowering
+// admits for the native primitives alone (#1170) and for no other builtin yet
+// (#1106), but where the definition's value is first a computation with no
+// stated type. Division, append and equality with their types stated check
+// and run.
+
+/// Integer division with its type stated, which checks; the namespace `int`
+/// qualifies the path, and the path answers for it (#1170).
+@[ checks ]
+def quotientOf(c : Integer) -> Integer {
+  run lead <- int.div(c, 64);
+  lead
+}
+
+/// Two strings appended with the type stated, which checks and runs: the
+/// first string's characters, then the second's.
+@[ runs("\"types are machines\"") ]
+def stated() -> String {
+  run joined <- string.append("types are ", "machines");
+  joined
+}
+
+/// Two strings compared with the type stated, which checks and runs: equal
+/// exactly when their bytes are, which these are not.
+@[ runs("+{.1 = unit}") ]
+def compared() -> Bool {
+  run equal <- string.eq("types are ", "machines");
+  equal
+}

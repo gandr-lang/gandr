@@ -1,4 +1,6 @@
-/// `constructor-namespacing`: a constructor is named by its family, `Family.Constructor`, in a pattern and in a value.
+/// `constructor-namespacing`: Constructor names namespaced by family.
+/// Implemented: a constructor named by its family, `Family.Constructor`, in a pattern and in a value, and bare where its name resolves to it.
+/// Not implemented: two data families sharing a constructor name in one source, and a bare name resolved by uniqueness among imports; #2713 owes it.
 @[ checks ]
 data Shape : Type {
   Dot : Shape;
