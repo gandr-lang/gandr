@@ -645,11 +645,14 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # `corpus` entry a path from the root (a
 # `::item` suffix naming a test inside it), an `exemplar` a file outside
 # `pathological/`, which holds refusals; every file under
-# `corpus/ledger/features/` is named by a row; and every implemented or
+# `corpus/ledger/features/` is named by a row; every implemented or
 # partial row outside the areas `exempt` lists, whose evidence is crate tests,
-# names an exemplar. Every finding is printed before the gate fails.
+# names an exemplar; and every implemented or partial row naming neither a
+# `corpus` witness nor an `exemplar` names in `issue` an open `kind:gap`
+# issue, the issue stating what the witness still needs (#2526), its state
+# read through `gh`. Every finding is printed before the gate fails.
 ["check:ledger"]
-description = "The features ledger round-trips, keeps its constraints, names paths that exist and an exemplar for every language feature"
+description = "The features ledger round-trips, keeps its constraints, names paths that exist, an exemplar for every language feature and a witness or an open gap for every implemented one"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -706,6 +709,21 @@ if [ -s "$tmp/unshown" ]; then
   cat "$tmp/unshown" >&2
   failed=1
 fi
+while IFS='|' read -r id issues; do
+  gap=
+  for number in $(grep -oE '(^| )#[0-9]+' <<< "$issues" | tr -d ' #'); do
+    state=$(gh issue view "$number" --json state,labels --jq '[.state, ([.labels[].name] | index("kind:gap") != null)] | @tsv') \
+      || { echo "$id: the state of #$number could not be read through gh" >&2; failed=1; continue; }
+    if [[ $state == $'OPEN\ttrue' ]]; then gap=$number; fi
+  done
+  if [[ -z $gap ]]; then
+    echo "$id: an implemented or partial row naming no corpus witness and no exemplar names no open kind:gap issue (issue: ${issues:-none}); name a witness, or file the gap stating what it needs" >&2
+    failed=1
+  fi
+done < <(sqlite3 -separator '|' "$db" "
+  SELECT id, coalesce(issue, '') FROM feature
+  WHERE status IN ('implemented', 'partial') AND coalesce(corpus, '') = '' AND exemplar IS NULL
+  ORDER BY id;")
 if (( failed )); then
   echo 'ledger check FAILED' >&2
   exit 1

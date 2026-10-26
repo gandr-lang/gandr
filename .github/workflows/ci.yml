@@ -648,6 +648,8 @@ jobs:
       contents: read
       packages: read
       actions: read
+      # `check:ledger` reads the state of a row's gap issue (#2526).
+      issues: read
     container: &ci-image ${{ needs.prepare.outputs.image }} # zizmor: ignore[unpinned-images]
     timeout-minutes: 30
     env:
@@ -764,6 +766,9 @@ jobs:
         run: mise run check:exemplars
       - name: check the features ledger
         if: *plain-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: mise run check:ledger
       - *upload-test-report
       - *prune-build-state
