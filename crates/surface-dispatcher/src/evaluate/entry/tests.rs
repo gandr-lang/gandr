@@ -25,7 +25,8 @@ use crate::evaluate::tests::program;
 
 /// The entry is the `main` the source run declares at its top level, with
 /// the arguments its type reads; a source with no `main`, and a module's
-/// member named `main`, have none (#1881).
+/// member named `main`, have none (#1881). A run target opening with `main`
+/// is no declaration of it (#2758).
 #[test]
 fn the_entry_is_the_main_of_the_source_run_1881()
 {
@@ -51,6 +52,13 @@ fn the_entry_is_the_main_of_the_source_run_1881()
         (
             "module Tool { def main() -> -F Integer { return 0 } }\n",
             Maybe::Absent(program_entry::Absent::Undeclared),
+        ),
+        (
+            "def main() -> -F Integer { return 0 }\nmain()\n",
+            Maybe::Present(Entry {
+                constant: ConstantIndex::from(0_usize),
+                arguments: Arguments::Unread,
+            }),
         ),
     ] {
         assert_eq!(program(source).entry(), wanted, "{source}");

@@ -29,7 +29,6 @@ use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringBudget;
-use gandr_surface_lowering::Role;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::lower_unit;
 use gandr_surface_lowering::namespace::Recognition;
@@ -298,17 +297,16 @@ pub fn unelaborated(
 /// - requires: both modules were lowered into `arena`, and `elaborated`, when
 ///   given, holds a checker's elaborations of the two.
 /// - ensures: [`Agreement::Unpaired`] unless the two hold as many declarations;
-///   else [`Agreement::Same`] exactly when each pair, in order, has one role
-///   and container, one name unless the role binds none (a held slot or a run
-///   target, named only by the text they open with), and outcomes of one kind
-///   whose types, bodies and data signatures are syntactically equal — evidence
-///   erased, no reduction — bodies that are not counting as equal where
-///   `elaborated` holds equal elaborations of both, whose seals agree but for
-///   their types' positions, and whose refusals are of one kind; else
-///   [`Agreement::Declarations`] with each of `before`'s declarations whose
-///   pair is not so, in order: the keys of the forms holding it, its name, its
-///   span in the source starting at `base`, and why — the refusal the rewritten
-///   declaration met, or that it lowered otherwise.
+///   else [`Agreement::Same`] exactly when each pair, in order, has one name,
+///   role and container and outcomes of one kind whose types, bodies and data
+///   signatures are syntactically equal — evidence erased, no reduction —
+///   bodies that are not counting as equal where `elaborated` holds equal
+///   elaborations of both, whose seals agree but for their types' positions,
+///   and whose refusals are of one kind; else [`Agreement::Declarations`] with
+///   each of `before`'s declarations whose pair is not so, in order: the keys
+///   of the forms holding it, its name, its span in the source starting at
+///   `base`, and why — the refusal the rewritten declaration met, or that it
+///   lowered otherwise.
 /// - provides: the check a rewrite's output passes.
 /// - fails: never.
 /// - panics: none.
@@ -354,9 +352,6 @@ pub fn agree(
             Some((Some(_) | None, _)) | None => false,
         }
     };
-    // A held slot and a run target declare no name: theirs is the text they
-    // open with, which a layout may respace.
-    let binds = |role: Role| !matches!(role, Role::Held | Role::RunTarget);
     let declared = before.declarations();
     let written = after.declarations();
     if declared.len() != written.len() {
@@ -367,7 +362,7 @@ pub fn agree(
         .zip(written)
         .enumerate()
         .filter(|&(position, (left, right))| {
-            (binds(left.role()) && left.name() != right.name())
+            left.name() != right.name()
                 || left.role() != right.role()
                 || left.container() != right.container()
                 || !match (left.outcome(), right.outcome()) {
