@@ -1,0 +1,43 @@
+// Structural equality derived from a declaration's levitated code (Chapman,
+// Dagand, McBride and Morris, _The Gentle Art of Levitation_, ICFP 2010,
+// doi:10.1145/1863543.1863547). `Nat`'s code is `1` for `Zero` and `var Nat`
+// for `Succ`; `Tagged`'s is one product of two fields, a builtin `Bool` and
+// `Nat`. `Eq.generic(T)` reads that code — the constructor table, the product
+// spine, a `var` as the recursion and each leaf at the type it names — into
+// closed core the checker judges as written and the kernel replays; the
+// derivation itself is never trusted. A family whose code takes a parameter,
+// or a mutual pair, is refused beside
+// `../../pathological/metaprograms/derive-eq-over-codes.gandr`.
+
+/// Unary naturals: a unit and a recursive occurrence.
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// A natural with a flag: one product whose leaves name a builtin and `Nat`.
+data Tagged : Type {
+  Tagged : (shown : Bool, count : Nat) --> Tagged;
+}
+
+/// Naturals compared constructor by constructor, recursing at `var Nat`.
+def eqNat = Eq.generic(Nat);
+
+/// Tagged naturals compared leaf by leaf, `count` by `Nat`'s equality.
+def eqTagged = Eq.generic(Tagged);
+
+/// Two is two.
+@[ runs("+{.0 = unit}") ]
+def sameNat() -> Bool { eqNat(Succ(Succ(Zero)), Succ(Succ(Zero))) }
+
+/// One is not two: the recursion reaches `Zero` on one side only.
+@[ runs("+{.1 = unit}") ]
+def shorterNat() -> Bool { eqNat(Succ(Zero), Succ(Succ(Zero))) }
+
+/// Two tagged naturals alike in both leaves.
+@[ runs("+{.0 = unit}") ]
+def sameTagged() -> Bool { eqTagged(Tagged(true, Succ(Zero)), Tagged(true, Succ(Zero))) }
+
+/// Two tagged naturals apart in their count alone.
+@[ runs("+{.1 = unit}") ]
+def recountedTagged() -> Bool { eqTagged(Tagged(true, Succ(Zero)), Tagged(true, Zero)) }

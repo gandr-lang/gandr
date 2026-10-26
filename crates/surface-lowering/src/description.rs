@@ -338,6 +338,9 @@ pub struct NativeFamily
     pub parameters: Vec<FamilyParameter>,
     /// Where each of its constructors is written, in declaration order.
     pub written: written::WrittenMembers,
+    /// The first field of each constructor its first-order code cannot
+    /// carry, in declaration order.
+    pub uncoded: Vec<DescriptionDiagnostic>,
 }
 
 /// A member-local refusal; siblings remain inspectable.
@@ -1282,6 +1285,7 @@ impl Reader<'_, '_>
                         constructors: generators,
                         ..written::WrittenMembers::default()
                     },
+                    uncoded,
                 })));
             }
             diagnostics.extend(uncoded);

@@ -9,7 +9,7 @@ CREATE TABLE concern(
   CHECK(instr(name || line, char(10)) = 0)
 ) WITHOUT ROWID;
 INSERT INTO concern VALUES('fork','Fork','Work split across a pool: the checker states the trait and a driver hands it a pool.','core-checker::fork::Fork','#1250');
-INSERT INTO concern VALUES('oracle','Oracle','A decision the kernel asks of a module that answers with evidence the kernel checks.',NULL,'#313');
+INSERT INTO concern VALUES('oracle','Oracle','A decision the kernel asks of a module that answers with evidence the kernel checks. A metaprogram stands as one: `Eq.generic`''s derived core is judged and readmitted as if written, so the derivation itself is never trusted.',NULL,'#313');
 INSERT INTO concern VALUES('sharing','Sharing','A descent datum: positions, a coverage of which positions share, a compatibility, a gluing done once, and a certificate the kernel replays.',NULL,'#2291');
 CREATE TABLE descent(
   mechanism     TEXT PRIMARY KEY CHECK(mechanism GLOB '[a-z]*' AND mechanism NOT GLOB '*[^a-z-]*'),

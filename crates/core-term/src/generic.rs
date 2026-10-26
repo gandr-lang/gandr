@@ -20,8 +20,13 @@
 //! applies that declaration's own derived equality, written in place. It is
 //! generic equality over a description's codes — the unit, products, sums
 //! and the recursive occurrence (Chapman, Dagand, `McBride` and Morris, *The
-//! Gentle Art of Levitation*, ICFP 2010, `doi:10.1145/1863543.1863547`) — read
-//! off the admitted signature instead of a code.
+//! Gentle Art of Levitation*, ICFP 2010, `doi:10.1145/1863543.1863547`) —
+//! read off each declaration's levitated code: the caller answers the
+//! constructor table the code decodes to, each constructor's product spine
+//! flattened into fields, a `var` of the family the recursion and each leaf
+//! interpreted at the type it names ([`crate::description::decode_ref`]), so a
+//! declaration the code cannot carry is refused, never derived from its
+//! admitted signature.
 //!
 //! The derivation is untrusted: the equality is an ordinary declaration the
 //! checker judges and the kernel readmits, its fixpoint typed by stages in
@@ -33,7 +38,9 @@
 //! `Eq.generic` is applied to; a presented declaration is a quotient, which
 //! structural equality does not respect; a field reading an earlier field, a
 //! cycle through two declarations and a recursive occurrence under a product
-//! or a sum each need a recursion the one structural fixpoint does not give.
+//! or a sum each need a recursion the one structural fixpoint does not give;
+//! a field whose type the code does not carry leaves the declaration no code
+//! to read.
 //!
 //! The equality's reflexivity and symmetry are [`law`]'s, the bodies of
 //! `Eq.generic.refl(T)` and `Eq.generic.sym(T)`.
@@ -85,7 +92,7 @@ use crate::primitive::PrimitiveType;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Uncovered
 {
-    /// The lookup answers no data signature at the position.
+    /// The lookup answers no data declaration at the position.
     Unknown(ConstantIndex),
     /// The declaration takes parameters or indices.
     Applied(ConstantIndex),
@@ -95,6 +102,9 @@ pub enum Uncovered
     Field(ConstantIndex, OccurrenceSite),
     /// A field's type reads a field before it.
     Dependent(ConstantIndex, OccurrenceSite),
+    /// A field's type is one the levitated code does not carry, so the
+    /// declaration has no code to read.
+    Uncoded(ConstantIndex, OccurrenceSite),
     /// A field reaches a declaration whose equality is being derived through
     /// another.
     Cycle(ConstantIndex, OccurrenceSite),
@@ -164,14 +174,18 @@ impl Derived
     }
 }
 
-/// The data signatures a derivation reads, by admission position.
-pub type Signatures<'lookup> = dyn Fn(ConstantIndex) -> Option<&'lookup DataSignature> + 'lookup;
+/// The constructor table a derivation reads of each data declaration, by
+/// admission position: the signature the declaration's levitated code decodes
+/// to, or why it has none.
+pub type Signatures<'lookup> =
+    dyn Fn(ConstantIndex) -> Result<&'lookup DataSignature, Uncovered> + 'lookup;
 
 /// Derive the equality of the closed, free data declaration at `position`.
 ///
 /// # Specification
-/// - requires: `signatures` answers the signature the lowering mints for each
-///   data declaration it reaches, `position` among them.
+/// - requires: `signatures` answers, for each data declaration the derivation
+///   reaches, `position` among them, the signature its levitated code decodes
+///   to, or the [`Uncovered`] naming why it has none.
 /// - ensures: the declared type `U (T → T → F Bool)` and the body the module
 ///   documentation states, minted into `arena`, each closed; its fixpoint
 ///   carries structural evidence.
@@ -529,8 +543,8 @@ impl Deriving<'_, '_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `position`'s fields filed by constructor, each closed.
-    /// - fails: [`Uncovered::Unknown`] with no signature,
-    ///   [`Uncovered::Applied`] with parameters or indices,
+    /// - fails: what the lookup answers for a declaration it holds no signature
+    ///   of, [`Uncovered::Applied`] with parameters or indices,
     ///   [`Uncovered::Presented`] with rules, and [`Uncovered::Dependent`] at
     ///   the first field reading one before it.
     /// - panics: none.
@@ -544,7 +558,7 @@ impl Deriving<'_, '_>
         position: ConstantIndex,
     ) -> Result<(), Uncovered>
     {
-        let signature = (self.signatures)(position).ok_or(Uncovered::Unknown(position))?;
+        let signature = (self.signatures)(position)?;
         if !signature.parameters().is_empty() || !signature.indices().is_empty() {
             return Err(Uncovered::Applied(position));
         }

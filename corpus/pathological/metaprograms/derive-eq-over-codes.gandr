@@ -1,0 +1,40 @@
+// Codes `Eq.generic` reads but derives no equality from yet (#2345). `List`'s
+// code is `1` for `Nil` and `field(a) × var List` for `Cons`: the leaf reads
+// the parameter, whose equality the derivation would need supplied. A `rec`
+// block's pair reads as two codes of one sort each, each naming the other in
+// a leaf rather than as a `var`, so the pair is a cycle through two
+// declarations, not one recursion; it needs a code of two sorts and one mutual
+// fixpoint over it.
+
+/// Lists over any element type.
+data List(a : Type) : Type {
+  Nil : List(a);
+  Cons : (x : a, xs : List(a)) --> List(a);
+}
+
+/// The even and odd naturals, each built from the other: two codes of one
+/// sort, each naming the other in a leaf.
+rec {
+  /// Even naturals, built from an odd one.
+  @[ checks ]
+  data Even : Type {
+    Nought : Even;
+    AfterOdd : (o : Odd) --> Even;
+  }
+
+  /// Odd naturals, built from an even one.
+  @[ checks ]
+  data Odd : Type {
+    AfterEven : (e : Even) --> Odd;
+  }
+}
+
+/// No equality for a code with a parameter, whose element equality the
+/// derivation would need supplied, yet (#2345).
+@[ refuses("GenericUncovered") ]
+def eqList = Eq.generic(List);
+
+/// No equality for a pair whose codes name each other, which needs a code of
+/// two sorts and one mutual fixpoint, yet (#2345).
+@[ refuses("GenericUncovered") ]
+def eqEven = Eq.generic(Even);

@@ -189,7 +189,8 @@ impl LoweringRefusal<'_>
                     | Uncovered::Cycle(..)
                     | Uncovered::Dependent(..)
                     | Uncovered::DependentCase(..)
-                    | Uncovered::Inductive(..),
+                    | Uncovered::Inductive(..)
+                    | Uncovered::Uncoded(..),
                 ..
             }
             | Self::GradedBridge { .. }
@@ -625,9 +626,11 @@ fn underived(fault: DeriveFault) -> FailureClass
 /// - ensures: a declaration with parameters or indices, a recursive occurrence
 ///   under a product or a sum, a cycle through two declarations, a dependent
 ///   field and a law's induction are unimplemented under the generic equality's
-///   issue, and a law's dependent case under the case motive's; a binder count
-///   past the ceiling is an engine fault; a field with no equality, a presented
-///   declaration and no declaration at all are malformed source.
+///   issue, a field whose type the levitated code does not carry under the
+///   code's type-shape issue, and a law's dependent case under the case
+///   motive's; a binder count past the ceiling is an engine fault; a field with
+///   no equality, a presented declaration and no declaration at all are
+///   malformed source.
 /// - provides: the lowering classifier's arm for `GenericUncovered`.
 /// - fails: never.
 /// - panics: none.
@@ -648,6 +651,7 @@ fn uncovered(fault: Uncovered) -> FailureClass
         | Uncovered::Dependent(..)
         | Uncovered::Inductive(..) => FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY),
         Uncovered::DependentCase(..) => FailureClass::Unimplemented(TrackingIssue::CASE_MOTIVE),
+        Uncovered::Uncoded(..) => FailureClass::Unimplemented(TrackingIssue::TYPE_SHAPE),
         Uncovered::BinderCeiling => FailureClass::EngineFault,
         Uncovered::Unknown(_) | Uncovered::Presented(_) | Uncovered::Field(..) => {
             FailureClass::MalformedSource
@@ -1531,6 +1535,10 @@ mod tests
             (
                 Uncovered::DependentCase(at, site),
                 FailureClass::Unimplemented(TrackingIssue::CASE_MOTIVE),
+            ),
+            (
+                Uncovered::Uncoded(at, site),
+                FailureClass::Unimplemented(TrackingIssue::TYPE_SHAPE),
             ),
             (Uncovered::BinderCeiling, FailureClass::EngineFault),
         ];

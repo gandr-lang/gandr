@@ -49,7 +49,9 @@ fn derived(
     signatures: &BTreeMap<ConstantIndex, DataSignature>,
 ) -> Result<super::Derived, Uncovered>
 {
-    equality(arena, position, &|at| signatures.get(&at))
+    equality(arena, position, &|at| {
+        signatures.get(&at).ok_or(Uncovered::Unknown(at))
+    })
 }
 
 /// More binders than any derivation opens: a value strengthening past them

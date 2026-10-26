@@ -45,6 +45,7 @@ use gandr_core_term::Transparency;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::generic::Uncovered;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::TraceLog;
 use gandr_kernel_core::EngineClaim;
@@ -2245,9 +2246,10 @@ fn derived_equalities_are_admitted_readmitted_and_decide_2302()
         .map(|(&constant, signature)| data(constant, signature.clone()))
         .collect();
     for (offset, &family) in signatures.keys().enumerate() {
-        let derived =
-            gandr_core_term::generic::equality(&mut arena, family, &|at| signatures.get(&at))
-                .expect("each declaration derives its equality");
+        let derived = gandr_core_term::generic::equality(&mut arena, family, &|at| {
+            signatures.get(&at).ok_or(Uncovered::Unknown(at))
+        })
+        .expect("each declaration derives its equality");
         declarations.push(definition(
             ConstantIndex::from(offset + 3),
             derived.declared(),
@@ -2358,7 +2360,9 @@ fn a_case_over_a_held_native_call_meets_the_derived_equality_binding_it_2378()
     let [point_at, equality_at, claim_at] = [0_usize, 1, 2].map(ConstantIndex::from);
     let signature = DataSignature::new(vec![], vec![vec![integer, integer]], kind);
     let derived = gandr_core_term::generic::equality(&mut arena, point_at, &|at| {
-        (at == point_at).then_some(&signature)
+        (at == point_at)
+            .then_some(&signature)
+            .ok_or(Uncovered::Unknown(at))
     })
     .expect("Point derives its equality");
 
@@ -2490,9 +2494,10 @@ fn derived_laws_are_admitted_and_readmitted_2302()
     }
     // The equalities, 6 and 7, then the laws.
     for &family in signatures.keys() {
-        let derived =
-            gandr_core_term::generic::equality(&mut arena, family, &|at| signatures.get(&at))
-                .expect("each declaration derives its equality");
+        let derived = gandr_core_term::generic::equality(&mut arena, family, &|at| {
+            signatures.get(&at).ok_or(Uncovered::Unknown(at))
+        })
+        .expect("each declaration derives its equality");
         let at = ConstantIndex::from(declarations.len());
         declarations.push(definition(at, derived.declared(), derived.body()));
     }
@@ -2501,7 +2506,7 @@ fn derived_laws_are_admitted_and_readmitted_2302()
             let derived = gandr_core_term::generic::law::law(
                 &mut arena,
                 family,
-                &|at| signatures.get(&at),
+                &|at| signatures.get(&at).ok_or(Uncovered::Unknown(at)),
                 statement,
                 &|base, statement| {
                     hosted
