@@ -14,8 +14,8 @@ use crate::report::Standing;
 use crate::report::TITLE_PREFIX;
 
 /// The labels a new issue is opened with: a defect of CI, which triage picks
-/// up.
-const LABELS: [&str; 2] = ["kind:defect", "area:ci"];
+/// up, kept by the guard as a collector.
+const LABELS: [&str; 3] = ["kind:defect", "area:ci", "collector"];
 
 /// An issue's number in the repository.
 #[repr(transparent)]
@@ -159,8 +159,9 @@ fn run(
 ///   permission to write issues.
 /// - ensures: when the comparison stands [`Standing::Dropped`], the open issue
 ///   whose title starts with [`TITLE_PREFIX`] carries its title and body,
-///   opened labelled `kind:defect` and `area:ci` if none was open; when it
-///   stands [`Standing::Steady`], no `gh` invocation runs.
+///   opened labelled `kind:defect`, `area:ci` and `collector` if none was open,
+///   and labelled `collector` when it was; when it stands [`Standing::Steady`],
+///   no `gh` invocation runs.
 /// - provides: one open drop issue per repository, never one per night; a
 ///   closed one is history and stays closed.
 /// - fails: [`GuardError::Gh`] when a `gh` invocation fails or the listing is
@@ -217,6 +218,8 @@ pub fn file(comparison: &Comparison) -> Result<Filed, GuardError>
                 &title,
                 "--body-file",
                 "-",
+                "--add-label",
+                "collector",
             ]),
             Feed::Body(comparison),
         )?;

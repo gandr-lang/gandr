@@ -15,6 +15,10 @@ use crate::report::RunId;
 use crate::report::Sample;
 use crate::report::Standing;
 
+/// The label marking the issue the report keeps: its body is the report, and
+/// it closes once every lane is within budget.
+const COLLECTOR: &str = "collector";
+
 /// The `gh api` route listing the CI workflow's runs.
 const RUNS: &str = "repos/{owner}/{repo}/actions/workflows/ci.yml/runs";
 
@@ -344,7 +348,8 @@ pub fn samples(run_id: RunId) -> Result<Vec<Sample>, BudgetError>
 /// - ensures: when the report is over, the issue with exactly that title,
 ///   opened if none exists and reopened if closed, holds the report as its
 ///   body; when it is within, an open such issue holds the report and is
-///   closed, and a closed or absent one is left alone.
+///   closed, and a closed or absent one is left alone. Every issue opened or
+///   edited carries [`COLLECTOR`].
 /// - provides: one issue per repository, never one per night.
 /// - fails: [`BudgetError::Gh`] when a `gh` invocation fails or the listing is
 ///   not the JSON this crate reads.
@@ -388,7 +393,15 @@ pub fn file(
     let found = issues.into_iter().find(|issue| issue.title == title.0);
     let edit = |number: u64| {
         run(
-            Command::new("gh").args(["issue", "edit", &number.to_string(), "--body-file", "-"]),
+            Command::new("gh").args([
+                "issue",
+                "edit",
+                &number.to_string(),
+                "--body-file",
+                "-",
+                "--add-label",
+                COLLECTOR,
+            ]),
             Feed::Body(report),
         )
     };
@@ -408,6 +421,8 @@ pub fn file(
                     &title.0,
                     "--body-file",
                     "-",
+                    "--label",
+                    COLLECTOR,
                 ]),
                 Feed::Body(report),
             )?;
