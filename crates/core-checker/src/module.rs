@@ -2628,7 +2628,7 @@ pub fn absorb(
         context
             .handled()
             .iter()
-            .map(|(&at, &handled)| (at, handled)),
+            .map(|(&at, handled)| (at, handled.clone())),
     );
     report.reflexivities.extend(
         context

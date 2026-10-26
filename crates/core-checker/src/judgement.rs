@@ -3411,9 +3411,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ))
         };
         let on_return = *on_return;
+        let level = level_of(self.context, TypeNode::Value(result))?;
         self.context.record_handled(at, crate::handler::Handled {
             subject: result,
             answer,
+            level,
         });
         let natural = self
             .context
@@ -3838,9 +3840,11 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 second: interface,
             });
         };
+        let level = level_of(self.context, TypeNode::Value(result))?;
         self.context.record_handled(at, crate::handler::Handled {
             subject: result,
             answer,
+            level,
         });
         let subject = self
             .context

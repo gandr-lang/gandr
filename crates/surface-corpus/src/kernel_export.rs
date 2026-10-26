@@ -2945,10 +2945,12 @@ mod kernel_effect_tree_readmission
     }
 }
 
-/// A deep handler of one operation readmits as the fold of its effect's free
-/// model, a data declaration the kernel admits ahead of the first handler of
-/// the effect; the kernel types the fold, so a twin whose model replies
-/// another type than the clauses resume with is refused by name.
+/// A deep handler readmits as the fold of its effect's free model, a data
+/// declaration the kernel admits ahead of the first handler of the effect,
+/// one constructor per operation, at the level of the universe the handled
+/// subject's result inhabits; the kernel types the fold, so a twin whose
+/// model replies another type than the clauses resume with is refused by
+/// name.
 mod kernel_effect_handler_readmission
 {
     use alloc::vec::Vec;
@@ -3056,6 +3058,161 @@ mod kernel_effect_handler_readmission
             matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
             "the kernel names the reply's type against the resumption's: {:?}",
             refusal.error()
+        );
+    }
+
+    #[test]
+    fn a_handler_of_several_operations_crosses_as_one_fold_2750()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/state-handler.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("state-handler lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("state-handler's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!("state-handler readmits, each handler a fold: {refusal:?}")
+        });
+        let named = |segments: &[&str]| {
+            let named = StructuredName::from(
+                segments
+                    .iter()
+                    .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
+                    .collect::<Vec<_>>(),
+            );
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+        };
+        let position = |segments: &[&str]| {
+            named(segments).unwrap_or_else(|| panic!("`{}` crossed", segments.join(".")))
+        };
+        // `constant` writes its clauses, and `answeredByPassing` hands each
+        // operation to `Passing`'s; both fold `State`'s one model.
+        for handler in ["constant", "answeredByPassing", "answeredFromZero"] {
+            assert!(
+                matches!(
+                    *declarations[position(&[handler])].declaration().content(),
+                    DeclarationContent::Def { .. }
+                ),
+                "`{handler}` crosses as a definition"
+            );
+        }
+        let model = position(&["effect", "free", "0"]);
+        assert!(model < position(&["constant"]));
+        assert_eq!(
+            named(&["effect", "free", "1"]),
+            None,
+            "the second handler of `State` folds the first's model"
+        );
+        let marked = &declarations[model];
+        let DeclarationContent::Data {
+            ref parameters,
+            ref constructors,
+            kind,
+            ..
+        } = *marked.declaration().content()
+        else {
+            panic!("`State`'s free model is a data declaration");
+        };
+        assert_eq!(
+            constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+            [1, 2, 2],
+            "`Return(x)`, then `get(p, k)` and `put(p, k)`"
+        );
+        let (parameters, mut constructors) = (parameters.clone(), constructors.clone());
+        // The twin's `get` continues from the unit, where `State` replies the
+        // integer state `constant`'s clause resumes with.
+        let Some(&ValueType::Thunk(continuation)) = arena.value_type(constructors[1][1])
+        else {
+            panic!("`get`'s continuation is a thunk");
+        };
+        let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(continuation)
+        else {
+            panic!("`get`'s continuation is a function of the reply");
+        };
+        let unit = arena.value_type_unit();
+        let forged = arena.comp_type_arrow(unit, codomain);
+        constructors[1][1] = arena.value_type_thunk(forged);
+        let twin_model = DeclarationBuilder::new(&mut arena)
+            .data(
+                marked.declaration().levels().clone(),
+                parameters,
+                constructors,
+                kind,
+            )
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[model] = MarkedDeclaration::new(marked.mark(), twin_model);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a clause resuming with an integer has no unit to give");
+        assert_eq!(usize::from(refusal.position()), position(&["constant"]));
+        assert!(
+            matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
+            "the kernel names the reply's type against the resumption's: {:?}",
+            refusal.error()
+        );
+    }
+
+    #[test]
+    fn a_handler_into_predicate_transformers_crosses_through_a_larger_model_2750()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/specification/state-wp.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("state-wp lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("state-wp's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        Environment::replay(decoded.arena().clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!("state-wp readmits, its observation a fold: {refusal:?}")
+        });
+        let position = |segments: &[&str]| {
+            let named = StructuredName::from(
+                segments
+                    .iter()
+                    .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
+                    .collect::<Vec<_>>(),
+            );
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{}` crossed", segments.join(".")))
+        };
+        assert!(
+            matches!(
+                *declarations[position(&["incrObserved"])]
+                    .declaration()
+                    .content(),
+                DeclarationContent::Def { .. }
+            ),
+            "`incrObserved` crosses as a definition"
+        );
+        // Its subject returns a predicate transformer, a type of types, so
+        // the model it folds stands above the smallest universe.
+        let model = position(&["effect", "free", "0"]);
+        assert!(model < position(&["incrObserved"]));
+        let DeclarationContent::Data { kind, .. } = *declarations[model].declaration().content()
+        else {
+            panic!("`StateLaws`'s free model is a data declaration");
+        };
+        assert!(
+            matches!(
+                decoded.arena().value_type(kind),
+                Some(ValueType::Universe { level, .. }) if !bool::from(level.is_zero())
+            ),
+            "the model stands above level zero: {:?}",
+            decoded.arena().value_type(kind)
         );
     }
 }
