@@ -2,4 +2,4 @@
 def later : +U (-F Integer);
 
 @[ runs("blame: `later` is owed its body") ]
-def main() -> -F Integer { become force later }
+def main() -> -F Integer { force later }

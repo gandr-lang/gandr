@@ -26,7 +26,7 @@ pub def rec spinWords(n : Int) -> Words {
 
 /// Two successors spin twice around.
 @[ runs("Loop(Loop(Nil))") ]
-def spun() -> Words { become spinWords(S(S(Z))) }
+def spun() -> Words { spinWords(S(S(Z))) }
 
 /// Conversion runs spinning at a closed word: two successors are two loops.
 def spun_twice : Path(Words, spinWords(S(S(Z))), Loop(Loop(Nil))) = here(Loop(Loop(Nil)));

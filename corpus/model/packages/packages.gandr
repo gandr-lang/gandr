@@ -10,7 +10,7 @@ def consume(p : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed :
   run r <- force m;
   run f <- r.read;
   run s <- r.seed;
-  become f(s)
+  f(s)
 }
 
 /// A counter over integers, packed.

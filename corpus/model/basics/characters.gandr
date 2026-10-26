@@ -22,7 +22,7 @@ def echo(c : Char) -> Char { c }
 
 /// A character passes through a function at `Char` unchanged.
 @[ runs("'z'") ]
-def echoed() -> Char { become echo('z') }
+def echoed() -> Char { echo('z') }
 
 /// A character is not a string.
 @[ refuses("TypeMismatch") ]

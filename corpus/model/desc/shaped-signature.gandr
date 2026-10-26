@@ -33,7 +33,7 @@ def rec faces(chain : Theory) -> Integer {
 @[ runs("6") ]
 def squareFaces() -> Integer { case Cells {
   Presents(sorts, opers, rules) => case sorts {
-    Shape(name, size, chain, rest) => become faces(chain),
+    Shape(name, size, chain, rest) => faces(chain),
     _ => 0
   },
   _ => 0

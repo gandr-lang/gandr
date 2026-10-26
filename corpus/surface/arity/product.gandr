@@ -42,4 +42,4 @@ def last(t : #{Integer, Integer, Integer}) -> -F Integer {
 }
 
 @[ runs("3") ]
-def picked() -> -F Integer { become last(#{1, 2, 3}) }
+def picked() -> -F Integer { last(#{1, 2, 3}) }

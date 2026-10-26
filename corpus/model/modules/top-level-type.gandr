@@ -17,7 +17,7 @@ pub def width(band : Band) -> Integer {
 
 /// The set's band is six tenths wide.
 @[ runs("600000") ]
-def setWidth() -> Integer { become width(setBand) }
+def setWidth() -> Integer { width(setBand) }
 
 /// A pair of one type, a synonym with a parameter.
 pub type Twice(a : Type) = a * a;

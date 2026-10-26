@@ -25,13 +25,13 @@ def whole : #{n : Integer, s : String};
 def whole = #{.s = "x", .n = 3};
 
 @[ runs("\"x\"") ]
-def named() -> -F String { become punned(#{.s = "x", .n = 3}) }
+def named() -> -F String { punned(#{.s = "x", .n = 3}) }
 
 @[ runs("3") ]
-def numbered() -> -F Integer { become renamed(#{n = 3, s = "x"}) }
+def numbered() -> -F Integer { renamed(#{n = 3, s = "x"}) }
 
 @[ runs("4") ]
-def widened() -> -F Integer { become renamed(#{.a = unit, .n = 4, .s = "y"}) }
+def widened() -> -F Integer { renamed(#{.a = unit, .n = 4, .s = "y"}) }
 
 /// A field selected by its label off a record no field depends on reads the
 /// field the pattern `#{.n = m}` reads (#855).
@@ -42,4 +42,4 @@ def selected(r : #{n : Integer, s : String}) -> -F Integer {
 
 /// `selected` answers the field its label names.
 @[ runs("3") ]
-def picked() -> -F Integer { become selected(#{.s = "x", .n = 3}) }
+def picked() -> -F Integer { selected(#{.s = "x", .n = 3}) }

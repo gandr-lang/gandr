@@ -10,4 +10,4 @@ def at_a_static_parameter = #{1, 2};
 def use(f : Type -> Type) -> -F Unit { return unit }
 
 @[ refuses("StaticLambdaArgument") ]
-def at_a_dynamic_parameter() -> -F Unit { become use(\X. #{X, X}) }
+def at_a_dynamic_parameter() -> -F Unit { use(\X. #{X, X}) }

@@ -7,8 +7,8 @@ pub def p = here(7);
 
 /// A path between two integers, reversed.
 def flip(a : Integer, b : Integer, q : Path(Integer, a, b)) -> Path(Integer, b, a) {
-  become back(q)
+  back(q)
 }
 
 /// Reflexivity at seven, reversed by a run.
-def flipped_here() -> Path(Integer, 7, 7) { become flip(7, 7, p) }
+def flipped_here() -> Path(Integer, 7, 7) { flip(7, 7, p) }

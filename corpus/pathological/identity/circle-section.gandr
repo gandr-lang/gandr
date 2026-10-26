@@ -59,8 +59,8 @@ def rec forged(p : Path(Circle, Base, Base)) -> Path(
 ) {
   case p {
     here => here(here(Base)),
-    loop ∷ q => become forged[<](q),
-    back(loop) ∷ q => { run ih <- forged[<](q); become cong(unloopOn, ih) }
+    loop ∷ q => forged[<](q),
+    back(loop) ∷ q => { run ih <- forged[<](q); cong(unloopOn, ih) }
   }
 }
 
@@ -73,7 +73,7 @@ def rec forged(p : Path(Circle, Base, Base)) -> Path(
 def rec rewound(p : Path(Circle, Base, Base)) -> Path(Path(Circle, Base, Base), p, p) {
   case p {
     here => here(here(Base)),
-    loop ∷ q => { run ih <- rewound[<](q); become cong(loopOn, ih) },
+    loop ∷ q => { run ih <- rewound[<](q); cong(loopOn, ih) },
     back(loop) ∷ q => here(back(loop) ∷ q)
   }
 }

@@ -46,7 +46,7 @@ def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> Path(
   bwdAlong(a, b, p, fwdAlong(a, b, p, x)),
   x
 ) {
-  become transport(
+  transport(
     (y : Type, z : Path(Type, a, y)) => Path(
       a,
       bwdAlong(a, y, z, fwdAlong(a, y, z, x)),
@@ -65,7 +65,7 @@ def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
   fwdAlong(a, b, p, bwdAlong(a, b, p, w)),
   w
 ) {
-  become transport(
+  transport(
     (y : Type, z : Path(Type, a, y)) => (w : y) => Path(
       y,
       fwdAlong(a, y, z, bwdAlong(a, y, z, w)),
@@ -85,7 +85,7 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
   y
 ) {
   run r <- retrAll(a, b, p);
-  become r(y)
+  r(y)
 }
 
 /// Transport along a path between types as the bi-invertible map: the book's

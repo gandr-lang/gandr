@@ -22,7 +22,7 @@ def useAtExtension(
   use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
   g : con
 ) -> -F Unit {
-  become use(extend(g), q(g))
+  use(extend(g), q(g))
 }
 
 /// The same with the family applied to a variable, which needs no call bound
@@ -35,7 +35,7 @@ def useAtVariable(
   use : +U ((g : con) -> (t : tm(g)) -> -F Unit),
   g : con
 ) -> -F Unit {
-  become use(g, q(g))
+  use(g, q(g))
 }
 
 /// The law of the first stated as a record's field: each later field's type

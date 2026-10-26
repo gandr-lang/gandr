@@ -95,7 +95,7 @@ def bump_elided(n : Nat) -> Nat { Succ(n) }
 
 /// The length of `small`.
 @[ runs("Succ(Succ(Zero))") ]
-def counted() -> Nat { become length_nat(small) }
+def counted() -> Nat { length_nat(small) }
 
 /// The length of `small`, the `return`s elided.
 @[ runs("Succ(Succ(Zero))") ]
@@ -104,7 +104,7 @@ def counted_elided : () => Nat = length_nat_elided(small);
 /// `small` with three appended at its head.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
 def joined() -> List(Nat) {
-  become append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat)))
+  append_nat(small, (Cons(three, (Nil : List(Nat))) : List(Nat)))
 }
 
 /// The same append, the `return`s elided.

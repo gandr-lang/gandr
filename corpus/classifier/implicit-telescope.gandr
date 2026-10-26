@@ -34,7 +34,7 @@ def firstSwapped() -> Integer { first[b = Unit, a = Integer](5, unit) }
 
 /// `first` with both implicits omitted, each determined by its own argument.
 @[ runs("5") ]
-def firstInferred() -> Integer { become first(5, unit) }
+def firstInferred() -> Integer { first(5, unit) }
 
 /// An implicit whose type names an explicit parameter written after it: the
 /// merge binds `t` first, so `x : t` reads it.
@@ -55,11 +55,11 @@ def keptRun() -> Integer { kept[a = Integer](0, 4) }
 /// `kept` with its implicit omitted: the stage binds no value, and the second
 /// argument determines `a`.
 @[ runs("4") ]
-def keptInferred() -> Integer { become kept(0, 4) }
+def keptInferred() -> Integer { kept(0, 4) }
 
 /// `same` called at a type the definition binds: the solution for `a` is the
 /// parameter `t`, which the call stands under.
-def sameAt(t : Type, y : t) -> t { become same(y) }
+def sameAt(t : Type, y : t) -> t { same(y) }
 
 /// A function taking a function of a type and a value of it, the result type
 /// of that function implicit.
@@ -68,7 +68,7 @@ pub def konst @[b : Type] (f : (t : Type, t) => b) -> Integer { 1 }
 /// `konst` with its implicit omitted: the lambda returns an integer under its
 /// own binders, and `b` is solved as `Integer`, which names none of them.
 @[ runs("1") ]
-def konstInferred() -> Integer { become konst(fn (t) { fn (y) { 0 } }) }
+def konstInferred() -> Integer { konst(fn (t) { fn (y) { 0 } }) }
 
 /// A function applied to the integer it is passed.
 def apply(f : Integer => Integer, x : Integer) -> Integer { f(x) }
@@ -80,7 +80,7 @@ def passedRun() -> Integer { apply(same[a = Integer], 3) }
 
 /// A function applied to a value of the type it is passed, the function
 /// implicit: its type names `t`, so the merge binds `t` before it.
-def applyAt @[g : t => t] (t : Type, v : t) -> t { become g(v) }
+def applyAt @[g : t => t] (t : Type, v : t) -> t { g(v) }
 
 /// `applyAt` passed as a value with `g` supplied: the supply opens a lambda
 /// for `t`, which `g`'s type names, and is a function of a type and a value
@@ -89,7 +89,7 @@ def identityAt : (t : Type, t) => t = applyAt[g = fn (y) { y }];
 
 /// `identityAt` at the integers.
 @[ runs("5") ]
-def identityRun() -> Integer { become identityAt(Integer, 5) }
+def identityRun() -> Integer { identityAt(Integer, 5) }
 
 /// The integers' addition, a member of a module.
 module Adding {

@@ -8,7 +8,7 @@ def inc(x : Integer) -> Integer {
 
 /// `inc` twice: the first call runs, the second is the tail call.
 def twice(x : Integer) -> Integer {
-  become inc(inc(x))
+  inc(inc(x))
 }
 
 /// A call nested in an argument, then sixteen calls each on what the last
@@ -31,7 +31,7 @@ def chained() -> Integer {
   run m <- inc(l);
   run n <- inc(m);
   run o <- inc(n);
-  become inc(inc(o))
+  inc(inc(o))
 }
 
 /// The run target calls `twice`.
