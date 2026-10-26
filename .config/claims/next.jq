@@ -8,7 +8,9 @@
 #   order    each open epic's sub-issues in the epic's order: {"<epic>": [number]}
 #
 # An issue is a candidate when it is unowned (no `status:claimed`), not ruled
-# out (`status:deferred`, `status:discarded`) and not an epic. The buckets, in
+# out (`status:deferred`, `status:discarded`), not an epic and not a
+# `collector`, whose rows a guard keeps and other issues work (#2621). The
+# buckets, in
 # order: a `kind:defect` in the area, then any `kind:defect`; a
 # `kind:performance`; a `kind:gap` in the area, cheapest first by its
 # `effort:` label (`easy`, `medium`, `hard`, `unknown`, then none); then a
@@ -18,7 +20,8 @@
 
 def has($label): .labels | index($label) != null;
 def candidate:
-  (has("status:claimed") or has("status:deferred") or has("status:discarded") or has("kind:epic")) | not;
+  (has("status:claimed") or has("status:deferred") or has("status:discarded") or has("kind:epic")
+    or has("collector")) | not;
 def effort:
   ["effort:easy", "effort:medium", "effort:hard", "effort:unknown"] as $ranks
   | [.labels[] as $l | $ranks | index($l) | values] | min // 4;

@@ -568,5 +568,55 @@
       }
     },
     "output": ""
+  },
+  {
+    "name": "#2621: a collector, the oldest defect in the area, is passed over for the next candidate",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 5,
+          "title": "a collector, the oldest defect in the area",
+          "labels": ["kind:defect", "area:workflow", "collector"],
+          "parent": null
+        },
+        {
+          "number": 9,
+          "title": "the next defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null
+        }
+      ],
+      "order": {}
+    },
+    "output": "9\tdefect\tthe next defect"
+  },
+  {
+    "name": "#2621: a board of collectors alone gives no claim",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 5,
+          "title": "issue 5",
+          "labels": ["kind:defect", "area:workflow", "collector"],
+          "parent": null
+        },
+        {
+          "number": 6,
+          "title": "issue 6",
+          "labels": ["kind:performance", "collector"],
+          "parent": null
+        },
+        {
+          "number": 7,
+          "title": "issue 7",
+          "labels": ["kind:gap", "area:workflow", "collector"],
+          "parent": null
+        }
+      ],
+      "order": {}
+    },
+    "output": ""
   }
 ]
