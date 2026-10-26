@@ -425,11 +425,12 @@ impl Reader<'_, '_>
     ///   it, and the description is the value's [`TheoryValue::description`] at
     ///   its faces' spans, with the circuits added. The included presentations
     ///   come first, in written order, each by [`TheoryParts::include`], with
-    ///   the inclusion kept beside the value and each included member's
-    ///   provenance its own block's. An `ext` member's generated operations and
-    ///   laws follow the written ones, each placed at the member's keyword. The
-    ///   stated laws are the included presentations' then the block's own, in
-    ///   written order.
+    ///   the inclusion kept beside the value; each included member keeps its
+    ///   own block's name tile and stands at the `include` member that brings
+    ///   it, where this block's refusal of it is placed. An `ext` member's
+    ///   generated operations and laws follow the written ones, each placed at
+    ///   the member's keyword. The stated laws are the included presentations'
+    ///   then the block's own, in written order.
     /// - fails: a malformed signature head refuses the whole declaration; an
     ///   `include` that names no visible block, names two, or whose members
     ///   clash with the presentation's, an `ext` member the block cannot
@@ -449,13 +450,16 @@ impl Reader<'_, '_>
     /// - hypothesis: L3 — a declined rule member between readable ones leaves
     ///   both neighbours read, and an unreadable member keeps its own report; a
     ///   block that includes another restricts along the inclusion to it, and
-    ///   an include of an unknown or clashing block is refused at the member;
-    ///   an extension generates the signature a hand-written block states.
+    ///   an include of an unknown or clashing block is refused at the member,
+    ///   as is an included member the including block refuses and the included
+    ///   one reads; an extension generates the signature a hand-written block
+    ///   states.
     /// - witness: `description::theory::tests::a_declined_rule_member_leaves_the_members_after_it_intact`
     /// - witness: `description::theory::tests::an_unreadable_member_keeps_its_own_report`
     /// - witness: `description::theory::tests::the_description_is_read_off_the_value`
     /// - witness: `description::theory::tests::an_included_theory_is_the_extension_restricted`
     /// - witness: `description::theory::tests::an_include_is_refused_at_its_member`
+    /// - witness: `description::theory::tests::an_included_member_is_refused_at_its_include_2752`
     /// - witness: `description::theory::tests::an_extension_generates_its_signature`
     /// - witness: `description::theory::tests::a_port_at_a_sort_nothing_declares_is_refused_2410`
     pub(super) fn signature(
@@ -528,31 +532,32 @@ impl Reader<'_, '_>
                     written.sorts.push(member.clone());
                 }
             }
-            for (((position, &tile), &whole), member) in inclusion
+            // An included member is refused, if at all, in this block, so its
+            // member span is the `include` that brings it; its name keeps its
+            // own block's tile.
+            for ((position, &tile), member) in inclusion
                 .operations
                 .iter()
                 .zip(&presented.placement.operations)
-                .zip(&declaration.operation_spans)
                 .zip(&declaration.written.operations)
             {
                 if usize::from(*position) >= read.operations {
                     scope.insert(self.text(tile), HeadKind::Operation);
                     placement.operations.push(tile);
-                    operation_spans.push(whole);
+                    operation_spans.push(span);
                     written.operations.push(member.clone());
                 }
             }
-            for (((position, &tile), &whole), sides) in inclusion
+            for ((position, &tile), sides) in inclusion
                 .rules
                 .iter()
                 .zip(&presented.placement.laws)
-                .zip(&presented.placement.faces)
                 .zip(&declaration.written.faces)
             {
                 if usize::from(*position) >= read.rules {
                     scope.insert(self.text(tile), HeadKind::Rewrite);
                     placement.laws.push(tile);
-                    placement.faces.push(whole);
+                    placement.faces.push(span);
                     written.faces.push(sides.clone());
                 }
             }
