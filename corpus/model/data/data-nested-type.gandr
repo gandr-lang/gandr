@@ -11,6 +11,6 @@ def sum_first() -> Integer {
   7
 }
 
-/// The run target calls `sum_first`.
+/// A call of `sum_first`.
 @[ runs("7") ]
-sum_first()
+def first_summed() -> Integer { sum_first() }

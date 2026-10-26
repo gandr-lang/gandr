@@ -1,5 +1,5 @@
-// Arithmetic over integers, numbers at a stated width, and a run target
-// returning a sum.
+// Arithmetic over integers, numbers at a stated width, and a definition
+// naming a sum.
 
 /// The operators' precedence groups `2 * 3` first. An operator is a
 /// computation, and a definition with no stated type reads its value where
@@ -15,7 +15,7 @@ def sized_atoms = (1u32, (2u64, (3i32, 4i64)));
 @[ refuses("OutOfFragment.typed_number") ]
 def floating_atoms = (1.5f32, 2.5f64);
 
-/// The run target returns the sum, whose definition is refused above, so it
-/// names a declaration whose type is not known.
+/// The sum, whose definition is refused above, so it names a declaration
+/// whose type is not known.
 @[ refuses("UnknownConstant") ]
-pure total
+def summed = total;

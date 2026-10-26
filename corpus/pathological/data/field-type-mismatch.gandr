@@ -1,6 +1,5 @@
 // A constructor's field is checked at the type its family's argument gives
-// it: `Some("hello")` is no `Maybe(Integer)`. The mismatch is written as the
-// run target.
+// it: `Some("hello")` is no `Maybe(Integer)`.
 
 /// An optional value of any type.
 data Maybe(a : Type) : Type {
@@ -10,4 +9,4 @@ data Maybe(a : Type) : Type {
 
 /// A string where an integer is expected.
 @[ refuses("TypeMismatch") ]
-(Some("hello") : Maybe(Integer))
+def held = (Some("hello") : Maybe(Integer));

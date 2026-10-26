@@ -4,6 +4,6 @@
 /// A record named `list`, with a field `each`.
 def list = #{each = 7};
 
-/// The run target reads the record's field `each`, not the builtin's member.
+/// The record's field `each`, not the builtin's member.
 @[ runs("7") ]
-list.each
+def each() -> Integer { list.each }

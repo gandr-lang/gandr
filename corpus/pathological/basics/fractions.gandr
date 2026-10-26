@@ -18,6 +18,6 @@ def single = 0.5f32;
 /// The annotated fraction checks.
 def stated = (0.2 : f64);
 
-/// The run target is the annotated fraction.
+/// The annotated fraction, named again.
 @[ runs("0.2f64") ]
-stated
+def shown = stated;

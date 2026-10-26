@@ -9,7 +9,7 @@ def base = #{name = "gandr", stars = 1};
 @[ refuses("OutOfFragment.projection_expression") ]
 def extended = record.insert(base, "kind", "language");
 
-/// The run target reads the inserted field back, through the `record`
-/// namespace's projection (#1106).
+/// The inserted field read back, through the `record` namespace's projection
+/// (#1106).
 @[ refuses("OutOfFragment.projection_expression") ]
-record.get(extended, "kind")
+def kind = record.get(extended, "kind");

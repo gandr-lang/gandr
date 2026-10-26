@@ -1,6 +1,6 @@
 // Hello, world: a program printing a line through `Console`, an effect the
-// host provides. Its handler is the runtime at the run target, writing each
-// line to standard output; a test runs the same program under a handler that
+// host provides. Its handler is the runtime at the entry, writing each line
+// to standard output; a test runs the same program under a handler that
 // keeps the lines. `gandr run hello.gandr` prints `hello, world!` and exits 0.
 
 /// The entry: it prints its greeting and returns the unit, which exits 0.
@@ -8,5 +8,3 @@
 def main() -> [Console] Unit {
   Console.print("hello, world!")
 }
-
-main()

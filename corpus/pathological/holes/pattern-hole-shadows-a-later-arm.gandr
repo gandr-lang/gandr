@@ -18,6 +18,6 @@ def classify(c : Color) -> Integer {
   }
 }
 
-/// The run target classifies `Blue`: it checks against `classify`'s
-/// signature, whose body is refused above, so it is not run.
-classify(Blue)
+/// `Blue` classified: it checks against `classify`'s signature, whose body is
+/// refused above, so it is not run.
+def blue() -> Integer { classify(Blue) }

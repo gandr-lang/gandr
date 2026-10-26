@@ -34,6 +34,6 @@ def chained() -> Integer {
   inc(inc(o))
 }
 
-/// The run target calls `twice`.
+/// A call of `twice`.
 @[ runs("42") ]
-twice(40)
+def answer() -> Integer { twice(40) }

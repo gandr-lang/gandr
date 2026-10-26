@@ -8,7 +8,7 @@ extern "c" from "testlib" {
   def gandr_test_strlen(s : CStr) -> u64;
 }
 
-/// The run target measures a string holding a NUL; the lowering reads no
-/// projection yet (#1106), and `testlib` is the extern block's (#327).
+/// A string holding a NUL, measured; the lowering reads no projection yet
+/// (#1106), and `testlib` is the extern block's (#327).
 @[ refuses("OutOfFragment.projection_expression") ]
-testlib.gandr_test_strlen("a\0b")
+def measured = testlib.gandr_test_strlen("a\0b");

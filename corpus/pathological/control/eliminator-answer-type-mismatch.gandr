@@ -5,4 +5,7 @@
 /// `-> -F String` written over integer arms: `1` is refused as no `String`
 /// (#2089).
 @[ refuses("TypeMismatch") ]
-if true -> -F String { pure 1 } else { pure 2 }
+def answered() -> String {
+  run s <- if true -> -F String { pure 1 } else { pure 2 };
+  pure s
+}

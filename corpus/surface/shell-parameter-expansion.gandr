@@ -1,7 +1,7 @@
 // Parameters in a shell block expand bare or braced, and stay verbatim inside
 // single quotes, each block read as written. Every block but the last stands
-// before another root form, a stray refused where it stands; the last is the
-// run target, which the lowering admits no shell block for yet (#1057).
+// before another root form, a stray refused where it stands; the last is a
+// definition's body, which the lowering admits no shell block for yet (#1057).
 
 /// A parameter and an escape inside single quotes, kept verbatim, a stray.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
@@ -11,7 +11,7 @@
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 #!{ echo $HOME ${HOME}; }
 
-/// Braced parameters joined to a word and to each other, the run target
+/// Braced parameters joined to a word and to each other, in a definition
 /// (#1057).
 @[ refuses("OutOfFragment.shell_block") ]
-#!{ echo ${prefix}_suffix ${x}${y}; }
+def joined() -> -F Unit { #!{ echo ${prefix}_suffix ${x}${y}; } }

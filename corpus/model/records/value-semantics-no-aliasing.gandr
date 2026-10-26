@@ -7,6 +7,6 @@ def r = #{x = 1, y = 2};
 /// `r` updated at `x`: a new record.
 def r2 = #{r | x = 9};
 
-/// The run target returns `r`, still at `x = 1`.
+/// `r`, still at `x = 1`.
 @[ runs("#{.x = 1, .y = 2}") ]
-r
+def original = r;

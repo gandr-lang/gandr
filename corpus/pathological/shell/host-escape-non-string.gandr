@@ -4,4 +4,4 @@
 
 /// An integer in a host escape (#1057).
 @[ refuses("OutOfFragment.shell_block") ]
-#!{ printf '%s' $(1); }
+def escaped() -> -F Unit { #!{ printf '%s' $(1); } }

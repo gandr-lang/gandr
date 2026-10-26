@@ -17,6 +17,6 @@ module Ordered : #{ third : Integer, first : Integer, second : Integer } {
   def third = second + 1;
 }
 
-/// The run target gathers the three in a record: it checks, each member typed
-/// by the signature, though the second and third are refused above.
-#{a = Ordered.first, b = Ordered.second, c = Ordered.third}
+/// The three gathered in a record: it checks, each member typed by the
+/// signature, though the second and third are refused above.
+def gathered = #{a = Ordered.first, b = Ordered.second, c = Ordered.third};

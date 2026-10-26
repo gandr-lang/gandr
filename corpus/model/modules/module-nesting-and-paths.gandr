@@ -36,7 +36,6 @@ def note = Config.limits.hard.detail.note;
 /// The soft limit, through a path of two names.
 def soft_limit = Config.limits.soft;
 
-/// The run target gathers the three in a record, spelled by its labels in
-/// order.
+/// The three gathered in a record, spelled by its labels in order.
 @[ runs("#{.hard = 100, .note = \"the innermost component\", .soft = 10}") ]
-#{hard = hard_limit, soft = soft_limit, note = note}
+def limits = #{hard = hard_limit, soft = soft_limit, note = note};

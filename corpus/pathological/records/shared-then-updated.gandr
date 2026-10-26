@@ -13,5 +13,5 @@ def b = r;
 /// The record updated at `x`: a new record, `a` and `b` untouched.
 def updated = #{r | x = 99};
 
-/// The run target returns the first name, its `x` still one.
-a
+/// The first name again, its `x` still one.
+def first = a;

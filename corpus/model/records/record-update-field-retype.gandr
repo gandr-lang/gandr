@@ -7,7 +7,7 @@ def cell = #{count = 3, label = "start"};
 /// `cell` with a string count, the retyped record stated.
 def named : #{count : String, label : String} = #{cell | count = "three"};
 
-/// The run target gives `count` a string: the record's `count` is the
-/// string now.
+/// `count` given a string and returned: the record's `count` is the string
+/// now.
 @[ runs("#{.count = \"three\", .label = \"start\"}") ]
-#{cell | count = "three"}
+def recounted() -> #{count : String, label : String} { #{cell | count = "three"} }

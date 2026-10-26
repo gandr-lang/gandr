@@ -19,7 +19,7 @@ def plus_two(x : Integer) -> -F Integer {
   return (x + 2)
 }
 
-/// The run target applies the function to the seed, both refused above, so
-/// it names a declaration whose type is not known.
+/// The function applied to the seed, both refused above, so it names a
+/// declaration whose type is not known.
 @[ refuses("UnknownConstant") ]
-plus_two(seed)
+def seeded() -> Integer { plus_two(seed) }

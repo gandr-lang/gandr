@@ -4,4 +4,4 @@
 
 /// A pipe between two commands (#1057).
 @[ refuses("OutOfFragment.shell_block") ]
-#!{ printf 'x' | cat; }
+def piped() -> -F Unit { #!{ printf 'x' | cat; } }

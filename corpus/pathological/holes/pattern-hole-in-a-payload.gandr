@@ -16,6 +16,6 @@ def describe(m : Maybe) -> Integer {
   }
 }
 
-/// The run target describes `Just(3)`: it checks against `describe`'s
-/// signature, whose body is refused above, so it is not run.
-describe(Just(3))
+/// `Just(3)` described: it checks against `describe`'s signature, whose body
+/// is refused above, so it is not run.
+def described() -> Integer { describe(Just(3)) }

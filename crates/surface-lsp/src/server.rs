@@ -9548,10 +9548,10 @@ mod tests
             changed("sums-and-case.gandr"),
             [
                 "def pick+2:4 `Inl` enumMember→unresolvedReference",
-                "pick+0:0 `pick` variable→function"
+                "def picked+0:26 `pick` variable→function"
             ],
             "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
-             the run target the lowering refuses still names `pick`, a function (#1265)"
+             the call of `pick` in the definition after it still names a function (#1265)"
         );
     }
 

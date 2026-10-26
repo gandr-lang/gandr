@@ -1,7 +1,7 @@
 // An eliminator that writes its answer, `if c -> C { … }` or `case e -> C {
 // … }`, answers it wherever it stands: the case is ascribed the answer, so a
-// computation a `run` binds and a source's run target, which state no type,
-// synthesise it, and each arm is checked against it (#2089). The rule is the
+// computation a `run` binds, which states no type, synthesises it, and each
+// arm is checked against it (#2089). The rule is the
 // annotation rule of bidirectional typing (Dunfield and Krishnaswami,
 // "Bidirectional Typing", ACM Computing Surveys 54(5), 2021, § 3: an
 // annotated term synthesises its annotation).
@@ -37,7 +37,10 @@ def valued() -> Integer {
   pure m
 }
 
-/// The run target, whose type nothing states: the conditional answers the
-/// type written after its condition.
+/// A conditional whose answer only the type written after its condition
+/// states, bound by a `run` that reads its type off it.
 @[ runs("1") ]
-if true -> -F Integer { pure 1 } else { pure 2 }
+def chosen() -> Integer {
+  run n <- if true -> -F Integer { pure 1 } else { pure 2 };
+  pure n
+}

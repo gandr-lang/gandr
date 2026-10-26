@@ -36,6 +36,6 @@ def total() -> Integer {
   return (a + b)
 }
 
-/// The run target calls `total`: it checks against `total`'s signature,
-/// whose body is refused above, so it is not run.
-total()
+/// A call of `total`: it checks against `total`'s signature, whose body is
+/// refused above, so it is not run.
+def totalled() -> Integer { total() }

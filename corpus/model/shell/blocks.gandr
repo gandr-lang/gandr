@@ -4,6 +4,8 @@
 
 /// `printf` handed one argument with spaces through a host escape (#1057).
 @[ refuses("OutOfFragment.shell_block") ]
-#!{
-  printf 'hello from the host\n<%s>\n' $("one argv with spaces");
+def greeted() -> -F Unit {
+  #!{
+    printf 'hello from the host\n<%s>\n' $("one argv with spaces");
+  }
 }
