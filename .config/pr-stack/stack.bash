@@ -24,15 +24,17 @@ stacking_current() {
 }
 
 # The open pull requests that land, drafts left out, as a JSON array of
-# `{number, head, base, created, landing, held, stack}`: `landing` when the
-# pull request is in the merge queue or set to enter it (auto-merge), so its
-# branch is about to be deleted and nothing new stacks on it (#1455); `held`
-# when it carries the `landing` label, a `pr:land` waiting to queue it
-# (#1556); `stack` the number of the linked stack holding it, or null (#1520).
+# `{number, head, base, created, landing, held, stack, bot}`: `landing` when
+# the pull request is in the merge queue or set to enter it (auto-merge), so
+# its branch is about to be deleted and nothing new stacks on it (#1455);
+# `held` when it carries the `landing` label, a `pr:land` waiting to queue it
+# (#1556); `stack` the number of the linked stack holding it, or null (#1520);
+# `bot` when an app such as Dependabot opened it, so nothing stacks on it
+# (#2550).
 open_prs() {
   gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" \
-    -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } } } } }' \
-    --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not) | {number, head: .headRefName, base: .baseRefName, created: .createdAt, landing: (.isInMergeQueue or .autoMergeRequest != null), held: any(.labels.nodes[]; .name == "landing"), stack: .stack.number}' \
+    -f query='query($owner: String!, $name: String!, $endCursor: String) { repository(owner: $owner, name: $name) { pullRequests(states: OPEN, first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { number headRefName baseRefName isDraft createdAt isInMergeQueue autoMergeRequest { enabledAt } labels(first: 50) { nodes { name } } stack { number } author { __typename } } } } }' \
+    --jq '.data.repository.pullRequests.nodes[] | select(.isDraft | not) | {number, head: .headRefName, base: .baseRefName, created: .createdAt, landing: (.isInMergeQueue or .autoMergeRequest != null), held: any(.labels.nodes[]; .name == "landing"), stack: .stack.number, bot: (.author.__typename == "Bot")}' \
     | jq -cs .
 }
 

@@ -122,6 +122,43 @@
     "output": "{\"number\":1262,\"head\":\"theory-solve\",\"depth\":1,\"held\":false,\"landing\":false}"
   },
   {
+    "name": "a pull request a bot opened is never the top: with only it open a new pull request opens on main (#2550)",
+    "program": "top.jq",
+    "args": { "own": "probe-kernel-boundary", "trunk": "main" },
+    "input": [
+      {
+        "number": 2508,
+        "head": "dependabot/cargo/cargo-0342038f58",
+        "base": "main",
+        "created": "2026-10-25T08:00:00Z",
+        "bot": true
+      }
+    ],
+    "output": "null"
+  },
+  {
+    "name": "beside a newer pull request a bot opened, the top is the agents' chain (#2550)",
+    "program": "top.jq",
+    "args": { "own": "probe-kernel-boundary", "trunk": "main" },
+    "input": [
+      {
+        "number": 2500,
+        "head": "theory-order",
+        "base": "main",
+        "created": "2026-10-24T20:00:00Z",
+        "bot": false
+      },
+      {
+        "number": 2508,
+        "head": "dependabot/cargo/cargo-0342038f58",
+        "base": "main",
+        "created": "2026-10-25T08:00:00Z",
+        "bot": true
+      }
+    ],
+    "output": "{\"number\":2500,\"head\":\"theory-order\",\"depth\":1,\"held\":false,\"landing\":false}"
+  },
+  {
     "name": "a stack in the merge queue with nothing else open is the top: a new pull request opens on its top, unlinked (#1983)",
     "program": "top.jq",
     "args": { "own": "witness-surface-driver", "trunk": "main" },
