@@ -1,6 +1,9 @@
 # One grouped pull request per ecosystem per week, for releases at least a
-# week old. CI skips dependabot's pull requests; the updates land through a
-# maintainer's pull request.
+# week old. CI skips dependabot's pull requests; one that needs no code
+# change is queued as it stands, and the merge group runs CI on it. Each
+# ecosystem's prefix is a commitlint type and scope, so the merge commit's
+# header passes the `PR title` check; a title over 72 characters is
+# shortened before it is queued.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -10,6 +13,8 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 2
+    commit-message:
+      prefix: build(repo)
     groups:
       cargo:
         patterns: ["*"]
@@ -20,6 +25,8 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 2
+    commit-message:
+      prefix: build(ci)
     groups:
-      github-actions:
+      actions:
         patterns: ["*"]
