@@ -1,9 +1,10 @@
 # What a landing queues of a stack, decided from the server, the only record
 # (#1264): the largest prefix that is ready (#1988), at most `cap` members
 # (#2046). The stack is read bottom up, and every member green on the trunk's
-# required contexts joins the prefix until the first that is red or pending,
-# or until the prefix holds `cap` members. The tail above becomes the next
-# stack, landed the moment its own bottom goes green.
+# required contexts and free of conflicts joins the prefix until the first
+# that is red, pending or conflicting (#2783), or until the prefix holds `cap`
+# members. The tail above becomes the next stack, landed the moment its own
+# bottom goes green.
 #
 # The merge queue merges a queued stack whole: it fits the stack into a merge
 # group only up to `max_entries_to_merge` and half again, and otherwise merges
@@ -25,9 +26,9 @@
 #   carried  the numbers of the pull requests outside the stack, queued on
 #            their own, whose branch the stack's top holds
 #            (`carried_queued`); absent reads as none;
-#   states   each member's required contexts outside the queue, from its
-#            number to `green`, `red` or `pending` (`required.jq`); a member
-#            not read is pending;
+#   states   each member's readiness, from its number to `green`, `red`,
+#            `pending` or `conflicting` (`state.jq`); a member not read is
+#            pending;
 #   cap      the most members one landing queues; absent or 0 reads as no
 #            cap.
 #
@@ -41,11 +42,12 @@
 #                              above it is not green; the next unit lands once
 #                              it merges;
 #   hold<TAB>N<TAB>STATE       nothing lands: the lowest member outside the
-#                              queue, #N, is red or pending;
+#                              queue, #N, is red, pending or conflicting;
 #   land<TAB>N                 queue the stack up to and including #N, its top;
 #   land<TAB>N<TAB>M<TAB>STATE queue the stack up to and including #N; #M
 #                              above it stays out, STATE being `red`,
-#                              `pending`, or `capped` when the unit is full.
+#                              `pending`, `conflicting`, or `capped` when the
+#                              unit is full.
 # A landing above queued members queues only the members outside the queue,
 # at most the cap less the queued ones.
 

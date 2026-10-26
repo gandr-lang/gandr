@@ -514,6 +514,73 @@
     "output": "hold\t1262\tred"
   },
   {
+    "name": "a stack with a conflicting middle lands its green root and names the conflicting member (#2783)",
+    "program": "prefix.jq",
+    "input": {
+      "server": [
+        {
+          "number": 2774,
+          "head": "surface"
+        },
+        {
+          "number": 2776,
+          "head": "corpus-2444"
+        },
+        {
+          "number": 2777,
+          "head": "corpus-2445"
+        }
+      ],
+      "queued": [],
+      "states": {
+        "2774": "green",
+        "2776": "conflicting",
+        "2777": "green"
+      }
+    },
+    "output": "land\t2774\t2776\tconflicting"
+  },
+  {
+    "name": "a member whose checks are green but which conflicts is conflicting, not green (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "CONFLICTING",
+      "failed": [],
+      "pending": []
+    },
+    "output": "conflicting"
+  },
+  {
+    "name": "a conflict is named before a red check: the rebase reruns the checks (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "CONFLICTING",
+      "failed": ["test (linux)"],
+      "pending": []
+    },
+    "output": "conflicting"
+  },
+  {
+    "name": "a mergeable member with a failed and a pending check is red (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "MERGEABLE",
+      "failed": ["test (linux)"],
+      "pending": ["lint"]
+    },
+    "output": "red"
+  },
+  {
+    "name": "a member whose mergeability GitHub is still computing is read by its checks (#2783)",
+    "program": "state.jq",
+    "input": {
+      "mergeable": "UNKNOWN",
+      "failed": [],
+      "pending": []
+    },
+    "output": "green"
+  },
+  {
     "name": "a member not read is pending, and holds the prefix there (#1988)",
     "program": "prefix.jq",
     "input": {

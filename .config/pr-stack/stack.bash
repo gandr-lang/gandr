@@ -414,19 +414,34 @@ queue_stack() {
 }
 
 # Pull request `$1`'s head read against the trunk's required contexts `$2`
-# (`required.jq`): `green` when every one passed, `red` when one failed,
-# `pending` otherwise.
+# (`required.jq`) and its mergeability (`state.jq`, #2783): `conflicting`
+# when it conflicts, else `green` when every context passed, `red` when one
+# failed, `pending` otherwise.
 required_state() {
-  gh pr view "$1" -R "$repo" --json statusCheckRollup --jq .statusCheckRollup \
+  local view
+  view=$(gh pr view "$1" -R "$repo" --json mergeable,statusCheckRollup)
+  jq -c .statusCheckRollup <<< "$view" \
     | jq -c --argjson required "$2" -f "$pr_stack_dir/required.jq" \
-    | jq -r 'if .failed != [] then "red" elif .pending != [] then "pending" else "green" end'
+    | jq -c --arg mergeable "$(jq -r .mergeable <<< "$view")" '. + {mergeable: $mergeable}' \
+    | jq -r -f "$pr_stack_dir/state.jq"
+}
+
+# Why stack member `$1`, in state `$2` (`state.jq`), cuts the prefix below
+# it: the words the landing prints after its number.
+cut_reason() {
+  case "$2" in
+    conflicting) echo "#$1 conflicts with $trunk: rebase it" ;;
+    red) echo "#$1's required checks are red" ;;
+    *) echo "#$1's required checks are $2" ;;
+  esac
 }
 
 # Queue the largest ready prefix of pull request `$1`'s stack (`prefix.jq`,
 # #1988), at most `queue_unit_cap` members (#2046). The members outside the
 # queue are read bottom up, and every one green on the trunk's required
-# contexts is queued, up to the first red or pending one, which is named and
-# where the reading stops, or up to the cap. A queued unit below the cap is
+# contexts and free of conflicts is queued, up to the first red, pending or
+# conflicting one (#2783), which is named with what cuts it and where the
+# reading stops, or up to the cap. A queued unit below the cap is
 # topped up the same way to the cap (#2096); one at the cap takes nothing
 # more. The tail above it is the next stack, landed the moment its own bottom
 # goes green. `pr:land` runs this from any member, and `pr:watch` the moment
@@ -475,7 +490,7 @@ land_prefix() {
       echo "#$upto is queued; the stack's next unit lands once it merges" >&2
       return 3
       ;;
-    hold) echo "nothing lands: #$upto is $stop, and the stack lands from it once it is green" >&2 ;;
+    hold) echo "nothing lands: $(cut_reason "$upto" "$stop"), and the stack lands from it once it is ready" >&2 ;;
     land)
       hold_landing "$(jq -c --argjson queued "$queued" --argjson upto "$upto" \
         '[.[].number | select(IN($queued[]) | not)] | .[: index($upto) + 1]' <<< "$server")"
@@ -486,7 +501,7 @@ land_prefix() {
         echo "queued the stack up to #$upto, a full unit; #$stop above it lands once the unit merges" >&2
         return 3
       fi
-      echo "queued the stack up to #$upto${stop:+; #$stop above it is $state, and the stack lands from it once it is green}" >&2
+      echo "queued the stack up to #$upto${stop:+; above it, $(cut_reason "$stop" "$state"), and the stack lands from it once it is ready}" >&2
       ;;
     *) echo "unexpected landing decision: $decision" >&2; return 2 ;;
   esac
