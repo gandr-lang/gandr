@@ -1,0 +1,545 @@
+// The null niche as a realizability predicate. A type's realisers are a
+// predicate on a word and a heap, `V⟦T⟧ : (Nat, Heap) => Type`; the heap is
+// data, the separating conjunction a sigma over a disjoint split and
+// points-to a singleton, so the normaliser computes every assertion and the
+// kernel replays every declaration here (Wagner, Eisbach and Ahmed,
+// "Realistic Realizability: Specifying ABIs You Can Count On", OOPSLA 2024,
+// doi:10.1145/3689755, § 4.2). `Option<&T>` is one word, null or a
+// reference; its realisers are equivalent at every heap to those of the
+// two-word tagged layout, and the marshallers between the two meet their
+// triples. A C function specified by hand, `deref_or`, is met by the niche;
+// its `_Nonnull` neighbour is refused, in
+// `../../pathological/specification/niche-realizability.gandr`.
+//
+// Words are `Nat`, null `Zero`, so a case on a word reduces; a triple is
+// `P(h) => wp(c, Q, h)`, and a pure marshaller's precondition is its
+// postcondition at its answer. Departing from § 4.2: both layouts are words
+// by value rather than objects behind a reference count, so there is no
+// `size` and no count; there is no later modality; and a triple is stated at
+// the heap it owns, with no frame rule over it. Where a realiser runs to
+// `emp(h)` the proofs case on the heap (#2832).
+
+// `Nat`.
+import "../data/data-base.gandr";
+
+// `Maybe`.
+import "../data/data-maybe.gandr";
+
+/// A heap: finitely many cells, each a location and the word it holds.
+pub data Heap : Type {
+  Emp : Heap;
+  Cell : (l : Nat, v : Nat, rest : Heap) --> Heap;
+}
+
+/// `yes` when the two words are one, `no` otherwise.
+def rec pick(a : Nat, b : Nat, yes : Maybe(Nat), no : Maybe(Nat)) -> Maybe(Nat) {
+  case a {
+    Zero => case b {
+      Zero => yes,
+      Succ(_q) => no
+    },
+    Succ(p) => case b {
+      Zero => no,
+      Succ(q) => pick[<](p, q, yes, no)
+    }
+  }
+}
+
+/// The word a heap holds at a location, the first cell naming it.
+def rec lookup(h : Heap, x : Nat) -> Maybe(Nat) {
+  case h {
+    Emp => None,
+    Cell(l, v, rest) => pick(l, x, Some(v), lookup[<](rest, x))
+  }
+}
+
+/// The empty heap.
+pub def emp(h : Heap) -> Type {
+  case h {
+    Emp => return Unit,
+    Cell(_l, _v, _rest) => return Void
+  }
+}
+
+/// The singleton heap holding `v` at `l`.
+pub def pointsTo(l : Nat, v : Nat, h : Heap) -> Type {
+  case h {
+    Emp => return Void,
+    Cell(m, w, rest) => return type(#{
+      loc : Path(Nat, m, l),
+      held : Path(Nat, w, v),
+      only : emp(rest)
+    })
+  }
+}
+
+/// One location read through a disjoint union: nothing on the left, and the
+/// union holds what the right part does; or a word on the left, the right
+/// part holding nothing there.
+def union(o : Maybe(Nat), o1 : Maybe(Nat), o2 : Maybe(Nat)) -> Type {
+  case o1 {
+    None => return type(Path(Maybe(Nat), o, o2)),
+    Some(v) => return type(#{
+      free : Path(Maybe(Nat), o2, (None : Maybe(Nat))),
+      held : Path(Maybe(Nat), o, (Some(v) : Maybe(Nat)))
+    })
+  }
+}
+
+/// The separating conjunction: a split of the heap into two disjoint parts,
+/// the first satisfying `p` and the second `q`.
+pub def star(p : Heap => Type, q : Heap => Type, h : Heap) -> Type {
+  return type(#{
+    h1 : Heap,
+    h2 : Heap,
+    split : (x : Nat) => union(lookup(h, x), lookup(h1, x), lookup(h2, x)),
+    left : p(h1),
+    right : q(h2)
+  })
+}
+
+/// The singleton heap at `l` holding `v`, as a predicate on heaps.
+pub def pointsToAt(l : Nat, v : Nat) -> Heap => Type {
+  return fn (h) { pointsTo(l, v, h) }
+}
+
+/// `T`'s realisers at the word `v`, as a predicate on heaps.
+pub def realisedAt(vt : (Nat, Heap) => Type, v : Nat) -> Heap => Type {
+  return fn (h) { vt(v, h) }
+}
+
+/// A reference to a `T`: a non-null word whose cell holds a realiser of `T`.
+pub def vRef(vt : (Nat, Heap) => Type, w : Nat, h : Heap) -> Type {
+  case w {
+    Zero => return Void,
+    Succ(_n) => return type(#{v : Nat, cell : star(pointsToAt(w, v), realisedAt(vt, v), h)})
+  }
+}
+
+/// The null niche: null, owning nothing, or a reference.
+pub def vOpt(vt : (Nat, Heap) => Type, w : Nat, h : Heap) -> Type {
+  case w {
+    Zero => emp(h),
+    Succ(_n) => vRef(vt, w, h)
+  }
+}
+
+/// Two words: a tag and a payload.
+pub data Tagged : Type {
+  Tag : (t : Nat, p : Nat) --> Tagged;
+}
+
+/// The tagged layout: tag zero with a null payload, owning nothing, or tag
+/// one with a reference.
+pub def vTag(vt : (Nat, Heap) => Type, r : Tagged, h : Heap) -> Type {
+  case r {
+    Tag(t, p) => case t {
+      Zero => case p {
+        Zero => emp(h),
+        Succ(_n) => return Void
+      },
+      Succ(s) => case s {
+        Zero => vRef(vt, p, h),
+        Succ(_n) => return Void
+      }
+    }
+  }
+}
+
+/// Marshal the niche to the tagged layout.
+pub def fromOpt(w : Nat) -> Tagged {
+  case w {
+    Zero => Tag(Zero, Zero),
+    Succ(_n) => Tag(Succ(Zero), w)
+  }
+}
+
+/// Marshal the tagged layout to the niche.
+pub def toOpt(r : Tagged) -> Nat {
+  case r {
+    Tag(t, p) => case t {
+      Zero => Zero,
+      Succ(_s) => p
+    }
+  }
+}
+
+/// `{V_opt(w)} fromOpt(w) {V_tag}`.
+def fromOptMeets(vt : (Nat, Heap) => Type, w : Nat, h : Heap) -> (vOpt(vt, w, h)) => vTag(
+  vt,
+  fromOpt(w),
+  h
+) {
+  case w {
+    Zero => case h {
+      Emp => return fn (e) { e },
+      Cell(_l, _v, _rest) => return fn (e) { e }
+    },
+    Succ(_n) => return fn (r) { r }
+  }
+}
+
+/// The tag-zero half of `toOptMeets`: a null payload owning nothing.
+def toOptNone(vt : (Nat, Heap) => Type, p : Nat, h : Heap) -> (vTag(vt, Tag(Zero, p), h)) => vOpt(
+  vt,
+  toOpt(Tag(Zero, p)),
+  h
+) {
+  case p {
+    Zero => case h {
+      Emp => return fn (e) { e },
+      Cell(_l, _v, _rest) => return fn (e) { e }
+    },
+    Succ(_n) => return fn (none) { case (none : Void) {} }
+  }
+}
+
+/// The tag-one half of `toOptMeets`: a reference, never null.
+def toOptSome(vt : (Nat, Heap) => Type, s : Nat, p : Nat, h : Heap) -> (vTag(
+  vt,
+  Tag(Succ(s), p),
+  h
+)) => vOpt(vt, toOpt(Tag(Succ(s), p)), h) {
+  case s {
+    Zero => case p {
+      Zero => return fn (none) { case (none : Void) {} },
+      Succ(_n) => return fn (q) { q }
+    },
+    Succ(_n) => return fn (none) { case (none : Void) {} }
+  }
+}
+
+/// `toOptMeets` at a written pair, by its tag.
+def toOptAt(vt : (Nat, Heap) => Type, t : Nat, p : Nat, h : Heap) -> vTag(
+  vt,
+  Tag(t, p),
+  h
+) => vOpt(vt, toOpt(Tag(t, p)), h) {
+  case t {
+    Zero => toOptNone(vt, p, h),
+    Succ(s) => toOptSome(vt, s, p, h)
+  }
+}
+
+/// `{V_tag(r)} toOpt(r) {V_opt}`.
+def toOptMeets(vt : (Nat, Heap) => Type, r : Tagged, h : Heap) -> vTag(vt, r, h) => vOpt(
+  vt,
+  toOpt(r),
+  h
+) {
+  case r {
+    Tag(t, p) => toOptAt(vt, t, p, h)
+  }
+}
+
+/// A niche realiser marshalled: the pair `fromOpt` answers, with the
+/// evidence `fromOptMeets` carries to it.
+def marshalled(vt : (Nat, Heap) => Type, h : Heap, w : Nat) -> (vOpt(vt, w, h)) => #{
+  r : Tagged,
+  ok : vTag(vt, r, h)
+} {
+  case w {
+    Zero => case h {
+      Emp => return fn (ok) {
+        run meets <- fromOptMeets(vt, Zero, Emp);
+        run e <- meets(ok);
+        return (Tag(Zero, Zero), e)
+      },
+      Cell(l, v, rest) => return fn (ok) {
+        run meets <- fromOptMeets(vt, Zero, Cell(l, v, rest));
+        run e <- meets(ok);
+        return (Tag(Zero, Zero), e)
+      }
+    },
+    Succ(n) => return fn (ok) {
+      run meets <- fromOptMeets(vt, Succ(n), h);
+      run e <- meets(ok);
+      return (Tag(Succ(Zero), Succ(n)), e)
+    }
+  }
+}
+
+/// The tag-zero half of `unmarshalled`: the null word.
+def unmarshalledNone(vt : (Nat, Heap) => Type, h : Heap, p : Nat) -> (vTag(
+  vt,
+  Tag(Zero, p),
+  h
+)) => #{w : Nat, ok : vOpt(vt, w, h)} {
+  case p {
+    Zero => case h {
+      Emp => return fn (ok) {
+        run meets <- toOptMeets(vt, Tag(Zero, Zero), Emp);
+        run e <- meets(ok);
+        return (Zero, e)
+      },
+      Cell(l, v, rest) => return fn (ok) {
+        run meets <- toOptMeets(vt, Tag(Zero, Zero), Cell(l, v, rest));
+        run e <- meets(ok);
+        return (Zero, e)
+      }
+    },
+    Succ(_n) => return fn (none) { case (none : Void) {} }
+  }
+}
+
+/// The tag-one half of `unmarshalled`: the reference itself.
+def unmarshalledSome(vt : (Nat, Heap) => Type, h : Heap, s : Nat, p : Nat) -> (vTag(
+  vt,
+  Tag(Succ(s), p),
+  h
+)) => #{w : Nat, ok : vOpt(vt, w, h)} {
+  case s {
+    Zero => case p {
+      Zero => return fn (none) { case (none : Void) {} },
+      Succ(n) => return fn (ok) {
+        run meets <- toOptMeets(vt, Tag(Succ(Zero), Succ(n)), h);
+        run e <- meets(ok);
+        return (Succ(n), e)
+      }
+    },
+    Succ(_n) => return fn (none) { case (none : Void) {} }
+  }
+}
+
+/// `unmarshalled` at a written pair, by its tag.
+def unmarshalledAt(vt : (Nat, Heap) => Type, h : Heap, t : Nat, p : Nat) -> vTag(
+  vt,
+  Tag(t, p),
+  h
+) => #{w : Nat, ok : vOpt(vt, w, h)} {
+  case t {
+    Zero => unmarshalledNone(vt, h, p),
+    Succ(s) => unmarshalledSome(vt, h, s, p)
+  }
+}
+
+/// A tagged realiser marshalled back: the word `toOpt` answers, with the
+/// evidence `toOptMeets` carries to it.
+def unmarshalled(vt : (Nat, Heap) => Type, h : Heap, r : Tagged) -> vTag(vt, r, h) => #{
+  w : Nat,
+  ok : vOpt(vt, w, h)
+} {
+  case r {
+    Tag(t, p) => unmarshalledAt(vt, h, t, p)
+  }
+}
+
+/// The niche layout's realisers to the tagged layout's.
+def toTagged(vt : (Nat, Heap) => Type, h : Heap, x : #{w : Nat, ok : vOpt(vt, w, h)}) -> #{
+  r : Tagged,
+  ok : vTag(vt, r, h)
+} {
+  case x {
+    #{w, ok} => {
+      run m <- marshalled(vt, h, w);
+      m(ok)
+    }
+  }
+}
+
+/// The tagged layout's realisers to the niche layout's.
+def fromTagged(vt : (Nat, Heap) => Type, h : Heap, y : #{r : Tagged, ok : vTag(vt, r, h)}) -> #{
+  w : Nat,
+  ok : vOpt(vt, w, h)
+} {
+  case y {
+    #{r, ok} => {
+      run u <- unmarshalled(vt, h, r);
+      u(ok)
+    }
+  }
+}
+
+/// A niche realiser marshalled and back is itself, at a word.
+def sectAt(vt : (Nat, Heap) => Type, h : Heap, w : Nat) -> (ok : vOpt(vt, w, h)) => Path(
+  #{w : Nat, ok : vOpt(vt, w, h)},
+  fromTagged(vt, h, toTagged(vt, h, (w, ok))),
+  (w, ok)
+) {
+  case w {
+    Zero => case h {
+      Emp => return fn (ok) { here((Zero, ok)) },
+      Cell(l, v, rest) => return fn (ok) { here((Zero, ok)) }
+    },
+    Succ(n) => return fn (ok) { here((Succ(n), ok)) }
+  }
+}
+
+/// A niche realiser marshalled and back is itself.
+def nicheSect(vt : (Nat, Heap) => Type, h : Heap, x : #{w : Nat, ok : vOpt(vt, w, h)}) -> Path(
+  #{w : Nat, ok : vOpt(vt, w, h)},
+  fromTagged(vt, h, toTagged(vt, h, x)),
+  x
+) {
+  case x {
+    #{w, ok} => {
+      run s <- sectAt(vt, h, w);
+      s(ok)
+    }
+  }
+}
+
+/// The tag-zero half of `retrTagged`.
+def retrNone(vt : (Nat, Heap) => Type, h : Heap, p : Nat) -> (ok : vTag(
+  vt,
+  Tag(Zero, p),
+  h
+)) => Path(
+  #{r : Tagged, ok : vTag(vt, r, h)},
+  toTagged(vt, h, fromTagged(vt, h, (Tag(Zero, p), ok))),
+  (Tag(Zero, p), ok)
+) {
+  case p {
+    Zero => case h {
+      Emp => return fn (ok) { here((Tag(Zero, Zero), ok)) },
+      Cell(l, v, rest) => return fn (ok) { here((Tag(Zero, Zero), ok)) }
+    },
+    Succ(_n) => return fn (none) { case (none : Void) {} }
+  }
+}
+
+/// The tag-one half of `retrTagged`.
+def retrSome(vt : (Nat, Heap) => Type, h : Heap, s : Nat, p : Nat) -> (ok : vTag(
+  vt,
+  Tag(Succ(s), p),
+  h
+)) => Path(
+  #{r : Tagged, ok : vTag(vt, r, h)},
+  toTagged(vt, h, fromTagged(vt, h, (Tag(Succ(s), p), ok))),
+  (Tag(Succ(s), p), ok)
+) {
+  case s {
+    Zero => case p {
+      Zero => return fn (none) { case (none : Void) {} },
+      Succ(n) => return fn (ok) { here((Tag(Succ(Zero), Succ(n)), ok)) }
+    },
+    Succ(_n) => return fn (none) { case (none : Void) {} }
+  }
+}
+
+/// `retrTagged` at a written pair, by its tag.
+def retrAt(vt : (Nat, Heap) => Type, h : Heap, t : Nat, p : Nat) -> (ok : vTag(
+  vt,
+  Tag(t, p),
+  h
+)) => Path(
+  #{r : Tagged, ok : vTag(vt, r, h)},
+  toTagged(vt, h, fromTagged(vt, h, (Tag(t, p), ok))),
+  (Tag(t, p), ok)
+) {
+  case t {
+    Zero => retrNone(vt, h, p),
+    Succ(s) => retrSome(vt, h, s, p)
+  }
+}
+
+/// A tagged realiser marshalled back and again is itself, at a pair.
+def retrTagged(vt : (Nat, Heap) => Type, h : Heap, r : Tagged) -> (ok : vTag(vt, r, h)) => Path(
+  #{r : Tagged, ok : vTag(vt, r, h)},
+  toTagged(vt, h, fromTagged(vt, h, (r, ok))),
+  (r, ok)
+) {
+  case r {
+    Tag(t, p) => retrAt(vt, h, t, p)
+  }
+}
+
+/// A tagged realiser marshalled back and again is itself.
+def taggedRetr(vt : (Nat, Heap) => Type, h : Heap, y : #{r : Tagged, ok : vTag(vt, r, h)}) -> Path(
+  #{r : Tagged, ok : vTag(vt, r, h)},
+  toTagged(vt, h, fromTagged(vt, h, y)),
+  y
+) {
+  case y {
+    #{r, ok} => {
+      run s <- retrTagged(vt, h, r);
+      s(ok)
+    }
+  }
+}
+
+/// The two layouts' realisers are isomorphic at every heap: the
+/// marshaller and its inverse, with both round trips.
+pub def nicheTagged(vt : (Nat, Heap) => Type, h : Heap) -> #{w : Nat, ok : vOpt(vt, w, h)} ≅ #{
+  r : Tagged,
+  ok : vTag(vt, r, h)
+} {
+  (
+    fn (x) { toTagged(vt, h, x) },
+    (
+      fn (y) { fromTagged(vt, h, y) },
+      (fn (x) { nicheSect(vt, h, x) }, fn (y) { taggedRetr(vt, h, y) })
+    )
+  )
+}
+
+/// The two layouts' realisers are equivalent at every heap, the
+/// quasi-inverse made bi-invertible as `isoToEquiv` makes it.
+pub def nicheTaggedEquiv(vt : (Nat, Heap) => Type, h : Heap) -> #{w : Nat, ok : vOpt(vt, w, h)} ≃ #{
+  r : Tagged,
+  ok : vTag(vt, r, h)
+} {
+  (
+    fn (x) { toTagged(vt, h, x) },
+    (
+      (fn (y) { fromTagged(vt, h, y) }, fn (x) { nicheSect(vt, h, x) }),
+      (fn (y) { fromTagged(vt, h, y) }, fn (y) { taggedRetr(vt, h, y) })
+    )
+  )
+}
+
+/// An unboxed integer: any word, owning nothing.
+pub def vInt(_v : Nat, h : Heap) -> Type {
+  emp(h)
+}
+
+/// The reference handed back: after the call, the niche at the word passed.
+pub def keptOpt(p : Nat, _r : Nat, h : Heap) -> Type {
+  vOpt(vInt, p, h)
+}
+
+/// `int deref_or(const int *_Nullable p, int d)`, specified by hand as the
+/// precondition it needs for a postcondition `q` on the word passed, the
+/// answer and the heap after: at null it answers `d` and touches nothing;
+/// otherwise `p` points to an int and it answers that int. That the C body
+/// meets this is assumed, not checked: `extern` declarations are not lowered
+/// (#327), so nothing here names the body.
+pub def derefOrWp(w : Nat, d : Nat, q : (Nat, Nat, Heap) => Type, h : Heap) -> Type {
+  case w {
+    Zero => q(w, d, h),
+    Succ(_n) => return type(#{
+      v : Nat,
+      cell : star(pointsToAt(w, v), realisedAt(vInt, v), h),
+      post : q(w, v, h)
+    })
+  }
+}
+
+/// The reference half of `derefOrMeets`: the cell the reference owns is the
+/// cell `deref_or` reads, and the reference is handed back.
+pub def derefOrSome(
+  n : Nat,
+  d : Nat,
+  h : Heap,
+  r : #{v : Nat, cell : star(pointsToAt(Succ(n), v), realisedAt(vInt, v), h)}
+) -> #{
+  v : Nat,
+  cell : star(pointsToAt(Succ(n), v), realisedAt(vInt, v), h),
+  post : keptOpt(Succ(n), v, h)
+} {
+  case r {
+    #{v, cell} => (v, (cell, r))
+  }
+}
+
+/// `Option<&int>` passed to `deref_or`: `{V_opt(w)} deref_or(w, d)
+/// {V_opt(w)}`, the reference handed back.
+pub def derefOrMeets(w : Nat, d : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefOrWp(w, d, keptOpt, h) {
+  case w {
+    Zero => case h {
+      Emp => return fn (e) { e },
+      Cell(_l, _v, _rest) => return fn (e) { e }
+    },
+    Succ(n) => return fn (r) { derefOrSome(n, d, h, r) }
+  }
+}

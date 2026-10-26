@@ -1,0 +1,37 @@
+// A C function whose pointer must not be null, bound to `Option<&int>`:
+// the niche's null owns nothing, and the function has no precondition
+// there, so the boundary check refuses the binding instead of a crash
+// finding it. The binding the niche meets is beside, in
+// `../../model/specification/niche-realizability.gandr`.
+
+// `Nat`.
+import "../../model/data/data-base.gandr";
+
+// `Heap`, the predicates and `derefOrSome`.
+import "../../model/specification/niche-realizability.gandr";
+
+/// `int deref(const int *_Nonnull p)`, specified by hand: no precondition
+/// at null; otherwise `p` points to an int and it answers that int.
+def derefWp(w : Nat, q : (Nat, Nat, Heap) => Type, h : Heap) -> Type {
+  case w {
+    Zero => return Void,
+    Succ(_n) => return type(#{
+      v : Nat,
+      cell : star(pointsToAt(w, v), realisedAt(vInt, v), h),
+      post : q(w, v, h)
+    })
+  }
+}
+
+/// `Option<&int>` passed to `deref`: at null and the empty heap the niche
+/// holds, and `deref` asks what no heap gives (#2555).
+@[ refuses("TypeMismatch") ]
+def derefMeets(w : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefWp(w, keptOpt, h) {
+  case w {
+    Zero => case h {
+      Emp => return fn (e) { e },
+      Cell(_l, _v, _rest) => return fn (e) { e }
+    },
+    Succ(n) => return fn (r) { derefOrSome(n, Zero, h, r) }
+  }
+}
