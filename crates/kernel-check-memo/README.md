@@ -24,7 +24,7 @@ The check-memo seam: a statically dispatched interface through which a checker s
 
 ## References
 
-- Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10, POPL, Article 53, January 2026. `doi:10.1145/3776695` — §6.3 describes process re-sharing by hash-consing, a memo this seam can carry.
+- `Courant-2026-lazy_concurrent_convertibility_checker` — background: Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10, POPL, Article 53, January 2026. `doi:10.1145/3776695` — §6.3 describes process re-sharing by hash-consing, a memo this seam can carry.
 
 ## Provided features
 

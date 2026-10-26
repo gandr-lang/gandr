@@ -1,0 +1,57 @@
+[
+  {
+    "name": "key lines in a module and its README, a locator in a key entry left to the entry, a legacy entry's locator read",
+    "files": {
+      "crates/demo-crate/src/lib.rs": "//! The crate.\n//!\n//! # References\n//!\n//! - `Courant-2026-lazy_concurrent_convertibility_checker` — background: §6.3's\n//!   re-sharing by hash-consing (`doi:10.1145/3776695`), a memo this seam carries.\n//! - Paul Blain Levy. \"Call-by-Push-Value.\" 1999. `doi:10.1007/3-540-48959-2_17` — the\n//!   value/computation split, preprint arXiv:1507.01234v2.\npub mod memo;\n",
+      "crates/demo-crate/README.md": "# demo-crate\n\n## References\n\n- `Courant-2026-lazy_concurrent_convertibility_checker` — background: Nathanaëlle Courant and Xavier Leroy. \"A Lazy, Concurrent Convertibility Checker.\" POPL 2026. `doi:10.1145/3776695` — §6.3.\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tCourant-2026-lazy_concurrent_convertibility_checker\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:5",
+      "locator\tdoi:10.1007/3-540-48959-2_17\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:7",
+      "locator\tarXiv:1507.01234\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:8",
+      "mirror\tCourant-2026-lazy_concurrent_convertibility_checker\tdemo-crate\t\tbackground\tcrates/demo-crate/README.md:5"
+    ]
+  },
+  {
+    "name": "a key line without a role, a locator for a key and a malformed vault key are refused; a vault key with its uuid is read",
+    "files": {
+      "crates/demo-crate/src/memo.rs": "//! The memo.\n//!\n//! # References\n//!\n//! - `Maillard-2019-dijkstra_monads_all` — the monads.\n//! - `doi:10.1145/3776695` — background: a locator.\n//! - `vault:01A16C8C-a658-7c31-8c33-b2e2142c0b73` — lineage: the page.\n//! - `vault:01a16c8c-a658-7c31-8c33-b2e2142c0b73` — lineage: the page that names the design.\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs",
+      "refused\ta References line gives its key a role and what it decides: - `Maillard-2019-dijkstra_monads_all` — <exemplar|lineage|background>: <what it decides>\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:5",
+      "refused\ta key is the library's citation key or `vault:<uuid>`, never a locator: the locator belongs in the README's entry\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:6",
+      "refused\ta vault key is `vault:` and the page's `mint:` uuid, in lower case\tdemo-crate\tmemo\t\tcrates/demo-crate/src/memo.rs:7",
+      "cite\tvault:01a16c8c-a658-7c31-8c33-b2e2142c0b73\tdemo-crate\tmemo\tlineage\tcrates/demo-crate/src/memo.rs:8"
+    ]
+  },
+  {
+    "name": "modules by path, item docs read, plain comments and a heading below code not a References section",
+    "files": {
+      "crates/demo-crate/src/a/mod.rs": "/// See https://doi.org/10.1016/1385-7258(72)90034-0).\npub fn f() {}\n//// arXiv:2401.00001 in a plain comment\n// doi:10.1000/plain\n",
+      "crates/demo-crate/src/a/b.rs": "//! # References\n//!\n//! - `Kept-2020-key` — exemplar: the construction.\nuse x;\n//! - `Lost-2020-key` — exemplar: after code, outside the section.\n",
+      "crates/demo-crate/src/main.rs": "//! [doi:10.2168/LMCS-11(4:3)2015](https://doi.org/10.2168/LMCS-11(4:3)2015). Also 10.48550/arXiv.2601.08071v3 and arxiv.org/abs/math/0601001.\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\ta\t\tcrates/demo-crate/src/a/mod.rs",
+      "locator\tdoi:10.1016/1385-7258(72)90034-0\tdemo-crate\ta\tbackground\tcrates/demo-crate/src/a/mod.rs:1",
+      "file\t\tdemo-crate\ta::b\t\tcrates/demo-crate/src/a/b.rs",
+      "cite\tKept-2020-key\tdemo-crate\ta::b\texemplar\tcrates/demo-crate/src/a/b.rs:3",
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/main.rs",
+      "locator\tdoi:10.2168/lmcs-11(4:3)2015\tdemo-crate\t\tbackground\tcrates/demo-crate/src/main.rs:1",
+      "locator\tarXiv:2601.08071\tdemo-crate\t\tbackground\tcrates/demo-crate/src/main.rs:1",
+      "locator\tarXiv:math/0601001\tdemo-crate\t\tbackground\tcrates/demo-crate/src/main.rs:1"
+    ]
+  },
+  {
+    "name": "a README's code fence is not documentation, and a References entry ends at a blank line",
+    "files": {
+      "crates/demo-crate/README.md": "# demo-crate\n\n```text\ndoi:10.9999/fenced\n```\n\n## References\n\n- `Key-2021-one` — lineage: the line\n  continued, doi:10.1111/continued.\n\nA paragraph, doi:10.2222/after.\n\n## Examples\n\n- `Key-2021-two` — lineage: not a reference.\n"
+    },
+    "output": [
+      "mirror\tKey-2021-one\tdemo-crate\t\tlineage\tcrates/demo-crate/README.md:9",
+      "locator\tdoi:10.2222/after\tdemo-crate\t\tbackground\tcrates/demo-crate/README.md:12"
+    ]
+  }
+]

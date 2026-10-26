@@ -97,7 +97,9 @@
 //!
 //! # References
 //!
-//! The paper the crate draws on is in its `README.md`, § References.
+//! - `Courant-2026-lazy_concurrent_convertibility_checker` — background: §6.3
+//!   re-shares duplicated convertibility processes by hash-consing their
+//!   channels, a memo this seam can carry.
 #![no_std]
 
 extern crate alloc;

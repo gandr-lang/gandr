@@ -1013,6 +1013,107 @@ fi
 echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, crates rowed: ${#rowed[@]}; every public item of a rowed crate has its row, every row names an entry, every concern tag is a key"
 {% endraw %}'''
 
+# The references ledger (`ledger/references.sql`) is what `ledger:references`
+# writes from the crates' documentation, and the documentation keeps its
+# shape: a key line names a library citation key, or `vault:` and a vault
+# page's `mint:` uuid, with its role; a key has one role at a site; and a
+# crate's README lists under `## References` exactly the keys its modules
+# cite. When `$XDG_CONFIG_HOME/gandr/references` names the library's BibTeX
+# file (`library <path>`) and the vault's checkout (`vault <path>`), each key
+# must be a citation key there or a page's `mint:`; without it, a key is read
+# for its shape alone. A site whose source has changed since its last reading
+# is reported stale, never refused. Each case in
+# `.config/references/cases.json` holds sources and the lines `cites.awk`
+# prints for them. Every finding is printed before the gate fails.
+["check:references"]
+description = "The references ledger is the crates' citations, each key line keyed and given its role, each README listing its crate's keys"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+root=$PWD
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+failed=0
+while IFS= read -r case; do
+  dir=$(mktemp -d "$fresh/case.XXXXXX")
+  mapfile -t paths < <(jq -r '.files | keys_unsorted[]' <<< "$case")
+  for path in "${paths[@]}"; do
+    mkdir -p "$dir/$(dirname "$path")"
+    jq -j --arg path "$path" '.files[$path]' <<< "$case" > "$dir/$path"
+  done
+  got=$(cd "$dir" && LC_ALL=C awk -f "$root/.config/references/cites.awk" "${paths[@]}")
+  if [[ "$got" != "$(jq -r '.output | join("\n")' <<< "$case")" ]]; then
+    printf 'references citation case FAILED: %s\n  gave:\n%s\n' "$(jq -r .name <<< "$case")" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/references/cases.json)
+db=$fresh/references.db
+references_load "$db"
+references_fresh "$db"
+sqlite3 "$fresh/fresh.db" .dump > "$fresh/references.sql"
+if ! cmp -s "$fresh/references.sql" ledger/references.sql; then
+  diff -u ledger/references.sql "$fresh/references.sql" >&2 || true
+  echo 'ledger/references.sql is not the citations the documentation makes; write it with `mise run ledger:references`' >&2
+  failed=1
+fi
+config=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/references
+resolved='for their shape alone: no library and no vault are configured'
+unresolved=
+if [[ -f $config ]]; then
+  library=$(awk '$1 == "library" { sub(/^library[[:space:]]+/, ""); print }' "$config")
+  vault=$(awk '$1 == "vault" { sub(/^vault[[:space:]]+/, ""); print }' "$config")
+  if [[ -f $library && -d $vault ]]; then
+    {
+      LC_ALL=C awk 'match($0, /^@[A-Za-z]+\{[^,]+,/) { open = index($0, "{"); print substr($0, open + 1, RLENGTH - open - 1) }' "$library"
+      git -C "$vault" grep -hoE 'mint: [0-9a-f-]{36}' -- '*.md' | awk '{ print "vault:" $2 }'
+    } > "$fresh/known"
+    sqlite3 -bail -tabs "$db" 'CREATE TABLE known(key TEXT);' ".import $fresh/known known"
+    resolved='against the library and the vault $XDG_CONFIG_HOME/gandr/references names'
+    unresolved="UNION ALL
+SELECT min(location) || ': \`' || key || '\` is no citation key of the library and no vault page''s \`mint:\`; cite the source by its library key, or the page by \`vault:\` and its \`mint:\`'
+FROM cite WHERE kind IN ('cite', 'mirror') AND key NOT IN (SELECT key FROM known) GROUP BY key"
+  else
+    echo "$config names no library file and vault checkout that exist: write \`library <BibTeX file>\` and \`vault <checkout>\`, one a line" >&2
+    failed=1
+  fi
+fi
+findings=$(sqlite3 -bail "$db" "
+WITH cited(crate, key, location) AS (SELECT crate, key, min(location) FROM cite WHERE kind = 'cite' GROUP BY crate, key),
+listed(crate, key, location) AS (SELECT crate, key, min(location) FROM cite WHERE kind = 'mirror' GROUP BY crate, key)
+SELECT location || ': ' || key FROM cite WHERE kind = 'refused'
+UNION ALL
+SELECT min(location) || ': \`' || key || '\` is cited as ' || group_concat(DISTINCT role) || ' at one site; give it one role there'
+FROM cite WHERE kind = 'cite' GROUP BY key, crate, module HAVING count(DISTINCT role) > 1
+UNION ALL
+SELECT 'crates/' || c.crate || '/README.md: \`## References\` lacks \`' || c.key || '\`, which ' || c.location || ' cites; add - \`' || c.key || '\` — <role>: <authors, title, venue, date, identifier, and what the crate takes from it>'
+FROM cited c WHERE NOT EXISTS (SELECT 1 FROM listed l WHERE (l.crate, l.key) = (c.crate, c.key))
+UNION ALL
+SELECT l.location || ': \`## References\` lists \`' || l.key || '\`, which no module of ' || l.crate || ' cites; cite it in the \`# References\` of the module it decides something for, or delete the entry'
+FROM listed l WHERE NOT EXISTS (SELECT 1 FROM cited c WHERE (c.crate, c.key) = (l.crate, l.key))
+$unresolved;")
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+sqlite3 -bail "$db" "
+SELECT s.shown || ': \`' || r.key || '\` was read on ' || r.read_date || ' at ' || substr(r.read_commit, 1, 12) || ', and ' || s.path || ' has changed since; read it again against the change, then run \`mise run refs:read ' || s.shown || ' ' || r.key || '\`'
+FROM reference r JOIN source s USING (crate, module)
+WHERE r.read_blob <> s.blob
+ORDER BY s.shown, r.key;"
+if (( failed )); then
+  echo 'references check FAILED' >&2
+  exit 1
+fi
+echo "references check OK: $(sqlite3 "$db" "
+SELECT count(*) || ' rows, ' || count(DISTINCT key) || ' sources at ' || count(DISTINCT crate || ' ' || module) || ' sites in ' || count(DISTINCT crate) || ' crates; '
+  || count(*) FILTER (WHERE key NOT GLOB 'doi:*' AND key NOT GLOB 'arXiv:*') || ' by key, the rest by locator; '
+  || count(*) FILTER (WHERE read_blob IS NOT NULL) || ' read, '
+  || (SELECT count(*) FROM reference r JOIN source s USING (crate, module) WHERE r.read_blob <> s.blob) || ' of them stale'
+FROM reference;"); keys read $resolved"
+{% endraw %}'''
+
 # The stacking rule's readings (#1264): `chain.jq` reads a pull request's
 # stack from the open pull requests, `top.jq` the top a new one stacks on,
 # `prefix.jq` what a landing queues (#1988), and `sweep.jq` which worktrees

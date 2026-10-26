@@ -144,6 +144,108 @@ sqlite3 -bail -header -separator $'\t' "$db" "
   ORDER BY e.crate, e.path, e.kind;"
 '''
 
+# The references ledger, `ledger/references.sql`, is the crates'
+# documentation read by `.config/references/cites.awk`: one row per source a
+# module cites, by a key line of its `# References` or by a DOI or arXiv
+# locator, its README's at the crate root. This task rewrites the file from
+# the tree, each row keeping its committed reading, as `sqlite3`'s own dump.
+# `check:references` fails while the file is not what this task writes.
+["ledger:references"]
+description = "Write ledger/references.sql from the citations in the crates' documentation"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+references_load "$fresh/references.db"
+references_fresh "$fresh/references.db"
+sqlite3 "$fresh/fresh.db" .dump > ledger/references.sql
+'''
+
+# Each row of `ledger/references.sql`, of the named crate or of every crate:
+# one tab-separated line per source and site under a header, its status
+# `unread` until the site is read, then `current` while the module's source
+# is the blob it was read against, `stale` once it has changed.
+["refs:list"]
+description = "List the sources the crates cite, each at each site, with the status of its last reading"
+usage = '''
+arg "[crate]" help="the crate's directory under crates/; every crate when omitted"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+crate=${usage_crate:-}
+if [[ -n $crate && ! ( $crate =~ ^[a-z][a-z0-9-]*$ && -d crates/$crate ) ]]; then
+  echo "$crate: no crate under crates/ has that directory" >&2
+  exit 1
+fi
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+references_load "$fresh/references.db"
+sqlite3 -bail -header -separator $'\t' "$fresh/references.db" "
+  SELECT r.key, r.role, r.crate, r.module,
+    CASE WHEN r.read_blob IS NULL THEN 'unread' WHEN r.read_blob = s.blob THEN 'current' ELSE 'stale' END AS status,
+    substr(r.read_commit, 1, 12) AS read_commit, r.read_date
+  FROM reference r LEFT JOIN source s USING (crate, module)
+  WHERE '$crate' IN ('', r.crate)
+  ORDER BY r.key, r.crate, r.module;"
+'''
+
+# Records a reading: each source the site cites, or each key named, read
+# against the module's source as it stands. The site is a crate's directory,
+# then `::` and the module unless it is the crate root. The ledger is first
+# written from the tree, as `ledger:references` writes it, so a key line just
+# added can be read; each row read takes the commit checked out, today's date
+# in UTC and the blob id of the module's source.
+["refs:read"]
+description = "Stamp a site's sources, or the keys named, as read against the module's source now"
+usage = '''
+arg "<site>" help="<crate>, or <crate>::<module>"
+arg "[key]..." help="the keys read; every key the site cites when none is named" var=#true
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/references/ledger.bash
+site=${usage_site:?}
+crate=${site%%::*}
+module=
+if [[ $site == *::* ]]; then module=${site#*::}; fi
+if ! [[ $crate =~ ^[a-z][a-z0-9-]*$ && $module =~ ^[a-z0-9_:]*$ ]]; then
+  echo "$site: a site is a crate's directory under crates/, then ::<module> unless it is the crate root" >&2
+  exit 2
+fi
+read -ra keys <<< "${usage_key:-}"
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+references_load "$fresh/references.db"
+references_fresh "$fresh/references.db"
+db=$fresh/fresh.db
+at="crate = '$crate' AND module = '$module'"
+where=$at
+if (( $(sqlite3 "$db" "SELECT count(*) FROM reference WHERE $where;") == 0 )); then
+  echo "$site cites nothing; \`mise run refs:list $crate\` lists what $crate cites, by site" >&2
+  exit 1
+fi
+if (( ${#keys[@]} )); then
+  quoted=()
+  for key in "${keys[@]}"; do
+    quoted+=("'${key//\'/\'\'}'")
+    if (( $(sqlite3 "$db" "SELECT count(*) FROM reference WHERE $where AND key = ${quoted[-1]};") == 0 )); then
+      echo "$site does not cite \`$key\`; \`mise run refs:list $crate\` lists what it cites" >&2
+      exit 1
+    fi
+  done
+  where+=" AND key IN ($(IFS=,; echo "${quoted[*]}"))"
+fi
+IFS=$'\t' read -r path blob < <(sqlite3 -separator $'\t' "$fresh/references.db" "SELECT path, blob FROM source WHERE $at;")
+read=$(sqlite3 "$db" "UPDATE reference SET read_commit = '$(git rev-parse HEAD)', read_date = '$(date -u +%F)', read_blob = '$blob' WHERE $where RETURNING key;" | wc -l)
+sqlite3 "$db" .dump > ledger/references.sql
+echo "read $((read)) at $site, against $path as blob ${blob:0:12}"
+{% endraw %}'''
+
 # The recovery sweep over the syntax exemplars (`gandr-surface-dispatcher`'s
 # `ledger::recovery` module): every literal tile written as its near miss and
 # deleted, each mutant's first error read against the mutation. The whole
