@@ -1331,25 +1331,35 @@ echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as re
 # The hotpath verdict's report (#1468): `report.jq` reads the head's hotpath
 # checks as the deltas `evidence:obligations` passes to `--hotpath`. Each case
 # in `.config/hotpath/cases.json` holds the checks and the compact JSON they
-# must give.
+# must give. A report not uploaded (#2641): `upload.jq` decides what one
+# upload's outcome does to the job, each case in `.config/hotpath/upload.json`
+# an outcome and that decision; `unsent.jq` writes the one issue that holds
+# main's reports not uploaded, each case in `.config/hotpath/unsent.json` the
+# open issue, a run and the compact JSON it must give.
 ["check:hotpath"]
-description = "The hotpath report reading gives each recorded case its deltas"
+description = "The hotpath report reading gives each recorded case its deltas, and an upload its outcome and issue"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  got=$(jq .input <<< "$case" | jq -c -f .config/hotpath/report.jq)
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'hotpath case FAILED: %s\n  gave:   %s\n  wanted: %s\n' "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/hotpath/cases.json)
+cases() {
+  local mode=$1 program=$2 file=$3 case name got want
+  while IFS= read -r case; do
+    name=$(jq -r .name <<< "$case")
+    got=$(jq .input <<< "$case" | jq "$mode" -f ".config/hotpath/$program")
+    want=$(jq -r .output <<< "$case")
+    if [[ "$got" != "$want" ]]; then
+      printf 'hotpath case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
+      failed=1
+    fi
+  done < <(jq -c '.[]' ".config/hotpath/$file")
+}
+cases -c report.jq cases.json
+cases -r upload.jq upload.json
+cases -c unsent.jq unsent.json
 (( failed == 0 )) || exit 1
-echo "hotpath check OK: $(jq length .config/hotpath/cases.json) cases read as recorded"
+echo "hotpath check OK: $(jq length .config/hotpath/cases.json) reports, $(jq length .config/hotpath/upload.json) upload outcomes and $(jq length .config/hotpath/unsent.json) unsent issues read as recorded"
 '''
 
 # A clone may wire merge drivers. A driver that merges a rebase "cleanly" into
