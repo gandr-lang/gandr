@@ -1028,7 +1028,7 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # The claim lifecycle (`.config/claims/decide.jq`, #1270) picks the claims
 # that come off. Each case in `.config/claims/cases.json` holds an input and
 # the removals it must give: a merge's `Advances` and closing targets, the
-# closed and epic sweep, 12 hours of silence, and an open pull
+# closed and epic sweep, 4 hours of silence, and an open pull
 # request that keeps a claim. Each case in `.config/claims/opening.json`
 # holds a branch, a body, the issues it works, the tree's lines naming what
 # it supersedes, the concerns ledger and the sources the change adds, and the

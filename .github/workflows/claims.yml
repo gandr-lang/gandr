@@ -10,17 +10,18 @@ name: claims
 
 # `status:claimed` means a seat is on the issue now (#1270). The claim comes
 # off when a merged pull request's body says `Advances #n` or closes the
-# issue, when the issue is closed, on 12 hours of silence with no open pull
-# request naming the issue, and always on a `kind:epic` issue. `pr:open`
-# refuses a body that names no such line for the branch's
+# issue, when the issue is closed, on 4 hours of silence with no open pull
+# request naming the issue (#2534), and always on a `kind:epic` issue.
+# `pr:open` refuses a body that names no such line for the branch's
 # issue (#2462), so every landing unclaims what it worked.
 # `.config/claims/claims.sh` reads, decides (`decide.jq`) and removes;
 # the removals are printed in the run log and nothing is posted on an issue.
+# The sweep runs every 2 hours, so a lapsed claim comes off within 6.
 on:
   pull_request:
     types: [closed]
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 */2 * * *"
   workflow_dispatch: {}
 
 permissions:
