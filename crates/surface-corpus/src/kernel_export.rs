@@ -3215,4 +3215,48 @@ mod kernel_effect_handler_readmission
             decoded.arena().value_type(kind)
         );
     }
+
+    /// A scope that names no model is answered by the one model of its
+    /// theory in scope, its carrier among the components the checker fills:
+    /// the scope crosses as the one naming that model does, and the program
+    /// calling it crosses after it.
+    #[test]
+    fn a_scope_answered_by_the_model_in_scope_crosses_as_naming_it_2755()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/state-handler.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("state-handler lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("state-handler's export decodes");
+        let declarations = decoded.declarations();
+        Environment::replay(decoded.arena().clone(), declarations).unwrap_or_else(|refusal| {
+            panic!("state-handler readmits, the scope in scope a fold: {refusal:?}")
+        });
+        let content = |name: &str| {
+            let named = StructuredName::from(Vec::from([
+                NameSegment::from_text(name.into()).expect("a name segment")
+            ]));
+            let marked = declarations
+                .iter()
+                .find(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            marked.declaration().content().clone()
+        };
+        assert!(
+            matches!(content("inScopeFromZero"), DeclarationContent::Def { .. }),
+            "`inScopeFromZero` crosses as a definition"
+        );
+        // The decoder shares every repeated subterm, so two definitions whose
+        // types and bodies are one term name the same roots.
+        assert_eq!(
+            content("answeredInScope"),
+            content("answeredByPassing"),
+            "the model in scope answers the scope as naming it does"
+        );
+    }
 }
