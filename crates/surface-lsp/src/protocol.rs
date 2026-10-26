@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use anodized::spec;
 use gandr_surface_diagnostics::Verbosity;
+use gandr_surface_lowering::Visibility;
 use gandr_surface_pretty::Form;
 use gandr_surface_pretty::Spelling;
 use serde::Deserialize;
@@ -3513,6 +3514,10 @@ pub struct DocumentSymbol
     /// Whether a `deprecated` attribute marks the declaration, which the
     /// symbol's `Deprecated` tag says.
     pub deprecated: bool,
+    /// Whether its source exports it: a `pub` mark stands before a top-level
+    /// declaration, or before the declaration holding a member. Read by what
+    /// the server offers to import, never written to the client.
+    pub exported: Visibility,
 }
 
 /// The declarations of a document in source order, each after the one
@@ -4402,6 +4407,8 @@ mod tests
     use std::path::Path;
     use std::path::PathBuf;
 
+    use gandr_surface_lowering::Visibility;
+
     use super::DocumentSymbol;
     use super::DocumentSymbols;
     use super::DocumentUri;
@@ -4532,6 +4539,7 @@ mod tests
             detail: None,
             holder,
             deprecated: false,
+            exported: Visibility::Private,
         };
         let symbols = DocumentSymbols(Vec::from([
             symbol("outer", None),

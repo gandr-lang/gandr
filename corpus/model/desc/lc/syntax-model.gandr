@@ -15,7 +15,7 @@ import "./sub-lam.gandr";
 import "./sub-app.gandr";
 
 /// The λ-calculus's syntax as a model of its single-substitution calculus.
-module LCSyntax : Model(LC) {
+pub module LCSyntax : Model(LC) {
   type Con = N;
   type Sub(d : N, g : N) = Env;
   type Tm(g : N) = Term;

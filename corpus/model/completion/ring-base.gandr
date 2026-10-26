@@ -13,7 +13,7 @@
 /// on the submitter's side, the protocols that take a buffer, a pending
 /// completion or a target's pending completion over a session, and one entry
 /// of each kind.
-module Ring :> #{
+pub module Ring :> #{
   type Sqe,
   type Cqe,
   type Submission = ?Sqe. !Cqe. end,

@@ -9,7 +9,7 @@
 import "./flow-data.gandr";
 
 /// A shape's width: a circle's radius, a rectangle's first side.
-def width(shape : Shape) -> Integer {
+pub def width(shape : Shape) -> Integer {
   case shape {
     Circle(r) => r,
     Rect(w, h) => w

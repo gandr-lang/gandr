@@ -7,7 +7,7 @@
 // operators).
 
 /// The successor, a call whose type synthesises where a statement binds it.
-def succ(n : Integer) -> Integer {
+pub def succ(n : Integer) -> Integer {
   pure n + 1
 }
 

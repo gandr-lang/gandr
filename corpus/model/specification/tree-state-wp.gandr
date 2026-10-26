@@ -13,7 +13,7 @@ import "../effects/tree.gandr";
 
 /// The increment as a tree: read the counter, store one more, and answer the
 /// unit.
-def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fn (n) {
+pub def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fn (n) {
   (Op(Left(Put(n + 1)), fn (_u) {
     (Done(unit) : Prog(Either(StateOp, Void), Unit))
   }) : Prog(Either(StateOp, Void), Unit))
@@ -23,7 +23,7 @@ def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fn (n) {
 /// the final state, and an initial state, to the precondition. A read
 /// continues at the current state, and a store continues from the stored
 /// value.
-def rec wp(
+pub def rec wp(
   p : Prog(Either(StateOp, Void), Unit),
   post : (Unit, Integer) => Type,
   s : Integer
@@ -40,10 +40,10 @@ def rec wp(
 
 /// The increment's specification: the postcondition at the unit and the
 /// successor of the initial state.
-def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
+pub def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
 
 /// The counter ends at one.
-def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
+pub def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
 
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`: the second entry's type reads the program, and

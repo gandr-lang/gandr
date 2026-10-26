@@ -500,7 +500,7 @@ def noted : (/* the count */ Integer) => Integer;
 
 /// The circle the path-composite goldens compose its loop in.
 const CIRCLE: &str = "\
-data Circle : Type {
+pub data Circle : Type {
   Base : Circle;
   loop : Base <-> Base;
 }
@@ -810,7 +810,7 @@ def stated(x: Circle, q: Path(Circle, x, Base)) -> -F Path(Path(Circle, x, Base)
     let formatted = format(&grammar, &parsed, options).expect("the source formats");
     assert_eq!(formatted.withdrawn(), &[]);
     expect![[r#"
-        data Circle : Type {
+        pub data Circle : Type {
           Base : Circle;
           loop : Base <-> Base;
         }

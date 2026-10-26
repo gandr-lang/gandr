@@ -111,6 +111,7 @@ use crate::import::ImportResolution;
 use crate::module::Container;
 use crate::module::ReceiverMode;
 use crate::module::SlotIndex;
+use crate::module::Visibility;
 use crate::namespace::NamePath;
 use crate::namespace::PathResolution;
 use crate::namespace::Recognized;
@@ -1341,9 +1342,10 @@ impl<'source> Lowerer<'_, 'source>
     /// - requires: `here` is a source of the unit.
     /// - ensures: each method of that name whose module's path, joined with the
     ///   name, resolves to it as an exported component, and whose outermost
-    ///   module `here` declares or one of `here`'s imports resolves to; a
-    ///   module of a sibling source `here` does not import is out of scope,
-    ///   though the unit recognises its path.
+    ///   module `here` declares or one of `here`'s imports resolves to and
+    ///   exports; a module of a sibling source `here` does not import is out of
+    ///   scope, though the unit recognises its path, and so is one an imported
+    ///   source keeps private.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk up a nested
     ///   module's containers runs out of allowance.
     /// - panics: none.
@@ -1353,10 +1355,11 @@ impl<'source> Lowerer<'_, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a method one module declares, one two modules
-    ///   declare, and one a sibling source declares that the caller does not
-    ///   import.
+    ///   declare, one a sibling source declares that the caller does not
+    ///   import, and one of a module an imported source keeps private.
     /// - witness: `lower::method::tests::a_method_two_modules_declare_is_refused_naming_both`
     /// - witness: `tests::namespace::a_method_of_a_source_not_imported_is_out_of_scope`
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.iter().all(|&(slot, mode, _)| self.collected.receivers.get(&slot) == Some(&mode))))]
     fn methods_named(
         &mut self,
@@ -1364,11 +1367,12 @@ impl<'source> Lowerer<'_, 'source>
         here: SourceIndex,
     ) -> Result<Vec<(SlotIndex, ReceiverMode, SurfaceName<'source>)>, LoweringRefusal<'source>>
     {
-        let seen = |collected: &crate::module::Collected<'source>, target: SourceIndex| {
+        let seen = |collected: &crate::module::Collected<'source>, target: SourceIndex, slot| {
             target == here
-                || collected.imports.of(here).any(|import| {
-                    import.resolution() == ImportResolution::Path(ImportTarget::Source(target))
-                })
+                || (collected.slot_visibility(slot) == Visibility::Public
+                    && collected.imports.of(here).any(|import| {
+                        import.resolution() == ImportResolution::Path(ImportTarget::Source(target))
+                    }))
         };
         let mut found = Vec::new();
         let receivers: Vec<(SlotIndex, ReceiverMode)> = self
@@ -1410,7 +1414,7 @@ impl<'source> Lowerer<'_, 'source>
             segments.reverse();
             segments.push(Segment::from(method.as_ref()));
             let path = NamePath::from(segments);
-            if declared_in.is_some_and(|source| seen(&self.collected, source))
+            if declared_in.is_some_and(|source| seen(&self.collected, source, slot))
                 && self.recognition.resolve_path(&path)
                     == PathResolution::Complete(Recognized::ModuleComponent)
                 && self.exported.get(&path) == Some(&slot)

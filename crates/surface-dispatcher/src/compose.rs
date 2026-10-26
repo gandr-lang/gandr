@@ -6884,8 +6884,8 @@ def delivered() -> -F Unit {
 
         let grammar = grammar();
         let sources = [
-            "def seven : Integer ;\ndef seven = 7 ;",
-            "def eight : Integer ;\ndef eight = 8 ;",
+            "pub def seven : Integer ;\ndef seven = 7 ;",
+            "pub def eight : Integer ;\ndef eight = 8 ;",
             "import \"./seven.gandr\" ;\nimport \"./eight.gandr\" ;\ndef value : Integer ;\ndef \
              value = seven ;",
             "import \"./eight.gandr\" ;\ndef broken : Integer ;\ndef broken = nowhere ;",

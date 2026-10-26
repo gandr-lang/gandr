@@ -26,7 +26,7 @@ def weakenSingleAgree(a : Term, n : N) -> Path(
 }
 
 /// Weakening then substituting `a` for the new variable is the identity.
-def subWeakenSingle(
+pub def subWeakenSingle(
   b : Term,
   a : Term
 ) -> Path(Term, subst(subst(b, Shift(S(Z))), Cons(a, Shift(Z))), b) {

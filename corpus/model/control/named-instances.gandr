@@ -12,7 +12,7 @@
 
 /// A line printed through the instance `out`, the capability its label
 /// binds.
-def say() -> [out : Console] Unit { out.print("said") }
+pub def say() -> [out : Console] Unit { out.print("said") }
 
 /// One instance of `Console` handled around the call: the call passes it.
 @[ runs("1") ]

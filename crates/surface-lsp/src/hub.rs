@@ -1239,7 +1239,8 @@ mod tests
         let hub = hub(&socket);
         let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
         let base = scratch.0.join("base.gandr");
-        std::fs::write(&base, "def one : Integer ;\ndef one = 1 ;\n").expect("the base is written");
+        std::fs::write(&base, "pub def one : Integer ;\ndef one = 1 ;\n")
+            .expect("the base is written");
         let importing = scratch.0.join("importer.gandr");
         std::fs::write(&importing, importer).expect("the importer is written");
         let mut client = Client::new(&socket);
@@ -1258,7 +1259,7 @@ mod tests
             Some(&serde_json::json!([])),
             "the importer checks against its base"
         );
-        std::fs::write(&base, "def other : Integer ;\ndef other = 1 ;\n")
+        std::fs::write(&base, "pub def other : Integer ;\ndef other = 1 ;\n")
             .expect("the base is rewritten");
         let rechecked = client.receive();
         assert_eq!(
@@ -1289,7 +1290,8 @@ mod tests
         let hub = hub(&socket);
         let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
         let base = scratch.0.join("base.gandr");
-        std::fs::write(&base, "def one : Integer ;\ndef one = 1 ;\n").expect("the base is written");
+        std::fs::write(&base, "pub def one : Integer ;\ndef one = 1 ;\n")
+            .expect("the base is written");
         let importing = scratch.0.join("importer.gandr");
         std::fs::write(&importing, importer).expect("the importer is written");
         let mut reader = Client::new(&socket);
@@ -1315,7 +1317,7 @@ mod tests
         );
         writer.send(Json(&open(
             &base,
-            "def other : Integer ;\ndef other = 1 ;\n",
+            "pub def other : Integer ;\ndef other = 1 ;\n",
         )));
         assert_eq!(
             writer.receive().pointer("/params/diagnostics"),

@@ -1,6 +1,6 @@
 /// `ImportShadows`: a name an import binds and another binding of the source binds too.
-// The answer, unqualified.
-import "../syntax/def_value.gandr" ;
+// The answer, unqualified and exported.
+import "../syntax/pub_declaration.gandr" ;
 
 @[ refuses("ImportShadows") ]
 def answer = 43 ;

@@ -13,7 +13,7 @@ import "./second-order-signatures.gandr";
 
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
-data N : Type {
+pub data N : Type {
   Z : N;
   S : (n : N) --> N;
 }

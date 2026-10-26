@@ -25,7 +25,7 @@ def shiftByWeakens(a : Term, k : N) -> Path(Term, shiftBy(a, S(k)), wk(shiftBy(a
 
 /// A lookup under one binder more is the lookup weakened, by recursion on
 /// the index.
-def rec lookWeakens(n : N, s : Env, k : N) -> Path(Term, look(n, s, S(k)), wk(look(n, s, k))) {
+pub def rec lookWeakens(n : N, s : Env, k : N) -> Path(Term, look(n, s, S(k)), wk(look(n, s, k))) {
   case s {
     Shift(j) => case n {
       Z => back(ixShiftAdds(plusTwo(Z, j, k), S(Z))),

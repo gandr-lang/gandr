@@ -8,7 +8,7 @@
 
 /// A task: the protocol its end carries back to the parent, and the path it
 /// reads.
-module Task :> #{
+pub module Task :> #{
   type Join = !String. end,
   notes : String
 } {

@@ -38,7 +38,7 @@ def substRenamesLift(
 }
 
 /// A substitution that renames at every index is that renaming.
-def rec substRenames(
+pub def rec substRenames(
   t : Term,
   s : Env,
   r : Ren,
@@ -63,7 +63,7 @@ def rec substRenames(
 }
 
 /// The substitution shifting by one renames each index by the shift by one.
-def shiftOneRenames(i : N) -> Path(Term, look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
+pub def shiftOneRenames(i : N) -> Path(Term, look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
   case i {
     Z => here(Ix(S(Z))),
     S(j) => here(Ix(S(S(j))))

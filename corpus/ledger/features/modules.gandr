@@ -1,5 +1,5 @@
 /// `modules`: a module groups declarations under a name, and a member is reached through it.
-module Origin {
+pub module Origin {
   /// The starting point.
   def zero() -> -F Integer { return 0 }
 }

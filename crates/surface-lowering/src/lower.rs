@@ -593,6 +593,7 @@ use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
+use crate::error::Unexported;
 use crate::form::Cursor;
 use crate::form::FormName;
 use crate::form::Former;
@@ -648,6 +649,7 @@ use crate::module::THEORY_CODE;
 use crate::module::TypeComponent;
 use crate::module::TypeMeaning;
 use crate::module::ValueComponent;
+use crate::module::Visibility;
 use crate::module::WrittenAttribute;
 use crate::module::WrittenDoc;
 use crate::module::begin_collection;
@@ -1329,7 +1331,7 @@ enum Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::LazyRecord | Former::Parenthesized | Former::Lambda | Former::Hole | Former::Loop | Former::While | Former::For => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Return | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn ending(former: Former) -> Ending
 {
@@ -1394,6 +1396,7 @@ fn ending(former: Former) -> Ending
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
+        | Former::Visibility
         | Former::Import
         | Former::Module
         | Former::Data
@@ -1429,7 +1432,7 @@ fn ending(former: Former) -> Ending
 #[spec(ensures: |ret| match former {
     Former::Exit | Former::Become | Former::Break | Former::Continue => ret == Ending::Exit,
     Former::Block | Former::Case | Former::If | Former::Offer | Former::Parenthesized | Former::Hole => ret == Ending::Passes,
-    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
+    Former::Name | Former::Constructor | Former::Number | Former::Boolean | Former::Text | Former::Character | Former::TypeQuote | Former::Unit | Former::Thunk | Former::Lambda | Former::Return | Former::Loop | Former::While | Former::For | Former::Force | Former::Run | Former::Call | Former::ForgetModel | Former::Telescope | Former::List | Former::PackModel | Former::Injection | Former::LazyRecord | Former::Binary | Former::Unary | Former::Projection | Former::TypeHead | Former::TypePath | Former::Universe | Former::TypeApplication | Former::ThunkType | Former::ReturnerType | Former::ArrowType | Former::ProductType | Former::SumType | Former::LazyProductType | Former::TelescopeType | Former::LabelledSumType | Former::LazyRecordType | Former::ValueFunctionType | Former::StaticAbstraction | Former::ParenthesizedType | Former::PathType | Former::RelationType | Former::ManifestType | Former::CapabilityType | Former::AtType | Former::StagedType | Former::ModedType | Former::Scope | Former::Declaration | Former::AttributeBlock | Former::Visibility | Former::Import | Former::Module | Former::Data | Former::Mutual | Former::Instantiation | Former::SessionType | Former::Action | Former::Access | Former::World | Former::WorldDeclaration | Former::Reserved(_) | Former::Unadmitted(_) | Former::Misplaced => ret == Ending::Inferred,
 })]
 fn iterating(former: Former) -> Ending
 {
@@ -1545,6 +1548,7 @@ fn iterating(former: Former) -> Ending
             ) | (
                 Former::Declaration
                     | Former::AttributeBlock
+                    | Former::Visibility
                     | Former::Import
                     | Former::Module
                     | Former::Data
@@ -1628,6 +1632,7 @@ const fn family_of(former: Former) -> Family
         | Former::SessionType => Family::Type,
         Former::Declaration
         | Former::AttributeBlock
+        | Former::Visibility
         | Former::Import
         | Former::Module
         | Former::Data
@@ -5166,12 +5171,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   holds [`LoweringRefusal::ImportUnresolved`] or
     ///   [`LoweringRefusal::ImportCycle`] at its declaration form, naming the
     ///   import; each top-level declared name, and each family whose
-    ///   constructor, a source unqualified-imports from another holds
-    ///   [`LoweringRefusal::ImportShadows`] at its name, naming the import and
-    ///   the imported declaration — except a constructor the import entered as
-    ///   the very same constructor, as every source whose block takes the one
-    ///   `Theory` enters its constructors. The import itself, and every source
-    ///   without such an import, is untouched.
+    ///   constructor, a source unqualified-imports from another that exports it
+    ///   holds [`LoweringRefusal::ImportShadows`] at its name, naming the
+    ///   import and the imported declaration — except a constructor the import
+    ///   entered as the very same constructor, as every source whose block
+    ///   takes the one `Theory` enters its constructors. A declaration its
+    ///   source keeps private binds nothing in an importer. The import itself,
+    ///   and every source without such an import, is untouched.
     /// - provides: the per-declaration refusal the corpus pins an import's
     ///   failure by.
     /// - fails: never; a refusal is carried by its declaration.
@@ -5183,6 +5189,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   corpus's pathological twins.
     /// - witness: `tests::namespace::an_unresolved_import_refuses_its_source`
     /// - witness: `tests::namespace::a_declaration_an_import_binds_again_is_refused`
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
     #[spec(
         captures: before = self.collected.slots.len(),
@@ -5233,11 +5240,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .by_name
                     .get(&(Container::TopLevel(imported), name))
                     .copied()
+                    .filter(|&slot| collected.slot_visibility(slot) == Visibility::Public)
                     .and_then(named_at)
                     .or_else(|| {
                         collected
                             .constructors
                             .get(&(imported, name))
+                            .filter(|constructor| {
+                                collected.slot_visibility(constructor.family) == Visibility::Public
+                            })
                             .map(|constructor| constructor.named.span)
                     })
             };
@@ -6715,6 +6726,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::World => self.world_form(site, pieces),
             Former::Declaration | Former::Module => self.function(site, cursor),
             Former::AttributeBlock
+            | Former::Visibility
             | Former::Import
             | Former::Data
             | Former::Mutual
@@ -7437,8 +7449,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the import fallback of [`Self::resolve_name`].
     /// - fails: [`LoweringRefusal::ImportShadows`] when two imports declare the
     ///   name, naming both; [`LoweringRefusal::UnexportedName`] when the
-    ///   declaration has a signature and no definition, which its source does
-    ///   not export.
+    ///   declaration has a signature and no definition, or when no imported
+    ///   source exports it and one keeps it private, which its source does not
+    ///   export.
     /// - panics: none.
     ///
     /// # Errors
@@ -7446,11 +7459,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// [`LoweringRefusal::UnexportedName`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a name one import answers, a name two answer and a
-    ///   pending declaration, each asserted exactly.
+    /// - hypothesis: L3 — a name one import answers, a name two answer, a
+    ///   pending declaration and a private one, each asserted exactly.
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
     /// - witness: `tests::namespace::a_pending_declaration_is_not_exported`
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     #[spec(ensures: |ref ret| match *ret {
         Ok(_) => true,
         Err(LoweringRefusal::ImportShadows { name: found, .. } | LoweringRefusal::UnexportedName { name: found, .. }) => {
@@ -7467,7 +7481,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let (target, import) = match self.collected.imported_slot(source, name) {
             Ok(Maybe::Present(found)) => found,
-            Ok(Maybe::Absent(_)) => return Ok(Maybe::Absent(named::Absent::Unresolved)),
+            Ok(Maybe::Absent(_)) => {
+                let Maybe::Present((private, import)) = self.collected.private_slot(source, name)
+                else {
+                    return Ok(Maybe::Absent(named::Absent::Unresolved));
+                };
+                self.collected.reach(import);
+                return Err(self.private(site, name, private));
+            },
             Err(ambiguity) => {
                 return Err(LoweringRefusal::ImportShadows {
                     span: site.at.span,
@@ -7489,8 +7510,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   source imports.
     /// - ensures: its constant and written signature type; the unresolved
     ///   absence for a slot the collection does not hold.
-    /// - fails: [`LoweringRefusal::UnexportedName`] for a declaration with a
-    ///   signature and no definition.
+    /// - fails: [`LoweringRefusal::UnexportedName`] for a declaration its
+    ///   source keeps private, and for one with a signature and no definition.
     /// - panics: none.
     ///
     /// # Errors
@@ -7499,6 +7520,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — the witnesses of [`Self::imported`].
     /// - witness: `tests::namespace::a_pending_declaration_is_not_exported`
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     #[spec(ensures: |ref ret| match *ret {
         Ok(Maybe::Present(Resolved::Declaration { constant, .. })) => self
             .collected
@@ -7520,11 +7542,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         else {
             return Ok(Maybe::Absent(named::Absent::Unresolved));
         };
+        if self.collected.slot_visibility(target) == Visibility::Private {
+            return Err(self.private(site, name, target));
+        }
         if let Maybe::Absent(_) = entry.definition {
             return Err(LoweringRefusal::UnexportedName {
                 span: site.at.span,
                 name,
                 declared: entry.named.span,
+                reason: Unexported::Undefined,
             });
         }
         let declared = match entry.signature {
@@ -7541,6 +7567,73 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }))
     }
 
+    /// The refusal of `name`, read at `site`, which another source declares
+    /// at `target` and keeps private.
+    ///
+    /// # Specification
+    /// trivial.
+    fn private(
+        &self,
+        site: Site,
+        name: SurfaceName<'source>,
+        target: SlotIndex,
+    ) -> LoweringRefusal<'source>
+    {
+        LoweringRefusal::UnexportedName {
+            span: site.at.span,
+            name,
+            declared: self
+                .collected
+                .slots
+                .get(usize::from(target))
+                .map_or(site.at.span, |entry| entry.named.span),
+            reason: Unexported::Private,
+        }
+    }
+
+    /// Refuse the member `target` of the module `module`, read at `site`,
+    /// when another source declares it and keeps the module private.
+    ///
+    /// # Specification
+    /// - requires: `target` is the slot the module path at `site` resolves to,
+    ///   and `module` the path's head.
+    /// - ensures: nothing when the site's source declares `target`, or when its
+    ///   source exports it.
+    /// - fails: [`LoweringRefusal::UnexportedName`], naming `module`, for a
+    ///   member of a module another source keeps private.
+    /// - panics: none.
+    /// - executable: none — the clause would restate the comparison of the two
+    ///   sources and the slot's visibility whole.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnexportedName`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member of a private module read beside it and from
+    ///   an importer, and a member of an exported one.
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - witness: `tests::namespace::each_import_a_name_is_read_through_is_reached`
+    fn exported_across(
+        &self,
+        site: Site,
+        module: SurfaceName<'source>,
+        target: SlotIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let unit = &self.collected.unit;
+        let declared = self
+            .collected
+            .slots
+            .get(usize::from(target))
+            .map(|entry| unit.source_at(entry.introduced_by.span.start()));
+        if declared.is_some_and(|source| source != unit.source_at(site.at.span.start()))
+            && self.collected.slot_visibility(target) == Visibility::Private
+        {
+            return Err(self.private(site, module, target));
+        }
+        Ok(())
+    }
+
     /// What `alias.selected`, written at `site`, names when `alias` is the
     /// alias of a path import of the site's source.
     ///
@@ -7555,7 +7648,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the qualified reading of an aliased import.
     /// - fails: [`LoweringRefusal::UnknownMember`] for a name the imported
     ///   source does not declare; [`LoweringRefusal::UnexportedName`] for one
-    ///   it declares without a definition.
+    ///   it keeps private or declares without a definition.
     /// - panics: none.
     ///
     /// # Errors
@@ -10850,6 +10943,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 if self.generic == Some(exported) {
                     return Err(LoweringRefusal::GenericMisplaced { span: site.at.span });
                 }
+                self.exported_across(site, self.name_at(head), exported)?;
                 self.select(site, exported)?;
                 if let Some(&(_, member)) = links.first()
                     && let Some(entry) = self.collected.slots.get(usize::from(exported))
@@ -20613,6 +20707,7 @@ pub fn parse_literal(
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
+        | Former::Visibility
         | Former::Import
         | Former::Module
         | Former::Data

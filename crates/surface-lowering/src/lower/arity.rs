@@ -1398,6 +1398,7 @@ impl<'source> Lowerer<'_, 'source>
                 | Former::Scope
                 | Former::Declaration
                 | Former::AttributeBlock
+                | Former::Visibility
                 | Former::Import
                 | Former::Module
                 | Former::Data

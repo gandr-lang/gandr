@@ -80,7 +80,7 @@ def substSquareLift(
 
 /// Substituting `s1` then `s2` is substituting `u1` then `u2`, given the
 /// two composites agree at every index.
-def rec substSquare(
+pub def rec substSquare(
   t : Term,
   s1 : Env,
   s2 : Env,

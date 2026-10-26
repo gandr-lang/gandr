@@ -10,12 +10,12 @@
 import "./data-base.gandr";
 
 /// Two successors over a natural.
-def plusTwo(n : Nat) -> Nat {
+pub def plusTwo(n : Nat) -> Nat {
   Succ(Succ(n))
 }
 
 /// Doubling, its arm handing the recursive call to `plusTwo`.
-def rec double(n : Nat) -> Nat {
+pub def rec double(n : Nat) -> Nat {
   case n {
     Zero => Zero,
     Succ(m) => plusTwo(double[<](m))

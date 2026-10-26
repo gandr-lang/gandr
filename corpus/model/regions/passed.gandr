@@ -3,7 +3,7 @@
 // reads it inside the same scope.
 
 /// Hands back the thunk it is lent, kept in the same region.
-def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) { pure k }
+pub def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) { pure k }
 
 /// Reads what `pass` hands back inside the handler whose region keeps it.
 @[ runs("4") ]

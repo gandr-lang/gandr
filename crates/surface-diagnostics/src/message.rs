@@ -57,6 +57,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Offer;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
 use quenchant_shape::shape::Maybe;
@@ -235,10 +236,24 @@ fn lowered(
         LoweringRefusal::ImportShadows { name, .. } => {
             write!(f, "`{name}` is bound by an import and again in this source")
         },
-        LoweringRefusal::UnexportedName { name, .. } => {
+        LoweringRefusal::UnexportedName {
+            name,
+            reason: Unexported::Undefined,
+            ..
+        } => {
             write!(
                 f,
                 "`{name}` is declared in the imported source without a definition, so it is not exported"
+            )
+        },
+        LoweringRefusal::UnexportedName {
+            name,
+            reason: Unexported::Private,
+            ..
+        } => {
+            write!(
+                f,
+                "`{name}` is private to the imported source; write `pub` before its declaration there to export it"
             )
         },
         LoweringRefusal::ShadowedBuiltin { name, .. } => {
@@ -260,6 +275,9 @@ fn lowered(
                     write!(f, "the {spoken} is reserved, and not available yet")
                 },
                 FragmentBoundary::Unadmitted(_) => write!(f, "the {spoken} is not supported yet"),
+                FragmentBoundary::Misplaced if form == FormName::VISIBILITY => f.write_str(
+                    "`pub` exports the declaration after it, and stands before a declaration alone",
+                ),
                 FragmentBoundary::Misplaced => write!(
                     f,
                     "the {spoken} classifies a theory's sort member, and stands nowhere else"
@@ -1390,6 +1408,7 @@ mod tests
     use gandr_surface_lowering::PayloadForm;
     use gandr_surface_lowering::SurfaceName;
     use gandr_surface_lowering::TelescopeFault;
+    use gandr_surface_lowering::Unexported;
     use gandr_surface_lowering::model::InterfaceFault;
     use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
@@ -1470,6 +1489,7 @@ mod tests
                 span,
                 name,
                 declared: span,
+                reason: Unexported::Private,
             },
             LoweringRefusal::ShadowedBuiltin { span, name },
             LoweringRefusal::OutOfFragment {

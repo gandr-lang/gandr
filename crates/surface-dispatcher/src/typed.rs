@@ -6164,7 +6164,7 @@ mod tests
         use gandr_surface_lowering::UnitSource;
 
         let sibling = SourceText::from(
-            "data Point : Type {\n  Here : Point;\n}\ndef here : Point ;\ndef here = Here ;",
+            "pub data Point : Type {\n  Here : Point;\n}\npub def here : Point ;\ndef here = Here ;",
         );
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
@@ -6226,8 +6226,8 @@ mod tests
         use super::NameKind;
 
         let sibling = SourceText::from(
-            "data Point : Type {\n  Here : Point;\n  There : Point;\n}\ndef here : Point ;\ndef \
-             here = Here ;",
+            "pub data Point : Type {\n  Here : Point;\n  There : Point;\n}\npub def here : Point \
+             ;\ndef here = Here ;",
         );
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
@@ -6292,7 +6292,7 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = SourceText::from("def here = 7 ;");
+        let sibling = SourceText::from("pub def here = 7 ;");
         let importer = SourceText::from(
             "import \"./here.gandr\" ;\ndata Point : Type {\n  Origin : Point;\n}\ndef answer = 42 \
              ;\ndef step() -> -F Integer { return 1 }\ndef double(n : Integer) -> -F Integer { \
@@ -6376,8 +6376,8 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "data Point : Type {\n  Here : Point;\n}\ndata Spot : Type {\n  There : \
-                       Spot;\n}";
+        let sibling = "pub data Point : Type {\n  Here : Point;\n}\npub data Spot : Type {\n  \
+                       There : Spot;\n}";
         let importer = "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef \
                         a : Integer ;\ndef a = nope ;\ndata Spot : Type {\n  There : Spot;\n}";
         let laid = format!("{sibling}\n{importer}");
@@ -6463,8 +6463,7 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling =
-            "data Point : Type {\n  Here : Point;\n}\ndef here : Point ;\ndef here = Here ;";
+        let sibling = "pub data Point : Type {\n  Here : Point;\n}\npub def here : Point ;\ndef here = Here ;";
         let importer =
             SourceText::from("import \"./point.gandr\" ;\ndef there : Point ;\ndef there = here ;");
         let laid = format!("{sibling}\n{}", <&str>::from(importer));
@@ -6564,7 +6563,7 @@ mod tests
         use super::reprinted;
         use super::signed;
 
-        let sibling = "data Point : Type {\n  Here : Point;\n}";
+        let sibling = "pub data Point : Type {\n  Here : Point;\n}";
         let importer = "import \"./point.gandr\" ;\ndef there : +U (-F +{Point, Point}) ;\ndef \
                         there = thunk { return +{.1 = Here} } ;";
         let laid = format!("{sibling}\n{importer}");
@@ -6676,7 +6675,9 @@ mod tests
         let scratch = Scratch::new(Path::new("member-reprint"));
         scratch.file(
             Path::new("fixture/base.gandr"),
-            SourceText::from("data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n"),
+            SourceText::from(
+                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+            ),
         );
         scratch.file(
             Path::new("fixture/a-sibling.gandr"),
@@ -7967,7 +7968,7 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "data Point : Type {\n  Here : Point;\n}";
+        let sibling = "pub data Point : Type {\n  Here : Point;\n}";
         let importer = "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef \
                         here : Point ;\ndef here = Here ;";
         let laid = format!("{sibling}\n{importer}");
@@ -8747,7 +8748,7 @@ mod tests
         use gandr_surface_lowering::Unit;
         use gandr_surface_lowering::UnitSource;
 
-        let sibling = "data Point : Type {\n  Here : Point;\n}";
+        let sibling = "pub data Point : Type {\n  Here : Point;\n}";
         let importer =
             "import \"./point.gandr\" ;\ndata Point : Type {\n  Here : Point;\n}\ndef two = 2 ;";
         let laid = format!("{sibling}\n{importer}");

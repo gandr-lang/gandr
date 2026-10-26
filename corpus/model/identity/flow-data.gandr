@@ -16,13 +16,13 @@ data Other : Type {
 }
 
 /// The old shapes.
-data Shape : Type {
+pub data Shape : Type {
   Circle : (r : Integer) --> Shape;
   Rect : (w : Integer, h : Integer) --> Shape;
 }
 
 /// The new shapes: the circle renamed, the rectangle's sides swapped.
-data Figure : Type {
+pub data Figure : Type {
   Round : (r : Integer) --> Figure;
   Box : (h : Integer, w : Integer) --> Figure;
 }
@@ -50,7 +50,7 @@ module Rename {
 }
 
 /// Each constructor moved to its twin, a constructor's fields swapped.
-module Shapes {
+pub module Shapes {
   /// The translator: each shape to its figure, the sides swapped.
   @[ checks ]
   def toFigure(shape : Shape) -> Figure {

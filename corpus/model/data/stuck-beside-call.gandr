@@ -10,13 +10,13 @@
 import "./data-base.gandr";
 
 /// One successor over a natural.
-def succ(n : Nat) -> Nat {
+pub def succ(n : Nat) -> Nat {
   Succ(n)
 }
 
 /// A walk down its first argument, passing its accumulator through `succ`
 /// at every step.
-def rec walk(t : Nat, c : Nat) -> Nat {
+pub def rec walk(t : Nat, c : Nat) -> Nat {
   case t {
     Zero => c,
     Succ(m) => Succ(walk[<](m, succ(c)))

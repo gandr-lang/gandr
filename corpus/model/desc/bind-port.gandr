@@ -8,7 +8,7 @@
 
 /// The π-calculus's processes: `nu` restricts a channel name over a process,
 /// abstracting it.
-theory Restriction {
+pub theory Restriction {
   sort Name : Atom;
   sort Proc : Type;
   oper nil : () --> Proc;

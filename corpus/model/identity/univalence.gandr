@@ -17,13 +17,13 @@ import "./circle-base.gandr";
 import "./circle.gandr";
 
 /// Transport forward along a path between types, the map `idtoequiv` packages.
-def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> b {
+pub def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> b {
   transport(\X. X, p, x)
 }
 
 /// Transport back along a path between types: the map the round trips are
 /// stated over.
-def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
+pub def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
   transport(\X. X, back(p), y)
 }
 
@@ -93,7 +93,7 @@ def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
 /// written out, which converts under its field's binder with the named map
 /// its law is stated over (#650), and `univalence`'s laws replay over them
 /// (#695, #698).
-def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
+pub def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
   (
     fn (x) { fwdAlong(a, b, p, x) },
     (
@@ -125,7 +125,7 @@ def uaLiteral(
 
 /// The loops at the point are the integers, as types: `winding`'s laws admit
 /// the path between a path type and a presented type.
-def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(winding);
+pub def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(winding);
 
 /// The same path ascribed a type whose right end is left as a wildcard:
 /// `ua(winding)` forces that end to the integers, so the elaborator reads the
@@ -204,7 +204,7 @@ def univalenceIso(a : Type, b : Type) -> Path(Type, a, b) ≅ (a ≃ b) {
 /// bi-invertible as `isoToEquiv` makes it, its map back both inverses. The
 /// record is written out: a split of `univalenceIso`'s result reads its type
 /// as unknown (#656).
-def univalence(a : Type, b : Type) -> Path(Type, a, b) ≃ (a ≃ b) {
+pub def univalence(a : Type, b : Type) -> Path(Type, a, b) ≃ (a ≃ b) {
   (
     fn (p) { idtoequiv(a, b, p) },
     (

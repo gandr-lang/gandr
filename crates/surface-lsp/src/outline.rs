@@ -65,6 +65,7 @@ use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
 use gandr_surface_grammar::Sort;
+use gandr_surface_lowering::Visibility;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::LineIndex;
@@ -97,6 +98,10 @@ const BLOCK_COMMENT: &str = "/*";
 /// no symbol.
 const IMPORT: &str = "import_declaration";
 
+/// The rule of a `pub` mark, one tile before the declaration it exports: it
+/// widens that declaration's symbol as an attribute block does.
+const PUB_DECLARATION: &str = "pub_declaration";
+
 /// What declares a symbol: a form of its own, a member written among the
 /// tiles of the form holding it, or a root form that declares nothing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -123,23 +128,25 @@ pub enum Declarer
 ///   [`Sort::ModuleMember`] sort that has a name: its first direct tile the
 ///   highlighter classifies as [`HlRole::FunctionDef`], [`HlRole::VariableDef`]
 ///   or [`HlRole::Type`], or as [`HlRole::Label`] after the keyword `world`.
-///   The symbol's range is the form's, widened to the attribute blocks standing
-///   directly before it, and it is deprecated exactly when one of those blocks,
-///   or one the form writes among its own tiles before its keyword, names the
-///   `deprecated` attribute; its selection range the name's, and its kind a
-///   function, a value, or by the form's first keyword a world, a module, a
-///   data declaration, a codata declaration or a signature. A signature, data
-///   declaration or codata declaration holds one symbol per member written
-///   between its own braces, as [`members`] reads them, none of them
-///   deprecated. Every other form or tile at the root that is no import and
-///   writes no such form, as [`rooted`] reads them, is one symbol of the kind
-///   [`SymbolKind::EVENT`], named by [`root_name`], its range the bytes
-///   [`rooted`] gives it, its selection range the form's own, deprecated
-///   exactly when an attribute block before it names the `deprecated`
-///   attribute, and beside [`Declarer::Root`] of it. Symbols are in source
-///   order, each after the declaration holding it, which it names by position;
-///   a top-level one names none. Each is beside the form that declares it, or
-///   the form whose member it is.
+///   The symbol's range is the form's, widened to the attribute blocks and the
+///   `pub` mark standing directly before it, and it is deprecated exactly when
+///   one of those blocks, or one the form writes among its own tiles before its
+///   keyword, names the `deprecated` attribute; it is exported exactly when the
+///   mark stands there, or, held by another symbol, when that one is. Its
+///   selection range is the name's, and its kind a function, a value, or by the
+///   form's first keyword a world, a module, a data declaration, a codata
+///   declaration or a signature. A signature, data declaration or codata
+///   declaration holds one symbol per member written between its own braces, as
+///   [`members`] reads them, none of them deprecated, each exported when its
+///   holder is. Every other form or tile at the root that is no import, no
+///   `pub` mark and writes no such form, as [`rooted`] reads them, is one
+///   unexported symbol of the kind [`SymbolKind::EVENT`], named by
+///   [`root_name`], its range the bytes [`rooted`] gives it, its selection
+///   range the form's own, deprecated exactly when an attribute block before it
+///   names the `deprecated` attribute, and beside [`Declarer::Root`] of it.
+///   Symbols are in source order, each after the declaration holding it, which
+///   it names by position; a top-level one names none. Each is beside the form
+///   that declares it, or the form whose member it is.
 /// - provides: the declarations the document symbols and a hover read.
 /// - fails: never.
 /// - panics: none.
@@ -184,7 +191,14 @@ pub fn declarations(
                 symbol.kind,
                 SymbolKind::INTERFACE | SymbolKind::ENUM | SymbolKind::STRUCT
             );
-            found.push((Declarer::Form(at), DocumentSymbol { holder, ..symbol }));
+            let exported = holder
+                .and_then(|held| found.get(held))
+                .map_or(symbol.exported, |&(_, ref held)| held.exported);
+            found.push((Declarer::Form(at), DocumentSymbol {
+                holder,
+                exported,
+                ..symbol
+            }));
             let held = found.len().saturating_sub(1);
             if container {
                 members(roles, tree, index, at, &mut found);
@@ -216,13 +230,23 @@ pub fn declarations(
                 {
                     let span = node.span();
                     let Deprecated(deprecated) = names_deprecated(tree, child);
-                    blocks =
-                        Some(
-                            blocks.map_or(Decorated { span, deprecated }, |first| Decorated {
-                                span: first.span.join(span),
-                                deprecated: first.deprecated || deprecated,
-                            }),
-                        );
+                    blocks = Some(Decorated::joined(blocks, Decorated {
+                        span,
+                        deprecated,
+                        exported: Visibility::Private,
+                    }));
+                    pending.push((child, holder, None));
+                },
+                NodeLabel::Tile(mold)
+                    if grammar
+                        .rule_of(mold)
+                        .is_ok_and(|rule| rule.name().0 == PUB_DECLARATION) =>
+                {
+                    blocks = Some(Decorated::joined(blocks, Decorated {
+                        span: node.span(),
+                        deprecated: false,
+                        exported: Visibility::Public,
+                    }));
                     pending.push((child, holder, None));
                 },
                 NodeLabel::Meld(_) | NodeLabel::Tile(_) => {
@@ -261,14 +285,14 @@ struct Rooted
 /// - requires: `tree` was parsed under `grammar`, and `index` built over its
 ///   text.
 /// - ensures: one entry per child of the root that is a form or a tile, is no
-///   attribute block and no import, and holds no form [`declared`] names,
-///   counted by [`declares`]; except a `;` written alone right after such a
-///   child, layout between them, which widens that child's entry instead, as
-///   the lowering files it with the child. An entry covers the attribute blocks
-///   written directly before its child, the child and that `;`, and is
-///   deprecated when one of those blocks names the `deprecated` attribute. A
-///   run of attribute blocks that no form follows is one entry, by its first
-///   block, covering the run.
+///   attribute block, no `pub` mark and no import, and holds no form
+///   [`declared`] names, counted by [`declares`]; except a `;` written alone
+///   right after such a child, layout between them, which widens that child's
+///   entry instead, as the lowering files it with the child. An entry covers
+///   the attribute blocks and `pub` mark written directly before its child, the
+///   child and that `;`, and is deprecated when one of those blocks names the
+///   `deprecated` attribute. A run of attribute blocks and marks that no form
+///   follows is one entry, by its first, covering the run.
 /// - provides: the root forms [`declarations`] gives an `Event` symbol.
 /// - fails: never.
 /// - panics: none.
@@ -308,7 +332,9 @@ fn rooted(
                 continue;
             },
         };
-        if matches!(node.label(), NodeLabel::Meld(_)) && rule == Some(ATTRIBUTE_BLOCK) {
+        let marks = matches!(node.label(), NodeLabel::Meld(_)) && rule == Some(ATTRIBUTE_BLOCK)
+            || matches!(node.label(), NodeLabel::Tile(_)) && rule == Some(PUB_DECLARATION);
+        if marks {
             let Deprecated(deprecated) = names_deprecated(tree, child);
             let block = Rooted { span, deprecated };
             blocks = Some(blocks.map_or((child, block), |(first, run)| {
@@ -396,6 +422,7 @@ fn root_symbol(
         detail: None,
         holder: None,
         deprecated: rooted.deprecated,
+        exported: Visibility::Private,
     })
 }
 
@@ -437,15 +464,41 @@ fn root_name(
     (!name.is_empty()).then_some(name)
 }
 
-/// The attribute blocks standing before a form: the bytes they cover, and
-/// whether one names the `deprecated` attribute.
+/// The attribute blocks and the `pub` mark standing before a form: the bytes
+/// they cover, whether a block names the `deprecated` attribute, and whether
+/// the mark exports the form.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Decorated
 {
-    /// From the first block's start to the last one's end.
+    /// From the first block's or the mark's start to the last one's end.
     span: ByteSpan,
     /// Whether a block names the `deprecated` attribute.
     deprecated: bool,
+    /// Whether a `pub` mark stands among them.
+    exported: Visibility,
+}
+
+impl Decorated
+{
+    /// `next` after the run `before`, when one stands before it: the run
+    /// widened over it, deprecated or exported when either is.
+    ///
+    /// # Specification
+    /// trivial.
+    fn joined(
+        before: Option<Self>,
+        next: Self,
+    ) -> Self
+    {
+        before.map_or(next, |first| Self {
+            span: first.span.join(next.span),
+            deprecated: first.deprecated || next.deprecated,
+            exported: match (first.exported, next.exported) {
+                (Visibility::Public, _) | (_, Visibility::Public) => Visibility::Public,
+                (Visibility::Private, Visibility::Private) => Visibility::Private,
+            },
+        })
+    }
 }
 
 /// Whether attribute blocks name the `deprecated` attribute.
@@ -567,6 +620,7 @@ fn declared(
                     holder: None,
                     deprecated: decorated.is_some_and(|blocks| blocks.deprecated)
                         || names_deprecated(tree, at).0,
+                    exported: decorated.map_or(Visibility::Private, |blocks| blocks.exported),
                 });
             },
             Ok(_) | Err(_) => {},
@@ -881,8 +935,12 @@ fn members(
                 .find_map(|later| body_start(tree, later))
         });
         if let Some(symbol) = member(tree, index, &run, keyword, name, body) {
+            let exported = found
+                .get(holder)
+                .map_or(Visibility::Private, |&(_, ref held)| held.exported);
             found.push((Declarer::Member(at, run.span), DocumentSymbol {
                 holder: Some(holder),
+                exported,
                 ..symbol
             }));
         }
@@ -918,6 +976,7 @@ fn member(
         detail: detail(tree, named_span.end(), end),
         holder: None,
         deprecated: false,
+        exported: Visibility::Private,
     })
 }
 

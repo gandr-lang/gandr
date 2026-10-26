@@ -12,7 +12,7 @@ import "./magma-base.gandr";
 import "../identity/univalence.gandr";
 
 /// The magma's degree telescope at degree one, and the swap's path on it.
-module AtStratum {
+pub module AtStratum {
   type Tel = Unit * (+{Unit} * Bool);
 
   /// The magma to itself by the swap, at degree one: a path in `Type`.

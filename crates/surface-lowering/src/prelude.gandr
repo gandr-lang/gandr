@@ -1,6 +1,6 @@
 /// Decidable equality over a carrier some value may be unequal to itself in:
 /// symmetric.
-theory PartialEq {
+pub theory PartialEq {
   sort Carrier : Type;
   oper eq : (a : Carrier, b : Carrier) --> Bool;
   law sym : (a : Carrier, b : Carrier) => Path(Bool, eq(a, b), eq(b, a));
@@ -8,20 +8,20 @@ theory PartialEq {
 
 /// Decidable equality over a carrier: a partial equality every value is
 /// equal to itself in.
-theory Eq {
+pub theory Eq {
   include PartialEq;
   law refl : (a : Carrier) => Path(Bool, eq(a, a), true);
 }
 
 /// Structural equality from `T`'s constructors, and its laws.
-module Eq {
+pub module Eq {
   /// `def eq = Eq.generic(T)`; `def refl = Eq.generic.refl(T)` and `def sym
   /// = Eq.generic.sym(T)` prove its laws.
   def generic : (T : Type) => (T, T) => Bool ;
 }
 
 /// Integer equality, the integer primitive, its laws the host's.
-module EqInteger : Model(Eq) with sort Carrier = Integer {
+pub module EqInteger : Model(Eq) with sort Carrier = Integer {
   /// Whether two integers are equal.
   def eq(a : Integer, b : Integer) -> Bool { int.eq(a, b) }
   law refl admitted;
@@ -29,7 +29,7 @@ module EqInteger : Model(Eq) with sort Carrier = Integer {
 }
 
 /// String equality, the string primitive, its laws the host's.
-module EqString : Model(Eq) with sort Carrier = String {
+pub module EqString : Model(Eq) with sort Carrier = String {
   /// Whether two strings are equal, byte for byte.
   def eq(a : String, b : String) -> Bool { string.eq(a, b) }
   law refl admitted;
@@ -38,7 +38,7 @@ module EqString : Model(Eq) with sort Carrier = String {
 
 /// Float equality, the float primitive: symmetric, and no equality, since
 /// NaN is equal to nothing, itself included.
-module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 {
+pub module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 {
   /// Whether two floats are equal, NaN equal to none.
   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
   law sym admitted;
@@ -46,11 +46,11 @@ module PartialEqFloat : Model(PartialEq) with sort Carrier = f64 {
 
 /// Equality through the model of `PartialEq` the operands' type resolves:
 /// what `a == b` calls.
-def eq @[e : Model(PartialEq)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
+pub def eq @[e : Model(PartialEq)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
 
 /// A decidable order over a carrier with its equality: below, at most, above
 /// and at least.
-theory Ord {
+pub theory Ord {
   include Eq;
   oper lt : (a : Carrier, b : Carrier) --> Bool;
   oper le : (a : Carrier, b : Carrier) --> Bool;
@@ -59,7 +59,7 @@ theory Ord {
 }
 
 /// The integers' order, the integer primitives, over `EqInteger`.
-module OrdInteger : Model(Ord) with sort Carrier = Integer {
+pub module OrdInteger : Model(Ord) with sort Carrier = Integer {
   include EqInteger;
   /// Whether one integer is below another.
   def lt(a : Integer, b : Integer) -> Bool { int.lt(a, b) }
@@ -73,7 +73,7 @@ module OrdInteger : Model(Ord) with sort Carrier = Integer {
 
 /// The strings' byte-lexicographic order, the string primitive, over
 /// `EqString`.
-module OrdString : Model(Ord) with sort Carrier = String {
+pub module OrdString : Model(Ord) with sort Carrier = String {
   include EqString;
   /// Whether one string is below another, byte by byte.
   def lt(a : String, b : String) -> Bool { string.lt(a, b) }
@@ -87,13 +87,13 @@ module OrdString : Model(Ord) with sort Carrier = String {
 
 /// Below, through the model of `Ord` the operands' type resolves: what `a < b`
 /// calls.
-def lt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.lt(a, b) }
+pub def lt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.lt(a, b) }
 
 /// At most, through the operands' model of `Ord`: what `a <= b` calls.
-def le @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.le(a, b) }
+pub def le @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.le(a, b) }
 
 /// Above, through the operands' model of `Ord`: what `a > b` calls.
-def gt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b) }
+pub def gt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b) }
 
 /// At least, through the operands' model of `Ord`: what `a >= b` calls.
-def ge @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
+pub def ge @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }

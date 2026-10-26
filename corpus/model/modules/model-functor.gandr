@@ -15,7 +15,7 @@ theory Mag {
 }
 
 /// The integers under multiplication, a model of the magma.
-module Times : Model(Mag) {
+pub module Times : Model(Mag) {
   type M = Integer;
 
   def mul(a : Integer, b : Integer) -> Integer { a * b }

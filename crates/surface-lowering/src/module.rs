@@ -1458,6 +1458,11 @@ pub struct Collected<'source>
     pub data_members: BTreeMap<NodeIndex, Vec<DataMember>>,
     /// Every top-level module an attribute block decorates, in source order.
     pub decorated: Vec<DecoratedModule<'source>>,
+    /// Every root declaration a `pub` mark precedes, by the first byte of its
+    /// form, with the form's bytes: what its source exports, the
+    /// constructors and members written inside it included. A declaration
+    /// none precedes is private to its source.
+    pub public: BTreeMap<ByteOffset, ByteSpan>,
     /// Every module form's documentation, each piece documenting its module
     /// form, in source order: a module is no slot, so its documentation is
     /// kept beside the slots' rather than in one (#1135).
@@ -1770,10 +1775,11 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the slot one source `source` imports unqualified declares at
-    ///   its top level under `name`, with that import's bytes; two such imports
-    ///   answering two slots are [`Ambiguity`], naming both imports; an import
-    ///   whose address did not resolve to a source of the unit answers nothing.
-    ///   Imports are not re-exported: only the imported source's own
+    ///   its top level under `name` and exports, with that import's bytes; two
+    ///   such imports answering two slots are [`Ambiguity`], naming both
+    ///   imports; an import whose address did not resolve to a source of the
+    ///   unit answers nothing, and neither does a declaration its source keeps
+    ///   private. Imports are not re-exported: only the imported source's own
     ///   declarations answer. Where no import answers, the unit's prelude does,
     ///   for every source but the prelude itself, with the empty bytes at its
     ///   start, which no written import covers.
@@ -1788,12 +1794,14 @@ impl<'source> Collected<'source>
     /// - hypothesis: L3 — a name one import binds, a name two bind, and a name
     ///   only an import of the imported source binds, each answered exactly; a
     ///   name the prelude declares answers where nothing written does, and a
-    ///   source's own declaration of it shadows it.
+    ///   source's own declaration of it shadows it; a private declaration
+    ///   answers nothing.
     /// - witness: `tests::namespace::an_unqualified_import_answers_a_name_its_source_declares`
     /// - witness: `tests::namespace::two_imports_binding_one_name_refuse_its_use`
     /// - witness: `tests::namespace::the_prelude_answers_a_name_nothing_written_binds_2302`
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     #[spec(ensures: |ref ret| match *ret {
-        Ok(Maybe::Present((slot, _))) => self.slots.get(usize::from(slot)).is_some(),
+        Ok(Maybe::Present((slot, _))) => self.slot_visibility(slot) == Visibility::Public,
         Ok(Maybe::Absent(_)) => true,
         Err(ref ambiguity) => ambiguity.import != ambiguity.other,
     })]
@@ -1807,7 +1815,157 @@ impl<'source> Collected<'source>
             self.by_name
                 .get(&(Container::TopLevel(target), name))
                 .copied()
+                .filter(|&slot| self.slot_visibility(slot) == Visibility::Public)
         })
+    }
+
+    /// The top-level declaration under `name` that a source `source` imports
+    /// unqualified keeps private, or the family of a constructor so named,
+    /// and the import reaching it: what a name [`Self::imported_slot`] does
+    /// not answer would have read.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::imported_slot`] over the private declarations
+    ///   alone, a constructor answering its family; two imports answering two
+    ///   private slots answer the first.
+    /// - provides: the evidence of the refusal of a private name.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::imported_slot`].
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    #[spec(ensures: |ref ret| match *ret {
+        Maybe::Present((slot, _)) => self.slot_visibility(slot) == Visibility::Private,
+        Maybe::Absent(_) => true,
+    })]
+    pub fn private_slot(
+        &self,
+        source: SourceIndex,
+        name: SurfaceName<'source>,
+    ) -> Maybe<(SlotIndex, ByteSpan), imported::Absent>
+    {
+        let mut found = Maybe::Absent(imported::Absent::Unbound);
+        for import in self.imports.of(source) {
+            let (ImportBinding::Unqualified, ImportResolution::Path(ImportTarget::Source(target))) =
+                (import.binding(), import.resolution())
+            else {
+                continue;
+            };
+            let declared = self
+                .by_name
+                .get(&(Container::TopLevel(target), name))
+                .copied()
+                .or_else(|| {
+                    self.constructors
+                        .get(&(target, name))
+                        .map(|found| found.family)
+                });
+            if let Some(slot) = declared
+                && self.slot_visibility(slot) == Visibility::Private
+            {
+                found = Maybe::Present((slot, import.span()));
+                break;
+            }
+        }
+        found
+    }
+
+    /// Whether the source declaring `slot` exports it: a `pub` mark precedes
+    /// the form that introduced it, its signature or its definition.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Visibility::Public`] when a form of [`Self::public`] holds
+    ///   the bytes of the slot's introducing form or of either half's
+    ///   declaration, and for the unit's one `Theory` code, which no source
+    ///   declares; [`Visibility::Private`] otherwise, and for a slot the
+    ///   collection does not hold.
+    /// - provides: the one visibility rule every import lookup reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is a reading of the receiver's tables,
+    ///   which a clause would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a marked signature, a marked definition and an
+    ///   unmarked declaration, read through an import; the code a private block
+    ///   minted, read through an import of its source.
+    /// - witness: `tests::namespace::a_pub_declaration_is_read_by_its_importer_2687`
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
+    /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+    ///
+    /// # Clause cost
+    /// - bound: reads one slot and makes at most three [`Self::covering`]
+    ///   lookups, each logarithmic in the unit's `pub` marks; no read grows
+    ///   with the source's declarations.
+    #[must_use]
+    pub fn slot_visibility(
+        &self,
+        slot: SlotIndex,
+    ) -> Visibility
+    {
+        let Some(entry) = self.slots.get(slot.0)
+        else {
+            return Visibility::Private;
+        };
+        let marked = |half: &Maybe<Half, declaration_half::Absent>| match *half {
+            Maybe::Present(ref half) => self.covering(half.declaration.span),
+            Maybe::Absent(_) => Visibility::Private,
+        };
+        if matches!(
+            entry.definition,
+            Maybe::Present(Half {
+                operand: Operand::Code,
+                ..
+            })
+        ) || self.covering(entry.introduced_by.span) == Visibility::Public
+            || marked(&entry.signature) == Visibility::Public
+            || marked(&entry.definition) == Visibility::Public
+        {
+            Visibility::Public
+        }
+        else {
+            Visibility::Private
+        }
+    }
+
+    /// Whether the source declaring the module `module` exports it: a `pub`
+    /// mark precedes its form.
+    ///
+    /// # Specification
+    /// trivial.
+    #[must_use]
+    pub fn structure_visibility(
+        &self,
+        module: StructureIndex,
+    ) -> Visibility
+    {
+        self.structures
+            .get(module.0)
+            .map_or(Visibility::Private, |entry| {
+                self.covering(entry.declared_by.span)
+            })
+    }
+
+    /// Whether a form of [`Self::public`] holds the bytes `span`.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Clause cost
+    /// - bound: one descending step of an ordered-map range from `span`'s
+    ///   start, logarithmic in the unit's `pub` marks.
+    fn covering(
+        &self,
+        span: ByteSpan,
+    ) -> Visibility
+    {
+        match self.public.range(..= span.start()).next_back() {
+            Some((_, form)) if span.end() <= form.end() => Visibility::Public,
+            Some(_) | None => Visibility::Private,
+        }
     }
 
     /// The code the name `Theory` reads in `source`, where no declaration of
@@ -1865,11 +2023,11 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::imported_slot`], over the constructors each
-    ///   imported source declares; the prelude answers none of the
-    ///   presentation's, which its `theory` block enters as any block does but
-    ///   which are no part of what it offers, so a source names `Shape` or
-    ///   `Var` for its own type unless it, or a source it imports, writes a
-    ///   theory.
+    ///   imported source declares, a constructor answering only when its source
+    ///   exports its family; the prelude answers none of the presentation's,
+    ///   which its `theory` block enters as any block does but which are no
+    ///   part of what it offers, so a source names `Shape` or `Var` for its own
+    ///   type unless it, or a source it imports, writes a theory.
     /// - provides: the import fallback of constructor lookup.
     /// - fails: [`Ambiguity`] for two imports binding one constructor name.
     /// - panics: none.
@@ -1901,6 +2059,7 @@ impl<'source> Collected<'source>
                 .get(&(target, name))
                 .copied()
                 .filter(|found| found.form != Generators::Presentation || prelude != Some(target))
+                .filter(|found| self.slot_visibility(found.family) == Visibility::Public)
         })
     }
 
@@ -1910,8 +2069,8 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::imported_slot`], over the type members each
-    ///   imported source writes at its top level, the last of a name answering
-    ///   it.
+    ///   imported source writes at its top level and exports, the last of a
+    ///   name answering it.
     /// - provides: the import fallback of a bare type head's member lookup.
     /// - fails: [`Ambiguity`] for two imports writing a type member of one
     ///   name.
@@ -1941,6 +2100,7 @@ impl<'source> Collected<'source>
                 .filter(|member| member.name == name)
                 .last()
                 .copied()
+                .filter(|member| self.slot_visibility(member.held) == Visibility::Public)
         })
     }
 
@@ -1950,8 +2110,8 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::imported_slot`], over the modules and instances
-    ///   each imported source declares at its top level; a functor's body is
-    ///   neither.
+    ///   each imported source declares at its top level and exports; a
+    ///   functor's body is neither.
     /// - provides: the import fallback of a functor argument's head.
     /// - fails: [`Ambiguity`] for two imports declaring a module of one name.
     /// - panics: none.
@@ -1981,7 +2141,7 @@ impl<'source> Collected<'source>
                 .filter(|module| {
                     self.structures.get(module.0).is_some_and(|entry| {
                         matches!(entry.stratum, Stratum::Module | Stratum::Instance(_))
-                    })
+                    }) && self.structure_visibility(*module) == Visibility::Public
                 })
         })
     }
@@ -1992,7 +2152,7 @@ impl<'source> Collected<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::imported_slot`], `lookup` standing for the table
-    ///   read in each imported source.
+    ///   read in each imported source and deciding what it keeps private.
     /// - fails: [`Ambiguity`] for two imports answering two values.
     /// - panics: none.
     ///
@@ -2594,6 +2754,10 @@ struct Collector<'run, 'source>
     pieces: Pieces,
     /// The next path import's ordinal in each source that has written one.
     ordinals: BTreeMap<SourceIndex, PathImportOrdinal>,
+    /// The documentation before each `pub` mark, by the node of the form the
+    /// mark exports: a mark is one tile, which groups none of it, so the
+    /// parser leaves it beside the mark, and it documents the form.
+    marks: BTreeMap<NodeIndex, Vec<Placed>>,
 }
 
 /// Collect every source of `unit` at once, as the lowering collects them a
@@ -2734,6 +2898,7 @@ pub fn begin_collection<'source>(
         unread_expectations: BTreeMap::new(),
         data_members: BTreeMap::new(),
         decorated: Vec::new(),
+        public: BTreeMap::new(),
         module_docs: Vec::new(),
         families: Vec::new(),
         top_types: Vec::new(),
@@ -3009,6 +3174,7 @@ pub fn collect_source<'source>(
         collected,
         pieces: Pieces::new(),
         ordinals: BTreeMap::new(),
+        marks: BTreeMap::new(),
     };
     // A datatype declares its family's slot before it is entered, so the slots
     // count it; a module may declare no slot, so the structures count it.
@@ -3025,6 +3191,9 @@ pub fn collect_source<'source>(
     let mut filed = 0_usize;
     let mut first_stray: Option<LoweringRefusal<'source>> = None;
     let mut decorations: Vec<Placed> = Vec::new();
+    // The `pub` mark read before the declaration it exports, attribute blocks
+    // between the two aside.
+    let mut marked: Option<Placed> = None;
     let mut after_stray = false;
     // Whether the last root child read, the `;` ending it aside, is an
     // expression the parser did not repair: the run target the source runs.
@@ -3047,9 +3216,23 @@ pub fn collect_source<'source>(
     let mut manifests = collector.manifest_types().into_iter().peekable();
     let mut forgotten = collector.forgotten();
     let mut minted = 0_usize;
+    // The documentation the parser left beside the root's children, and the
+    // run of it written before the mark read last.
+    let loose = collector.loose_docs(collector.tree.root());
+    let mut mark_docs: Vec<Placed> = Vec::new();
+    let mut previous_end = placed.first().map_or_else(
+        || ByteOffset::from(0_usize),
+        |first| {
+            let unit = &collector.collected.unit;
+            unit.sources()
+                .get(usize::from(unit.source_at(first.span.start())))
+                .map_or_else(|| first.span.start(), super::unit::UnitSource::start)
+        },
+    );
     for piece in pieces {
         collector.fuel.spend()?;
         let child = piece.placed();
+        let gap = core::mem::replace(&mut previous_end, child.span.end()) .. child.span.start();
         let follows_stray = core::mem::replace(&mut after_stray, false);
         // The `;` that ends a stray statement belongs to it.
         let terminates = follows_stray
@@ -3099,6 +3282,31 @@ pub fn collect_source<'source>(
         if former == Maybe::Present(Former::AttributeBlock) {
             decorations.push(child);
             continue;
+        }
+        if former == Maybe::Present(Former::Visibility) {
+            if let Some(earlier) = marked.replace(child) {
+                strays.push(Stray::of(earlier, misplaced_mark(earlier), Vec::new()));
+            }
+            mark_docs = loose
+                .iter()
+                .filter(|doc| gap.contains(&doc.span.start()))
+                .copied()
+                .collect();
+            continue;
+        }
+        if let Some(mark) = marked.take() {
+            if collector.exports(child, former)? == Exported::Declares {
+                collector
+                    .collected
+                    .public
+                    .insert(child.span.start(), child.span);
+                let _first = collector
+                    .marks
+                    .insert(child.node, core::mem::take(&mut mark_docs));
+            }
+            else {
+                strays.push(Stray::of(mark, misplaced_mark(mark), Vec::new()));
+            }
         }
         if collector.derives(child)?.0 {
             if let Some(refusal) = strayed(collector.derive(child, &decorations))? {
@@ -3229,6 +3437,9 @@ pub fn collect_source<'source>(
     {
         strays.push(Stray::of(block, refusal, Vec::new()));
     }
+    if let Some(mark) = marked {
+        strays.push(Stray::of(mark, misplaced_mark(mark), Vec::new()));
+    }
     for stray in strays {
         first_stray.get_or_insert(stray.refusal);
         filed = filed.saturating_add(1);
@@ -3258,6 +3469,16 @@ pub fn collect_source<'source>(
     collector.stray_expectations();
 
     Ok(())
+}
+
+/// Whether a source exports a declaration of its top level.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Visibility
+{
+    /// A `pub` mark precedes it: a source importing its source reads it.
+    Public,
+    /// No mark precedes it: it is read in its own source alone.
+    Private,
 }
 
 /// A root child that is no declaration, the refusal it raised, the attribute
@@ -3345,6 +3566,32 @@ fn strayed<'source>(
         ) => Ok(Some(refusal)),
         Err(refusal) => Err(refusal),
     }
+}
+
+/// The refusal of a `pub` mark at `mark` that precedes no root declaration:
+/// one before an import, an expression, a block, another mark or nothing.
+///
+/// # Specification
+/// trivial.
+const fn misplaced_mark<'source>(mark: Placed) -> LoweringRefusal<'source>
+{
+    LoweringRefusal::OutOfFragment {
+        span: mark.span,
+        form: FormName::VISIBILITY,
+        sort: FragmentSort::Declaration,
+        boundary: FragmentBoundary::Misplaced,
+    }
+}
+
+/// Whether a root child is a declaration a `pub` mark before it exports.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Exported
+{
+    /// The child declares a name: a definition, a data declaration, a
+    /// module, a world, a `theory` block or a derived rule.
+    Declares,
+    /// The child declares nothing a source exports.
+    Declines,
 }
 
 /// Whether an import's address names a scheme or a path.
@@ -3979,21 +4226,53 @@ impl<'source> Collector<'_, 'source>
         }
         let first = SlotIndex(self.collected.slots.len());
         let mut decorations: Vec<Placed> = Vec::new();
+        let mut marked: Option<Placed> = None;
+        let loose = self.loose_docs(block.node);
+        let mut mark_docs: Vec<Placed> = Vec::new();
+        let mut previous_end = block.span.start();
         for piece in pieces.pieces {
             let Piece::Operand(member) = piece
             else {
                 continue;
             };
             self.fuel.spend()?;
+            let gap =
+                core::mem::replace(&mut previous_end, member.span.end()) .. member.span.start();
             match self.root_former(member)? {
                 Maybe::Present(Former::AttributeBlock) => decorations.push(member),
+                Maybe::Present(Former::Visibility) => {
+                    if let Some(earlier) = marked.replace(member) {
+                        return Err(misplaced_mark(earlier));
+                    }
+                    mark_docs = loose
+                        .iter()
+                        .filter(|doc| gap.contains(&doc.span.start()))
+                        .copied()
+                        .collect();
+                },
                 Maybe::Present(Former::Data) => {
+                    if marked.take().is_some() {
+                        self.collected
+                            .public
+                            .insert(member.span.start(), member.span);
+                        let _first = self
+                            .marks
+                            .insert(member.node, core::mem::take(&mut mark_docs));
+                    }
                     self.data(member, &decorations)?;
                     self.hold_described_refusals(member);
                     self.route_operations(member);
                     decorations.clear();
                 },
                 Maybe::Present(Former::Declaration) => {
+                    if marked.take().is_some() {
+                        self.collected
+                            .public
+                            .insert(member.span.start(), member.span);
+                        let _first = self
+                            .marks
+                            .insert(member.node, core::mem::take(&mut mark_docs));
+                    }
                     self.declaration(member, &decorations)?;
                     decorations.clear();
                 },
@@ -4086,6 +4365,9 @@ impl<'source> Collector<'_, 'source>
                     }
                 },
             }
+        }
+        if let Some(mark) = marked {
+            return Err(misplaced_mark(mark));
         }
         if let Some(&stray) = decorations.first() {
             self.module_child(stray)?;
@@ -4504,6 +4786,48 @@ impl<'source> Collector<'_, 'source>
                 .is_some_and(|entry| matches!(entry.classifier, Maybe::Absent(_)))
                 && !self.described_refusals(child).is_empty(),
         )
+    }
+
+    /// Whether the root child `child`, read as `former`, declares a name a
+    /// `pub` mark before it exports.
+    ///
+    /// # Specification
+    /// - requires: `former` is what [`Self::root_former`] reads `child` as.
+    /// - ensures: [`Exported::Declares`] for a definition, a data declaration,
+    ///   a module, a world, a described `theory` or `oper` block and a derived
+    ///   rule; [`Exported::Declines`] for every other child.
+    /// - fails: as [`Self::derives`].
+    /// - panics: none.
+    /// - executable: none — the answer is a reading of the receiver's
+    ///   collection, which the clauses cannot restate apart from the body.
+    ///
+    /// # Errors
+    /// As [`Self::derives`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an exported definition is read by an importer, and a
+    ///   mark before an import is refused at the mark.
+    /// - witness: `tests::namespace::a_pub_declaration_is_read_by_its_importer_2687`
+    /// - witness: `tests::namespace::a_pub_mark_before_no_declaration_is_misplaced_2687`
+    fn exports(
+        &self,
+        child: Placed,
+        former: Maybe<Former, data::root::Absent>,
+    ) -> Result<Exported, LoweringRefusal<'source>>
+    {
+        let declares = matches!(
+            former,
+            Maybe::Present(
+                Former::Declaration | Former::Data | Former::Module | Former::WorldDeclaration
+            )
+        ) || self.collected.descriptions.contains_key(&child.node)
+            || self.derives(child)?.0;
+        Ok(if declares {
+            Exported::Declares
+        }
+        else {
+            Exported::Declines
+        })
     }
 
     /// File the refusals raised inside the top-level `oper` at `child` as
@@ -5748,18 +6072,22 @@ impl<'source> Collector<'_, 'source>
     /// - requires: `holder` is the declaration form at `documents`, or an
     ///   attribute block standing before it.
     /// - ensures: each [`NodeLabel::Doc`] child of `holder` whose span ends at
-    ///   or before `before` joins the slot's documentation, in child order; a
-    ///   documentation node after `before` documents something inside the form
-    ///   rather than the form, and is left alone.
+    ///   or before `before` joins the slot's documentation; a documentation
+    ///   node after `before` documents something inside the form rather than
+    ///   the form, and is left alone. Reading the form itself, the
+    ///   documentation its `pub` mark holds joins too, and the slot's
+    ///   documentation stands in source order.
     /// - provides: the documentation half of collection.
     /// - fails: never; an unlisted slot files nothing.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — documentation before a definition, before a data
-    ///   declaration and in its own block reach the declaration, while a
-    ///   comment of `///` lines inside a data body does not.
+    ///   declaration, in its own block and before a `pub` mark reach the
+    ///   declaration, while a comment of `///` lines inside a data body does
+    ///   not.
     /// - witness: `lower::tests::documentation_is_filed_under_the_declaration_key`
+    /// - witness: `tests::namespace::documentation_before_a_pub_mark_documents_its_declaration_2687`
     #[spec(
         captures: before_docs = self.collected.slots.get(slot.0).map_or(0, |entry| entry.docs.len()),
         ensures: self.collected.slots.get(slot.0).is_none_or(|entry| entry.docs.len() >= before_docs),
@@ -5773,9 +6101,42 @@ impl<'source> Collector<'_, 'source>
     )
     {
         let tree = self.tree;
+        let carried = if holder == documents {
+            self.marks.remove(&documents).unwrap_or_default()
+        }
+        else {
+            Vec::new()
+        };
         if let Some(entry) = self.collected.slots.get_mut(slot.0) {
             written_docs(tree, holder, before, documents, &mut entry.docs);
+            if !carried.is_empty() {
+                entry
+                    .docs
+                    .extend(carried.into_iter().map(|at| WrittenDoc { at, documents }));
+                entry.docs.sort_by_key(|written| written.at.span.start());
+            }
         }
+    }
+
+    /// The documentation the parser left among `holder`'s children rather
+    /// than grouping it under a form: what is written before a `pub` mark.
+    ///
+    /// # Specification
+    /// trivial.
+    fn loose_docs(
+        &self,
+        holder: NodeIndex,
+    ) -> Vec<Placed>
+    {
+        self.tree
+            .children(holder)
+            .filter_map(|child| {
+                self.tree
+                    .node(child)
+                    .filter(|node| node.label() == NodeLabel::Doc)
+                    .map(|node| Placed::of(child, node))
+            })
+            .collect()
     }
 
     /// Keep beside the slots the documentation `holder` holds, ending at or
@@ -5813,6 +6174,17 @@ impl<'source> Collector<'_, 'source>
             documents,
             &mut self.collected.module_docs,
         );
+        if holder == documents
+            && let Some(carried) = self.marks.remove(&documents)
+            && !carried.is_empty()
+        {
+            self.collected
+                .module_docs
+                .extend(carried.into_iter().map(|at| WrittenDoc { at, documents }));
+            self.collected
+                .module_docs
+                .sort_by_key(|written| written.at.span.start());
+        }
     }
 }
 

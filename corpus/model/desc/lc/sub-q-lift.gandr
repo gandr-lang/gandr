@@ -7,6 +7,6 @@ import "../model-in-source.gandr";
 import "./syntax.gandr";
 
 /// A lifted substitution at the newest variable is that variable.
-def subQLift(s : Env) -> Path(Term, subst(Ix(Z), Lift(s)), Ix(Z)) {
+pub def subQLift(s : Env) -> Path(Term, subst(Ix(Z), Lift(s)), Ix(Z)) {
   here(Ix(Z))
 }

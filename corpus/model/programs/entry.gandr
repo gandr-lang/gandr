@@ -5,7 +5,7 @@
 // entry.gandr a b c` exits 3.
 
 /// The number of strings in a list.
-def rec count(xs : List(String)) -> Integer {
+pub def rec count(xs : List(String)) -> Integer {
   case xs {
     [] => 0,
     [x, ..rest] => { run n <- count[<](rest); n + 1 }

@@ -788,6 +788,7 @@ impl Reader<'_, '_>
             classifier: Maybe::Absent(family_classifier::Absent::Signature),
             presentation: Maybe::Present(presentation),
             written,
+            exported: crate::module::Visibility::Private,
         })
     }
 
@@ -1002,6 +1003,7 @@ impl Reader<'_, '_>
             classifier: Maybe::Absent(family_classifier::Absent::Circuit),
             presentation: Maybe::Absent(presentation::Absent::Circuit),
             written: WrittenMembers::default(),
+            exported: crate::module::Visibility::Private,
         })
     }
 

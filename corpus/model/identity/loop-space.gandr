@@ -16,7 +16,7 @@ import "./loop-winding.gandr";
 /// Spinning, the fold out of the presented integers into the words: a
 /// successor is a loop and a predecessor an inverse. It recurses structurally
 /// and respects both rules as the winding number does.
-def rec spinWords(n : Int) -> Words {
+pub def rec spinWords(n : Int) -> Words {
   case n {
     Z => Nil,
     S(x) => Loop(spinWords[<](x)),

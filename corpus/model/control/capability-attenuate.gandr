@@ -10,7 +10,7 @@
 def fs : Cap { read, write };
 
 /// A reader that asks only for reading.
-def peek(c : Cap { read }) -> [Fs] String {
+pub def peek(c : Cap { read }) -> [Fs] String {
   c.read("notes")
 }
 

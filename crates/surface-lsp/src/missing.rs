@@ -60,9 +60,10 @@ pub const UNRESOLVED_NAME: &str = "UnresolvedName";
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a value no import reaches is offered the one import
-///   declaring it, preferred; a name two sources declare is offered both, none
-///   preferred; a name written as a type is not offered a source declaring it
-///   only as a value; a range elsewhere is offered none.
+///   exporting it, preferred, and not a source declaring it privately; a name
+///   two sources export is offered both, none preferred; a name written as a
+///   type is not offered a source declaring it only as a value; a range
+///   elsewhere is offered none.
 /// - witness: `missing::tests::an_unresolved_name_is_offered_the_import_declaring_it`
 #[spec(ensures: |ret| ret.iter().all(|action| action.kind == "quickfix"
     && action.edit.changes.as_ref().is_some_and(|changes| changes.len() == 1)))]
@@ -159,11 +160,15 @@ mod tests
     fn an_unresolved_name_is_offered_the_import_declaring_it()
     {
         let far = declared(SourceText::from(
-            "data Shape : Type {\n  Circle : Shape;\n}\ndef faraway : Integer ;\ndef faraway = 7 \
-             ;\n",
+            "pub data Shape : Type {\n  Circle : Shape;\n}\npub def faraway : Integer ;\ndef \
+             faraway = 7 ;\n",
         ));
         let twin = declared(SourceText::from(
-            "def faraway : Integer ;\ndef faraway = 8 ;\ndef Shape : Integer ;\ndef Shape = 1 ;\n",
+            "pub def faraway : Integer ;\ndef faraway = 8 ;\npub def Shape : Integer ;\ndef Shape \
+             = 1 ;\n",
+        ));
+        let hidden = declared(SourceText::from(
+            "def faraway : Integer ;\ndef faraway = 9 ;\n",
         ));
         let far = Unimported {
             path: Path::new("/folder/far.gandr"),
@@ -172,6 +177,10 @@ mod tests
         let twin = Unimported {
             path: Path::new("/folder/twin.gandr"),
             names: &twin,
+        };
+        let hidden = Unimported {
+            path: Path::new("/folder/hidden.gandr"),
+            names: &hidden,
         };
         let uri = DocumentUri::from("file:///folder/typing.gandr");
         let range = |line: u32, start: u32, end: u32| -> Range {
@@ -210,9 +219,10 @@ mod tests
         let value = "def here : Integer ;\ndef here = faraway ;\n";
         let at_value = range(1, 11, 18);
         assert_eq!(
-            offered(value, (at_value, at_value), &[far]),
+            offered(value, (at_value, at_value), &[far, hidden]),
             [(String::from("Import `./far.gandr`"), true)],
-            "the one source declaring the value is offered, preferred"
+            "the one source exporting the value is offered, preferred; one declaring it \
+             privately is not, since its import would not bring the name into scope"
         );
         assert_eq!(
             offered(value, (at_value, at_value), &[far, twin]),

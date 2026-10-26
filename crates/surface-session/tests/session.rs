@@ -1236,8 +1236,8 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     let document = directory.join("document.gandr");
     std::fs::write(
         &sibling,
-        "/// #776: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two \
-         = one ;\n",
+        "/// #776: the closure.\ndef one : Integer ;\ndef one = 1 ;\npub def two : Integer ;\ndef \
+         two = one ;\n",
     )
     .expect("the sibling is written");
     // The editor's buffer is what is judged; the file only has to exist.
@@ -1264,8 +1264,8 @@ fn an_edit_to_its_own_text_readmits_the_document_alone_776()
     );
     std::fs::write(
         &sibling,
-        "/// #776: the closure, changed.\ndef one : Integer ;\ndef one = 2 ;\ndef two : Integer \
-         ;\ndef two = one ;\n",
+        "/// #776: the closure, changed.\ndef one : Integer ;\ndef one = 2 ;\npub def two : \
+         Integer ;\ndef two = one ;\n",
     )
     .expect("the sibling is rewritten");
     assert_eq!(
@@ -1306,8 +1306,8 @@ fn an_admission_resumes_the_declarations_a_revision_left_alone_2102()
     let document = directory.join("document.gandr");
     std::fs::write(
         directory.join("base.gandr"),
-        "/// #2102: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef \
-         two = one ;\n",
+        "/// #2102: the closure.\npub def one : Integer ;\ndef one = 1 ;\npub def two : Integer \
+         ;\ndef two = one ;\n",
     )
     .expect("the sibling is written");
     std::fs::write(&document, "").expect("the document is written");
@@ -1414,7 +1414,7 @@ fn a_retired_admission_leaves_what_it_crossed_to_the_next_1547()
     let document = directory.join("document.gandr");
     std::fs::write(
         &sibling,
-        "/// #1547: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef \
+        "/// #1547: the closure.\ndef one : Integer ;\ndef one = 1 ;\npub def two : Integer ;\ndef \
          two = one ;\n",
     )
     .expect("the sibling is written");
@@ -1589,7 +1589,7 @@ fn a_document_after_its_closure_shares_the_closure_s_images_776()
     let document = directory.join("document.gandr");
     std::fs::write(
         &sibling,
-        "def one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef two = one ;\n",
+        "def one : Integer ;\ndef one = 1 ;\npub def two : Integer ;\ndef two = one ;\n",
     )
     .expect("the sibling is written");
     std::fs::write(&document, "").expect("the document is written");
@@ -1840,7 +1840,7 @@ fn an_importer_lowers_its_closure_once_1033()
     let document = directory.join("document.gandr");
     std::fs::write(
         &sibling,
-        "/// #1033: the closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer ;\ndef \
+        "/// #1033: the closure.\ndef one : Integer ;\ndef one = 1 ;\npub def two : Integer ;\ndef \
          two = one ;\n",
     )
     .expect("the sibling is written");
@@ -1959,7 +1959,7 @@ fn a_revision_reads_the_imports_its_own_parse_writes_2439()
         std::fs::canonicalize(&directory).expect("the scratch directory has a canonical path");
     std::fs::write(
         directory.join("base.gandr"),
-        "/// #2439: the closure.\ndef one : Integer ;\ndef one = 1 ;\n",
+        "/// #2439: the closure.\npub def one : Integer ;\ndef one = 1 ;\n",
     )
     .expect("the sibling is written");
     let document = directory.join("document.gandr");

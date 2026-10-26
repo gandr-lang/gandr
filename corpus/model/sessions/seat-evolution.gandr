@@ -10,7 +10,7 @@ import "./seat-base.gandr";
 
 /// The seat's protocol, the protocol with a pause added, and the protocol
 /// unrolled once, related by simulation and bisimulation.
-module Evolution {
+pub module Evolution {
   type Dispatch = Seat.Dispatch;
   type Report = Seat.Report;
   type Handoff = Seat.Handoff;

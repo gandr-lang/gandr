@@ -268,6 +268,11 @@ pub(super) const MEANINGLESS: &[(&str, &str)] = &[
         "an attribute's name is the expectation it states, no term or type: the declaration's \
          head answers it",
     ),
+    (
+        "item pub_declaration",
+        "a `pub` mark exports the declaration after it and is no term or type: the declaration's \
+         head answers it",
+    ),
 ];
 
 /// The tile labels a form spells a name with: a tile so labelled names

@@ -1202,8 +1202,8 @@ fn an_importer_edit_offers_the_kernel_its_own_declarations_776()
     let document = directory.join("document.gandr");
     std::fs::write(
         directory.join("base.gandr"),
-        "/// #776: the server's closure.\ndef one : Integer ;\ndef one = 1 ;\ndef two : Integer \
-         ;\ndef two = one ;\n",
+        "/// #776: the server's closure.\ndef one : Integer ;\ndef one = 1 ;\npub def two : \
+         Integer ;\ndef two = one ;\n",
     )
     .expect("the sibling is written");
     // The editor's buffer is what is judged; the file only has to exist.
@@ -1263,7 +1263,7 @@ fn a_definition_in_a_sibling_answers_the_sibling_s_path_795()
         std::fs::canonicalize(&scratch.0).expect("the scratch directory has a canonical path");
     let base = directory.join("base.gandr");
     let document = directory.join("document.gandr");
-    std::fs::write(&base, "def one : Integer ;\n\ndef one = 1 ;\n")
+    std::fs::write(&base, "pub def one : Integer ;\n\ndef one = 1 ;\n")
         .expect("the sibling is written");
     std::fs::write(&document, "").expect("the document is written");
     let address = uri(&document);
@@ -1302,7 +1302,7 @@ fn a_completion_offers_what_a_sibling_declares_806()
         std::fs::canonicalize(&scratch.0).expect("the scratch directory has a canonical path");
     let base = directory.join("base.gandr");
     let document = directory.join("document.gandr");
-    std::fs::write(&base, "def one : Integer ;\n\ndef one = 1 ;\n")
+    std::fs::write(&base, "pub def one : Integer ;\n\ndef one = 1 ;\n")
         .expect("the sibling is written");
     std::fs::write(&document, "").expect("the document is written");
     let address = uri(&document);
@@ -1347,7 +1347,7 @@ fn signature_help_reads_a_sibling_s_head()
     let document = directory.join("document.gandr");
     std::fs::write(
         &base,
-        "/// Picks the first.\ndef pick(a : Integer, b : Integer) -> -F Integer { return a }\n",
+        "/// Picks the first.\npub def pick(a : Integer, b : Integer) -> -F Integer { return a }\n",
     )
     .expect("the sibling is written");
     std::fs::write(&document, "").expect("the document is written");

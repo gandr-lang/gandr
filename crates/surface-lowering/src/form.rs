@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 71_usize] = [
+    pub const ALL: [Self; 72_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -261,7 +261,10 @@ impl FormName
         Self::UNKNOWN_TYPE,
         Self::REPRESENTABLE_UNIVERSE_TYPE,
         Self::INDEX,
+        Self::VISIBILITY,
     ];
+    /// The visibility mark `pub` before a root declaration.
+    pub const VISIBILITY: Self = Self("pub_declaration");
     /// The statement `acquire …;`, inlined into its block.
     pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
     /// An annotation: `(e : T)`, folded into the parenthesised expression, and
@@ -945,6 +948,9 @@ pub enum Former
     Declaration,
     /// An attribute block standing on its own, decorating nothing.
     AttributeBlock,
+    /// The visibility mark `pub`, exporting the declaration it precedes from
+    /// its source.
+    Visibility,
     /// The import `import "URI" as name ;`.
     Import,
     /// The module family `module M …`: a module declaration, and each member
@@ -1012,7 +1018,7 @@ impl Former
     ///   table outcome's variant. The evidence is bounded to the current closed
     ///   enum and table.
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 73_usize] = [
+    pub const ALL: [Self; 74_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Hole,
@@ -1072,6 +1078,7 @@ impl Former
         Self::Scope,
         Self::Declaration,
         Self::AttributeBlock,
+        Self::Visibility,
         Self::Import,
         Self::Module,
         Self::Data,
@@ -1113,7 +1120,7 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 130_usize] = [
+pub const FORMERS: [(&str, Former); 131_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
@@ -1203,6 +1210,7 @@ pub const FORMERS: [(&str, Former); 130_usize] = [
     ("hold_expression", Former::World),
     ("migrate_expression", Former::World),
     ("world_declaration", Former::WorldDeclaration),
+    ("pub_declaration", Former::Visibility),
     ("dup_expression", Former::Reserved(Unbuilt::Dup)),
     // Realised by the grammar, declined by the lowering.
     ("as_pattern", Former::Unadmitted(Unbuilt::AsPattern)),

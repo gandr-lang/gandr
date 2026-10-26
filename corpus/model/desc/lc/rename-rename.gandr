@@ -28,7 +28,7 @@ def renameRenameLift(
 
 /// Renaming by `a1` then `a2` is renaming by `a3`, given they agree at every
 /// index.
-def rec renameRename(
+pub def rec renameRename(
   t : Term,
   a1 : Ren,
   a2 : Ren,
@@ -84,7 +84,7 @@ def renameSquareLift(
 
 /// Renaming by `a1` then `a2` is renaming by `a3` then `a4`, given the two
 /// composites agree at every index.
-def rec renameSquare(
+pub def rec renameSquare(
   t : Term,
   a1 : Ren,
   a2 : Ren,

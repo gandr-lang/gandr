@@ -11,7 +11,7 @@
 import "./passed.gandr";
 
 /// Forces the thunk it is lent, then hands it back in the same region.
-def touch @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) {
+pub def touch @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) {
   run _ <- force k;
   pure k
 }

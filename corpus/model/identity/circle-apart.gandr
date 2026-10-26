@@ -10,7 +10,7 @@
 import "./circle-base.gandr";
 
 /// The loop is not the empty word.
-def loop_apart(e : Path(Path(Circle, Base, Base), loop, here(Base))) -> Empty {
+pub def loop_apart(e : Path(Path(Circle, Base, Base), loop, here(Base))) -> Empty {
   case e {}
 }
 

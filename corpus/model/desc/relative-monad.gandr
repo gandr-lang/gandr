@@ -37,7 +37,7 @@ theory MonadRightUnit {
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
 /// unification, and its two reducts normalize to one term (#2116).
-theory RelativeMonad {
+pub theory RelativeMonad {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;

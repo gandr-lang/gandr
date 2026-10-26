@@ -13,7 +13,7 @@
 /// unit and `a()`, `b()` two elements the row reads; the row's normal form is
 /// one only a derived rule reaches.
 @[ normalizes("inv(mul(a, b)) ~> mul(inv(b), inv(a))") ]
-theory Group {
+pub theory Group {
   sort G : Type;
 
   oper e : G;

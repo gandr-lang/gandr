@@ -23,7 +23,7 @@ def substIdLift(s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n)), n : N)
 }
 
 /// A substitution that is the identity at every index is the identity.
-def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n))) -> Path(
+pub def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n))) -> Path(
   Term,
   subst(t, s),
   t
@@ -44,7 +44,7 @@ def rec substId(t : Term, s : Env, h : (n : N) => Path(Term, look(n, s, Z), Ix(n
 }
 
 /// The shift by zero is the identity at every index.
-def shiftZeroIsId(n : N) -> Path(Term, look(n, Shift(Z), Z), Ix(n)) {
+pub def shiftZeroIsId(n : N) -> Path(Term, look(n, Shift(Z), Z), Ix(n)) {
   case n {
     Z => here(Ix(Z)),
     S(j) => here(Ix(S(j)))

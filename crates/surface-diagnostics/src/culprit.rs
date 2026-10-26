@@ -63,9 +63,11 @@ use gandr_surface_corpus::CorpusRefusal;
 use gandr_surface_corpus::Refusal;
 use gandr_surface_lowering::Ending;
 use gandr_surface_lowering::FormFault;
+use gandr_surface_lowering::FormName;
 use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::Repair;
+use gandr_surface_lowering::Unexported;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GroutShape;
 
@@ -131,7 +133,7 @@ impl fmt::Display for Culprit
 ///
 /// # Specification
 /// trivial.
-const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
+fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
 {
     Culprit(match refusal {
         LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
@@ -145,7 +147,19 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
         LoweringRefusal::ImportCycle { .. } => "leads back to this source",
         LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
-        LoweringRefusal::UnexportedName { .. } => "declared without a definition",
+        LoweringRefusal::UnexportedName {
+            reason: Unexported::Undefined,
+            ..
+        } => "declared without a definition",
+        LoweringRefusal::UnexportedName {
+            reason: Unexported::Private,
+            ..
+        } => "private to its source",
+        LoweringRefusal::OutOfFragment {
+            form: FormName::VISIBILITY,
+            boundary: FragmentBoundary::Misplaced,
+            ..
+        } => "a mark before no declaration",
         LoweringRefusal::OutOfFragment { boundary, .. } => match boundary {
             FragmentBoundary::Reserved(_) => "a reserved form",
             FragmentBoundary::Unadmitted(_) => "a form the fragment does not admit",
@@ -500,6 +514,7 @@ mod tests
     use gandr_surface_lowering::TelescopeFault;
     use gandr_surface_lowering::TileName;
     use gandr_surface_lowering::Unbuilt;
+    use gandr_surface_lowering::Unexported;
     use gandr_surface_lowering::model::ModelFault;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::ByteSpan;
@@ -556,7 +571,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    const fn label(refusal: LoweringRefusal<'_>) -> Culprit
+    fn label(refusal: LoweringRefusal<'_>) -> Culprit
     {
         Culprit(match refusal {
             LoweringRefusal::UnresolvedName { .. } => "not found in this scope",
@@ -570,7 +585,19 @@ mod tests
             LoweringRefusal::ImportUnresolved { .. } => "names no source this root holds",
             LoweringRefusal::ImportCycle { .. } => "leads back to this source",
             LoweringRefusal::ImportShadows { .. } => "bound here and by an import",
-            LoweringRefusal::UnexportedName { .. } => "declared without a definition",
+            LoweringRefusal::UnexportedName {
+                reason: Unexported::Undefined,
+                ..
+            } => "declared without a definition",
+            LoweringRefusal::UnexportedName {
+                reason: Unexported::Private,
+                ..
+            } => "private to its source",
+            LoweringRefusal::OutOfFragment {
+                form: FormName::VISIBILITY,
+                boundary: FragmentBoundary::Misplaced,
+                ..
+            } => "a mark before no declaration",
             LoweringRefusal::OutOfFragment { boundary, .. } => match boundary {
                 FragmentBoundary::Reserved(_) => "a reserved form",
                 FragmentBoundary::Unadmitted(_) => "a form the fragment does not admit",
@@ -751,6 +778,7 @@ mod tests
                 span: at,
                 name,
                 declared: at,
+                reason: Unexported::Undefined,
             },
             LoweringRefusal::OutOfFragment {
                 span: at,

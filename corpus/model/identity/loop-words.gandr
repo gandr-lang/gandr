@@ -10,7 +10,7 @@
 /// The loop's words as a presented type: its rules rewrite constructor
 /// terms, so a word normalizes to the loops it winds.
 @[ normalizes("Loop(Loop(Unloop(Unloop(Loop(Nil))))) ~> Loop(Nil)") ]
-data Words : Type {
+pub data Words : Type {
   Nil : Words;
   Loop : (x : Words) --> Words;
   Unloop : (x : Words) --> Words;
@@ -19,7 +19,7 @@ data Words : Type {
 }
 
 /// A function that builds a word: one more loop.
-def around(c : Words) -> Words {
+pub def around(c : Words) -> Words {
   Loop(c)
 }
 

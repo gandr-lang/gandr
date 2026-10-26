@@ -136,7 +136,7 @@ def weakenLiftLooks(
 
 /// A weakened term under a lifted substitution is the substituted term
 /// weakened.
-def substWeaken(x : Term, s : Env) -> Path(Term, subst(wk(x), Lift(s)), wk(subst(x, s))) {
+pub def substWeaken(x : Term, s : Env) -> Path(Term, subst(wk(x), Lift(s)), wk(subst(x, s))) {
   substRenameSquare(
     x,
     RShift(S(Z)),

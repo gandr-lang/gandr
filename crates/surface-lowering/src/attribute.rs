@@ -1136,6 +1136,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Scope
         | Former::Declaration
         | Former::AttributeBlock
+        | Former::Visibility
         | Former::Import
         | Former::Module
         | Former::Data

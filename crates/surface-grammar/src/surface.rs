@@ -465,6 +465,7 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "pack_model_expression",
     "package_type",
     "path_type",
+    "pub_declaration",
     "unpack_statement",
     "representable_universe_type",
     "rec_block",

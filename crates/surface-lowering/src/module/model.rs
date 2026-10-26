@@ -82,6 +82,7 @@ use super::SlotIndex;
 use super::StructureIndex;
 use super::TypeComponent;
 use super::TypeMeaning;
+use super::Visibility;
 use super::component_kind;
 use super::declaration_half;
 use super::declared_member;
@@ -93,6 +94,7 @@ use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
 use crate::error::TelescopeFault;
+use crate::error::Unexported;
 use crate::form::Cursor;
 use crate::form::FormName;
 use crate::form::Former;
@@ -301,16 +303,18 @@ impl<'source> Collected<'source>
     /// - provides: the one lookup a module's ascription `Model(S)`, a nested
     ///   model and the type `Model(S)` share.
     /// - fails: a shadowed import for a name two imports bind, at `span`; an
-    ///   unresolved head, at `span`, for a name no such block defines.
+    ///   unexported name, at `span`, for a block an imported source keeps
+    ///   private; an unresolved head, at `span`, for a name no such block
+    ///   defines.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::ImportShadows`] and
-    /// [`LoweringRefusal::UnresolvedTypeHead`].
+    /// [`LoweringRefusal::ImportShadows`], [`LoweringRefusal::UnexportedName`]
+    /// and [`LoweringRefusal::UnresolvedTypeHead`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a local theory, an imported one, an undeclared one, a
-    ///   nested model's theory and a model type's.
+    /// - hypothesis: L3 — a local theory, an imported one, a private one, an
+    ///   undeclared one, a nested model's theory and a model type's.
     /// - witness: `tests::modules::models::a_model_of_an_undeclared_theory_is_refused_by_name`
     /// - witness: `tests::namespace::a_model_of_an_imported_theory_derives_its_signature_726`
     /// - witness: `tests::modules::models::a_nested_model_is_a_module_ascribed_its_theory_1226`
@@ -336,7 +340,22 @@ impl<'source> Collected<'source>
             Some(position) => Some(position),
             None => match self.imported_slot(self.unit.source_at(at), name) {
                 Ok(Maybe::Present((position, _import))) => Some(position),
-                Ok(Maybe::Absent(_)) => None,
+                Ok(Maybe::Absent(_)) => {
+                    if let Maybe::Present((private, _import)) =
+                        self.private_slot(self.unit.source_at(at), name)
+                    {
+                        return Err(LoweringRefusal::UnexportedName {
+                            span,
+                            name,
+                            declared: self
+                                .slots
+                                .get(private.0)
+                                .map_or(span, |slot| slot.named.span),
+                            reason: Unexported::Private,
+                        });
+                    }
+                    None
+                },
                 Err(ambiguity) => {
                     return Err(LoweringRefusal::ImportShadows {
                         span,
@@ -418,6 +437,7 @@ impl<'source> Collected<'source>
                 self.modules
                     .get(&(Container::TopLevel(target), name))
                     .copied()
+                    .filter(|&module| self.structure_visibility(module) == Visibility::Public)
             }) {
                 Ok(Maybe::Present((module, _import))) => Some(module),
                 Ok(Maybe::Absent(_)) => None,
@@ -1346,6 +1366,7 @@ pub fn spine_domains<'source>(
             | Former::Scope
             | Former::Declaration
             | Former::AttributeBlock
+            | Former::Visibility
             | Former::Import
             | Former::Module
             | Former::Data

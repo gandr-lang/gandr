@@ -9,19 +9,19 @@
 import "./tree.gandr";
 
 /// Exceptions' operation: raise a code.
-data ExnOp : Type {
+pub data ExnOp : Type {
   Raise : (code : Integer) --> ExnOp;
 }
 
 /// What an exception handler answers: raised with a code, or returned.
-data Outcome(a : Type) : Type {
+pub data Outcome(a : Type) : Type {
   Raised : (code : Integer) --> Outcome(a);
   Returned : (x : a) --> Outcome(a);
 }
 
 /// State answered at the front of the row from the state `s`, the rest of
 /// the row forwarded.
-def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Integer) -> Prog(e, a) {
+pub def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Integer) -> Prog(e, a) {
   case p {
     Done(x) => (Done(x) : Prog(e, a)),
     Op(o, k) => case o {
@@ -36,7 +36,7 @@ def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Intege
 
 /// Exceptions answered at the front of the row, the rest of the row
 /// forwarded: a raise ends the program with its code.
-def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Outcome(a)) {
+pub def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Outcome(a)) {
   case p {
     Done(x) => (Done(Returned(x)) : Prog(e, Outcome(a))),
     Op(o, k) => case o {
@@ -49,7 +49,7 @@ def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Out
 }
 
 /// A program with nothing left in its row is its result.
-def pureOf(a : Type, p : Prog(Void, a)) -> a {
+pub def pureOf(a : Type, p : Prog(Void, a)) -> a {
   case p {
     Done(x) => x,
     Op(o, _k) => case o {}
@@ -58,7 +58,7 @@ def pureOf(a : Type, p : Prog(Void, a)) -> a {
 
 /// Over exceptions, then state: read, store one more, read again, and answer
 /// ten times the second read.
-def guarded : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fn (a) {
+pub def guarded : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fn (a) {
   (Op(Right(Left(Put(a + 1))), fn (_u) {
     (Op(Right(Left(Get)), fn (b) {
       (Done(b * 10) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))

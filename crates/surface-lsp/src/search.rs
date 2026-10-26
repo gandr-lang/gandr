@@ -18,6 +18,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_lowering::SourceIndex;
+use gandr_surface_lowering::Visibility;
 use gandr_surface_syntax::SourceText;
 
 use crate::position::Range;
@@ -44,6 +45,8 @@ pub struct Declared
     pub container: Option<String>,
     /// The range of its name in the text.
     pub range: Range,
+    /// Whether its source exports it, as the outline reads its `pub` mark.
+    pub exported: Visibility,
 }
 
 /// A workspace-symbol query, folded to lower case once.
@@ -173,6 +176,7 @@ pub fn declared(text: SourceText<'_>) -> Vec<Declared>
             kind: symbol.kind,
             container: container.map(String::from),
             range: symbol.selection_range,
+            exported: symbol.exported,
         });
     }
     names
@@ -297,6 +301,7 @@ mod tests
                 kind: SymbolKind::FUNCTION,
                 container: None,
                 range: Range::default(),
+                exported: gandr_surface_lowering::Visibility::Private,
             },
             source: SourceIndex::from(0_usize),
         };

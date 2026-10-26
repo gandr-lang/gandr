@@ -201,6 +201,7 @@ unproduced = [
   { rule = "package_type", reason = "the lowering names no former for this type (`former_of` is `Unadmitted`), so no core type carries it" },
   { rule = "pipeline.pipe", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "pipeline.pipe_both", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
+  { rule = "pub_declaration", reason = "a module item's mark: the printer presents one core term or type, and a `pub` mark lowers to the export of the declaration after it, never to a core node" },
   { rule = "rec_block", reason = "a module item: the printer presents one core term or type, and a declaration lowers to the module's environment, never to a core node" },
   { rule = "redirection_operator", reason = "shell syntax: the lowering names no former for it (`former_of` is `Unadmitted`), so no core node carries it" },
   { rule = "representable_universe_type", reason = "a sort member's classifier: a `theory` block lowers to its presentation, never to a core type, and the lowering refuses `Type+` anywhere else (`OutOfFragment`)" },

@@ -30,7 +30,7 @@ import "../model-in-source.gandr";
 /// cell layer does not read there (#1510); `Model(LC)` derives from it all the
 /// same.
 @[ refuses("UndescribedMember.NestedOperation") ]
-theory LC {
+pub theory LC {
   sort Con : Type;
   sort Sub(d : Con, g : Con) : Type;
   sort Tm(g : Con) : Type;
@@ -55,7 +55,7 @@ theory LC {
 
 /// λ-terms with de Bruijn indices: a variable, an abstraction whose body
 /// binds index zero, and an application.
-data Term : Type {
+pub data Term : Type {
   Ix : (n : N) --> Term;
   Lam : (t : Term) --> Term;
   Ap : (t : Term, u : Term) --> Term;
@@ -63,21 +63,21 @@ data Term : Type {
 
 /// Renamings: every index shifted by `k`, or a renaming lifted under one
 /// binder.
-data Ren : Type {
+pub data Ren : Type {
   RShift : (k : N) --> Ren;
   RLift : (r : Ren) --> Ren;
 }
 
 /// Substitutions: every index shifted by `k`, a term consed on for index
 /// zero, or a substitution lifted under one binder.
-data Env : Type {
+pub data Env : Type {
   Shift : (k : N) --> Env;
   Cons : (a : Term, s : Env) --> Env;
   Lift : (s : Env) --> Env;
 }
 
 /// Addition, by recursion on the second summand.
-def rec plus(n : N, k : N) -> N {
+pub def rec plus(n : N, k : N) -> N {
   case k {
     Z => n,
     S(j) => S(plus[<](n, j))
@@ -85,7 +85,7 @@ def rec plus(n : N, k : N) -> N {
 }
 
 /// `n + j + k`, by recursion on `k`: a shift's index under `k` more binders.
-def rec plusTwo(n : N, j : N, k : N) -> N {
+pub def rec plusTwo(n : N, j : N, k : N) -> N {
   case k {
     Z => plus(n, j),
     S(i) => S(plusTwo[<](n, j, i))
@@ -94,7 +94,7 @@ def rec plusTwo(n : N, j : N, k : N) -> N {
 
 /// The index a renaming sends `n` to: a lift keeps zero and renames under
 /// it.
-def rec rlook(n : N, r : Ren) -> N {
+pub def rec rlook(n : N, r : Ren) -> N {
   case r {
     RShift(k) => plus(n, k),
     RLift(q) => case n {
@@ -105,7 +105,7 @@ def rec rlook(n : N, r : Ren) -> N {
 }
 
 /// A renaming applied to a term, lifted under each abstraction.
-def rec rename(t : Term, r : Ren) -> Term {
+pub def rec rename(t : Term, r : Ren) -> Term {
   case t {
     Ix(n) => Ix(rlook(n, r)),
     Lam(b) => Lam(rename[<](b, RLift(r))),
@@ -114,12 +114,12 @@ def rec rename(t : Term, r : Ren) -> Term {
 }
 
 /// Weakening: every index shifted by one.
-def wk(t : Term) -> Term {
+pub def wk(t : Term) -> Term {
   rename(t, RShift(S(Z)))
 }
 
 /// A term under `k` more binders: itself under none.
-def shiftBy(a : Term, k : N) -> Term {
+pub def shiftBy(a : Term, k : N) -> Term {
   case k {
     Z => a,
     S(j) => rename(a, RShift(S(j)))
@@ -128,7 +128,7 @@ def shiftBy(a : Term, k : N) -> Term {
 
 /// The term a substitution sends index `n` to, under `k` binders the lookup
 /// has crossed: each lift it passes adds one.
-def rec look(n : N, s : Env, k : N) -> Term {
+pub def rec look(n : N, s : Env, k : N) -> Term {
   case s {
     Shift(j) => Ix(plusTwo(n, j, k)),
     Cons(a, r) => case n {
@@ -143,7 +143,7 @@ def rec look(n : N, s : Env, k : N) -> Term {
 }
 
 /// A substitution applied to a term, lifted under each abstraction.
-def rec subst(t : Term, s : Env) -> Term {
+pub def rec subst(t : Term, s : Env) -> Term {
   case t {
     Ix(n) => look(n, s, Z),
     Lam(b) => Lam(subst[<](b, Lift(s))),

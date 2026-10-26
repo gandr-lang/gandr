@@ -6,7 +6,7 @@
 // both alike by construction.
 
 /// A counter: a carrier, a zero, a step and a reading.
-theory Counter {
+pub theory Counter {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -14,7 +14,7 @@ theory Counter {
 }
 
 /// Counting up modulo three, read as it is.
-module Up : Model(Counter) {
+pub module Up : Model(Counter) {
   type C = Unit + (Unit + Unit);
   /// Zero.
   @[ checks ]
@@ -66,10 +66,10 @@ module Down : Model(Counter) {
 }
 
 /// Counting up, as a model.
-def upModel : Model(Counter) = pack Up at Model(Counter);
+pub def upModel : Model(Counter) = pack Up at Model(Counter);
 
 /// Counting down, as a model.
-def downModel : Model(Counter) = pack Down at Model(Counter);
+pub def downModel : Model(Counter) = pack Down at Model(Counter);
 
 /// The count negated: zero stays, one and two swap.
 def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
@@ -81,7 +81,7 @@ def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
 }
 
 /// The counts to themselves by negation, its own inverse.
-def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
+pub def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
   negateCount,
   negateCount
 );
@@ -101,13 +101,13 @@ def readNegated : Path(
 ) = funext(transport(\t. t => Integer, countsNegated, Up.read), Down.read);
 
 /// The two packed modules are one model along negation.
-def oneCounter : Path(Model(Counter), upModel, downModel) = (
+pub def oneCounter : Path(Model(Counter), upModel, downModel) = (
   countsNegated,
   (here(+{.0 = unit}), (stepNegated, readNegated))
 );
 
 /// A consumer of any counter: the reading after one step from zero.
-def observe(m : Model(Counter)) -> Integer {
+pub def observe(m : Model(Counter)) -> Integer {
   case m {
     #{.zero = z, .incr = i, .read = r} => r(i(z))
   }
