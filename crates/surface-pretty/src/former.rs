@@ -1128,6 +1128,11 @@ pub enum Unreadable
     /// writes. Its `_` reads back as a wildcard at the same place, so it is
     /// written faithfully, a call's arguments included.
     Wildcard,
+    /// A metavariable the elaborator nominated for a splice `~t` the source
+    /// writes, which the checker fills by running its tactic. One it has not
+    /// filled reads back as the same splice, its `~` and the tactic its name
+    /// carries, so it is written faithfully.
+    Splice(gandr_core_term::tactic::Tactic),
     /// A mark: a term the elaborator could not type, kept as written.
     Mark,
     /// A universe lift of a type or a value: the core's explicit cumulativity,

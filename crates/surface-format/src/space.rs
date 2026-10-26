@@ -97,7 +97,8 @@ pub enum Context
     Operand,
     /// An operator touching what follows it: a negation, a session's `!` or
     /// `?`, a universe's `+` or `-`, a staged bound's `<` or `>`, a lambda's
-    /// `\`, a rest pattern's `..`, and the `+` or `&` of a sum or lazy record.
+    /// `\`, a rest pattern's `..`, a splice's `~`, and the `+` or `&` of a sum
+    /// or lazy record.
     Prefix,
     /// A `.` ending a binder or a session's message.
     Binding,
@@ -154,7 +155,7 @@ impl Context
             "+" if rule == "universe_type" => Self::Prefix,
             "?" if rule == "receive_session_type" => Self::Prefix,
             "<" | ">" if MARKS.contains(&rule) => Self::Prefix,
-            "!" | "\\" | ".." => Self::Prefix,
+            "!" | "\\" | ".." | "~" => Self::Prefix,
             _ => Self::Plain,
         }
     }

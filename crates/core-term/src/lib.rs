@@ -35,6 +35,8 @@
 //! - [`generic`] derives a closed, free data declaration's equality from its
 //!   constructors, the body a model member written `Eq.generic(T)` takes, and
 //!   [`generic::law`] its reflexivity and symmetry by congruence.
+//! - [`tactic`] holds the tactics a splice `~t` runs at the hole it writes:
+//!   `assumption`, and `intro` before another.
 //! - [`ua`] holds what univalence at a stratum reads: the stratum a statement
 //!   fixes and the two descriptions it relates, read as graphical species.
 //! - [`world`] holds the located vocabulary: the handle type `A at w`, the
@@ -221,6 +223,7 @@ pub mod session;
 pub mod staged;
 pub mod support;
 mod syntax;
+pub mod tactic;
 pub mod ua;
 pub mod world;
 

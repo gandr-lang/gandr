@@ -157,8 +157,8 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "malformed-form",
         identifier: "MalformedForm",
-        source: "def bad = 1 ~ 2 ;\n",
-        locus: "~",
+        source: "def bad = 1 ^ 2 ;\n",
+        locus: "^",
     },
     Case {
         name: "refused-whole",

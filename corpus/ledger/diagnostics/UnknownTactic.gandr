@@ -1,0 +1,3 @@
+/// `UnknownTactic`: a splice whose operand writes no tactic.
+@[ refuses("UnknownTactic") ]
+def named(x : Integer) -> Integer { ~x }

@@ -1,0 +1,8 @@
+/// `splice_expression`: a splice, a hole the checker fills by running its
+/// tactic at the goal the hole stands at.
+@[ checks ]
+def id : (Integer) => Integer = ~intro(assumption) ;
+
+/// The tactic's answer runs: `id` returns its argument.
+@[ runs("3") ]
+def applied() -> Integer { id(3) }

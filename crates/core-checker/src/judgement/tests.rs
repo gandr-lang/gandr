@@ -4652,3 +4652,57 @@ fn a_record_update_extends_retypes_and_refuses_a_non_record_base()
         "a refused update records no kept labels"
     );
 }
+
+#[test]
+fn a_forged_answer_is_refused_naming_its_tactic_2762()
+{
+    // Under `x : Integer, u : Unit`, at the goal `Integer`, a splice's frame
+    // waits on its tactic's answer: `x` fills the hole, while `u`, of another
+    // type, and a variable past both binders are forged answers, refused
+    // naming the tactic that returned them.
+    use gandr_core_term::hole::NominationIndex;
+    use gandr_core_term::tactic::Tactic;
+
+    use super::Direction;
+    use crate::refusal::TacticFault;
+
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit = arena.value_type_unit();
+    let hole =
+        HoleId::spliced(NominationIndex::from(0_u32), Tactic::ASSUMPTION).expect("a splice's name");
+    let at = arena.value_hole(hole);
+    let [u, x, past] = [0_u32, 1, 2]
+        .map(|index| arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index)));
+    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+    context.binders().open(Zone::Intuitionistic, integer);
+    context.binders().open(Zone::Intuitionistic, unit);
+    let answered = [x, u, past].map(|answer| {
+        let goal = Goal::Value {
+            term: answer,
+            direction: Direction::Check(integer),
+        };
+        let mut machine = Machine {
+            context: &mut context,
+            frames: Vec::new(),
+            owner: goal,
+            native_types: Vec::new(),
+            conversions: ConversionCount::default(),
+            remaining: usize::from(CheckBudget::DEFAULT),
+            marking: Marking::Strict,
+            anchors: Vec::new(),
+            marks: Vec::new(),
+            sessions: Sessions::new(BinderDepth::default(), crate::capability::Reach::Clear),
+            root: Maybe::Absent(crate::respect::root::Absent::Unmarked),
+            staged_motives: Vec::new(),
+        };
+        machine.wait(Frame::Spliced { at, hole, answer });
+        machine.drive(goal).map_err(|halt| halt.refusal)
+    });
+    let forged = Err(CheckRefusal::TacticRefused {
+        at,
+        tactic: Tactic::ASSUMPTION,
+        fault: TacticFault::Forged,
+    });
+    assert_eq!(answered, [Ok(Produced::Checked), forged, forged]);
+}

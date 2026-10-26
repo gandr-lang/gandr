@@ -2891,6 +2891,26 @@ fn every_refusal() -> Vec<Refusal>
                     gandr_core_term::model::Survivors::with,
                 ),
         },
+        Refusal::TacticRefused {
+            at,
+            tactic: gandr_core_term::tactic::Tactic::ASSUMPTION,
+            fault: gandr_core_checker::TacticFault::NoHypothesis,
+        },
+        Refusal::TacticRefused {
+            at,
+            tactic: gandr_core_term::tactic::Tactic::try_from(31).expect("the last tactic"),
+            fault: gandr_core_checker::TacticFault::NoFunction,
+        },
+        Refusal::TacticRefused {
+            at,
+            tactic: gandr_core_term::tactic::Tactic::ASSUMPTION,
+            fault: gandr_core_checker::TacticFault::Forged,
+        },
+        Refusal::TacticRefused {
+            at,
+            tactic: gandr_core_term::tactic::Tactic::ASSUMPTION,
+            fault: gandr_core_checker::TacticFault::Unplaced,
+        },
         Refusal::CapabilityForged { at, expected: ty() },
         Refusal::CapabilityAmplified {
             at,

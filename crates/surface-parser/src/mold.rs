@@ -4357,7 +4357,7 @@ mod tests
             (Lexeme::Punct, "≃", &["≃"]),
             (Lexeme::LowerWord, "inf", &["inf", "ω"]),
             (Lexeme::Space, " ", &[]),
-            (Lexeme::Unknown, "~", &[]),
+            (Lexeme::Unknown, "^", &[]),
         ];
         for &(lexeme, text, expected) in cases {
             assert!(
@@ -4521,7 +4521,7 @@ mod tests
                 .copied()
                 .eq(expected.iter().copied())
         );
-        for source in [" ", "~"] {
+        for source in [" ", "^"] {
             let token = *label(SourceFragment::from(source)).first().unwrap();
             assert_eq!(
                 molder.candidate_count(token, SourceText::from(source)),
@@ -4560,7 +4560,7 @@ mod tests
         let mut molder = Molder::new(&pbg);
         let mut state = MeldState::new(&pbg);
         let invalid = gandr_surface_syntax::MoldId::from(u32::MAX);
-        state.push(&crate::MoldedTile::new(invalid, crate::TileText::from("~")));
+        state.push(&crate::MoldedTile::new(invalid, crate::TileText::from("^")));
         let before = state.checkpoint().to_bytes();
         let floor = molder.floor_key(&state, invalid, &state.admissibility_frontier());
         assert!(bool::from(floor.delta.is_empty()));
@@ -4591,7 +4591,7 @@ mod tests
         let mut state = MeldState::new(&pbg);
         state.push(&crate::MoldedTile::new(
             gandr_surface_syntax::MoldId::from(u32::MAX),
-            crate::TileText::from("~"),
+            crate::TileText::from("^"),
         ));
         let before = state.checkpoint().to_bytes();
         let space = *label(SourceFragment::from(" ")).first().unwrap();
@@ -4698,7 +4698,7 @@ mod tests
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
-        let source = SourceFragment::from("~ 1 2");
+        let source = SourceFragment::from("^ 1 2");
         let tokens = label(source);
         let unmolded_tokens = |count: usize| {
             let mut delta = crate::Delta::empty();
@@ -4707,7 +4707,7 @@ mod tests
             }
             delta
         };
-        // The unmolded `~` flags one obligation before the window's first
+        // The unmolded `^` flags one obligation before the window's first
         // token, `1`: a bound it reaches stops the window there, one above it
         // lets the window mold to its end.
         let window = |molder: &mut Molder<'_>, bound| {
@@ -4715,7 +4715,7 @@ mod tests
             let mark = state.mark();
             state.push(&crate::MoldedTile::new(
                 gandr_surface_syntax::MoldId::from(u32::MAX),
-                crate::TileText::from("~"),
+                crate::TileText::from("^"),
             ));
             let end = molder.mold_window(
                 &mut state,
@@ -4730,7 +4730,7 @@ mod tests
         let mut unmolded = MeldState::new(&pbg);
         unmolded.push(&crate::MoldedTile::new(
             gandr_surface_syntax::MoldId::from(u32::MAX),
-            crate::TileText::from("~"),
+            crate::TileText::from("^"),
         ));
         for reached in [crate::Delta::empty(), unmolded_tokens(1)] {
             assert_eq!(
@@ -4799,7 +4799,7 @@ mod tests
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
         let mut state = MeldState::new(&pbg);
-        let src = "~";
+        let src = "^";
         for token in label(SourceFragment::from(src)) {
             molder.mold(&mut state, token, SourceText::from(src));
         }
@@ -5460,7 +5460,7 @@ mod tests
             [CandidateLabel::from("->")]
         );
         assert!(candidate_labels(Lexeme::Space, TokenText::from(" ")).is_empty());
-        assert!(candidate_labels(Lexeme::Unknown, TokenText::from("~")).is_empty());
+        assert!(candidate_labels(Lexeme::Unknown, TokenText::from("^")).is_empty());
     }
 
     /// Mold and commit `src`, returning the root digest and obligation count.

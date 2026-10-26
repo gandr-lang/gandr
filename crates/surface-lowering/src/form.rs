@@ -189,7 +189,7 @@ impl FormName
     ///   possible custom grammar kind.
     /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
     /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-    pub const ALL: [Self; 72_usize] = [
+    pub const ALL: [Self; 73_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -227,6 +227,7 @@ impl FormName
         Self::CONSTRUCTOR_PATTERN,
         Self::CONS_PATTERN,
         Self::WILDCARD,
+        Self::SPLICE,
         Self::LITERAL_PATTERN,
         Self::OR_PATTERN,
         Self::AS_PATTERN,
@@ -371,6 +372,9 @@ impl FormName
     /// The wildcard `_`: a pattern that matches anything, and in a term a hole
     /// the elaborator answers with the term its equations force.
     pub const WILDCARD: Self = Self("wildcard");
+    /// The splice `~t`: a hole the elaborator answers by running the tactic
+    /// `t` at the goal the hole stands at.
+    pub const SPLICE: Self = Self("splice_expression");
     /// The tuple pattern `(p, q, …)`: a bind statement's binder splits the
     /// tuple its computation returns.
     pub const TUPLE_PATTERN: Self = Self("tuple_pattern");
@@ -642,6 +646,8 @@ impl TileName
     pub const SEAL: Self = Self(":>");
     /// The semicolon `;` closing a declaration or a statement.
     pub const SEMICOLON: Self = Self(";");
+    /// The splice's lead `~`, before the tactic it runs.
+    pub const TILDE: Self = Self("~");
     /// A run of plain text inside a string's own tiles.
     pub const STRING_FRAGMENT: Self = Self("string_fragment");
     /// The infix composite of two paths, `then`.
@@ -1120,11 +1126,12 @@ impl Former
 /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
-pub const FORMERS: [(&str, Former); 131_usize] = [
+pub const FORMERS: [(&str, Former); 132_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("hole", Former::Hole),
     ("wildcard", Former::Hole),
+    ("splice_expression", Former::Hole),
     ("number", Former::Number),
     ("boolean", Former::Boolean),
     ("string", Former::Text),

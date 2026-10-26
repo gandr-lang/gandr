@@ -167,6 +167,8 @@ pub(super) enum Nomination<'source>
     },
     /// A wildcard `_` written where a value is read.
     Wildcard,
+    /// A splice `~t` written where a value is read, running the tactic `t`.
+    Spliced(gandr_core_term::tactic::Tactic),
 }
 
 impl<'source> Lowerer<'_, 'source>
@@ -1147,15 +1149,15 @@ impl<'source> Lowerer<'_, 'source>
     }
 
     /// Nominate a hole for `nomination`, an implicit a call omits, a component
-    /// of the model a capability scope names none of, or a wildcard the text
-    /// writes, the next nominated name of its kind.
+    /// of the model a capability scope names none of, a wildcard or a splice
+    /// the text writes, the next nominated name of its kind.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a name no hole before it carries, kept beside `nomination`: a
     ///   wildcard's name for a wildcard, so the printer writes it back as `_`,
-    ///   and a nominated one for an omitted implicit or a scope's component,
-    ///   which it leaves out.
+    ///   a splice's, carrying its tactic, for a splice, and a nominated one for
+    ///   an omitted implicit or a scope's component, which it leaves out.
     /// - fails: the budget refusal once the kind's quarter has no more names.
     /// - panics: none.
     ///
@@ -1165,15 +1167,17 @@ impl<'source> Lowerer<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — two implicits a call omits are two distinct holes,
     ///   each kept with its implicit's name, and a wildcard beside them a
-    ///   third, named as a wildcard.
+    ///   third, named as a wildcard; a splice's hole carries its tactic.
     /// - witness: `lower::implicit::tests::an_omitted_implicit_is_a_nominated_hole`
     /// - witness: `lower::implicit::tests::a_wildcard_is_a_nominated_hole_of_its_own`
+    /// - witness: `lower::splice::tests::a_splice_is_a_hole_carrying_its_tactic_2762`
     #[spec(
         captures: before = self.nominations.len(),
         ensures: |ret| match ret {
             Ok(hole) => matches!(
                 (hole.origin(), nomination),
                 (gandr_core_term::hole::HoleOrigin::Wildcard, Nomination::Wildcard)
+                    | (gandr_core_term::hole::HoleOrigin::Spliced, Nomination::Spliced(_))
                     | (
                         gandr_core_term::hole::HoleOrigin::Nominated,
                         Nomination::Omitted { .. } | Nomination::Answering { .. }
@@ -1188,16 +1192,18 @@ impl<'source> Lowerer<'_, 'source>
         nomination: Nomination<'source>,
     ) -> Result<gandr_core_term::hole::HoleId, LoweringRefusal<'source>>
     {
-        let named = match nomination {
-            Nomination::Wildcard => gandr_core_term::hole::HoleId::wildcard,
-            Nomination::Omitted { .. } | Nomination::Answering { .. } => {
-                gandr_core_term::hole::HoleId::nominated
-            },
-        };
         let hole = u32::try_from(self.nominations.len())
             .ok()
             .map(gandr_core_term::hole::NominationIndex::from)
-            .and_then(named)
+            .and_then(|index| match nomination {
+                Nomination::Wildcard => gandr_core_term::hole::HoleId::wildcard(index),
+                Nomination::Spliced(tactic) => {
+                    gandr_core_term::hole::HoleId::spliced(index, tactic)
+                },
+                Nomination::Omitted { .. } | Nomination::Answering { .. } => {
+                    gandr_core_term::hole::HoleId::nominated(index)
+                },
+            })
             .ok_or(LoweringRefusal::BudgetExceeded {
                 budget: self.fuel.budget,
             })?;

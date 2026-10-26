@@ -101,10 +101,12 @@ use crate::syntax::ValueType;
 /// once. A hole the text writes is named in the lower half, by its place; a
 /// hole the elaborator nominates as a metavariable is named in the upper
 /// half: one standing for an implicit the text omits in its upper quarter,
-/// counted down from the last name ([`HoleId::nominated`]), and one standing
-/// for a wildcard `_` the text writes in its lower quarter, counted up from
-/// the half's first name ([`HoleId::wildcard`]). No two of the three share a
-/// name, and a hole's name says which it is.
+/// counted down from the last name ([`HoleId::nominated`]), one standing for
+/// a wildcard `_` the text writes in the lower eighth of its lower quarter,
+/// counted up from the half's first name ([`HoleId::wildcard`]), and one a
+/// splice `~t` writes in the eighth above, its tactic in its name
+/// ([`HoleId::spliced`]). No two of the four share a name, and a hole's name
+/// says which it is.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HoleId(u32);
@@ -121,6 +123,9 @@ pub enum HoleOrigin
     /// A hole the elaborator nominates for a wildcard `_` the text writes,
     /// which the checker solves as a metavariable.
     Wildcard,
+    /// A hole a splice `~t` writes, which the checker fills with the term
+    /// the tactic its name carries returns.
+    Spliced,
 }
 
 /// The place of a hole among those an elaborator nominates, counted from
@@ -153,6 +158,19 @@ impl HoleId
 
     /// How many names each quarter of the upper half holds.
     const QUARTER: u32 = 1 << 30_u32;
+
+    /// How many names each eighth of the upper half holds: the wildcards'
+    /// and the splices'.
+    const EIGHTH: u32 = 1 << 29_u32;
+
+    /// Where a splice's tactic starts in its name: above the places it counts.
+    const TACTIC_SHIFT: u32 = 24;
+
+    /// How many places a splice's name counts, below its tactic's bits.
+    const SPLICES: u32 = 1 << Self::TACTIC_SHIFT;
+
+    /// The bits of a splice's name its tactic's introductions take.
+    const TACTIC_BITS: u32 = Self::EIGHTH - Self::SPLICES;
 
     /// The name of the `index`th hole an elaborator nominates for an implicit
     /// the text omits: the last name less `index`, which is `index`'s
@@ -188,25 +206,83 @@ impl HoleId
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a wildcard's name for each `index` below a quarter's size,
+    /// - ensures: a wildcard's name for each `index` below an eighth's size,
     ///   distinct indices naming distinct holes; `None` past it.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::nominated`], over the quarter below.
+    /// - hypothesis: L3 — as [`Self::nominated`], over the eighth.
     /// - witness: `hole::tests::a_nominated_hole_shares_no_name_with_a_written_one`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| match ret {
         Some(hole) => matches!(hole.origin(), HoleOrigin::Wildcard) && hole.0 == (Self::NOMINATED | index.0),
-        None => index.0 >= Self::QUARTER,
+        None => index.0 >= Self::EIGHTH,
     })]
     pub const fn wildcard(index: NominationIndex) -> Option<Self>
     {
-        if index.0 >= Self::QUARTER {
+        if index.0 >= Self::EIGHTH {
             return None;
         }
         Some(Self(Self::NOMINATED | index.0))
+    }
+
+    /// The name of the `index`th hole an elaborator nominates for a splice
+    /// `~t` the text writes, running `tactic`: the splices' eighth's first
+    /// name, with the tactic's introductions above `index`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a splice's name for each `index` below the places a splice's
+    ///   name counts, whose [`Self::tactic`] is `tactic`, distinct indices or
+    ///   tactics naming distinct holes; `None` past it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first and the last place under the deepest
+    ///   tactic, and the place past them, separate the names from the refusal;
+    ///   neither a wildcard's name nor a written one carries a tactic.
+    /// - witness: `hole::tests::a_spliced_hole_carries_its_tactic_in_its_name`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.map_or(index.0 >= Self::SPLICES, |hole| {
+        matches!(hole.origin(), HoleOrigin::Spliced)
+            && hole.tactic() == Some(tactic)
+    }))]
+    pub fn spliced(
+        index: NominationIndex,
+        tactic: crate::tactic::Tactic,
+    ) -> Option<Self>
+    {
+        if index.0 >= Self::SPLICES {
+            return None;
+        }
+        let intros = u32::from(u8::from(tactic)).checked_shl(Self::TACTIC_SHIFT)?;
+        Some(Self(Self::NOMINATED | Self::EIGHTH | intros | index.0))
+    }
+
+    /// The tactic a splice's hole runs, read off its name; `None` for every
+    /// other hole.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the tactic [`Self::spliced`] named the hole with exactly when
+    ///   its origin is [`HoleOrigin::Spliced`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::spliced`].
+    /// - witness: `hole::tests::a_spliced_hole_carries_its_tactic_in_its_name`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.is_some() == matches!(self.origin(), HoleOrigin::Spliced))]
+    pub fn tactic(self) -> Option<crate::tactic::Tactic>
+    {
+        if !matches!(self.origin(), HoleOrigin::Spliced) {
+            return None;
+        }
+        let intros = (self.0 & Self::TACTIC_BITS).checked_shr(Self::TACTIC_SHIFT)?;
+        crate::tactic::Tactic::try_from(u8::try_from(intros).ok()?).ok()
     }
 
     /// The name of the `index`th hole a checker nominates for a carrier a
@@ -243,8 +319,8 @@ impl HoleId
     }
 
     /// Where this hole comes from: nominated for an omitted implicit in the
-    /// upper half's upper quarter, for a wildcard in its lower quarter, and
-    /// written below the half.
+    /// upper half's upper quarter, for a splice in the eighth below it, for a
+    /// wildcard in the eighth below that, and written below the half.
     ///
     /// # Specification
     /// trivial.
@@ -254,6 +330,9 @@ impl HoleId
     {
         if self.0 >= Self::OMITTED {
             HoleOrigin::Nominated
+        }
+        else if self.0 >= Self::NOMINATED | Self::EIGHTH {
+            HoleOrigin::Spliced
         }
         else if self.0 >= Self::NOMINATED {
             HoleOrigin::Wildcard

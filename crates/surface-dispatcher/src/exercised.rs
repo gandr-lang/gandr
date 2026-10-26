@@ -524,7 +524,7 @@ fn bridged(
                 if matches!(lowered.outcome(), DeclarationOutcome::Bodied { body } if body == thunk)
                 => Some(Row::NonSynthesisableDefinition),
             CheckRefusal::StagesDisagree { .. } | CheckRefusal::ImplicitUnsolved { .. } |
-            CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } |
+            CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } |
             CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } |
             CheckRefusal::AtomTransport { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
             CheckRefusal::HandlerUnlawful { .. } |
@@ -636,6 +636,7 @@ fn checking_row(
         | CheckRefusal::ImplicitUnsolved { .. }
         | CheckRefusal::ModelUnanswered { .. }
         | CheckRefusal::ModelAmbiguous { .. }
+        | CheckRefusal::TacticRefused { .. }
         | CheckRefusal::EffectSignatureConflict { .. }
         | CheckRefusal::UnknownOperation { .. }
         | CheckRefusal::HandlerCoverage { .. }
@@ -753,6 +754,7 @@ fn is_whole_unsigned_body(
             LoweringRefusal::IllFormedDescription { .. } |
             LoweringRefusal::UnderivedRule { .. } |
             LoweringRefusal::GenericMisplaced { .. } |
+            LoweringRefusal::UnknownTactic { .. } |
             LoweringRefusal::GenericUncovered { .. } |
             LoweringRefusal::MismatchedPattern { .. } |
             LoweringRefusal::PartialField { .. } |
@@ -868,6 +870,7 @@ fn lowering_row(
         | LoweringRefusal::RulesUndecided { .. }
         | LoweringRefusal::UnderivedRule { .. }
         | LoweringRefusal::GenericMisplaced { .. }
+        | LoweringRefusal::UnknownTactic { .. }
         | LoweringRefusal::GenericUncovered { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }

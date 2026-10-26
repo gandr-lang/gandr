@@ -20,8 +20,6 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 
 **How.** One goal-and-frame machine charges each transition to `CheckBudget`; [`src/lib.rs`](src/lib.rs) states the decisions that shape it, and each module the boundary it owns.
 
-**Suspension.** A judgement waiting on an owed code hole is `Verdict::Suspended`, naming its holes in `ModuleReport::suspensions`; [`elaboration`](src/elaboration.rs) emits, fills and resumes, and states the fragment and its guarantees.
-
 ## Provided features
 
 - `synthesise_value`, `check_value`, `synthesise_comp`, `check_comp`, `Synthesised` and `Checked`: the four directed faces.
@@ -48,6 +46,8 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `bridge`: independent readmission of accepted declarations into a fresh kernel environment — `readmit`, `Readmission` and its canonical `export`; `readmit_resuming`, `Crossed` and `export_resuming`, a prefix resumed from a record; `Readmitted`, `Outcome`, `ArtifactAudit`, `Replayed` and `Refusal`: what became of each origin, what it rests on, what was replayed, why it did not cross.
 - `Retirement`, `Demand`, `Polled`, `Unretired` and `bridge::readmit_retiring`: a run polled between its steps ([`retire`](src/retire.rs)).
 - The hole surface: term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`.
+- `Verdict::Suspended` and `ModuleReport::suspensions`: a judgement held on an owed code hole ([`elaboration`](src/elaboration.rs)).
+- `CheckRefusal::TacticRefused`, `TacticFault`: a splice's tactic run at its goal ([`tactic`](src/tactic.rs)).
 - `fork::Fork` and `fork::Serial`: the shape a program check forks by, and the serial reference.
 - `staging::check`, `staging::Program`, `staging::Allowance`, `staging::Checked`, `staging::Readmission`, `staging::Stages`, `staging::ProgramError` and `staging::SourceIndex`: a staged program checked end to end on the caller's fork.
 - `stage::compile`, `stage::Program::admit` and `stage::Program::execute`: certified first-order residual readmission for the experimental stage universe.

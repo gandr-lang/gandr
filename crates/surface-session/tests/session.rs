@@ -202,7 +202,7 @@ fn whole_file_submit_carries_definitions_forward()
 fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 {
     let mut session = session(SourceRoot::Strict);
-    let first = submit(&mut session, "def bad = 1 ~ 2 ;\ndef good = 2 ;");
+    let first = submit(&mut session, "def bad = 1 ^ 2 ;\ndef good = 2 ;");
     let Composed::Settled { ref report, .. } = *first.composed()
     else {
         panic!("the damaged declaration does not collapse the submission");
@@ -229,7 +229,7 @@ fn a_malformed_declaration_is_declined_and_the_later_definition_binds()
 
     let later = submit(
         &mut session,
-        "def bad = 1 ~ 2 ;\ndef good = 2 ;\ndef later : Integer ;\ndef later = good ;",
+        "def bad = 1 ^ 2 ;\ndef good = 2 ;\ndef later : Integer ;\ndef later = good ;",
     );
     assert_eq!(
         rows(later.composed()).get(2_usize),

@@ -552,6 +552,33 @@ pub enum Unsolved
     Rows,
 }
 
+/// Why a splice's tactic answered no term its goal admits.
+///
+/// # Specification
+/// - provides: the reason a splice is refused, read beside the tactic it ran.
+/// - panics: none.
+/// - executable: none — closed classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `assumption` with no binder of the goal's type, `intro`
+///   at a goal of no function type, a forged answer and a splice whose type is
+///   synthesised separate the four reasons.
+/// - witness: `tactic::tests::a_tactic_with_no_answer_names_why`
+/// - witness: `judgement::tests::a_forged_answer_is_refused_naming_its_tactic_2762`
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TacticFault
+{
+    /// `assumption` met no binder in scope whose type is the goal's.
+    NoHypothesis,
+    /// `intro` met a goal that is no function type.
+    NoFunction,
+    /// The term the tactic returned is refused when judged again against its
+    /// goal.
+    Forged,
+    /// The splice stands where a type is synthesised, so it has no goal.
+    Unplaced,
+}
+
 impl From<gandr_core_unify::Reason> for Unsolved
 {
     /// The solver's reason, without the metavariables it names.
@@ -1184,6 +1211,16 @@ pub enum CheckRefusal
         /// The candidates left, by their place among the slot's.
         survivors: gandr_core_term::model::Survivors,
     },
+    /// A splice's tactic answered no term its goal admits.
+    TacticRefused
+    {
+        /// The hole the splice wrote.
+        at: ValueId,
+        /// The tactic it ran.
+        tactic: gandr_core_term::tactic::Tactic,
+        /// Why its answer is refused.
+        fault: TacticFault,
+    },
     /// A term stands at a capability type without being a capability
     /// hypothesis: only a capability the host holds or the binder a
     /// capability scope introduces carries authority, so no term forms one.
@@ -1393,7 +1430,7 @@ impl CheckRefusal
         | Self::DanglingNode { .. }
         | Self::AdmissionOrder { .. }
         | Self::SealSiteRepeated(_)
-        | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
+        | Self::MachineInvariant | Self::TacticRefused { fault: TacticFault::Forged, .. } => matches!(ret, FailureClass::EngineFault),
         | Self::Undecided { .. } | Self::LoopUndecided { .. }
         | Self::PathCode(_) | Self::EndpointMismatch { .. } | Self::CompoundEndpoint { .. } | Self::PointwiseDistinct { .. } | Self::RoundTripDistinct { .. } | Self::NotOver { .. } | Self::UaInequivalent { .. }
         | Self::NotADataType(_) | Self::DataKindNotUniverse(_) | Self::DataFieldLevel { .. } | Self::RuleNotPresentable { .. } | Self::RuleNotRespected { .. } | Self::NotApart { .. } | Self::LoopNotRespected { .. } | Self::AbstractKindNotUniverse(_) | Self::RepresentationAboveKind { .. } | Self::NotAnAbstractType(_) | Self::AtomTransport { .. } | Self::DataArgumentArity(_) | Self::UnknownConstructor { .. } | Self::ConstructorArity(_) | Self::NonExhaustiveDataCase(_) | Self::UndecidedCoverage(_) | Self::AbsentRecordField(_) | Self::AbsentTupleComponent(_) | Self::MissingRecordField { .. }
@@ -1412,6 +1449,7 @@ impl CheckRefusal
         | Self::StaticLambdaArgument { .. }
         | Self::StaticClassifierExpected { .. }
         | Self::NegativeOccurrence(_) | Self::NestedOccurrence(_) | Self::IndexOccurrence(_) | Self::NonUniformOccurrence(_) | Self::CrossBlockReference { .. } | Self::StageNotBelow { .. } | Self::StagesDisagree { .. } | Self::UnenclosedRun { .. } | Self::ImplicitUnsolved { .. } | Self::ModelUnanswered { .. } | Self::ModelAmbiguous { .. }
+        | Self::TacticRefused { .. }
         | Self::SessionMismatch { .. } | Self::Linearity { .. } | Self::Access { .. } | Self::Codata { .. } | Self::Located { .. }
         | Self::CapabilityForged { .. } | Self::CapabilityAmplified(_) | Self::CapabilityOutsideAuthority { .. } | Self::CapabilityEscaped { .. } | Self::CapabilityConsumable(_) | Self::CapabilityUngranted { .. }
         | Self::SessionNotEquivalent { .. } | Self::SessionNotSubtype { .. } | Self::SessionCodeExpected { .. } | Self::OpenSessionPayload { .. } | Self::UnassertedLaw { .. } | Self::NonCovariantMotive { .. } | Self::RunNotAdmitted { .. } | Self::DialogueUnmatched { .. } | Self::DialogueInverted { .. } | Self::Boundary { .. } => matches!(ret, FailureClass::MalformedSource),
@@ -1475,6 +1513,10 @@ impl CheckRefusal
             | Self::ImplicitUnsolved { .. }
             | Self::ModelUnanswered { .. }
             | Self::ModelAmbiguous { .. }
+            | Self::TacticRefused {
+                fault: TacticFault::NoHypothesis | TacticFault::NoFunction | TacticFault::Unplaced,
+                ..
+            }
             | Self::SessionMismatch { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
@@ -1512,7 +1554,11 @@ impl CheckRefusal
             | Self::DanglingNode { .. }
             | Self::AdmissionOrder { .. }
             | Self::SealSiteRepeated(_)
-            | Self::MachineInvariant => FailureClass::EngineFault,
+            | Self::MachineInvariant
+            | Self::TacticRefused {
+                fault: TacticFault::Forged,
+                ..
+            } => FailureClass::EngineFault,
         }
     }
 
@@ -1702,6 +1748,7 @@ impl CheckRefusal
             | Self::ImplicitUnsolved { .. }
             | Self::ModelUnanswered { .. }
             | Self::ModelAmbiguous { .. }
+            | Self::TacticRefused { .. }
             | Self::Linearity { .. }
             | Self::Access { .. }
             | Self::Codata { .. }

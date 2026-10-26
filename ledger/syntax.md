@@ -2,9 +2,9 @@
 
 Generated from the built-in grammar by `gandr ledger syntax --write ledger`; never edited by hand. `mise run check:syntax-ledger` regenerates it and fails while this file differs. `syntax.json` holds the same rows for machines, each form as a tree with every tile's mold.
 
-- Grammar fingerprint: `0xb0cf12974cbe0f03`
-- Rules: 166 — 165 committed, 1 internal
-- Molds: 3215
+- Grammar fingerprint: `0x001fb29ebf8bb700`
+- Rules: 167 — 166 committed, 1 internal
+- Molds: 3216
 - Attributes: 14
 
 ## Reading a form
@@ -63,7 +63,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`identifier.pattern`](../corpus/ledger/syntax/identifier.pattern.gandr) | `‹identifier›` | `pattern.atom` | `identifier` | admitted | Variable |
 | [`unit.pattern`](../corpus/ledger/syntax/unit.pattern.gandr) | `unit` | `pattern.atom` | `unit` | admitted | Keyword |
 
-## `expression` — 85 rules
+## `expression` — 86 rules
 
 | Rule | Form | Group | Kind | Admission | Roles |
 | ---- | ---- | ----- | ---- | --------- | ----- |
@@ -89,6 +89,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`force_expression`](../corpus/ledger/syntax/force-expression.gandr) | `force EXPRESSION` | `expression.unary` | `force_expression` | admitted | Keyword |
 | [`run_expression`](../corpus/ledger/syntax/run-expression.gandr) | `run EXPRESSION` | `expression.unary` | `run_expression` * | admitted | Keyword |
 | [`hold_expression`](../corpus/ledger/syntax/hold-expression.gandr) | `hold EXPRESSION` | `expression.unary` | `hold_expression` | admitted | Keyword |
+| [`splice_expression`](../corpus/ledger/syntax/splice-expression.gandr) | `~ EXPRESSION` | `expression.unary` | `splice_expression` * | admitted | Other |
 | [`pack_expression`](../corpus/ledger/syntax/pack-expression.gandr) | `pack [ TYPE ⦅ , TYPE ⦆* ⦅ , ⦆? ] EXPRESSION` | `expression.pure` | `pack_expression` * | unadmitted | Keyword, Other |
 | [`pack_model_expression`](../corpus/ledger/syntax/pack-model-expression.gandr) | `pack EXPRESSION at TYPE` | `expression.pure` | `pack_model_expression` * | admitted | Keyword |
 | [`call_expression`](../corpus/ledger/syntax/call-expression.gandr) | `EXPRESSION ( ⦅ EXPRESSION ⦅ , EXPRESSION ⦆* ⦅ , ⦆? ⦆? )` | `expression.postfix` | `call_expression` | admitted | Other |

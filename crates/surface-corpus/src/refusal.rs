@@ -720,6 +720,10 @@ pub enum RefusalName
     /// A call omitting a model implicit more than one module in scope
     /// answers.
     ModelAmbiguous,
+    /// A splice whose tactic answers no term its goal admits: no binder of
+    /// the goal's type, no function to introduce, an answer the goal refuses,
+    /// or no goal where the splice stands.
+    TacticRefused,
     /// A definition's region binder named as a value.
     RegionAsValue,
     /// A source's top-level `main` declared at a type no entry has.
@@ -787,6 +791,8 @@ pub enum RefusalName
     /// `Eq.generic` read anywhere but as a definition's whole body, applied
     /// to one data type.
     GenericMisplaced,
+    /// A splice whose operand writes no tactic.
+    UnknownTactic,
     /// A data type `Eq.generic` derives no equality or law for: the
     /// declaration's gap, bare; a law's dependent case, qualified `Dependent`.
     GenericUncovered(GenericCoverage),
@@ -975,7 +981,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 216_usize] = [
+    pub const VOCABULARY: [Self; 218_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1084,6 +1090,7 @@ impl RefusalName
         Self::ImplicitUnsolved,
         Self::ModelUnanswered,
         Self::ModelAmbiguous,
+        Self::TacticRefused,
         Self::RegionAsValue,
         Self::EntryType,
         Self::StrayReceiverMode,
@@ -1111,6 +1118,7 @@ impl RefusalName
         Self::RulesUndecided,
         Self::UnderivedRule,
         Self::GenericMisplaced,
+        Self::UnknownTactic,
         Self::GenericUncovered(GenericCoverage::Declaration),
         Self::BudgetExceeded,
         Self::GrammarMismatch,
@@ -1290,6 +1298,7 @@ impl RefusalName
         (Self::ImplicitUnsolved, b"ImplicitUnsolved") |
         (Self::ModelUnanswered, b"ModelUnanswered") |
         (Self::ModelAmbiguous, b"ModelAmbiguous") |
+        (Self::TacticRefused, b"TacticRefused") |
         (Self::RegionAsValue, b"RegionAsValue") |
         (Self::EntryType, b"EntryType") |
         (Self::StrayReceiverMode, b"StrayReceiverMode") |
@@ -1317,6 +1326,7 @@ impl RefusalName
         (Self::RulesUndecided, b"RulesUndecided") |
         (Self::UnderivedRule, b"UnderivedRule") |
         (Self::GenericMisplaced, b"GenericMisplaced") |
+        (Self::UnknownTactic, b"UnknownTactic") |
         (Self::GenericUncovered(_), b"GenericUncovered") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
         b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::HostConflict, b"HostConflict") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
@@ -1630,6 +1640,7 @@ impl RefusalName
             Self::ImplicitUnsolved => "ImplicitUnsolved",
             Self::ModelUnanswered => "ModelUnanswered",
             Self::ModelAmbiguous => "ModelAmbiguous",
+            Self::TacticRefused => "TacticRefused",
             Self::RegionAsValue => "RegionAsValue",
             Self::EntryType => "EntryType",
             Self::StrayReceiverMode => "StrayReceiverMode",
@@ -1657,6 +1668,7 @@ impl RefusalName
             Self::RulesUndecided => "RulesUndecided",
             Self::UnderivedRule => "UnderivedRule",
             Self::GenericMisplaced => "GenericMisplaced",
+            Self::UnknownTactic => "UnknownTactic",
             Self::GenericUncovered(_) => "GenericUncovered",
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
@@ -2295,6 +2307,8 @@ impl Refusal<'_>
         RefusalName::UnderivedRule) |
         (Self::Lowering(LoweringRefusal::GenericMisplaced { .. }),
         RefusalName::GenericMisplaced) |
+        (Self::Lowering(LoweringRefusal::UnknownTactic { .. }),
+        RefusalName::UnknownTactic) |
         (Self::Lowering(LoweringRefusal::GenericUncovered { .. }),
         RefusalName::GenericUncovered(_)) |
         (Self::Lowering(LoweringRefusal::BudgetExceeded { .. }) |
@@ -2373,6 +2387,7 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::ImplicitUnsolved { .. }), RefusalName::ImplicitUnsolved)
         | (Self::Checking(CheckRefusal::ModelUnanswered { .. }), RefusalName::ModelUnanswered)
         | (Self::Checking(CheckRefusal::ModelAmbiguous { .. }), RefusalName::ModelAmbiguous)
+        | (Self::Checking(CheckRefusal::TacticRefused { .. }), RefusalName::TacticRefused)
         | (Self::Checking(CheckRefusal::SessionMismatch { .. }), RefusalName::SessionMismatch | RefusalName::UnofferedLabel | RefusalName::OfferArms)
         | (Self::Checking(CheckRefusal::Linearity { .. }), RefusalName::LinearResidue | RefusalName::UsedAfterClose | RefusalName::EndpointUsedTwice | RefusalName::CapturedEndpoint | RefusalName::EndpointAsValue | RefusalName::ArmsDisagree | RefusalName::UnrestrictedEndpoint | RefusalName::UnboundEndpoint | RefusalName::BufferUnreturned | RefusalName::BufferReturnedTwice | RefusalName::BufferRead | RefusalName::ContinuationUnspent | RefusalName::ContinuationUsedTwice | RefusalName::ContinuationCaptured | RefusalName::ContinuationAsValue)
         | (Self::Checking(CheckRefusal::Access { .. }), RefusalName::NotHeld | RefusalName::HeldLent | RefusalName::HeldCaptured | RefusalName::ViewEscaped | RefusalName::ViewUnended | RefusalName::ViewSpent | RefusalName::NotAView | RefusalName::ViewReadOnly | RefusalName::UnwindEffect | RefusalName::PlaceUnindexed | RefusalName::HeldShared | RefusalName::HeldCopied | RefusalName::ViewMoved | RefusalName::HeldKept | RefusalName::KeptEscaped | RefusalName::HeldConsumed)
@@ -2536,7 +2551,8 @@ impl Refusal<'_>
         RefusalName::RulesNeverComplete) | (LoweringRefusal::RulesUndecided { .. },
         RefusalName::RulesUndecided) | (LoweringRefusal::UnderivedRule { .. },
         RefusalName::UnderivedRule) | (LoweringRefusal::GenericMisplaced { .. },
-        RefusalName::GenericMisplaced) | (LoweringRefusal::GenericUncovered { .. },
+        RefusalName::GenericMisplaced) | (LoweringRefusal::UnknownTactic { .. },
+        RefusalName::UnknownTactic) | (LoweringRefusal::GenericUncovered { .. },
         RefusalName::GenericUncovered(_)) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
@@ -2642,6 +2658,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::RulesUndecided { .. } => RefusalName::RulesUndecided,
         LoweringRefusal::UnderivedRule { .. } => RefusalName::UnderivedRule,
         LoweringRefusal::GenericMisplaced { .. } => RefusalName::GenericMisplaced,
+        LoweringRefusal::UnknownTactic { .. } => RefusalName::UnknownTactic,
         LoweringRefusal::GenericUncovered { fault, .. } => {
             RefusalName::GenericUncovered(GenericCoverage::of(fault))
         },
@@ -2744,6 +2761,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | (CheckRefusal::ImplicitUnsolved { .. }, RefusalName::ImplicitUnsolved)
         | (CheckRefusal::ModelUnanswered { .. }, RefusalName::ModelUnanswered)
         | (CheckRefusal::ModelAmbiguous { .. }, RefusalName::ModelAmbiguous)
+        | (CheckRefusal::TacticRefused { .. }, RefusalName::TacticRefused)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Action { .. }, .. }, RefusalName::SessionMismatch)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Label, .. }, RefusalName::UnofferedLabel)
         | (CheckRefusal::SessionMismatch { defect: ProtocolDefect::Arms, .. }, RefusalName::OfferArms)
@@ -2876,6 +2894,7 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
         CheckRefusal::ImplicitUnsolved { .. } => RefusalName::ImplicitUnsolved,
         CheckRefusal::ModelUnanswered { .. } => RefusalName::ModelUnanswered,
         CheckRefusal::ModelAmbiguous { .. } => RefusalName::ModelAmbiguous,
+        CheckRefusal::TacticRefused { .. } => RefusalName::TacticRefused,
         CheckRefusal::SessionMismatch { defect, .. } => match defect {
             ProtocolDefect::Action { .. } => RefusalName::SessionMismatch,
             ProtocolDefect::Label => RefusalName::UnofferedLabel,

@@ -648,6 +648,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::ImplicitUnsolved { .. }
         | CheckRefusal::ModelUnanswered { .. }
         | CheckRefusal::ModelAmbiguous { .. }
+        | CheckRefusal::TacticRefused { .. }
         | CheckRefusal::CapabilityForged { .. }
         | CheckRefusal::CapabilityAmplified(_)
         | CheckRefusal::CapabilityOutsideAuthority { .. }

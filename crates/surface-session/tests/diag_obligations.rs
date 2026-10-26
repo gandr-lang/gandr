@@ -33,13 +33,13 @@ use crate::common::names;
 use crate::common::session;
 use crate::common::submit;
 
-/// A malformed declaration — the stray `~` the melder cannot mold — followed
+/// A malformed declaration — the stray `^` the melder cannot mold — followed
 /// by a well-formed one: the recovery-continuation shape.
-const MALFORMED_THEN_VALID: &str = "def bad = 1 ~ 2 ;\ndef good = 2 ;\n";
+const MALFORMED_THEN_VALID: &str = "def bad = 1 ^ 2 ;\ndef good = 2 ;\n";
 
 /// A source whose obligations disagree about order: the most severe, the
-/// unmolded `~`, is the last in the source, behind two lower-severity repairs.
-const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str = "def k = thunk { pure 1 ;\ndef b = 1 ~ 2 ;\n";
+/// unmolded `^`, is the last in the source, behind two lower-severity repairs.
+const SEVERITY_AND_SOURCE_ORDER_DISAGREE: &str = "def k = thunk { pure 1 ;\ndef b = 1 ^ 2 ;\n";
 
 /// A recovering source the lowering refuses as a whole: an unterminated shell
 /// block, and no declaration.
@@ -199,7 +199,7 @@ fn rows_carry_the_class_and_the_exact_span()
     let submission = submit(&mut session(SourceRoot::Strict), MALFORMED_THEN_VALID);
     let rows = submission.obligations();
     assert_eq!(rows, &[at!(Oblig::UnmoldedTok, 12 .. 13)]);
-    assert_eq!(spanned(MALFORMED_THEN_VALID, rows[0].span).0, "~");
+    assert_eq!(spanned(MALFORMED_THEN_VALID, rows[0].span).0, "^");
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn rows_are_in_source_order_not_severity_order()
     );
     assert_eq!(
         spanned(SEVERITY_AND_SOURCE_ORDER_DISAGREE, rows[2].span).0,
-        "~"
+        "^"
     );
 }
 

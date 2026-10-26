@@ -280,6 +280,8 @@ pub enum FrameRole
     ReturnValue,
     /// An injection's payload is being checked.
     InjectionPayload,
+    /// A splice's tactic's answer is being checked against the splice's goal.
+    Spliced,
     /// A send waits on its payload's check, then advances its endpoint.
     SessionSend,
     /// A receive's body is being judged with its payload bound.
@@ -464,6 +466,7 @@ impl fmt::Display for FrameRole
             Self::ThunkBody => "ThunkBody",
             Self::ReturnValue => "ReturnValue",
             Self::InjectionPayload => "InjectionPayload",
+            Self::Spliced => "Spliced",
             Self::SessionSend => "SessionSend",
             Self::ReceiveBody => "ReceiveBody",
             Self::OfferArm => "OfferArm",

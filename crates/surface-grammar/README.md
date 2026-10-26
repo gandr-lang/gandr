@@ -8,6 +8,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -105,9 +106,13 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | The walk index and comparison table | [`walk`](src/walk.rs) |
 | The built-in surface and its frozen tables | [`surface`](src/surface.rs) |
 | The bridges and the universe | [`surface::type_shell`](src/surface/type_shell.rs) |
-| Type operators, the unit value | [`surface::term`](src/surface/term.rs) |
+| Type operators, the unit value, the splice | [`surface::term`](src/surface/term.rs) |
 | The named-kind inventory | [`parity`](src/parity.rs) |
 | The highlighter | [`highlight`](src/highlight.rs) |
+
+## References
+
+- `Kovács-2022-staged_compilation_twolevel_type_theorya` — lineage: András Kovács, "Staged Compilation with Two-Level Type Theory", _ICFP_, 2022, `doi:10.1145/3547641` — the splice `~t`.
 
 ## License
 

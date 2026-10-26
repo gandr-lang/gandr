@@ -1,0 +1,33 @@
+// Tactics over goals: a splice `~t` stands where a value is read and runs
+// the tactic `t` at the goal the position holds, the binders in scope with
+// their types and the type the value is checked against (#2762). The checker
+// runs the tactic, judges the term it answers against the goal again and
+// fills the splice with it, so the kernel replays the filled declaration and
+// no tactic is trusted. Two tactics stand: `assumption`, the innermost binder
+// whose type is the goal's, and `intro(t)`, a function whose body is `t`'s
+// answer under the binder it introduces. What refuses is in
+// `../../pathological/metaprograms/tactics-over-goals.gandr`.
+
+/// The innermost integer in scope: `b`, which stands after `a`.
+def pick(a : Integer, u : Unit, b : Integer) -> Integer { ~assumption }
+
+/// `pick` applied: its tactic answered `b`.
+@[ runs("3") ]
+def picked() -> Integer { pick(1, unit, 3) }
+
+/// The identity on integers, written by its tactic: one introduction, then
+/// the binder it introduced.
+def id : Integer => Integer = ~intro(assumption);
+
+/// The identity applied.
+@[ runs("5") ]
+def identity() -> Integer { id(5) }
+
+/// The polymorphic identity: the second introduction's binder has the type
+/// the first introduced, and the goal under both reads that type, so each new
+/// goal is stated under the binders before it.
+def poly : (a : Type, a) => a = ~intro(intro(assumption));
+
+/// The polymorphic identity applied.
+@[ runs("7") ]
+def polyApplied() -> Integer { poly(Integer, 7) }

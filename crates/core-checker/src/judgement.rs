@@ -464,6 +464,7 @@ use gandr_core_term::effect::capability::Region;
 use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::hole::CodomainScope;
 use gandr_core_term::hole::Components;
+use gandr_core_term::hole::HoleId;
 use gandr_core_term::hole::HoleOrigin;
 use gandr_core_term::hole::matched_function;
 use gandr_core_term::hole::matched_list;
@@ -518,6 +519,7 @@ use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
 use crate::refusal::Mismatch;
 use crate::refusal::StaticArity;
+use crate::refusal::TacticFault;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
@@ -2335,6 +2337,17 @@ enum Frame
     ReturnValue,
     /// An injection waits on its payload's check against its summand.
     InjectionPayload,
+    /// A splice's tactic's answer is checked against the splice's goal; the
+    /// answer then fills the splice's hole.
+    Spliced
+    {
+        /// The splice's hole, where it stands.
+        at: ValueId,
+        /// The hole, whose name carries the tactic.
+        hole: HoleId,
+        /// The tactic's answer.
+        answer: ValueId,
+    },
     /// A send waits on its payload's check; its endpoint then advances.
     SessionSend
     {
@@ -2635,6 +2648,7 @@ impl Frame
             Self::ThunkBody => FrameRole::ThunkBody,
             Self::ReturnValue => FrameRole::ReturnValue,
             Self::InjectionPayload => FrameRole::InjectionPayload,
+            Self::Spliced { .. } => FrameRole::Spliced,
             Self::SessionSend { .. } => FrameRole::SessionSend,
             Self::OfferArm { .. } => FrameRole::OfferArm,
             Self::ForkProtocol { .. } => FrameRole::ForkProtocol,
@@ -2783,6 +2797,7 @@ impl Frame
             | Self::ThunkBody
             | Self::ReturnValue
             | Self::InjectionPayload
+            | Self::Spliced { .. }
             | Self::SessionSend { .. }
             | Self::OfferArm { .. }
             | Self::ForkProtocol { .. }
@@ -3259,6 +3274,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::ThunkBody
                 | Frame::ReturnValue
                 | Frame::InjectionPayload
+                | Frame::Spliced { .. }
                 | Frame::SessionSend { .. }
                 | Frame::OfferArm { .. }
                 | Frame::ForkProtocol { .. }
@@ -4224,6 +4240,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(next) => next,
                 Err(refusal) => {
                     let refusal = self.unwinding(refusal, control);
+                    let refusal = self.spliced_refusal(refusal);
                     match self.recover(refusal) {
                         Ok(next) => next,
                         Err(refusal) => return Err(Halt { refusal, control }),
@@ -4258,6 +4275,46 @@ impl<'context, 'arena> Machine<'context, 'arena>
             frame,
             owner: self.owner,
         });
+    }
+
+    /// The refusal a step gives while a splice's answer is under judgement:
+    /// the splice's tactic refused as forged, since the tactic answered a term
+    /// its goal refuses.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`CheckRefusal::TacticRefused`] with [`TacticFault::Forged`]
+    ///   at the innermost pending splice, naming its tactic; `refusal`
+    ///   unchanged when no splice is pending.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an answer of another type and one past the goal's
+    ///   binders are refused naming the tactic; the answer of the goal's type
+    ///   fills the hole.
+    /// - witness: `judgement::tests::a_forged_answer_is_refused_naming_its_tactic_2762`
+    #[spec(ensures: |ret| ret == refusal
+        || matches!(ret, CheckRefusal::TacticRefused { fault: TacticFault::Forged, .. }))]
+    fn spliced_refusal(
+        &self,
+        refusal: CheckRefusal,
+    ) -> CheckRefusal
+    {
+        self.frames
+            .iter()
+            .rev()
+            .find_map(|waiting| {
+                let Frame::Spliced { at, hole, .. } = waiting.frame
+                else {
+                    return None;
+                };
+                hole.tactic().map(|tactic| CheckRefusal::TacticRefused {
+                    at,
+                    tactic,
+                    fault: TacticFault::Forged,
+                })
+            })
+            .unwrap_or(refusal)
     }
 
     /// Spend one step of the allowance.
@@ -4865,8 +4922,20 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
             },
             Value::Hole(hole) => {
-                if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) {
-                    self.context.nominate(term, hole)?;
+                match hole.origin() {
+                    HoleOrigin::Nominated | HoleOrigin::Wildcard => {
+                        self.context.nominate(term, hole)?;
+                    },
+                    // A splice's goal is the type it is checked against, and
+                    // here none is.
+                    HoleOrigin::Spliced => {
+                        return Err(CheckRefusal::TacticRefused {
+                            at: term,
+                            tactic: hole.tactic().ok_or(CheckRefusal::MachineInvariant)?,
+                            fault: crate::refusal::TacticFault::Unplaced,
+                        });
+                    },
+                    HoleOrigin::Written => {},
                 }
                 let unknown = self.context.arena_mut().value_type_unknown();
                 Ok(Step::Ascend(Produced::ValueType(Relocated::from(unknown))))
@@ -5366,11 +5435,27 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            Value::Hole(hole) => {
-                if matches!(hole.origin(), HoleOrigin::Nominated | HoleOrigin::Wildcard) {
+            Value::Hole(hole) => match hole.origin() {
+                HoleOrigin::Nominated | HoleOrigin::Wildcard => {
                     self.context.nominate(term, hole)?;
-                }
-                Ok(Step::Ascend(Produced::Checked))
+                    Ok(Step::Ascend(Produced::Checked))
+                },
+                // The tactic answers at the goal, and its answer is judged
+                // against it as the next goal; a refusal there names the
+                // tactic ([`Self::spliced_refusal`]).
+                HoleOrigin::Spliced => {
+                    let answer = crate::tactic::answer(self.context, term, hole, expected)?;
+                    self.wait(Frame::Spliced {
+                        at: term,
+                        hole,
+                        answer,
+                    });
+                    Ok(Step::Descend(Goal::Value {
+                        term: answer,
+                        direction: Direction::Check(expected),
+                    }))
+                },
+                HoleOrigin::Written => Ok(Step::Ascend(Produced::Checked)),
             },
             Value::Mark { .. } => Ok(Step::Ascend(Produced::Checked)),
         }
@@ -8005,6 +8090,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::RunProtocol,
                 Produced::Checked,
             ) => Ok(Step::Ascend(Produced::Checked)),
+            // The answer checked against the goal: it fills the hole as a
+            // metavariable's solution does, under the binders open here.
+            (Frame::Spliced { hole, answer, .. }, Produced::Checked) => {
+                let scope = self.context.intuitionistic_scope()?;
+                self.context.deferrals_mut().splice(hole, answer, scope);
+                Ok(Step::Ascend(Produced::Checked))
+            },
             (Frame::ReturnValue, Produced::ValueType(result)) => {
                 let arena = self.context.arena_mut();
                 let result = result.settle(arena);
@@ -9519,6 +9611,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | CheckRefusal::ImplicitUnsolved { .. }
                     | CheckRefusal::ModelUnanswered { .. }
                     | CheckRefusal::ModelAmbiguous { .. }
+                    | CheckRefusal::TacticRefused { .. }
                     | CheckRefusal::CapabilityForged { .. }
                     | CheckRefusal::CapabilityAmplified(_)
                     | CheckRefusal::CapabilityOutsideAuthority { .. }
@@ -9704,6 +9797,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Unknowing(_)
                 | Frame::ThunkBody
                 | Frame::InjectionPayload
+                | Frame::Spliced { .. }
                 | Frame::SessionSend { .. }
                 | Frame::OfferArm { .. }
                 | Frame::ForkProtocol { .. }

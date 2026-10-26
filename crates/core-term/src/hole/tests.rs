@@ -47,9 +47,9 @@ fn a_nominated_hole_shares_no_name_with_a_written_one()
         "the quarter has no more names"
     );
     let first_wildcard = wildcard(0).expect("the first wildcard is named");
-    let last_wildcard = wildcard((1 << 30_u32) - 1).expect("the last wildcard is named");
+    let last_wildcard = wildcard((1 << 29_u32) - 1).expect("the last wildcard is named");
     assert_eq!(u32::from(first_wildcard), 1 << 31_u32);
-    assert_eq!(u32::from(last_wildcard), (3 << 30_u32) - 1);
+    assert_eq!(u32::from(last_wildcard), (1 << 31_u32) + (1 << 29_u32) - 1);
     assert_eq!(
         [first_wildcard.origin(), last_wildcard.origin()],
         [HoleOrigin::Wildcard; 2],
@@ -60,7 +60,7 @@ fn a_nominated_hole_shares_no_name_with_a_written_one()
         nominated(0),
         "a wildcard and an omitted implicit at one index are two holes"
     );
-    assert_eq!(wildcard(1 << 30_u32), None, "the quarter has no more names");
+    assert_eq!(wildcard(1 << 29_u32), None, "the eighth has no more names");
     for written in [0_u32, 1, (1 << 31_u32) - 1] {
         assert_eq!(
             HoleId::from(written).origin(),
@@ -68,6 +68,38 @@ fn a_nominated_hole_shares_no_name_with_a_written_one()
             "a written name below the half is not nominated"
         );
     }
+}
+
+#[test]
+fn a_spliced_hole_carries_its_tactic_in_its_name()
+{
+    let deepest = crate::tactic::Tactic::try_from(crate::tactic::Tactic::INTROS - 1)
+        .expect("the deepest tactic is admitted");
+    let spliced = |index: u32, tactic| HoleId::spliced(NominationIndex::from(index), tactic);
+    let first = spliced(0, crate::tactic::Tactic::ASSUMPTION).expect("the first place is named");
+    let last = spliced((1 << 24_u32) - 1, deepest).expect("the last place is named");
+    assert_eq!(u32::from(first), (1 << 31_u32) + (1 << 29_u32));
+    assert_eq!(u32::from(last), (3 << 30_u32) - 1, "the eighth's last name");
+    assert_eq!([first.origin(), last.origin()], [HoleOrigin::Spliced; 2]);
+    assert_eq!(first.tactic(), Some(crate::tactic::Tactic::ASSUMPTION));
+    assert_eq!(last.tactic(), Some(deepest));
+    assert_ne!(
+        spliced(0, deepest),
+        Some(first),
+        "two tactics at one place are two holes"
+    );
+    assert_eq!(
+        spliced(1 << 24_u32, crate::tactic::Tactic::ASSUMPTION),
+        None,
+        "the places past the last are refused"
+    );
+    let wildcard = HoleId::wildcard(NominationIndex::from(0)).expect("a wildcard's name");
+    assert_eq!(wildcard.tactic(), None, "a wildcard runs no tactic");
+    assert_eq!(
+        HoleId::from(0_u32).tactic(),
+        None,
+        "a written hole runs none"
+    );
 }
 
 #[test]

@@ -1,0 +1,29 @@
+// The refusals of tactics over goals (#2762): a tactic whose goal no binder
+// answers, an introduction where no function is asked, a splice with no type
+// to check it against, an operand that writes no tactic, and a splice where a
+// computation is read.
+
+/// No binder in scope is an integer: `assumption` has no answer.
+@[ refuses("TacticRefused") ]
+def none(u : Unit) -> Integer { ~assumption }
+
+/// `intro` where an integer is asked: there is no binder to introduce.
+@[ refuses("TacticRefused") ]
+def flat : Integer = ~intro(assumption);
+
+/// A splice its declaration states no type for: the tactic has no goal.
+@[ refuses("TacticRefused") ]
+def loose = ~assumption;
+
+/// A binder's name where a tactic is read: a splice runs a tactic, never a
+/// term.
+@[ refuses("UnknownTactic") ]
+def named(x : Integer) -> Integer { ~x }
+
+/// A splice bound by `run`, where a computation is read: a tactic answers a
+/// value, so the splice is a form of the wrong sort there.
+@[ refuses("OutOfFragment.WrongSort") ]
+def ranSplice(x : Integer) -> -F Integer {
+  run y <- ~assumption;
+  y
+}

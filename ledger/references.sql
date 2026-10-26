@@ -25,7 +25,8 @@ CREATE TABLE reference(
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
-INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','fe0acf8ec5d3b7ad3cd66d1d9d42088c9d74abcc','2026-10-26','e9252d40055d3edecdf6463aedbbddeba8fd710c');
+INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','afd9dec17cecc97902f59738297a0e8964c85ca2');
+INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','bcd5208d8b0414d4706e2afdb774c208bf266495');
 INSERT INTO reference VALUES('arXiv:0809.3341','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0906.4931','theory-levitation','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0907.4553','theory-sites','','background',NULL,NULL,NULL);

@@ -1,0 +1,12 @@
+/// `tactics-over-goals`: Tactics over goals (~t).
+/// Implemented: a splice `~t` where a value is read runs `assumption` or `intro(t)` in the checker at the goal the hole holds, the binders in scope and the expected type; the answer is judged again and fills the hole, so the kernel replays it.
+/// Not implemented: a tactic written in gandr over codes of the goal and of its answer; #2787 owes it.
+
+/// `intro` opens the type and the value as binders; `assumption` answers the
+/// value, the binder whose type is the second goal's.
+@[ checks ]
+def poly : (a : Type, y : a) => a = ~intro(intro(assumption));
+
+/// The filled body runs as the identity.
+@[ runs("7") ]
+def polyIdentity() -> Integer { poly(Integer, 7) }
