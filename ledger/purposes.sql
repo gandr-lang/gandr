@@ -2844,6 +2844,10 @@ INSERT INTO purpose VALUES('surface-render-remote','wire::RenderFrame','struct',
 INSERT INTO purpose VALUES('surface-render-remote','wire::ReportView','struct','The renderer-facing report a FrameBody::Frame carries: the document''s text, highlights, marks, diagnostic cards and goal cards over one document version.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','wire::WIRE_SCHEMA_VERSION','constant','The render-bus wire schema version this crate writes and reads.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-render-remote','wire::WireSchemaVersion','struct','A render-bus wire schema version.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-terminal','render::render','function','Lays a diagnostic out for a terminal, so the snippet `gandr check` and `gandr test` print is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-terminal','style::RenderStyle','enum','Names how a report is laid out, so a diagnostic''s plain or styled text is chosen.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-terminal','style::Rendered','struct','Holds the presentation text a diagnostic becomes, so the text''s bytes are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-render-terminal','style::TerminalCapability','enum','Names whether an output destination is a terminal capable of styled rendering, so a style is chosen from the capability.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-repl','batch::Ended','enum','How a face''s run ended.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-repl','batch::Fault','enum','What stopped a face before its input ended.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-repl','batch::run_batch','function','Run the loop over every line of `input`, writing each block to `output`.',NULL,'fits','sound',NULL);
