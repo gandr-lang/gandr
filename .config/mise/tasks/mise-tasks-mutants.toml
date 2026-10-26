@@ -18,8 +18,9 @@
 # cargo-mutants (`--shard k/n`, `--list`, `--timeout`). Outcomes land in
 # `mutants.out/<crate>`, or in `MUTANTS_OUTPUT` when set. One run holds the
 # host at a time, in a scope of its own whose memory is capped
-# (`.config/mise/mutants.bash`). The release ships no Apple-silicon binary,
-# so the pin stays `cargo:` (binstall fetches the rest).
+# (`.config/mise/mutants.bash`): a second run waits for the first, naming it,
+# or with `--no-wait` refuses at once (#2540). The release ships no
+# Apple-silicon binary, so the pin stays `cargo:` (binstall fetches the rest).
 ["mutants"]
 description = "Mutation-test one crate with the campaign's measured settings"
 tools."cargo:cargo-mutants" = "27.1.0"
@@ -29,6 +30,7 @@ run = '''
 set -euo pipefail
 crate=
 previous=
+arguments=()
 for argument in "$@"; do
   case "$previous" in
     -p | --package) crate=$argument ;;
@@ -37,9 +39,11 @@ for argument in "$@"; do
     --package=*) crate=${argument#--package=} ;;
   esac
   previous=$argument
+  if [[ $argument == --no-wait ]]; then export MUTANTS_NO_WAIT=1; else arguments+=("$argument"); fi
 done
+set -- "${arguments[@]}"
 if [[ -z "$crate" ]]; then
-  echo 'usage: mise run mutants -- -p <crate> [cargo-mutants arguments]' >&2
+  echo 'usage: mise run mutants -- -p <crate> [--no-wait] [cargo-mutants arguments]' >&2
   exit 2
 fi
 host=$(rustc -vV | sed -n 's/^host: //p')
@@ -129,8 +133,10 @@ MUTANTS_OUTPUT="mutants.out/$crate/named" exec mise run mutants -- -p "$crate" \
 # unmutated first, in a lane, so a witness that fails there stops the run
 # instead of reading every mutant caught. That run and every mutant's build
 # share `mutants`' flags, the lint cap included, so a lane builds once.
-# The run holds the host's mutants lock as `mutants` does, and each group's
-# cargo-mutants runs in its own capped scope (`.config/mise/mutants.bash`).
+# The run holds the host's mutants lock as `mutants` does, waiting for a run
+# that holds it or, with `--no-wait`, refusing at once (#2540), and each
+# group's cargo-mutants runs in its own capped scope
+# (`.config/mise/mutants.bash`).
 # Outcomes land in `mutants.out/<crate>/witnessed` (or `MUTANTS_OUTPUT`):
 # cargo-mutants' `caught`, `missed`, `timeout` and `unviable` lists, merged,
 # `unwitnessed.txt`, each group's log under `logs/`, and a summary line with
@@ -178,6 +184,7 @@ flag "--in-diff <file>" help="mutate only the lines a unified diff adds"
 flag "--iterate" help="skip the mutants earlier --iterate runs settled, and those they tried in the current pass"
 flag "--until <seconds>" help="start no group after this many seconds and stop the one running then; the rest wait for the next run"
 flag "--seed-target <dir>" help="copy this built target directory into each lane, which builds in its copy"
+flag "--no-wait" help="refuse at once, naming the holder, when another mutants run holds the host"
 '''
 run = '''
 {% raw %}#!/usr/bin/env bash
@@ -188,6 +195,7 @@ timeout=${usage_timeout:-300}
 iterate=${usage_iterate:-false}
 until=${usage_until:-}
 seed=${usage_seed_target:-}
+[[ ${usage_no_wait:-false} != true ]] || export MUTANTS_NO_WAIT=1
 in_diff=()
 if [[ -n "${usage_in_diff:-}" ]]; then
   [[ -f "$usage_in_diff" ]] || { printf 'no diff at %s\n' "$usage_in_diff" >&2; exit 2; }
