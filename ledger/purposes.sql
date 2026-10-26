@@ -3616,6 +3616,16 @@ INSERT INTO purpose VALUES('theory-nominal-automata','rnta::Term','struct','A fl
 INSERT INTO purpose VALUES('theory-nominal-automata','rnta::TermError','struct','An absent or forward term reference.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-nominal-automata','rnta::TermId','struct','A node index in one term arena; child references must point backward.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-nominal-automata','rnta::TermNode','struct','A flat term node whose children are arena indices.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','interval::Interval','struct','Holds a closed interval of order points straddling a subtree, so the interval''s endpoints are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::GroupWidth','struct','Names the width of a group''s label universe, so the width''s value is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::HandleMembership','struct','Names whether a handle refers to a live element of an `OrderMaintenance`, so the membership''s verdict is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::IntervalContainment','struct','Names whether one interval contains another in the maintained order, so the containment''s verdict is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::Iter','struct','Holds an in-order iterator over an `OrderMaintenance`, so the iterator''s cursor is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::LiveLen','struct','Names the number of live elements in an `OrderMaintenance`, so the count''s value is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::OrderError','enum','Names a failure of an `OrderMaintenance` operation, so the failure''s cause is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::OrderIsEmpty','struct','Names whether an `OrderMaintenance` currently has no live elements, so the emptiness''s verdict is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::OrderMaintenance','struct','Holds a total order over payload-carrying elements with O(1) comparison, so the order''s elements are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-order-maintenance','order::Pos','struct','Holds an opaque, stable handle to an element of an `OrderMaintenance`, so the handle''s identity is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','evidence::Argument','struct','An argument''s index among its node''s arguments, left to right.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','evidence::Clause','enum','The clause of the order a step applies.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-path-orders','evidence::Cover','enum','How a covering step covers one argument of its right subterm.',NULL,'fits','sound',NULL);
