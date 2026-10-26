@@ -795,7 +795,7 @@ mod tests
         let literals = literal_tiles(&pbg);
         let text = "def answer = 42 ;\n";
         let made = mutants(
-            Path::new("def_value.gandr"),
+            Path::new("def-value.gandr"),
             SourceText::from(text),
             &literals,
             &mut BTreeMap::new(),
@@ -842,24 +842,24 @@ mod tests
         };
         let report = RecoveryReport {
             findings: vec![
-                finding("syntax/sum_type.gandr", None, Mutation::Deleted),
+                finding("syntax/sum-type.gandr", None, Mutation::Deleted),
                 finding(
-                    "syntax/binary_expression.add.gandr",
+                    "syntax/binary-expression.add.gandr",
                     Some("MalformedForm"),
                     Mutation::Deleted,
                 ),
                 finding(
-                    "syntax/binary_expression.cons.gandr",
+                    "syntax/binary-expression.cons.gandr",
                     Some("MalformedForm"),
                     Mutation::Deleted,
                 ),
                 finding(
-                    "syntax/path_type.gandr",
+                    "syntax/path-type.gandr",
                     Some("MalformedForm"),
                     Mutation::Deleted,
                 ),
                 finding(
-                    "syntax/path_type.gandr",
+                    "syntax/path-type.gandr",
                     Some("MalformedForm"),
                     Mutation::Missed("==".to_owned()),
                 ),
@@ -873,9 +873,9 @@ mod tests
             .map(str::to_owned)
             .collect();
         assert_eq!(causes, [
-            "cause: `MalformedForm` deleted: 3 mutants in 2 families: binary_expression, path_type",
-            "cause: `MalformedForm` missed: 1 mutants in 1 families: path_type",
-            "cause: `unnamed` deleted: 1 mutants in 1 families: sum_type",
+            "cause: `MalformedForm` deleted: 3 mutants in 2 families: binary-expression, path-type",
+            "cause: `MalformedForm` missed: 1 mutants in 1 families: path-type",
+            "cause: `unnamed` deleted: 1 mutants in 1 families: sum-type",
         ]);
     }
 
@@ -889,7 +889,7 @@ mod tests
         let folder = scratch.join("syntax");
         std::fs::create_dir_all(&folder).expect("the scratch folder");
         std::fs::write(
-            folder.join("def_value.gandr"),
+            folder.join("def-value.gandr"),
             "/// `def_value`: a definition.\n@[ checks ]\ndef answer = 42 ;\n",
         )
         .expect("the exemplar is written");
@@ -921,7 +921,7 @@ mod tests
         let folder = scratch.join("syntax");
         std::fs::create_dir_all(&folder).expect("the scratch folder");
         std::fs::write(
-            folder.join("labelled_sum_expression.gandr"),
+            folder.join("labelled-sum-expression.gandr"),
             "/// `labelled_sum_expression`: a labelled sum injection.\n@[ checks ]\ndef one() -> \
              -F +{Integer} {\n  return +{.0 = 1}\n}\n",
         )

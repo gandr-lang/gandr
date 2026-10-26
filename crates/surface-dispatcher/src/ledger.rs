@@ -886,12 +886,13 @@ impl SyntaxLedger
                 };
                 writeln!(
                     out,
-                    "| [`{name}`](../corpus/ledger/syntax/{name}.gandr) | {} | `{}` | `{}`{marker} | {} | {roles} |",
+                    "| [`{name}`](../corpus/ledger/syntax/{file}.gandr) | {} | `{}` | `{}`{marker} | {} | {roles} |",
                     Forms(row),
                     row.group,
                     row.kind,
                     Shown(row.admission),
                     name = row.name,
+                    file = row.name.replace('_', "-"),
                 )?;
             }
         }
@@ -1089,7 +1090,10 @@ fn rule_json(row: &RuleRow) -> Value
             fields.insert("standing".to_owned(), Value::from("committed"));
             fields.insert(
                 "exemplar".to_owned(),
-                Value::from(format!("../corpus/ledger/syntax/{}.gandr", row.name)),
+                Value::from(format!(
+                    "../corpus/ledger/syntax/{}.gandr",
+                    row.name.replace('_', "-")
+                )),
             );
         },
         Standing::Internal(reason) => {
@@ -1797,7 +1801,7 @@ fn admission(
     row: &RuleRow,
 ) -> Result<Admission, LedgerFault>
 {
-    let path = folder.join(format!("{}.gandr", row.name));
+    let path = folder.join(format!("{}.gandr", row.name.replace('_', "-")));
     let unshown = |error: String| LedgerFault::Unshown {
         path: path.clone(),
         error,
@@ -2417,7 +2421,11 @@ mod tests
             match row.standing {
                 Standing::Committed => core::fmt::Write::write_fmt(
                     &mut cell,
-                    format_args!("| [`{0}`](../corpus/ledger/syntax/{0}.gandr) |", row.name),
+                    format_args!(
+                        "| [`{0}`](../corpus/ledger/syntax/{1}.gandr) |",
+                        row.name,
+                        row.name.replace('_', "-")
+                    ),
                 ),
                 Standing::Internal(_) => {
                     core::fmt::Write::write_fmt(&mut cell, format_args!("| `{}` |", row.name))
@@ -2521,7 +2529,7 @@ mod tests
             let text = std::fs::read_to_string(
                 committed()
                     .join("syntax")
-                    .join(format!("{}.gandr", row.name)),
+                    .join(format!("{}.gandr", row.name.replace('_', "-"))),
             )
             .expect("a committed rule's exemplar reads");
             let stated = [
@@ -2578,7 +2586,7 @@ mod tests
             .rules
             .iter()
             .find(|row| row.standing == Standing::Committed)
-            .map(|row| format!("{}.gandr", row.name))
+            .map(|row| format!("{}.gandr", row.name.replace('_', "-")))
             .expect("a committed rule");
         for entry in std::fs::read_dir(committed().join("syntax")).expect("the exemplars list") {
             let path = entry.expect("an entry").path();

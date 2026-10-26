@@ -153,7 +153,8 @@ impl core::fmt::Display for Subject
 
 impl Subject
 {
-    /// The name the subject's file and comment carry.
+    /// The name the subject's comment carries: the rule's or attribute's
+    /// snake name.
     ///
     /// # Specification
     /// trivial.
@@ -161,6 +162,19 @@ impl Subject
     {
         match self {
             Self::Rule(rule) => rule.to_string(),
+            Self::Attribute(name) => name.to_string(),
+        }
+    }
+
+    /// The name the subject's file carries: a rule's snake name with its
+    /// underscores hyphenated, an attribute's name as is.
+    ///
+    /// # Specification
+    /// trivial.
+    fn file_name(self) -> String
+    {
+        match self {
+            Self::Rule(rule) => rule.to_string().replace('_', "-"),
             Self::Attribute(name) => name.to_string(),
         }
     }
@@ -525,7 +539,7 @@ pub(super) fn verify(
     for (folder, expected) in subjects {
         let mut present = listed(&folder)?;
         for subject in expected {
-            let path = folder.join(format!("{}.{EXTENSION}", subject.name()));
+            let path = folder.join(format!("{}.{EXTENSION}", subject.file_name()));
             if !present.remove(&path) {
                 report.findings.push(ExemplarFinding {
                     path,
@@ -1137,14 +1151,14 @@ mod tests
         let directory = copied(Path::new("renamed"));
         let syntax = directory.join("syntax");
         std::fs::rename(
-            syntax.join("def_value.gandr"),
-            syntax.join("def_values.gandr"),
+            syntax.join("def-value.gandr"),
+            syntax.join("def-values.gandr"),
         )
         .expect("the exemplar renames");
         let report = verified(&directory);
         assert_eq!(named(&report), [
-            "def_value.gandr: no exemplar for rule `def_value`",
-            "def_values.gandr: names nothing the ledger lists",
+            "def-value.gandr: no exemplar for rule `def_value`",
+            "def-values.gandr: names nothing the ledger lists",
         ]);
         assert!(matches!(
             report.findings.first().map(|finding| &finding.fault),
@@ -1157,13 +1171,13 @@ mod tests
     {
         let directory = copied(Path::new("another"));
         std::fs::write(
-            directory.join("syntax/return_expression.gandr"),
+            directory.join("syntax/return-expression.gandr"),
             "/// `return_expression`: a return.\ndef answer = pure 42 ;\n",
         )
         .expect("the exemplar is replaced");
         let report = verified(&directory);
         assert_eq!(named(&report), [
-            "return_expression.gandr: its tree holds no tile molded by rule `return_expression`"
+            "return-expression.gandr: its tree holds no tile molded by rule `return_expression`"
         ]);
     }
 
@@ -1173,7 +1187,7 @@ mod tests
         let directory = copied(Path::new("checks"));
         for (file, text) in [
             (
-                "syntax/case_expression.gandr",
+                "syntax/case-expression.gandr",
                 "// `case_expression`\ndef a = case x { y => y } ;\n",
             ),
             (
@@ -1198,7 +1212,7 @@ mod tests
         let report = verified(&directory);
         assert_eq!(named(&report), [
             "block.gandr: parses with 2 obligations left",
-            "case_expression.gandr: does not open with a `///` comment naming rule `case_expression`",
+            "case-expression.gandr: does not open with a `///` comment naming rule `case_expression`",
             "number.expression.gandr: holds 2 items of its rule where it shows 1",
             "doc.gandr: the attribute `doc` is filed on no declaration",
             "entry.gandr: the lowering refuses it: no declaration or binder answers `seat`",
@@ -1211,15 +1225,15 @@ mod tests
         let directory = copied(Path::new("glyphs"));
         for (file, text) in [
             (
-                "syntax/equivalence_type.gandr",
+                "syntax/equivalence-type.gandr",
                 "/// `equivalence_type`: the glyph twice.\ndef a : Type ≃ Type ;\ndef b : Type ≃ Type ;\n",
             ),
             (
-                "syntax/isomorphism_type.gandr",
+                "syntax/isomorphism-type.gandr",
                 "/// `isomorphism_type`: no call.\ndef a : Type ≅ Type ;\ndef b : Type ≅ Type ;\n",
             ),
             (
-                "syntax/universe_flow_type.gandr",
+                "syntax/universe-flow-type.gandr",
                 "/// `universe_flow_type`: one spelling.\ndef a : Type ⇝ Type ;\n",
             ),
         ] {
@@ -1227,9 +1241,9 @@ mod tests
         }
         let report = verified(&directory);
         assert_eq!(named(&report), [
-            "equivalence_type.gandr: writes no tile of rule `equivalence_type` as `<~>`",
-            "isomorphism_type.gandr: writes no tile of rule `isomorphism_type` as `Iso`",
-            "universe_flow_type.gandr: holds 1 item of its rule where it shows 2",
+            "equivalence-type.gandr: writes no tile of rule `equivalence_type` as `<~>`",
+            "isomorphism-type.gandr: writes no tile of rule `isomorphism_type` as `Iso`",
+            "universe-flow-type.gandr: holds 1 item of its rule where it shows 2",
         ]);
     }
 
