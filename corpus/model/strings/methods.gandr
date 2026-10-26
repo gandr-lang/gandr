@@ -15,7 +15,7 @@ import "./copy-on-write.gandr";
 import "./unique-write.gandr";
 
 /// A string's methods, one per receiver mode.
-module Str {
+pub module Str {
   /// The number of bytes the string holds, its zero included, read from a
   /// string lent for reading.
   def len(self : shared Repr) -> Integer {

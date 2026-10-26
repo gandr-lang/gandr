@@ -45,7 +45,7 @@ def shape_laws() -> Integer { law_count(CircleShape) }
 /// the predecessor. Each law is proved by `here`: conversion reads the inner
 /// call under the constructor the outer one builds, and the integers' rules
 /// cancel the pair.
-module Winding : Model(CircleShape) {
+pub module Winding : Model(CircleShape) {
   type Pt = Int;
 
   def base = Z;
@@ -71,7 +71,7 @@ module Winding : Model(CircleShape) {
 /// The same shape modelled over the native integers. The laws hold by
 /// arithmetic, which conversion leaves to the runtime, so each is owed, and
 /// a fold into this model rests on them.
-module NativeWinding : Model(CircleShape) {
+pub module NativeWinding : Model(CircleShape) {
   type Pt = Integer;
 
   def base = 0;

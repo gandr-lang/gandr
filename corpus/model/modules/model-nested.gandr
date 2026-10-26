@@ -12,7 +12,7 @@ theory Answering {
 }
 
 /// The theory of its outer `#{ inner: #{ answer: Integer }, total: Integer }`.
-theory Faceted {
+pub theory Faceted {
   oper inner : Model(Answering);
   oper total : Integer;
 }
@@ -46,7 +46,7 @@ theory Outer {
 }
 
 /// A model sealed at `Outer`: the nested model's sort is an atom outside.
-module Sealed :> Model(Outer) {
+pub module Sealed :> Model(Outer) {
   /// The nested model, its carrier the integers inside the seal.
   module inner : Model(Carrier) {
     /// The carrier.

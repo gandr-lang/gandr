@@ -889,6 +889,7 @@ fn operand_of(
         | Former::ManifestType
         | Former::Declaration
         | Former::AttributeBlock
+        | Former::Visibility
         | Former::Import
         | Former::Module
         | Former::Data

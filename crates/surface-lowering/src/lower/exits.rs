@@ -688,6 +688,7 @@ impl<'source> Lowerer<'_, 'source>
             | Former::StagedType
             | Former::ModedType
             | Former::AttributeBlock
+            | Former::Visibility
             | Former::Import
             | Former::Data
             | Former::Mutual

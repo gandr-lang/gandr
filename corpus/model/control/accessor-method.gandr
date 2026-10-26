@@ -13,7 +13,7 @@
 import "./accessor-place.gandr";
 
 /// A list's places, each at the mode its call asks.
-module Places {
+pub module Places {
   /// The first element.
   @[ checks ]
   def first @[ m : Mode ] (self : m List(Integer)) -> View[m](Integer) { self[0] }

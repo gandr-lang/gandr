@@ -8,20 +8,20 @@
 // of the free model.
 
 /// The two sides of a row: the operation at its front, or the rest.
-data Either(l : Type, r : Type) : Type {
+pub data Either(l : Type, r : Type) : Type {
   Left : (x : l) --> Either(l, r);
   Right : (y : r) --> Either(l, r);
 }
 
 /// State's operations: read the state, or store one.
-data StateOp : Type {
+pub data StateOp : Type {
   Get : StateOp;
   Put : (s : Integer) --> StateOp;
 }
 
 /// A program over the row `e` answering an `a`: a result, or an operation of
 /// the row and its continuation, every reply an integer.
-data Prog(e : Type, a : Type) : Type {
+pub data Prog(e : Type, a : Type) : Type {
   Done : (x : a) --> Prog(e, a);
   Op : (o : e, k : Integer => Prog(e, a)) --> Prog(e, a);
 }

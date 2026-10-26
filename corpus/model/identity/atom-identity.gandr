@@ -5,10 +5,10 @@
 // Program, _Homotopy Type Theory_, 2013, §5.8, Theorem 5.8.2).
 
 /// Any two points of the unit type are related, by the unit type.
-def related(a : Unit, b : Unit) -> Type { return Unit }
+pub def related(a : Unit, b : Unit) -> Type { return Unit }
 
 /// Every point is related to itself.
-def reflexivity(a : Unit) -> related(a, a) { unit }
+pub def reflexivity(a : Unit) -> related(a, a) { unit }
 
 /// The transport law: each point `b` that `a` relates to, with its evidence,
 /// is the centre `a` with its reflexivity (Theorem 5.8.2, (iv)).
@@ -105,10 +105,10 @@ def overAlong : Path(
 /// Two points of the unit type, related by the paths between them: each
 /// fibre of this relation is an identity of the unit type, not the unit type
 /// itself (#1959).
-def pathRelated(a : Unit, b : Unit) -> Type { return Path(Unit, a, b) }
+pub def pathRelated(a : Unit, b : Unit) -> Type { return Path(Unit, a, b) }
 
 /// Every point related to itself by its reflexivity.
-def pathReflexivity(a : Unit) -> pathRelated(a, a) { here(a) }
+pub def pathReflexivity(a : Unit) -> pathRelated(a, a) { here(a) }
 
 /// The transport law at the paths of the unit type: an identity of the
 /// unit type, and one over it, is the unit (#1960).

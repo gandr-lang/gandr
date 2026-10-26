@@ -2331,6 +2331,7 @@ INSERT INTO purpose VALUES('surface-lowering','error::FragmentSort','enum','Name
 INSERT INTO purpose VALUES('surface-lowering','error::LoopExit','enum','Names a loop''s exit, so a `break` or a `continue` on no path through a loop''s body is refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::LoweringRefusal','enum','Names the crate''s typed refusal vocabulary, so a refusal''s span is named.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::TelescopeFault','enum','Names a telescope''s fault, so the refusal names the fault.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','error::Unexported','enum','Names why an imported name is not exported, so a private name and an undefined one are refused apart.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','error::refusal_span::Absent','enum','Names why a refusal''s span is absent, so the refusal names no span.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::Ending','enum','Names a form''s ending, so the form''s ending is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','form::FormName','struct','Names the name a diagnostic writes a form as, so a form''s name is read.',NULL,'fits','sound',NULL);
@@ -2415,6 +2416,7 @@ INSERT INTO purpose VALUES('surface-lowering','module::Role','enum','Names a dec
 INSERT INTO purpose VALUES('surface-lowering','module::SlotIndex','struct','Names the index of a slot, so the slot''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::StructureIndex','struct','Names the index of a structure, so the structure''s index is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::ValueComponent','struct','Holds a value''s component, so the component''s type is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-lowering','module::Visibility','enum','Names whether a source exports a declaration, so an importer reads only what a `pub` mark exports.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::WrittenImport','struct','Holds a written import, so the import''s target is resolved.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::codata_signature::Absent','enum','Names why a codata''s signature is absent, so the signature''s absence is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lowering','module::data_signature::Absent','enum','Names why a data''s signature is absent, so the signature''s absence is read.',NULL,'fits','sound',NULL);

@@ -11,7 +11,7 @@ data Box(a : Type) : Type {
 }
 
 /// The naturals: the successor's field holds the type itself.
-data Nat : Type {
+pub data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
 }
@@ -31,7 +31,7 @@ module Repack {
 }
 
 /// The naturals renumbered as themselves.
-module Renumber {
+pub module Renumber {
   /// The translator: each constructor to itself, the predecessor moved.
   def step(n : Nat) -> Nat {
     case n {

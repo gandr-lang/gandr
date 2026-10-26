@@ -107,7 +107,7 @@ use crate::model::Sym;
 /// - witness: `surface::term::tests::assembly_reports_the_first_missing_band`
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 106 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=9 => Sort::Item, 10..=15 => Sort::ModuleMember, 16..=27 | 96..=97 => Sort::Pattern, 28..=33 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["item.singleton", "pattern.or", "pattern.as", "pattern.cons", "pattern.atom", "expression.pure", "expression.or", "expression.and", "expression.cmp", "expression.cons", "expression.add", "expression.mul", "expression.unary", "expression.postfix", "expression.atom"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 107 && rules.iter().enumerate().all(|(index, rule)| rule.sort() == match index { 0..=10 => Sort::Item, 11..=16 => Sort::ModuleMember, 17..=28 | 97..=98 => Sort::Pattern, 29..=34 => Sort::Instantiation, _ => Sort::Expression }) && rules.first().is_some_and(|rule| rule.name().0 == "def_value") && rules.last().is_some_and(|rule| rule.name().0 == "string.expression")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let item = precs.prec(PrecName("item.singleton"))?;
@@ -244,7 +244,7 @@ fn items(
 ///   aliases are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 7 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "import_declaration", "world_declaration", "operator_declaration", "rec_block"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
+#[spec(captures: before = out.len(), ensures: |()| out.get(before..).is_some_and(|added| added.len() == 8 && added.iter().zip(["data_declaration", "codata_declaration", "module_declaration", "import_declaration", "world_declaration", "operator_declaration", "rec_block", "pub_declaration"]).all(|(rule, name)| rule.name().0 == name && rule.sort() == Sort::Item && rule.prec() == p && rule.provenance().0 == name)))]
 fn declarations(
     out: &mut Vec<Rule>,
     p: Prec,
@@ -497,6 +497,22 @@ fn declarations(
         AdaptationReason("a `rec { … }` mutual block: its members are items — data declarations, definitions and their attribute blocks — admitted as one block"),
     ));
     out.push(rec_block);
+
+    // --- `pub` visibility --------------------------------
+    // `pub` exports the declaration after it from its source: a declaration
+    // without it is private to the source that writes it. It stands as an
+    // item of its own, as an attribute block does, and the lowering reads it
+    // with the declaration it precedes, so every reader of a source's
+    // declarations reads them as before. The keyword is reserved and the form
+    // is its one tile: a fresh first-token discriminator at an item slot, with
+    // no successor to wait for.
+    out.push(r(
+        RuleName("pub_declaration"),
+        Provenance("pub_declaration"),
+        s,
+        p,
+        t(TileLabel("pub")),
+    ));
 }
 
 /// Build the top-level definition family: `def` and a factored

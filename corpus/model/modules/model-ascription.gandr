@@ -9,7 +9,7 @@
 // doi:10.1017/S0956796814000264) for sealing as opaque ascription.
 
 /// A counter: a carrier, a start and a step. No laws: an ML signature.
-theory Counter {
+pub theory Counter {
   sort C : Type;
   oper start : () --> C;
   oper step : (c : C) --> C;

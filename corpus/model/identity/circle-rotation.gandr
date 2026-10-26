@@ -86,7 +86,7 @@ def toLoop(f : Circle => Int) -> #{point : Int, around : Path(Int, point, point)
 
 /// A point and a loop at it make a map out of the circle, at a point of it: a
 /// non-dependent case whose loop arm is the given loop.
-def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> Int {
+pub def fromLoopAt(x : Int, p : Path(Int, x, x), c : Circle) -> Int {
   case c {
     Base => x,
     loop => p

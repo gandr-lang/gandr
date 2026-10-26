@@ -6,7 +6,7 @@
 
 /// The old and the new schema, the translator between them and the flow it
 /// gives.
-module Schema {
+pub module Schema {
   type Old = String * Integer;
   type New = Integer * String * (Unit + Unit);
   /// The translator: the fields swapped and a flag added.

@@ -19,7 +19,7 @@ data CView : Type {
 
 /// An owned string's bytes: the code points encoded, then the terminating
 /// zero.
-def terminated(cs : List(Integer)) -> List(Integer) {
+pub def terminated(cs : List(Integer)) -> List(Integer) {
   concat(encodeAll(cs), (Cons(0, Nil) : List(Integer)))
 }
 

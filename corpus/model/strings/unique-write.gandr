@@ -20,7 +20,7 @@ import "./copy-on-write.gandr";
 
 /// `b` appended with no holder count read: inline bytes as `push` writes
 /// them, a heap buffer written where it is, whoever holds it.
-def pushInPlace(s : Repr, b : Integer) -> Written {
+pub def pushInPlace(s : Repr, b : Integer) -> Written {
   case s {
     Inline(bs) => push(s, b),
     Shared(n, bs) => Written(Shared(n, beforeZero(bs, b)), 0)

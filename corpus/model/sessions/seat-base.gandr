@@ -10,7 +10,7 @@
 /// serves, and one message of each type. A report is marked `mobile`: its
 /// representation may cross from the seat's world back to the one that
 /// dispatched it (`../worlds/seat-and-operator.gandr`).
-module Seat :> #{
+pub module Seat :> #{
   type Dispatch,
   mobile type Report,
   type Handoff,

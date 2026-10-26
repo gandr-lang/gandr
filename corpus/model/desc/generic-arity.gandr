@@ -6,7 +6,7 @@
 
 /// A monoid presented as data: the block binds `Monoid : Theory`, its sort and
 /// its two operations held in one value.
-theory Monoid {
+pub theory Monoid {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
@@ -23,7 +23,7 @@ def rec operations(chain : Theory) -> Integer {
 
 /// The number of operations a presentation declares, read off its `Presents`
 /// value by the generic program above.
-def arity(presented : Theory) -> Integer {
+pub def arity(presented : Theory) -> Integer {
   case presented {
     Presents(sorts, opers, rules) => operations(opers),
     _ => 0

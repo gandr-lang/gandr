@@ -9,7 +9,7 @@ import "./circle-base.gandr";
 /// The sum of two integers (cubical's `_+_` on `ℤ`), by recursion on the
 /// second. It respects `Int`'s rules: at `S(P(x))` it builds `S(P(plus(a,
 /// x)))`, which the first rule reads as `plus(a, x)`.
-def rec plus(a : Int, b : Int) -> Int {
+pub def rec plus(a : Int, b : Int) -> Int {
   case b {
     Z => a,
     S(x) => S(plus[<](a, x)),
@@ -21,7 +21,7 @@ def rec plus(a : Int, b : Int) -> Int {
 /// induction on the right summand: the kernel reads the endpoint `S(plus(a,
 /// P(x)))` by `Int`'s rules down to `plus(a, x)`, and the `cong(up, …)` and
 /// `cong(down, …)` arms as transports along the recursive path.
-def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
+pub def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
   case b {
     Z => here(S(a)),
     S(x) => cong(up, plusS[<](a, x)),
@@ -31,7 +31,7 @@ def rec plusS(a : Int, b : Int) -> Path(Int, plus(S(a), b), S(plus(a, b))) {
 
 /// A predecessor on the left of a sum comes out of it (cubical's `predℤ+`),
 /// as `plusS`.
-def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
+pub def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
   case b {
     Z => here(P(a)),
     S(x) => cong(up, plusP[<](a, x)),
@@ -40,7 +40,7 @@ def rec plusP(a : Int, b : Int) -> Path(Int, plus(P(a), b), P(plus(a, b))) {
 }
 
 /// Zero is a left unit of the sum, by induction on the right summand.
-def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
+pub def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
   case b {
     Z => here(Z),
     S(x) => cong(up, plusZ[<](x)),
@@ -53,7 +53,7 @@ def rec plusZ(b : Int) -> Path(Int, plus(Z, b), b) {
 /// summand brought out of the left. The arms compose to no conversion of the
 /// answer at `x`, yet `Int` is a set, so its rules are respected by their
 /// endpoints alone (#427).
-def rec plusComm(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
+pub def rec plusComm(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
   case b {
     Z => back(plusZ(a)),
     S(x) => cong(up, plusComm[<](a, x)) then back(plusS(x, a)),

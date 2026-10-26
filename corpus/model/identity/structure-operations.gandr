@@ -13,26 +13,26 @@ import "./funext.gandr";
 import "./transport-list.gandr";
 
 /// A toggle that starts false and reads its state as it is.
-def plainToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
+pub def plainToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
   Bool,
   (+{.0 = unit}, (not, same))
 );
 
 /// A toggle that starts true and reads its state negated.
-def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
+pub def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
   Bool,
   (+{.1 = unit}, (not, not))
 );
 
 /// The step carried along negation is the step: negating back, stepping and
 /// negating again steps.
-def stepped : Path(Bool => Bool, transport(\t. t => t, negation, not), not) = funext(
+pub def stepped : Path(Bool => Bool, transport(\t. t => t, negation, not), not) = funext(
   transport(\t. t => t, negation, not),
   not
 );
 
 /// The reading carried along negation reads negated.
-def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) = funext(
+pub def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) = funext(
   transport(\t. t => Bool, negation, same),
   not
 );

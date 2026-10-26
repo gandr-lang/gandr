@@ -11,7 +11,7 @@ import "./state.gandr";
 
 /// Writes that go nowhere: a theory of no operation, which a row holds where
 /// what is written is discarded.
-theory Sink {
+pub theory Sink {
   sort C : Type;
 }
 
@@ -20,7 +20,7 @@ theory Sink {
 /// keeps it. The two overlap at `flush(mark(k))` in the rows holding both
 /// `State` and `Sink`; there marks and flushes are erased, so both reducts
 /// reach `k`.
-theory Marks {
+pub theory Marks {
   sort C : Type;
   oper mark : (k : C) --> C;
   oper flush : (k : C) --> C;

@@ -1590,7 +1590,7 @@ enum Joins
     /// On its own line: a form, or a comment the source wrote on its own.
     OwnLine,
     /// After one space: a comment the source wrote on the line before it
-    /// ended.
+    /// ended, or the form a `pub` mark exports.
     SameLine,
     /// Touching: a separator, against the form it ends.
     Touching,
@@ -1604,6 +1604,9 @@ fn units<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> Vec<Unit<'leaves
 {
     let mut units = Vec::new();
     let mut gap = Gap::Adjacent;
+    // Whether the unit before is a `pub` mark, which stands before the form it
+    // exports on that form's line.
+    let mut marked = false;
     let mut rest = leaves;
     while let Some((first, after)) = rest.split_first() {
         if first.material == Material::Whitespace {
@@ -1633,8 +1636,13 @@ fn units<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> Vec<Unit<'leaves
         let joins = match gap {
             Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank if separator => Joins::Touching,
             Gap::Adjacent | Gap::Space if comment => Joins::SameLine,
+            Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank if marked && !comment => {
+                Joins::SameLine
+            },
             Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank => Joins::OwnLine,
         };
+        marked = matches!(unit, [only] if only.material == Material::Token
+            && <&str>::from(only.text) == "pub");
         let last = unit.last().map_or(first.span, |last| last.span);
         units.push(Unit {
             leaves: unit,

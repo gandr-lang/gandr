@@ -48,7 +48,7 @@ def encode(c : Integer) -> List(Integer) {
 }
 
 /// A run of code points, each encoded in turn.
-def rec encodeAll(cs : List(Integer)) -> List(Integer) {
+pub def rec encodeAll(cs : List(Integer)) -> List(Integer) {
   case cs {
     Nil => Nil,
     Cons(c, rest) => concat(encode(c), encodeAll[<](rest))

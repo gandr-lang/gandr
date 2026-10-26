@@ -6,7 +6,7 @@
 import "./syntax.gandr";
 
 /// A substitution applied to an application applies to both sides.
-def subApp(t : Term, u : Term, s : Env) -> Path(
+pub def subApp(t : Term, u : Term, s : Env) -> Path(
   Term,
   subst(Ap(t, u), s),
   Ap(subst(t, s), subst(u, s))

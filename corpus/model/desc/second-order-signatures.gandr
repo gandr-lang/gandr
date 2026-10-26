@@ -8,7 +8,7 @@
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.
-theory Nat {
+pub theory Nat {
   sort Nat : Type;
   oper zero : () --> Nat;
   oper succ : (n : Nat) --> Nat;

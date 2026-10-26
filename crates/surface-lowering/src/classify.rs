@@ -740,6 +740,7 @@ mod tests
     use crate::error::FragmentBoundary;
     use crate::error::FragmentSort;
     use crate::error::LoweringRefusal;
+    use crate::error::Unexported;
     use crate::fixture::registered;
     use crate::fixture::span;
     use crate::form::FormName;
@@ -967,6 +968,7 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("pending"),
                 declared: empty,
+                reason: Unexported::Undefined,
             },
             LoweringRefusal::DescentOnSeveralParameters {
                 span: empty,

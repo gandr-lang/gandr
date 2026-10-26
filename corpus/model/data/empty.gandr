@@ -10,7 +10,7 @@
 import "./data-base.gandr";
 
 /// The type with no element.
-data Empty : Type {}
+pub data Empty : Type {}
 
 /// Anything follows from an element of the empty type.
 def absurd(v : Empty) -> Integer {

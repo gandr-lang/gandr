@@ -9643,15 +9643,15 @@ mod tests
         };
         assert_eq!(
             read("data-maybe.gandr", &[
-                "data Maybe",
+                "pub data Maybe",
                 "def unwrap_or_zero",
                 "def kept"
             ]),
             [
-                "data Maybe+0:5 `Maybe` type declaration",
-                "data Maybe+1:2 `None` enumMember declaration+value",
-                "data Maybe+2:2 `Some` enumMember declaration+value",
-                "data Maybe+2:10 `x` parameter declaration+value",
+                "pub data Maybe+0:9 `Maybe` type declaration",
+                "pub data Maybe+1:2 `None` enumMember declaration+value",
+                "pub data Maybe+2:2 `Some` enumMember declaration+value",
+                "pub data Maybe+2:10 `x` parameter declaration+value",
                 "def unwrap_or_zero+0:4 `unwrap_or_zero` function declaration",
                 "def unwrap_or_zero+2:4 `None` enumMember value",
                 "def unwrap_or_zero+3:4 `Some` enumMember value",
@@ -9692,19 +9692,19 @@ mod tests
              the `tagged` passed to it is a value; `tag`, one function form, declares once"
         );
         assert_eq!(
-            read("data-base.gandr", &["def rec plus"]),
+            read("data-base.gandr", &["pub def rec plus"]),
             [
-                "def rec plus+0:8 `plus` function declaration+value",
-                "def rec plus+0:13 `n` parameter declaration+value",
-                "def rec plus+0:22 `m` parameter declaration+value",
-                "def rec plus+1:7 `m` parameter value",
-                "def rec plus+2:4 `Zero` enumMember value",
-                "def rec plus+2:12 `n` parameter value",
-                "def rec plus+3:4 `Succ` enumMember value",
-                "def rec plus+3:9 `p` variable declaration+value",
-                "def rec plus+3:20 `plus` function computation",
-                "def rec plus+3:28 `n` parameter value",
-                "def rec plus+3:31 `p` variable value",
+                "pub def rec plus+0:12 `plus` function declaration+value",
+                "pub def rec plus+0:17 `n` parameter declaration+value",
+                "pub def rec plus+0:26 `m` parameter declaration+value",
+                "pub def rec plus+1:7 `m` parameter value",
+                "pub def rec plus+2:4 `Zero` enumMember value",
+                "pub def rec plus+2:12 `n` parameter value",
+                "pub def rec plus+3:4 `Succ` enumMember value",
+                "pub def rec plus+3:9 `p` variable declaration+value",
+                "pub def rec plus+3:20 `plus` function computation",
+                "pub def rec plus+3:28 `n` parameter value",
+                "pub def rec plus+3:31 `p` variable value",
             ],
             "#1487: the recursive call's name, written with its claim as `plus[<]`, is run as a \
              computation as any called name is; the arguments passed to it are values"
@@ -9878,7 +9878,7 @@ mod tests
         let directory = std::env::temp_dir().join(format!("gandr-symbols-{}", std::process::id()));
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let base = "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n";
+        let base = "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n";
         let disk = [
             ("base.gandr", base),
             (
@@ -10036,13 +10036,13 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
             ),
             ("opener.gandr", opener),
             ("held.gandr", "def stale : Integer ;\ndef stale = 1 ;\n"),
             (
                 "lonely/far.gandr",
-                "def faraway : Integer ;\ndef faraway = 7 ;\n",
+                "pub def faraway : Integer ;\ndef faraway = 7 ;\n",
             ),
         ] {
             std::fs::write(directory.join(file), text).expect("the source is written");
@@ -10099,7 +10099,7 @@ mod tests
             [(
                 String::from("faraway"),
                 uri("lonely/far.gandr"),
-                at(0_i32, 4_i32, 11_i32)
+                at(0_i32, 8_i32, 15_i32)
             )],
             "a source under the opened folder that no open closure reads is found at its path"
         );
@@ -10153,7 +10153,7 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         for (file, text) in [
-            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            ("base.gandr", "pub def one : Integer ;\ndef one = 1 ;\n"),
             (
                 "user.gandr",
                 "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
@@ -10258,7 +10258,7 @@ mod tests
         );
         std::fs::write(
             directory.join("base.gandr"),
-            "def one : Integer ;\ndef one = 1 ;\n",
+            "pub def one : Integer ;\ndef one = 1 ;\n",
         )
         .expect("the import is restored");
         let change = json!({"jsonrpc": "2.0", "method": "textDocument/didChange", "params": {
@@ -10324,11 +10324,11 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
+                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n",
             ),
             (
                 "lonely/far.gandr",
-                "def faraway : Integer ;\ndef faraway = 7 ;\n",
+                "pub def faraway : Integer ;\ndef faraway = 7 ;\n",
             ),
         ] {
             std::fs::write(directory.join(file), text).expect("the source is written");
@@ -10406,7 +10406,7 @@ mod tests
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         std::fs::write(
             directory.join("lonely/far.gandr"),
-            "def faraway : Integer ;\ndef faraway = 7 ;\n",
+            "pub def faraway : Integer ;\ndef faraway = 7 ;\n",
         )
         .expect("the source is written");
         let uri = format!("file://{}", directory.join("typing.gandr").display());
@@ -10498,8 +10498,8 @@ mod tests
         let disk = [
             (
                 "base.gandr",
-                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-                 def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
+                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+                 pub def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
                  Succ(p) => Succ(plus[<](n, p))\n  }\n}\n",
             ),
             (
@@ -10564,7 +10564,7 @@ mod tests
         assert_eq!(
             references("base.gandr", 6, 12, true),
             Value::Array(vec![
-                location("base.gandr", 4, 13, 14),
+                location("base.gandr", 4, 17, 18),
                 location("base.gandr", 6, 12, 13),
                 location("base.gandr", 7, 28, 29),
             ]),
@@ -10668,8 +10668,8 @@ mod tests
         let three = item(
             "data-base.gandr",
             "three",
-            lines(three_at, three_at, 28),
-            span(three_at, 4, 9),
+            span(three_at, 4, 32),
+            span(three_at, 8, 13),
         );
         let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
         assert_eq!(
@@ -10789,10 +10789,10 @@ mod tests
                 &item(
                     "data-base.gandr",
                     "two",
-                    lines(two_at, two_at, 33),
-                    span(two_at, 4, 7)
+                    span(two_at, 4, 37),
+                    span(two_at, 8, 11)
                 ),
-                &[span(three_at, 23, 26)]
+                &[span(three_at, 27, 30)]
             )]),
             "`three`, read from disk, calls `two`"
         );
@@ -10912,29 +10912,29 @@ mod tests
         assert_eq!(
             rows,
             [
-                "data Empty+0: Empty: 0 references",
-                "data Circle+0: Circle: 32 references",
-                "data Circle+1: Base: 43 references",
-                "data Circle+2: loop: 21 references",
-                "data Int+0: Int: 15 references",
-                "data Int+1: Z: 7 references",
-                "data Int+2: S: 4 references",
-                "data Int+3: P: 4 references",
-                "def up+0: up: 1 reference",
-                "def down+0: down: 1 reference",
-                "data Nat+0: Nat: 3 references",
-                "data Nat+1: Zero: 0 references",
-                "data Nat+2: Succ: 0 references",
-                "def rec wind+0: wind: 4 references",
-                "def rec spin+0: spin: 4 references",
-                "def loopOn+0: loopOn: 1 reference",
-                "def unloopOn+0: unloopOn: 1 reference",
-                "def rec sect+0: sect: 2 references",
-                "def rec retr+0: retr: 2 references",
-                "def selfloop+0: selfloop: 1 reference",
-                "def selfrefl+0: selfrefl: 0 references",
-                "def invLooper+0: invLooper: 3 references",
-                "def mul+0: mul: 0 references",
+                "pub data Empty+0: Empty: 0 references",
+                "pub data Circle+0: Circle: 32 references",
+                "pub data Circle+1: Base: 43 references",
+                "pub data Circle+2: loop: 21 references",
+                "pub data Int+0: Int: 15 references",
+                "pub data Int+1: Z: 7 references",
+                "pub data Int+2: S: 4 references",
+                "pub data Int+3: P: 4 references",
+                "pub def up+0: up: 1 reference",
+                "pub def down+0: down: 1 reference",
+                "pub data Nat+0: Nat: 3 references",
+                "pub data Nat+1: Zero: 0 references",
+                "pub data Nat+2: Succ: 0 references",
+                "pub def rec wind+0: wind: 4 references",
+                "pub def rec spin+0: spin: 4 references",
+                "pub def loopOn+0: loopOn: 1 reference",
+                "pub def unloopOn+0: unloopOn: 1 reference",
+                "pub def rec sect+0: sect: 2 references",
+                "pub def rec retr+0: retr: 2 references",
+                "pub def selfloop+0: selfloop: 1 reference",
+                "pub def selfrefl+0: selfrefl: 0 references",
+                "pub def invLooper+0: invLooper: 3 references",
+                "pub def mul+0: mul: 0 references",
             ],
             "each name the base declares, with its uses in both documents"
         );
@@ -10961,7 +10961,7 @@ mod tests
             shown.and_then(|lens| lens.get("command").cloned()),
             Some(
                 serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
-                "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(4_u32)), [
+                "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(8_u32)), [
                     location("circle-elim.gandr", involutive_at, 43, 52),
                     location("circle-elim.gandr", involutive_at, 53, 62),
                     location("circle-elim.gandr", flipped_at, 35, 44),
@@ -10991,8 +10991,8 @@ mod tests
         let disk = [
             (
                 "base.gandr",
-                "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
-                 def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
+                "pub data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\n\
+                 pub def rec plus(n : Nat, m : Nat) -> -F Nat {\n  case m {\n    Zero => n,\n    \
                  Succ(p) => Succ(plus[<](n, p))\n  }\n}\n",
             ),
             (
@@ -11148,7 +11148,7 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         let disk = [
-            ("base.gandr", "data Nat : Type {\n  Zero : Nat;\n}\n"),
+            ("base.gandr", "pub data Nat : Type {\n  Zero : Nat;\n}\n"),
             (
                 "first.gandr",
                 "import \"./base.gandr\" ;\ndef nought : Nat ;\ndef nought = Zero ;\n",
@@ -11232,7 +11232,7 @@ mod tests
         for (file, text) in [
             (
                 "base.gandr",
-                "data Nat : Type {\n  Zero : Nat;\n}\ndef zero : Nat ;\ndef zero = Zero ;\n",
+                "pub data Nat : Type {\n  Zero : Nat;\n}\npub def zero : Nat ;\ndef zero = Zero ;\n",
             ),
             ("first.gandr", opened),
             (
@@ -12150,7 +12150,7 @@ mod tests
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         let sources = [
-            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            ("base.gandr", "pub def one : Integer ;\ndef one = 1 ;\n"),
             (
                 "importer.gandr",
                 "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n",
@@ -12195,7 +12195,7 @@ mod tests
         };
         std::fs::write(
             directory.join("base.gandr"),
-            "def uno : Integer ;\ndef uno = 1 ;\n",
+            "pub def uno : Integer ;\ndef uno = 1 ;\n",
         )
         .expect("the sibling is rewritten");
         let rewritten = changed(&mut server, "base.gandr", 2);
@@ -12205,7 +12205,7 @@ mod tests
         );
         std::fs::write(
             directory.join("later.gandr"),
-            "def four : Integer ;\ndef four = 4 ;\n",
+            "pub def four : Integer ;\ndef four = 4 ;\n",
         )
         .expect("the missing import is written");
         assert_eq!(
@@ -12235,7 +12235,7 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         let sibling = directory.join("base.gandr");
-        std::fs::write(&sibling, "def one : Integer ;\ndef one = 1 ;\n")
+        std::fs::write(&sibling, "pub def one : Integer ;\ndef one = 1 ;\n")
             .expect("the sibling is written");
         let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
         let uri = format!("file://{}", directory.join("importer.gandr").display());
@@ -12255,7 +12255,7 @@ mod tests
                 .and_then(Value::as_str)
                 .map(String::from)
         };
-        std::fs::write(&sibling, "def uno : Integer ;\ndef uno = 1 ;\n")
+        std::fs::write(&sibling, "pub def uno : Integer ;\ndef uno = 1 ;\n")
             .expect("the sibling is rewritten without `one`");
         assert!(
             hovered(&mut server, 2_i32).is_some_and(|shown| shown.contains("Integer")),
@@ -12299,8 +12299,8 @@ mod tests
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
         let sibling = directory.join("base.gandr");
-        let declared = "def one : Integer ;\ndef one = 1 ;\n";
-        let renamed = "def uno : Integer ;\ndef uno = 1 ;\n";
+        let declared = "pub def one : Integer ;\ndef one = 1 ;\n";
+        let renamed = "pub def uno : Integer ;\ndef uno = 1 ;\n";
         let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
         let uri = |file: &str| format!("file://{}", directory.join(file).display());
         // The sibling written as `text`, its modification time set back so the
@@ -12446,7 +12446,7 @@ mod tests
         };
         std::fs::write(
             directory.join("later.gandr"),
-            "def four : Integer ;\ndef four = 4 ;\n",
+            "pub def four : Integer ;\ndef four = 4 ;\n",
         )
         .expect("the missing import is written");
         assert_eq!(
@@ -12461,7 +12461,7 @@ mod tests
         std::fs::create_dir_all(directory.join("lib")).expect("the folder is created");
         std::fs::write(
             directory.join("lib/five.gandr"),
-            "def five : Integer ;\ndef five = 5 ;\n",
+            "pub def five : Integer ;\ndef five = 5 ;\n",
         )
         .expect("the nested import is written");
         assert_eq!(
@@ -12603,8 +12603,8 @@ mod tests
         let directory = std::env::temp_dir().join(format!("gandr-shadowed-{}", std::process::id()));
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let declares_one = "def one : Integer ;\ndef one = 1 ;\n";
-        let declares_uno = "def uno : Integer ;\ndef uno = 1 ;\n";
+        let declares_one = "pub def one : Integer ;\ndef one = 1 ;\n";
+        let declares_uno = "pub def uno : Integer ;\ndef uno = 1 ;\n";
         let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
         let base = directory.join("base.gandr");
         std::fs::write(&base, declares_one).expect("the base is written");
@@ -12699,12 +12699,12 @@ mod tests
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
         std::fs::write(
             directory.join("base.gandr"),
-            "def one : Integer ;\ndef one = 1 ;\n",
+            "pub def one : Integer ;\ndef one = 1 ;\n",
         )
         .expect("the base is written");
         std::fs::write(
             directory.join("other.gandr"),
-            "def uno : Integer ;\ndef uno = 1 ;\n",
+            "pub def uno : Integer ;\ndef uno = 1 ;\n",
         )
         .expect("the other base is written");
         std::fs::create_dir_all(directory.join("sub")).expect("the sub-directory is created");
@@ -12838,8 +12838,8 @@ mod tests
             std::env::temp_dir().join(format!("gandr-retokened-{}", std::process::id()));
         let _cleared = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("the scratch directory is created");
-        let declares_one = "def one : Integer ;\ndef one = 1 ;\n";
-        let declares_uno = "def uno : Integer ;\ndef uno = 1 ;\n";
+        let declares_one = "pub def one : Integer ;\ndef one = 1 ;\n";
+        let declares_uno = "pub def uno : Integer ;\ndef uno = 1 ;\n";
         let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
         std::fs::write(directory.join("base.gandr"), declares_uno).expect("the base is written");
         std::fs::write(directory.join("importer.gandr"), importer)
@@ -13333,7 +13333,7 @@ mod tests
         )
         .0;
         let nat = serde_json::json!({"uri": uri("data-base.gandr"), "range": {
-            "start": {"line": declared, "character": 5_u32}, "end": {"line": declared, "character": 8_u32}}});
+            "start": {"line": declared, "character": 9_u32}, "end": {"line": declared, "character": 12_u32}}});
         let located = serde_json::json!({"position": position, "kind": 1_i32,
             "label": [{"value": ": "}, {"value": "Nat", "location": nat}]});
         assert_eq!(
@@ -17830,7 +17830,7 @@ mod tests
         let importer = "import \"./base.gandr\" ;\ndef two : Integer ;\ndef two = one ;\n";
         for (file, text) in [
             ("lone.gandr", lone),
-            ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
+            ("base.gandr", "pub def one : Integer ;\ndef one = 1 ;\n"),
             ("importer.gandr", importer),
         ] {
             std::fs::write(directory.join(file), text).expect("the source is written");

@@ -906,7 +906,7 @@ pub const KEYWORDS: &[&str] = &[
     "select", "offer", "fork", "acquire", "release", "migrate", "at", "true", "false", "unit",
     "mu", "end", "data", "codata", "rec", "op", "rule", "for", "in", "while", "break", "continue",
     "with", "import", "module", "theory", "oper", "handle", "access", "unwind", "resume", "abort",
-    "world", "mobile", "inf",
+    "world", "mobile", "inf", "pub",
 ];
 
 /// The keywords that open a block's statements: one that no open form

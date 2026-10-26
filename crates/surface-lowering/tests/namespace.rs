@@ -19,6 +19,7 @@ use gandr_surface_lowering::ClosureLowering;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::FormFault;
 use gandr_surface_lowering::FormName;
+use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::ImportBinding;
 use gandr_surface_lowering::ImportDeclaration;
 use gandr_surface_lowering::ImportIndex;
@@ -32,6 +33,7 @@ use gandr_surface_lowering::ModuleImports;
 use gandr_surface_lowering::Onto;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::Unexported;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
 use gandr_surface_lowering::circuit::SignatureFault;
@@ -1433,7 +1435,7 @@ fn an_unqualified_import_answers_a_name_its_source_declares()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "data Point : Type { One : Point; }\ndef one : Point ;\ndef one = One ;",
+                "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;",
             ),
             &[],
         ),
@@ -1577,13 +1579,13 @@ fn a_method_of_a_source_not_imported_is_out_of_scope()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "module Str { def len(self : shared Integer) -> -F Integer { pure self } }",
+                "pub module Str { def len(self : shared Integer) -> -F Integer { pure self } }",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "module Bytes { def len(self : shared Integer) -> -F Integer { pure 0 } }",
+                "pub module Bytes { def len(self : shared Integer) -> -F Integer { pure 0 } }",
             ),
             &[],
         ),
@@ -1636,8 +1638,14 @@ fn two_imports_binding_one_name_refuse_its_use()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[
-        (SourceText::from("def one : Integer ;\ndef one = 1 ;"), &[]),
-        (SourceText::from("def one : Integer ;\ndef one = 2 ;"), &[]),
+        (
+            SourceText::from("pub def one : Integer ;\ndef one = 1 ;"),
+            &[],
+        ),
+        (
+            SourceText::from("pub def one : Integer ;\ndef one = 2 ;"),
+            &[],
+        ),
         (
             SourceText::from(
                 "import \"./left.gandr\" ;\nimport \"./right.gandr\" ;\ndef both : \
@@ -1688,13 +1696,13 @@ fn an_imported_top_level_type_member_names_its_type_1834()
     ]);
     let (text, unit) = laid(&[
         (
-            SourceText::from("type Band = #{low : Integer, high : Integer} ;"),
+            SourceText::from("pub type Band = #{low : Integer, high : Integer} ;"),
             &[],
         ),
-        (SourceText::from("type Band = Integer ;"), &[]),
+        (SourceText::from("pub type Band = Integer ;"), &[]),
         (
             SourceText::from(
-                "import \"./base.gandr\" ;\ndef wide : Band ;\ndef wide = #{low = 1, high = 2} ;",
+                "import \"./base.gandr\" ;\npub def wide : Band ;\ndef wide = #{low = 1, high = 2} ;",
             ),
             &base,
         ),
@@ -1771,7 +1779,7 @@ fn a_model_of_an_imported_theory_derives_its_signature_726()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+                "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
                  Nat) --> Nat;\n}",
             ),
             &[],
@@ -1819,16 +1827,16 @@ fn a_functor_argument_reads_an_imported_module_1993()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\nmodule \
-                 Times : Model(Mag) {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) \
-                 -> -F Integer { become a * b }\n}\nmodule Squaring(S : Model(Mag)) {\n  def \
+                "pub theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}\npub \
+                 module Times : Model(Mag) {\n  type M = Integer;\n  def mul(a : Integer, b : \
+                 Integer) -> -F Integer { become a * b }\n}\npub module Squaring(S : Model(Mag)) {\n  def \
                  square(x : S.M) -> -F S.M { become S.mul(x, x) }\n}",
             ),
             &[],
         ),
         (
             SourceText::from(
-                "module Times {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) -> -F \
+                "pub module Times {\n  type M = Integer;\n  def mul(a : Integer, b : Integer) -> -F \
                  Integer { become a + b }\n}",
             ),
             &[],
@@ -1900,7 +1908,7 @@ fn a_rule_derived_in_an_imported_theory_is_read_under_its_name()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "theory Inv {\n  sort G : Type;\n  oper inv : (x : G) --> G;\n  rule invInv : \
+                "pub theory Inv {\n  sort G : Type;\n  oper inv : (x : G) --> G;\n  rule invInv : \
                  inv(inv(x)) <=> x;\n}",
             ),
             &[],
@@ -1964,8 +1972,9 @@ fn include_faults(module: &LoweredModule<'_>) -> Vec<SignatureFault>
 fn an_include_reads_the_theories_its_source_imports_1224()
 {
     let pbg = grammar();
-    let magma =
-        SourceText::from("theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}");
+    let magma = SourceText::from(
+        "pub theory Mag {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n}",
+    );
     let pointed = SourceText::from(
         "import \"./magma.gandr\" ;\ntheory Pointed {\n  include Mag;\n  oper one : () --> \
          M;\n}",
@@ -1989,7 +1998,7 @@ fn an_include_reads_the_theories_its_source_imports_1224()
         ),
         (
             SourceText::from(
-                "theory Mag {\n  sort N : Type;\n  oper add : (x : N, y : N) --> N;\n}",
+                "pub theory Mag {\n  sort N : Type;\n  oper add : (x : N, y : N) --> N;\n}",
             ),
             &[],
         ),
@@ -2075,9 +2084,9 @@ fn a_source_lowers_alike_whatever_follows_it_776()
 {
     let pbg = grammar();
     let base = SourceText::from(
-        "theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : Nat) \
-         --> Nat;\n}\ndata Point : Type { One : Point; }\ndef one : Point ;\ndef one = One \
-         ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
+        "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+         Nat) --> Nat;\n}\npub data Point : Type { One : Point; }\npub def one : Point ;\ndef \
+         one = One ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
     );
     let importer = SourceText::from(
         "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = Integer;\n  \
@@ -2230,7 +2239,7 @@ fn a_univalence_statement_reads_only_the_blocks_its_source_sees_1078()
 {
     let pbg = grammar();
     let monoid = SourceText::from(
-        "theory Monoid {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  oper one : \
+        "pub theory Monoid {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  oper one : \
          () --> (z : M);\n}",
     );
     let stating = "theory Magma {\n  sort M : Type;\n  oper mul : (x : M, y : M) --> (z : M);\n  \
@@ -2295,9 +2304,9 @@ fn a_document_resumed_after_its_closure_lowers_as_the_whole_1033()
 {
     let pbg = grammar();
     let base = SourceText::from(
-        "theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : Nat) \
-         --> Nat;\n}\ndata Point : Type { One : Point; }\ndef one : Point ;\ndef one = One \
-         ;\ndef pending = ? ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
+        "pub theory Nat {\n  sort Nat : Type;\n  oper zero : () --> Nat;\n  oper succ : (n : \
+         Nat) --> Nat;\n}\npub data Point : Type { One : Point; }\npub def one : Point ;\ndef \
+         one = One ;\ndef pending = ? ;\ndef inc(n : Integer) -> -F Integer { return n + 1 }",
     );
     let importer = SourceText::from(
         "import \"./base.gandr\" ;\nmodule Counting : Model(Nat) {\n  type Nat = Integer;\n  \
@@ -2501,8 +2510,8 @@ fn a_document_lowered_onto_its_closure_s_arena_follows_its_nodes_776()
     }
     let pbg = grammar();
     let base = SourceText::from(
-        "data Point : Type { One : Point; }\ndef one : Point ;\ndef one = One ;\ndef pending = ? \
-         ;",
+        "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;\ndef \
+         pending = ? ;",
     );
     let importer = SourceText::from(
         "import \"./base.gandr\" ;\ndef again : Point ;\ndef again = one ;\ndef later = ?named ;",
@@ -2675,7 +2684,7 @@ fn a_pending_declaration_is_not_exported()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[
-        (SourceText::from("def owed : Integer ;"), &[]),
+        (SourceText::from("pub def owed : Integer ;"), &[]),
         (
             SourceText::from(
                 "import \"./base.gandr\" ;\ndef again : Integer ;\ndef again = owed ;",
@@ -2689,7 +2698,7 @@ fn a_pending_declaration_is_not_exported()
     assert!(
         module.declarations().iter().any(|declaration| matches!(
             declaration.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::UnexportedName { name, .. })
+            DeclarationOutcome::Refused(LoweringRefusal::UnexportedName { name, reason: Unexported::Undefined, .. })
                 if name.as_ref() == "owed"
         )),
         "a signature without a definition is not exported, and its use refuses by name"
@@ -2703,7 +2712,7 @@ fn an_aliased_import_qualifies_its_source_s_names()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "data Point : Type { One : Point; }\ndef one : Point ;\ndef one = One ;",
+                "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;",
             ),
             &[],
         ),
@@ -2749,7 +2758,7 @@ fn a_pending_member_read_through_an_alias_is_refused_at_the_member()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[
-        (SourceText::from("def owed : Integer ;"), &[]),
+        (SourceText::from("pub def owed : Integer ;"), &[]),
         (
             SourceText::from(
                 "import \"./base.gandr\" as base ;\ndef again : Integer ;\ndef again = \
@@ -2765,7 +2774,7 @@ fn a_pending_member_read_through_an_alias_is_refused_at_the_member()
     assert!(
         module.declarations().iter().any(|declaration| matches!(
             declaration.outcome(),
-            DeclarationOutcome::Refused(LoweringRefusal::UnexportedName { span, name, .. })
+            DeclarationOutcome::Refused(LoweringRefusal::UnexportedName { span, name, reason: Unexported::Undefined, .. })
                 if name.as_ref() == "owed" && span == bytes(member, member + "owed".len())
         )),
         "the refusal stands at the selected name, not the whole path"
@@ -2826,7 +2835,7 @@ fn a_constructor_an_import_binds_again_refuses_its_family()
     let pbg = grammar();
     let (text, unit) = laid(&[
         (
-            SourceText::from("data Bit : Type { O : Bit; I : Bit; }"),
+            SourceText::from("pub data Bit : Type { O : Bit; I : Bit; }"),
             &[],
         ),
         (
@@ -2866,7 +2875,10 @@ fn a_declaration_an_import_binds_again_is_refused()
 {
     let pbg = grammar();
     let (text, unit) = laid(&[
-        (SourceText::from("def one : Integer ;\ndef one = 1 ;"), &[]),
+        (
+            SourceText::from("pub def one : Integer ;\ndef one = 1 ;"),
+            &[],
+        ),
         (
             SourceText::from(
                 "import \"./base.gandr\" ;\ndef one : Integer ;\ndef one = 2 ;\ndef two : \
@@ -2894,7 +2906,7 @@ fn a_declaration_an_import_binds_again_is_refused()
         .collect();
     assert_eq!(
         refused,
-        Vec::from([(String::from("one"), bytes(4_usize, 7_usize))]),
+        Vec::from([(String::from("one"), bytes(8_usize, 11_usize))]),
         "the importer's `one` is refused, naming the base's; `two` stands"
     );
 }
@@ -4125,9 +4137,9 @@ fn each_import_a_name_is_read_through_is_reached()
     let (text, unit) = laid(&[
         (
             SourceText::from(
-                "data Point : Type { One : Point; }\nmodule Cancel :> #{\n  notes : String\n} \
-                 {\n  def notes = \"notes\";\n}\nmodule Str { def len(self : shared Integer) \
-                 -> -F Integer { pure self } }\ndef seven : Integer ;\ndef seven = 7 ;",
+                "pub data Point : Type { One : Point; }\npub module Cancel :> #{\n  notes : \
+                 String\n} {\n  def notes = \"notes\";\n}\npub module Str { def len(self : shared \
+                 Integer) -> -F Integer { pure self } }\npub def seven : Integer ;\ndef seven = 7 ;",
             ),
             &[],
         ),
@@ -4199,5 +4211,213 @@ fn each_import_a_name_is_read_through_is_reached()
     assert!(
         !module.reached_imports().contains(idle),
         "an import nothing is read through is not reached"
+    );
+}
+
+/// The base the visibility witnesses import: each form exported by a `pub`
+/// mark on its signature, its definition, before or after its attributes, and
+/// each kept private by none.
+const VISIBLE_BASE: &str = "pub def shown : Integer ;\ndef shown = 2 ;\ndef hidden : Integer \
+                            ;\npub def hidden = 1 ;\n@[ checks ]\npub def checked : Integer ;\ndef \
+                            checked = 4 ;\npub @[ checks ]\ndef early : Integer ;\ndef early = 5 \
+                            ;\ndef secret = 3 ;\npub data Bit : Type { O : Bit; }\ndata Hid : \
+                            Type { H : Hid; }\npub theory Pointed {\n  sort P : Type;\n  oper pt \
+                            : () --> P;\n}\ntheory Closed {\n  sort Q : Type;\n  oper qt : () \
+                            --> Q;\n}\npub module Open { def x = 6; }\nmodule Shut { def y = 7; \
+                            }\npub module Methods { def width(self : shared Integer) -> -F Integer \
+                            { pure self } }\nmodule Hidden { def depth(self : shared Integer) -> \
+                            -F Integer { pure self } }";
+
+/// Each declaration of the unit `base` then `importer` lays, the importer
+/// reading the base unqualified, with its refusal printed, or `None` where it
+/// stands.
+///
+/// # Specification
+/// trivial.
+fn importer_outcomes(importer: SourceText<'_>) -> Vec<(String, Option<String>)>
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (SourceText::from(VISIBLE_BASE), &[]),
+        (importer, &[ImportTarget::Source(SourceIndex::from(
+            0_usize,
+        ))]),
+    ]);
+    let start = unit
+        .sources()
+        .get(1_usize)
+        .map(gandr_surface_lowering::UnitSource::start)
+        .expect("the importer is the second source");
+    lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers")
+        .declarations()
+        .iter()
+        .filter(|declaration| declaration.span().start() >= start)
+        .map(|declaration| {
+            (
+                String::from(declaration.name().as_ref()),
+                match declaration.outcome() {
+                    DeclarationOutcome::Refused(refusal) => Some(format!("{refusal:?}")),
+                    DeclarationOutcome::Completed { .. }
+                    | DeclarationOutcome::Bodied { .. }
+                    | DeclarationOutcome::Uncompleted { .. }
+                    | DeclarationOutcome::Data(_)
+                    | DeclarationOutcome::Codata(_)
+                    | DeclarationOutcome::Abstract(_)
+                    | DeclarationOutcome::World => None,
+                },
+            )
+        })
+        .collect()
+}
+
+/// #2687: a declaration a `pub` mark precedes is read by a source importing
+/// its own — the mark on its signature or on its definition, before its
+/// attributes or after them — as are a marked family's constructors, a
+/// marked theory, a marked module's members and its methods.
+#[test]
+fn a_pub_declaration_is_read_by_its_importer_2687()
+{
+    let outcomes = importer_outcomes(SourceText::from(
+        "import \"./base.gandr\" ;\ndef a : Integer ;\ndef a = shown ;\ndef b : Integer ;\ndef b \
+         = hidden ;\ndef c : Integer ;\ndef c = checked ;\ndef d : Integer ;\ndef d = early ;\ndef \
+         e : Bit ;\ndef e = O ;\ndef f : Integer ;\ndef f = Open.x ;\nmodule Pointing : \
+         Model(Pointed) {\n  type P = Integer;\n  def pt() -> -F Integer { return 0 }\n}\ndef \
+         g() -> -F Integer { hold s = 1; s.width() }",
+    ));
+    let refused: Vec<_> = outcomes
+        .iter()
+        .filter(|&&(_, ref refusal)| refusal.is_some())
+        .collect();
+    assert_eq!(
+        refused,
+        Vec::<&(String, Option<String>)>::new(),
+        "every exported form reads through the import"
+    );
+}
+
+/// #2687: a declaration no `pub` mark precedes is private to its source. A
+/// value, a family and its constructor, a module's member and a theory an
+/// importer names are each refused as unexported at the use, naming the
+/// declaration; a private module's method is out of scope; and a private
+/// name binds nothing in the importer, which declares it again freely.
+#[test]
+fn a_private_declaration_is_refused_to_its_importer_2687()
+{
+    let outcomes = importer_outcomes(SourceText::from(
+        "import \"./base.gandr\" ;\ndef g : Integer ;\ndef g = secret ;\ndef h : Hid ;\ndef h = \
+         1 ;\ndef i = H ;\ndef j : Integer ;\ndef j = Shut.y ;\nmodule Closing : Model(Closed) \
+         {\n  type Q = Integer;\n  def qt() -> -F Integer { return 0 }\n}\ndef k() -> -F Integer \
+         { hold s = 1; s.depth() }\ndef secret = 8 ;",
+    ));
+    let private = |name: &str| format!("name: SurfaceName(SourceFragment(\"{name}\"))");
+    let refused_as = |declaration: &str, name: &str| {
+        outcomes.iter().any(|&(ref held, ref refusal)| {
+            held == declaration
+                && refusal.as_deref().is_some_and(|refusal| {
+                    refusal.starts_with("UnexportedName")
+                        && refusal.contains(&private(name))
+                        && refusal.ends_with("reason: Private }")
+                })
+        })
+    };
+    for (declaration, name) in [
+        ("g", "secret"),
+        ("h", "Hid"),
+        ("i", "H"),
+        ("j", "Shut"),
+        ("Closing", "Closed"),
+    ] {
+        assert!(
+            refused_as(declaration, name),
+            "`{declaration}` is refused at the private `{name}`: {outcomes:?}"
+        );
+    }
+    assert!(
+        outcomes
+            .iter()
+            .any(|&(ref held, ref refusal)| held == "k" && refusal.is_none()),
+        "the private module's `width` is out of scope, so the exported one's is called alone: \
+         {outcomes:?}"
+    );
+    assert!(
+        outcomes
+            .iter()
+            .any(|&(ref held, ref refusal)| held == "secret" && refusal.is_none()),
+        "the private `secret` binds nothing in the importer: {outcomes:?}"
+    );
+}
+
+/// #2687: a `pub` mark exports the declaration after it and stands nowhere
+/// else: before an import, before another mark and at the end of a source it
+/// is refused as misplaced, at the mark.
+#[test]
+fn a_pub_mark_before_no_declaration_is_misplaced_2687()
+{
+    let pbg = grammar();
+    let text = "pub import \"./base.gandr\" ;\npub pub def one = 1 ;\npub";
+    let module = lowered(&pbg, &parsed(&pbg, SourceText::from(text))).expect("the source lowers");
+    let misplaced: Vec<ByteSpan> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| match declaration.outcome() {
+            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+                span,
+                form,
+                boundary: FragmentBoundary::Misplaced,
+                ..
+            }) if form == FormName::VISIBILITY => Some(span),
+            DeclarationOutcome::Refused(_)
+            | DeclarationOutcome::Completed { .. }
+            | DeclarationOutcome::Bodied { .. }
+            | DeclarationOutcome::Uncompleted { .. }
+            | DeclarationOutcome::Data(_)
+            | DeclarationOutcome::Codata(_)
+            | DeclarationOutcome::Abstract(_)
+            | DeclarationOutcome::World => None,
+        })
+        .collect();
+    let at = |offset: usize| bytes(offset, offset + "pub".len());
+    assert_eq!(
+        misplaced,
+        [at(0_usize), at(28_usize), at(50_usize)],
+        "the mark before the import, the first of two and the last are each misplaced"
+    );
+}
+
+/// #2687: documentation written before a `pub` mark documents the declaration
+/// the mark exports, as it does with no mark, and joins the documentation of
+/// an attribute block after the mark in source order.
+#[test]
+fn documentation_before_a_pub_mark_documents_its_declaration_2687()
+{
+    let pbg = grammar();
+    let text = "/// The answer.\npub def answer = 42 ;\n/// A point.\npub data Point : Type { P : \
+                Point; }\n/// First.\npub @[ doc(\"Second.\") ]\ndef both = 1 ;";
+    let module = lowered(&pbg, &parsed(&pbg, SourceText::from(text))).expect("the source lowers");
+    let documented = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == name)
+            .and_then(
+                |declaration| match module.documentation(declaration.introduced()) {
+                    Maybe::Present(documentation) => Some(format!("{:?}", documentation.text())),
+                    Maybe::Absent(_) => None,
+                },
+            )
+    };
+    assert_eq!(
+        [
+            documented("answer"),
+            documented("Point"),
+            documented("both")
+        ],
+        [
+            Some(String::from("DocumentationText(\"The answer.\")")),
+            Some(String::from("DocumentationText(\"A point.\")")),
+            Some(String::from("DocumentationText(\"First.\\nSecond.\")")),
+        ],
+        "each marked declaration reads the documentation before its mark"
     );
 }

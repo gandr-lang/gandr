@@ -10,14 +10,14 @@
 // The universe subject reads the naturals and the branches from here too.
 
 /// Natural numbers, free: every constructor term is its own value.
-data Nat : Type {
+pub data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
 }
 
 /// Addition by recursion on the second argument, the recursive call nested
 /// in the successor it returns.
-def rec plus(n : Nat, m : Nat) -> Nat {
+pub def rec plus(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
     Succ(p) => Succ(plus[<](n, p))
@@ -26,16 +26,16 @@ def rec plus(n : Nat, m : Nat) -> Nat {
 
 /// Two.
 @[ runs("Succ(Succ(Zero))") ]
-def two : Nat = Succ(Succ(Zero));
+pub def two : Nat = Succ(Succ(Zero));
 
 /// Three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def three : Nat = Succ(two);
+pub def three : Nat = Succ(two);
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel, each rule invertible.
 @[ normalizes("S(P(S(Z))) ~> S(Z)") ]
-data Int : Type {
+pub data Int : Type {
   Z : Int;
   S : (x : Int) --> Int;
   P : (x : Int) --> Int;
@@ -45,21 +45,21 @@ data Int : Type {
 
 /// Three colours: an enumeration, a data type whose constructors take no
 /// field.
-data Color : Type {
+pub data Color : Type {
   Red : Color;
   Green : Color;
   Blue : Color;
 }
 
 /// The two branches of a binary node.
-data Two : Type {
+pub data Two : Type {
   L : Two;
   R : Two;
 }
 
 /// Lists of elements of a type `a`. The element stands only where a list
 /// holds it, strictly positive, so a family nests through it.
-data List(a : Type) : Type {
+pub data List(a : Type) : Type {
   Nil : List(a);
   Cons : (head : a, tail : List(a)) --> List(a);
 }

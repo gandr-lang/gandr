@@ -40,7 +40,7 @@ def weakenLiftAgree(
 }
 
 /// Weakening then a lifted substitution is the substitution then weakening.
-def subWeakenLift(
+pub def subWeakenLift(
   b : Term,
   s : Env
 ) -> Path(Term, subst(subst(b, Shift(S(Z))), Lift(s)), subst(subst(b, s), Shift(S(Z)))) {

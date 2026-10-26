@@ -11,7 +11,7 @@
 import "./data-base.gandr";
 
 /// The length of a list, returned, the run written at its read.
-def rec length(a : Type, xs : List(a)) -> Nat {
+pub def rec length(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length[<](a, rest))
@@ -19,7 +19,7 @@ def rec length(a : Type, xs : List(a)) -> Nat {
 }
 
 /// The length of a list, the `return`s elided, the run written at its read.
-def rec length_elided(a : Type, xs : List(a)) -> Nat {
+pub def rec length_elided(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
     Cons(x, rest) => Succ(length_elided[<](a, rest))
@@ -59,7 +59,7 @@ def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> List(a) {
 }
 
 /// Mapping a function over a list, returned, the runs written at their reads.
-def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
+pub def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
     Cons(x, rest) => (Cons(f(x), map[<](a, b, f, rest)) : List(b))

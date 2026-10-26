@@ -11,7 +11,7 @@
 
 /// A quasi-inverse is bi-invertible: its map back is both the left and the
 /// right inverse (cubical's `isoToEquiv`).
-def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
+pub def isoToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
   case i {
     #{t, k, s, r} => (t, ((k, s), (k, r)))
   }

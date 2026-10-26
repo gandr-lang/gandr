@@ -8,7 +8,7 @@
 // doi:10.1017/S0960129514000565).
 
 /// A magma: one sort, a binary operation and a constant.
-theory Magma {
+pub theory Magma {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
   oper one : () --> (z : M);
@@ -16,7 +16,7 @@ theory Magma {
 
 /// The swap of the booleans, its own inverse: the binary corolla's
 /// translator.
-def exchange(b : Bool) -> Bool {
+pub def exchange(b : Bool) -> Bool {
   case b {
     true => +{.1 = unit},
     false => +{.0 = unit}
@@ -25,11 +25,11 @@ def exchange(b : Bool) -> Bool {
 
 /// The identity on the booleans, which is no inverse of the swap; named
 /// apart from the flow former `stay`.
-def boolId(b : Bool) -> Bool {
+pub def boolId(b : Bool) -> Bool {
   b
 }
 
 /// The identity on the constant corolla's one element.
-def keep(e : +{Unit}) -> +{Unit} {
+pub def keep(e : +{Unit}) -> +{Unit} {
   e
 }

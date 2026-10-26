@@ -14,7 +14,7 @@ def unstarted : Prefix(Seat.SeatEnd) = recorded();
 
 /// A seat that took its task and reported, its next move the offer to go on
 /// or retire: open, so a prefix (#1861).
-def reporting : Prefix(Seat.SeatEnd) = recorded(
+pub def reporting : Prefix(Seat.SeatEnd) = recorded(
   received(Seat.task),
   selected(report),
   sent(Seat.progress)

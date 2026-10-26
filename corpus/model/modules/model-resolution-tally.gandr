@@ -2,7 +2,7 @@
 // one that includes it, and a step over any model of it.
 
 /// A tally: a carrier, a zero, a step and a reading.
-theory Count {
+pub theory Count {
   sort C : Type;
   oper zero : C;
   oper incr : (c : C) --> C;
@@ -10,10 +10,10 @@ theory Count {
 }
 
 /// A tally that also resets.
-theory ResetCount {
+pub theory ResetCount {
   include Count;
   oper reset : (c : C) --> C;
 }
 
 /// The reading after one step, over any tally the slot names.
-def advanced @[s : Model(Count)] (c : s.C) -> Integer { s.read(s.incr(c)) }
+pub def advanced @[s : Model(Count)] (c : s.C) -> Integer { s.read(s.incr(c)) }

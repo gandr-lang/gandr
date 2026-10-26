@@ -4,7 +4,7 @@
 // 1984).
 
 /// An optional `a`: none, or some value.
-data Maybe(a : Type) : Type {
+pub data Maybe(a : Type) : Type {
   None : Maybe(a);
   Some : (x : a) --> Maybe(a);
 }

@@ -4,7 +4,7 @@
 // counter transparently.
 
 /// A counter: a carrier, a start and a step.
-theory Counter {
+pub theory Counter {
   sort C : Type;
   oper start : () --> C;
   oper step : (c : C) --> C;

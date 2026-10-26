@@ -21,7 +21,7 @@ import "./model-counter.gandr";
 
 /// Counting up modulo three, its carrier manifest: the carrier is no field,
 /// so the record is the zero, the step and the reading.
-def upManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
+pub def upManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
   .zero = Up.zero,
   .incr = Up.incr,
   .read = Up.read
@@ -38,7 +38,7 @@ def observedManifest() -> Integer { observe(upManifest) }
 def observedAscribed() -> Integer { observe((upManifest : Model(Counter))) }
 
 /// The manifest counter carried along negation.
-def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = transport(
+pub def negatedManifest : Model(Counter) with sort C = Unit + (Unit + Unit) = transport(
   \x. Model(Counter) with sort C = x,
   countsNegated,
   upManifest
@@ -51,7 +51,7 @@ def observedCarried() -> Integer { observe(negatedManifest) }
 
 /// A counter whose reading has a sort of its own: the counts and the
 /// readings, a zero, a step, a reading and the reading shown as an integer.
-theory ReadCounter {
+pub theory ReadCounter {
   sort C : Type;
   sort R : Type;
   oper zero : C;
@@ -62,7 +62,7 @@ theory ReadCounter {
 
 /// A consumer of any such counter: the reading after one step from zero,
 /// shown.
-def observeShown(m : Model(ReadCounter)) -> Integer {
+pub def observeShown(m : Model(ReadCounter)) -> Integer {
   case m {
     #{.zero = z, .incr = i, .read = r, .shown = s} => s(r(i(z)))
   }
@@ -74,7 +74,7 @@ def asIs(r : Integer) -> Integer { r }
 /// Counting up modulo three, its readings manifest at the integers and its
 /// counts a field: the record is the counts' type, the zero, the step, the
 /// reading and the showing.
-def upReadings : Model(ReadCounter) with sort R = Integer = (
+pub def upReadings : Model(ReadCounter) with sort R = Integer = (
   type(Unit + (Unit + Unit)),
   (Up.zero, (Up.incr, (Up.read, asIs)))
 );
@@ -85,7 +85,7 @@ def upReadings : Model(ReadCounter) with sort R = Integer = (
 def observedReadings() -> Integer { observeShown(upReadings) }
 
 /// Counting up modulo three, both its sorts manifest: neither is a field.
-def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = #{
+pub def upBoth : Model(ReadCounter) with sort C = Unit + (Unit + Unit) with sort R = Integer = #{
   .zero = Up.zero,
   .incr = Up.incr,
   .read = Up.read,
@@ -125,7 +125,7 @@ def sharedUp() -> Integer { stepShared(upModel, upManifest, Up.zero) }
 
 /// The counter sharing `a`'s counts where any counter is asked: the checker
 /// solves the carrier as `a`'s.
-def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> Integer {
+pub def observeShared(a : Model(Counter), b : Model(Counter) with sort C = a.C) -> Integer {
   observe(b)
 }
 
@@ -187,7 +187,7 @@ def countOfAny(x : Type, a : Model(Counter) with sort C = x, n : Integer, c : a.
 }
 
 /// A pairing: two carriers, a value of each.
-theory Pairing {
+pub theory Pairing {
   sort A : Type;
   sort B : Type;
   oper left : A;
@@ -207,7 +207,7 @@ def bothManifest : Model(Pairing) with sort A = Integer with sort B = Unit = #{
 
 /// A pairing's left beside a value of its second carrier, read off it where
 /// its type fixes the first.
-def leftBeside(m : Model(Pairing) with sort A = Integer, b : m.B) -> Integer {
+pub def leftBeside(m : Model(Pairing) with sort A = Integer, b : m.B) -> Integer {
   case m {
     #{.left = l, .right = r} => l
   }

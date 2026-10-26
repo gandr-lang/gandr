@@ -57,6 +57,7 @@ use gandr_surface_dispatcher::Referent;
 use gandr_surface_dispatcher::Subject;
 use gandr_surface_dispatcher::TypeTable;
 use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::Visibility;
 use gandr_surface_pretty::PageWidth;
 use gandr_surface_pretty::Style;
 use gandr_surface_render_remote::LineIndex;
@@ -309,20 +310,21 @@ pub struct Elsewhere<'held>
 /// protocol's kind for it, or not at all.
 ///
 /// # Specification
-/// - ensures: a value or a computation offers a value declared at its source's
-///   top as a function; a value, a computation or a pattern offers a
-///   constructor whose family is declared at its source's top as a constructor;
-///   a type offers a family declared at its source's top as an enum; nothing
-///   else is offered, a module's or a theory's member among it, since importing
-///   the source does not bring it into scope.
+/// - ensures: only a name its source exports is offered, since importing the
+///   source brings no other into scope: a value or a computation offers a value
+///   declared at its source's top as a function; a value, a computation or a
+///   pattern offers a constructor whose family is declared at its source's top
+///   as a constructor; a type offers a family declared at its source's top as
+///   an enum; nothing else is offered, a module's or a theory's member among
+///   it.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause is the match itself.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the unimported witness offers a function in a body, a
-///   family in a type and a constructor in a pattern, and a module's member
-///   nowhere.
+///   family in a type and a constructor in a pattern, and a module's member and
+///   a private value nowhere.
 /// - witness: `complete::tests::a_name_no_import_reaches_is_offered_with_its_import`
 pub fn unimported_as(
     category: Category,
@@ -330,6 +332,9 @@ pub fn unimported_as(
     names: &[Declared],
 ) -> Option<CompletionItemKind>
 {
+    if declared.exported == Visibility::Private {
+        return None;
+    }
     let top = declared.container.is_none();
     match (category, declared.kind) {
         (Category::Value | Category::Computation, SymbolKind::FUNCTION | SymbolKind::VARIABLE)
@@ -926,8 +931,9 @@ mod tests
         use CompletionItemKind as Kind;
 
         let far = declared(SourceText::from(
-            "data Shape : Type {\n  Circle : Shape;\n}\ndef faraway : Integer ;\ndef faraway = 7 \
-             ;\ndef far : Integer ;\ndef far = 2 ;\nmodule Inner {\n  def fargone = 1 ;\n}\n",
+            "pub data Shape : Type {\n  Circle : Shape;\n}\npub def faraway : Integer ;\ndef \
+             faraway = 7 ;\ndef farther : Integer ;\ndef farther = 3 ;\npub def far : Integer \
+             ;\ndef far = 2 ;\npub module Inner {\n  def fargone = 1 ;\n}\n",
         ));
         let import = [TextEdit {
             range: crate::position::Range::default(),
@@ -975,8 +981,8 @@ mod tests
         assert_eq!(
             elsewhere(&body),
             [(String::from("faraway"), Kind::FUNCTION)],
-            "a body: the unimported source's top-level value, never its module's member, \
-             {body:?}"
+            "a body: the unimported source's exported top-level value, never its private one \
+             nor its module's member, {body:?}"
         );
         let faraway = body.last().expect("an item is offered");
         assert_eq!(
@@ -1157,6 +1163,7 @@ mod tests
             row("world", "world ${1:identifier};"),
             row("op", "op infixl ${1:number} \"${2:string_fragment}\";"),
             row("rec", "rec { ${1:item} \\}"),
+            (String::from("pub"), String::from("pub"), false),
             row(
                 "extern",
                 "extern \"${1:string_fragment}\" from \"${2:string_fragment}\" { \\}",

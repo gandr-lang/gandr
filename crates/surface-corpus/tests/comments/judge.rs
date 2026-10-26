@@ -307,7 +307,7 @@ pub fn findings_of(
         else {
             continue;
         };
-        let NodeLabel::Meld(mold) = node.label()
+        let (NodeLabel::Meld(mold) | NodeLabel::Tile(mold)) = node.label()
         else {
             continue;
         };
@@ -315,8 +315,13 @@ pub fn findings_of(
             file: file.0.to_owned(),
             detail: error.to_string(),
         })?;
-        if kind.0 == "attribute_block" {
+        // A `pub` mark is one tile before the item it exports: the comment
+        // before it comments the item, as one before an attribute block does.
+        if kind.0 == "attribute_block" || kind.0 == "pub_declaration" {
             attributes.push(child);
+            continue;
+        }
+        if matches!(node.label(), NodeLabel::Tile(_)) {
             continue;
         }
         let anchor = attributes.first().copied().unwrap_or(child);

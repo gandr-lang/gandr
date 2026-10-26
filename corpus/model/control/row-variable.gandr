@@ -9,7 +9,7 @@
 
 /// A line printed through `Console`, the rest of the row left open: `r`
 /// lacks `Console`, which the row writes beside it.
-def log @[r : Row] (s : String) -> [Console | r] Unit { Console.print(s) }
+pub def log @[r : Row] (s : String) -> [Console | r] Unit { Console.print(s) }
 
 /// `log` where the row is `Console` alone: the call's `r` is the empty row.
 def logAlone() -> [Console] Unit { log("alone") }

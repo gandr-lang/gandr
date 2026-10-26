@@ -8,7 +8,7 @@
 // `../../pathological/holes/wildcard.gandr`.
 
 /// The identity at a type passed explicitly.
-def idAt(a : Type, y : a) -> a { y }
+pub def idAt(a : Type, y : a) -> a { y }
 
 /// `idAt` with its type left to the argument: `3` forces `_` to `Integer`.
 @[ runs("3") ]

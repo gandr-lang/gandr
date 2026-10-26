@@ -7,7 +7,7 @@
 
 /// A task: the protocol its end carries back to the parent, and the path it
 /// reads.
-module Cancel :> #{
+pub module Cancel :> #{
   type Join = !String. end,
   notes : String
 } {

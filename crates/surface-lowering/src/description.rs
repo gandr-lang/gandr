@@ -111,12 +111,14 @@ use gandr_theory_levitation::WfDiagnostic;
 use quenchant_shape::shape::Maybe;
 
 use crate::LoweringRefusal;
+use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
 use crate::form::Shape;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::module::Visibility;
 use crate::unit::SourceIndex;
 use crate::unit::Unit;
 
@@ -547,6 +549,9 @@ pub struct DescribedDeclaration
     pub presentation: crate::model::Presented,
     /// Where the members are written.
     pub written: written::WrittenMembers,
+    /// Whether a `pub` mark precedes the declaration, so that a source
+    /// importing its source names it: set by the reading of its root.
+    pub exported: crate::module::Visibility,
 }
 
 impl DescribedDeclaration
@@ -815,8 +820,8 @@ pub(crate) struct Visible<'held>
 {
     /// Those of the including source read before it, in reading order.
     own: Vec<&'held DescribedDeclaration>,
-    /// Those of the sources it imports unqualified, in reading order, each
-    /// with its source.
+    /// Those of the sources it imports unqualified that their sources export,
+    /// in reading order, each with its source.
     imported: Vec<(SourceIndex, &'held DescribedDeclaration)>,
     /// Every declaration read before it, whatever its source, in reading
     /// order: an include reaches through blocks it cannot name.
@@ -831,14 +836,16 @@ impl<'held> Visible<'held>
     /// # Specification
     /// - requires: `read` is in reading order.
     /// - ensures: `own` holds the declarations of `read` in `source`, and
-    ///   `imported` those in a source of `imports`, both in the order of
+    ///   `imported` those a source of `imports` exports, both in the order of
     ///   `read`; every declaration of `read` is kept as read.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a declaration of a source not imported is not seen.
+    /// - hypothesis: L3 — a declaration of a source not imported is not seen,
+    ///   nor is one its imported source keeps private.
     /// - witness: `tests::namespace::an_include_reads_the_theories_its_source_imports_1224`
+    /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     #[spec(ensures: |ret| ret.own.iter().all(|declaration| unit.source_at(declaration.at.span.start()) == source)
         && ret.imported.iter().all(|&(from, declaration)| from != source && imports.contains(&from)
             && unit.source_at(declaration.at.span.start()) == from))]
@@ -856,7 +863,9 @@ impl<'held> Visible<'held>
             if from == source {
                 visible.own.push(declaration);
             }
-            else if imports.contains(&from) {
+            else if imports.contains(&from)
+                && declaration.exported == crate::module::Visibility::Public
+            {
                 visible.imported.push((from, declaration));
             }
         }
@@ -930,6 +939,9 @@ pub(crate) fn elaborate_roots<'source>(
     // its place, as declarations of their own.
     let mut pending: Vec<_> = roots.iter().flat_map(|&root| tree.children(root)).collect();
     pending.reverse();
+    // A `pub` mark exports the declaration after it, past any attribute block
+    // between them.
+    let mut marked = Visibility::Private;
     while let Some(position) = pending.pop() {
         let Some(node) = tree.node(position)
         else {
@@ -938,13 +950,34 @@ pub(crate) fn elaborate_roots<'source>(
         let at = Placed::of(position, node);
         let mut pieces = Pieces::new();
         read_pieces(grammar, tree, position, &mut pieces)?;
-        if matches!(shape_of(grammar, node)?, Shape::Form { name, .. } if name == crate::FormName::MUTUAL)
-        {
-            pending.extend(pieces.pieces.iter().rev().filter_map(|piece| match *piece {
-                Piece::Operand(member) => Some(member.node),
-                Piece::Tile { .. } => None,
-            }));
-            continue;
+        let exported = core::mem::replace(&mut marked, Visibility::Private);
+        match shape_of(grammar, node)? {
+            Shape::Form {
+                former: Former::Visibility,
+                ..
+            } => {
+                marked = Visibility::Public;
+                continue;
+            },
+            Shape::Form {
+                former: Former::AttributeBlock,
+                ..
+            }
+            | Shape::Layout => {
+                marked = exported;
+                continue;
+            },
+            Shape::Form {
+                former: Former::Mutual,
+                ..
+            } => {
+                pending.extend(pieces.pieces.iter().rev().filter_map(|piece| match *piece {
+                    Piece::Operand(member) => Some(member.node),
+                    Piece::Tile { .. } => None,
+                }));
+                continue;
+            },
+            Shape::Form { .. } | Shape::Root | Shape::Repair(_) => {},
         }
         let mut run = Run::new(&pieces.pieces, at.span);
         let serial = NominalSerial::from(
@@ -1007,7 +1040,8 @@ pub(crate) fn elaborate_roots<'source>(
                     },
                 },
             });
-            if let Ok(Read::Described(declaration)) = declaration {
+            if let Ok(Read::Described(mut declaration)) = declaration {
+                declaration.exported = exported;
                 report.declarations.push(*declaration);
             }
             continue;
@@ -1041,6 +1075,7 @@ pub(crate) fn elaborate_roots<'source>(
                     }
                 }
                 declaration.ill_formed = report.diagnostics.len() > refused;
+                declaration.exported = exported;
                 report.declarations.push(*declaration);
             },
             Err(diagnostic) => report.diagnostics.push(diagnostic),
@@ -1320,6 +1355,7 @@ impl Reader<'_, '_>
                 classifier: Maybe::Present(classifier),
                 presentation: Maybe::Absent(crate::model::presentation::Absent::Family),
                 written,
+                exported: Visibility::Private,
             },
         )))
     }

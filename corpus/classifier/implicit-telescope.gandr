@@ -10,7 +10,7 @@
 // `../pathological/classifier/implicit-telescope.gandr`.
 
 /// The identity at a type supplied by name.
-def same @[a : Type] (y : a) -> a { y }
+pub def same @[a : Type] (y : a) -> a { y }
 
 /// `same` at the integers, supplied by name.
 @[ runs("3") ]
@@ -38,7 +38,7 @@ def firstInferred() -> Integer { become first(5, unit) }
 
 /// An implicit whose type names an explicit parameter written after it: the
 /// merge binds `t` first, so `x : t` reads it.
-def chosen @[x : t] (t : Type) -> t { x }
+pub def chosen @[x : t] (t : Type) -> t { x }
 
 /// `chosen` at the integers, its implicit supplied by name.
 @[ runs("7") ]
@@ -63,7 +63,7 @@ def sameAt(t : Type, y : t) -> t { become same(y) }
 
 /// A function taking a function of a type and a value of it, the result type
 /// of that function implicit.
-def konst @[b : Type] (f : (t : Type, t) => b) -> Integer { 1 }
+pub def konst @[b : Type] (f : (t : Type, t) => b) -> Integer { 1 }
 
 /// `konst` with its implicit omitted: the lambda returns an integer under its
 /// own binders, and `b` is solved as `Integer`, which names none of them.
@@ -99,7 +99,7 @@ module Adding {
 }
 
 /// A value combined with itself, the combination and its carrier implicit.
-def twice @[m : Type, combine : (m, m) => m] (x : m) -> m { combine(x, x) }
+pub def twice @[m : Type, combine : (m, m) => m] (x : m) -> m { combine(x, x) }
 
 /// `twice` with its combination supplied by a module path: a resident's value
 /// runs to the slot's next `,` or its `]` (#1188).

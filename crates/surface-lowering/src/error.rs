@@ -261,7 +261,8 @@ pub enum FragmentBoundary
     Unadmitted(Unbuilt),
     /// The form is admitted at one position only and written at another:
     /// the universe of representable sorts, which classifies a theory's sort
-    /// member, read anywhere else.
+    /// member, read anywhere else; the mark `pub`, read before anything but a
+    /// root declaration.
     Misplaced,
     /// The form is a row written before a type, `[E] B`, standing anywhere
     /// but a definition's result: only there is a returner inserted for the
@@ -328,6 +329,16 @@ pub enum FragmentBoundary
     /// declaration or an ordinary binder, where only the view an `access`
     /// binds can be ended.
     View,
+}
+
+/// Why a source does not export a declaration an importer names.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Unexported
+{
+    /// No `pub` mark precedes the declaration.
+    Private,
+    /// The declaration has a signature and no definition.
+    Undefined,
 }
 
 impl fmt::Display for FragmentBoundary
@@ -869,7 +880,8 @@ pub enum LoweringRefusal<'source>
     },
 
     /// A name an unqualified import answers with a declaration its source
-    /// does not export: one with a signature and no definition.
+    /// does not export: one no `pub` mark precedes, or one with a signature
+    /// and no definition.
     UnexportedName
     {
         /// The bytes the use covers.
@@ -878,6 +890,8 @@ pub enum LoweringRefusal<'source>
         name: SurfaceName<'source>,
         /// The bytes of the declaration's name in its own source.
         declared: ByteSpan,
+        /// Why its source does not export it.
+        reason: Unexported,
     },
 
     /// A declared name or a binder over a builtin, under the policy that
@@ -1839,9 +1853,21 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "`{name}` is bound by an import and by another binding of this source"
             ),
-            Self::UnexportedName { name, .. } => write!(
+            Self::UnexportedName {
+                name,
+                reason: Unexported::Undefined,
+                ..
+            } => write!(
                 f,
                 "`{name}` is declared by an imported source without a definition, so it is not exported"
+            ),
+            Self::UnexportedName {
+                name,
+                reason: Unexported::Private,
+                ..
+            } => write!(
+                f,
+                "`{name}` is private to the imported source that declares it; `pub` before its declaration exports it"
             ),
             Self::ShadowedBuiltin { name, .. } => write!(
                 f,
@@ -2414,6 +2440,7 @@ mod tests
     use super::LoopExit;
     use super::LoweringRefusal;
     use super::TelescopeFault;
+    use super::Unexported;
     use super::refusal_span;
     use crate::attribute::AttributeSchema;
     use crate::attribute::PayloadForm;
@@ -2648,6 +2675,7 @@ mod tests
                 span: s(75_usize, 76_usize),
                 name: SurfaceName::from("pending"),
                 declared: s(0_usize, 1_usize),
+                reason: Unexported::Undefined,
             },
             LoweringRefusal::RulesUncompleted {
                 span: s(77_usize, 78_usize),

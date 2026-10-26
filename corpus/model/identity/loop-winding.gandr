@@ -13,7 +13,7 @@ import "./loop-shape.gandr";
 /// The winding number, the fold out of the words into the presented
 /// integers. At `Loop(Unloop(x))` it builds `S(P(windWords(x)))`, whose
 /// normal form is `windWords(x)`, so it respects both rules and is admitted.
-def rec windWords(c : Words) -> Int {
+pub def rec windWords(c : Words) -> Int {
   case c {
     Nil => Z,
     Loop(x) => S(windWords[<](x)),

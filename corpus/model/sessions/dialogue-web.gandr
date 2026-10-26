@@ -26,7 +26,7 @@ import "./seat-base.gandr";
     parallel(series(event(left, 3), event(left, 4)), event(right, 4))
   )
 ) ]
-def retiring : Dialogue(Seat.SeatEnd) = dialogue(
+pub def retiring : Dialogue(Seat.SeatEnd) = dialogue(
   right(sent(Seat.task)),
   left(received(Seat.task)),
   left(selected(report)),
@@ -83,7 +83,7 @@ def sameWeb : Path(Web, decompose(retiring), decompose(retiringLater)) = here(de
     )
   )
 ) ]
-def handedOff : Dialogue(Seat.SeatEnd) = dialogue(
+pub def handedOff : Dialogue(Seat.SeatEnd) = dialogue(
   right(sent(Seat.task)),
   left(received(Seat.task)),
   left(selected(handoff)),

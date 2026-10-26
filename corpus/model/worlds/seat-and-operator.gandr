@@ -12,17 +12,17 @@
 import "../sessions/seat-base.gandr";
 
 /// The world the operator stands at.
-world operator;
+pub world operator;
 
 /// The world a seat works at.
-world seat;
+pub world seat;
 
 /// The operator's turn: at its own world, holding one capability to the
 /// seat's, it runs the seat's work there and takes the report back. The
 /// migration spends the capability, and the report crosses because its type
 /// is marked mobile.
 @[ entry((operator, seat)) ]
-def collect() -> Seat.Report {
+pub def collect() -> Seat.Report {
   migrate [seat] { pure Seat.progress }
 }
 

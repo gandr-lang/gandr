@@ -7,7 +7,7 @@
 // the unit laws join.
 
 /// A semigroup: one carrier and an associative multiplication.
-theory Semigroup {
+pub theory Semigroup {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
   rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));
@@ -15,7 +15,7 @@ theory Semigroup {
 
 /// A monoid: the semigroup with a two-sided unit. Its rules are the
 /// semigroup's associativity, then the unit laws, and they join.
-theory Monoid {
+pub theory Monoid {
   include Semigroup;
   oper one : () --> M;
   rule unitL : mul(one(), x) ==> x;
@@ -23,7 +23,7 @@ theory Monoid {
 }
 
 /// The semigroup with a zero that absorbs on the left.
-theory LeftZero {
+pub theory LeftZero {
   include Semigroup;
   oper zero : () --> M;
   rule absorb : mul(zero(), x) ==> zero();
@@ -31,7 +31,7 @@ theory LeftZero {
 
 /// Both extensions at once: one carrier, one multiplication, its unit and
 /// its zero.
-theory UnitAndZero {
+pub theory UnitAndZero {
   include Monoid;
   include LeftZero;
 }
@@ -39,7 +39,7 @@ theory UnitAndZero {
 /// The functions on the integers under composition: every law holds by
 /// conversion, and the members it gives for the included semigroup are its
 /// multiplication and associativity.
-module Endo : Model(Monoid) {
+pub module Endo : Model(Monoid) {
   type M = Integer => Integer;
 
   /// `f` then `g`, applied.

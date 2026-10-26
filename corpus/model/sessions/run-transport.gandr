@@ -5,13 +5,13 @@
 // the transport as a match on the run's moves, to the run conversion gives.
 
 /// A bit.
-data Bit : Type {
+pub data Bit : Type {
   Zero : Bit;
   One : Bit;
 }
 
 /// An answer.
-data Answer : Type {
+pub data Answer : Type {
   No : Answer;
   Yes : Answer;
 }
@@ -49,7 +49,7 @@ def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
 }
 
 /// The bits and the answers are one type, by univalence.
-def codes : Path(Type, Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded))));
+pub def codes : Path(Type, Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded))));
 
 /// A protocol that hears a bit, and one that hears an answer.
 module Ask {

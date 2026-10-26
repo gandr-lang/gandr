@@ -82,6 +82,10 @@ const APPLICATION: &str = "type_application";
 /// decorates, whose documentation documents that declaration.
 const ATTRIBUTE_BLOCK: &str = "attribute_block";
 
+/// The rule of a `pub` mark, one tile between a declaration's documentation
+/// and the declaration it exports.
+const PUB_DECLARATION: &str = "pub_declaration";
+
 /// The rules a function type's arrow is read through: the thunk around it, and
 /// the parentheses around either.
 const ENCLOSING: [&str; 2] = ["u_type", PARENTHESES];
@@ -738,8 +742,8 @@ fn closure_heads(
 
 /// Push the forms among `children`, one level of `tree`, onto `pending` so
 /// that the first pops first, each with the documentation written before it
-/// since the last form or tile: in its attribute blocks or as its own
-/// documentation nodes.
+/// since the last form or tile other than a `pub` mark: in its attribute
+/// blocks or as its own documentation nodes.
 ///
 /// # Specification
 /// - requires: `children` are siblings in `tree`, in order.
@@ -780,6 +784,12 @@ fn level(
                 }
             },
             NodeLabel::Meld(_) => pending.push((child, documented.take())),
+            // A `pub` mark stands between a declaration's documentation and
+            // the declaration it exports.
+            NodeLabel::Tile(mold)
+                if grammar
+                    .rule_of(mold)
+                    .is_ok_and(|rule| rule.name().0 == PUB_DECLARATION) => {},
             NodeLabel::Tile(_) => documented = None,
             NodeLabel::Wald
             | NodeLabel::Grout { .. }

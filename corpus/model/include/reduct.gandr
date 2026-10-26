@@ -12,7 +12,7 @@
 import "./monoid.gandr";
 
 /// The endomorphism monoid, packed at its own theory.
-def endoMonoid : Model(Monoid) = pack Endo at Model(Monoid);
+pub def endoMonoid : Model(Monoid) = pack Endo at Model(Monoid);
 
 /// The endomorphism monoid, packed at the semigroup it includes.
 def endoSemigroup : Model(Semigroup) = pack Endo at Model(Semigroup);
@@ -27,7 +27,7 @@ def restricted : Path(
 
 /// Whether a semigroup's multiplication is there to read: every semigroup's
 /// is, so this answers zero.
-def multiplies(s : Model(Semigroup)) -> Integer {
+pub def multiplies(s : Model(Semigroup)) -> Integer {
   case s {
     #{.mul = m} => 0
   }
@@ -46,7 +46,7 @@ def throughTheDiamond(m : Model(UnitAndZero)) -> Integer {
 /// The endomorphism monoid with its carrier written: the carrier is no field,
 /// so the record is the multiplication, the unit and the three laws, nested
 /// as pairs since each law names the operations before it.
-def endoManifest : Model(Monoid) with sort M = (Integer => Integer) = (
+pub def endoManifest : Model(Monoid) with sort M = (Integer => Integer) = (
   Endo.mul,
   (Endo.one, (Endo.assoc, (Endo.unitL, Endo.unitR)))
 );

@@ -6,7 +6,7 @@
 
 /// A counter sealed by its signature: an abstract type, its zero, a step and
 /// a reader.
-module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } {
+pub module Seed :> #{ type T, zero : T, next : T => T, read : T => Integer } {
   type T = Integer;
   /// The counter's zero.
   @[ runs("0") ]

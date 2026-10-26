@@ -2218,7 +2218,7 @@ pub mod tests
         let scratch = Scratch::new(Path::new("given-twice"));
         scratch.file(
             Path::new("fixture/base.gandr"),
-            SourceText::from("def one = 1 ;"),
+            SourceText::from("pub def one = 1 ;"),
         );
         scratch.file(
             Path::new("fixture/importer.gandr"),
@@ -2600,15 +2600,15 @@ pub mod tests
             }
             cut
         };
-        let base = "@[ checks ]\ndata Point : Type {\n  Here : Point;\n}\n\n@[ checks ]\ndef here \
-                    : Point ;\ndef here = Here ;\n";
+        let base = "@[ checks ]\npub data Point : Type {\n  Here : Point;\n}\n\n@[ checks ]\npub \
+                    def here : Point ;\ndef here = Here ;\n";
         scratch.file(Path::new("fixture/base.gandr"), SourceText::from(base));
         for side in ["left", "right"] {
             scratch.file(
                 Path::new(&format!("fixture/{side}.gandr")),
                 SourceText::from(
                     format!(
-                        "import \"./base.gandr\" ;\n\n@[ checks ]\ndef {side} : Point ;\ndef \
+                        "import \"./base.gandr\" ;\n\n@[ checks ]\npub def {side} : Point ;\ndef \
                          {side} = here ;\n"
                     )
                     .as_str(),
@@ -2845,7 +2845,10 @@ pub mod tests
     {
         let scratch = Scratch::new(Path::new("refused-whole"));
         let sources = [
-            ("base", "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n"),
+            (
+                "base",
+                "@[ checks ]\npub def one : Integer ;\ndef one = 1 ;\n",
+            ),
             // A source that declares nothing, an attribute block decorating
             // nothing after its import, is refused as a whole.
             ("bad", "import \"./base.gandr\" ;\n\n@[ checks ]\n"),
@@ -2941,7 +2944,7 @@ pub mod tests
     fn two_sources_refused_whole_are_each_set_apart()
     {
         let scratch = Scratch::new(Path::new("refused-twice"));
-        let checks = "@[ checks ]\ndef one : Integer ;\ndef one = 1 ;\n";
+        let checks = "@[ checks ]\npub def one : Integer ;\ndef one = 1 ;\n";
         let bad = "import \"./base.gandr\" ;\n\n@[ checks ]\n";
         for (name, text) in [
             ("base", checks),

@@ -9,7 +9,7 @@
 import "./data-base.gandr";
 
 /// Vectors of elements of `a`, indexed by their length.
-data Vec(a : Type) : Nat -> Type {
+pub data Vec(a : Type) : Nat -> Type {
   VNil : Vec(a, Zero);
   VCons : (n : Nat, head : a, tail : Vec(a, n)) --> Vec(a, Succ(n));
 }
@@ -20,7 +20,7 @@ def single() -> Vec(Integer, Succ(Zero)) {
 }
 
 /// A vector of two integers, two long: each `VCons` one past its tail.
-def pair() -> Vec(Integer, Succ(Succ(Zero))) {
+pub def pair() -> Vec(Integer, Succ(Succ(Zero))) {
   VCons(
     Succ(Zero),
     1,
