@@ -2163,7 +2163,8 @@ exit 2
 # does, once per head; a stack waiting on a pull request queued on its own,
 # or on a unit of its own queued below (#2046), is tried again every 2
 # minutes. A seat's `pr:open` and `pr:watch` land its pull request without a
-# `pr:land`.
+# `pr:land`. A pull request whose watch ended is read by the `landing`
+# workflow every 10 minutes (#2701): it lands it, or tells its seat.
 #
 # A dequeue or a conflict with no red check anywhere in the pull request's
 # server stack needs no hand (#1264): the stack is restacked onto main, what

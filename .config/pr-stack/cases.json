@@ -1728,5 +1728,629 @@
       }
     ],
     "output": "{\"failed\":[],\"pending\":[]}"
+  },
+  {
+    "name": "#2701: a recorded set, with the App: the green unqueued pull request is landed, the queued one untouched, the red one told, the pending one left",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 2675,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "CLEAN",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2691,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2695,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": ["test the workspace (linux)"]
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":2675,\"act\":\"land\"},{\"number\":2694,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "#2701: the same set without the App: the green pull request's seat is told to land it",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 2675,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "CLEAN",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2691,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 2695,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": ["test the workspace (linux)"]
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":2675,\"act\":\"green\"},{\"number\":2694,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "#2701: a pull request already told at its head is told nothing more",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-red:cccccccccccccccccccccccccccccccccccccccc"]
+        },
+        {
+          "number": 2675,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-green:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a pull request told at an older head is told again at its new one",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 2694,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-red:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        }
+      ]
+    },
+    "output": "[{\"number\":2694,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "a conflicting pull request is told once per head, before its checks are read",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 10,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "DIRTY",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 11,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "DIRTY",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-dirty:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+        }
+      ]
+    },
+    "output": "[{\"number\":10,\"act\":\"dirty\"}]"
+  },
+  {
+    "name": "a held, bot or auto-merge pull request is left alone",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 20,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": true,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 21,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": true,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 22,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "a stack's green members ask for one landing, or one telling, from its lowest member",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 31,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 32,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 33,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":31,\"act\":\"land\"},{\"number\":33,\"act\":\"land\"}]"
+  },
+  {
+    "name": "a green stack whose lowest member was told is not told again through the member above",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 31,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": ["pr-green:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        },
+        {
+          "number": 32,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 30,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[]"
+  },
+  {
+    "name": "without the App a dequeued pull request is told once, and its green stack is not queued again unchanged",
+    "program": "landing.jq",
+    "input": {
+      "token": false,
+      "prs": [
+        {
+          "number": 41,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 40,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 42,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 40,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":41,\"act\":\"dequeued\"}]"
+  },
+  {
+    "name": "with the App every dequeued member of a stack with no red or queued member is rebased by GitHub, nothing landed meanwhile",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 51,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 50,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 52,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 50,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 53,
+          "oid": "cccccccccccccccccccccccccccccccccccccccc",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 50,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":51,\"act\":\"restack\",\"told\":false},{\"number\":52,\"act\":\"restack\",\"told\":false}]"
+  },
+  {
+    "name": "a rebase GitHub refused at this head is tried again and told no more",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 54,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": ["pr-dequeued:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        }
+      ]
+    },
+    "output": "[{\"number\":54,\"act\":\"restack\",\"told\":true}]"
+  },
+  {
+    "name": "#2701: a dequeued stack with a queued member is never pushed (#2531); its seat is told",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 61,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": true,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        },
+        {
+          "number": 62,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 60,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":62,\"act\":\"dequeued\"}]"
+  },
+  {
+    "name": "a dequeued stack with a red member is not rebased; the red one is told",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 71,
+          "oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 70,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": []
+        },
+        {
+          "number": 72,
+          "oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": 70,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": ["check Clippy wall"],
+            "pending": []
+          },
+          "removed": false,
+          "marks": []
+        }
+      ]
+    },
+    "output": "[{\"number\":71,\"act\":\"dequeued\"},{\"number\":72,\"act\":\"red\",\"failed\":[\"check Clippy wall\"]}]"
+  },
+  {
+    "name": "three restacks of a pull request are the cap: the fourth dequeue is told",
+    "program": "landing.jq",
+    "input": {
+      "token": true,
+      "prs": [
+        {
+          "number": 81,
+          "oid": "dddddddddddddddddddddddddddddddddddddddd",
+          "queued": false,
+          "held": false,
+          "bot": false,
+          "stack": null,
+          "merge": "BLOCKED",
+          "reading": {
+            "failed": [],
+            "pending": []
+          },
+          "removed": true,
+          "marks": [
+            "pr-restacked:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "pr-restacked:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "pr-restacked:cccccccccccccccccccccccccccccccccccccccc"
+          ]
+        }
+      ]
+    },
+    "output": "[{\"number\":81,\"act\":\"dequeued\"}]"
   }
 ]
