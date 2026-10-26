@@ -86,8 +86,8 @@ INSERT INTO reference VALUES('arXiv:2508.16848','surface-syntax','','background'
 INSERT INTO reference VALUES('arXiv:2508.16848','theory-graphs','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2512.07511','core-checker','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2512.09464','kernel-core','identity_recursion','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:2601.08071','core-sequent','','background',NULL,NULL,NULL);
-INSERT INTO reference VALUES('arXiv:2601.08071','runtime-stencils','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('arXiv:2601.08071','core-sequent','','background','66cbc25bfce14f56fb70ecba36ab78d735b45ea7','2026-10-26','c9bbc76ca417449be987a639d299f9b0eb1ea17a');
+INSERT INTO reference VALUES('arXiv:2601.08071','runtime-stencils','','background','66cbc25bfce14f56fb70ecba36ab78d735b45ea7','2026-10-26','24b6c43aecf1cda8f417f5238cc1b69900e9febb');
 INSERT INTO reference VALUES('arXiv:2603.24468','theory-nominal-automata','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-checker','elaboration','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:2607.09564','core-unify','','background',NULL,NULL,NULL);
