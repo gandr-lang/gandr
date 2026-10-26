@@ -1489,5 +1489,244 @@
       }
     ],
     "output": "[]"
+  },
+  {
+    "name": "#2700: the head #2691's rebase replaced (c303937d2) failed its Clippy wall, and the reading names it",
+    "program": "required.jq",
+    "args": {
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "FAILURE",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check quenchant compiler policy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "prepare the run",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      }
+    ],
+    "output": "{\"failed\":[\"check Clippy wall\"],\"pending\":[]}"
+  },
+  {
+    "name": "#2700: GitHub's rebase of an unchanged change whose replaced head failed runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": ["check Clippy wall"],
+        "pending": []
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "GitHub's rebase of an unchanged change whose replaced head passed, its filtered lanes skipped, skips them",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": []
+      }
+    },
+    "output": "true"
+  },
+  {
+    "name": "#2700: a replaced head still running, or whose required contexts were not read, runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": ["test the workspace (linux)"]
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "no required contexts read, or no reading, runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": []
+    },
+    "output": "false"
+  },
+  {
+    "name": "a seat's push, or a rebase that changed the patch, runs the lanes whatever the replaced head did",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "agent-shade",
+      "before": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "after": "3f1c9a0e2b7d4c5a6e8f9b0c1d2e3f4a5b6c7d8e",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": []
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "a patch-id not read runs the lanes",
+    "program": "rebased.jq",
+    "input": {
+      "committer": "web-flow",
+      "before": "",
+      "after": "",
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ],
+      "reading": {
+        "failed": [],
+        "pending": []
+      }
+    },
+    "output": "false"
+  },
+  {
+    "name": "the replaced head passed: its skipped lanes read as passed",
+    "program": "required.jq",
+    "args": {
+      "required": [
+        "check formatting and lint gates (treefmt)",
+        "check Clippy wall",
+        "test the workspace (linux)",
+        "check quenchant compiler policy",
+        "lint the pull request title",
+        "prepare the run"
+      ]
+    },
+    "input": [
+      {
+        "__typename": "CheckRun",
+        "name": "check formatting and lint gates (treefmt)",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check Clippy wall",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "test the workspace (linux)",
+        "status": "COMPLETED",
+        "conclusion": "SKIPPED",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "check quenchant compiler policy",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "lint the pull request title",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      },
+      {
+        "__typename": "CheckRun",
+        "name": "prepare the run",
+        "status": "COMPLETED",
+        "conclusion": "SUCCESS",
+        "startedAt": "2026-10-26T14:00:00Z"
+      }
+    ],
+    "output": "{\"failed\":[],\"pending\":[]}"
   }
 ]
