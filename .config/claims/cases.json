@@ -116,25 +116,35 @@
     "output": "2\tepic"
   },
   {
-    "name": "a claim silent for 12 hours with no pull request naming it comes off; one a second fresher stays",
+    "name": "a claim silent for 4 hours with no pull request naming it comes off, so 5 hours does; 3 hours, or a second under 4, stays",
     "input": {
       "now": 1760000000,
       "claimed": [
         {
           "number": 20,
           "labels": ["kind:defect", "status:claimed"],
-          "updated_at": "2025-10-08T20:53:20Z"
+          "updated_at": "2025-10-09T03:53:20Z"
         },
         {
           "number": 21,
           "labels": ["kind:defect", "status:claimed"],
-          "updated_at": "2025-10-08T20:53:21Z"
+          "updated_at": "2025-10-09T05:53:20Z"
+        },
+        {
+          "number": 22,
+          "labels": ["kind:defect", "status:claimed"],
+          "updated_at": "2025-10-09T04:53:20Z"
+        },
+        {
+          "number": 23,
+          "labels": ["kind:defect", "status:claimed"],
+          "updated_at": "2025-10-09T04:53:21Z"
         }
       ],
       "open_prs": [],
       "merged_body": null
     },
-    "output": "20\tsilent"
+    "output": "20\tsilent\n22\tsilent"
   },
   {
     "name": "an open pull request naming the issue in its body or its branch keeps a silent claim",
