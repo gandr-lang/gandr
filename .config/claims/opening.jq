@@ -13,6 +13,8 @@
 #   added     the paths the change adds under `crates/*/src/`
 #   regressions  the lines the change adds to corpus sources, Rust test files
 #             and `.config` cases: [{path, text}]
+#   surface   the paths the change touches under `crates/surface-parser/`,
+#             `crates/surface-grammar/` and `crates/surface-syntax/`
 #
 # A merge takes the claim off what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -44,6 +46,14 @@
 # `## Observation`, and the change adds a regression naming `#n`: a corpus
 # `///` line citing `#n`, a Rust test whose name ends `_n` (or carries `_n_`),
 # or a `.config` JSON case whose `"name"` cites `#n`.
+#
+# A surface form states its parser cost and its demand (#2527): a change to
+# the parser, its grammar or its syntax tree (`surface`, the paths it changes
+# under `crates/surface-parser/`, `crates/surface-grammar/` or
+# `crates/surface-syntax/`) has a `### Surface form` subsection with a
+# non-blank `cost:` line (the keystroke scenario's numbers before and after,
+# the molder's candidates and windows on the form) and a non-blank
+# `demand: <site>` line naming the corpus source or program that needs it.
 
 include "targets";
 include "sections";
@@ -181,4 +191,28 @@ def defects:
   | select(length > 0)
   | "the body closes #\($n), a `kind:defect`, without \(join(", and without ")); add \(if length > 1 then "both" else "it" end), then run `pr:open` again";
 
-claim, sources, readings, concerns, defects
+# The lines of the body's `### $name` subsection, up to the next heading of
+# level two or three, or null when it has none.
+def subsection($name):
+  lines as $lines
+  | ([range(0; $lines | length) | select($lines[.] | test("^### \($name)\\s*$"))] | first) as $start
+  | if $start == null then null
+    else $lines[$start + 1:] as $rest
+    | ([range(0; $rest | length) | select($rest[.] | test("^###? "))] | first // ($rest | length)) as $end
+    | $rest[:$end]
+    end;
+
+# The refusal of a change to the parser whose body states no surface form.
+def surface:
+  (.surface // []) as $paths
+  | select($paths | length > 0)
+  | (.body | subsection("Surface form")) as $form
+  | ($form // [] | map(select(test("^\\s*(?:[-*]\\s+)?(?:\\*\\*)?cost:(?:\\*\\*)?\\s*\\S")))) as $cost
+  | ($form // [] | map(select(test("^\\s*(?:[-*]\\s+)?(?:\\*\\*)?demand:(?:\\*\\*)?\\s*\\S")))) as $demand
+  | [if $form == null then "a `### Surface form` subsection" else empty end,
+     if $cost == [] then "a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form)" else empty end,
+     if $demand == [] then "a non-blank `demand: <site>` line naming the corpus source or program that needs the form" else empty end]
+  | select(length > 0)
+  | "the change touches the parser (\($paths[:3] | map("`\(.)`") | join(", "))\(if ($paths | length) > 3 then ", …" else "" end)) and the body lacks \(join(", and ")) (#2527); add it, then run `pr:open` again";
+
+claim, sources, readings, concerns, defects, surface

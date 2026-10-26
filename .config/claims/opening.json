@@ -852,5 +852,85 @@
       ]
     },
     "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, or a `.config` case whose name cites it, added by the change; add it, then run `pr:open` again"
+  },
+  {
+    "name": "#2527: a grammar change whose body has no `### Surface form` is refused, naming the subsection and both lines",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": ["crates/surface-grammar/src/grammar.rs"]
+    },
+    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`) and the body lacks a `### Surface form` subsection, and a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form), and a non-blank `demand: <site>` line naming the corpus source or program that needs the form (#2527); add it, then run `pr:open` again"
+  },
+  {
+    "name": "#2527: a grammar change whose surface form leaves `demand:` blank is refused, naming it",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n\n## The change\n\n### Surface form\n\n- cost: keystroke scenario 41 ms before, 42 ms after; 3 candidates, 2 windows\n- demand:\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": ["crates/surface-grammar/src/grammar.rs"]
+    },
+    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`) and the body lacks a non-blank `demand: <site>` line naming the corpus source or program that needs the form (#2527); add it, then run `pr:open` again"
+  },
+  {
+    "name": "a grammar change stating its cost and its demand opens",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n\n### Surface form\n\n**cost:** keystroke scenario 41 ms before, 42 ms after; the molder offers 3 candidates in 2 windows\n**demand:** `corpus/model/data/vectors.gandr`\n\n## Sources read\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": ["crates/surface-grammar/src/grammar.rs"]
+    },
+    "output": ""
+  },
+  {
+    "name": "a surface form's lines are read under its own subsection, not under the next one",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n\n### Surface form\n\n- cost: 41 ms before, 42 ms after\n\n### Elsewhere\n\n- demand: `corpus/x.gandr`\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": ["crates/surface-grammar/src/grammar.rs"]
+    },
+    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`) and the body lacks a non-blank `demand: <site>` line naming the corpus source or program that needs the form (#2527); add it, then run `pr:open` again"
+  },
+  {
+    "name": "a change outside the parser needs no surface form",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": []
+    },
+    "output": ""
   }
 ]
