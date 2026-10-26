@@ -1598,6 +1598,14 @@ pub enum LoweringRefusal<'source>
         fault: gandr_core_term::generic::Uncovered,
     },
 
+    /// A splice `~t` whose operand writes no tactic: `assumption`, or
+    /// `intro(t)` of a tactic, under fewer than 32 introductions.
+    UnknownTactic
+    {
+        /// The bytes of the operand.
+        span: ByteSpan,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -2173,6 +2181,10 @@ impl fmt::Display for LoweringRefusal<'_>
                 fault,
                 ..
             } => write!(f, "the theory `{theory}` does not derive `{rule}`: {fault}"),
+            Self::UnknownTactic { .. } => f.write_str(
+                "a splice runs a tactic: `assumption`, or `intro(t)` of a tactic `t`, under \
+                 fewer than 32 introductions",
+            ),
             Self::GenericMisplaced { .. } => f.write_str(
                 "`Eq.generic` stands only as a definition's whole body, applied to one data \
                  type: `def eq = Eq.generic(T)`",
@@ -2410,6 +2422,7 @@ impl LoweringRefusal<'_>
             | Self::RulesUndecided { span, .. }
             | Self::UnderivedRule { span, .. }
             | Self::GenericMisplaced { span }
+            | Self::UnknownTactic { span }
             | Self::GenericUncovered { span, .. }
             | Self::UnknownMold { span, .. }
             | Self::HostConflict { span }
@@ -2480,7 +2493,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 71_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 72_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2802,6 +2815,9 @@ mod tests
             LoweringRefusal::HostConflict {
                 span: s(133_usize, 134_usize),
             },
+            LoweringRefusal::UnknownTactic {
+                span: s(135_usize, 136_usize),
+            },
         ]
     }
 
@@ -2884,6 +2900,7 @@ mod tests
             s(129_usize, 130_usize),
             s(131_usize, 132_usize),
             s(133_usize, 134_usize),
+            s(135_usize, 136_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

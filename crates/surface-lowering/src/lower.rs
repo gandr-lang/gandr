@@ -759,6 +759,8 @@ mod sealing;
 
 mod session;
 
+mod splice;
+
 mod staged;
 
 mod ua;
@@ -6627,6 +6629,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Former::Name | Former::Constructor if headed => self.type_head(site),
             Former::Name => self.name(site),
             Former::Constructor => self.constructor(site),
+            Former::Hole if site.name == FormName::SPLICE => self.splice(site, cursor),
             Former::Hole => {
                 // A wildcard stands for a value the equations force; where a
                 // computation is read it is a form of the wrong sort, since the
@@ -16724,7 +16727,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             });
                     },
                     Some(
-                        &(implicit::Nomination::Wildcard | implicit::Nomination::Answering { .. }),
+                        &(implicit::Nomination::Wildcard
+                        | implicit::Nomination::Spliced(_)
+                        | implicit::Nomination::Answering { .. }),
                     )
                     | None => {},
                 }

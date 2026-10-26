@@ -211,6 +211,9 @@ pub struct Deferrals
     /// Each hole of a resolved model slot the running judgement did not meet,
     /// beside the closed component of the one elaboration that answers it.
     pub answered: BTreeMap<HoleId, ValueId>,
+    /// The fill of each hole a splice wrote that the running judgement met:
+    /// its tactic's answer, judged again, and the binders it stands under.
+    pub spliced: BTreeMap<HoleId, (ValueId, Binders)>,
 }
 
 impl Deferrals
@@ -235,7 +238,7 @@ impl Deferrals
         captures: [owed = self.owed.len(), suspended = self.suspended.len()],
         ensures: self.collecting == collecting && self.residue.equations.is_empty()
             && self.residue.dependencies.is_empty()
-            && self.nominated.is_empty() && self.answered.is_empty()
+            && self.nominated.is_empty() && self.answered.is_empty() && self.spliced.is_empty()
             && usize::from(self.metas.count()) == 0
             && self.owed.len() == owed && self.suspended.len() == suspended,
     )]
@@ -250,6 +253,32 @@ impl Deferrals
         self.metas = Metas::new();
         self.nominated.clear();
         self.answered.clear();
+        self.spliced.clear();
+    }
+
+    /// Keep `answer`, written under `scope` binders, as the fill of the hole
+    /// `hole` a splice wrote: its tactic's answer, judged again against the
+    /// goal the hole stands at.
+    ///
+    /// # Specification
+    /// - requires: `answer` was judged against the hole's goal.
+    /// - ensures: `hole` is filled by `answer` under `scope` binders; a hole
+    ///   met before keeps its first fill.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a splice's answer is the hole's solution the body is
+    ///   judged again with.
+    /// - witness: `tactic::tests::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
+    #[spec(ensures: self.spliced.contains_key(&hole))]
+    pub fn splice(
+        &mut self,
+        hole: HoleId,
+        answer: ValueId,
+        scope: Binders,
+    )
+    {
+        let _first = self.spliced.entry(hole).or_insert((answer, scope));
     }
 
     /// Take what the running judgement left, leaving the residue empty.
@@ -715,18 +744,20 @@ impl Deferrals
 
     /// Each nominated hole the running judgement met, with its solution and
     /// the binders the solution is written under, or the node of the first
-    /// one the solver left unbound and why; and each hole a slot's resolution
-    /// answered without the judgement meeting it.
+    /// one the solver left unbound and why; each hole a slot's resolution
+    /// answered without the judgement meeting it; and each hole a splice wrote
+    /// it met, with its tactic's answer.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: one entry per hole met, its solution in its own context and
-    ///   that context's binders, when every one is bound, and one per hole
-    ///   [`Self::resolve`] answered, its elaboration's closed component at no
-    ///   binder; the first unbound met one's node otherwise, with the reason of
-    ///   the first equation in the store that waits on it, names it or has its
-    ///   decode at a head, or [`Unsolved::Unforced`] when none does; nothing
-    ///   when the judgement met none and no resolution answered one.
+    /// - ensures: one entry per nominated hole met, its solution in its own
+    ///   context and that context's binders, when every one is bound, one per
+    ///   hole [`Self::resolve`] answered, its elaboration's closed component at
+    ///   no binder, and one per hole a splice wrote, its tactic's answer; the
+    ///   first unbound met one's node otherwise, with the reason of the first
+    ///   equation in the store that waits on it, names it or has its decode at
+    ///   a head, or [`Unsolved::Unforced`] when none does; nothing when the
+    ///   judgement met none and no resolution answered one.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -739,8 +770,10 @@ impl Deferrals
     /// - witness: `elaboration::tests::an_implicit_no_argument_forces_is_unsolved_1216`
     /// - witness: `elaboration::tests::an_implicit_solved_past_its_scope_escapes_1216`
     /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
+    /// - witness: `tactic::tests::assumption_answers_the_innermost_binder_of_the_goal_type_2762`
     #[spec(ensures: |ret| ret.as_ref().map_or(!self.nominated.is_empty(), |solutions| {
-        solutions.len() == self.nominated.len().saturating_add(self.answered.len())
+        solutions.len()
+            == self.nominated.len().saturating_add(self.answered.len()).saturating_add(self.spliced.len())
     }))]
     pub fn solutions(
         &self,
@@ -773,6 +806,9 @@ impl Deferrals
                 .iter()
                 .map(|(&hole, &component)| (hole, (component, Binders::NONE))),
         );
+        for (&hole, &fill) in &self.spliced {
+            let _first = solutions.entry(hole).or_insert(fill);
+        }
         Ok(solutions)
     }
 

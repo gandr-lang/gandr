@@ -274,6 +274,7 @@ fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
         LoweringRefusal::UnderivedRule { .. } => "a rule its theory does not derive",
         LoweringRefusal::GenericMisplaced { .. } => "a generic program read off its place",
+        LoweringRefusal::UnknownTactic { .. } => "a splice of no tactic",
         LoweringRefusal::GenericUncovered { .. } => "a type with no derived equality",
         LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
@@ -359,6 +360,7 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::ImplicitUnsolved { .. } => "an implicit left unsolved",
         CheckRefusal::ModelUnanswered { .. } => "a model implicit no module answers",
         CheckRefusal::ModelAmbiguous { .. } => "a model implicit more than one module answers",
+        CheckRefusal::TacticRefused { .. } => "a splice its tactic does not answer",
         CheckRefusal::TypeMismatch(Mismatch::Value { .. } | Mismatch::Computation { .. }) => {
             "its type does not convert"
         },
@@ -714,6 +716,7 @@ mod tests
             LoweringRefusal::RulesUndecided { .. } => "a pair the check's budget left undecided",
             LoweringRefusal::UnderivedRule { .. } => "a rule its theory does not derive",
             LoweringRefusal::GenericMisplaced { .. } => "a generic program read off its place",
+            LoweringRefusal::UnknownTactic { .. } => "a splice of no tactic",
             LoweringRefusal::GenericUncovered { .. } => "a type with no derived equality",
             LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
             LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",

@@ -7459,6 +7459,15 @@ impl Walk<'_, '_>
                 self.wildcards = Wildcards::Written;
                 return writes(Production("wildcard.expression"), self.atom(Glyphs("_")));
             },
+            // A splice its tactic has not filled reads back as the same splice
+            // at the same place: its `~` and the tactic its name carries.
+            Former::Unreadable(Unreadable::Splice(tactic)) => {
+                let spelled = format!("~{tactic}");
+                return writes(
+                    Production("splice_expression"),
+                    self.atom(Glyphs(spelled.as_str())),
+                );
+            },
             #[cfg_attr(
                 dylint_lib = "quenchant_dylints",
                 expect(

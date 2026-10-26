@@ -166,6 +166,7 @@ INSERT INTO purpose VALUES('core-checker','refusal::Mismatch','enum','A synthesi
 INSERT INTO purpose VALUES('core-checker','refusal::RunFault','enum','Why a session refuses a recorded run.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::RunStep','struct','A zero-based position among a recorded run''s moves; a count past u32 saturates.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::StaticArity','struct','A count of static arguments: how many a static application passes, or how many static Pis a head''s type opens.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-checker','refusal::TacticFault','enum','Why a splice''s tactic gave no answer its goal admits: no binder of the goal''s type, no function to introduce, no goal to run at, or an answer its judgement refused.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::TermNode','enum','A term node of the core arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::TypeNode','enum','A type node of the core arena.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-checker','refusal::UnadmittedFormer','enum','A former of the core vocabulary the judgement has no rule for.',NULL,'fits','sound',NULL);
@@ -855,6 +856,8 @@ INSERT INTO purpose VALUES('core-term','syntax::equal_comp_type_syntax','functio
 INSERT INTO purpose VALUES('core-term','syntax::equal_type_reading','function','Compares type syntax as a printed type reads, so the types every checker reads alike compare equal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','syntax::equal_type_syntax','function','Compares signature type syntax without making allocation identity observable, so separately allocated equal signatures compare equal.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','syntax::identified_words','function','The type of words the path type Path(carrier, left, right) reads as: the declaration whose free cells loop at a point both endpoints spell.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','tactic::Tactic','struct','The tactic a splice runs at its goal: a count of introductions, then an assumption.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','tactic::TooManyIntros','struct','A count of introductions at or past the limit, which no tactic makes.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','ua::Description','struct','A description as a stratum reads it: its name and its generators, in written order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','ua::Generator','struct','One generator of a description: an operation, by its label and the profile of its corolla.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','ua::Sides','struct','The two descriptions a univalence statement relates, the source first.',NULL,'fits','sound',NULL);

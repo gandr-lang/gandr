@@ -98,6 +98,7 @@ fn every_role_has_its_own_name()
         FrameRole::ThunkBody,
         FrameRole::ReturnValue,
         FrameRole::InjectionPayload,
+        FrameRole::Spliced,
         FrameRole::SessionSend,
         FrameRole::ReceiveBody,
         FrameRole::OfferArm,

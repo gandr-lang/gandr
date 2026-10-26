@@ -418,7 +418,7 @@ fn module_nesting_is_unbounded_in_the_clean_grammar() -> Result<(), Box<dyn Erro
 fn malformed_module_member_uses_ordinary_recovery() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
-    let src = "module M { def bad = 1 ~ 2; def good = 1; }";
+    let src = "module M { def bad = 1 ^ 2; def good = 1; }";
     let result = parse(pbg, SourceText::from(src))?;
     assert!(
         !bool::from(result.is_clean()),

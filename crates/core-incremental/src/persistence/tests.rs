@@ -478,6 +478,7 @@ fn kind(typing: &Typing) -> Key
         Typing::Refused(Refusal::ImplicitUnsolved { .. }) => "implicit-unsolved",
         Typing::Refused(Refusal::ModelUnanswered { .. }) => "model-unanswered",
         Typing::Refused(Refusal::ModelAmbiguous { .. }) => "model-ambiguous",
+        Typing::Refused(Refusal::TacticRefused { .. }) => "tactic-refused",
         Typing::Refused(Refusal::SessionMismatch { .. }) => "session-mismatch",
         Typing::Refused(Refusal::Linearity { .. }) => "linearity",
         Typing::Refused(Refusal::CapabilityForged { .. }) => "capability-forged",

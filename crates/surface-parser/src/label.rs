@@ -549,7 +549,7 @@ impl SourceByte
     /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| bool::from(ret) == b"!&()*+,-:;<=>?@[]{}|$".contains(&self.0))]
+    #[spec(ensures: |ret| bool::from(ret) == b"!&()*+,-:;<=>?@[]{}|$~".contains(&self.0))]
     fn is_single_punct(self) -> BytePredicate
     {
         BytePredicate::from(matches!(
@@ -574,6 +574,7 @@ impl SourceByte
                 | b'|'
                 | b'}'
                 | b'$'
+                | b'~'
         ))
     }
 }
@@ -2833,7 +2834,7 @@ fn scan_marked(
 ///   stray scalar and absent input, expose the maximal width. A shorter
 ///   operator shadowing a longer one or an overlong match changes the result.
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| MULTI_PUNCT.iter().filter(|operator| tail.starts_with(operator.as_bytes())).map(|operator| operator.len()).max().or_else(|| tail.first().filter(|byte| b"!&()*+,-:;<=>?@[]{}|$".contains(byte)).map(|_| 1))))]
+#[spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| MULTI_PUNCT.iter().filter(|operator| tail.starts_with(operator.as_bytes())).map(|operator| operator.len()).max().or_else(|| tail.first().filter(|byte| b"!&()*+,-:;<=>?@[]{}|$~".contains(byte)).map(|_| 1))))]
 fn punct_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -3118,7 +3119,8 @@ mod tests
         }
         for (source, expected) in [
             ("", None),
-            ("~", None),
+            ("^", None),
+            ("~", Some(1)),
             ("/", None),
             ("é", None),
             ("-", Some(1_usize)),
@@ -3287,7 +3289,8 @@ mod tests
                 ("+Unit", Lexeme::Punct, 1),
                 ("<=>x", Lexeme::Punct, 3),
                 ("éx", Lexeme::Unknown, 2),
-                ("~", Lexeme::Unknown, 1),
+                ("^", Lexeme::Unknown, 1),
+                ("~x", Lexeme::Punct, 1),
             ]),
         ];
         let mut input = alloc::string::String::new();
@@ -3360,7 +3363,7 @@ mod tests
             );
             assert_eq!(
                 bool::from(byte.is_single_punct()),
-                b"!&()*+,-:;<=>?@[]{}|$".contains(&value)
+                b"!&()*+,-:;<=>?@[]{}|$~".contains(&value)
             );
         }
     }
@@ -3439,7 +3442,8 @@ mod tests
             ("#!{[]}", &[Punct, SubshellOpen, SubshellClose, Punct]),
             ("#!{2>f}", &[Punct, FileDescriptor, Punct, ShellWord, Punct]),
             (" ", &[Space]),
-            ("~", &[Unknown]),
+            ("^", &[Unknown]),
+            ("~a", &[Punct, LowerWord]),
         ];
         for &(source, expected) in cases {
             let tokens = label(SourceFragment::from(source));
@@ -3491,7 +3495,7 @@ mod tests
             let tokens = label(SourceFragment::from(src));
             assert_eq!(reconstruct(SourceFragment::from(src), &tokens), src);
         }
-        let tokens = label(SourceFragment::from("~"));
+        let tokens = label(SourceFragment::from("^"));
         assert_eq!(1, tokens.len());
         assert_eq!(Some(Lexeme::Unknown), tokens.first().map(|t| t.lexeme));
     }
@@ -3889,7 +3893,7 @@ mod tests
             ]
         );
         // `~>` (the retired rewrite-face arrow) munches as one tile; a lone `~`
-        // stays an unknown stray byte.
+        // is the splice's own tile.
         assert_eq!(
             tiles(
                 SourceFragment::from("a~>b"),
@@ -3903,7 +3907,7 @@ mod tests
         );
         assert_eq!(
             tiles(SourceFragment::from("~"), &label(SourceFragment::from("~"))),
-            vec![(Lexeme::Unknown, "~".to_owned())]
+            vec![(Lexeme::Punct, "~".to_owned())]
         );
     }
 

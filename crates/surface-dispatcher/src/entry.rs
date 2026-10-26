@@ -1198,7 +1198,7 @@ mod tests
     {
         let grammar = built_in().expect("the grammar builds");
         let text = SourceText::from(
-            "def a() -> Integer {\n  return 1 ~ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
+            "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
              c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c()\n}\n",
         );
         let cascade = step(
@@ -1229,7 +1229,7 @@ mod tests
                 .map(|diagnostic| (diagnostic.severity, diagnostic.span))
                 .collect::<Vec<_>>(),
             [
-                (Severity::Error, at("~", 0)),
+                (Severity::Error, at("^", 0)),
                 (Severity::Note, at("a()", body))
             ],
             "the refused declaration is the one error; the one calling it is a note at the call, \

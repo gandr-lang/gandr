@@ -6319,6 +6319,14 @@ const UNSOLVED: [gandr_core_checker::Unsolved; 15] = [
     gandr_core_checker::Unsolved::Budget,
 ];
 
+/// Why a splice's tactic is refused, in stable wire order.
+const TACTIC_FAULTS: [gandr_core_checker::TacticFault; 4] = [
+    gandr_core_checker::TacticFault::NoHypothesis,
+    gandr_core_checker::TacticFault::NoFunction,
+    gandr_core_checker::TacticFault::Forged,
+    gandr_core_checker::TacticFault::Unplaced,
+];
+
 /// Write the parameter or field an occurrence refusal names.
 ///
 /// # Specification
@@ -6906,6 +6914,12 @@ where
             write_site(writer, at)?;
             write_survivors(writer, survivors)?;
         },
+        Refusal::TacticRefused { at, tactic, fault } => {
+            writer.tag(Tag(93));
+            write_site(writer, at)?;
+            writer.tag(Tag(u8::from(tactic)));
+            write_listed(writer, &TACTIC_FAULTS, &fault)?;
+        },
         Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -7430,6 +7444,7 @@ where
                     | Refusal::ImplicitUnsolved { .. } => 86,
                     | Refusal::ModelUnanswered { .. } => 89,
                     | Refusal::ModelAmbiguous { .. } => 90,
+                    | Refusal::TacticRefused { .. } => 93,
                     | Refusal::SessionMismatch { .. } => 56,
                     | Refusal::Linearity { .. } => 57,
                     | Refusal::CapabilityForged { .. } => 58,
@@ -7730,6 +7745,12 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         90 => Refusal::ModelAmbiguous {
             at: read_site(reader)?,
             survivors: read_survivors(reader)?,
+        },
+        93 => Refusal::TacticRefused {
+            at: read_site(reader)?,
+            tactic: gandr_core_term::tactic::Tactic::try_from(reader.tag()?.0)
+                .map_err(|_too_many| CodecError::Corrupt)?,
+            fault: read_listed(reader, &TACTIC_FAULTS)?,
         },
         56 => {
             let at = read_site(reader)?;
@@ -8512,6 +8533,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::ImplicitUnsolved { .. }
             | Refusal::ModelUnanswered { .. }
             | Refusal::ModelAmbiguous { .. }
+            | Refusal::TacticRefused { .. }
             | Refusal::Linearity { .. }
             | Refusal::CapabilityForged { .. }
             | Refusal::CapabilityAmplified { .. }

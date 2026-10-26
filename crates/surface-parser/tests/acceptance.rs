@@ -1202,7 +1202,7 @@ fn malformed_programs_repair_predictably() -> Result<(), Box<dyn Error>>
         // path is exercised directly here, where it is the sole repair.)
         ("pure 1 +", Oblig::MissingMeld),
         // A stray byte the grammar has no tile for.
-        ("def x = 1 ~ 2;", Oblig::UnmoldedTok),
+        ("def x = 1 ^ 2;", Oblig::UnmoldedTok),
         // An unterminated string force-closes.
         ("def x = \"open", Oblig::MissingTile),
         // A tile standing where its form's earlier tiles are absent: an `=`
@@ -1525,7 +1525,7 @@ fn an_unclosed_delimiter_yields_to_every_declaration_family() -> Result<(), Box<
 #[test]
 fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Error>>
 {
-    let source = "def bad = 1 ~ 2;\ndef good = 2;";
+    let source = "def bad = 1 ^ 2;\ndef good = 2;";
     let first = parse(built(), SourceText::from(source))?;
     assert!(
         first

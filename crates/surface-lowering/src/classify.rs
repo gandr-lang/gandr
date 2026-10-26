@@ -280,6 +280,7 @@ impl LoweringRefusal<'_>
             | Self::UnderivedRule { .. }
             | Self::AcrossHandler { .. }
             | Self::GenericMisplaced { .. }
+            | Self::UnknownTactic { .. }
             | Self::GenericUncovered { .. } => {
                 matches!(ret, FailureClass::MalformedSource)
             },
@@ -355,7 +356,8 @@ impl LoweringRefusal<'_>
             | Self::UnguardedCorecursion { .. }
             | Self::BareFeedback { .. }
             | Self::IllFormedDescription { .. }
-            | Self::GenericMisplaced { .. } => FailureClass::MalformedSource,
+            | Self::GenericMisplaced { .. }
+            | Self::UnknownTactic { .. } => FailureClass::MalformedSource,
             Self::GenericUncovered { fault, .. } => uncovered(fault),
             Self::OutOfFragment {
                 form,
@@ -776,7 +778,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 73_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 74_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1066,6 +1068,7 @@ mod tests
                 implicit: SurfaceName::from("s"),
             },
             LoweringRefusal::GenericMisplaced { span: empty },
+            LoweringRefusal::UnknownTactic { span: empty },
             LoweringRefusal::GenericUncovered {
                 span: empty,
                 data: SurfaceName::from("Box"),
@@ -1140,6 +1143,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::HIGHER_CELL),
+            FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,

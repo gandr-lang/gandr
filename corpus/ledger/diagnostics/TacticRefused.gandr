@@ -1,0 +1,5 @@
+/// `TacticRefused`: a splice whose tactic answers no term its goal admits.
+///
+/// No binder in scope is an integer, so `assumption` has no answer.
+@[ refuses("TacticRefused") ]
+def none(u : Unit) -> Integer { ~assumption }

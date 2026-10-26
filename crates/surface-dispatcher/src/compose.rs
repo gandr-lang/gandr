@@ -4941,23 +4941,23 @@ def wrong = "text" ;"#,
         let mut lowerings = LoweringCount::default();
         for (source, refused, expected) in [
             (
-                "def bad = 1 ~ 2 ;\ndef good = 2 ;",
+                "def bad = 1 ^ 2 ;\ndef good = 2 ;",
                 false,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
             ),
             ("def good = 2 ;", false, &[][..]),
             (
-                "def bad = 1 ~ 2 ;\npure 3",
+                "def bad = 1 ^ 2 ;\npure 3",
                 false,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 12_usize, 13_usize)][..],
             ),
             (
-                "pure 1 ~ 2",
+                "pure 1 ^ 2",
                 false,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 7_usize, 8_usize)][..],
             ),
             (
-                "~",
+                "^",
                 true,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 0_usize, 1_usize)][..],
             ),

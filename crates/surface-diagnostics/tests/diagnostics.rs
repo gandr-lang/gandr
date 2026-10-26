@@ -2601,7 +2601,7 @@ fn each_verb_prints_its_entries()
 fn a_declaration_naming_a_refused_one_is_a_note()
 {
     let text = SourceText::from(
-        "def a() -> Integer {\n  return 1 ~ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
+        "def a() -> Integer {\n  return 1 ^ 2\n}\n\ndef b() -> Integer {\n  return a()\n}\n\ndef \
              c() -> Integer {\n  return 1\n}\n\ndef d() -> Integer {\n  return c()\n}\n",
     );
     let printed = printed(
@@ -2624,7 +2624,7 @@ fn a_declaration_naming_a_refused_one_is_a_note()
         vec![
             (
                 Severity::Error,
-                Maybe::Present(nth(text, SourceText::from("~"))[0])
+                Maybe::Present(nth(text, SourceText::from("^"))[0])
             ),
             (Severity::Note, Maybe::Present(call)),
         ],

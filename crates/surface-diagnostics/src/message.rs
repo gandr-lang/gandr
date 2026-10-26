@@ -41,6 +41,7 @@ use core::fmt;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::TacticFault;
 use gandr_core_checker::access::AccessDefect;
 use gandr_core_checker::codata::CodataFault;
 use gandr_core_checker::session::LinearityDefect;
@@ -714,7 +715,9 @@ fn lowered(
             f,
             "the theory `{theory}` does not derive `{rule}`: {fault}"
         ),
-        LoweringRefusal::GenericMisplaced { .. } | LoweringRefusal::GenericUncovered { .. } => {
+        LoweringRefusal::GenericMisplaced { .. }
+        | LoweringRefusal::GenericUncovered { .. }
+        | LoweringRefusal::UnknownTactic { .. } => {
             fmt::Display::fmt(&refusal, f)
         },
         LoweringRefusal::BudgetExceeded { budget } => write!(
@@ -939,6 +942,25 @@ fn checked(
             "this call omits a model implicit more than one module in scope answers at the types \
              its arguments force; supply the one meant by name in brackets before the parentheses",
         ),
+        CheckRefusal::TacticRefused { tactic, fault, .. } => match fault {
+            TacticFault::NoHypothesis => write!(
+                f,
+                "the tactic `{tactic}` reaches a goal whose type no binder in scope has"
+            ),
+            TacticFault::NoFunction => write!(
+                f,
+                "the tactic `{tactic}` introduces a binder where the goal is no function"
+            ),
+            TacticFault::Forged => write!(
+                f,
+                "the tactic `{tactic}` answered a term its goal refuses"
+            ),
+            TacticFault::Unplaced => write!(
+                f,
+                "the splice running `{tactic}` stands where no type is known to check it \
+                 against; state the type it stands at"
+            ),
+        },
         CheckRefusal::SessionNotEquivalent { .. } => {
             f.write_str("`bisim` needs the two protocols to behave alike at every step")
         },
@@ -1696,6 +1718,7 @@ mod tests
                 name: SurfaceName::from("windHom"),
             },
             LoweringRefusal::GenericMisplaced { span },
+            LoweringRefusal::UnknownTactic { span },
             LoweringRefusal::GenericUncovered {
                 span,
                 data: name,
@@ -2171,6 +2194,11 @@ mod tests
             CheckRefusal::ModelAmbiguous {
                 at: value,
                 survivors: gandr_core_term::model::Survivors::default(),
+            },
+            CheckRefusal::TacticRefused {
+                at: value,
+                tactic: gandr_core_term::tactic::Tactic::ASSUMPTION,
+                fault: gandr_core_checker::TacticFault::NoHypothesis,
             },
             CheckRefusal::SessionNotEquivalent { at: value },
             CheckRefusal::SessionNotSubtype { at: value },
