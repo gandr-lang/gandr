@@ -1358,29 +1358,35 @@ fn a_model_slot_resolves_to_the_candidate_its_sort_admits_739()
     );
 }
 
-/// A handle answered by the model in scope reads its theory's operations
-/// and never its laws, so the hole standing for a law is in no term (#2272):
-/// the slot resolves on the holes the judgement met.
+/// A capability scope answered by the model in scope meets its theory's
+/// operations as terms, but its carrier only through a decode the judgement
+/// reads as the unknown type, and its laws nowhere: the slot resolves on the
+/// holes the judgement met, and its one elaboration answers the others by its
+/// own components, closed, at no binder.
 #[test]
-fn a_model_slot_resolves_on_the_holes_the_judgement_met_2272()
+fn a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755()
 {
-    // `Up` and `Flag` as above, each passing a law the judgement never meets.
+    // `Up` and `Flag` as above, each passing one more component the
+    // judgement never meets, each its own.
     let mut arena = CoreArena::new();
     let mut deferrals = super::Deferrals::default();
     let ([sort, step], _, [integer, unit]) = forced_slot(&mut arena, &mut deferrals);
-    let law = gandr_core_term::hole::HoleId::nominated(
+    let unmet = gandr_core_term::hole::HoleId::nominated(
         gandr_core_term::hole::NominationIndex::from(2_u32),
     )
     .expect("a nominated name");
-    let _unmet = arena.value_hole(law);
-    let [up, flag] = [(integer, 1_usize), (unit, 2)].map(|(code, at)| {
-        let mut lawful = candidate(&mut arena, code, ConstantIndex::from(at));
-        lawful.components.push(arena.value_unit());
-        lawful
+    let standing = arena.value_hole(unmet);
+    let _decoded = arena.value_type_element(standing, Level::zero());
+    let [up, flag] = [(integer, 1_usize, 3_usize), (unit, 2, 4)].map(|(code, at, own)| {
+        let mut answering = candidate(&mut arena, code, ConstantIndex::from(at));
+        answering
+            .components
+            .push(arena.value_constant(ConstantIndex::from(own)));
+        answering
     });
-    let up_step = up.components[1];
+    let (up_step, up_unmet) = (up.components[1], up.components[2]);
     let slot = gandr_core_term::model::ModelSlot {
-        holes: Vec::from([sort, step, law]),
+        holes: Vec::from([sort, step, unmet]),
         fixed: Vec::new(),
         candidates: Vec::from([flag, up]),
     };
@@ -1391,8 +1397,8 @@ fn a_model_slot_resolves_on_the_holes_the_judgement_met_2272()
         solutions.as_ref().is_ok_and(|solved| solved
             .get(&step)
             .is_some_and(|&(solved, _)| solved == up_step)
-            && !solved.contains_key(&law)),
-        "the step is `Up`'s and the law is bound by nothing: {solutions:?}"
+            && solved.get(&unmet) == Some(&(up_unmet, Binders::NONE))),
+        "the step is `Up`'s, and so is the hole the judgement never met: {solutions:?}"
     );
 }
 

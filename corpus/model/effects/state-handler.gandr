@@ -4,8 +4,9 @@
 // operations answer them, or leaves that to the one model of the theory in
 // scope. The carrier `C` is what the scope answers; `get` replies an integer
 // to its continuation, and `put` sends one and is replied the unit. The
-// kernel replays a scope answered by its clauses or by a named model as the
-// fold of `State`'s free model, one constructor per operation.
+// kernel replays each scope as the fold of `State`'s free model, one
+// constructor per operation, and a scope the model in scope answers as the
+// one naming that model.
 
 // The theory `State`.
 import "./state.gandr";

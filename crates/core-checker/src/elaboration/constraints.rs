@@ -208,6 +208,9 @@ pub struct Deferrals
     /// The nodes of the nominated holes the running judgement met, in the
     /// order it met them.
     pub nominated: Vec<ValueId>,
+    /// Each hole of a resolved model slot the running judgement did not meet,
+    /// beside the closed component of the one elaboration that answers it.
+    pub answered: BTreeMap<HoleId, ValueId>,
 }
 
 impl Deferrals
@@ -232,7 +235,8 @@ impl Deferrals
         captures: [owed = self.owed.len(), suspended = self.suspended.len()],
         ensures: self.collecting == collecting && self.residue.equations.is_empty()
             && self.residue.dependencies.is_empty()
-            && self.nominated.is_empty() && usize::from(self.metas.count()) == 0
+            && self.nominated.is_empty() && self.answered.is_empty()
+            && usize::from(self.metas.count()) == 0
             && self.owed.len() == owed && self.suspended.len() == suspended,
     )]
     pub fn open(
@@ -245,6 +249,7 @@ impl Deferrals
         self.emission.restart();
         self.metas = Metas::new();
         self.nominated.clear();
+        self.answered.clear();
     }
 
     /// Take what the running judgement left, leaving the residue empty.
@@ -710,28 +715,32 @@ impl Deferrals
 
     /// Each nominated hole the running judgement met, with its solution and
     /// the binders the solution is written under, or the node of the first
-    /// one the solver left unbound and why.
+    /// one the solver left unbound and why; and each hole a slot's resolution
+    /// answered without the judgement meeting it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one entry per hole met, its solution in its own context and
-    ///   that context's binders, when every one is bound; the first unbound
-    ///   one's node otherwise, with the reason of the first equation in the
-    ///   store that waits on it, names it or has its decode at a head, or
-    ///   [`Unsolved::Unforced`] when none does; nothing when the judgement met
-    ///   none.
+    ///   that context's binders, when every one is bound, and one per hole
+    ///   [`Self::resolve`] answered, its elaboration's closed component at no
+    ///   binder; the first unbound met one's node otherwise, with the reason of
+    ///   the first equation in the store that waits on it, names it or has its
+    ///   decode at a head, or [`Unsolved::Unforced`] when none does; nothing
+    ///   when the judgement met none and no resolution answered one.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a call whose argument forces its implicit answers the
     ///   solution; one whose arguments force none answers the hole, unforced;
     ///   one whose only solution names a binder of an argument's own lambda
-    ///   answers the hole and its escape.
+    ///   answers the hole and its escape; a slot's hole the judgement never met
+    ///   answers its elaboration's component.
     /// - witness: `elaboration::tests::an_omitted_implicit_is_solved_from_the_argument_1216`
     /// - witness: `elaboration::tests::an_implicit_no_argument_forces_is_unsolved_1216`
     /// - witness: `elaboration::tests::an_implicit_solved_past_its_scope_escapes_1216`
+    /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
     #[spec(ensures: |ret| ret.as_ref().map_or(!self.nominated.is_empty(), |solutions| {
-        solutions.len() == self.nominated.len()
+        solutions.len() == self.nominated.len().saturating_add(self.answered.len())
     }))]
     pub fn solutions(
         &self,
@@ -757,6 +766,13 @@ impl Deferrals
                 },
             }
         }
+        // A candidate's components are closed, so each reads the same under
+        // any binders the hole stands beneath.
+        solutions.extend(
+            self.answered
+                .iter()
+                .map(|(&hole, &component)| (hole, (component, Binders::NONE))),
+        );
         Ok(solutions)
     }
 
@@ -773,16 +789,19 @@ impl Deferrals
     ///   the solver bound, its components posed against the holes the judgement
     ///   met and its code of each sort the slot fixes against the slot's, where
     ///   the slot's code reads no binder of the callee, and one the solver
-    ///   refutes is dropped. A hole the judgement did not meet stands in no
-    ///   term, as a law no handler clause reads, so nothing binds it.
-    ///   Candidates left are counted up to conversion: one whose components and
-    ///   codes convert with the first one left's ([`agreement`]) is the same
+    ///   refutes is dropped. A hole the judgement did not meet is not posed: a
+    ///   capability scope's carrier, which its clauses read only through its
+    ///   decode, read as the unknown type, or a law no clause reads. Candidates
+    ///   left are counted up to conversion: one whose components and codes
+    ///   convert with the first one left's ([`agreement`]) is the same
     ///   elaboration, as a model including another is at the included model's
     ///   theory, and is not counted again. A single elaboration binds the holes
     ///   as its candidate's trial did, its equations solved again against the
-    ///   store. A slot whose met holes are all bound, one none of whose holes
-    ///   the judgement met, and a candidate of another arity, or carrying
-    ///   another number of fixed sorts, are left out.
+    ///   store, and answers each hole the judgement did not meet by its
+    ///   component at the hole's place, kept in `answered` for
+    ///   [`Self::solutions`]. A slot whose met holes are all bound, one none of
+    ///   whose holes the judgement met, and a candidate of another arity, or
+    ///   carrying another number of fixed sorts, are left out.
     /// - fails: [`CheckRefusal::ModelUnanswered`] at the slot's first hole when
     ///   no candidate is left; [`CheckRefusal::ModelAmbiguous`] there, naming
     ///   the first candidate left and every one not converting with it, when
@@ -803,13 +822,14 @@ impl Deferrals
     ///   no candidate of the forced sort answers is unanswered; a slot whose
     ///   type fixes the sort resolves to the candidate of that sort alone; two
     ///   candidates passing the same members are one elaboration; a slot with a
-    ///   hole the judgement never met resolves on the others.
+    ///   hole the judgement never met resolves on the others, and its
+    ///   elaboration answers that hole.
     /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
     /// - witness: `elaboration::tests::a_model_slot_two_candidates_answer_is_ambiguous_739`
     /// - witness: `elaboration::tests::a_model_slot_no_candidate_answers_is_refused_739`
     /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
     /// - witness: `elaboration::tests::two_candidates_passing_one_member_are_one_elaboration_2333`
-    /// - witness: `elaboration::tests::a_model_slot_resolves_on_the_holes_the_judgement_met_2272`
+    /// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
     #[spec(ensures: |ret| match ret {
         | Err((at, CheckRefusal::ModelAmbiguous { at: named, survivors })) => at == named && (survivors.places().count() > 1 || u32::from(survivors.beyond()) > 0),
         | Err((at, refusal)) => refusal == CheckRefusal::ModelUnanswered { at },
@@ -901,6 +921,11 @@ impl Deferrals
                     // holes as its trial did.
                     pose(&mut equations, &self.metas, &holes, &closed, candidate);
                     let _solved = gandr_core_unify::solve(arena, &mut self.metas, &equations);
+                    for (hole, &component) in slot.holes.iter().zip(&candidate.components) {
+                        if !met.contains_key(hole) {
+                            let _first = self.answered.insert(*hole, component);
+                        }
+                    }
                 },
                 (0, _) | (_, None) => {
                     return Err((first, CheckRefusal::ModelUnanswered { at: first }));
@@ -944,7 +969,7 @@ struct Component(usize);
 /// - hypothesis: L3 — as [`Deferrals::resolve`].
 /// - witness: `elaboration::tests::a_model_slot_resolves_to_the_candidate_its_sort_admits_739`
 /// - witness: `elaboration::tests::a_manifest_model_slot_resolves_to_the_candidate_of_its_fixed_sort_2317`
-/// - witness: `elaboration::tests::a_model_slot_resolves_on_the_holes_the_judgement_met_2272`
+/// - witness: `elaboration::tests::a_slot_hole_the_judgement_never_met_is_answered_by_the_elaboration_2755`
 #[spec(ensures: equations.len() <= holes.len().saturating_add(closed.len()))]
 fn pose(
     equations: &mut Vec<gandr_core_unify::Equation>,

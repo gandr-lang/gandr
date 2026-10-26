@@ -80,6 +80,17 @@ def unansweredAtTwo() -> Integer => Integer {
   }
 }
 
+/// No model named, and the subject computing an integer where the scope
+/// answers the carrier of `Passing`, the one model of `State` at an integer
+/// state in scope, a function of the state: the scope answers that model's
+/// carrier as naming it does (#2755).
+@[ refuses("TypeMismatch") ]
+def inScopeAtInteger() -> Integer {
+  handle st : State with sort S = Integer {
+    pure 1
+  }
+}
+
 /// A second state-passing model at an integer state: reading answers zero,
 /// and storing is forgotten.
 module Forgetting : Model(State) with sort S = Integer {
