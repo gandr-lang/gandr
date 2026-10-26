@@ -1,16 +1,16 @@
-6:1-6:3 pub ⇒ not : Bool => Bool @6:1-6:5
-6:5-6:7 def ⇒ not : Bool => Bool @6:5-6:45
-6:9-6:12 not( ⇒ not : Bool => Bool @6:9-6:12
+6:1-6:3 pub ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:1-6:5
+6:5-6:7 def ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-6:45
+6:9-6:12 not( ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:9-6:12
 6:13-6:13 b ⇒ b : Bool @6:13-6:14
-6:15-6:15 : ⇒ not : Bool => Bool @6:5-6:45
+6:15-6:15 : ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-6:45
 6:17-6:20 Unit ⇒ Unit : Type @6:17-6:21
 6:22-6:22 + ⇒ Unit + Unit : Type @6:17-6:28
 6:24-6:27 Unit ⇒ Unit : Type @6:24-6:28
-6:28-6:31 ) -> ⇒ not : Bool => Bool @6:5-6:45
+6:28-6:31 ) -> ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-6:45
 6:33-6:36 Unit ⇒ Unit : Type @6:33-6:37
 6:38-6:38 + ⇒ Unit + Unit : Type @6:33-6:44
 6:40-6:43 Unit ⇒ Unit : Type @6:40-6:44
-6:45-6:45 { ⇒ not : Bool => Bool @6:5-11:2
+6:45-6:45 { ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-11:2
 7:3-7:6 case ⇒ -F Bool @7:3-10:4
 7:8-7:8 b ⇒ b : Bool @7:8-7:9
 7:10-7:10 { ⇒ -F Bool @7:3-10:4
@@ -34,7 +34,7 @@
 9:25-9:25 u ⇒ u : Unit @9:25-9:26
 9:26-9:26 } ⇒ Bool @9:18-9:27
 10:3-10:3 } ⇒ -F Bool @7:3-10:4
-11:1-11:1 } ⇒ not : Bool => Bool @6:5-11:2
+11:1-11:1 } ⇒ not : Bool => Bool⏎⏎Negation on the booleans, `+{Unit, Unit}`. @6:5-11:2
 14:1-14:3 def ⇒ not_not : Bool => Bool⏎⏎Negation twice. @14:1-14:45
 14:5-14:12 not_not( ⇒ not_not : Bool => Bool⏎⏎Negation twice. @14:5-14:12
 14:13-14:13 b ⇒ b : Bool @14:13-14:14
@@ -55,21 +55,21 @@
 15:12-15:12 ) ⇒ -F Bool @15:7-15:13
 15:13-15:13 ) ⇒ -F Bool @15:3-15:14
 16:1-16:1 } ⇒ not_not : Bool => Bool⏎⏎Negation twice. @14:1-16:2
-19:1-19:3 pub ⇒ same : Bool => Bool @19:1-19:5
-19:5-19:7 def ⇒ same : Bool => Bool @19:5-19:46
-19:9-19:13 same( ⇒ same : Bool => Bool @19:9-19:13
+19:1-19:3 pub ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @19:1-19:5
+19:5-19:7 def ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @19:5-19:46
+19:9-19:13 same( ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @19:9-19:13
 19:14-19:14 b ⇒ b : Bool @19:14-19:15
-19:16-19:16 : ⇒ same : Bool => Bool @19:5-19:46
+19:16-19:16 : ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @19:5-19:46
 19:18-19:21 Unit ⇒ Unit : Type @19:18-19:22
 19:23-19:23 + ⇒ Unit + Unit : Type @19:18-19:29
 19:25-19:28 Unit ⇒ Unit : Type @19:25-19:29
-19:29-19:32 ) -> ⇒ same : Bool => Bool @19:5-19:46
+19:29-19:32 ) -> ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @19:5-19:46
 19:34-19:37 Unit ⇒ Unit : Type @19:34-19:38
 19:39-19:39 + ⇒ Unit + Unit : Type @19:34-19:45
 19:41-19:44 Unit ⇒ Unit : Type @19:41-19:45
-19:46-19:46 { ⇒ same : Bool => Bool @19:5-21:2
+19:46-19:46 { ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @19:5-21:2
 20:3-20:3 b ⇒ b : Bool @20:3-20:4
-21:1-21:1 } ⇒ same : Bool => Bool @19:5-21:2
+21:1-21:1 } ⇒ same : Bool => Bool⏎⏎The identity on the booleans. @19:5-21:2
 24:1-24:3 def ⇒ involution : Path(Bool => Bool, not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @24:1-24:90
 24:5-24:14 involution ⇒ involution : Path(Bool => Bool, not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @24:5-24:15
 24:16-24:16 : ⇒ involution : Path(Bool => Bool, not_not, same)⏎⏎Negation twice is the identity: they agree at both booleans. @24:1-24:90

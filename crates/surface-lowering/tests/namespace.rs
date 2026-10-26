@@ -4505,3 +4505,71 @@ fn documentation_before_a_pub_mark_documents_its_declaration_2687()
         "each marked declaration reads the documentation before its mark"
     );
 }
+
+/// #2687: a document laid after its closure's tree stands under a root of its
+/// own, and documentation written before a `pub` mark there still documents
+/// the declaration the mark exports, as the editor's hover reads it.
+#[test]
+fn documentation_before_a_pub_mark_reaches_a_document_laid_after_its_closure_2687()
+{
+    let pbg = grammar();
+    let base = SourceText::from("/// The base.\npub def base = 1 ;");
+    let document = SourceText::from(
+        "import \"./base.gandr\" ;\n/// The answer.\npub def answer = base ;\n/// Plain.\ndef \
+         plain = 2 ;",
+    );
+    let imports = [ImportTarget::Source(SourceIndex::from(0_usize))];
+    let (text, unit) = laid(&[(base, &[]), (document, &imports)]);
+    let start = unit
+        .sources()
+        .get(1_usize)
+        .map(|source| usize::from(source.start()))
+        .expect("the document is the second source");
+    let closure = ClosureLowering::new(
+        Arc::new(grammar()),
+        String::from(text.get(.. start).expect("the closure's text")),
+        Unit::new(unit.sources().get(.. 1_usize).expect("the base").to_vec())
+            .expect("the base alone is a unit"),
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+        |pbg, closure| parse(pbg, closure).map(ParseResult::into_tree),
+    )
+    .expect("the closure parses");
+    let joined = parse(
+        &pbg,
+        SourceText::from(text.get(start ..).expect("the document's text")),
+    )
+    .expect("the document parses")
+    .after(closure.tree(), SourceText::from(text.as_str()))
+    .expect("the document lays after its closure")
+    .into_tree();
+    let mut arena = CoreArena::new();
+    let module = closure
+        .resume(&joined, &unit, &mut arena, &mut Decisions::none())
+        .expect("the document lowers resumed");
+    let documented = |name: &str| {
+        module
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name().as_ref() == name)
+            .and_then(
+                |declaration| match module.documentation(declaration.introduced()) {
+                    Maybe::Present(documentation) => Some(format!("{:?}", documentation.text())),
+                    Maybe::Absent(_) => None,
+                },
+            )
+    };
+    assert_eq!(
+        [
+            documented("base"),
+            documented("answer"),
+            documented("plain")
+        ],
+        [
+            Some(String::from("DocumentationText(\"The base.\")")),
+            Some(String::from("DocumentationText(\"The answer.\")")),
+            Some(String::from("DocumentationText(\"Plain.\")")),
+        ],
+        "a marked declaration in either root reads the documentation before its mark"
+    );
+}
