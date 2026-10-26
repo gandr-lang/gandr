@@ -19,7 +19,6 @@ def other : Type;
 def held : other;
 
 /// A code filled with the string type.
-@[ checks ]
 def stringy : Type = String;
 
 /// Three at the decode of the code filled with `String`: the comparison is

@@ -12,7 +12,6 @@ import "./data-base.gandr";
 
 /// Addition by recursion on the first argument, the second an accumulator
 /// each call grows: `plus(Succ(p), n) = plus(p, Succ(n))`.
-@[ checks ]
 def rec plusFirst(m : Nat, n : Nat) -> Nat {
   case m {
     Zero => n,
@@ -22,7 +21,6 @@ def rec plusFirst(m : Nat, n : Nat) -> Nat {
 
 /// Half a number, rounded down: the inner match takes apart the outer one's
 /// field, so the call on its field still descends on `n`.
-@[ checks ]
 def rec half(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -35,7 +33,6 @@ def rec half(n : Nat) -> Nat {
 
 /// Fibonacci numbers: the first call rebuilds `Succ(q)` from the inner
 /// match's field, a value below `n` though not one of its fields.
-@[ checks ]
 def rec fib(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -50,7 +47,6 @@ def rec fib(n : Nat) -> Nat {
 /// the accumulator each call grows is a constructor written bare, its type
 /// read off the parameter it fills, the element type standing for itself
 /// (#2127).
-@[ checks ]
 def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> List(a) {
   case xs {
     Nil => acc,
@@ -62,7 +58,6 @@ def rec reverseOnto(a : Type, xs : List(a), acc : List(a)) -> List(a) {
 /// on `xs` and consumes `ys` alongside it, so the call under the match on
 /// `ys` still descends on `xs`, the parameter a match above it takes apart
 /// (#2135).
-@[ checks ]
 def rec pairwise(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
   case xs {
     Nil => Nil,

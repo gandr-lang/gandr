@@ -8,7 +8,6 @@
 def neutral = 0;
 
 /// The sum of two integers.
-@[ checks ]
 def combine(x : Integer, y : Integer) -> Integer {
   x + y
 }

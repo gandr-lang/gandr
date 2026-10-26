@@ -6,25 +6,21 @@
 // proves the path.
 
 /// A pair is the pair of its projections.
-@[ checks ]
 def etaPair(e : Integer * Integer) -> Path(Integer * Integer, (e.0, e.1), e) {
   here(e)
 }
 
 /// The pair of projections stands on either side.
-@[ checks ]
 def etaPairRight(e : Integer * Integer) -> Path(Integer * Integer, e, (e.0, e.1)) {
   here(e)
 }
 
 /// A record is the record of its fields.
-@[ checks ]
 def etaRecord(e : #{r : Integer}) -> Path(#{r : Integer}, #{.r = e.r}, e) {
   here(e)
 }
 
 /// A record of two fields, each read by its label.
-@[ checks ]
 def etaRecordTwo(e : #{l : Integer, r : Integer}) -> Path(
   #{l : Integer, r : Integer},
   #{.l = e.l, .r = e.r},
@@ -35,7 +31,6 @@ def etaRecordTwo(e : #{l : Integer, r : Integer}) -> Path(
 
 /// A dependent pair, the second component's type reading the first, is the
 /// pair of its components.
-@[ checks ]
 def etaFiber(e : #{n : Integer, v : Path(Integer, n, n)}) -> Path(
   #{n : Integer, v : Path(Integer, n, n)},
   (e.n, e.v),

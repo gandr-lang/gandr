@@ -2,11 +2,9 @@
 // as it was, so no name aliases another's change.
 
 /// A record of two fields.
-@[ checks ]
 def r = #{x = 1, y = 2};
 
 /// `r` updated at `x`: a new record.
-@[ checks ]
 def r2 = #{r | x = 9};
 
 /// The run target returns `r`, still at `x = 1`.

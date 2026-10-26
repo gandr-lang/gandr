@@ -3,7 +3,6 @@
 // Programming Languages_, MIT Press, 2002, § 11.2).
 
 /// Forty-two, read off the one arm a unit takes.
-@[ checks ]
 def answer(u : Unit) -> Integer {
   case u {
     unit => 42

@@ -12,7 +12,6 @@ import "./seat-evolution.gandr";
 import "./seat-prefix.gandr";
 
 /// An open play ridden forward along the simulation (#1318).
-@[ checks ]
 def carried(play : Prefix(Seat.SeatEnd)) -> Prefix(Evolution.SeatEnd′) {
   ride(\X. Prefix(X), Evolution.sub, play)
 }

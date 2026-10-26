@@ -17,7 +17,6 @@
 import "./data-base.gandr";
 
 /// A function applied to an argument, both at one type parameter.
-@[ checks ]
 def apply(a : Type, b : Type, f : a => b, x : a) -> b {
   f(x)
 }
@@ -25,7 +24,6 @@ def apply(a : Type, b : Type, f : a => b, x : a) -> b {
 /// A number rebuilt, each predecessor counted through `apply`: the call
 /// instantiates `apply`'s parameter at the predecessor's stage, so `count[<]`
 /// takes it.
-@[ checks ]
 def rec count(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -35,7 +33,6 @@ def rec count(n : Nat) -> Nat {
 
 /// A function applied to a number below a stage `i`, which a call
 /// instantiates at the stage its arguments show.
-@[ checks ]
 def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> Nat {
   f(x)
 }
@@ -43,7 +40,6 @@ def applyAt @[i : Size] (f : Nat[<i] => Nat, x : Nat[<i]) -> Nat {
 /// A number rebuilt, each predecessor handed through `applyAt`: the
 /// predecessor stands one below the recursion's stage, so the call
 /// instantiates `i` at that stage and `helped[<]` takes the predecessor.
-@[ checks ]
 def rec helped(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -58,7 +54,6 @@ def helpedTwo : () => Nat = helped(Succ(Succ(Zero)));
 /// The predecessor of a number at a stage `i`, zero's its own: the result
 /// stands at `i` too, as the signature states, the returner inserted over the
 /// staged type and never over its base (#2373).
-@[ checks ]
 def predAt @[i : Size] (n : Nat[i]) -> Nat[i] {
   case n {
     Zero => Zero,
@@ -69,7 +64,6 @@ def predAt @[i : Size] (n : Nat[i]) -> Nat[i] {
 /// Half a number, rounded up, recursing on its predecessor's predecessor read
 /// through `predAt`: the call instantiates `i` at the field's stage, below the
 /// recursion's, and the result stands there for `halvedAt[<]` to take.
-@[ checks ]
 def rec halvedAt(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -84,7 +78,6 @@ def halvedAtFour : () => Nat = halvedAt(Succ(three));
 /// A number below a stage `j` handed back, the stage `k` it stands at bounded
 /// below `j`: the result stands below `j`, as the body was checked with `k`
 /// there; written without its returner, as `predAt`'s is (#2373).
-@[ checks ]
 def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> Nat[<j] {
   y
 }
@@ -94,7 +87,6 @@ def boundedAt @[j : Size, k : Size, k < j] (x : Nat[j], y : Nat[k]) -> Nat[<j] {
 /// the result stands below the number and `boundedHelped[<]` takes it. A call
 /// whose `k` is not below its `j` is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1241).
-@[ checks ]
 def rec boundedHelped(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -107,7 +99,6 @@ def rec boundedHelped(n : Nat) -> Nat {
 def boundedTwo : () => Nat = boundedHelped(Succ(Succ(Zero)));
 
 /// A function applied to a number at a stage `i` itself, not below it.
-@[ checks ]
 def sameAt @[i : Size] (f : Nat[i] => Nat, x : Nat[i]) -> Nat {
   f(x)
 }
@@ -118,7 +109,6 @@ def sameAt @[i : Size] (f : Nat[i] => Nat, x : Nat[i]) -> Nat {
 /// there, so the call solves `i` at the predecessor's stage. A call whose
 /// arguments no stage fits is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1227).
-@[ checks ]
 def rec agreed(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -134,14 +124,12 @@ def agreedTwo : () => Nat = agreed(Succ(Succ(Zero)));
 /// stage supplied by name: the arguments show `i` at `j`, the stage the
 /// supply states. A supply the arguments do not show is refused in
 /// `../../pathological/data/sized-higher-order.gandr` (#1227).
-@[ checks ]
 def appliedAt @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
   applyAt[i = j](f, x)
 }
 
 /// A function and a number below a stage `j`, handed to a third function
 /// that applies the one to the other.
-@[ checks ]
 def handedAt @[j : Size] (
   g : (Nat[<j] => Nat, Nat[<j]) => Nat,
   f : Nat[<j] => Nat,
@@ -153,7 +141,6 @@ def handedAt @[j : Size] (
 /// `applyAt` passed as a value with its stage supplied: a stage crosses only
 /// at a call's head, so the supply stands as `λ f. λ x. applyAt[i = j](f, x)`
 /// (#1498).
-@[ checks ]
 def passedAt @[j : Size] (f : Nat[<j] => Nat, x : Nat[<j]) -> Nat {
   handedAt[j = j](applyAt[i = j], f, x)
 }

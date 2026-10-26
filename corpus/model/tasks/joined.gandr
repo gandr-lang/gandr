@@ -6,7 +6,6 @@
 import "./task-base.gandr";
 
 /// A scope exiting after the parent read its task's end to its close.
-@[ checks ]
 def joined() -> Unit {
   handle c : Proc {
     fork (task : Task.Join) {

@@ -11,20 +11,17 @@
 import "./circle-base.gandr";
 
 /// One successor more, the naturals' step for the paths a recursion builds.
-@[ checks ]
 def next(n : Nat) -> Nat {
   Succ(n)
 }
 
 /// A parameter's inverse, read at the parameter's written type, then the
 /// parameter again.
-@[ checks ]
 def backThen(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
   back(p) then p
 }
 
 /// A parameter composed in a type, and reflexivity at it (#423).
-@[ checks ]
 def stated(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   p then loop,
@@ -34,19 +31,16 @@ def stated(p : Path(Circle, Base, Base)) -> Path(
 }
 
 /// A loop walked twice.
-@[ checks ]
 def walkTwice(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
   p then p
 }
 
 /// A call's inverse, read at the result `walkTwice` writes, then the loop.
-@[ checks ]
 def untwice(p : Path(Circle, Base, Base)) -> Path(Circle, Base, Base) {
   back(walkTwice(p)) then loop
 }
 
 /// A call composed in a type (#423).
-@[ checks ]
 def thrice(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   walkTwice(p) then p,
@@ -57,7 +51,6 @@ def thrice(p : Path(Circle, Base, Base)) -> Path(
 
 /// A call of a declaration whose own type holds a derived operation: that
 /// type is read before the operation over it.
-@[ checks ]
 def unthrice(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   walkTwice(p) then p,
@@ -71,13 +64,11 @@ def unthrice(p : Path(Circle, Base, Base)) -> Path(
 def stay : (a : Nat) => Path(Nat, a, a);
 
 /// A call of a signature, read at the result it states.
-@[ checks ]
 def stayUp(a : Nat) -> Path(Nat, Succ(a), Succ(a)) {
   cong(next, stay(a)) then here(Succ(a))
 }
 
 /// A recursive call, read at its function's own result.
-@[ checks ]
 def rec still(b : Nat) -> Path(Nat, b, b) {
   case b {
     Zero => here(Zero),
@@ -86,14 +77,12 @@ def rec still(b : Nat) -> Path(Nat, b, b) {
 }
 
 /// `cong` over a parameter function, read at the result its type writes.
-@[ checks ]
 def mapped(f : Circle => Nat) -> Path(Nat, f(Base), f(Base)) {
   back(cong(f, loop))
 }
 
 /// `cong` at a parameter map whose type reads an earlier parameter, the type
 /// it maps from: its result read where the operation stands (#546).
-@[ checks ]
 def mappedOver(b : Type, g : b => Nat, u : b, v : b, q : Path(b, u, v)) -> Path(
   Nat,
   g(v),
@@ -103,7 +92,6 @@ def mappedOver(b : Type, g : b => Nat, u : b, v : b, q : Path(b, u, v)) -> Path(
 }
 
 /// The same map into a type it reads, in a type and in a body (#546).
-@[ checks ]
 def mappedInto(a : Type, b : Type, g : b => a, u : b, v : b, q : Path(b, u, v)) -> Path(
   Path(a, g(u), g(v)),
   cong(g, q),

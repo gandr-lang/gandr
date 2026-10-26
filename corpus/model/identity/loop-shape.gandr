@@ -21,7 +21,6 @@ theory CircleShape {
 }
 
 /// The number of laws in a presentation's rule chain.
-@[ checks ]
 def rec laws(chain : Theory) -> Integer {
   case chain {
     Rule(name, left, right, rest) => { run r <- laws[<](rest); r + 1 },
@@ -30,7 +29,6 @@ def rec laws(chain : Theory) -> Integer {
 }
 
 /// The number of laws a presentation states.
-@[ checks ]
 def law_count(presented : Theory) -> Integer {
   case presented {
     Presents(sorts, opers, rules) => laws(rules),
@@ -56,12 +54,10 @@ module Winding : Model(CircleShape) {
 
   def unturn(n : Int) -> Int { P(n) }
 
-  @[ checks ]
   def turnUnturn(n : Int) -> Path(Int, turn(unturn(n)), n) {
     here(n)
   }
 
-  @[ checks ]
   def unturnTurn(n : Int) -> Path(Int, unturn(turn(n)), n) {
     here(n)
   }

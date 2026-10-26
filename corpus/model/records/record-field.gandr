@@ -4,7 +4,6 @@
 // one is read: a body, a bind, a run target, a path's endpoint.
 
 /// A record holding a record, no type written for either.
-@[ checks ]
 def nest = #{tag = "t", inner = #{x = 1, y = 2}};
 
 /// The field `inner` of `nest`, a record.
@@ -25,7 +24,6 @@ def boundField() -> Integer {
 
 /// The record rebuilt from its fields is the record: η, a path whose
 /// endpoints read the fields off `nest`.
-@[ checks ]
 def rebuilt() -> Path(
   #{tag : String, inner : #{x : Integer, y : Integer}},
   #{.tag = nest.tag, .inner = nest.inner},

@@ -4,14 +4,12 @@ data Either(a : Type, b : Type,) : Type {
   Right : (y : b,) --> Either(a, b,);
 }
 
-@[ checks ]
 data Color : Type {
   Red : Color;
   Green : Color;
   Blue : Color;
 }
 
-@[ checks ]
 def from_left() -> Integer {
   case (Left(5,) : Either(Integer, String,)) {
     | Left(x,) => x,
@@ -19,7 +17,6 @@ def from_left() -> Integer {
   }
 }
 
-@[ checks ]
 def warm(c : Color) -> Integer {
   case c {
     | Red
@@ -28,7 +25,6 @@ def warm(c : Color) -> Integer {
   }
 }
 
-@[ checks ]
 def cool(c : Color) -> Integer {
   case c { Red | Green => 0, | Blue => 1, }
 }
@@ -39,7 +35,6 @@ def first(x : Integer, y : Integer) -> Integer { x }
 @[ runs("42") ]
 def chosen() -> Integer { become (force first)(42,)(7,) }
 
-@[ checks ]
 def pick(x : Integer, y : Integer,) -> Integer {
   x
 }

@@ -9,7 +9,6 @@ import "../../model/circuit/circuit-feed-wheel.gandr";
 
 /// The running sum's step, the `emit` its model gives: the output fed back
 /// plus the stream's value.
-@[ checks ]
 def step(s : Integer, x : Integer) -> Integer { s + x }
 
 /// The trace the wheel would run over `1, 2, 3` from zero, unrolled by hand:

@@ -11,7 +11,6 @@
 /// encloses both. `q` moves under the restriction, so the law states `a`
 /// fresh for it (`freshness.gandr`). The checker orients the law, finds no
 /// critical pair and the kernel replays the verdict.
-@[ checks ]
 theory Scope {
   sort Name : Atom;
   sort Proc : Type;
@@ -24,7 +23,6 @@ theory Scope {
 /// Two laws whose left sides differ only in the atom they abstract: one left
 /// side once re-minted, so the laws overlap at the root, and completion joins
 /// `nil()` and `stop()` as it would for one binder-free left side.
-@[ checks ]
 theory Alpha {
   sort Name : Atom;
   sort Proc : Type;
@@ -37,7 +35,6 @@ theory Alpha {
 
 /// Structural recursion over a rule chain: one per `Derived` link, the
 /// rules completion added to join a critical pair.
-@[ checks ]
 def rec derived(chain : Theory) -> Integer {
   case chain {
     Rule(name, lhs, rhs, rest) => derived[<](rest),

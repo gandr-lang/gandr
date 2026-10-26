@@ -25,7 +25,6 @@ def unwound() -> Integer {
 }
 
 /// A list built where it runs.
-@[ checks ]
 def built(a : Integer) -> List(Integer) {
   pure cons(a, cons(2, nil))
 }

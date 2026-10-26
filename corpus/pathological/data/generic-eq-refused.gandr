@@ -6,31 +6,26 @@
 // induction.
 
 /// A shape holding a function, which has no equality the program decides.
-@[ checks ]
 data Shape : Type {
   Shape : (f : Integer => Integer) --> Shape;
 }
 
 /// A box over any type: its equality needs its argument's.
-@[ checks ]
 data Box(a : Type) : Type {
   Box : (x : a) --> Box(a);
 }
 
 /// A point in the plane.
-@[ checks ]
 data Point : Type {
   Point : (x : Integer, y : Integer) --> Point;
 }
 
 /// A point with a flag.
-@[ checks ]
 data Flagged : Type {
   Flagged : (x : Integer, shown : Bool) --> Flagged;
 }
 
 /// Unary naturals.
-@[ checks ]
 data Peano : Type {
   Nought : Peano;
   Next : (n : Peano) --> Peano;

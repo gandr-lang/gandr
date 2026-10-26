@@ -2,7 +2,6 @@
 // target: the program's result, here the value the definition names.
 
 /// A string, named.
-@[ checks ]
 def greeting = "the value zone";
 
 /// The run target returns the named value.

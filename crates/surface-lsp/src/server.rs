@@ -9519,7 +9519,10 @@ mod tests
                             .unwrap_or("?");
                         format!(
                             "{}:{column} `{spelled}` {}→{}",
-                            line.saturating_add(1),
+                            crate::anchor::anchored(
+                                crate::anchor::Source(&text),
+                                crate::anchor::Row(line)
+                            ),
                             named(written_kind),
                             named(judged_kind)
                         )
@@ -9530,13 +9533,13 @@ mod tests
         assert_eq!(
             changed("data-maybe.gandr"),
             [
-                "25:53 `m` variable→parameter",
-                "25:56 `m` variable→parameter",
-                "26:7 `m` variable→parameter",
-                "27:17 `m` variable→parameter",
-                "28:20 `m` variable→parameter",
-                "48:8 `t` variable→parameter",
-                "55:8 `d` variable→parameter",
+                "def kept+0:53 `m` variable→parameter",
+                "def kept+0:56 `m` variable→parameter",
+                "def kept+1:7 `m` variable→parameter",
+                "def kept+2:17 `m` variable→parameter",
+                "def kept+3:20 `m` variable→parameter",
+                "def keptTally+1:8 `t` variable→parameter",
+                "def keptDuo+1:8 `d` variable→parameter",
             ],
             "each use of a parameter (`m`, `t`, `d`) is a parameter; the family and its constructors \
              the highlighter already names"
@@ -9544,8 +9547,8 @@ mod tests
         assert_eq!(
             changed("sums-and-case.gandr"),
             [
-                "8:4 `Inl` enumMember→unresolvedReference",
-                "16:0 `pick` variable→function"
+                "def pick+2:4 `Inl` enumMember→unresolvedReference",
+                "pick+0:0 `pick` variable→function"
             ],
             "the name the lowering refused `pick` for, an expected refusal, sent as unresolved; \
              the run target the lowering refuses still names `pick`, a function (#1265)"
@@ -9560,7 +9563,9 @@ mod tests
     #[test]
     fn a_name_is_sent_with_its_reading()
     {
-        let read = |name: &str, lines: core::ops::RangeInclusive<u32>| -> Vec<String> {
+        // Each row's line is named by the declaration it stands in (#2786),
+        // and only the declarations headed `heads` are read.
+        let read = |name: &str, heads: &[&str]| -> Vec<String> {
             let path = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../corpus/model/data")
                 .join(name);
@@ -9580,6 +9585,7 @@ mod tests
             )[0]["result"]["data"]
                 .clone();
             let judged: Vec<u32> = serde_json::from_value(answered).expect("a token stream");
+            let heads: alloc::collections::BTreeSet<&str> = heads.iter().copied().collect();
             let (mut line, mut column) = (0_u32, 0_u32);
             judged
                 .as_chunks::<5>()
@@ -9593,7 +9599,12 @@ mod tests
                         across
                     };
                     line = line.saturating_add(down);
-                    (bits & !2 != 0 && lines.contains(&line.saturating_add(1))).then(|| {
+                    let anchored = crate::anchor::anchored(
+                        crate::anchor::Source(&text),
+                        crate::anchor::Row(line),
+                    );
+                    let head = anchored.rsplit_once('+').map_or("", |(head, _)| head);
+                    (bits & !2 != 0 && heads.contains(head)).then(|| {
                         let start = usize::try_from(column).unwrap_or(usize::MAX);
                         let spelled = text
                             .lines()
@@ -9607,8 +9618,7 @@ mod tests
                             })
                             .unwrap_or("?");
                         let row = format!(
-                            "{}:{column} `{spelled}` {} ",
-                            line.saturating_add(1),
+                            "{anchored}:{column} `{spelled}` {} ",
                             usize::try_from(kind)
                                 .ok()
                                 .and_then(|kind| crate::tokens::TOKEN_TYPES.get(kind))
@@ -9632,65 +9642,69 @@ mod tests
                 .collect()
         };
         assert_eq!(
-            read("data-maybe.gandr", 1 ..= 30),
+            read("data-maybe.gandr", &[
+                "data Maybe",
+                "def unwrap_or_zero",
+                "def kept"
+            ]),
             [
-                "8:5 `Maybe` type declaration",
-                "9:2 `None` enumMember declaration+value",
-                "10:2 `Some` enumMember declaration+value",
-                "10:10 `x` parameter declaration+value",
-                "15:4 `unwrap_or_zero` function declaration",
-                "17:4 `None` enumMember value",
-                "18:4 `Some` enumMember value",
-                "18:9 `x` variable declaration+value",
-                "18:15 `x` variable value",
-                "25:4 `kept` function declaration",
-                "25:9 `m` parameter declaration+value",
-                "25:53 `m` parameter value",
-                "25:56 `m` parameter value",
-                "26:7 `m` parameter value",
-                "27:4 `None` enumMember value",
-                "27:17 `m` parameter value",
-                "28:4 `Some` enumMember value",
-                "28:9 `x` variable declaration+value",
-                "28:20 `m` parameter value",
+                "data Maybe+0:5 `Maybe` type declaration",
+                "data Maybe+1:2 `None` enumMember declaration+value",
+                "data Maybe+2:2 `Some` enumMember declaration+value",
+                "data Maybe+2:10 `x` parameter declaration+value",
+                "def unwrap_or_zero+0:4 `unwrap_or_zero` function declaration",
+                "def unwrap_or_zero+2:4 `None` enumMember value",
+                "def unwrap_or_zero+3:4 `Some` enumMember value",
+                "def unwrap_or_zero+3:9 `x` variable declaration+value",
+                "def unwrap_or_zero+3:15 `x` variable value",
+                "def kept+0:4 `kept` function declaration",
+                "def kept+0:9 `m` parameter declaration+value",
+                "def kept+0:53 `m` parameter value",
+                "def kept+0:56 `m` parameter value",
+                "def kept+1:7 `m` parameter value",
+                "def kept+2:4 `None` enumMember value",
+                "def kept+2:17 `m` parameter value",
+                "def kept+3:4 `Some` enumMember value",
+                "def kept+3:9 `x` variable declaration+value",
+                "def kept+3:20 `m` parameter value",
             ],
             "the family, its constructors and their telescope binder, each definition, parameter \
              and pattern variable declare; a constructor matched in a pattern and each name read \
              are values, the value an arm answers included"
         );
         assert_eq!(
-            read("sigma-pair.gandr", 17 ..= 28),
+            read("sigma-pair.gandr", &["def tag_of", "def tag"]),
             [
-                "18:4 `tag_of` function declaration",
-                "18:11 `p` parameter declaration+value",
-                "18:17 `n` typeParameter declaration+value",
-                "18:30 `w` typeParameter declaration+value",
-                "18:37 `n` typeParameter value",
-                "19:7 `p` parameter value",
-                "20:6 `m` variable declaration+value",
-                "20:9 `w` variable declaration+value",
-                "20:15 `m` variable value",
-                "26:4 `tag` function declaration",
-                "26:23 `tag_of` function computation",
-                "26:30 `tagged` function value",
+                "def tag_of+0:4 `tag_of` function declaration",
+                "def tag_of+0:11 `p` parameter declaration+value",
+                "def tag_of+0:17 `n` typeParameter declaration+value",
+                "def tag_of+0:30 `w` typeParameter declaration+value",
+                "def tag_of+0:37 `n` typeParameter value",
+                "def tag_of+1:7 `p` parameter value",
+                "def tag_of+2:6 `m` variable declaration+value",
+                "def tag_of+2:9 `w` variable declaration+value",
+                "def tag_of+2:15 `m` variable value",
+                "def tag+0:4 `tag` function declaration",
+                "def tag+0:23 `tag_of` function computation",
+                "def tag+0:30 `tagged` function value",
             ],
             "a dependent pair's labels bind; the called `tag_of` is run as a computation and \
              the `tagged` passed to it is a value; `tag`, one function form, declares once"
         );
         assert_eq!(
-            read("data-base.gandr", 22 ..= 25),
+            read("data-base.gandr", &["def rec plus"]),
             [
-                "22:8 `plus` function declaration+value",
-                "22:13 `n` parameter declaration+value",
-                "22:22 `m` parameter declaration+value",
-                "23:7 `m` parameter value",
-                "24:4 `Zero` enumMember value",
-                "24:12 `n` parameter value",
-                "25:4 `Succ` enumMember value",
-                "25:9 `p` variable declaration+value",
-                "25:20 `plus` function computation",
-                "25:28 `n` parameter value",
-                "25:31 `p` variable value",
+                "def rec plus+0:8 `plus` function declaration+value",
+                "def rec plus+0:13 `n` parameter declaration+value",
+                "def rec plus+0:22 `m` parameter declaration+value",
+                "def rec plus+1:7 `m` parameter value",
+                "def rec plus+2:4 `Zero` enumMember value",
+                "def rec plus+2:12 `n` parameter value",
+                "def rec plus+3:4 `Succ` enumMember value",
+                "def rec plus+3:9 `p` variable declaration+value",
+                "def rec plus+3:20 `plus` function computation",
+                "def rec plus+3:28 `n` parameter value",
+                "def rec plus+3:31 `p` variable value",
             ],
             "#1487: the recursive call's name, written with its claim as `plus[<]`, is run as a \
              computation as any called name is; the arguments passed to it are values"
@@ -10611,29 +10625,57 @@ mod tests
             start: at(Line::from(line), Character::from(0_u32)),
             end: at(Line::from(end_line), Character::from(end)),
         };
+        // Each declaration's line is found where its head is written, and
+        // each position within it counted from there (#2786).
+        let base =
+            std::fs::read_to_string(corpus.join("data-base.gandr")).expect("the base is read");
+        let [
+            minus_at,
+            divided_at,
+            halved_at,
+            difference_at,
+            quotient_at,
+            halved_three_at,
+            four_at,
+        ] = [
+            "def rec minus(",
+            "def rec divided(",
+            "def rec halvedUp(",
+            "def difference :",
+            "def quotient :",
+            "def halvedThree :",
+            "def digitsOfFour :",
+        ]
+        .map(|head| {
+            crate::anchor::line_of(crate::anchor::Source(&text), crate::anchor::Held(head)).0
+        });
+        let [two_at, three_at] = ["def two :", "def three :"].map(|head| {
+            crate::anchor::line_of(crate::anchor::Source(&base), crate::anchor::Held(head)).0
+        });
+        let below = |line: u32, by: u32| line.saturating_add(by);
         let minus = item(
             "following.gandr",
             "minus",
-            lines(15, 23, 1),
-            span(15, 8, 13),
+            lines(minus_at, below(minus_at, 8), 1),
+            span(minus_at, 8, 13),
         );
         let difference = item(
             "following.gandr",
             "difference",
-            lines(57, 57, 54),
-            span(57, 4, 14),
+            lines(difference_at, difference_at, 54),
+            span(difference_at, 4, 14),
         );
         let three = item(
             "data-base.gandr",
             "three",
-            lines(34, 34, 28),
-            span(34, 4, 9),
+            lines(three_at, three_at, 28),
+            span(three_at, 4, 9),
         );
         let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
         assert_eq!(
             ask(
                 "textDocument/prepareCallHierarchy",
-                prepare("following.gandr", 31, 28)
+                prepare("following.gandr", below(divided_at, 3), 28)
             ),
             serde_json::json!([minus]),
             "a call of `minus` in `divided` prepares `minus` at its definition"
@@ -10641,7 +10683,7 @@ mod tests
         assert_eq!(
             ask(
                 "textDocument/prepareCallHierarchy",
-                prepare("following.gandr", 57, 6)
+                prepare("following.gandr", difference_at, 6)
             ),
             serde_json::json!([difference]),
             "a value joined with its signature prepares at its one item"
@@ -10652,28 +10694,28 @@ mod tests
                 serde_json::json!({"item": minus})
             ),
             serde_json::json!([
-                call("from", &minus, &[span(20, 17, 22)]),
+                call("from", &minus, &[span(below(minus_at, 5), 17, 22)]),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "divided",
-                        lines(28, 33, 1),
-                        span(28, 8, 15)
+                        lines(divided_at, below(divided_at, 5), 1),
+                        span(divided_at, 8, 15)
                     ),
-                    &[span(31, 26, 31)]
+                    &[span(below(divided_at, 3), 26, 31)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedUp",
-                        lines(38, 43, 1),
-                        span(38, 8, 16)
+                        lines(halved_at, below(halved_at, 5), 1),
+                        span(halved_at, 8, 16)
                     ),
-                    &[span(41, 26, 31)]
+                    &[span(below(halved_at, 3), 26, 31)]
                 ),
-                call("from", &difference, &[span(57, 29, 34)]),
+                call("from", &difference, &[span(difference_at, 29, 34)]),
             ]),
             "`minus` is called by its own recursion and by three definitions, each at its call"
         );
@@ -10682,7 +10724,7 @@ mod tests
                 "callHierarchy/outgoingCalls",
                 serde_json::json!({"item": minus})
             ),
-            serde_json::json!([call("to", &minus, &[span(20, 17, 22)])]),
+            serde_json::json!([call("to", &minus, &[span(below(minus_at, 5), 17, 22)])]),
             "`minus` calls itself once, at the recursive call's name; `Succ` and `Zero` are no calls"
         );
         assert_eq!(
@@ -10691,8 +10733,8 @@ mod tests
                 serde_json::json!({"item": difference})
             ),
             serde_json::json!([
-                call("to", &three, &[span(57, 35, 40)]),
-                call("to", &minus, &[span(57, 29, 34)]),
+                call("to", &three, &[span(difference_at, 35, 40)]),
+                call("to", &minus, &[span(difference_at, 29, 34)]),
             ]),
             "`difference` calls the base's `three` and `minus`, the base's source first"
         );
@@ -10702,36 +10744,36 @@ mod tests
                 serde_json::json!({"item": three})
             ),
             serde_json::json!([
-                call("from", &difference, &[span(57, 35, 40)]),
+                call("from", &difference, &[span(difference_at, 35, 40)]),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "quotient",
-                        lines(61, 61, 60),
-                        span(61, 4, 12)
+                        lines(quotient_at, quotient_at, 60),
+                        span(quotient_at, 4, 12)
                     ),
-                    &[span(61, 40, 45)]
+                    &[span(quotient_at, 40, 45)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "halvedThree",
-                        lines(65, 65, 46),
-                        span(65, 4, 15)
+                        lines(halved_three_at, halved_three_at, 46),
+                        span(halved_three_at, 4, 15)
                     ),
-                    &[span(65, 39, 44)]
+                    &[span(halved_three_at, 39, 44)]
                 ),
                 call(
                     "from",
                     &item(
                         "following.gandr",
                         "digitsOfFour",
-                        lines(69, 69, 51),
-                        span(69, 4, 16)
+                        lines(four_at, four_at, 51),
+                        span(four_at, 4, 16)
                     ),
-                    &[span(69, 43, 48)]
+                    &[span(four_at, 43, 48)]
                 ),
             ]),
             "the base's `three`, asked about where no editor holds the base, is called by the \
@@ -10744,15 +10786,20 @@ mod tests
             ),
             serde_json::json!([call(
                 "to",
-                &item("data-base.gandr", "two", lines(30, 30, 33), span(30, 4, 7)),
-                &[span(34, 23, 26)]
+                &item(
+                    "data-base.gandr",
+                    "two",
+                    lines(two_at, two_at, 33),
+                    span(two_at, 4, 7)
+                ),
+                &[span(three_at, 23, 26)]
             )]),
             "`three`, read from disk, calls `two`"
         );
         assert_eq!(
             ask(
                 "textDocument/prepareCallHierarchy",
-                prepare("following.gandr", 31, 6)
+                prepare("following.gandr", below(divided_at, 3), 6)
             ),
             Value::Null,
             "a constructor prepares nothing"
@@ -10853,37 +10900,57 @@ mod tests
             if name == "invLooper" {
                 shown = Some(resolved.clone());
             }
-            rows.push(format!("{}: {name}: {title}", line.saturating_add(1)));
+            // Each lens's line is named by the declaration it stands in (#2786).
+            rows.push(format!(
+                "{}: {name}: {title}",
+                crate::anchor::anchored(
+                    crate::anchor::Source(&written),
+                    crate::anchor::Row(u32::try_from(line).unwrap_or(u32::MAX))
+                )
+            ));
         }
         assert_eq!(
             rows,
             [
-                "12: Empty: 0 references",
-                "17: Circle: 32 references",
-                "18: Base: 43 references",
-                "19: loop: 21 references",
-                "26: Int: 15 references",
-                "27: Z: 7 references",
-                "28: S: 4 references",
-                "29: P: 4 references",
-                "36: up: 1 reference",
-                "42: down: 1 reference",
-                "48: Nat: 3 references",
-                "49: Zero: 0 references",
-                "50: Succ: 0 references",
-                "56: wind: 4 references",
-                "68: spin: 4 references",
-                "78: loopOn: 1 reference",
-                "84: unloopOn: 1 reference",
-                "99: sect: 2 references",
-                "111: retr: 2 references",
-                "122: selfloop: 1 reference",
-                "130: selfrefl: 0 references",
-                "139: invLooper: 3 references",
-                "150: mul: 0 references",
+                "data Empty+0: Empty: 0 references",
+                "data Circle+0: Circle: 32 references",
+                "data Circle+1: Base: 43 references",
+                "data Circle+2: loop: 21 references",
+                "data Int+0: Int: 15 references",
+                "data Int+1: Z: 7 references",
+                "data Int+2: S: 4 references",
+                "data Int+3: P: 4 references",
+                "def up+0: up: 1 reference",
+                "def down+0: down: 1 reference",
+                "data Nat+0: Nat: 3 references",
+                "data Nat+1: Zero: 0 references",
+                "data Nat+2: Succ: 0 references",
+                "def rec wind+0: wind: 4 references",
+                "def rec spin+0: spin: 4 references",
+                "def loopOn+0: loopOn: 1 reference",
+                "def unloopOn+0: unloopOn: 1 reference",
+                "def rec sect+0: sect: 2 references",
+                "def rec retr+0: retr: 2 references",
+                "def selfloop+0: selfloop: 1 reference",
+                "def selfrefl+0: selfrefl: 0 references",
+                "def invLooper+0: invLooper: 3 references",
+                "def mul+0: mul: 0 references",
             ],
             "each name the base declares, with its uses in both documents"
         );
+        let elim = std::fs::read_to_string(corpus.join("circle-elim.gandr"))
+            .expect("the importer is read");
+        let [flip_at, involutive_at, flipped_at] = [
+            (written.as_str(), "def invLooper("),
+            (elim.as_str(), "def involutive("),
+            (
+                elim.as_str(),
+                "transport(\\x. Path(Circle, Base, invLooper(x))",
+            ),
+        ]
+        .map(|(text, held)| {
+            crate::anchor::line_of(crate::anchor::Source(text), crate::anchor::Held(held)).0
+        });
         let location = |file: &str, line: u32, start: u32, end: u32| {
             serde_json::json!({"uri": uri(file), "range": Range {
                 start: at(Line::from(line), Character::from(start)),
@@ -10894,10 +10961,10 @@ mod tests
             shown.and_then(|lens| lens.get("command").cloned()),
             Some(
                 serde_json::json!({"title": "3 references", "command": "gandr.showReferences",
-                "arguments": [uri("circle-base.gandr"), at(Line::from(138_u32), Character::from(4_u32)), [
-                    location("circle-elim.gandr", 18, 43, 52),
-                    location("circle-elim.gandr", 18, 53, 62),
-                    location("circle-elim.gandr", 94, 35, 44),
+                "arguments": [uri("circle-base.gandr"), at(Line::from(flip_at), Character::from(4_u32)), [
+                    location("circle-elim.gandr", involutive_at, 43, 52),
+                    location("circle-elim.gandr", involutive_at, 53, 62),
+                    location("circle-elim.gandr", flipped_at, 35, 44),
                 ]]})
             ),
             "the flip's command shows the importer's three calls of it: twice in \
@@ -13212,7 +13279,17 @@ mod tests
         let uri = |file: &str| format!("file://{}", corpus.join(file).display());
         let text =
             std::fs::read_to_string(corpus.join("following.gandr")).expect("the source is read");
-        let position = at(Line::from(31_u32), Character::from(22_u32));
+        // `r`'s line and `Nat`'s are found where they are written (#2786).
+        let position = at(
+            Line::from(
+                crate::anchor::line_of(
+                    crate::anchor::Source(&text),
+                    crate::anchor::Held("run r <- minus(p, d)"),
+                )
+                .0,
+            ),
+            Character::from(22_u32),
+        );
         let opened = |capabilities: Value| {
             let mut server = Connected::default();
             let initialize = serde_json::json!({"jsonrpc": "2.0", "id": 1_i32, "method": "initialize",
@@ -13248,8 +13325,15 @@ mod tests
                 .cloned()
                 .unwrap_or(Value::Null)
         };
+        let base =
+            std::fs::read_to_string(corpus.join("data-base.gandr")).expect("the base is read");
+        let declared = crate::anchor::line_of(
+            crate::anchor::Source(&base),
+            crate::anchor::Held("data Nat :"),
+        )
+        .0;
         let nat = serde_json::json!({"uri": uri("data-base.gandr"), "range": {
-            "start": {"line": 13_u32, "character": 5_u32}, "end": {"line": 13_u32, "character": 8_u32}}});
+            "start": {"line": declared, "character": 5_u32}, "end": {"line": declared, "character": 8_u32}}});
         let located = serde_json::json!({"position": position, "kind": 1_i32,
             "label": [{"value": ": "}, {"value": "Nat", "location": nat}]});
         assert_eq!(
@@ -13826,7 +13910,9 @@ mod tests
             let text = std::fs::read_to_string(&path).expect("the corpus source reads");
             (format!("file://{}", path.display()), text)
         };
-        let hinted = |published: &Value| {
+        // Each hint as its line, named by the declaration it stands in
+        // (#2786), and its message.
+        let hinted = |published: &Value, text: &str| {
             published[0]["params"]["diagnostics"]
                 .as_array()
                 .map(|diagnostics| {
@@ -13836,7 +13922,15 @@ mod tests
                         .map(|diagnostic| {
                             format!(
                                 "{}:{}",
-                                diagnostic["range"]["start"]["line"],
+                                crate::anchor::anchored(
+                                    crate::anchor::Source(text),
+                                    crate::anchor::Row(
+                                        diagnostic["range"]["start"]["line"]
+                                            .as_u64()
+                                            .and_then(|line| u32::try_from(line).ok())
+                                            .unwrap_or(u32::MAX)
+                                    )
+                                ),
                                 diagnostic["message"].as_str().unwrap_or_default()
                             )
                         })
@@ -13846,14 +13940,14 @@ mod tests
         };
         let (uri, text) = corpus("pathological/control/capability-drop.gandr");
         assert_eq!(
-            hinted(&open(&mut server, &uri, &text)),
+            hinted(&open(&mut server, &uri, &text), &text),
             [""; 0],
             "an unused consumable capability is the checker's refusal, never a hint"
         );
         let (uri, text) = corpus("surface/control-flow.gandr");
         assert_eq!(
-            hinted(&open(&mut server, &uri, &text)),
-            ["13:`n` is never used"],
+            hinted(&open(&mut server, &uri, &text), &text),
+            ["def tick+0:`n` is never used"],
             "`tick` leaves its parameter unused, and control flow's every other binder is used"
         );
     }
@@ -17073,8 +17167,14 @@ mod tests
                 )),
             )
         };
-        let hole = serde_json::json!({"start": {"line": 78_u32, "character": 9_u32},
-            "end": {"line": 78_u32, "character": 10_u32}});
+        // The hole's line is the one written with it (#2786).
+        let line = crate::anchor::line_of(
+            crate::anchor::Source(&written),
+            crate::anchor::Held("  loop ∷ ?"),
+        )
+        .0;
+        let hole = serde_json::json!({"start": {"line": line, "character": 9_u32},
+            "end": {"line": line, "character": 10_u32}});
         let fill = |name: &str| {
             serde_json::json!({
                 "title": format!("Fill the hole with `{name}`"),
@@ -17085,12 +17185,12 @@ mod tests
             })
         };
         assert_eq!(
-            ask(78, 9),
+            ask(line, 9),
             serde_json::json!([fill("p"), fill("loop")]),
             "the parameter, which settles the source, before the loop, which checks here"
         );
         assert_eq!(
-            ask(78, 2),
+            ask(line, 2),
             serde_json::json!([]),
             "where no hole stands, no fill"
         );

@@ -3,6 +3,5 @@
 // is read into the report beside the declaration's verdict.
 
 // A greeting, its documentation given by the attribute alone.
-@[ checks ]
 @[ doc("Returns a fixed greeting.") ]
 def greet = "hello";

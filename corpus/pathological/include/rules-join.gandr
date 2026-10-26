@@ -5,7 +5,6 @@
 // orients neither way, so the including block is refused by name.
 
 /// Choosing is combining, left to right.
-@[ checks ]
 theory Choice {
   sort M : Type;
   oper plus : (x : M, y : M) --> M;

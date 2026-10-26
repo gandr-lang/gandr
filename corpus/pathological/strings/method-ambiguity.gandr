@@ -10,7 +10,6 @@ import "../../model/strings/methods.gandr";
 /// A byte list's methods: its own length.
 module Bytes {
   /// The number of bytes in the list, read from a list lent for reading.
-  @[ checks ]
   def len(self : shared List(Integer)) -> Integer {
     count(self)
   }

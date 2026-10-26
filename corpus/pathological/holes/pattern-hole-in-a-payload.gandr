@@ -2,7 +2,6 @@
 // payload the arm covers undecided, and the checker refuses the match (#391).
 
 /// An integer, or none.
-@[ checks ]
 data Maybe : Type {
   Nothing : Maybe;
   Just : (x : Integer) --> Maybe;
@@ -19,5 +18,4 @@ def describe(m : Maybe) -> Integer {
 
 /// The run target describes `Just(3)`: it checks against `describe`'s
 /// signature, whose body is refused above, so it is not run.
-@[ checks ]
 describe(Just(3))

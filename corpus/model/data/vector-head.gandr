@@ -15,7 +15,6 @@ import "./vectors.gandr";
 
 /// The first element of a vector at least one long: `VNil` stands at zero,
 /// apart from `Succ(n)`, so its arm is left out.
-@[ checks ]
 def vhead(n : Nat, v : Vec(Integer, Succ(n))) -> Integer {
   case v {
     VCons(m, h, t) => h

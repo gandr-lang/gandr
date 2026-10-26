@@ -3,7 +3,6 @@
 // (#391).
 
 /// Three colours, one arm each.
-@[ checks ]
 data Color : Type {
   Red : Color;
   Green : Color;
@@ -22,5 +21,4 @@ def classify(c : Color) -> Integer {
 
 /// The run target classifies `Green`: it checks against `classify`'s
 /// signature, whose body is refused above, so it is not run.
-@[ checks ]
 classify(Green)

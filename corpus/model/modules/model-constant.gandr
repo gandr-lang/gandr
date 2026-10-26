@@ -30,10 +30,8 @@ theory Based {
 /// Seven and its double.
 module Sevens : Model(Based) {
   /// The base.
-  @[ checks ]
   def base = 7;
   /// Its double.
-  @[ checks ]
   def double = 14;
 }
 
@@ -58,7 +56,6 @@ module Additive : Model(Unital) {
   @[ runs("0") ]
   def e = 0;
   /// The sum.
-  @[ checks ]
   def mul(x : Integer, y : Integer) -> Integer { x + y }
   /// Zero is a left unit.
   @[ owes(1) ]

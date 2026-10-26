@@ -17,14 +17,12 @@ import "./int-sum.gandr";
 
 /// Spinning a successor is one loop more (cubical's `intLoop-sucℤ`), by
 /// computation.
-@[ checks ]
 def spinUp(n : Int) -> Path(Path(Circle, Base, Base), spin(S(n)), loop ∷ spin(n)) {
   here(loop ∷ spin(n))
 }
 
 /// Spinning a predecessor is one inverse loop more (cubical's
 /// `intLoop-predℤ`), by computation.
-@[ checks ]
 def spinDown(n : Int) -> Path(Path(Circle, Base, Base), spin(P(n)), back(loop) ∷ spin(n)) {
   here(back(loop) ∷ spin(n))
 }
@@ -36,7 +34,6 @@ def spinDown(n : Int) -> Path(Path(Circle, Base, Base), spin(P(n)), back(loop) �
 /// `loop ∷ (p then q)` (#422). At zero `spin(Z)` is a call that returns the
 /// empty word, and the composite over it runs that call first (#473); the
 /// composites the arms carry convert through their definitions (#440).
-@[ checks ]
 def rec spinHom(
   a : Int,
   b : Int
@@ -56,7 +53,6 @@ def rec spinHom(
 /// `up` or `down`. The composite in its type is read off the parameters'
 /// written types (#423), and the kernel reads its endpoint
 /// `plus(wind(q), wind(p))` as the call it returns (#424).
-@[ checks ]
 def rec windHom(
   q : Path(Circle, Base, Base),
   p : Path(Circle, Base, Base)
@@ -72,7 +68,6 @@ def rec windHom(
 /// its winding by `sect`, the windings sum by `windHom`, and the sums commute
 /// by `plusComm`. Each lemma is read at its written result (#423), and the
 /// calls in the types stand as what they return (#426).
-@[ checks ]
 def comm(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)

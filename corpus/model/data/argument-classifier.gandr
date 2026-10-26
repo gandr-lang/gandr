@@ -8,7 +8,6 @@
 import "./data-base.gandr";
 
 /// The length of a list of integers.
-@[ checks ]
 def rec listLength(xs : List(Integer)) -> Integer {
   case xs {
     Nil => 0,
@@ -34,7 +33,6 @@ def annotatedLength() -> Integer { listLength((Cons(1, Cons(2, Nil)) : List(Inte
 
 /// A colour and a list of colours, each argument classified by its own
 /// parameter.
-@[ checks ]
 def rec tally(c : Color, cs : List(Color)) -> Integer {
   case cs {
     Nil => 0,
@@ -50,7 +48,6 @@ def rec tally(c : Color, cs : List(Color)) -> Integer {
 def colours() -> Integer { tally(Red, Cons(Red, Cons(Green, Cons(Blue, Nil)))) }
 
 /// The length of a list of any type, the type given first.
-@[ checks ]
 def rec anyLength(a : Type, xs : List(a)) -> Integer {
   case xs {
     Nil => 0,

@@ -6,7 +6,6 @@
 // inner one, never the reverse.
 
 /// The scope's own capability is bound at the type that names its region.
-@[ checks ]
 def named() -> Unit {
   handle c : Proc {
     run d : Cap { exit } at c <- pure c;
@@ -31,7 +30,6 @@ def held() -> Unit {
 }
 
 /// Inside a second scope the outer capability still names the outer region.
-@[ checks ]
 def outer() -> Unit {
   handle c : Proc {
     handle e : Proc {
@@ -80,7 +78,6 @@ def unbound(c : Integer) -> -F Unit {
 
 /// Any value enters a region the same way: the integer is kept until the scope
 /// binding `c` ends (`kept-view.gandr` keeps a view there).
-@[ checks ]
 def plain() -> Unit {
   handle c : Proc {
     run d : Integer at c <- pure 1;

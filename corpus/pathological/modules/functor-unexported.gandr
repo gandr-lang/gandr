@@ -11,10 +11,8 @@ import "../../model/modules/functor-pair.gandr";
 module Unread :> #{ type T, zero : T, next : T => T } {
   type T = Integer;
   /// The counter's zero.
-  @[ checks ]
   def zero = 0;
   /// One step on.
-  @[ checks ]
   def next(n : T) -> T { n + 1 }
 }
 

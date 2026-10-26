@@ -9,7 +9,6 @@
 
 /// The relabelling between the two allocation orders: the first two ids
 /// swap, the third stays.
-@[ checks ]
 def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
   case i {
     +{.0 = u} => +{.1 = +{.0 = u}},
@@ -19,7 +18,6 @@ def swapFirstTwo(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
 }
 
 /// The ids to themselves along the relabelling, its own inverse.
-@[ checks ]
 def relabelling : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
   swapFirstTwo,
   swapFirstTwo
@@ -27,7 +25,6 @@ def relabelling : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv
 
 /// The ring `a → b → c → a` with `a` allocated first, then `b`, then `c`:
 /// each id links to the next one allocated.
-@[ checks ]
 def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
   +{.0 = u} => +{.1 = +{.0 = u}},
   +{.1 = +{.0 = u}} => +{.1 = +{.1 = u}},
@@ -36,7 +33,6 @@ def nextABC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
 
 /// The labels of `a`, `b` and `c`, at the ids allocated first, second and
 /// third.
-@[ checks ]
 def labelABC(i : Unit + (Unit + Unit)) -> Integer { case i {
   +{.0 = u} => 1,
   +{.1 = +{.0 = u}} => 2,
@@ -45,7 +41,6 @@ def labelABC(i : Unit + (Unit + Unit)) -> Integer { case i {
 
 /// The same ring with `b` allocated first, then `a`, then `c`: `b` links to
 /// the third id, `a` to the first, `c` to the second.
-@[ checks ]
 def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
   +{.0 = u} => +{.1 = +{.1 = u}},
   +{.1 = +{.0 = u}} => +{.0 = u},
@@ -54,7 +49,6 @@ def nextBAC(i : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) { case i {
 
 /// The labels of `b`, `a` and `c`, at the ids allocated first, second and
 /// third.
-@[ checks ]
 def labelBAC(i : Unit + (Unit + Unit)) -> Integer { case i {
   +{.0 = u} => 2,
   +{.1 = +{.0 = u}} => 1,
@@ -62,21 +56,18 @@ def labelBAC(i : Unit + (Unit + Unit)) -> Integer { case i {
 } }
 
 /// The ring allocated `a`, `b`, `c`, walked from `a`.
-@[ checks ]
 def builtABC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} = (
   type(Unit + (Unit + Unit)),
   (+{.0 = unit}, (nextABC, labelABC))
 );
 
 /// The ring allocated `b`, `a`, `c`, walked from `a`, now the second id.
-@[ checks ]
 def builtBAC : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer} = (
   type(Unit + (Unit + Unit)),
   (+{.1 = +{.0 = unit}}, (nextBAC, labelBAC))
 );
 
 /// The links carried along the relabelling are the other order's links.
-@[ checks ]
 def linksRelabelled : Path(
   Unit + (Unit + Unit) => Unit + (Unit + Unit),
   transport(\t. t => t, relabelling, nextABC),
@@ -84,7 +75,6 @@ def linksRelabelled : Path(
 ) = funext(transport(\t. t => t, relabelling, nextABC), nextBAC);
 
 /// The labels carried along the relabelling are the other order's labels.
-@[ checks ]
 def labelsRelabelled : Path(
   Unit + (Unit + Unit) => Integer,
   transport(\t. t => Integer, relabelling, labelABC),
@@ -94,7 +84,6 @@ def labelsRelabelled : Path(
 /// The two allocation orders build one arena: the ids along the relabelling,
 /// the start carried to `a`'s new id, and the links and labels carried to the
 /// other order's.
-@[ checks ]
 def oneArena : Path(
   #{ids : Type, start : ids, next : ids => ids, label : ids => Integer},
   builtABC,
@@ -102,7 +91,6 @@ def oneArena : Path(
 ) = (relabelling, (here(+{.1 = +{.0 = unit}}), (linksRelabelled, labelsRelabelled)));
 
 /// A consumer of any arena: the label two links on from the start.
-@[ checks ]
 def walk(r : #{ids : Type, start : ids, next : ids => ids, label : ids => Integer}) -> Integer {
   case r {
     #{.start = s, .next = n, .label = l} => {
@@ -122,7 +110,6 @@ def walkedBAC() -> Integer { become walk(builtBAC) }
 
 /// The consumer reads both orders alike by construction, along the path
 /// between the arenas.
-@[ checks ]
 def walkedAlike() -> Path(Integer, walk(builtABC), walk(builtBAC)) {
   become cong(walk, oneArena)
 }

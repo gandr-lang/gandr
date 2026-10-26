@@ -373,6 +373,8 @@ extern crate alloc;
 
 use core::fmt;
 
+#[cfg(test)]
+mod anchor;
 #[cfg(unix)]
 mod bus;
 mod calls;

@@ -36,7 +36,6 @@ data IntOp : Type {
 
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves
 /// the path between them.
-@[ checks ]
 def collapsed : Path(IntOp, S(P(Z)), Z) = here(Z);
 
 /// The circle: one point and one invertible cell at it, bound as `loop :
@@ -49,7 +48,6 @@ data Circle : Type {
 /// A cell adds: the loop's inverse is `back(loop)`, and the cancellation
 /// `loop then back(loop)` is the empty word by the rules the cell mints on
 /// its words.
-@[ checks ]
 def cancelled : Path(
   Path(Circle, Base, Base),
   loop then back(loop),

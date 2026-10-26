@@ -3,15 +3,12 @@
 // exponential, arithmetic, comparison and rounding to an integer.
 
 /// A suffix types the number.
-@[ checks ]
 def half = 0.5f64;
 
 /// So does an annotation: the low bound of a rubric's band.
-@[ checks ]
 def low = (0.2 : f64);
 
 /// An annotation types a number written without a fraction.
-@[ checks ]
 def trio = (3 : f64);
 
 /// The exponential of a half, the same double on every host.

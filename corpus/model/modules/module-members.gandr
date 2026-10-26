@@ -3,7 +3,6 @@
 // only the members it states.
 
 /// A seed every member builds on.
-@[ checks ]
 def seed = 40;
 
 /// The facts, with one nested module; the signature hides `hidden_reply`,

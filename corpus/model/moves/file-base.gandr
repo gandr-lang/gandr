@@ -16,6 +16,5 @@ module File :> #{
 } {
   type Line = String;
   /// The line a writer writes.
-  @[ checks ]
   def line = "line";
 }

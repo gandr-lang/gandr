@@ -20,7 +20,6 @@ import "./copy-on-write.gandr";
 
 /// `b` appended with no holder count read: inline bytes as `push` writes
 /// them, a heap buffer written where it is, whoever holds it.
-@[ checks ]
 def pushInPlace(s : Repr, b : Integer) -> Written {
   case s {
     Inline(bs) => push(s, b),
@@ -29,7 +28,6 @@ def pushInPlace(s : Repr, b : Integer) -> Written {
 }
 
 /// The number of strings holding a string's bytes: one for inline bytes.
-@[ checks ]
 def holders(s : Repr) -> Integer {
   case s {
     Inline(bs) => 1,

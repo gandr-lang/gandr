@@ -8,7 +8,6 @@
 import "./data-base.gandr";
 
 /// Red apart from the rest: one arm, then a wildcard for the others.
-@[ checks ]
 def notRed(c : Color) -> Integer {
   case c {
     Red => 0,
@@ -17,7 +16,6 @@ def notRed(c : Color) -> Integer {
 }
 
 /// The warm colours, two constructors sharing one arm.
-@[ checks ]
 def warm(c : Color) -> Integer {
   case c {
     Red | Green => 1,
@@ -26,14 +24,12 @@ def warm(c : Color) -> Integer {
 }
 
 /// An optional integer.
-@[ checks ]
 data Inner : Type {
   No : Inner;
   Yes : (n : Integer) --> Inner;
 }
 
 /// An optional `Inner`, so a match can reach two constructors deep.
-@[ checks ]
 data Outer : Type {
   None : Outer;
   Some : (i : Inner) --> Outer;
@@ -41,7 +37,6 @@ data Outer : Type {
 
 /// The integer two constructors down, or zero: the first arm's pattern nests
 /// `Yes` inside `Some`.
-@[ checks ]
 def depth(m : Outer) -> Integer {
   case m {
     Some(Yes(n)) => n,
@@ -51,9 +46,7 @@ def depth(m : Outer) -> Integer {
 }
 
 /// An inner value, annotated with its type.
-@[ checks ]
 def inner = (Yes(41) : Inner);
 
 /// The inner value wrapped once more.
-@[ checks ]
 def answer = (Some(inner) : Outer);

@@ -13,7 +13,6 @@
 /// No process outside the restriction can name `c` to send on it, so the
 /// receive never fires. The checker orients the law and the kernel replays
 /// the verdict.
-@[ checks ]
 theory Deaf {
   sort Name : Atom;
   sort Val : Type+;
@@ -29,7 +28,6 @@ theory Deaf {
 /// written without `x` as an argument, so no instance of it names `x`, and
 /// the law needs no freshness condition where an abstraction's atom would
 /// (`freshness.gandr`): a field binds for substitution, never for swapping.
-@[ checks ]
 theory Vacuous {
   sort Val : Type+;
   sort Proc : Type;
@@ -39,7 +37,6 @@ theory Vacuous {
 
 /// Structural recursion over a rule term: one per `Bind` node, the binding
 /// fields; an `Abs` node counts none of its own.
-@[ checks ]
 def rec fieldsOf(term : Theory) -> Integer {
   case term {
     Bind(var, body) => {
@@ -59,7 +56,6 @@ def rec fieldsOf(term : Theory) -> Integer {
 
 /// Structural recursion over a rule term: one per `Abs` node, the atom
 /// abstractions; a `Bind` node counts none of its own.
-@[ checks ]
 def rec abstractionsOf(term : Theory) -> Integer {
   case term {
     Abs(atom, body) => {

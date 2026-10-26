@@ -12,14 +12,12 @@ data Nat : Type {
 }
 
 /// The codes: the naturals, and the functions from one coded type to another.
-@[ checks ]
 data U : Type {
   NatC : U;
   Arrow : (a : U, b : U) --> U;
 }
 
 /// The decoder: each arm returns the type its code names.
-@[ checks ]
 def rec el(u : U) -> Type {
   case u {
     NatC => return Nat,
@@ -38,7 +36,6 @@ def idAt(c : U, v : el(c)) -> el(Arrow(c, c)) { v }
 
 /// A value packed with its code: the second field's type is the decode of the
 /// first.
-@[ checks ]
 data Coded : Type {
   Pack : (c : U, v : el(c)) --> Coded;
 }

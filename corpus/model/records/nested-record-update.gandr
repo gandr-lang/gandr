@@ -2,7 +2,6 @@
 // at its field.
 
 /// A record holding a record.
-@[ checks ]
 def outer = #{tag = "t", inner = #{x = 1, y = 2}};
 
 /// The run target updates `inner.y`: the inner record, read off `outer` by

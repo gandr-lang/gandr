@@ -28,7 +28,6 @@ def bumped() -> List(Integer) {
 }
 
 /// A list of pairs built where it runs.
-@[ checks ]
 def tagged(a : Integer) -> List(Integer * Integer) {
   pure cons((a, 1), cons((a, 2), cons((a, 3), nil)))
 }
@@ -53,7 +52,6 @@ def kept() -> List(Integer) {
 }
 
 /// The index is any value where the access stands, here a parameter.
-@[ checks ]
 def indexed(i : Integer) -> Integer {
   hold xs = pair;
   access shared xs[i] as w { pure w }

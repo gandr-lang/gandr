@@ -11,11 +11,9 @@
 import "./funext.gandr";
 
 /// The booleans to themselves by negation, its own inverse.
-@[ checks ]
 def negation : Path(Type, Bool, Bool) = equiv(not, not);
 
 /// A list of booleans transported along negation, in the family of lists.
-@[ checks ]
 def moved_list(xs : List(Bool)) -> List(Bool) {
   transport(\X. List(X), negation, xs)
 }
@@ -26,7 +24,6 @@ def both : List(Bool) = cons(+{.0 = unit}, cons(+{.1 = unit}, nil));
 
 /// Truth then falsity transported along negation is falsity then truth, by
 /// conversion.
-@[ checks ]
 def flipped_beta : Path(
   List(Bool),
   transport(\X. List(X), negation, cons(+{.0 = unit}, cons(+{.1 = unit}, nil))),
@@ -46,7 +43,6 @@ def flipped_value : List(Bool) = transport(\X. List(X), negation, both);
 /// #1064: a list transported along negation written in place, as along the
 /// named `negation`. The kernel read the inline equivalence's type,
 /// `Path_U(Bool, Bool)`, as no path and refused the transport by shape.
-@[ checks ]
 def moved_inline(xs : List(Bool)) -> List(Bool) {
   transport(\X. List(X), equiv(not, not), xs)
 }
@@ -60,22 +56,18 @@ def flipped_inline() -> List(Bool) { moved_inline(both) }
 def collapse_bool : Path(Type, Bool, Bool) = equiv(not, same);
 
 /// The identity on lists of booleans.
-@[ checks ]
 def keep(xs : List(Bool)) -> List(Bool) {
   xs
 }
 
 /// Lists of booleans to themselves by the identity: its round trip returns
 /// the empty list and each cell over a rigid tail.
-@[ checks ]
 def lists : Path(Type, List(Bool), List(Bool)) = equiv(keep, keep);
 
 /// A list transported along the identity's path is itself, by conversion.
-@[ checks ]
 def kept_beta : Path(List(Bool), transport(\X. X, lists, both), both) = here(both);
 
 /// A flag beside a list of booleans, negated, the list left as it is.
-@[ checks ]
 def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) {
   case entry {
     #{b, xs} => (not(b), xs)
@@ -84,7 +76,6 @@ def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) {
 
 /// Negating the flag is its own inverse: at each boolean beside the empty
 /// list and beside each cell over a rigid tail.
-@[ checks ]
 def flagged : Path(Type, Bool * List(Bool), Bool * List(Bool)) = equiv(flip_flag, flip_flag);
 
 /// Truth beside `both`, transported along the flag's path by a run: the flag

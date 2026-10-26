@@ -21,7 +21,5 @@ def takes_unknown : ? -> -F Unit;
 @[ refuses("OutOfFragment.unknown_type") ]
 def parenthesized : Integer -> (?);
 
-@[ checks ]
 def term_hole = ?;
-@[ checks ]
 def named_term_hole = ?goal;

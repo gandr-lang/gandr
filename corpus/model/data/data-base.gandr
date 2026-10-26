@@ -10,7 +10,6 @@
 // The universe subject reads the naturals and the branches from here too.
 
 /// Natural numbers, free: every constructor term is its own value.
-@[ checks ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
@@ -18,7 +17,6 @@ data Nat : Type {
 
 /// Addition by recursion on the second argument, the recursive call nested
 /// in the successor it returns.
-@[ checks ]
 def rec plus(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
@@ -47,7 +45,6 @@ data Int : Type {
 
 /// Three colours: an enumeration, a data type whose constructors take no
 /// field.
-@[ checks ]
 data Color : Type {
   Red : Color;
   Green : Color;
@@ -55,7 +52,6 @@ data Color : Type {
 }
 
 /// The two branches of a binary node.
-@[ checks ]
 data Two : Type {
   L : Two;
   R : Two;
@@ -63,7 +59,6 @@ data Two : Type {
 
 /// Lists of elements of a type `a`. The element stands only where a list
 /// holds it, strictly positive, so a family nests through it.
-@[ checks ]
 data List(a : Type) : Type {
   Nil : List(a);
   Cons : (head : a, tail : List(a)) --> List(a);

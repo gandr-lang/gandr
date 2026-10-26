@@ -11,7 +11,6 @@ import "./state.gandr";
 
 /// Writes that go nowhere: a theory of no operation, which a row holds where
 /// what is written is discarded.
-@[ checks ]
 theory Sink {
   sort C : Type;
 }
@@ -21,7 +20,6 @@ theory Sink {
 /// keeps it. The two overlap at `flush(mark(k))` in the rows holding both
 /// `State` and `Sink`; there marks and flushes are erased, so both reducts
 /// reach `k`.
-@[ checks ]
 theory Marks {
   sort C : Type;
   oper mark : (k : C) --> C;
@@ -35,7 +33,6 @@ theory Marks {
 /// The same two rules under closed rows: a row holding exactly `Sink` is
 /// never one holding exactly `State`, so the overlap owes no join and no
 /// rule erases anything.
-@[ checks ]
 theory ExactMarks {
   sort C : Type;
   oper mark : (k : C) --> C;

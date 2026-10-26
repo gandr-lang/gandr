@@ -11,7 +11,6 @@
 import "./circle-base.gandr";
 
 /// The identity on the circle, its loop arm the loop's name.
-@[ checks ]
 def circleId(a : Circle) -> Circle {
   case a {
     Base => Base,
@@ -20,7 +19,6 @@ def circleId(a : Circle) -> Circle {
 }
 
 /// The identity on its first argument, the second along for the ride.
-@[ checks ]
 def first(a : Circle, b : Circle) -> Circle {
   case a {
     Base => Base,
@@ -29,7 +27,6 @@ def first(a : Circle, b : Circle) -> Circle {
 }
 
 /// The identity on its second argument, the first along for the ride.
-@[ checks ]
 def second(b : Circle, a : Circle) -> Circle {
   case a {
     Base => Base,
@@ -39,7 +36,6 @@ def second(b : Circle, a : Circle) -> Circle {
 
 /// A map whose loop arm answers the loop's name: carried along the loop,
 /// reflexivity at `Base` is the loop's inverse, then the loop.
-@[ checks ]
 def throughName(b : Circle) -> Path(Circle, circleId(b), b) {
   case b {
     Base => here(Base)
@@ -47,7 +43,6 @@ def throughName(b : Circle) -> Path(Circle, circleId(b), b) {
 }
 
 /// A map of two arguments, the point through the first.
-@[ checks ]
 def throughFirst(b : Circle) -> Path(Circle, first(b, Base), b) {
   case b {
     Base => here(Base)
@@ -55,7 +50,6 @@ def throughFirst(b : Circle) -> Path(Circle, first(b, Base), b) {
 }
 
 /// A map of two arguments, the point through the second.
-@[ checks ]
 def throughSecond(b : Circle) -> Path(Circle, second(Base, b), b) {
   case b {
     Base => here(Base)
@@ -63,7 +57,6 @@ def throughSecond(b : Circle) -> Path(Circle, second(Base, b), b) {
 }
 
 /// Two maps of two arguments, one inside the other.
-@[ checks ]
 def throughBoth(b : Circle) -> Path(Circle, second(Base, first(b, Base)), b) {
   case b {
     Base => here(Base)
@@ -82,7 +75,6 @@ def twisted(b : Circle) -> Path(Circle, first(b, Base), Base) {
 /// The point is a right unit of the multiplication, whose loop arm calls
 /// `selfloop`. The obligation unfolds `mul`'s loop arm through its call of
 /// `selfloop`, and the transport computes (#425).
-@[ checks ]
 def unitRight(b : Circle) -> Path(Circle, mul(b, Base), b) {
   case b {
     Base => here(Base)

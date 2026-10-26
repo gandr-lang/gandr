@@ -1,11 +1,9 @@
 // A record update at a field the record lacks extends it with that field.
 
 /// A record of one field.
-@[ checks ]
 def single = #{a = 1};
 
 /// `single` extended at `b`, the record type it gains stated.
-@[ checks ]
 def pair : #{a : Integer, b : Integer} = #{single | b = 2};
 
 /// The run target adds `b`: the record gains the field.

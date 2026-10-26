@@ -3,7 +3,6 @@
 // run target.
 
 /// An optional value of any type.
-@[ checks ]
 data Maybe(a : Type) : Type {
   None : Maybe(a);
   Some : (x : a) --> Maybe(a);

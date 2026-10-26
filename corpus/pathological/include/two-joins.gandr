@@ -4,21 +4,18 @@
 // incomparable joins, so it is refused naming the pair and both.
 
 /// A carrier with a unit.
-@[ checks ]
 theory Pointed {
   sort M : Type;
   oper point : () --> M;
 }
 
 /// A carrier with a multiplication.
-@[ checks ]
 theory Magma {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
 }
 
 /// The pair joined once.
-@[ checks ]
 theory UnitalMagma {
   include Pointed;
   include Magma;

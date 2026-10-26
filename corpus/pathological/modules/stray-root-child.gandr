@@ -3,7 +3,6 @@
 // were not there (#1058).
 
 /// A declaration before every stray, which checks.
-@[ checks ]
 def before : Integer = 1;
 
 /// A statement keyword outside any block: a block's statement, not a
@@ -21,7 +20,6 @@ leta x = 1 ;
 def mu = 1 ;
 
 /// A declaration between the strays, which checks.
-@[ checks ]
 def between : Integer = before;
 
 /// A byte no label molds (#1058).
@@ -29,5 +27,4 @@ def between : Integer = before;
 §
 
 /// A declaration after every stray, which checks and reads the ones before.
-@[ checks ]
 def after : Integer = between;

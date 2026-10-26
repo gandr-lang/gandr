@@ -14,7 +14,6 @@
 /// composition and restriction, scope extrusion moving `q` under the
 /// restriction fresh for its atom. The checker orients the law and the kernel
 /// replays the verdict.
-@[ checks ]
 theory Pi {
   sort Name : Atom;
   sort Proc : Type;
@@ -26,7 +25,6 @@ theory Pi {
 
 /// Structural recursion over a rule chain: one per `Fresh` link, the
 /// conditions its written rules state.
-@[ checks ]
 def rec conditions(chain : Theory) -> Integer {
   case chain {
     Rule(name, lhs, rhs, rest) => become conditions[<](rest),

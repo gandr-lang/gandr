@@ -11,7 +11,6 @@ import "./state.gandr";
 /// applies what runs after it at the state, and a store applies it at the
 /// stored value. Both sides of put-get store and continue at the stored
 /// value, and both sides of put-put continue at the second.
-@[ checks ]
 def counter() -> (Integer => Integer) {
   handle st : StatePutLaws with sort S = Integer {
     st.put(1);

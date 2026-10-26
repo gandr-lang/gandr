@@ -12,7 +12,6 @@ import "./data-base.gandr";
 import "./vectors.gandr";
 
 /// The length a vector holds, read off the index its `VCons` states.
-@[ checks ]
 def vlength(n : Nat, v : Vec(Integer, n)) -> Nat {
   case v {
     VNil => Zero,
@@ -22,7 +21,6 @@ def vlength(n : Nat, v : Vec(Integer, n)) -> Nat {
 
 /// The length of a vector one long: the `VNil` arm is written, though `VNil`
 /// stands at no length but zero.
-@[ checks ]
 def oneLength(v : Vec(Integer, Succ(Zero))) -> Nat {
   case v {
     VNil => Zero,
@@ -32,7 +30,6 @@ def oneLength(v : Vec(Integer, Succ(Zero))) -> Nat {
 
 /// The length counted by structural recursion on the tail, which stands at
 /// the length its `VCons` states, one below the vector's.
-@[ checks ]
 def rec vcount(n : Nat, v : Vec(Integer, n)) -> Nat {
   case v {
     VNil => Zero,

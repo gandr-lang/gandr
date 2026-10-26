@@ -10,17 +10,14 @@
 import "./data-base.gandr";
 
 /// The type with no element.
-@[ checks ]
 data Empty : Type {}
 
 /// Anything follows from an element of the empty type.
-@[ checks ]
 def absurd(v : Empty) -> Integer {
   case v {}
 }
 
 /// The answer written on the match itself.
-@[ checks ]
 def stated(v : Empty) -> Integer {
   case v -> -F Integer {}
 }
@@ -28,52 +25,42 @@ def stated(v : Empty) -> Integer {
 /// A lambda's binder matched with no arm (#534): the function form lowers to
 /// the lambda its arrow types, the binder `Empty`, as a parameter's written
 /// type does.
-@[ checks ]
 def viaLambda(x : Empty) -> Integer { case x {} }
 
 /// The answer written on a lambda binder's match (#534).
-@[ checks ]
 def viaStated(x : Empty) -> Integer { case x -> -F Integer {} }
 
 /// The same lambda written bare, the checker inserting its thunk: the
 /// signature's arrow types its binder as it types the thunk's (#1944).
-@[ checks ]
 def viaBare(x : Empty) -> Integer { case x {} }
 
 /// The answer written on a bare lambda binder's match (#1944).
-@[ checks ]
 def viaBareStated(x : Empty) -> Integer { case x -> -F Integer {} }
 
 /// A function of a function on the empty type, applied to its element.
-@[ checks ]
 def applied(f : Empty => Integer, v : Empty) -> Integer { f(v) }
 
 /// A lambda passed as an argument: the callee's parameter types its binder
 /// as a signature types a definition's (#1948).
-@[ checks ]
 def viaArgument(v : Empty) -> Integer { applied(fn (x) { case x {} }, v) }
 
 /// The answer written on a passed lambda binder's match (#1948).
-@[ checks ]
 def viaArgumentStated(v : Empty) -> Integer {
   applied(fn (x) { case x -> -F Integer {} }, v)
 }
 
 /// One is not zero: `S(Z)` and `Z` are normal forms with distinct heads.
-@[ checks ]
 def not_zero(e : Path(Int, S(Z), Z)) -> Empty {
   case e {}
 }
 
 /// One is not two: the normal forms first differ below their shared
 /// successor.
-@[ checks ]
 def one_not_two(e : Path(Int, S(Z), S(S(Z)))) -> Empty {
   case e {}
 }
 
 /// Minus one is not one, read through the rules: `P(S(P(Z)))` is `P(Z)`.
-@[ checks ]
 def signs(e : Path(Int, P(S(P(Z))), S(Z))) -> Empty {
   case e {}
 }
@@ -85,7 +72,6 @@ data Truth : Type {
 }
 
 /// True is not false: distinct constructors of a free type are apart.
-@[ checks ]
 def true_not_false(e : Path(Truth, True, False)) -> Empty {
   case e {}
 }

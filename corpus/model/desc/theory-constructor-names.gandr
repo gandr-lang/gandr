@@ -6,7 +6,6 @@
 
 /// λ-terms with de Bruijn indices, whose application is named as `Theory`'s
 /// is.
-@[ checks ]
 data Bruijn : Type {
   Ix : (n : Integer) --> Bruijn;
   Abst : (t : Bruijn) --> Bruijn;
@@ -15,7 +14,6 @@ data Bruijn : Type {
 
 /// A monoid's signature presented as data, in a source that already declares
 /// `App`.
-@[ checks ]
 theory Mon {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
@@ -23,13 +21,11 @@ theory Mon {
 }
 
 /// One kind, named as `Theory`'s sort link is, declared after the block.
-@[ checks ]
 data Kind : Type {
   Sort : Kind;
 }
 
 /// One per `Oper` link of a presentation's operation chain, zero at its end.
-@[ checks ]
 def rec opsOf(chain : Theory) -> Integer {
   case chain {
     Oper(name, inputs, outputs, rest) => { run r <- opsOf[<](rest); r + 1 },

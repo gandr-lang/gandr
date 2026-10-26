@@ -13,7 +13,6 @@ module FirstOrder : Model(State) with sort S = Integer {
   @[ refuses("TypeMismatch") ]
   def get(k : Integer) -> Integer { k }
   /// Storing is forgotten.
-  @[ checks ]
   def put(_s : Integer, k : Integer) -> Integer { k }
 }
 
@@ -25,12 +24,10 @@ module PutGet : Model(StatePutGet) with sort S = Integer {
   /// A computation awaiting the current state.
   type C = +U (Integer -> -F Integer);
   /// Reading hands the current state on.
-  @[ checks ]
   def get(k : +U (Integer -> -F +U (Integer -> -F Integer))) -> +U (Integer -> -F Integer) {
     thunk { fn (s) { run after <- k(s); after(s) } }
   }
   /// Storing runs what comes after at the stored value.
-  @[ checks ]
   def put(s : Integer, k : +U (Integer -> -F Integer)) -> +U (Integer -> -F Integer) {
     thunk { fn (_old) { k(s) } }
   }

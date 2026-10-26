@@ -12,23 +12,19 @@ import "./data-base.gandr";
 
 /// Chains whose every link holds the chain before it and a test of chains:
 /// `Chain` stands to the left of the test's arrow, below the link.
-@[ checks ]
 data Chain : Type {
   Start : Chain;
   Link : (prev : Chain, test : Chain => Two) --> Chain;
 }
 
 /// A test answering `R` of a link and `L` of the start.
-@[ checks ]
 def linked(c : Chain) -> Two { case c -> -F Two { Start => L, Link(p, t) => R } }
 
 /// Two links over the start, each holding `linked`.
-@[ checks ]
 def twice : Chain = Link(Link(Start, linked), linked);
 
 /// The test a link holds, applied to the chain before it: the chain stands
 /// at the stage the test takes.
-@[ checks ]
 def judge(c : Chain) -> Two {
   case c {
     Start => L,
@@ -37,7 +33,6 @@ def judge(c : Chain) -> Two {
 }
 
 /// The links of a chain, by recursion one stage below each link.
-@[ checks ]
 def rec chainLength(c : Chain) -> Nat {
   case c {
     Start => Zero,

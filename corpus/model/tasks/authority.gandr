@@ -7,7 +7,6 @@ import "./task-base.gandr";
 
 /// A task reading through its parent's capability and handing back what it
 /// read (#1334).
-@[ checks ]
 def reader(c : Cap { read }) -> [Fs] Unit {
   fork (task : Task.Join) {
     run text <- c.read(Task.notes);
@@ -19,7 +18,6 @@ def reader(c : Cap { read }) -> [Fs] Unit {
 }
 
 /// A parent exiting through its capability while its task's end is open.
-@[ checks ]
 def exiter(c : Cap { exit }) -> [Proc] Unit {
   fork (task : Task.Join) {
     send(task, Task.notes);

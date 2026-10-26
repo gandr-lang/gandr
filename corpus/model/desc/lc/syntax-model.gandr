@@ -49,13 +49,11 @@ module LCSyntax : Model(LC) {
   def app(g : N, t : Term, u : Term) -> Term { Ap(t, u) }
 
   /// Law 1, `subQSingle`.
-  @[ checks ]
   def law1(g : N, b : Term) -> Path(Term, subTm(S(g), g, qTm(g), singleTm(g, b)), b) {
     subQSingle(b)
   }
 
   /// Law 2, `subQLift`; its indices stand as `liftTm`'s do.
-  @[ checks ]
   def law2(d : N, g : N, s : Env) -> Path(
     Term,
     subTm(S(g), S(d), qTm(g), liftTm(d, g, s)),
@@ -65,7 +63,6 @@ module LCSyntax : Model(LC) {
   }
 
   /// Law 3, `subWeakenLift`, by induction on `b`.
-  @[ checks ]
   def law3(g : N, d : N, b : Term, s : Env) -> Path(
     Term,
     subTm(S(g), S(d), subTm(g, S(g), b, pTm(g)), liftTm(d, g, s)),
@@ -75,7 +72,6 @@ module LCSyntax : Model(LC) {
   }
 
   /// Law 4, `subWeakenSingle`, by induction on `b`.
-  @[ checks ]
   def law4(g : N, b : Term, a : Term) -> Path(
     Term,
     subTm(S(g), g, subTm(g, S(g), b, pTm(g)), singleTm(g, a)),
@@ -85,7 +81,6 @@ module LCSyntax : Model(LC) {
   }
 
   /// Law 5, `subLam`.
-  @[ checks ]
   def law5(g : N, d : N, t : Term, s : Env) -> Path(
     Term,
     subTm(g, d, lam(g, t), s),
@@ -95,7 +90,6 @@ module LCSyntax : Model(LC) {
   }
 
   /// Law 6, `subApp`.
-  @[ checks ]
   def law6(g : N, d : N, t : Term, u : Term, s : Env) -> Path(
     Term,
     subTm(g, d, app(g, t, u), s),

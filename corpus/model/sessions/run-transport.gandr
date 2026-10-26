@@ -5,21 +5,18 @@
 // the transport as a match on the run's moves, to the run conversion gives.
 
 /// A bit.
-@[ checks ]
 data Bit : Type {
   Zero : Bit;
   One : Bit;
 }
 
 /// An answer.
-@[ checks ]
 data Answer : Type {
   No : Answer;
   Yes : Answer;
 }
 
 /// A bit read as an answer.
-@[ checks ]
 def decode(b : Bit) -> Answer {
   case b {
     Zero => No,
@@ -28,7 +25,6 @@ def decode(b : Bit) -> Answer {
 }
 
 /// An answer written as a bit.
-@[ checks ]
 def encode(a : Answer) -> Bit {
   case a {
     No => Zero,
@@ -37,7 +33,6 @@ def encode(a : Answer) -> Bit {
 }
 
 /// Encoding a decoded bit gives the bit back.
-@[ checks ]
 def encoded(b : Bit) -> Path(Bit, encode(decode(b)), b) {
   case b {
     Zero => here(Zero),
@@ -46,7 +41,6 @@ def encoded(b : Bit) -> Path(Bit, encode(decode(b)), b) {
 }
 
 /// Decoding an encoded answer gives the answer back.
-@[ checks ]
 def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
   case a {
     No => here(No),
@@ -55,7 +49,6 @@ def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
 }
 
 /// The bits and the answers are one type, by univalence.
-@[ checks ]
 def codes : Path(Type, Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded))));
 
 /// A protocol that hears a bit, and one that hears an answer.
@@ -65,11 +58,9 @@ module Ask {
 }
 
 /// A run that heard a one.
-@[ checks ]
 def heard : Run(Ask.Coded) = recorded(received(One), closed);
 
 /// Carried along the path, the run heard the one decoded: a yes.
-@[ checks ]
 def heardDecoded : Path(
   Run(Ask.Decoded),
   transport(\X. Run(?X. end), codes, heard),
@@ -85,7 +76,6 @@ def heardKept : Path(
 ) = here(recorded(received(No), closed));
 
 /// The carried run, computed.
-@[ checks ]
 def heardRun() -> Run(Ask.Decoded) {
   transport(\X. Run(?X. end), codes, heard)
 }

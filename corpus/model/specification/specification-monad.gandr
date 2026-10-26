@@ -8,7 +8,6 @@
 /// Values `V`, computations `C` and the order between two computations:
 /// reflexive, transitive, and an extension below another where its
 /// computation and each of its continuations are.
-@[ checks ]
 theory SpecificationMonad {
   sort V : Type+;
   sort C : Type;

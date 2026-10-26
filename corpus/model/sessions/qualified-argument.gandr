@@ -6,9 +6,7 @@
 import "./seat-base.gandr";
 
 /// The seat's protocol simulates itself, both sides named through the module.
-@[ checks ]
 def itself : Flow(Type, Seat.SeatEnd, Seat.SeatEnd) = sim(Seat.SeatEnd, Seat.SeatEnd);
 
 /// The stationary flow at the seat's protocol, named through the module.
-@[ checks ]
 def kept : Flow(Type, Seat.SeatEnd, Seat.SeatEnd) = stay(Seat.SeatEnd);

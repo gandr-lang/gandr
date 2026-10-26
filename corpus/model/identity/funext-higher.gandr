@@ -4,32 +4,27 @@
 // function at different arguments are not.
 
 /// A function at truth.
-@[ checks ]
 def at_truth(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
   f(+{.0 = unit})
 }
 
 /// A function at truth, its result bound and returned.
-@[ checks ]
 def through(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
   run b <- at_truth(f);
   b
 }
 
 /// A function at falsity.
-@[ checks ]
 def at_falsity(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
   f(+{.1 = unit})
 }
 
 /// A function applied twice from truth, the second call in tail position.
-@[ checks ]
 def applied_twice(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
   f(f(+{.0 = unit}))
 }
 
 /// A function applied twice from truth, both results bound.
-@[ checks ]
 def twice_bound(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
   run b <- f(+{.0 = unit});
   run c <- f(b);
@@ -37,7 +32,6 @@ def twice_bound(f : Unit + Unit => Unit + Unit) -> Unit + Unit {
 }
 
 /// A functional is a path to itself.
-@[ checks ]
 def reflexive : Path(
   (Unit + Unit => Unit + Unit) => Unit + Unit,
   at_truth,
@@ -45,7 +39,6 @@ def reflexive : Path(
 ) = funext(at_truth, at_truth);
 
 /// Binding the result and returning it agree at every function.
-@[ checks ]
 def unfolded : Path(
   (Unit + Unit => Unit + Unit) => Unit + Unit,
   at_truth,
@@ -53,7 +46,6 @@ def unfolded : Path(
 ) = funext(at_truth, through);
 
 /// The two spellings of applying twice agree at every function.
-@[ checks ]
 def nested : Path(
   (Unit + Unit => Unit + Unit) => Unit + Unit,
   applied_twice,

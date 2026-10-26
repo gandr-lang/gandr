@@ -11,7 +11,6 @@ import "./shift-lookup.gandr";
 import "./lookup-weaken.gandr";
 
 /// The hypothesis at `m`, weakened.
-@[ checks ]
 def weakenedVariable(
   s : Env,
   r : Ren,
@@ -23,7 +22,6 @@ def weakenedVariable(
 
 /// A substitution renaming at every index renames at every index of its
 /// lift.
-@[ checks ]
 def substRenamesLift(
   s : Env,
   r : Ren,
@@ -40,7 +38,6 @@ def substRenamesLift(
 }
 
 /// A substitution that renames at every index is that renaming.
-@[ checks ]
 def rec substRenames(
   t : Term,
   s : Env,
@@ -66,7 +63,6 @@ def rec substRenames(
 }
 
 /// The substitution shifting by one renames each index by the shift by one.
-@[ checks ]
 def shiftOneRenames(i : N) -> Path(Term, look(i, Shift(S(Z)), Z), Ix(rlook(i, RShift(S(Z))))) {
   case i {
     Z => here(Ix(S(Z))),

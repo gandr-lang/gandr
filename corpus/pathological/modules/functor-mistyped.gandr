@@ -11,13 +11,10 @@ import "../../model/modules/functor-pair.gandr";
 module Integral :> #{ type T, zero : Integer, next : T => T, read : T => Integer } {
   type T = Integer;
   /// The counter's zero, sealed as an integer.
-  @[ checks ]
   def zero = 0;
   /// One step on.
-  @[ checks ]
   def next(n : T) -> T { n + 1 }
   /// The count read as an integer.
-  @[ checks ]
   def read(n : T) -> Integer { n }
 }
 

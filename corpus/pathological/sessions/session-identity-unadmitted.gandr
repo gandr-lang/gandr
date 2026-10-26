@@ -8,7 +8,6 @@ module Evolution {
   def keep : Flow(Type, SeatEnd, Kept) = sim(SeatEnd, Kept);
 }
 
-@[ checks ]
 def served : Run(Evolution.SeatEnd) = recorded(
   received("task"),
   selected(report),

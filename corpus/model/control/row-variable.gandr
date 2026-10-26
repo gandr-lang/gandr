@@ -9,26 +9,21 @@
 
 /// A line printed through `Console`, the rest of the row left open: `r`
 /// lacks `Console`, which the row writes beside it.
-@[ checks ]
 def log @[r : Row] (s : String) -> [Console | r] Unit { Console.print(s) }
 
 /// `log` where the row is `Console` alone: the call's `r` is the empty row.
-@[ checks ]
 def logAlone() -> [Console] Unit { log("alone") }
 
 /// `log` beside `Div`: the call's `r` is `[Div]`.
-@[ checks ]
 def logBeside() -> [Console, Div] Unit { log("beside") }
 
 /// `logBeside`'s row listed the other way round is the same row, so the
 /// call's `r` is solved as the same `[Div]`: one solution, not two that
 /// convert.
-@[ checks ]
 def logSwapped() -> [Div, Console] Unit { log("swapped") }
 
 /// A handler of `Console` around `log`: the handled body's row is
 /// `[Console | r]`, and what the handler leaves is `r`.
-@[ checks ]
 def quiet @[r : Row] (s : String) -> [r] Unit {
   handle c : Console {
     log(s)
@@ -43,5 +38,4 @@ def quiet @[r : Row] (s : String) -> [r] Unit {
 def quietRun() -> Unit { quiet("handled") }
 
 /// `quiet` beside `Div`: the variable carries `Div` through the handler.
-@[ checks ]
 def quietBeside() -> [Div] Unit { quiet("forwarded") }

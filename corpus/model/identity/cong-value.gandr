@@ -3,24 +3,20 @@
 // between the boxes the constructor builds around them.
 
 /// A box holding one integer.
-@[ checks ]
 data Box : Type {
   Wrap : (n : Integer) --> Box;
 }
 
 /// The constructor as a function.
-@[ checks ]
 def wrap(x : Integer) -> Box {
   Wrap(x)
 }
 
 /// A path between integers carried along the wrapper, to the boxes around
 /// its endpoints.
-@[ checks ]
 def cong_wrap(a : Integer, b : Integer, p : Path(Integer, a, b)) -> Path(Box, Wrap(a), Wrap(b)) {
   cong(wrap, p)
 }
 
 /// Reflexivity at four carried along the wrapper by a run.
-@[ checks ]
 def wrapped() -> Path(Box, Wrap(4), Wrap(4)) { cong_wrap(4, 4, here(4)) }

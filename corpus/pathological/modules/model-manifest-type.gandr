@@ -8,13 +8,11 @@
 import "./model-ascription.gandr";
 
 /// The unit as the first state.
-@[ checks ]
 def unitStart() -> Unit {
   unit
 }
 
 /// The unit as the next state.
-@[ checks ]
 def unitStep(u : Unit) -> Unit {
   u
 }

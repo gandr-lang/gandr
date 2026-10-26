@@ -5,7 +5,6 @@
 // model implicit is named alone.
 
 /// A tally: a carrier, a zero, a step and a reading.
-@[ checks ]
 theory Tally {
   sort C : Type;
   oper zero : C;
@@ -14,7 +13,6 @@ theory Tally {
 }
 
 /// A tally without its reading.
-@[ checks ]
 theory Stepper {
   sort C : Type;
   oper zero : C;
@@ -25,19 +23,15 @@ theory Stepper {
 module Mute : Model(Stepper) {
   type C = Integer;
   /// Zero.
-  @[ checks ]
   def zero = 0;
   /// One count more.
-  @[ checks ]
   def incr(c : Integer) -> Integer { c + 1 }
 }
 
 /// The reading after one step, over any tally the slot names.
-@[ checks ]
 def stepped @[s : Model(Tally)] (c : s.C) -> Integer { s.read(s.incr(c)) }
 
 /// A step counted, whatever the model.
-@[ checks ]
 def observe(m : Model(Stepper)) -> Integer { 0 }
 
 /// No module is named `Nowhere`.

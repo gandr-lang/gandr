@@ -7,7 +7,6 @@
 import "./seat-base.gandr";
 
 /// The stationary flow at a protocol that opens with a receive.
-@[ checks ]
 def quoted_receive : Flow(
   Type,
   ?(Seat.Dispatch). end,
@@ -15,12 +14,10 @@ def quoted_receive : Flow(
 ) = stay(type(?(Seat.Dispatch). end));
 
 /// The stationary flow at a labelled sum of one summand.
-@[ checks ]
 def quoted_sum : Flow(Type, +{Unit}, +{Unit}) = stay(type(+{Unit}));
 
 /// The seat's protocol, written out in full where an expression stands,
 /// simulates the protocol its name stands for.
-@[ checks ]
 def protocol : Flow(Type, Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
   report : !(Seat.Report). &{next : turn, retire : end},
   handoff : !(Seat.Handoff). end
@@ -32,7 +29,6 @@ def protocol : Flow(Type, Seat.SeatEnd, ?(Seat.Dispatch). mu turn. +{
 /// A run's protocol may read the binder of the motive it stands in, where a
 /// quote may not: a run stays on the checker's side, so its payloads are no
 /// codes the kernel forms, and the run moves along a path (#1728).
-@[ checks ]
 def run_over_binder(served : Run(?(Seat.Dispatch). end)) -> Run(?(Seat.Dispatch). end) {
   transport(\X. Run(?X. end), here(Seat.Dispatch), served)
 }

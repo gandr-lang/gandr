@@ -6,7 +6,6 @@
 // its body and so hides nothing. Shared with `../../model/data/w-tree.gandr`.
 
 /// The two branches of a binary node.
-@[ checks ]
 data Two : Type {
   L : Two;
   R : Two;

@@ -32,7 +32,6 @@ def two_plus_one_overlapping() -> NatUnits { add(Succ(Succ(Zero)), Succ(Zero)) }
 /// `mul(mul(mul(a, b), c), d)`, and both ways round reach `mul(a, mul(b,
 /// mul(c, d)))`. The rewrite at the peak matches the rule's `z` against a
 /// subterm holding the peak's own `z`, which stays the peak's (#654).
-@[ checks ]
 theory Semigroup {
   sort S : Type;
 

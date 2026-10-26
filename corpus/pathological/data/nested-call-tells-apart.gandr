@@ -1,6 +1,5 @@
 /// The integers presented by their two cancellations: `S(P(x))` and
 /// `P(S(x))` are each `x`.
-@[ checks ]
 data Int : Type {
   Z : Int;
   S : (x : Int) --> Int;

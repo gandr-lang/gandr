@@ -52,7 +52,6 @@ def bare() -> Integer {
 }
 
 /// The same read at an index a parameter carries.
-@[ checks ]
 def bareAt(i : Integer) -> Integer {
   hold xs = pair;
   run y <- xs[i];

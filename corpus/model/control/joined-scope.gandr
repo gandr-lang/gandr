@@ -5,7 +5,6 @@
 // past the one the arm opened.
 
 /// The naturals, for the matches below.
-@[ checks ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
@@ -13,7 +12,6 @@ data Nat : Type {
 
 /// The arm holds its own `c` and writes 2 back to it; the rest's `c` is the
 /// one held before the match.
-@[ checks ]
 def shadowed(rounds : Nat) -> Integer {
   hold c = 100;
   run settled <- case rounds {
@@ -33,7 +31,6 @@ def shadowedExited : () => Integer = shadowed(Zero);
 
 /// The arm forks, and its parent end closes before the rest: the rest reads
 /// the held count, not the end.
-@[ checks ]
 def forked(rounds : Nat) -> Integer {
   hold c = 100;
   run settled <- case rounds {
@@ -44,7 +41,6 @@ def forked(rounds : Nat) -> Integer {
 }
 
 /// A fork in an arm whose block ends at the unit the match settles.
-@[ checks ]
 def forkPastAnExit(rounds : Nat) -> Unit {
   run settled <- case rounds {
     Zero => return unit,

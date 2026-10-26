@@ -1,12 +1,9 @@
-@[ checks ]
 def product_chain : Integer * Unit * Integer * String = (1, unit, 2, "text");
 
-@[ checks ]
 def sum_chain : Integer + Unit + Integer + String = +{.2 = 2};
 
 /// A lazy chain is one lazy product of four, as the eager chains above are one
 /// product and one sum.
-@[ checks ]
 def lazy_chain : +U (-F Integer & -F Unit & -F Integer & -F String) = &{
   .0 => pure 1,
   .1 => pure unit,

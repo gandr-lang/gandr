@@ -5,7 +5,6 @@
 // doi:10.1145/96709.96718).
 
 /// A data family whose constructors are written with the circuit arrow.
-@[ checks ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;

@@ -3,7 +3,6 @@
 // first's answer.
 
 /// A field bound once and applied twice.
-@[ checks ]
 def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> Integer {
   case m {
     #{.start = s, .step = t} => {
@@ -14,7 +13,6 @@ def twoSteps(m : #{start : () => Integer, step : Integer => Integer}) -> Integer
 }
 
 /// A field bound once and applied once.
-@[ checks ]
 def oneStep(m : #{start : () => Integer, step : Integer => Integer}) -> Integer {
   case m {
     #{.start = s, .step = t} => t(s())

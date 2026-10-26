@@ -7,7 +7,6 @@
 import "./data-base.gandr";
 
 /// The rank of green among the colours, read off the arm green takes.
-@[ checks ]
 def rank() -> Integer {
   case (Green : Color) {
     Red => 0,

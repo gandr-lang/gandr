@@ -3,7 +3,6 @@
 // At the booleans, negation twice is the identity, and negation once is not.
 
 /// Negation on the booleans, `+{Unit, Unit}`.
-@[ checks ]
 def not(b : Unit + Unit) -> Unit + Unit {
   case b {
     +{.0 = u} => +{.1 = u},
@@ -12,19 +11,16 @@ def not(b : Unit + Unit) -> Unit + Unit {
 }
 
 /// Negation twice.
-@[ checks ]
 def not_not(b : Unit + Unit) -> Unit + Unit {
   not(not(b))
 }
 
 /// The identity on the booleans.
-@[ checks ]
 def same(b : Unit + Unit) -> Unit + Unit {
   b
 }
 
 /// Negation twice is the identity: they agree at both booleans.
-@[ checks ]
 def involution : Path(Unit + Unit => Unit + Unit, not_not, same) = funext(not_not, same);
 
 /// Negation once is not the identity: they differ at a boolean.

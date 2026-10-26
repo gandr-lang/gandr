@@ -38,5 +38,4 @@ def total() -> Integer {
 
 /// The run target calls `total`: it checks against `total`'s signature,
 /// whose body is refused above, so it is not run.
-@[ checks ]
 total()

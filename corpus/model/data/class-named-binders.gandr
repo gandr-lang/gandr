@@ -4,7 +4,6 @@
 // token of the class, a malformed literal.
 
 /// An integer wrapped under a field named `number`.
-@[ checks ]
 data Wrap : Type {
   Wrapped : (number : Integer) --> Wrap;
 }

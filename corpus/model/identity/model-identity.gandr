@@ -12,7 +12,6 @@ import "./transport-list.gandr";
 import "./structure-operations.gandr";
 
 /// A toggle: a carrier, where it starts, a step and a reading.
-@[ checks ]
 theory Toggle {
   sort T : Type;
   oper start : T;
@@ -21,16 +20,13 @@ theory Toggle {
 }
 
 /// The toggle that starts false and reads its state as it is, as a model.
-@[ checks ]
 def plainModel : Model(Toggle) = plainToggle;
 
 /// The toggle that starts true and reads its state negated, as a model.
-@[ checks ]
 def flippedModel : Model(Toggle) = flippedToggle;
 
 /// The two models are one along negation: the carriers by negation, the start
 /// carried to `true`, and each operation carried to the other's.
-@[ checks ]
 def oneModel : Path(Model(Toggle), plainModel, flippedModel) = (
   negation,
   (here(+{.1 = unit}), (stepped, reread))

@@ -5,7 +5,6 @@
 // universe, transport keeps the value, by conversion and by a run.
 
 /// A reflexive transport at a path-type motive returns a path.
-@[ checks ]
 def moved_end : Path(
   Path(Integer, 2, 2),
   transport(\x. Path(Integer, x, x), here(2), here(2)),
@@ -29,7 +28,6 @@ def unit_end : Path(
 
 /// Transport along the path a reflexive transport returns, in the universe,
 /// is the identity: the inner transport runs to `here(a)` first (#649).
-@[ checks ]
 def along_returned(
   a : Type,
   x : a
@@ -39,7 +37,6 @@ def along_returned(
 
 /// Transport along reflexivity in the universe keeps the value, by
 /// conversion.
-@[ checks ]
 def along_here : Path(Integer, transport(\X. X, here(Integer), 2), 2) = here(2);
 
 /// Transport along reflexivity in the universe keeps the value, by a run.

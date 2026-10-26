@@ -2,7 +2,6 @@
 
 /// Three integers, annotated as a list of them: the cons cells over `1`, `2`
 /// and `3`, ending in the empty list (#1544).
-@[ checks ]
 def xs = ([1, 2, 3] : List(Integer));
 
 /// The run target prepends a zero; the lowering admits no `++` yet (#1997).

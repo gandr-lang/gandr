@@ -12,12 +12,10 @@
 import "./transport-list.gandr";
 
 /// A pair relates to a pair by a path in each place.
-@[ checks ]
 def corners : Path(Integer * Integer, (2, 3), (2, 3)) = (here(2), here(3));
 
 /// A pair carried along negation is each component carried, so it relates to
 /// the swapped pair by a reflexivity in each place.
-@[ checks ]
 def swappedPair : Path(
   Bool * Bool,
   transport(\t. t * t, negation, (+{.0 = unit}, +{.1 = unit})),
@@ -25,16 +23,13 @@ def swappedPair : Path(
 ) = (here(+{.1 = unit}), here(+{.0 = unit}));
 
 /// A carrier with a start and a stop, starting false.
-@[ checks ]
 def rising : #{t : Type, start : t, stop : t} = (Bool, (+{.0 = unit}, +{.1 = unit}));
 
 /// The same structure written the other way round, starting true.
-@[ checks ]
 def falling : #{t : Type, start : t, stop : t} = (Bool, (+{.1 = unit}, +{.0 = unit}));
 
 /// The two structures are one: the carriers by negation, and each point
 /// carried along it to the other's.
-@[ checks ]
 def oneStructure : Path(#{t : Type, start : t, stop : t}, rising, falling) = (
   negation,
   (here(+{.1 = unit}), here(+{.0 = unit}))

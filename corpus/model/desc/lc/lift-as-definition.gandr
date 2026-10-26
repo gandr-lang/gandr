@@ -10,13 +10,11 @@ import "../model-in-source.gandr";
 import "./syntax.gandr";
 
 /// Lifting as a definition, building the constructor.
-@[ checks ]
 def liftOf(s : Env) -> Env {
   Lift(s)
 }
 
 /// Substitution lifting through `liftOf`.
-@[ checks ]
 def rec substLifting(t : Term, s : Env) -> Term {
   case t {
     Ix(n) => look(n, s, Z),
@@ -26,7 +24,6 @@ def rec substLifting(t : Term, s : Env) -> Term {
 }
 
 /// Two substitutions at an abstraction, both unfolded once.
-@[ checks ]
 def substLiftingTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
   Term,
   substLifting(substLifting(Lam(b), s1), s2),

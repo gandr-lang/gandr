@@ -10,13 +10,11 @@
 import "./data-base.gandr";
 
 /// Two successors over a natural.
-@[ checks ]
 def plusTwo(n : Nat) -> Nat {
   Succ(Succ(n))
 }
 
 /// Doubling, its arm handing the recursive call to `plusTwo`.
-@[ checks ]
 def rec double(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -30,19 +28,16 @@ def doubledTwo : () => Nat = double(two);
 
 /// One step of `double` is `plusTwo` of the call, as the arm writes it
 /// (#761).
-@[ checks ]
 def doubleStep(n : Nat) -> Path(Nat, double(Succ(n)), plusTwo(double(n))) {
   here(plusTwo(double(n)))
 }
 
 /// The same step with `plusTwo` unfolded: two successors over the call.
-@[ checks ]
 def doubleStepUnfolded(n : Nat) -> Path(Nat, double(Succ(n)), Succ(Succ(double(n)))) {
   here(Succ(Succ(double(n))))
 }
 
 /// Two steps, each arm handing its call on to `plusTwo`.
-@[ checks ]
 def doubleTwoSteps(n : Nat) -> Path(Nat, double(Succ(Succ(n))), plusTwo(plusTwo(double(n)))) {
   here(plusTwo(plusTwo(double(n))))
 }

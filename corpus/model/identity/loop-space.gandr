@@ -16,7 +16,6 @@ import "./loop-winding.gandr";
 /// Spinning, the fold out of the presented integers into the words: a
 /// successor is a loop and a predecessor an inverse. It recurses structurally
 /// and respects both rules as the winding number does.
-@[ checks ]
 def rec spinWords(n : Int) -> Words {
   case n {
     Z => Nil,
@@ -30,31 +29,25 @@ def rec spinWords(n : Int) -> Words {
 def spun() -> Words { become spinWords(S(S(Z))) }
 
 /// Conversion runs spinning at a closed word: two successors are two loops.
-@[ checks ]
 def spun_twice : Path(Words, spinWords(S(S(Z))), Loop(Loop(Nil))) = here(Loop(Loop(Nil)));
 
 /// A cancelled count spins to the empty word.
-@[ checks ]
 def spun_back : Path(Words, spinWords(S(P(Z))), Nil) = here(Nil);
 
 /// A predecessor spins to the inverse loop.
-@[ checks ]
 def spun_under : Path(Words, spinWords(P(Z)), Unloop(Nil)) = here(Unloop(Nil));
 
 /// The round trip at a closed word: winding a loop and spinning the count
 /// gives the loop back. The inner call stands as the outer one's argument,
 /// and conversion runs both.
-@[ checks ]
 def spun_wound : Path(Words, spinWords(windWords(Loop(Nil))), Loop(Nil)) = here(Loop(Nil));
 
 /// The other round trip at a closed count: spinning two successors and
 /// winding the word counts two.
-@[ checks ]
 def wound_spun : Path(Int, windWords(spinWords(S(S(Z)))), S(S(Z))) = here(S(S(Z)));
 
 /// A round trip returns the normal form, not the word it started from: a
 /// cancelled loop comes back as the loop.
-@[ checks ]
 def spun_wound_cancelled : Path(
   Words,
   spinWords(windWords(Loop(Unloop(Loop(Nil))))),
@@ -62,7 +55,6 @@ def spun_wound_cancelled : Path(
 ) = here(Loop(Nil));
 
 /// A respelled count comes back as its normal form, one predecessor.
-@[ checks ]
 def wound_spun_respelled : Path(Int, windWords(spinWords(S(P(P(Z))))), P(Z)) = here(P(Z));
 
 /// The round trip does not lose the loop: it is not the empty word.
@@ -71,7 +63,6 @@ def spun_wound_lost : Path(Words, spinWords(windWords(Loop(Nil))), Nil) = here(N
 
 /// One inverse loop more: the function the inverse letter applies, as
 /// `around` applies the loop.
-@[ checks ]
 def unaround(c : Words) -> Words {
   Unloop(c)
 }
@@ -86,7 +77,6 @@ def unaround(c : Words) -> Words {
 /// the arms compose to `cong(around, cong(unaround, p))`, whose functions
 /// compose to the identity under the rules, so the chain is `p` itself, the
 /// answer at `x`.
-@[ checks ]
 def rec sectWords(c : Words) -> Path(Words, spinWords(windWords(c)), c) {
   case c {
     Nil => here(Nil),
@@ -98,7 +88,6 @@ def rec sectWords(c : Words) -> Path(Words, spinWords(windWords(c)), c) {
 /// Winding undoes spinning at every count: the other round trip, by
 /// induction over the presented integers, a successor carried along the
 /// model's `turn` and a predecessor along its `unturn`.
-@[ checks ]
 def rec retrWords(n : Int) -> Path(Int, windWords(spinWords(n)), n) {
   case n {
     Z => here(Z),
@@ -114,7 +103,6 @@ def rec retrWords(n : Int) -> Path(Int, windWords(spinWords(n)), n) {
 /// its value nests the same way: `sectWords` and `retrWords` are checked at
 /// the types the record states once `to` is `windWords` and `back` is
 /// `spinWords`.
-@[ checks ]
 def wordsWinding : #{
   to : Words => Int,
   back : Int => Words,

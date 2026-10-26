@@ -1,19 +1,15 @@
-@[ checks ]
 def single = (1,);
 
 @[ refuses("ShapeMismatch") ]
 def single_is_not_its_member : Integer = (1,);
 
-@[ checks ]
 def triple : Integer * Unit * String = (1, unit, "a");
 
 @[ refuses("ShapeMismatch") ]
 def nesting_is_written : (Integer * Unit) * String = (1, unit, "a");
 
-@[ checks ]
 def nested : (Integer * Unit) * String = ((1, unit), "a");
 
-@[ checks ]
 def absurd(x : Void) -> Integer {
   case x {}
 }

@@ -4,7 +4,6 @@
 // for no builtin yet (#1106).
 
 /// Three tens, annotated as a list of integers (#1544).
-@[ checks ]
 def tens = ([10, 20, 30] : List(Integer));
 
 /// The element at position one, replaced.

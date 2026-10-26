@@ -7,7 +7,6 @@
 // (`model-ord.gandr`).
 
 /// A string, named.
-@[ checks ]
 def slogan = "types are machines";
 
 /// A statement before a named item, a stray: only a source's final expression

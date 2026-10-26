@@ -1,5 +1,4 @@
 /// Two `doc` entries are two pieces of one text, as two `#[doc]` attributes are in Rust.
-@[ checks ]
 @[ doc("first") ]
 @[ doc("second") ]
 def f = 42;

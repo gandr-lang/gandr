@@ -10,7 +10,6 @@ import "./circle-base.gandr";
 /// one successor or predecessor of `b` onto `acc`. It respects `Int`'s rules:
 /// at `S(P(x))` it computes `count(P(S(acc)), x)`, which the second rule reads
 /// as `count(acc, x)`.
-@[ checks ]
 def rec count(acc : Int, b : Int) -> Int {
   case b {
     Z => acc,

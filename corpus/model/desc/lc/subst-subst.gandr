@@ -15,7 +15,6 @@ import "./subst-rename.gandr";
 
 /// Two substitutions at an abstraction are the abstraction of the body
 /// under both lifts, by conversion.
-@[ checks ]
 def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
   Term,
   subst(subst(Lam(b), s1), s2),
@@ -26,7 +25,6 @@ def substTwiceUnderLam(b : Term, s1 : Env, s2 : Env) -> Path(
 
 /// A lookup under one binder, under a lifted substitution, is the
 /// weakened lookup under it.
-@[ checks ]
 def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
   Term,
   subst(look(m, s1, S(Z)), Lift(s2)),
@@ -41,7 +39,6 @@ def substLookWeakens(s1 : Env, s2 : Env, m : N) -> Path(
 
 /// A lookup under one binder, under a lifted substitution, is the
 /// substituted lookup weakened.
-@[ checks ]
 def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path(
   Term,
   subst(look(m, s1, S(Z)), Lift(s2)),
@@ -51,7 +48,6 @@ def substLookWeakenLift(s1 : Env, s2 : Env, m : N) -> Path(
 }
 
 /// The hypothesis at `m`, weakened.
-@[ checks ]
 def weakenedComposites(
   s1 : Env,
   s2 : Env,
@@ -64,7 +60,6 @@ def weakenedComposites(
 }
 
 /// A pointwise agreement of two composites holds of their lifts.
-@[ checks ]
 def substSquareLift(
   s1 : Env,
   s2 : Env,
@@ -85,7 +80,6 @@ def substSquareLift(
 
 /// Substituting `s1` then `s2` is substituting `u1` then `u2`, given the
 /// two composites agree at every index.
-@[ checks ]
 def rec substSquare(
   t : Term,
   s1 : Env,

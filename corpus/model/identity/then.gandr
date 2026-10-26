@@ -7,7 +7,6 @@ import "./back.gandr";
 
 /// Two paths between integers, the second leaving where the first arrives,
 /// composed.
-@[ checks ]
 def join(
   a : Integer,
   b : Integer,
@@ -19,5 +18,4 @@ def join(
 }
 
 /// Reflexivity at seven composed with itself by a run.
-@[ checks ]
 def joined_here() -> Path(Integer, 7, 7) { join(7, 7, 7, p, p) }

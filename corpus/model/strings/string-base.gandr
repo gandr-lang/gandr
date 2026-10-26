@@ -13,14 +13,12 @@ import "../data/data-base.gandr";
 /// Where a string's bytes live: inline, in the string itself, when they fit;
 /// otherwise in a buffer on the heap that every copy of the string shares,
 /// beside the number of strings that hold it.
-@[ checks ]
 data Repr : Type {
   Inline : (bytes : List(Integer)) --> Repr;
   Shared : (holders : Integer, bytes : List(Integer)) --> Repr;
 }
 
 /// The bytes a string holds, wherever they live.
-@[ checks ]
 def bytes(s : Repr) -> List(Integer) {
   case s {
     Inline(bs) => bs,
@@ -29,7 +27,6 @@ def bytes(s : Repr) -> List(Integer) {
 }
 
 /// The number of bytes in a list.
-@[ checks ]
 def rec count(bs : List(Integer)) -> Integer {
   case bs {
     Nil => 0,
@@ -38,7 +35,6 @@ def rec count(bs : List(Integer)) -> Integer {
 }
 
 /// One byte list followed by another.
-@[ checks ]
 def rec concat(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
   case xs {
     Nil => ys,

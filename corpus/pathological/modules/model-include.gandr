@@ -8,11 +8,8 @@
 /// reflexivity.
 module EqLoose : Model(Eq) with sort Carrier = Integer {
   /// Every pair is equal.
-  @[ checks ]
   def eq(a : Integer, b : Integer) -> Bool { true }
-  @[ checks ]
   def refl(a : Integer) -> Path(Bool, eq(a, a), true) { here(true) }
-  @[ checks ]
   def sym(a : Integer, b : Integer) -> Path(Bool, eq(a, b), eq(b, a)) { here(true) }
 }
 
@@ -25,14 +22,12 @@ def looselyEqual() -> Bool { 3 == 3 }
 module Stray {
   include Nowhere;
   /// A member beside the include.
-  @[ checks ]
   def kept() -> Integer { 1 }
 }
 
 /// A grade's zero.
 module Zero {
   /// The least grade.
-  @[ checks ]
   def least() -> Integer { 0 }
 }
 
@@ -41,6 +36,5 @@ module Zero {
 module Shadowing {
   include Zero;
   /// A second `least`.
-  @[ checks ]
   def least() -> Integer { 1 }
 }

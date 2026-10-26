@@ -7,5 +7,4 @@
 def proc : Cap { exit };
 
 /// The entry: it exits with 7 before it can return 0.
-@[ checks ]
 def main() -> [Proc] Integer { proc.exit(7); 0 }

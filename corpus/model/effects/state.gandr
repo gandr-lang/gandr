@@ -13,7 +13,6 @@
 /// The operations alone: reading the state of sort `S` into what runs after,
 /// and storing a value of it before what runs after. A handler answers each
 /// with the sort fixed (`state-handler.gandr`).
-@[ checks ]
 theory State {
   sort S : Type+;
   sort C : Type;
@@ -23,7 +22,6 @@ theory State {
 
 /// Storing a value and then reading the state is storing it and continuing
 /// at it.
-@[ checks ]
 theory StatePutGet {
   sort S : Type+;
   sort C : Type;
@@ -33,7 +31,6 @@ theory StatePutGet {
 }
 
 /// Storing twice keeps the second value.
-@[ checks ]
 theory StatePutPut {
   sort S : Type+;
   sort C : Type;
@@ -45,7 +42,6 @@ theory StatePutPut {
 /// Put-get and put-put together. Put-put's continuation can be a `get`, so
 /// its inner `put` is a put-get redex; both reducts store the second value
 /// and continue at it (#2116).
-@[ checks ]
 theory StatePutLaws {
   sort S : Type+;
   sort C : Type;
@@ -58,7 +54,6 @@ theory StatePutLaws {
 /// Reading twice is reading once at the same state. The inner `get` is an
 /// instance of the rule's own left side through its pattern, and both
 /// reducts read once and continue at that state three times (#2116).
-@[ checks ]
 theory StateGetGet {
   sort S : Type+;
   sort C : Type;
@@ -71,7 +66,6 @@ theory StateGetGet {
 /// under a store is a redex of put-get and of get-get, and both reducts store
 /// the value and continue at it twice. Get-put beside them is refused in the
 /// twin (#1934).
-@[ checks ]
 theory StateLaws {
   sort S : Type+;
   sort C : Type;

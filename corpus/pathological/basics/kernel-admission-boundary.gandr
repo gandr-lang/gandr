@@ -3,21 +3,17 @@
 // does not lower.
 
 /// A string.
-@[ checks ]
 def greeting = "the value zone";
 
 /// The string paired with itself.
-@[ checks ]
 def pair = (greeting, greeting);
 
 /// The identity on integers.
-@[ checks ]
 def identity(x : Integer) -> Integer {
   x
 }
 
 /// A number at a stated width.
-@[ checks ]
 def wide = 1u32;
 
 /// A number one past the greatest `u32` does not fit the width it states.

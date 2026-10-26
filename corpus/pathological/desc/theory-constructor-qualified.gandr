@@ -2,7 +2,6 @@
 // nothing else (#2428).
 
 /// Trees of two constructors.
-@[ checks ]
 data Tree : Type {
   Var : (n : Integer) --> Tree;
   App : (t : Tree, u : Tree) --> Tree;

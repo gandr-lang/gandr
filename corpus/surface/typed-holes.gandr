@@ -1,7 +1,5 @@
-@[ checks ]
 def anon = ?;
 
-@[ checks ]
 def named = ?goal;
 
 @[ refuses("NotSynthesisable") ]
@@ -17,5 +15,4 @@ def in_thunk = thunk { ? };
 @[ refuses("NotSynthesisable") ]
 def seeded = thunk { return ?seed };
 
-@[ checks ]
 def pair_hole = (?, ?slot);

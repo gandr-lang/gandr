@@ -8,5 +8,4 @@
 1;
 
 /// A definition after it.
-@[ checks ]
 def late = 2;

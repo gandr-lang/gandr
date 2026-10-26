@@ -21,17 +21,13 @@ def three : code = 3;
 def again : code = three;
 
 /// A declaration that reads no hole checks beside them.
-@[ checks ]
 def four : Integer = 4;
 
 /// The code filled: a type named now.
-@[ checks ]
 def filled : Type = Integer;
 
 /// Three, resumed: at the decode of the filled code the comparison settles.
-@[ checks ]
 def threeFilled : filled = 3;
 
 /// The reader, resumed with it.
-@[ checks ]
 def againFilled : filled = threeFilled;

@@ -5,13 +5,11 @@
 // equivalence makes.
 
 /// A temperature in Celsius.
-@[ checks ]
 data Celsius : Type {
   Cel : (x : Integer) --> Celsius;
 }
 
 /// A temperature in Fahrenheit, the same shape.
-@[ checks ]
 data Fahrenheit : Type {
   Fah : (x : Integer) --> Fahrenheit;
 }

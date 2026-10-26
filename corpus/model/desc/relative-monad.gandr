@@ -14,7 +14,6 @@ import "../data/data-maybe.gandr";
 
 /// The left unit: returning a value to an extension runs its continuation at
 /// that value, a second-order rule over values `V` and computations `C`.
-@[ checks ]
 theory MonadLeftUnit {
   sort V : Type+;
   sort C : Type;
@@ -26,7 +25,6 @@ theory MonadLeftUnit {
 /// The right unit: extending a computation by the unit is the computation.
 /// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
 /// it at its port of the sort `V` (#2115).
-@[ checks ]
 theory MonadRightUnit {
   sort V : Type+;
   sort C : Type;
@@ -39,7 +37,6 @@ theory MonadRightUnit {
 /// of its own left side and of both unit laws', and its right side
 /// substitutes `k` under `bind x .`: each pair is found by pattern
 /// unification, and its two reducts normalize to one term (#2116).
-@[ checks ]
 theory RelativeMonad {
   sort V : Type+;
   sort C : Type;
@@ -51,12 +48,10 @@ theory RelativeMonad {
 }
 
 /// The option monad's unit: the value, present.
-@[ checks ]
 def ret(A : Type, a : A) -> Maybe(A) { Some(a) }
 
 /// The option monad's extension: run the computation once, first, then pass
 /// a present value to the continuation and stop at an absent one.
-@[ checks ]
 def ext(A : Type, B : Type, m : () => Maybe(A), k : A => Maybe(B)) -> Maybe(B) {
   run r <- force m;
   case r {
@@ -82,5 +77,4 @@ def two() -> Integer {
 
 /// Code polymorphic in the carrier: a computation of any family of
 /// computation types, run again.
-@[ checks ]
 def again(T : Type -> Type[-], m : +U T(Integer)) -> T(Integer) { force m }

@@ -6,7 +6,6 @@
 
 /// A monoid presented as data: the block binds `Monoid : Theory`, its sort and
 /// its two operations held in one value.
-@[ checks ]
 theory Monoid {
   sort M : Type;
   oper mul : (x : M, y : M) --> (z : M);
@@ -15,7 +14,6 @@ theory Monoid {
 
 /// Structural recursion over any presentation's operation chain: one per
 /// `Oper` link, zero at its end.
-@[ checks ]
 def rec operations(chain : Theory) -> Integer {
   case chain {
     Oper(name, inputs, outputs, rest) => { run r <- operations[<](rest); r + 1 },
@@ -25,7 +23,6 @@ def rec operations(chain : Theory) -> Integer {
 
 /// The number of operations a presentation declares, read off its `Presents`
 /// value by the generic program above.
-@[ checks ]
 def arity(presented : Theory) -> Integer {
   case presented {
     Presents(sorts, opers, rules) => operations(opers),
@@ -45,7 +42,6 @@ def sign() -> Integer { arity(Monoid) }
 /// A type computed from a presentation: a `case` over `Theory` whose arms return
 /// the quotes `Integer` and `Unit`. The type language gains no `case`; the call
 /// is unquoted where a type is read.
-@[ checks ]
 def counted_at(presented : Theory) -> Type {
   case presented {
     Presents(sorts, opers, rules) => return Integer,
@@ -60,7 +56,6 @@ def typed() -> counted_at(Monoid) { arity(Monoid) }
 
 /// On a binder the call cannot run: `counted_at(presented)` stays rigid, and
 /// its two occurrences are one type.
-@[ checks ]
 def kept(presented : Theory, n : counted_at(presented)) -> counted_at(presented) {
   n
 }

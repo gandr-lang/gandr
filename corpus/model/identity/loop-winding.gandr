@@ -13,7 +13,6 @@ import "./loop-shape.gandr";
 /// The winding number, the fold out of the words into the presented
 /// integers. At `Loop(Unloop(x))` it builds `S(P(windWords(x)))`, whose
 /// normal form is `windWords(x)`, so it respects both rules and is admitted.
-@[ checks ]
 def rec windWords(c : Words) -> Int {
   case c {
     Nil => Z,
@@ -32,11 +31,9 @@ def twice_wound() -> Int { windWords(Loop(Loop(Nil))) }
 def wound_letterwise() -> Int { windWords(Loop(Unloop(Nil))) }
 
 /// Conversion runs the fold at a closed word: two loops are two successors.
-@[ checks ]
 def wound_twice : Path(Int, windWords(Loop(Loop(Nil))), S(S(Z))) = here(S(S(Z)));
 
 /// A cancelled word winds to zero in conversion.
-@[ checks ]
 def wound_never : Path(Int, windWords(Loop(Unloop(Nil))), Z) = here(Z);
 
 /// The winding number into the native integers, a fold that rests on the

@@ -3,15 +3,12 @@
 // reflexivity to itself.
 
 /// Reflexivity at seven, the path the runs here reverse and compose.
-@[ checks ]
 def p = here(7);
 
 /// A path between two integers, reversed.
-@[ checks ]
 def flip(a : Integer, b : Integer, q : Path(Integer, a, b)) -> Path(Integer, b, a) {
   become back(q)
 }
 
 /// Reflexivity at seven, reversed by a run.
-@[ checks ]
 def flipped_here() -> Path(Integer, 7, 7) { become flip(7, 7, p) }

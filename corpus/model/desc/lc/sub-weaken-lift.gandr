@@ -16,7 +16,6 @@ import "./subst-as-rename.gandr";
 
 /// A lookup under one binder is the lookup under the substitution shifting
 /// by one.
-@[ checks ]
 def lookShiftedOnce(
   s : Env,
   n : N
@@ -30,7 +29,6 @@ def lookShiftedOnce(
 }
 
 /// The two composites of law 3 agree at every index.
-@[ checks ]
 def weakenLiftAgree(
   s : Env,
   n : N
@@ -42,7 +40,6 @@ def weakenLiftAgree(
 }
 
 /// Weakening then a lifted substitution is the substitution then weakening.
-@[ checks ]
 def subWeakenLift(
   b : Term,
   s : Env

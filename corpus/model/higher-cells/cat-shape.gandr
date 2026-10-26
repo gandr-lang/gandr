@@ -60,7 +60,6 @@ module SetoidCat : Model(CatShape) {
   }
 
   /// The left unit law, by conversion.
-  @[ checks ]
   def unitL(p : Type, q : Type, f : p => q) -> Path(
     (p => q),
     comp(p, p, q, id(p), f),
@@ -70,7 +69,6 @@ module SetoidCat : Model(CatShape) {
   }
 
   /// The right unit law, by conversion.
-  @[ checks ]
   def unitR(p : Type, q : Type, f : p => q) -> Path(
     (p => q),
     comp(p, q, q, f, id(q)),
@@ -80,7 +78,6 @@ module SetoidCat : Model(CatShape) {
   }
 
   /// Associativity, by conversion through `compose`.
-  @[ checks ]
   def assoc(
     p : Type,
     q : Type,
@@ -98,7 +95,6 @@ module SetoidCat : Model(CatShape) {
   }
 
   /// The left unit law stated by the right one, whose type converts to it.
-  @[ checks ]
   def unitLFromR : (p : Type, q : Type, f : p => q) => Path(
     (p => q),
     comp(p, p, q, id(p), f),
@@ -106,7 +102,6 @@ module SetoidCat : Model(CatShape) {
   ) = unitR;
 
   /// The left unit law by either law, chosen by a boolean.
-  @[ checks ]
   def unitLEither(p : Type, q : Type, f : p => q, b : Bool) -> Path(
     (p => q),
     comp(p, p, q, id(p), f),

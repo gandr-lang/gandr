@@ -7,17 +7,14 @@
 // `../../model/data/stratified.gandr`.
 
 /// The type with no element.
-@[ checks ]
 data Empty : Type {}
 
 /// A node holding a function from its own family into the empty type.
-@[ checks ]
 data Bad : Type {
   MkBad : (f : Bad => Empty) --> Bad;
 }
 
 /// A function applied to a node, each at its declared type.
-@[ checks ]
 def apply(g : Bad => Empty, b : Bad) -> Empty {
   g(b)
 }

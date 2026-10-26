@@ -4,7 +4,6 @@
 // counter transparently.
 
 /// A counter: a carrier, a start and a step.
-@[ checks ]
 theory Counter {
   sort C : Type;
   oper start : () --> C;

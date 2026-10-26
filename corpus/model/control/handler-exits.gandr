@@ -20,7 +20,6 @@ def resumed() -> Integer {
 
 /// A `return` in the handled body leaves the handler, the `pure` clause
 /// skipped.
-@[ checks ]
 def left(n : Integer) -> Integer {
   handle c : Proc {
     c.exit(1);
@@ -65,7 +64,6 @@ def nested() -> Integer {
 }
 
 /// A `case` whose one arm returns and whose other arm continues the body.
-@[ checks ]
 def branch(n : Integer) -> Integer {
   handle c : Proc {
     run m <- case n {
@@ -131,7 +129,6 @@ def answered() -> Integer {
 
 /// A continuation's type is written `Stack(C, D)`, the computation it resumes
 /// from and the one it ends as; a clause hands its continuation on by it.
-@[ checks ]
 def dropped(k : Stack(-F Unit, -F Integer)) -> Integer {
   9
 }
@@ -151,7 +148,6 @@ def handed_on() -> Integer {
 
 /// A function stating a continuation's type resumes the continuation it is
 /// handed, as the clause that bound it would (#1387).
-@[ checks ]
 def resume_stack(j : Stack(-F Unit, -F Integer)) -> Integer {
   j(unit)
 }
@@ -176,7 +172,6 @@ module Conts {
   type K = Stack(-F Unit, -F Integer);
 
   /// `resume_stack`, through the member.
-  @[ checks ]
   def aliased(j : K) -> Integer {
     j(unit)
   }

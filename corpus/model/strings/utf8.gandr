@@ -9,7 +9,6 @@ import "./string-base.gandr";
 
 /// A code point's UTF-8 bytes: one byte below 128, two below 2048, three below
 /// 65536 and four up to the last code point.
-@[ checks ]
 def encode(c : Integer) -> List(Integer) {
   run one <- c < 128;
   case one {
@@ -49,7 +48,6 @@ def encode(c : Integer) -> List(Integer) {
 }
 
 /// A run of code points, each encoded in turn.
-@[ checks ]
 def rec encodeAll(cs : List(Integer)) -> List(Integer) {
   case cs {
     Nil => Nil,
