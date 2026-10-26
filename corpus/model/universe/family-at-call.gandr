@@ -62,3 +62,19 @@ def fieldAt(
 @[ checks ]
 def familyRecord : #{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
 def familyRecord = #{Unit, #{thunk { fn (g) { return Unit } }, thunk { fn (g) { return unit } }}};
+
+/// A family applied through a definition: `appliedVia(post, x)` unfolds to
+/// `post(x)`.
+def appliedVia(post : +U (Unit -> -F Type), x : Unit) -> Type { post(x) }
+
+/// The application written out stands where the definition's is asked, and
+/// the definition's where the written one is: a definition that unfolds to a
+/// variable's call converts with the call (#2751).
+@[ checks ]
+def appliedWrittenOut(post : +U (Unit -> -F Type), x : Unit, h : post(x)) -> appliedVia(post, x) {
+  h
+}
+
+/// The other way round.
+@[ checks ]
+def appliedFolded(post : +U (Unit -> -F Type), x : Unit, h : appliedVia(post, x)) -> post(x) { h }
