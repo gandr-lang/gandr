@@ -770,6 +770,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: mise run check:ledger
+      - name: check the tracking issues
+        if: *plain-gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: mise run check:tracking
       - *upload-test-report
       - *prune-build-state
       - *archive-build-state

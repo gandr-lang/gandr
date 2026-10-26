@@ -12,9 +12,9 @@
 //! [`Former::Unadmitted`](crate::Former::Unadmitted), carry theirs. A site
 //! that names no feature does not compile. Each feature answers its spelling,
 //! the qualifier a fixture's `refuses("OutOfFragment.<spelling>")` names it
-//! by, and the issue tracking it: its own where one is open, else
-//! [`TrackingIssue::UNFILED`], the epic that files one once a source reaches
-//! the feature.
+//! by, and the issue tracking it: an open issue of its own, or one a shared
+//! cause shares (#2529). `check:tracking` holds every issue open, or closed as
+//! not planned.
 //!
 //! **Choice.** The feature is chosen at the site; the alternative, a table
 //! from a refused form and the sort its position demands to an issue, named
@@ -470,8 +470,8 @@ impl Unbuilt
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the feature's own issue where one is open, else
-    ///   [`TrackingIssue::UNFILED`].
+    /// - ensures: the open issue whose landing builds the feature, shared by
+    ///   the features one cause holds back.
     /// - provides: the issue every face of the refusal names.
     /// - fails: never.
     /// - panics: none.
@@ -479,8 +479,7 @@ impl Unbuilt
     ///   restate it row by row.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the census's tracked features are pinned to their
-    ///   issues, an untracked one to the epic.
+    /// - hypothesis: L3 — the census's features are pinned to their issues.
     /// - witness: `classify::tests::a_form_out_of_the_fragment_names_the_issue_tracking_it`
     #[inline]
     #[must_use]
@@ -488,15 +487,14 @@ impl Unbuilt
     {
         match self {
             Self::Projection => TrackingIssue::PROJECTION,
-            Self::Index => TrackingIssue::INDEX,
-            Self::Pack | Self::PackModel | Self::PackageType | Self::Unpack => {
+            Self::Index => TrackingIssue::UNHELD_INDEX,
+            Self::Pack | Self::PackModel | Self::PackageType | Self::Unpack | Self::ForgetModel => {
                 TrackingIssue::PACKAGES
             },
             Self::TypedNumber => TrackingIssue::TYPED_NUMBER,
-            Self::ShellBlock => TrackingIssue::SHELL_BLOCK,
             Self::FieldGrade => TrackingIssue::FIELD_GRADE,
             Self::Union => TrackingIssue::UNION,
-            Self::OperatorDeclaration => TrackingIssue::OPERATOR_DECLARATION,
+            Self::OperatorDeclaration | Self::PrefixOperator => TrackingIssue::OPERATOR_DECLARATION,
             Self::RecursiveClaim => TrackingIssue::RECURSIVE_CLAIM,
             Self::SharedFork | Self::Dup | Self::Acquire | Self::Release => {
                 TrackingIssue::SHARED_SESSIONS
@@ -507,26 +505,8 @@ impl Unbuilt
             Self::ThunkGrade => TrackingIssue::THUNK_GRADE,
             Self::InfixForm => TrackingIssue::INFIX_FORM,
             Self::EmptyCase => TrackingIssue::EMPTY_CASE_ANSWER,
-            Self::ExternBlock => TrackingIssue::EXTERN_BLOCK,
-            Self::Annotation
-            | Self::AsPattern
-            | Self::ListPattern
-            | Self::RestPattern
-            | Self::Interpolation
-            | Self::Bind
-            | Self::Circuit
-            | Self::Codata
-            | Self::ConsPattern
-            | Self::ConstructorPattern
-            | Self::Derive
-            | Self::HostEscape
-            | Self::LabelledSumPattern
-            | Self::LiteralPattern
-            | Self::ManifestSort
-            | Self::OrPattern
-            | Self::TelescopePattern
-            | Self::Theory
-            | Self::TuplePattern
+            Self::ExternBlock | Self::HostEscape => TrackingIssue::EXTERN_BLOCK,
+            Self::ShellBlock
             | Self::CommandSubstitution
             | Self::DoubleQuotedString
             | Self::EnvironmentAssignment
@@ -539,35 +519,48 @@ impl Unbuilt
             | Self::SingleQuotedString
             | Self::Subshell
             | Self::VariableExpansion
-            | Self::VariableName
-            | Self::TypeGrade
-            | Self::TypeAbstraction
-            | Self::Val
-            | Self::UnknownConstructor
-            | Self::PrefixOperator
-            | Self::UnreadPattern
-            | Self::StatedType
-            | Self::UniverseLevel
-            | Self::CapabilityHost
-            | Self::Presentation
-            | Self::RecordedMove
-            | Self::DialogueMove
-            | Self::CombinedSupply
-            | Self::UnownedSupply
-            | Self::UnownedScope
-            | Self::MethodCall
-            | Self::ManifestModel
-            | Self::ModelType
+            | Self::VariableName => TrackingIssue::SHELL_BLOCK,
+            Self::Bind
+            | Self::Circuit
+            | Self::Codata
+            | Self::Derive
+            | Self::ManifestSort
+            | Self::Theory => TrackingIssue::DECLARATION_AS_TERM,
+            Self::AsPattern
+            | Self::ListPattern
+            | Self::RestPattern
+            | Self::ConsPattern
+            | Self::ConstructorPattern
+            | Self::LabelledSumPattern
+            | Self::LiteralPattern
+            | Self::OrPattern
+            | Self::TelescopePattern
+            | Self::TuplePattern
             | Self::LoopPattern
-            | Self::SessionProtocol
-            | Self::StageResident
-            | Self::UaCount
-            | Self::UaDescription
-            | Self::CellMember
-            | Self::ConstructorBlockMember
-            | Self::GeneratorAttribute
-            | Self::ModelSignature
-            | Self::ForgetModel => TrackingIssue::UNFILED,
+            | Self::UnreadPattern => TrackingIssue::PATTERN_FORM,
+            Self::Annotation => TrackingIssue::ANNOTATION,
+            Self::Interpolation => TrackingIssue::INTERPOLATION,
+            Self::TypeGrade => TrackingIssue::TYPE_GRADE,
+            Self::TypeAbstraction => TrackingIssue::TYPE_ABSTRACTION,
+            Self::Val => TrackingIssue::VAL,
+            Self::UnknownConstructor | Self::UniverseLevel | Self::CapabilityHost => {
+                TrackingIssue::AUTHOR_ERROR_AS_UNBUILT
+            },
+            Self::StatedType | Self::MethodCall => TrackingIssue::UNCARRIED_DECLARATION,
+            Self::Presentation => TrackingIssue::PRESENTATION,
+            Self::RecordedMove | Self::DialogueMove => TrackingIssue::MOVES,
+            Self::CombinedSupply | Self::UnownedSupply | Self::StageResident => {
+                TrackingIssue::SUPPLIES
+            },
+            Self::UnownedScope => TrackingIssue::UNOWNED_SCOPE,
+            Self::ManifestModel | Self::ModelType | Self::ModelSignature => {
+                TrackingIssue::MODEL_TYPE
+            },
+            Self::SessionProtocol => TrackingIssue::SESSION_PROTOCOL,
+            Self::UaCount | Self::UaDescription => TrackingIssue::UA_RESIDENT,
+            Self::CellMember | Self::ConstructorBlockMember | Self::GeneratorAttribute => {
+                TrackingIssue::DATA_MEMBER
+            },
         }
     }
 }

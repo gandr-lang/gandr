@@ -286,8 +286,9 @@ impl UnadmittedFormer
     ///   representable level is an engine fault, the bound being the
     ///   representation's; a numeric literal, the numeric atom, a value lift
     ///   and a universe over a sort parameter are unimplemented, naming the
-    ///   holding issue no source reaches past the lowering; every other former
-    ///   has a rule in the judgement, so its refusal there is an engine fault.
+    ///   issue no source reaches past the lowering yet (#2669); every other
+    ///   former has a rule in the judgement, so its refusal there is an engine
+    ///   fault.
     /// - provides: the class of [`CheckRefusal::OutOfFragment`].
     /// - fails: never.
     /// - panics: none.
@@ -297,7 +298,7 @@ impl UnadmittedFormer
     /// - witness: `refusal::tests::each_unadmitted_former_carries_its_pinned_class`
     #[spec(ensures: |ret| match self {
         | Self::Stage | Self::TypeLift => matches!(ret, FailureClass::MalformedSource),
-        | Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::UNFILED)),
+        | Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
         | Self::TopUniverse | Self::Abstract | Self::StaticLambda | Self::EffectRow | Self::Reify | Self::Stack | Self::Perform | Self::Handle | Self::Resume | Self::Reset | Self::Shift | Self::Capability | Self::Exercise | Self::Scope | Self::Run | Self::Memory | Self::Buffer | Self::Abandon => matches!(ret, FailureClass::EngineFault),
     })]
     #[inline]
@@ -307,7 +308,7 @@ impl UnadmittedFormer
         match self {
             Self::Stage | Self::TypeLift => FailureClass::MalformedSource,
             Self::NumericLiteral | Self::NumericAtom | Self::ValueLift | Self::SortParameter => {
-                FailureClass::Unimplemented(TrackingIssue::UNFILED)
+                FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)
             },
             Self::TopUniverse
             | Self::Abstract

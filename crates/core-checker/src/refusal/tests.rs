@@ -268,14 +268,14 @@ fn each_unadmitted_former_carries_its_pinned_class()
 {
     let mut arena = CoreArena::new();
     let at = CoreNode::Term(TermNode::Value(arena.value_unit()));
-    let unfiled = FailureClass::Unimplemented(TrackingIssue::UNFILED);
+    let unruled = FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER);
     let rows = [
         (UnadmittedFormer::Stage, FailureClass::MalformedSource),
         (UnadmittedFormer::TypeLift, FailureClass::MalformedSource),
-        (UnadmittedFormer::NumericLiteral, unfiled),
-        (UnadmittedFormer::NumericAtom, unfiled),
-        (UnadmittedFormer::ValueLift, unfiled),
-        (UnadmittedFormer::SortParameter, unfiled),
+        (UnadmittedFormer::NumericLiteral, unruled),
+        (UnadmittedFormer::NumericAtom, unruled),
+        (UnadmittedFormer::ValueLift, unruled),
+        (UnadmittedFormer::SortParameter, unruled),
         (UnadmittedFormer::TopUniverse, FailureClass::EngineFault),
         (UnadmittedFormer::Abstract, FailureClass::EngineFault),
         (UnadmittedFormer::StaticLambda, FailureClass::EngineFault),

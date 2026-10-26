@@ -338,7 +338,7 @@ impl ClassCounts
     /// - witness: `report::tests::saturating_tallies_preserve_every_count_channel`
     const CLASSES: [FailureClass; 4_usize] = [
         FailureClass::UserAbsence,
-        FailureClass::Unimplemented(TrackingIssue::UNFILED),
+        FailureClass::Unimplemented(TrackingIssue::PROJECTION),
         FailureClass::MalformedSource,
         FailureClass::EngineFault,
     ];

@@ -5,4 +5,4 @@ error[OutOfFragment.typed_number]: the typed number is not supported yet
   │            ━━━━━━ a form the fragment does not admit
   │
   ├ note: `half` is expected to check, and this refusal leaves it unsettled
-  ╰ note: tracked by #1109 <https://github.com/gandr-lang/gandr/issues/1109>
+  ╰ note: tracked by #2563 <https://github.com/gandr-lang/gandr/issues/2563>

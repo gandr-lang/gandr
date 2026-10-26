@@ -731,6 +731,57 @@ fi
 echo "ledger check OK: $(sqlite3 "$db" 'SELECT count(*) FROM feature;') rows round-trip, every path exists, every exemplar is named, every language feature names one"
 '''
 
+# A refusal in the tree points at what resolves it (#2529). Every
+# `TrackingIssue` constant (`crates/core-term/src/failure.rs`), the issue an
+# unimplemented refusal names on every face, and every declined row of the
+# features ledger names an issue that is open, or closed as not planned (a
+# decision); never a completed issue or a pull request. The placeholder
+# `UNFILED` (#1207) is gone: an unimplemented refusal names its own issue or
+# does not compile. `.config/tracking/tracking.jq` reads them; each case in
+# `.config/tracking/cases.json` holds an input and the lines it prints, or
+# none. The states are read once through `gh`, after the cases, and every
+# finding is printed before the gate fails.
+["check:tracking"]
+description = "Every tracking issue a refusal names, and every declined ledger row's decision, is open or closed as not planned"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+failed=0
+while IFS= read -r case; do
+  got=$(jq .input <<< "$case" | jq -r -f .config/tracking/tracking.jq)
+  want=$(jq -r .output <<< "$case")
+  if [[ "$got" != "$want" ]]; then
+    printf 'tracking case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$(jq -r .name <<< "$case")" "$got" "$want" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/tracking/cases.json)
+(( failed == 0 )) || exit 1
+sed -nE 's/^ *pub const ([A-Z_]+): Self = Self\(([0-9]+)\);$/\1 \2/p' crates/core-term/src/failure.rs \
+  | jq -R '[inputs | split(" ") | {name: .[0], number: (.[1] | tonumber)}]' -n > "$tmp/constants.json"
+{ cat ledger/features.sql; printf '%s\n' "SELECT id, coalesce(issue, '') AS issue FROM feature WHERE status = 'declined' ORDER BY id;"; } \
+  | sqlite3 -json | jq '[.[] | {id, refs: [.issue | scan("(?:^|\\s)#([0-9]+)") | .[0] | tonumber]}]' > "$tmp/rows.json"
+jq -r -n --slurpfile c "$tmp/constants.json" --slurpfile r "$tmp/rows.json" \
+  '"{ repository(owner: \"gandr-lang\", name: \"gandr\") { " + ([$c[0][].number, $r[0][].refs[]] | unique
+    | map("n\(.): issueOrPullRequest(number: \(.)) { ... on Issue { state stateReason } ... on PullRequest { state } }")
+    | join(" ")) + " } }"' > "$tmp/query.graphql"
+gh api graphql -F query=@"$tmp/query.graphql" --jq '.data.repository | with_entries(.key |= ltrimstr("n")
+    | .value |= if . == null then null
+      elif has("stateReason") then {kind: "issue", state, reason: .stateReason}
+      else {kind: "pull", state} end)' > "$tmp/states.json" \
+  || { echo 'tracking: the states of the issues named could not be read through gh' >&2; exit 1; }
+findings=$(jq -n --slurpfile c "$tmp/constants.json" --slurpfile r "$tmp/rows.json" --slurpfile s "$tmp/states.json" \
+  '{constants: $c[0], rows: $r[0], states: $s[0]}' | jq -r -f .config/tracking/tracking.jq)
+if [[ -n $findings ]]; then
+  echo "$findings" >&2
+  echo 'tracking check FAILED' >&2
+  exit 1
+fi
+echo "tracking check OK: $(jq length .config/tracking/cases.json) cases; $(jq length "$tmp/constants.json") tracking issues and $(jq length "$tmp/rows.json") declined rows each open or decided"
+'''
+
 ["check:tests"]
 description = "Unit and integration tests over every target"
 run = ".config/mise/scope cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"

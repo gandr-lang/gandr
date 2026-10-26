@@ -6448,16 +6448,19 @@ fn each_former_the_kernel_refuses_names_its_issue()
         ),
         (
             UnadmittedFormer::NumericLiteral,
-            tracked(TrackingIssue::UNFILED),
+            tracked(TrackingIssue::JUDGEMENT_FORMER),
         ),
         (
             UnadmittedFormer::NumericAtom,
-            tracked(TrackingIssue::UNFILED),
+            tracked(TrackingIssue::JUDGEMENT_FORMER),
         ),
-        (UnadmittedFormer::ValueLift, tracked(TrackingIssue::UNFILED)),
+        (
+            UnadmittedFormer::ValueLift,
+            tracked(TrackingIssue::JUDGEMENT_FORMER),
+        ),
         (
             UnadmittedFormer::SortParameter,
-            tracked(TrackingIssue::UNFILED),
+            tracked(TrackingIssue::JUDGEMENT_FORMER),
         ),
         (UnadmittedFormer::TopUniverse, FailureClass::EngineFault),
         (UnadmittedFormer::TypeLift, FailureClass::EngineFault),

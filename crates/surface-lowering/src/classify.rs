@@ -363,7 +363,9 @@ impl LoweringRefusal<'_>
             Self::UndescribedMember { fault, .. } => undescribed(fault),
             Self::GradedBridge { .. } => FailureClass::Unimplemented(TrackingIssue::THUNK_GRADE),
             Self::UnreadAscription { .. } => FailureClass::Unimplemented(TrackingIssue::ASCRIPTION),
-            Self::ImplicitTelescope { .. } => FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            Self::ImplicitTelescope { .. } => {
+                FailureClass::Unimplemented(TrackingIssue::IMPLICIT_TELESCOPE)
+            },
             Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
@@ -417,7 +419,9 @@ fn out_of_fragment(
             FragmentFeature::Stray | FragmentFeature::Crossed(_) => FailureClass::MalformedSource,
         },
         FragmentBoundary::Indexed => FailureClass::Unimplemented(TrackingIssue::INDEXED),
-        FragmentBoundary::Endpoint => FailureClass::Unimplemented(TrackingIssue::DELEGATION),
+        FragmentBoundary::Endpoint => {
+            FailureClass::Unimplemented(TrackingIssue::ENDPOINT_PARAMETER)
+        },
         FragmentBoundary::Misplaced
         | FragmentBoundary::NotAtResult
         | FragmentBoundary::Arity(_)
@@ -599,7 +603,7 @@ fn underived(fault: DeriveFault) -> FailureClass
 {
     match fault {
         DeriveFault::Indexed | DeriveFault::Erased => {
-            FailureClass::Unimplemented(TrackingIssue::UNFILED)
+            FailureClass::Unimplemented(TrackingIssue::DERIVE_INDEXED)
         },
         DeriveFault::Unstated(component) => unstated(component),
         DeriveFault::Undecided => FailureClass::EngineFault,
@@ -652,14 +656,14 @@ fn uncovered(fault: Uncovered) -> FailureClass
 /// # Specification
 /// - requires: nothing.
 /// - ensures: an operation filler, a higher cell, the reversible glyph, a
-///   nested operation and two redexes in one circuit rule are unimplemented,
-///   each naming its issue; a field past the first-order code, an undecodable
-///   description, an aggregated output and an operation the cell frame cannot
-///   hold are unimplemented under the epic that files their issues; a circuit
-///   redex off its own derived boundary is an engine fault; every other fault —
-///   a rule from no operation, from an empty one, of the wrong result count,
-///   copying a variable, wearing one name at both polarities, a wiring with no
-///   boundary, an operation with no output — is malformed source.
+///   nested operation, two redexes in one circuit rule, a field past the
+///   first-order code, an undecodable description, an aggregated output and an
+///   operation the cell frame cannot hold are unimplemented, each naming its
+///   issue; a circuit redex off its own derived boundary is an engine fault;
+///   every other fault — a rule from no operation, from an empty one, of the
+///   wrong result count, copying a variable, wearing one name at both
+///   polarities, a wiring with no boundary, an operation with no output — is
+///   malformed source.
 /// - provides: the lowering classifier's arm for `UndescribedMember`.
 /// - fails: never.
 /// - panics: none.
@@ -687,13 +691,14 @@ fn undescribed(fault: MemberFault) -> FailureClass
         MemberFault::ParallelRedexes => {
             FailureClass::Unimplemented(TrackingIssue::PARALLEL_REDEXES)
         },
-        MemberFault::HigherOrderField
-        | MemberFault::DependentField
-        | MemberFault::TypeShape
-        | MemberFault::NativeDecode
-        | MemberFault::AggregatedOutput
-        | MemberFault::UnrepresentableOperation => {
-            FailureClass::Unimplemented(TrackingIssue::UNFILED)
+        MemberFault::HigherOrderField => {
+            FailureClass::Unimplemented(TrackingIssue::HIGHER_ORDER_FIELD)
+        },
+        MemberFault::DependentField => FailureClass::Unimplemented(TrackingIssue::DEPENDENT_FIELD),
+        MemberFault::TypeShape => FailureClass::Unimplemented(TrackingIssue::TYPE_SHAPE),
+        MemberFault::NativeDecode => FailureClass::Unimplemented(TrackingIssue::NATIVE_DECODE),
+        MemberFault::AggregatedOutput | MemberFault::UnrepresentableOperation => {
+            FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE)
         },
         MemberFault::OffBoundary => FailureClass::EngineFault,
         MemberFault::NoOutput
@@ -1066,7 +1071,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            FailureClass::Unimplemented(TrackingIssue::VAL),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
@@ -1111,7 +1116,7 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
-            FailureClass::Unimplemented(TrackingIssue::UNFILED),
+            FailureClass::Unimplemented(TrackingIssue::IMPLICIT_TELESCOPE),
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
@@ -1161,7 +1166,7 @@ mod tests
                 "index_expression",
                 FragmentSort::Computation,
                 FragmentBoundary::Unadmitted(Unbuilt::Index),
-                FailureClass::Unimplemented(TrackingIssue::INDEX),
+                FailureClass::Unimplemented(TrackingIssue::UNHELD_INDEX),
             ),
             (
                 "unpack_statement",
@@ -1179,7 +1184,7 @@ mod tests
                 "def_value",
                 FragmentSort::Declaration,
                 FragmentBoundary::Reserved(Unbuilt::Val),
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::VAL),
             ),
             (
                 "instantiation_expression",
@@ -1245,7 +1250,7 @@ mod tests
                 "identifier",
                 FragmentSort::Value,
                 FragmentBoundary::Endpoint,
-                FailureClass::Unimplemented(TrackingIssue::DELEGATION),
+                FailureClass::Unimplemented(TrackingIssue::ENDPOINT_PARAMETER),
             ),
             (
                 "data_generator",
@@ -1449,27 +1454,27 @@ mod tests
             ),
             (
                 MemberFault::HigherOrderField,
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::HIGHER_ORDER_FIELD),
             ),
             (
                 MemberFault::DependentField,
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::DEPENDENT_FIELD),
             ),
             (
                 MemberFault::TypeShape,
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::TYPE_SHAPE),
             ),
             (
                 MemberFault::NativeDecode,
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::NATIVE_DECODE),
             ),
             (
                 MemberFault::AggregatedOutput,
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE),
             ),
             (
                 MemberFault::UnrepresentableOperation,
-                FailureClass::Unimplemented(TrackingIssue::UNFILED),
+                FailureClass::Unimplemented(TrackingIssue::OPERATION_SHAPE),
             ),
             (MemberFault::NoOutput, FailureClass::MalformedSource),
             (MemberFault::LhsNotOperation, FailureClass::MalformedSource),

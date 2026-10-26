@@ -2704,7 +2704,7 @@ fn a_signature_whose_definition_is_refused_is_a_note_2339()
 #[test]
 fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
 {
-    let url = "https://github.com/gandr-lang/gandr/issues/1109";
+    let url = "https://github.com/gandr-lang/gandr/issues/2563";
     let wide = only(
         Path::new("half.gandr"),
         SourceText::from("def half = 0.5f32 ;\n"),
@@ -2715,14 +2715,14 @@ fn an_unimplemented_refusal_names_its_tracking_issue_in_every_face()
     );
     assert_eq!(
         wide.tracked(),
-        Maybe::Present(format!("tracked by #1109 <{url}>")),
+        Maybe::Present(format!("tracked by #2563 <{url}>")),
         "the terminal and the editor close with the issue and its address"
     );
     let image: serde_json::Value =
         serde_json::from_str(&wide.json()).expect("the JSON image parses");
     assert_eq!(
         image["tracking"],
-        serde_json::json!({"issue": "#1109", "url": url})
+        serde_json::json!({"issue": "#2563", "url": url})
     );
     let malformed = only(Path::new("force.gandr"), SourceText::from(FORCE));
     assert_eq!(

@@ -1,0 +1,125 @@
+[
+  {
+    "name": "an open feature issue and a not-planned decision hold",
+    "input": {
+      "constants": [
+        {
+          "name": "VAL",
+          "number": 2652
+        },
+        {
+          "name": "SHELL_BLOCK",
+          "number": 1057
+        }
+      ],
+      "rows": [
+        {
+          "id": "forall-types",
+          "refs": [1055]
+        }
+      ],
+      "states": {
+        "2652": {
+          "kind": "issue",
+          "state": "OPEN",
+          "reason": null
+        },
+        "1057": {
+          "kind": "issue",
+          "state": "OPEN",
+          "reason": null
+        },
+        "1055": {
+          "kind": "issue",
+          "state": "CLOSED",
+          "reason": "NOT_PLANNED"
+        }
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "#2529: a constant naming an issue closed as completed is refused",
+    "input": {
+      "constants": [
+        {
+          "name": "TYPED_NUMBER",
+          "number": 1109
+        }
+      ],
+      "rows": [],
+      "states": {
+        "1109": {
+          "kind": "issue",
+          "state": "CLOSED",
+          "reason": "COMPLETED"
+        }
+      }
+    },
+    "output": "crates/core-term/src/failure.rs: `TrackingIssue::TYPED_NUMBER` names #1109, which is closed as completed: name the open issue whose landing builds the feature, or the decision closed as not planned"
+  },
+  {
+    "name": "a constant naming no issue, or a pull request, is refused",
+    "input": {
+      "constants": [
+        {
+          "name": "GONE",
+          "number": 99999
+        },
+        {
+          "name": "LANDED",
+          "number": 569
+        }
+      ],
+      "rows": [],
+      "states": {
+        "569": {
+          "kind": "pull",
+          "state": "MERGED"
+        }
+      }
+    },
+    "output": "crates/core-term/src/failure.rs: `TrackingIssue::GONE` names #99999, which names nothing: name the open issue whose landing builds the feature, or the decision closed as not planned\ncrates/core-term/src/failure.rs: `TrackingIssue::LANDED` names #569, which is a pull request: name the open issue whose landing builds the feature, or the decision closed as not planned"
+  },
+  {
+    "name": "#2529: a declined row naming a merged pull request or a completed issue is refused; one decision among its references holds it",
+    "input": {
+      "constants": [],
+      "rows": [
+        {
+          "id": "compile-host-images",
+          "refs": [569]
+        },
+        {
+          "id": "intersection-types",
+          "refs": [1056]
+        },
+        {
+          "id": "decided",
+          "refs": [1056, 2680]
+        },
+        {
+          "id": "bare",
+          "refs": []
+        }
+      ],
+      "states": {
+        "569": {
+          "kind": "pull",
+          "state": "MERGED"
+        },
+        "1056": {
+          "kind": "issue",
+          "state": "CLOSED",
+          "reason": "COMPLETED"
+        },
+        "2680": {
+          "kind": "issue",
+          "state": "CLOSED",
+          "reason": "NOT_PLANNED"
+        }
+      }
+    },
+    "output": "ledger/features.sql: the declined row `compile-host-images` names #569, is a pull request: name its decision, an issue closed as not planned\nledger/features.sql: the declined row `intersection-types` names #1056, is closed as completed: name its decision, an issue closed as not planned\nledger/features.sql: the declined row `bare` names no issue: name its decision, an issue closed as not planned"
+  }
+]

@@ -2293,7 +2293,7 @@ mod tests
     #[test]
     fn an_unimplemented_refusal_links_its_tracking_issue()
     {
-        let url = "https://github.com/gandr-lang/gandr/issues/1109";
+        let url = "https://github.com/gandr-lang/gandr/issues/2563";
         let uri = DocumentUri::from("file:///strict/half.gandr");
         let diagnostics = checked(&uri, SourceText::from("def half = 0.5f32 ;\n"));
         let [ref diagnostic] = *diagnostics.as_slice()
@@ -2315,7 +2315,7 @@ mod tests
         assert!(
             diagnostic
                 .message
-                .ends_with(format!("\nnote: tracked by #1109 <{url}>").as_str()),
+                .ends_with(format!("\nnote: tracked by #2563 <{url}>").as_str()),
             "the message closes with the line the terminal closes with: {:?}",
             diagnostic.message
         );

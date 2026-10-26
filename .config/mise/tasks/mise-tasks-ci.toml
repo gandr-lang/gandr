@@ -1498,7 +1498,7 @@ findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null
   '($base | add // []) as $base | ($head | add // []) as $head
    | (INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
    | {pr: $pr, body: $body, rows: [$head[].id],
-      touched: ([$head[] | select($was[.id] != .) | {id, since}] + [$base[] | select($now[.id] == null) | {id, since: null}])}' \
+      touched: ([$head[] | select($was[.id] != .) | {id, since, status}] + [$base[] | select($now[.id] == null) | {id, since: null, status: null}])}' \
   | jq -r -L "$root/.config/claims" -f "$root/.config/claims/ledger.jq")
 [[ -z "$findings" ]] || { echo "$findings"; exit 1; }
 {% endraw %}'''

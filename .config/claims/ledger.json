@@ -18,11 +18,13 @@
       "touched": [
         {
           "id": "check-memo",
-          "since": "b87a65d #866"
+          "since": "b87a65d #866",
+          "status": "implemented"
         },
         {
           "id": "acset-store",
-          "since": "#348 #2600"
+          "since": "#348 #2600",
+          "status": "implemented"
         }
       ]
     },
@@ -37,7 +39,8 @@
       "touched": [
         {
           "id": "check-memo",
-          "since": "#26001"
+          "since": "#26001",
+          "status": "implemented"
         }
       ]
     },
@@ -52,7 +55,8 @@
       "touched": [
         {
           "id": "effects-as-data",
-          "since": "#2600"
+          "since": "#2600",
+          "status": "implemented"
         }
       ]
     },
@@ -77,14 +81,37 @@
       "touched": [
         {
           "id": "check-memo",
-          "since": "b87a65d"
+          "since": "b87a65d",
+          "status": "implemented"
         },
         {
           "id": "old-row",
-          "since": null
+          "since": null,
+          "status": null
         }
       ]
     },
     "output": "the change touches the ledger row `old-row`, and `## Ledger` does not name it: add `- `old-row` — <witness>`, then run the task again"
+  },
+  {
+    "name": "#2529: a named declined or planned row keeps `since` NULL and is not refused for it",
+    "input": {
+      "pr": 2690,
+      "body": "## Ledger\n\n- `intersection-types` — `ledger/features.sql`: the decision\n- `staged-memo` — `ledger/features.sql`: the plan\n",
+      "rows": ["intersection-types", "staged-memo"],
+      "touched": [
+        {
+          "id": "intersection-types",
+          "since": null,
+          "status": "declined"
+        },
+        {
+          "id": "staged-memo",
+          "since": null,
+          "status": "planned"
+        }
+      ]
+    },
+    "output": ""
   }
 ]

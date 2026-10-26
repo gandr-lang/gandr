@@ -730,12 +730,13 @@ impl Refusal
     ///   former outside the fragment, whose class is its former's at the kernel
     ///   ([`readmitted`]). A withheld constant is malformed source, since the
     ///   declaration it names was turned away for a reason its own entry
-    ///   reports; a session and a world are unimplemented, each naming the
-    ///   issue tracking it; a dangling id, a cyclic node, a declined
-    ///   certificate and a machine invariant are engine faults, because a
-    ///   judged term from the judged arena holds none of them and an unfolding
-    ///   holds by definition; a term hole and the unknown type are user
-    ///   absences.
+    ///   reports; a world is unimplemented, naming the issue tracking it; a
+    ///   session the bridge cannot cross, a dangling id, a cyclic node, a
+    ///   declined certificate and a machine invariant are engine faults,
+    ///   because a judged term from the judged arena holds none of them — a
+    ///   session action crosses once the judgement records its payload and
+    ///   admits its assumption (#1319) — and an unfolding holds by definition;
+    ///   a term hole and the unknown type are user absences.
     /// - provides: the fact a report groups by, in the same four classes the
     ///   judgement's refusals answer to.
     /// - fails: never.
@@ -751,8 +752,8 @@ impl Refusal
     #[spec(ensures: |ret| match *self {
         | Self::Withheld { .. } | Self::WithheldData { .. } => matches!(ret, FailureClass::MalformedSource),
         | Self::OutOfFragment { former, .. } => ret == readmitted(former),
-        | Self::Session { .. } | Self::Located { .. } => matches!(ret, FailureClass::Unimplemented(_)),
-        | Self::DanglingNode { .. } | Self::Cyclic { .. }
+        | Self::Located { .. } => matches!(ret, FailureClass::Unimplemented(_)),
+        | Self::Session { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
         | Self::Hole { .. } | Self::Unknown { .. } => matches!(ret, FailureClass::UserAbsence),
     })]
@@ -763,9 +764,9 @@ impl Refusal
         match *self {
             Self::Withheld { .. } | Self::WithheldData { .. } => FailureClass::MalformedSource,
             Self::OutOfFragment { former, .. } => readmitted(former),
-            Self::Session { .. } => FailureClass::Unimplemented(TrackingIssue::KERNEL_SESSION),
             Self::Located { .. } => FailureClass::Unimplemented(TrackingIssue::KERNEL_WORLD),
-            Self::DanglingNode { .. }
+            Self::Session { .. }
+            | Self::DanglingNode { .. }
             | Self::Cyclic { .. }
             | Self::CertificateDeclined { .. }
             | Self::MachineInvariant => FailureClass::EngineFault,
@@ -801,7 +802,7 @@ impl Refusal
     | UnadmittedFormer::Abstract => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_ABSTRACT)),
     | UnadmittedFormer::StaticLambda => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STATIC_LAMBDA)),
     | UnadmittedFormer::Stage => matches!(ret, FailureClass::Unimplemented(TrackingIssue::KERNEL_STAGE)),
-    | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom | UnadmittedFormer::ValueLift | UnadmittedFormer::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::UNFILED)),
+    | UnadmittedFormer::NumericLiteral | UnadmittedFormer::NumericAtom | UnadmittedFormer::ValueLift | UnadmittedFormer::SortParameter => matches!(ret, FailureClass::Unimplemented(TrackingIssue::JUDGEMENT_FORMER)),
     | UnadmittedFormer::TopUniverse | UnadmittedFormer::TypeLift => matches!(ret, FailureClass::EngineFault),
 })]
 #[must_use]
