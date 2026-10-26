@@ -893,8 +893,13 @@ jobs:
   # lowering's library tests are the three longest units of the deep rebuild,
   # and the lowering's waits on the checker's library. At eight cores' four
   # jobs after a core-term change the one shard rebuilt in 133 s, the two in
-  # 64 and 80 s (#2148). Every shard restores the lane's one state; its join
-  # overlays what each built on that state and hands the whole on.
+  # 64 and 80 s (#2148). A shard is a package set, its cost the packages'
+  # build and their tests (#2547): over ten queue runs faces took 200 s (98 s
+  # building, 39 s testing) against its 145 s surface budget while the checker
+  # took 72 s of its 190 s, so the language server, the faces' largest package
+  # (106 s of test time), is tested beside the checker. Every shard restores
+  # the lane's one state; its join overlays what each built on that state and
+  # hands the whole on.
   cargo-test-enforcing-shard:
     name: test enforcing targets (linux, ${{ matrix.shard }})
     needs: *rust-needs
@@ -916,11 +921,11 @@ jobs:
               gandr-surface-session
           - shard: faces
             packages: &faces-shard >-
-              gandr-lang gandr-surface-lsp gandr-surface-mcp gandr-surface-render-terminal
-              gandr-surface-repl gandr-surface-tui
+              gandr-lang gandr-surface-mcp gandr-surface-render-terminal gandr-surface-repl
+              gandr-surface-tui
           - shard: checker
             packages: &checker-shard >-
-              gandr-core-checker gandr-core-incremental
+              gandr-core-checker gandr-core-incremental gandr-surface-lsp
           - shard: lowering
             packages: &lowering-shard >-
               gandr-core-sequent gandr-runtime-emitter gandr-surface-lowering gandr-surface-pretty
