@@ -1479,7 +1479,8 @@ set -euo pipefail
 issue=${usage_issue:?}
 [[ $issue =~ ^[0-9]+$ ]] || { echo "unit:check takes an issue number, not \`$issue\`" >&2; exit 2; }
 claims=$(git rev-parse --show-toplevel)/.config/claims
-findings=$(gh issue view "$issue" --json body --jq .body | jq -R -s -r -L "$claims" -f "$claims/unit.jq")
+concerns=$(sqlite3 -json :memory: ".read $(git rev-parse --show-toplevel)/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
+findings=$(gh issue view "$issue" --json body --jq .body | jq -R -s -r -L "$claims" --argjson concerns "$concerns" -f "$claims/unit.jq")
 if [[ -n "$findings" ]]; then
   printf 'unit check FAILED: #%s lacks what a unit issue carries (units.md § units-issue; the template is .github/ISSUE_TEMPLATE/unit.md):\n' "$issue" >&2
   printf '%s\n' "$findings" | sed 's/^/  - /' >&2
@@ -1528,8 +1529,9 @@ for epic in $epics; do
   children=$(gh api --paginate "repos/$repo/issues/$epic/sub_issues?per_page=100" --jq '[.[].number]' | jq -s 'add // []')
   order=$(jq --arg epic "$epic" --argjson children "$children" '. + {($epic): $children}' <<< "$order")
 done
+concerns=$(sqlite3 -json :memory: ".read $(git rev-parse --show-toplevel)/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
 lines=$(jq -n --arg area "$area" --slurpfile issues "$board/issues.json" --argjson order "$order" '{area: $area, issues: $issues[0], order: $order}' \
-  | jq -r -L "$claims" -f "$claims/next.jq")
+  | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
 awk '/^needs sections: /' <<< "$lines" >&2
 pick=$(awk '!/^needs sections: /' <<< "$lines")
 if [[ -z "$pick" ]]; then
