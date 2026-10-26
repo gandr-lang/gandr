@@ -1,0 +1,27 @@
+// Effects as data. A program over a row of operations is a tree, the free
+// model of those operations: a result, or one operation of the row with the
+// continuation that awaits its reply. The row is a type parameter, a sum of
+// operation types, so an operation outside the row has no injection to be
+// written, and every declaration here is pure. Follows Swierstra, "Data types
+// à la carte" (JFP 2008), for the row as a sum of signatures, and Plotkin and
+// Pretnar, "Handling algebraic effects" (LMCS 2013), for a handler as a fold
+// of the free model.
+
+/// The two sides of a row: the operation at its front, or the rest.
+data Either(l : Type, r : Type) : Type {
+  Left : (x : l) --> Either(l, r);
+  Right : (y : r) --> Either(l, r);
+}
+
+/// State's operations: read the state, or store one.
+data StateOp : Type {
+  Get : StateOp;
+  Put : (s : Integer) --> StateOp;
+}
+
+/// A program over the row `e` answering an `a`: a result, or an operation of
+/// the row and its continuation, every reply an integer.
+data Prog(e : Type, a : Type) : Type {
+  Done : (x : a) --> Prog(e, a);
+  Op : (o : e, k : Integer => Prog(e, a)) --> Prog(e, a);
+}

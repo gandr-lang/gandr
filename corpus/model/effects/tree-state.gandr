@@ -1,0 +1,61 @@
+// State as data: `state-handler.gandr`'s programs written as trees over the
+// row of state alone, and its two handlers as folds of the tree. They run to
+// what the native handlers run to, and the kernel replays every declaration
+// here, where it replays none of the native ones.
+
+// `Either`, `StateOp` and `Prog`.
+import "./tree.gandr" ;
+
+/// `constant`'s subject as a tree: read, store what was read, read again,
+/// and answer the two reads and one.
+def constantTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Get), fn (a) {
+  (Op(Left(Put(a)), fn (_u) {
+    (Op(Left(Get), fn (b) {
+      (Done(a + b + 1) : Prog(Either(StateOp, Void), Integer))
+    }) : Prog(Either(StateOp, Void), Integer))
+  }) : Prog(Either(StateOp, Void), Integer))
+}) ;
+
+/// `constant`'s clauses as a fold: every read is answered four, and a store
+/// is forgotten.
+def rec answeringFour(p : Prog(Either(StateOp, Void), Integer)) -> Integer {
+  case p {
+    Done(x) => x,
+    Op(o, k) => case o {
+      Left(Get) => answeringFour[<](k(4)),
+      Left(Put(_s)) => answeringFour[<](k(0)),
+      Right(none) => case none {}
+    }
+  }
+}
+
+/// Nine, as `constant` runs to.
+@[ runs("9") ]
+def constantByFold() -> Integer { answeringFour(constantTree) }
+
+/// `answeredByPassing`'s subject as a tree: store four, read twice, and
+/// answer ten times the first read and the second.
+def passingTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Put(4)), fn (_u) {
+  (Op(Left(Get), fn (a) {
+    (Op(Left(Get), fn (b) {
+      (Done(a * 10 + b) : Prog(Either(StateOp, Void), Integer))
+    }) : Prog(Either(StateOp, Void), Integer))
+  }) : Prog(Either(StateOp, Void), Integer))
+}) ;
+
+/// The state-passing model as a fold: a read is answered the current state,
+/// and a store replaces it.
+def rec passingState(p : Prog(Either(StateOp, Void), Integer), s : Integer) -> Integer {
+  case p {
+    Done(x) => x,
+    Op(o, k) => case o {
+      Left(Get) => passingState[<](k(s), s),
+      Left(Put(t)) => passingState[<](k(0), t),
+      Right(none) => case none {}
+    }
+  }
+}
+
+/// Forty-four from a zero state, as `answeredFromZero` runs to.
+@[ runs("44") ]
+def passingByFold() -> Integer { passingState(passingTree, 0) }
