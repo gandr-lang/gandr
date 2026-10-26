@@ -1333,6 +1333,35 @@ fi
 wt step copy-ignored
 '''
 
+# A unit issue is the brief, and work starts only on one that carries its
+# sections (#2532, `units.md` § units-issue). `unit:check <n>` reads the
+# issue's body and prints each section missing, empty or malformed, exiting 1
+# on any; the rule is `.config/claims/unit.jq`, reading the sections through
+# `sections.jq` as `pr:open` does, its cases held by `check:claims`. The
+# vault's dispatch script runs it on the issue a prompt names and refuses to
+# launch on a failure. `.github/ISSUE_TEMPLATE/unit.md` carries the sections,
+# its hints in comments that leave a section empty until it is written.
+["unit:check"]
+description = "Refuse a unit issue missing a section work needs"
+usage = '''
+arg "<issue>" help="the issue number"
+'''
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+issue=${usage_issue:?}
+[[ $issue =~ ^[0-9]+$ ]] || { echo "unit:check takes an issue number, not \`$issue\`" >&2; exit 2; }
+claims=$(git rev-parse --show-toplevel)/.config/claims
+findings=$(gh issue view "$issue" --json body --jq .body | jq -R -s -r -L "$claims" -f "$claims/unit.jq")
+if [[ -n "$findings" ]]; then
+  printf 'unit check FAILED: #%s lacks what a unit issue carries (units.md § units-issue; the template is .github/ISSUE_TEMPLATE/unit.md):\n' "$issue" >&2
+  printf '%s\n' "$findings" | sed 's/^/  - /' >&2
+  exit 1
+fi
+echo "unit check OK: #$issue carries every section a unit needs"
+'''
+
 # The pull request's title becomes the header of its merge commit on main,
 # and the PR title workflow lints it with the commit rules: a conventional
 # header of at most 72 characters, its type and scope from
