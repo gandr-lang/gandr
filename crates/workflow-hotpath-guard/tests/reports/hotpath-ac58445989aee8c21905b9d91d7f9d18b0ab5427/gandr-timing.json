@@ -1,0 +1,183 @@
+{
+  "functions_timing": {
+    "total_elapsed_ns": 412300000,
+    "data": [
+      {
+        "name": "hotpath::main",
+        "calls": 1,
+        "avg": "412.24 ms",
+        "total": "412.24 ms",
+        "percent_total": "100.0%",
+        "location": {
+          "file": "crates/surface-driver/benches/hotpath.rs",
+          "line": 284
+        }
+      },
+      {
+        "name": "lsp keystroke",
+        "calls": 1,
+        "avg": "180.91 ms",
+        "total": "180.91 ms",
+        "percent_total": "43.9%",
+        "location": {
+          "file": "crates/surface-driver/benches/hotpath.rs",
+          "line": 289
+        }
+      },
+      {
+        "name": "gandr_surface_lsp::recheck::judge_laid",
+        "calls": 6,
+        "avg": "24.13 ms",
+        "total": "144.75 ms",
+        "percent_total": "35.1%",
+        "location": {
+          "file": "crates/surface-lsp/src/recheck.rs",
+          "line": 656
+        }
+      },
+      {
+        "name": "gandr_core_checker::bridge::readmit_from",
+        "calls": 10,
+        "avg": "14.40 ms",
+        "total": "144.00 ms",
+        "percent_total": "34.9%",
+        "location": {
+          "file": "crates/core-checker/src/bridge.rs",
+          "line": 1884
+        }
+      },
+      {
+        "name": "closure check",
+        "calls": 1,
+        "avg": "130.43 ms",
+        "total": "130.43 ms",
+        "percent_total": "31.6%",
+        "location": {
+          "file": "crates/surface-driver/benches/hotpath.rs",
+          "line": 286
+        }
+      },
+      {
+        "name": "gandr_core_checker::module::decide",
+        "calls": 341,
+        "avg": "190.88 µs",
+        "total": "65.09 ms",
+        "percent_total": "15.8%",
+        "location": {
+          "file": "crates/core-checker/src/module.rs",
+          "line": 1045
+        }
+      },
+      {
+        "name": "lsp burst",
+        "calls": 1,
+        "avg": "37.65 ms",
+        "total": "37.65 ms",
+        "percent_total": "9.1%",
+        "location": {
+          "file": "crates/surface-driver/benches/hotpath.rs",
+          "line": 290
+        }
+      },
+      {
+        "name": "lsp comment edit",
+        "calls": 1,
+        "avg": "34.94 ms",
+        "total": "34.94 ms",
+        "percent_total": "8.5%",
+        "location": {
+          "file": "crates/surface-driver/benches/hotpath.rs",
+          "line": 291
+        }
+      },
+      {
+        "name": "gandr_surface_lowering::coincide::decide",
+        "calls": 4,
+        "avg": "7.04 ms",
+        "total": "28.17 ms",
+        "percent_total": "6.8%",
+        "location": {
+          "file": "crates/surface-lowering/src/coincide.rs",
+          "line": 827
+        }
+      },
+      {
+        "name": "rule completion",
+        "calls": 1,
+        "avg": "25.18 ms",
+        "total": "25.18 ms",
+        "percent_total": "6.1%",
+        "location": {
+          "file": "crates/surface-driver/benches/hotpath.rs",
+          "line": 288
+        }
+      },
+      {
+        "name": "gandr_surface_lsp::recheck::lay",
+        "calls": 6,
+        "avg": "2.41 ms",
+        "total": "14.45 ms",
+        "percent_total": "3.5%",
+        "location": {
+          "file": "crates/surface-lsp/src/recheck.rs",
+          "line": 808
+        }
+      },
+      {
+        "name": "gandr_theory_coherent_resolutions::rewrite::normalize",
+        "calls": 1340,
+        "avg": "7.76 µs",
+        "total": "10.39 ms",
+        "percent_total": "2.5%",
+        "location": {
+          "file": "crates/theory-coherent-resolutions/src/rewrite.rs",
+          "line": 171
+        }
+      },
+      {
+        "name": "gandr_theory_coherent_resolutions::overlap::interior_overlaps_between",
+        "calls": 1285,
+        "avg": "6.74 µs",
+        "total": "8.66 ms",
+        "percent_total": "2.1%",
+        "location": {
+          "file": "crates/theory-coherent-resolutions/src/overlap.rs",
+          "line": 1054
+        }
+      },
+      {
+        "name": "stage readmission",
+        "calls": 1,
+        "avg": "3.11 ms",
+        "total": "3.11 ms",
+        "percent_total": "0.8%",
+        "location": {
+          "file": "crates/surface-driver/benches/hotpath.rs",
+          "line": 287
+        }
+      },
+      {
+        "name": "gandr_theory_coherent_resolutions::overlap::root_overlaps_between",
+        "calls": 614,
+        "avg": "3.12 µs",
+        "total": "1.92 ms",
+        "percent_total": "0.5%",
+        "location": {
+          "file": "crates/theory-coherent-resolutions/src/overlap.rs",
+          "line": 955
+        }
+      },
+      {
+        "name": "gandr_core_checker::staging::readmitted",
+        "calls": 2,
+        "avg": "351.53 µs",
+        "total": "703.05 µs",
+        "percent_total": "0.2%",
+        "location": {
+          "file": "crates/core-checker/src/staging.rs",
+          "line": 430
+        }
+      }
+    ]
+  }
+}
