@@ -31,12 +31,31 @@
 # directory lock serializes publication, never the gates themselves.
 # Two host-wide slots bound concurrent gates across repositories and worktrees.
 # Acquisition waits for a free slot and reclaims holders whose process is gone.
+# A local run is scoped to the jobs a change touches (#2541): the task
+# refuses, before anything starts, without a `-j <job>` among its arguments,
+# and when the committed branch changes nothing under `.github/` or
+# `.config/mise/tasks/` against its fork from `origin/main`. The owner runs
+# `act` directly for anything else.
 ["ci:act"]
-description = "Run the committed CI workflow locally"
+description = "Run the committed CI workflow's named jobs locally, after a workflow or task change"
 tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
+job=false
+for argument in "$@"; do
+  case "$argument" in
+    -j | --job | -j?* | --job=*) job=true ;;
+  esac
+done
+if [[ "$job" != true ]]; then
+  echo 'ci:act: name the jobs the change touches with `-j <job>`; the whole workflow runs in hosted CI' >&2
+  exit 2
+fi
+if [[ -z $(git diff --name-only origin/main...HEAD -- .github .config/mise/tasks) ]]; then
+  echo 'ci:act: the committed branch changes nothing under .github/ or .config/mise/tasks/ against origin/main; act runs only after a workflow or task change' >&2
+  exit 2
+fi
 remove_run() {
   local run_id=$1 kind ids resource status=0
   for kind in container network volume; do
