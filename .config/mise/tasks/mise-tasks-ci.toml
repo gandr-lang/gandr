@@ -1358,6 +1358,59 @@ if [[ "${usage_guard:-false}" == true ]] && (( free_gb < floor_gb )); then
 fi
 {% endraw %}'''
 
+# Landing is transactional (#2539): no branch outlives its unit unless it is
+# named `wip/<name>` and an open issue names its head. `branches:sweep`
+# prints, for the repository it runs in, three lists: the remote branches
+# no open pull request accounts for, the local ones likewise with the
+# worktree holding each, and the `wip/` branches no open issue names. The
+# trunk and the merge queue's own branches are never listed. It prints and
+# never deletes, and exits 0: the session close-out deletes from its output
+# (`wt remove`, `git push --delete`). The decisions are
+# `.config/pr-stack/branches.jq`'s, its cases held by `check:pr-stack`; the
+# remote is read live (`git ls-remote`), never from this clone's stale
+# remote-tracking refs. `--remote` prints the remote's two lists alone, the
+# part one host's run answers for every host.
+["branches:sweep"]
+description = "List the branches no open pull request or wip/ issue accounts for; delete none"
+tools.jq = "1.8.1"
+usage = '''
+flag "--remote" help="list only the remote's branches"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+remote=$(git ls-remote --heads origin | awk '{ sub("^refs/heads/", "", $2); print $2 }' | jq -R . | jq -cs .)
+local_branches='[]'
+if [[ ${usage_remote:-false} != true ]]; then
+  local_branches=$(
+    {
+      git for-each-ref refs/heads --format='%(refname:short)' | jq -R '{name: ., worktree: null}'
+      git worktree list --porcelain | awk '/^worktree / { tree = substr($0, 10) } /^branch refs\/heads\// { print substr($2, 12) "\t" tree }' \
+        | jq -R 'split("\t") | {name: .[0], worktree: .[1]}'
+    } | jq -cs 'group_by(.name) | map({name: .[0].name, worktree: (map(.worktree | values) | first)})'
+  )
+fi
+heads=$(gh pr list -R "$repo" --state open --limit 1000 --json headRefName --jq '[.[].headRefName]')
+issues=$(gh issue list -R "$repo" --state open --limit 5000 --json title,body --jq '[.[] | "\(.title)\n\(.body)"]')
+reading=$(jq -n --arg trunk "$trunk" --argjson remote "$remote" --argjson local "$local_branches" \
+  --argjson heads "$heads" --argjson issues "$issues" \
+  '{trunk: $trunk, remote: $remote, local: $local, heads: $heads, issues: $issues}' \
+  | jq -c -f .config/pr-stack/branches.jq)
+list() {
+  local title=$1 lines=$2
+  printf '%s (%s):\n' "$title" "$(grep -c . <<< "$lines" || true)"
+  [[ -z $lines ]] || sed 's/^/  /' <<< "$lines"
+}
+list "$repo: remote branches no open pull request accounts for" "$(jq -r '.remote[]' <<< "$reading")"
+if [[ ${usage_remote:-false} != true ]]; then
+  list "$repo: local branches no open pull request accounts for" \
+    "$(jq -r '.local[] | .name + (if .worktree then "  (worktree " + .worktree + ")" else "" end)' <<< "$reading")"
+fi
+list "$repo: wip/ branches no open issue names" "$(jq -r '.wip[]' <<< "$reading")"
+{% endraw %}'''
+
 # A new worktree starts warm (`.config/wt.toml`'s `post-start`): every
 # gitignored artifact of the primary worktree — the build directory, the code
 # index, the extension's modules — is copied in by `wt step copy-ignored`,
