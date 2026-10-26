@@ -3239,9 +3239,16 @@ pub fn collect_source<'source>(
     let mut manifests = collector.manifest_types().into_iter().peekable();
     let mut forgotten = collector.forgotten();
     let mut minted = 0_usize;
-    // The documentation the parser left beside the root's children, and the
-    // run of it written before the mark read last.
-    let loose = collector.loose_docs(collector.tree.root());
+    // The documentation the parser left beside the roots' children, and the
+    // run of it written before the mark read last. A unit laid after a held
+    // closure is a forest, each source under a root of its own, so every root
+    // is read.
+    let loose: Vec<Placed> = collector
+        .tree
+        .roots()
+        .iter()
+        .flat_map(|&root| collector.loose_docs(root))
+        .collect();
     let mut mark_docs: Vec<Placed> = Vec::new();
     let mut previous_end = placed.first().map_or_else(
         || ByteOffset::from(0_usize),

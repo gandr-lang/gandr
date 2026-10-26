@@ -1,7 +1,7 @@
-10:1-10:3 pub ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @10:1-10:5
-10:5-10:10 theory ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @10:5-10:22
-10:12-10:20 Semigroup ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @10:12-10:21
-10:22-10:22 { ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @10:5-14:2
+10:1-10:3 pub ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @10:1-10:5
+10:5-10:10 theory ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @10:5-10:22
+10:12-10:20 Semigroup ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @10:12-10:21
+10:22-10:22 { ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @10:5-14:2
 11:3-11:6 sort ⇒ sort M : Type @11:3-11:17
 11:8-11:8 M ⇒ M : Type @11:8-11:9
 11:10-11:10 : ⇒ sort M : Type @11:3-11:17
@@ -47,13 +47,13 @@
 13:53-13:53 ) ⇒ M @13:45-13:54
 13:54-13:54 ) ⇒ M @13:38-13:55
 13:55-13:55 ; ⇒ rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z)) @13:3-13:56
-14:1-14:1 } ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @10:5-14:2
-18:1-18:3 pub ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @18:1-18:5
-18:5-18:10 theory ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @18:5-18:19
-18:12-18:17 Monoid ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @18:12-18:18
-18:19-18:19 { ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @18:5-23:2
-19:3-19:9 include ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @19:3-19:21
-19:11-19:20 Semigroup; ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @19:11-19:20
+14:1-14:1 } ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @10:5-14:2
+18:1-18:3 pub ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @18:1-18:5
+18:5-18:10 theory ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @18:5-18:19
+18:12-18:17 Monoid ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @18:12-18:18
+18:19-18:19 { ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @18:5-23:2
+19:3-19:9 include ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @19:3-19:21
+19:11-19:20 Semigroup; ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @19:11-19:20
 20:3-20:6 oper ⇒ oper one : () --> M @20:3-20:23
 20:8-20:10 one ⇒ one : () => M @20:8-20:11
 20:12-20:19 : () --> ⇒ oper one : () --> M @20:3-20:23
@@ -85,13 +85,13 @@
 22:30-22:32 ==> ⇒ rule unitR : mul(x, one()) ==> x @22:3-22:36
 22:34-22:34 x ⇒ x : M @22:34-22:35
 22:35-22:35 ; ⇒ rule unitR : mul(x, one()) ==> x @22:3-22:36
-23:1-23:1 } ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @18:5-23:2
-26:1-26:3 pub ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎} @26:1-26:5
-26:5-26:10 theory ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎} @26:5-26:21
-26:12-26:19 LeftZero ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎} @26:12-26:20
-26:21-26:21 { ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎} @26:5-30:2
-27:3-27:9 include ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @27:3-27:21
-27:11-27:20 Semigroup; ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎} @27:11-27:20
+23:1-23:1 } ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @18:5-23:2
+26:1-26:3 pub ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎}⏎⏎The semigroup with a zero that absorbs on the left. @26:1-26:5
+26:5-26:10 theory ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎}⏎⏎The semigroup with a zero that absorbs on the left. @26:5-26:21
+26:12-26:19 LeftZero ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎}⏎⏎The semigroup with a zero that absorbs on the left. @26:12-26:20
+26:21-26:21 { ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎}⏎⏎The semigroup with a zero that absorbs on the left. @26:5-30:2
+27:3-27:9 include ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @27:3-27:21
+27:11-27:20 Semigroup; ⇒ theory Semigroup {⏎  sort M : Type;⏎  oper mul : (x : M, y : M) --> M;⏎  rule assoc : mul(mul(x, y), z) ==> mul(x, mul(y, z));⏎}⏎⏎A semigroup: one carrier and an associative multiplication. @27:11-27:20
 28:3-28:6 oper ⇒ oper zero : () --> M @28:3-28:24
 28:8-28:11 zero ⇒ zero : () => M @28:8-28:12
 28:13-28:20 : () --> ⇒ oper zero : () --> M @28:3-28:24
@@ -111,23 +111,23 @@
 29:36-29:39 zero ⇒ zero : () => M @29:36-29:40
 29:40-29:41 () ⇒ M @29:36-29:42
 29:42-29:42 ; ⇒ rule absorb : mul(zero(), x) ==> zero() @29:3-29:43
-30:1-30:1 } ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎} @26:5-30:2
-34:1-34:3 pub ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎} @34:1-34:5
-34:5-34:10 theory ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎} @34:5-34:24
-34:12-34:22 UnitAndZero ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎} @34:12-34:23
-34:24-34:24 { ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎} @34:5-37:2
-35:3-35:9 include ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @35:3-35:18
-35:11-35:17 Monoid; ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @35:11-35:17
-36:3-36:9 include ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎} @36:3-36:20
-36:11-36:19 LeftZero; ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎} @36:11-36:19
-37:1-37:1 } ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎} @34:5-37:2
-42:1-42:3 pub ⇒ module Endo : Model(Monoid) @42:1-42:5
-42:5-42:10 module ⇒ module Endo : Model(Monoid) @42:5-42:33
-42:12-42:15 Endo ⇒ module Endo : Model(Monoid) @42:12-42:16
-42:17-42:24 : Model( ⇒ module Endo : Model(Monoid) @42:5-42:33
-42:25-42:30 Monoid ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎} @42:25-42:31
-42:31-42:31 ) ⇒ module Endo : Model(Monoid) @42:5-42:33
-42:33-42:33 { ⇒ module Endo : Model(Monoid) @42:33-42:34
+30:1-30:1 } ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎}⏎⏎The semigroup with a zero that absorbs on the left. @26:5-30:2
+34:1-34:3 pub ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎}⏎⏎Both extensions at once: one carrier, one multiplication, its unit and⏎its zero. @34:1-34:5
+34:5-34:10 theory ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎}⏎⏎Both extensions at once: one carrier, one multiplication, its unit and⏎its zero. @34:5-34:24
+34:12-34:22 UnitAndZero ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎}⏎⏎Both extensions at once: one carrier, one multiplication, its unit and⏎its zero. @34:12-34:23
+34:24-34:24 { ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎}⏎⏎Both extensions at once: one carrier, one multiplication, its unit and⏎its zero. @34:5-37:2
+35:3-35:9 include ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @35:3-35:18
+35:11-35:17 Monoid; ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @35:11-35:17
+36:3-36:9 include ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎}⏎⏎The semigroup with a zero that absorbs on the left. @36:3-36:20
+36:11-36:19 LeftZero; ⇒ theory LeftZero {⏎  include Semigroup;⏎  oper zero : () --> M;⏎  rule absorb : mul(zero(), x) ==> zero();⏎}⏎⏎The semigroup with a zero that absorbs on the left. @36:11-36:19
+37:1-37:1 } ⇒ theory UnitAndZero {⏎  include Monoid;⏎  include LeftZero;⏎}⏎⏎Both extensions at once: one carrier, one multiplication, its unit and⏎its zero. @34:5-37:2
+42:1-42:3 pub ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @42:1-42:5
+42:5-42:10 module ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @42:5-42:33
+42:12-42:15 Endo ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @42:12-42:16
+42:17-42:24 : Model( ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @42:5-42:33
+42:25-42:30 Monoid ⇒ theory Monoid {⏎  include Semigroup;⏎  oper one : () --> M;⏎  rule unitL : mul(one(), x) ==> x;⏎  rule unitR : mul(x, one()) ==> x;⏎}⏎⏎A monoid: the semigroup with a two-sided unit. Its rules are the⏎semigroup's associativity, then the unit laws, and they join. @42:25-42:31
+42:31-42:31 ) ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @42:5-42:33
+42:33-42:33 { ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @42:33-42:34
 43:3-43:6 type ⇒ type M = Integer => Integer @43:3-43:31
 43:8-43:8 M ⇒ type M = Integer => Integer @43:8-43:9
 43:10-43:10 = ⇒ type M = Integer => Integer @43:3-43:31
@@ -333,7 +333,7 @@
 90:10-90:10 f ⇒ f : Integer => Integer @90:10-90:11
 90:11-90:11 ) ⇒ Path(Integer => Integer, Endo.mul(f, force Endo.one), f) @90:5-90:12
 91:3-91:3 } ⇒ unitR : (f : Integer => Integer) => Path(Integer => Integer, Endo.mul(f, force Endo.one⏎), f)⏎⏎The right unit law. @85:3-91:4
-92:1-92:1 } ⇒ module Endo : Model(Monoid) @92:1-92:2
+92:1-92:1 } ⇒ module Endo : Model(Monoid)⏎⏎The functions on the integers under composition: every law holds by⏎conversion, and the members it gives for the included semigroup are its⏎multiplication and associativity. @92:1-92:2
 95:1-95:14 @[ runs("8") ] ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @95:1-96:1
 96:1-96:3 def ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @96:1-96:27
 96:5-96:13 composed( ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @96:5-96:13
