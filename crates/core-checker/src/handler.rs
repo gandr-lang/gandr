@@ -44,13 +44,16 @@ use crate::refusal::TermNode;
 /// - hypothesis: L3 — a handler whose clause resumes its subject and one whose
 ///   clause answers for it each cross as their fold at the recorded types.
 /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Handled
 {
     /// The value type the subject returns, which the return clause binds.
     pub subject: gandr_core_term::ValueTypeId,
     /// The computation type the handler is checked at.
     pub answer: gandr_core_term::CompTypeId,
+    /// The level of the universe the subject's result inhabits, which the
+    /// effect's free model is admitted at.
+    pub level: gandr_kernel_strata::Level,
 }
 
 /// Decide that every law in `laws` holds of the clauses it is read through.

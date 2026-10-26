@@ -2760,8 +2760,7 @@ fn each_effect_former_is_refused_by_name_where_it_stands()
 /// A deep handler of one operation crosses as the fold of its effect's free
 /// model: a clause that resumes the subject and one that answers for it each
 /// cross, through the one model the kernel admits ahead of the first, named
-/// by its admission ordinal; a handler of two operations is refused by name
-/// at its node.
+/// by its admission ordinal.
 #[test]
 fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
 {
@@ -2781,19 +2780,6 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
         reply: integer,
     }])
     .expect("one operation");
-    let two = EffectSig::new(EffectName::from("Two"), [
-        EffectOp {
-            name: OperationName::from("first"),
-            payload: unit_type,
-            reply: unit_type,
-        },
-        EffectOp {
-            name: OperationName::from("second"),
-            payload: unit_type,
-            reply: unit_type,
-        },
-    ])
-    .expect("two operations");
     let answer = arena.comp_type_returner(integer);
     let answer_type = arena.value_type_thunk(answer);
     // `x ← ask(); return x`, its value passed on by the return clause, under
@@ -2827,41 +2813,12 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
     };
     let resuming = handler(&mut arena, true);
     let answering = handler(&mut arena, false);
-    let unit = arena.value_unit();
-    let zero = arena.value_literal(integer_literal());
-    let first = arena.computation_perform(two.clone(), "first".into(), unit);
-    let returned = arena.computation_return(zero);
-    let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
-    let resumed_unit = arena.computation_return(unit);
-    let resumed = arena.computation_resume(stack, resumed_unit);
-    let both = arena.computation_handle(
-        two,
-        first,
-        returned,
-        [
-            EffectClause {
-                operation: "first".into(),
-                body: resumed,
-            },
-            EffectClause {
-                operation: "second".into(),
-                body: returned,
-            },
-        ]
-        .into(),
-    );
-    let both_body = arena.value_thunk(both);
     let (_, readmission) = judge_and_readmit(&mut arena, &[
         declaration(At(0), Maybe::Present(answer_type), Maybe::Present(resuming)),
         declaration(
             At(1),
             Maybe::Present(answer_type),
             Maybe::Present(answering),
-        ),
-        declaration(
-            At(2),
-            Maybe::Present(answer_type),
-            Maybe::Present(both_body),
         ),
     ]);
     for crossed in [0_usize, 1] {
@@ -2874,13 +2831,6 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
             readmission.readmitted()[crossed].outcome()
         );
     }
-    assert_eq!(
-        readmission.readmitted()[2].outcome(),
-        &Outcome::Refused(Refusal::OutOfFragment {
-            at: CoreNode::Term(TermNode::Computation(both)),
-            former: UnadmittedFormer::Handle,
-        })
-    );
     let artifact = readmission.export(BTreeMap::new());
     let decoded = decode(artifact.as_image()).expect("the handlers export");
     let names = decoded
@@ -2913,6 +2863,280 @@ fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
         constructors.iter().map(Vec::len).collect::<Vec<_>>(),
         [1, 2],
         "`Return(x)`, then `ask(p, k)`"
+    );
+}
+
+/// A deep handler of two operations crosses as one fold of its effect's free
+/// model, one case for each clause: `first : Unit ↠ Integer` resumed at zero
+/// and `second : Integer ↠ Unit` answered with its payload, the signature and
+/// the clauses written in the other order. The model carries a constructor
+/// for each operation in the order the signature enumerates them, each with
+/// its own payload and reply, so a request or a clause at the other
+/// operation's constructor would be the kernel's type error.
+#[test]
+fn a_deep_handler_of_several_operations_crosses_as_one_fold_2750()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_kernel_term::CompType as KernelCompType;
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let two = EffectSig::new(EffectName::from("Two"), [
+        EffectOp {
+            name: OperationName::from("second"),
+            payload: integer,
+            reply: unit_type,
+        },
+        EffectOp {
+            name: OperationName::from("first"),
+            payload: unit_type,
+            reply: integer,
+        },
+    ])
+    .expect("two operations");
+    // `x ← first(); y ← second(x); return x`, its value passed on.
+    let unit = arena.value_unit();
+    let first = arena.computation_perform(two.clone(), "first".into(), unit);
+    let read = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let second = arena.computation_perform(two.clone(), "second".into(), read);
+    let kept = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let kept = arena.computation_return(kept);
+    let rest = arena.computation_bind(second, kept);
+    let subject = arena.computation_bind(first, rest);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let on_return = arena.computation_return(bound);
+    // `first` resumes at zero; `second` answers its payload, bound beneath
+    // the stack.
+    let zero = arena.value_literal(integer_literal());
+    let zero = arena.computation_return(zero);
+    let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let resumed = arena.computation_resume(stack, zero);
+    let payload = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let answered = arena.computation_return(payload);
+    let handled = arena.computation_handle(
+        two,
+        subject,
+        on_return,
+        [
+            EffectClause {
+                operation: "second".into(),
+                body: answered,
+            },
+            EffectClause {
+                operation: "first".into(),
+                body: resumed,
+            },
+        ]
+        .into(),
+    );
+    let body = arena.value_thunk(handled);
+    let answer = arena.comp_type_returner(integer);
+    let answer_type = arena.value_type_thunk(answer);
+    let (_, readmission) = judge_and_readmit(&mut arena, &[declaration(
+        At(0),
+        Maybe::Present(answer_type),
+        Maybe::Present(body),
+    )]);
+    assert!(
+        matches!(
+            readmission.readmitted()[0].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the handler crosses: {:?}",
+        readmission.readmitted()[0].outcome()
+    );
+    let artifact = readmission.export(BTreeMap::new());
+    let decoded = decode(artifact.as_image()).expect("the handler exports");
+    assert_eq!(
+        decoded.declarations().len(),
+        2,
+        "the free model, then the handler"
+    );
+    let DeclarationContent::Data {
+        ref constructors, ..
+    } = *decoded.declarations()[0].declaration().content()
+    else {
+        panic!("the free model is a data declaration");
+    };
+    assert_eq!(
+        constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+        [1, 2, 2],
+        "`Return(x)`, then `first(p, k)` and `second(p, k)`"
+    );
+    let kernel = decoded.arena();
+    let unit_typed = |at| matches!(kernel.value_type(at), Some(KernelValueType::Product(components)) if components.is_empty());
+    let integer_typed = |at| {
+        matches!(
+            kernel.value_type(at),
+            Some(&KernelValueType::Base(BaseType::Integer))
+        )
+    };
+    let reply = |continuation| {
+        let Some(&KernelValueType::Thunk(function)) = kernel.value_type(continuation)
+        else {
+            panic!("an operation's continuation is a thunk");
+        };
+        let Some(&KernelCompType::Arrow { domain, .. }) = kernel.comp_type(function)
+        else {
+            panic!("an operation's continuation is a function of its reply");
+        };
+        domain
+    };
+    assert!(
+        unit_typed(constructors[1][0]) && integer_typed(reply(constructors[1][1])),
+        "`first` carries the unit and awaits an integer"
+    );
+    assert!(
+        integer_typed(constructors[2][0]) && unit_typed(reply(constructors[2][1])),
+        "`second` carries an integer and awaits the unit"
+    );
+}
+
+/// A capability scope whose subject's last step returns a function, `x ←
+/// c.ask(); return thunk(λz. return x)`, crosses: the judgement checked that
+/// step at the subject's result, and its translation is checked there too,
+/// where a lambda standing alone is one the kernel cannot synthesise.
+#[test]
+fn a_handled_subject_returning_a_function_crosses_checked_at_its_result_2750()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let ask = EffectSig::new(EffectName::from("Ask"), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: unit_type,
+        reply: integer,
+    }])
+    .expect("one operation");
+    let unit = arena.value_unit();
+    let capability = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let requested = arena.computation_exercise(capability, ask.clone(), "ask".into(), unit);
+    let kept = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let kept = arena.computation_return(kept);
+    let function = arena.computation_lambda(kept);
+    let function = arena.value_thunk(function);
+    let returned = arena.computation_return(function);
+    let subject = arena.computation_bind(requested, returned);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let on_return = arena.computation_return(bound);
+    let zero = arena.value_literal(integer_literal());
+    let zero = arena.computation_return(zero);
+    let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let resumed = arena.computation_resume(stack, zero);
+    let handled = arena.computation_scope(
+        ask,
+        subject,
+        on_return,
+        [EffectClause {
+            operation: "ask".into(),
+            body: resumed,
+        }]
+        .into(),
+    );
+    let body = arena.value_thunk(handled);
+    let returns_integer = arena.comp_type_returner(integer);
+    let arrow = arena.comp_type_arrow(integer, returns_integer);
+    let function_type = arena.value_type_thunk(arrow);
+    let answer = arena.comp_type_returner(function_type);
+    let answer_type = arena.value_type_thunk(answer);
+    let (_, readmission) = judge_and_readmit(&mut arena, &[declaration(
+        At(0),
+        Maybe::Present(answer_type),
+        Maybe::Present(body),
+    )]);
+    assert!(
+        matches!(
+            readmission.readmitted()[0].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the handler crosses: {:?}",
+        readmission.readmitted()[0].outcome()
+    );
+}
+
+/// A capability scope whose subject returns a type, `x ← c.ask(); return
+/// ⌜Integer⌝`, crosses through a free model one level up: the subject's
+/// result is the smallest universe, itself at level one, which a model at
+/// level zero does not carry.
+#[test]
+fn a_handled_subject_returning_a_type_crosses_through_a_larger_model_2750()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let ask = EffectSig::new(EffectName::from("Ask"), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: unit_type,
+        reply: integer,
+    }])
+    .expect("one operation");
+    let unit = arena.value_unit();
+    let capability = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let requested = arena.computation_exercise(capability, ask.clone(), "ask".into(), unit);
+    let code = arena.value_quote(integer);
+    let returned = arena.computation_return(code);
+    let subject = arena.computation_bind(requested, returned);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let on_return = arena.computation_return(bound);
+    let zero = arena.value_literal(integer_literal());
+    let zero = arena.computation_return(zero);
+    let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let resumed = arena.computation_resume(stack, zero);
+    let handled = arena.computation_scope(
+        ask,
+        subject,
+        on_return,
+        [EffectClause {
+            operation: "ask".into(),
+            body: resumed,
+        }]
+        .into(),
+    );
+    let body = arena.value_thunk(handled);
+    let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let answer = arena.comp_type_returner(small);
+    let answer_type = arena.value_type_thunk(answer);
+    let (_, readmission) = judge_and_readmit(&mut arena, &[declaration(
+        At(0),
+        Maybe::Present(answer_type),
+        Maybe::Present(body),
+    )]);
+    assert!(
+        matches!(
+            readmission.readmitted()[0].outcome(),
+            Outcome::Defined { .. }
+        ),
+        "the handler crosses: {:?}",
+        readmission.readmitted()[0].outcome()
+    );
+    let artifact = readmission.export(BTreeMap::new());
+    let decoded = decode(artifact.as_image()).expect("the handler exports");
+    let DeclarationContent::Data { kind, .. } = *decoded.declarations()[0].declaration().content()
+    else {
+        panic!("the free model is a data declaration");
+    };
+    let one = Level::zero().succ().expect("level one");
+    assert!(
+        matches!(
+            decoded.arena().value_type(kind),
+            Some(KernelValueType::Universe { sort: GroundSort::Value, level }) if *level == one
+        ),
+        "the model stands one level up: {:?}",
+        decoded.arena().value_type(kind)
     );
 }
 
