@@ -1,0 +1,572 @@
+[
+  {
+    "name": "a defect in the area comes first, an owned or deferred one skipped",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 90,
+          "title": "a deferred epic",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 25,
+          "title": "issue 25",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 31,
+          "title": "issue 31",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 90
+        },
+        {
+          "number": 32,
+          "title": "issue 32",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 77
+        },
+        {
+          "number": 33,
+          "title": "issue 33",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 100
+        },
+        {
+          "number": 40,
+          "title": "issue 40",
+          "labels": ["kind:gap", "area:workflow", "effort:medium"],
+          "parent": null
+        },
+        {
+          "number": 45,
+          "title": "issue 45",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 41,
+          "title": "issue 41",
+          "labels": ["kind:gap", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 42,
+          "title": "issue 42",
+          "labels": ["kind:gap", "area:core", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 43,
+          "title": "issue 43",
+          "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
+          "parent": null
+        },
+        {
+          "number": 50,
+          "title": "issue 50",
+          "labels": ["kind:performance", "area:core"],
+          "parent": null
+        },
+        {
+          "number": 51,
+          "title": "issue 51",
+          "labels": ["kind:performance", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 60,
+          "title": "issue 60",
+          "labels": ["kind:defect", "area:surface"],
+          "parent": null
+        },
+        {
+          "number": 61,
+          "title": "issue 61",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 62,
+          "title": "issue 62",
+          "labels": ["kind:defect", "area:workflow", "status:claimed"],
+          "parent": null
+        },
+        {
+          "number": 63,
+          "title": "issue 63",
+          "labels": ["kind:defect", "area:workflow", "status:deferred"],
+          "parent": null
+        }
+      ],
+      "order": {
+        "100": [30, 25, 33]
+      }
+    },
+    "output": "61\tdefect\tissue 61"
+  },
+  {
+    "name": "then a defect in any area, the oldest first",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 90,
+          "title": "a deferred epic",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 25,
+          "title": "issue 25",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 31,
+          "title": "issue 31",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 90
+        },
+        {
+          "number": 32,
+          "title": "issue 32",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 77
+        },
+        {
+          "number": 33,
+          "title": "issue 33",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 100
+        },
+        {
+          "number": 40,
+          "title": "issue 40",
+          "labels": ["kind:gap", "area:workflow", "effort:medium"],
+          "parent": null
+        },
+        {
+          "number": 45,
+          "title": "issue 45",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 41,
+          "title": "issue 41",
+          "labels": ["kind:gap", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 42,
+          "title": "issue 42",
+          "labels": ["kind:gap", "area:core", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 43,
+          "title": "issue 43",
+          "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
+          "parent": null
+        },
+        {
+          "number": 50,
+          "title": "issue 50",
+          "labels": ["kind:performance", "area:core"],
+          "parent": null
+        },
+        {
+          "number": 51,
+          "title": "issue 51",
+          "labels": ["kind:performance", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 60,
+          "title": "issue 60",
+          "labels": ["kind:defect", "area:surface"],
+          "parent": null
+        },
+        {
+          "number": 62,
+          "title": "issue 62",
+          "labels": ["kind:defect", "area:workflow", "status:claimed"],
+          "parent": null
+        },
+        {
+          "number": 63,
+          "title": "issue 63",
+          "labels": ["kind:defect", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 58,
+          "title": "a defect with no area",
+          "labels": ["kind:defect"],
+          "parent": null
+        }
+      ],
+      "order": {
+        "100": [30, 25, 33]
+      }
+    },
+    "output": "58\tdefect\ta defect with no area"
+  },
+  {
+    "name": "then a performance issue in any area, a deferred one skipped",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 90,
+          "title": "a deferred epic",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 25,
+          "title": "issue 25",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 31,
+          "title": "issue 31",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 90
+        },
+        {
+          "number": 32,
+          "title": "issue 32",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 77
+        },
+        {
+          "number": 33,
+          "title": "issue 33",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 100
+        },
+        {
+          "number": 40,
+          "title": "issue 40",
+          "labels": ["kind:gap", "area:workflow", "effort:medium"],
+          "parent": null
+        },
+        {
+          "number": 45,
+          "title": "issue 45",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 41,
+          "title": "issue 41",
+          "labels": ["kind:gap", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 42,
+          "title": "issue 42",
+          "labels": ["kind:gap", "area:core", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 43,
+          "title": "issue 43",
+          "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
+          "parent": null
+        },
+        {
+          "number": 50,
+          "title": "issue 50",
+          "labels": ["kind:performance", "area:core"],
+          "parent": null
+        },
+        {
+          "number": 51,
+          "title": "issue 51",
+          "labels": ["kind:performance", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 62,
+          "title": "issue 62",
+          "labels": ["kind:defect", "area:workflow", "status:claimed"],
+          "parent": null
+        },
+        {
+          "number": 63,
+          "title": "issue 63",
+          "labels": ["kind:defect", "area:workflow", "status:deferred"],
+          "parent": null
+        }
+      ],
+      "order": {
+        "100": [30, 25, 33]
+      }
+    },
+    "output": "50\tperformance\tissue 50"
+  },
+  {
+    "name": "then a gap in the area, the cheapest first: easy before medium before none, an owned one and another area's skipped",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 90,
+          "title": "a deferred epic",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 25,
+          "title": "issue 25",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 31,
+          "title": "issue 31",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 90
+        },
+        {
+          "number": 32,
+          "title": "issue 32",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 77
+        },
+        {
+          "number": 33,
+          "title": "issue 33",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 100
+        },
+        {
+          "number": 40,
+          "title": "issue 40",
+          "labels": ["kind:gap", "area:workflow", "effort:medium"],
+          "parent": null
+        },
+        {
+          "number": 45,
+          "title": "issue 45",
+          "labels": ["kind:gap", "area:workflow", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 41,
+          "title": "issue 41",
+          "labels": ["kind:gap", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 42,
+          "title": "issue 42",
+          "labels": ["kind:gap", "area:core", "effort:easy"],
+          "parent": null
+        },
+        {
+          "number": 43,
+          "title": "issue 43",
+          "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
+          "parent": null
+        },
+        {
+          "number": 51,
+          "title": "issue 51",
+          "labels": ["kind:performance", "area:workflow", "status:deferred"],
+          "parent": null
+        }
+      ],
+      "order": {
+        "100": [30, 25, 33]
+      }
+    },
+    "output": "45\tgap\tissue 45"
+  },
+  {
+    "name": "then a planned unit in the epic's order, not the issue's number",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 90,
+          "title": "a deferred epic",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 30,
+          "title": "issue 30",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 25,
+          "title": "issue 25",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 100
+        },
+        {
+          "number": 31,
+          "title": "issue 31",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 90
+        },
+        {
+          "number": 32,
+          "title": "issue 32",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 77
+        },
+        {
+          "number": 33,
+          "title": "issue 33",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 100
+        }
+      ],
+      "order": {
+        "100": [30, 25, 33]
+      }
+    },
+    "output": "30\tplanned\tissue 30"
+  },
+  {
+    "name": "a planned unit under a deferred or closed epic, or in another area, is never picked",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 90,
+          "title": "a deferred epic",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 31,
+          "title": "issue 31",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 90
+        },
+        {
+          "number": 32,
+          "title": "issue 32",
+          "labels": ["kind:feature", "area:workflow"],
+          "parent": 77
+        },
+        {
+          "number": 33,
+          "title": "issue 33",
+          "labels": ["kind:feature", "area:core"],
+          "parent": 100
+        }
+      ],
+      "order": {
+        "100": [30, 25, 33]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "an epic is never picked, and nothing to claim prints nothing",
+    "input": {
+      "area": "area:workflow",
+      "issues": [
+        {
+          "number": 100,
+          "title": "the epic",
+          "labels": ["kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 90,
+          "title": "a deferred epic",
+          "labels": ["kind:epic", "area:workflow", "status:deferred"],
+          "parent": null
+        },
+        {
+          "number": 70,
+          "title": "issue 70",
+          "labels": ["kind:defect", "kind:epic", "area:workflow"],
+          "parent": null
+        },
+        {
+          "number": 71,
+          "title": "issue 71",
+          "labels": ["kind:gap", "area:workflow", "status:discarded"],
+          "parent": null
+        }
+      ],
+      "order": {
+        "100": [30, 25, 33]
+      }
+    },
+    "output": ""
+  }
+]

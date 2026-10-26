@@ -1036,43 +1036,34 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # the branch's issue (#2462), answer the sources (#2499) and the reading axes
 # (#2522) its issues request, and name the concerns it touches (#2523). Each
 # case in `.config/claims/unit.json` holds an issue body and the lines
-# `unit:check` prints for it, or none (`unit.jq`, #2532).
+# `unit:check` prints for it, or none (`unit.jq`, #2532); each in
+# `.config/claims/next.json` the open issues and the claim `claim:next` takes
+# from them, or none (`next.jq`, #2533).
 ["check:claims"]
-description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, and unit:check each issue its findings"
+description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings and claim:next each board its claim"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  got=$(jq .input <<< "$case" | jq -r -L .config/claims -f .config/claims/decide.jq)
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'claims case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/claims/cases.json)
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  got=$(jq .input <<< "$case" | jq -r -L .config/claims -f .config/claims/opening.jq)
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'opening case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/claims/opening.json)
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  got=$(jq .input <<< "$case" | jq -r -L .config/claims -f .config/claims/unit.jq)
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'unit case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/claims/unit.json)
+cases() {
+  local kind=$1 program=$2 file=$3 case name got want
+  while IFS= read -r case; do
+    name=$(jq -r .name <<< "$case")
+    got=$(jq .input <<< "$case" | jq -r -L .config/claims -f ".config/claims/$program")
+    want=$(jq -r .output <<< "$case")
+    if [[ "$got" != "$want" ]]; then
+      printf '%s case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$kind" "$name" "$got" "$want" >&2
+      failed=1
+    fi
+  done < <(jq -c '.[]' ".config/claims/$file")
+}
+cases claims decide.jq cases.json
+cases opening opening.jq opening.json
+cases unit unit.jq unit.json
+cases next next.jq next.json
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims"
 '''
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each
