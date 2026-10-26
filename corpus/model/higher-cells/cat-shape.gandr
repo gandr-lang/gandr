@@ -45,7 +45,7 @@ module SetoidCat : Model(CatShape) {
   /// The interface's identity runs to a function that applies `ident`, which
   /// the signature hides, so the run is opaque at the model.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) => a => a") ]
-  def id(t : Type) -> t => t { thunk { become ident(t) } }
+  def id(t : Type) -> t => t { thunk { ident(t) } }
 
   /// Composition likewise runs through the hidden `compose`.
   @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a => b, b => c) => a => c") ]
@@ -56,7 +56,7 @@ module SetoidCat : Model(CatShape) {
     f : t => u,
     g : u => v
   ) -> t => v {
-    thunk { become compose(t, u, v, f, g) }
+    thunk { compose(t, u, v, f, g) }
   }
 
   /// The left unit law, by conversion.
@@ -91,7 +91,7 @@ module SetoidCat : Model(CatShape) {
     comp(p, r, s, comp(p, q, r, f, g), h),
     comp(p, q, s, f, comp(q, r, s, g, h))
   ) {
-    here(thunk { become compose(p, q, s, f, thunk { become compose(q, r, s, g, h) }) })
+    here(thunk { compose(p, q, s, f, thunk { compose(q, r, s, g, h) }) })
   }
 
   /// The left unit law stated by the right one, whose type converts to it.
@@ -108,8 +108,8 @@ module SetoidCat : Model(CatShape) {
     f
   ) {
     case b {
-      true => become unitL(p, q, f),
-      false => become unitR(p, q, f)
+      true => unitL(p, q, f),
+      false => unitR(p, q, f)
     }
   }
 }
@@ -118,7 +118,7 @@ module SetoidCat : Model(CatShape) {
 /// the operation at its type argument and calls the function it returns
 /// (#452).
 @[ runs("3") ]
-def identity_observed() -> Integer { run f <- SetoidCat.id(Integer); become f(3) }
+def identity_observed() -> Integer { run f <- SetoidCat.id(Integer); f(3) }
 
 /// Composition observed through the interface: `n + 1` then `n + 2`, applied
 /// to `1` (#452).
@@ -127,6 +127,6 @@ def composite_observed() -> Integer { run h <- SetoidCat.comp(
   Integer,
   Integer,
   Integer,
-  fn (n) { become n + 1 },
-  fn (n) { become n + 2 }
-); become h(1) }
+  fn (n) { n + 1 },
+  fn (n) { n + 2 }
+); h(1) }

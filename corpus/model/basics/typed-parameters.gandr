@@ -15,5 +15,5 @@ def lend(
 
 /// Lends `lend` a lambda whose parameter states the record it observes.
 def lent(m : +U &{get : -F Integer, put : -F String}) -> Integer {
-  lend(fn (n : +U &{get : -F Integer, put : -F String}) { become n.get }, m)
+  lend(fn (n : +U &{get : -F Integer, put : -F String}) { n.get }, m)
 }

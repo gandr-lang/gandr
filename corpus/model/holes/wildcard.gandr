@@ -20,7 +20,7 @@ def firstAt(a : Type, b : Type, x : a, y : b) -> a { x }
 
 /// Both types left to the arguments, each forced by its own.
 @[ runs("5") ]
-def bothForced() -> Integer { become firstAt(_, _, 5, unit) }
+def bothForced() -> Integer { firstAt(_, _, 5, unit) }
 
 /// The identity at a type supplied by name.
 def same @[a : Type] (y : a) -> a { y }

@@ -66,7 +66,7 @@ def roundTrip(b : Type, x : Type, y : Type, p : Path(Type, x, y)) -> (u : y => b
   transport(\Z. Z => b, p, transport(\Z. Z => b, back(p), u)),
   u
 ) {
-  become transport(
+  transport(
     (w : Type, z : Path(Type, x, w)) => (v : w => b) => Path(
       w => b,
       transport(\Z. Z => b, z, transport(\Z. Z => b, back(z), v)),
@@ -90,7 +90,7 @@ def carryPath(
   v : x => b,
   e : Path(x => b, u, v)
 ) -> Path(y => b, transport(\Z. Z => b, p, u), transport(\Z. Z => b, p, v)) {
-  become transport(
+  transport(
     (w : x => b, Path(x => b, u, w)) => Path(
       y => b,
       transport(\Z. Z => b, p, u),
@@ -141,7 +141,7 @@ def carryInjective(
     transport(\Z. Z => b, back(p), v),
     e
   );
-  become chain(
+  chain(
     b,
     y,
     u,
@@ -162,7 +162,7 @@ def endsAgree(b : Type) -> Path(
   thunk { fn (w) { source(b, w) } },
   thunk { fn (w) { target(b, w) } }
 ) {
-  become carryInjective(
+  carryInjective(
     b,
     b,
     type(#{x : b, y : b, p : Path(b, x, y)}),
@@ -189,7 +189,7 @@ def whisker(
   t : #{x : b, y : b, p : Path(b, x, y)} => b,
   e : Path(#{x : b, y : b, p : Path(b, x, y)} => b, s, t)
 ) -> Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { t(k(x)) } }) {
-  become transport(
+  transport(
     (w : #{x : b, y : b, p : Path(b, x, y)} => b, Path(
       #{x : b, y : b, p : Path(b, x, y)} => b,
       s,
@@ -209,7 +209,7 @@ def funextOfSpace(a : Type, b : Type, k : a => #{x : b, y : b, p : Path(b, x, y)
   thunk { fn (x) { source(b, k(x)) } },
   thunk { fn (x) { target(b, k(x)) } }
 ) {
-  become whisker(
+  whisker(
     a,
     b,
     k,
@@ -231,5 +231,5 @@ def funextFromUa(
   g : a => b,
   h : (x : a) => Path(b, f(x), g(x))
 ) -> Path(a => b, f, g) {
-  become funextOfSpace(a, b, thunk { fn (x) { (f(x), (g(x), h(x))) } })
+  funextOfSpace(a, b, thunk { fn (x) { (f(x), (g(x), h(x))) } })
 }

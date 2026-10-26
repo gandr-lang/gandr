@@ -67,7 +67,7 @@ def representableSorts() -> Integer { case IdentityReturn {
 @[ runs("1") ]
 def boundInputs() -> Integer { case Lambda {
   Presents(sorts, opers, rules) => case opers {
-    Oper(name, inputs, outputs, rest) => become bound(inputs),
+    Oper(name, inputs, outputs, rest) => bound(inputs),
     _ => 0
   },
   _ => 0

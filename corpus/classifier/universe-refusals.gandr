@@ -21,4 +21,4 @@ def chosen() -> -F Type { return Integer }
 
 @[ refuses("TypeMismatch") ]
 def escaped : +U (Integer -> -F Integer);
-def escaped = thunk { run t <- force chosen; become id(t) };
+def escaped = thunk { run t <- force chosen; id(t) };

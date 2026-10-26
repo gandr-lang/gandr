@@ -4,7 +4,7 @@ module Counter :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] 
   /// The counter's zero.
   def zero = 0;
   /// One step on.
-  def next(n : T) -> -F T { become n + 1 }
+  def next(n : T) -> -F T { n + 1 }
   /// The count read as an integer.
   def read(n : T) -> -F Integer { return n }
 }
@@ -12,4 +12,4 @@ module Counter :> #{ type T, zero : T, next : +U[ω] (T -> -F T), read : +U[ω] 
 /// One step from the counter's zero, read back through the exposed reader.
 @[ runs("1") ]
 def shown : () => Integer ;
-def shown = thunk { run n <- Counter.next(Counter.zero) ; become Counter.read(n) } ;
+def shown = thunk { run n <- Counter.next(Counter.zero) ; Counter.read(n) } ;

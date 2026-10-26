@@ -61,7 +61,7 @@ def dollar() -> List(Integer) { encode(36) }
 
 /// `é`, below 2048: two bytes.
 @[ runs("Cons(195, Cons(169, Nil))") ]
-def eAcute() -> List(Integer) { become encode(233) }
+def eAcute() -> List(Integer) { encode(233) }
 
 /// `€`, below 65536: three bytes.
 @[ runs("Cons(226, Cons(130, Cons(172, Nil)))") ]

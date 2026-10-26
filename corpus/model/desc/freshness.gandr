@@ -27,8 +27,8 @@ theory Pi {
 /// conditions its written rules state.
 def rec conditions(chain : Theory) -> Integer {
   case chain {
-    Rule(name, lhs, rhs, rest) => become conditions[<](rest),
-    Turned(name, lhs, rhs, rest) => become conditions[<](rest),
+    Rule(name, lhs, rhs, rest) => conditions[<](rest),
+    Turned(name, lhs, rhs, rest) => conditions[<](rest),
     Fresh(atom, term, rest) => {
       run r <- conditions[<](rest);
       r + 1
@@ -40,6 +40,6 @@ def rec conditions(chain : Theory) -> Integer {
 /// `Pi` states one condition.
 @[ runs("1") ]
 def stated() -> Integer { case Pi {
-  Presents(sorts, opers, rules) => become conditions(rules),
+  Presents(sorts, opers, rules) => conditions(rules),
   _ => 0
 } }

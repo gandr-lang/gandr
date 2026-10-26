@@ -13,4 +13,4 @@ pub def rec count(xs : List(String)) -> Integer {
 }
 
 /// The entry: its exit code is the number of its arguments.
-def main(args : List(String)) -> Integer { become count(args) }
+def main(args : List(String)) -> Integer { count(args) }

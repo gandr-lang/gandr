@@ -59,7 +59,7 @@ def backToOrigin(
   b : Point.T,
   q : Path(Point.T, Point.origin, b)
 ) -> Path(Point.T, b, Point.origin) {
-  become transport(
+  transport(
     (y : Point.T, Path(Point.T, Point.origin, y)) => Path(Point.T, y, Point.origin),
     q,
     here(Point.origin),
