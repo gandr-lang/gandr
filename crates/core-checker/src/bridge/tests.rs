@@ -292,6 +292,7 @@ fn erase(
         directed: &BTreeMap::new(),
         motives: &BTreeMap::new(),
         payloads: &BTreeMap::new(),
+        handled: &BTreeMap::new(),
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
@@ -2636,18 +2637,17 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
             })
         );
     }
-    assert!(matches!(
-        readmission.readmitted()[2].outcome(),
-        Outcome::Defined { .. }
-    ));
+    // A deep handler of the one operation crosses as the fold of its free
+    // model, which the kernel admits ahead of it.
+    for crossed in [2_usize, 3] {
+        assert!(matches!(
+            readmission.readmitted()[crossed].outcome(),
+            Outcome::Defined { .. }
+        ));
+    }
     for (position, at, former) in [
         (
-            3_usize,
-            CoreNode::Term(TermNode::Computation(handled)),
-            UnadmittedFormer::Handle,
-        ),
-        (
-            4,
+            4_usize,
             CoreNode::Term(TermNode::Computation(reset)),
             UnadmittedFormer::Reset,
         ),
@@ -2676,8 +2676,12 @@ fn effectful_declarations_are_refused_by_name_at_the_pure_boundary()
     }
     assert!(readmission.audit().axioms().is_empty());
     let artifact = readmission.export(BTreeMap::new());
-    let decoded = decode(artifact.as_image()).expect("the remaining pure definition exports");
-    assert_eq!(decoded.declarations().len(), 1);
+    let decoded = decode(artifact.as_image()).expect("the pure definitions export");
+    assert_eq!(
+        decoded.declarations().len(),
+        3,
+        "the two definitions that crossed and the free model the handler folds"
+    );
 }
 
 /// Every effect, memory and control former a pure body may not hold, and
@@ -2712,9 +2716,11 @@ fn each_effect_former_is_refused_by_name_where_it_stands()
             arena.computation_exercise(unit, interface.clone(), "emit".into(), unit),
             UnadmittedFormer::Exercise,
         ),
+        // A scope covering none of its interface's operations, and judged at
+        // no type, is a handler outside the form the free model translates.
         (
             arena.computation_scope(interface, returned, returned, [].into()),
-            UnadmittedFormer::Scope,
+            UnadmittedFormer::Handle,
         ),
         (
             arena.computation_memory(gandr_core_term::memory::MemoryForm::Consume {
@@ -2749,6 +2755,165 @@ fn each_effect_former_is_refused_by_name_where_it_stands()
             "{former:?} is refused by name, at its node"
         );
     }
+}
+
+/// A deep handler of one operation crosses as the fold of its effect's free
+/// model: a clause that resumes the subject and one that answers for it each
+/// cross, through the one model the kernel admits ahead of the first, named
+/// by its admission ordinal; a handler of two operations is refused by name
+/// at its node.
+#[test]
+fn a_deep_handler_crosses_as_the_fold_of_its_free_model_1624()
+{
+    use gandr_core_term::control::EffectClause;
+    use gandr_core_term::effect::EffectName;
+    use gandr_core_term::effect::EffectOp;
+    use gandr_core_term::effect::EffectSig;
+    use gandr_core_term::effect::OperationName;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::NameSegment;
+    let mut arena = CoreArena::new();
+    let unit_type = arena.value_type_unit();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let ask = EffectSig::new(EffectName::from("Ask"), [EffectOp {
+        name: OperationName::from("ask"),
+        payload: unit_type,
+        reply: integer,
+    }])
+    .expect("one operation");
+    let two = EffectSig::new(EffectName::from("Two"), [
+        EffectOp {
+            name: OperationName::from("first"),
+            payload: unit_type,
+            reply: unit_type,
+        },
+        EffectOp {
+            name: OperationName::from("second"),
+            payload: unit_type,
+            reply: unit_type,
+        },
+    ])
+    .expect("two operations");
+    let answer = arena.comp_type_returner(integer);
+    let answer_type = arena.value_type_thunk(answer);
+    // `x ← ask(); return x`, its value passed on by the return clause, under
+    // a clause that resumes it at zero or one that answers zero.
+    let handler = |arena: &mut CoreArena, resumes: bool| {
+        let unit = arena.value_unit();
+        let zero = arena.value_literal(integer_literal());
+        let requested = arena.computation_perform(ask.clone(), "ask".into(), unit);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(bound);
+        let subject = arena.computation_bind(requested, returned);
+        let answered = arena.computation_return(zero);
+        let clause = if resumes {
+            let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+            arena.computation_resume(stack, answered)
+        }
+        else {
+            answered
+        };
+        let handled = arena.computation_handle(
+            ask.clone(),
+            subject,
+            returned,
+            [EffectClause {
+                operation: "ask".into(),
+                body: clause,
+            }]
+            .into(),
+        );
+        arena.value_thunk(handled)
+    };
+    let resuming = handler(&mut arena, true);
+    let answering = handler(&mut arena, false);
+    let unit = arena.value_unit();
+    let zero = arena.value_literal(integer_literal());
+    let first = arena.computation_perform(two.clone(), "first".into(), unit);
+    let returned = arena.computation_return(zero);
+    let stack = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let resumed_unit = arena.computation_return(unit);
+    let resumed = arena.computation_resume(stack, resumed_unit);
+    let both = arena.computation_handle(
+        two,
+        first,
+        returned,
+        [
+            EffectClause {
+                operation: "first".into(),
+                body: resumed,
+            },
+            EffectClause {
+                operation: "second".into(),
+                body: returned,
+            },
+        ]
+        .into(),
+    );
+    let both_body = arena.value_thunk(both);
+    let (_, readmission) = judge_and_readmit(&mut arena, &[
+        declaration(At(0), Maybe::Present(answer_type), Maybe::Present(resuming)),
+        declaration(
+            At(1),
+            Maybe::Present(answer_type),
+            Maybe::Present(answering),
+        ),
+        declaration(
+            At(2),
+            Maybe::Present(answer_type),
+            Maybe::Present(both_body),
+        ),
+    ]);
+    for crossed in [0_usize, 1] {
+        assert!(
+            matches!(
+                readmission.readmitted()[crossed].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "the handler at {crossed} crosses: {:?}",
+            readmission.readmitted()[crossed].outcome()
+        );
+    }
+    assert_eq!(
+        readmission.readmitted()[2].outcome(),
+        &Outcome::Refused(Refusal::OutOfFragment {
+            at: CoreNode::Term(TermNode::Computation(both)),
+            former: UnadmittedFormer::Handle,
+        })
+    );
+    let artifact = readmission.export(BTreeMap::new());
+    let decoded = decode(artifact.as_image()).expect("the handlers export");
+    let names = decoded
+        .declarations()
+        .iter()
+        .map(|marked| marked.declaration().name().segments().to_vec())
+        .collect::<Vec<_>>();
+    let model = ["effect", "free", "0"]
+        .map(|segment| NameSegment::from_text(segment.into()).expect("a name segment"));
+    assert_eq!(
+        names.len(),
+        3,
+        "one free model, then the two handlers: {names:?}"
+    );
+    assert_eq!(names[0], model.to_vec(), "the model crosses first, once");
+    let DeclarationContent::Data {
+        ref parameters,
+        ref constructors,
+        ..
+    } = *decoded.declarations()[0].declaration().content()
+    else {
+        panic!("the free model is a data declaration");
+    };
+    assert_eq!(
+        parameters.len(),
+        1,
+        "the model is over the subject's result"
+    );
+    assert_eq!(
+        constructors.iter().map(Vec::len).collect::<Vec<_>>(),
+        [1, 2],
+        "`Return(x)`, then `ask(p, k)`"
+    );
 }
 
 /// Each type the kernel has no former for is refused by its own name at its
@@ -4980,6 +5145,7 @@ fn the_machine_faults_are_refused_exactly()
         directed: &BTreeMap::new(),
         motives: &BTreeMap::new(),
         payloads: &BTreeMap::new(),
+        handled: &BTreeMap::new(),
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),
@@ -5756,6 +5922,7 @@ fn a_static_lambda_crosses_only_as_a_closed_operator()
         directed: &BTreeMap::new(),
         motives: &BTreeMap::new(),
         payloads: &BTreeMap::new(),
+        handled: &BTreeMap::new(),
         reflexivities: &BTreeMap::new(),
         relations: &BTreeMap::new(),
         laws: &BTreeMap::new(),

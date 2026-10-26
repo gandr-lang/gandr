@@ -480,7 +480,14 @@ impl Erasure<'_, '_>
                             .iter()
                             .find(|&&(member, _)| member == *declaration)
                             .map(|&(_, kernel)| kernel)
-                            .or_else(|| self.positions.admitted.get(declaration).copied());
+                            .or_else(|| self.positions.admitted.get(declaration).copied())
+                            .or_else(|| {
+                                self.positions
+                                    .models
+                                    .iter()
+                                    .find(|model| model.declaration == *declaration)
+                                    .map(|model| model.position)
+                            });
                         let position = crossing.ok_or(Refusal::WithheldData {
                             at: TypeNode::Value(at),
                             constant: *declaration,

@@ -1,0 +1,77 @@
+// Deep handlers of one operation, replayed by the kernel: the bridge reads a
+// handled body as a program of its effect's free model, a `Return` of the
+// body's value or the operation with its payload and the continuation
+// awaiting its reply, and the handler as the fold of that program
+// (`tree-exit.gandr` writes the translation by hand). The kernel types the
+// program and the fold, so the claim that the body performs only the handled
+// operation is its own.
+
+/// The clause resumes the body, whose value passes through the `pure` clause.
+@[ runs("101") ]
+def resumed() -> Integer {
+  handle c : Proc {
+    c.exit(5);
+    pure 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => k(unit)
+  }
+}
+
+/// The clause answers for the handler, and the rest of the body never runs.
+@[ runs("9") ]
+def answered() -> Integer {
+  handle c : Proc {
+    c.exit(5);
+    pure 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => pure 9
+  }
+}
+
+/// The clause answers the operation's payload.
+@[ runs("5") ]
+def coded() -> Integer {
+  handle c : Proc {
+    c.exit(5);
+    pure 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => pure code
+  }
+}
+
+/// The handler is deep: the second exit is handled in the body the first
+/// resumed, and each clause adds its code to what the rest answers.
+@[ runs("108") ]
+def summed() -> Integer {
+  handle c : Proc {
+    c.exit(3);
+    c.exit(4);
+    pure 1
+  } with {
+    pure(x) => pure x + 100,
+    oper exit(code, k) => {
+      run rest <- k(unit);
+      pure rest + code
+    }
+  }
+}
+
+/// A second effect crosses through its own free model: each line printed is
+/// counted, and the body's value is dropped.
+@[ runs("2") ]
+def printed() -> Integer {
+  handle out : Console {
+    out.print("one");
+    out.print("two");
+    pure 7
+  } with {
+    pure(x) => pure 0,
+    oper print(line, k) => {
+      run rest <- k(unit);
+      pure rest + 1
+    }
+  }
+}

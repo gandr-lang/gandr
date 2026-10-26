@@ -327,6 +327,48 @@
 //! `bridge::tests::a_dependent_pair_and_its_identity_are_readmitted` crosses
 //! one under a motive that reads its scrutinee's first projection.
 //!
+//! # A deep handler crosses as the fold of its free model
+//!
+//! The kernel is pure and has no effect former; readmission simulates effects
+//! instead. A handler or a capability scope of one operation `op : A ↠ B`
+//! crosses as its reduct, minted into the core arena and erased in its place
+//! as a split's is. The handled body is read along its bind spine as a
+//! program of the effect's free model `Free(a)`, a data type with `Return(a)`
+//! and `op(A, U(B → F Free(a)))`: each request of the operation becomes the
+//! constructor holding its payload and the rest of the spine as its
+//! continuation, and the spine ends in `Return`. The clauses become a
+//! structural fold of that program at the answer the judgement checked the
+//! handler at ([`crate::Handled`]), each resumption read as the rest folded
+//! again, so the fold handles deeply. The free model is a data declaration the
+//! kernel admits ahead of the first declaration that handles its effect,
+//! named `effect.free.<n>` by its admission ordinal, and named in the core
+//! arena at a position counted down from the last, which no module
+//! declaration takes; a later handler of the same signature folds the same
+//! model.
+//!
+//! The checker decides a handled body's row by its sealed-set arithmetic, and
+//! the kernel re-derives it by typing the program: the program is a value of
+//! the handled effect's model alone, so a payload of another type than the
+//! operation's, or a resumption at another type than its reply, is the
+//! kernel's type error at the handler's declaration, not a fact the bridge
+//! vouches for. The two can disagree only where the bridge leaves a request
+//! unread, which it then erases as it stands and refuses; it never drops one.
+//! Every form past this one — several operations, a request off the spine, a
+//! reset or a shallow handler, control and stacks, a returner row at a
+//! declaration's type — is refused `OutOfFragment` under
+//! [`TrackingIssue::KERNEL_EFFECTS`]. The witness
+//! `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+//! crosses a handler that resumes and one that answers through one model, and
+//! refuses one of two operations.
+//!
+//! The alternatives were a kernel effect former, which widens the trusted base
+//! by what a data type and a fold already express, and a fold fused into the
+//! body's continuations, which the kernel would type without ever seeing the
+//! program, so the row claim would be the bridge's. A model per handler would
+//! keep a module's positions independent of its handlers' order, at a data
+//! declaration per handler. The choice reverses if the kernel gains effect
+//! rows of its own.
+//!
 //! # The export carries the producer's names
 //!
 //! [`Readmission::export`] encodes the environment the kernel built: each
@@ -369,7 +411,8 @@
 //! native operation's signature is seeded at the first declaration that reads
 //! it, so the record holds the ones its leading declarations read at the
 //! positions every readmission leading with them gives them, whatever native
-//! operations the declarations after the boundary read. The core bodies a
+//! operations the declarations after the boundary read; so is an effect's free
+//! model, at the first declaration that handles it. The core bodies a
 //! later declaration unfolds name nodes of the arena the record was made over,
 //! so the record keeps none and the resumption defines them again from its own
 //! report, in the order crossing them did. A record is made only at a boundary
@@ -385,6 +428,13 @@
 //! source would want, and both wait on each imported source being composed
 //! once. The choice reverses then: a source's readmission is kept beside its
 //! own composition, and resuming a whole prefix goes.
+//!
+//! # References
+//!
+//! - `Plotkin-2013-handling_algebraic_effects` — background: §§ 1.1–1.2 read
+//!   handling as the homomorphism the universal property of the free model
+//!   induces from the return clause, which the fold of a handled body's program
+//!   is for a theory of one operation and no equations.
 //!
 //! [`Staging::axiom`]: gandr_kernel_core::Staging::axiom
 
@@ -432,6 +482,7 @@ use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Declaration as KernelDeclaration;
 use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::EncodedPrefix;
@@ -1575,6 +1626,7 @@ impl Crossed
                 native: positions.native.clone(),
                 assumed: positions.assumed.clone(),
                 admitted: positions.admitted.clone(),
+                models: positions.models.clone(),
                 definitions: CodeDefinitions::new(),
                 unfoldings: positions.unfoldings.clone(),
                 exports: {
@@ -1607,9 +1659,10 @@ impl Crossed
     ///   [`Outcome::Assumed`]. Then the record's environment, its positions
     ///   with each core body defined and each data signature presented again
     ///   from `report` in order, as crossing them did, and its entries with
-    ///   `report`'s origins. The native signatures the record holds are the
-    ///   ones its declarations read, each seeded at its first reader, so the
-    ///   native operations of the arena past them do not enter the agreement.
+    ///   `report`'s origins. The native signatures and the free models the
+    ///   record holds are the ones its declarations read, each seeded at its
+    ///   first reader, so the native operations and the effects of the arena
+    ///   past them do not enter the agreement.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -1694,9 +1747,9 @@ impl Crossed
 ///   lambda is erased as its reduct, minted into `arena`, until none remains —
 ///   each step certified and replayed once per distinct instance.
 /// - provides: the declarations that crossed, the signature of each native
-///   operation they read, seeded at its first reader, and an audit exposing
-///   every source-hole or native assumption on which an admitted source
-///   declaration depends.
+///   operation they read and the free model of each effect they handle, each
+///   seeded at its first reader, and an audit exposing every source-hole or
+///   native assumption on which an admitted source declaration depends.
 /// - fails: never; every declaration gets an outcome.
 /// - panics: none.
 ///
@@ -1945,6 +1998,7 @@ where
         directed: report.directed(),
         motives: report.motives(),
         payloads: report.payloads(),
+        handled: report.handled(),
         reflexivities: report.reflexivities(),
         relations: report.relations(),
         laws: report.laws(),
@@ -2413,6 +2467,10 @@ struct Source<'source>
     /// The payload type each send and each receive the judgement checked
     /// moves, by node.
     payloads: &'source BTreeMap<ComputationId, ValueTypeId>,
+    /// The types each handler and capability scope the judgement checked was
+    /// judged at, by node: what its translation through its free model is
+    /// checked at.
+    handled: &'source BTreeMap<ComputationId, crate::handler::Handled>,
     /// The reflexivities the judgement checked against a path type, by node.
     reflexivities: &'source BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's conversions
@@ -2553,11 +2611,12 @@ enum Erased
 ///   erasure or a declined certificate discards the session and a rejection is
 ///   truncated by the kernel, so the environment is as it was on every outcome
 ///   but an admission, save what is admitted first: the assumptions for the
-///   values its receives read and the choices its offers take, and the
-///   signature of each native operation it is the first declaration to read,
-///   each an axiom the audit of whatever reads it names. The replayed verdicts
-///   are returned beside the outcome; a native signature the kernel rejects is
-///   the declaration's [`Outcome::Rejected`].
+///   values its receives read and the choices its offers take, the signature of
+///   each native operation it is the first declaration to read, each an axiom
+///   the audit of whatever reads it names, and the free model of each effect it
+///   is the first declaration to handle. The replayed verdicts are returned
+///   beside the outcome; a native signature or a free model the kernel rejects
+///   is the declaration's [`Outcome::Rejected`].
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -2572,18 +2631,18 @@ enum Erased
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
 #[spec(
-    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len())],
+    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())],
     ensures: |ret| match ret.0 {
         | Outcome::Defined { admitted, .. } | Outcome::Data { admitted, .. } | Outcome::Assumed { admitted, .. } =>
-            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
-            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
+            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
+            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms).and_then(|fresh| fresh.checked_add(1))
             && positions.admitted.len().checked_sub(crossed) == Some(1)
             && positions.admitted.get(&constant) == Some(&admitted.position())
             && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Data(_) | Offer::Codata(_) | Offer::Abstract(_), &Outcome::Data { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
             && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
         | Outcome::Refused(_) | Outcome::Rejected(_) =>
-            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
-            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)
+            usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)
+            && usize::from(positions.exports.len()).checked_sub(usize::from(exports)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)
             && positions.admitted.len() == crossed,
         | Outcome::Marked(_) | Outcome::Suspended | Outcome::Static => false,
     },
@@ -2618,9 +2677,9 @@ where
             (crossing, base),
         ) {
             Ok(staged) => break staged,
-            Err(Unstaged::Unseeded(primitive)) => {
-                if let Err(error) = positions.seed(environment, primitive) {
-                    return (Outcome::Rejected(error), Vec::new());
+            Err(Unstaged::Unseeded(seed)) => {
+                if let Err(outcome) = seeded(environment, arena, source, positions, &seed, vouch) {
+                    return (outcome, Vec::new());
                 }
             },
             Err(Unstaged::Refused(outcome, replayed)) => {
@@ -2696,9 +2755,24 @@ enum Unstaged
     /// The erasure or a certificate refused it: the refused outcome and the
     /// verdicts replayed before it.
     Refused(Outcome, Vec<Replayed>),
-    /// It reads a native operation whose signature the environment does not
-    /// hold yet: seeded, the offer stages again.
-    Unseeded(gandr_core_term::primitive::Primitive),
+    /// It reads a native operation whose signature, or handles an effect
+    /// whose free model, the environment does not hold yet: seeded, the offer
+    /// stages again.
+    Unseeded(Seed),
+}
+
+/// A declaration an erasure stopped for, which the environment does not hold
+/// yet and the crossing seeds before staging the offer again.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug)]
+enum Seed
+{
+    /// The signature of a native operation.
+    Native(gandr_core_term::primitive::Primitive),
+    /// The free model of an effect signature of one operation.
+    Model(gandr_core_term::effect::EffectSig),
 }
 
 /// Erase `offer`, the declaration at `constant`, into a staging session of
@@ -2712,13 +2786,13 @@ enum Unstaged
 /// - ensures: the staged declaration, its body's image and the replayed
 ///   verdicts when the erasure and every certificate succeed; otherwise the
 ///   session discarded and, when the erasure stopped at a native operation
-///   whose signature the environment does not hold yet, that operation; else
-///   the refusal with the verdicts replayed so far.
+///   whose signature, or a handler whose free model, the environment does not
+///   hold yet, that seed; else the refusal with the verdicts replayed so far.
 /// - fails: never; a refusal is returned as its outcome.
 /// - panics: none.
 ///
 /// # Errors
-/// [`Unstaged::Unseeded`] with the native operation to seed, or
+/// [`Unstaged::Unseeded`] with the declaration to seed, or
 /// [`Unstaged::Refused`] with the refused outcome and the verdicts replayed
 /// before it.
 ///
@@ -2730,7 +2804,8 @@ enum Unstaged
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
 #[spec(ensures: |ret| ret.as_ref().err().is_none_or(|unstaged| match *unstaged {
     Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
-    Unstaged::Unseeded(primitive) => !positions.native.contains_key(&primitive),
+    Unstaged::Unseeded(Seed::Native(primitive)) => !positions.native.contains_key(&primitive),
+    Unstaged::Unseeded(Seed::Model(_)) => !source.handled.is_empty(),
 }))]
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn stage<Vouch>(
@@ -2760,9 +2835,9 @@ where
     };
     let (erased, replayed) = match (erased, unseeded) {
         (Ok(crossing), _) => crossing,
-        (Err(_), Some(primitive)) => {
+        (Err(_), Some(seed)) => {
             staging.discard();
-            return Err(Unstaged::Unseeded(primitive));
+            return Err(Unstaged::Unseeded(seed));
         },
         (Err((refusal, replayed)), None) => {
             staging.discard();
@@ -3036,8 +3111,8 @@ fn settle(
 /// - ensures: one outcome per member, in order: each admitted as [`cross`]
 ///   records an admission when the kernel admits the block, and otherwise every
 ///   member sharing the refusal or rejection of the member that failed, the
-///   environment as it was but for the assumptions and the native signatures
-///   admitted as [`cross`] admits them.
+///   environment as it was but for the assumptions, the native signatures and
+///   the free models admitted as [`cross`] admits them.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -3046,9 +3121,9 @@ fn settle(
 /// - hypothesis: L3 — a universe and its decoder cross and are admitted
 ///   together; a block one member of which is refused crosses nothing.
 /// - witness: `tests::recursive_data::a_mutual_block_is_admitted_in_both_checkers`
-#[spec(captures: [entries = environment.entries().len(), axioms = positions.assumed.len().saturating_add(positions.native.len())], ensures: |ret| ret.len() == members.len()
+#[spec(captures: [entries = environment.entries().len(), axioms = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len())], ensures: |ret| ret.len() == members.len()
     && (ret.iter().all(|crossed| matches!(crossed.0, Outcome::Defined { .. } | Outcome::Data { .. } | Outcome::Assumed { .. }))
-        || usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).checked_sub(axioms)))]
+        || usize::from(environment.entries().len()).checked_sub(usize::from(entries)) == positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()).checked_sub(axioms)))]
 fn cross_block<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -3084,17 +3159,17 @@ where
                 Err(unstaged) => {
                     // The block crosses whole or not at all: what staged is
                     // abandoned, latest first, and every member shares the
-                    // refusal, unless a native signature or an assumption it
-                    // waited on is admitted and the block staged again past
-                    // it.
+                    // refusal, unless a native signature, a free model or an
+                    // assumption it waited on is admitted and the block staged
+                    // again past it.
                     for member in staged.into_iter().rev() {
                         environment.abandon(member.declaration);
                     }
                     let (outcome, replayed) = match unstaged {
-                        Unstaged::Unseeded(primitive) => {
-                            match positions.seed(environment, primitive) {
+                        Unstaged::Unseeded(seed) => {
+                            match seeded(environment, arena, source, positions, &seed, vouch) {
                                 Ok(()) => continue 'block,
-                                Err(error) => (Outcome::Rejected(error), Vec::new()),
+                                Err(outcome) => (outcome, Vec::new()),
                             }
                         },
                         Unstaged::Refused(outcome, replayed) => {
@@ -3324,6 +3399,182 @@ where
     Maybe::Present(admitted.position())
 }
 
+/// Admit the declaration `seed` names, which the declaration about to cross is
+/// the first to read.
+///
+/// # Specification
+/// - requires: as [`cross`]; the environment holds no declaration of `seed`.
+/// - ensures: a native operation's signature as [`Positions::seed`] admits it,
+///   or an effect signature's free model as [`modelled`] admits it.
+/// - fails: [`Outcome::Rejected`] for a kernel rejection, and the refused
+///   outcome for a free model whose operation types do not erase.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a native operation and a handled effect each seeded at
+///   their first reader, and a readmission resumed past a prefix that read
+///   neither, answer as a whole readmission does.
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+/// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+#[spec(captures: seeded = positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()), ensures: |ret| ret.is_err() || positions.assumed.len().saturating_add(positions.native.len()).saturating_add(positions.models.len()) == seeded.saturating_add(1))]
+fn seeded<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    seed: &Seed,
+    vouch: &Vouch,
+) -> Result<(), Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    match *seed {
+        Seed::Native(primitive) => positions
+            .seed(environment, primitive)
+            .map_err(Outcome::Rejected),
+        Seed::Model(ref signature) => {
+            modelled(environment, arena, source, positions, signature, vouch)
+        },
+    }
+}
+
+/// Admit the free model of `signature`, the effect a handler of the
+/// declaration about to cross is the first to handle: the data type of the
+/// programs over its one operation.
+///
+/// # Specification
+/// - requires: as [`cross`]; `signature` has one operation `op : A ↠ B`, whose
+///   payload and reply mention no binder, and no model admitted so far is
+///   `signature`'s.
+/// - ensures: one data declaration at the next kernel position, named
+///   `effect.free.<n>` for the `n` models admitted before it and appended to
+///   the exports: `Free(a : Type)`, whose tag zero `Return(a)` is a program
+///   that returns, and whose tag one `op(A, U(B → F Free(a)))` performs the
+///   operation and continues with its reply. The core arena names it at the
+///   position [`Model::declaration`] reserves, which [`Positions::model`]
+///   answers for `signature`.
+/// - provides: the free model a handler is translated to a fold of: the kernel
+///   types the tree, so an operation outside the row is a kernel type error.
+/// - fails: the refused outcome when the payload or the reply does not erase,
+///   and [`Outcome::Rejected`] when the kernel refuses the declaration.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two handlers of one effect share one model, admitted once
+///   ahead of the first as a data type over the subject's result with a
+///   `Return` of one field and the operation of two; a model with another field
+///   count or admitted twice changes the export.
+/// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+#[spec(captures: models = positions.models.len(), ensures: |ret| ret.is_err() || positions.models.len() == models.saturating_add(1))]
+fn modelled<Vouch>(
+    environment: &mut Environment,
+    arena: &mut CoreArena,
+    source: Source<'_>,
+    positions: &mut Positions,
+    signature: &gandr_core_term::effect::EffectSig,
+    vouch: &Vouch,
+) -> Result<(), Outcome>
+where
+    Vouch: Fn(Certificate) -> Certificate,
+{
+    let mut operations = signature.operations();
+    let (Some(operation), None) = (operations.next(), operations.next())
+    else {
+        return Err(Outcome::Refused(Refusal::MachineInvariant));
+    };
+    let (payload, reply) = (operation.payload, operation.reply);
+    let ordinal = positions.models.len();
+    let declaration = positions.reserved();
+    let universe = arena.value_type_universe(
+        gandr_core_term::Sort::Ground(GroundSort::Value),
+        Level::zero(),
+    );
+    // The fields stand under the parameter, the continuation under the
+    // payload too.
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let returned = arena.value_type_element(parameter, Level::zero());
+    let payload =
+        gandr_core_term::shift_value_type(arena, payload, gandr_core_term::Binders::from(1_u32))
+            .settle(arena);
+    let reply =
+        gandr_core_term::shift_value_type(arena, reply, gandr_core_term::Binders::from(2_u32))
+            .settle(arena);
+    let parameter = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let tree = arena.value_type_data(declaration, Vec::from([parameter]));
+    let rest = arena.comp_type_returner(tree);
+    let continuation = arena.comp_type_arrow(reply, rest);
+    let continuation = arena.value_type_thunk(continuation);
+    let model = gandr_core_term::DataSignature::new(
+        Vec::from([universe]),
+        Vec::from([Vec::from([returned]), Vec::from([payload, continuation])]),
+        universe,
+    );
+    let next = ConstantIndex::from(environment.entries().len());
+    let base = ConstantIndex::from(usize::from(next).saturating_add(1));
+    let staged = match stage(
+        environment,
+        arena,
+        (source, &*positions),
+        Offer::Data(&model),
+        vouch,
+        (&[(declaration, next)], base),
+    ) {
+        Ok(staged) => staged,
+        Err(Unstaged::Refused(outcome, _)) => return Err(outcome),
+        Err(Unstaged::Unseeded(_)) => return Err(Outcome::Refused(Refusal::MachineInvariant)),
+    };
+    let ordinal = crate::alloc::format!("{ordinal}");
+    let name = StructuredName::from(
+        ["effect", "free", ordinal.as_str()]
+            .into_iter()
+            .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+            .collect::<Vec<_>>(),
+    );
+    let exported = staged.declaration.declaration().clone().named(name);
+    let admitted = admit(environment, staged.declaration).map_err(Outcome::Rejected)?;
+    positions.models.push(Model {
+        signature: signature.clone(),
+        declaration,
+        position: admitted.position(),
+    });
+    positions.exports.push(exported);
+    Ok(())
+}
+
+/// The free model of one effect signature the kernel admitted.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary.
+#[derive(Clone, Debug)]
+struct Model
+{
+    /// The effect signature it models.
+    signature: gandr_core_term::effect::EffectSig,
+    /// The position the core arena names it at, reserved past every module
+    /// position ([`Positions::reserved`]).
+    declaration: ConstantIndex,
+    /// Its kernel position.
+    position: ConstantIndex,
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no free model answers an effect signature.
+    mod model {
+        /// The reason no model answers.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// No model admitted so far is of the signature.
+            Unadmitted,
+        }
+    }
+}
+
 /// The kernel position each module declaration that crossed took, and the
 /// bodies the crossed and the static definitions unfold to on either side.
 #[derive(Clone, Debug, Default)]
@@ -3336,6 +3587,9 @@ struct Positions
     assumed: BTreeMap<Assumption, ConstantIndex>,
     /// Module position to kernel position.
     admitted: BTreeMap<ConstantIndex, ConstantIndex>,
+    /// The free model of each effect signature a handler crossed through,
+    /// admitted the first time one is handled, in admission order.
+    models: Vec<Model>,
     /// The crossed and the static definitions' core bodies, by module
     /// position: what a decode of a code naming one, or an instance of one,
     /// reduces to, and what its certificate is asked over.
@@ -3360,6 +3614,56 @@ struct Positions
 
 impl Positions
 {
+    /// The core position the next free model is named at: counted down from
+    /// the last position, which no module's declarations reach, by the models
+    /// admitted before it.
+    ///
+    /// # Specification
+    /// - ensures: each model admitted reserves a position distinct from every
+    ///   earlier one's, each past any module position a declaration takes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler's fold names its model at the reserved
+    ///   position and crosses; a position a module declaration held would
+    ///   resolve to that declaration instead.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    #[spec(ensures: |ret| usize::from(ret) == usize::MAX.saturating_sub(self.models.len()))]
+    fn reserved(&self) -> ConstantIndex
+    {
+        ConstantIndex::from(usize::MAX.saturating_sub(self.models.len()))
+    }
+
+    /// The free model admitted for `signature`, read in `arena`.
+    ///
+    /// # Specification
+    /// - ensures: the model whose signature is `signature` by name, operations
+    ///   and type syntax ([`gandr_core_term::effect::EffectSig::inclusion`]),
+    ///   the first admitted when several are; absent when none is.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two handlers of one effect share one model.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(model) => model.signature.inclusion(signature, arena) == gandr_core_term::row::RowInclusion::Included,
+        Maybe::Absent(model::Absent::Unadmitted) => true,
+    })]
+    fn model(
+        &self,
+        signature: &gandr_core_term::effect::EffectSig,
+        arena: &CoreArena,
+    ) -> Maybe<&Model, model::Absent>
+    {
+        self.models
+            .iter()
+            .find(|model| {
+                model.signature.inclusion(signature, arena)
+                    == gandr_core_term::row::RowInclusion::Included
+            })
+            .map_or(Maybe::Absent(model::Absent::Unadmitted), Maybe::Present)
+    }
+
     /// Admit the signature of the native operation `primitive`, which the
     /// declaration about to cross is the first to read, without adding an
     /// evaluator to the kernel.
@@ -4494,9 +4798,10 @@ struct Erasure<'source, 'positions>
     /// declaration holds yet — a data declaration's own, or every member of
     /// its mutual block.
     crossing: &'positions [(ConstantIndex, ConstantIndex)],
-    /// The native operation the erasure met whose signature the environment
-    /// does not hold yet, which stops it.
-    unseeded: Option<gandr_core_term::primitive::Primitive>,
+    /// The declaration the erasure met that the environment does not hold
+    /// yet — a native operation's signature or a handled effect's free model
+    /// — which stops it.
+    unseeded: Option<Seed>,
 }
 
 impl<'source, 'positions> Erasure<'source, 'positions>
@@ -4567,7 +4872,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///   resumed past a prefix that read none answers as a whole one.
     /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
     /// - witness: `bridge::tests::a_resumed_readmission_seeds_a_native_its_prefix_never_read`
-    #[spec(ensures: |ret| ret.is_ok() || self.unseeded == Some(primitive))]
+    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Native(seeded)) if seeded == primitive))]
     fn native(
         &mut self,
         primitive: gandr_core_term::primitive::Primitive,
@@ -4575,10 +4880,44 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     {
         let Some(&position) = self.positions.native.get(&primitive)
         else {
-            self.unseeded = Some(primitive);
+            self.unseeded = Some(Seed::Native(primitive));
             return Err(Refusal::MachineInvariant);
         };
         Ok(position)
+    }
+
+    /// The core position of the free model of `signature`, the effect a
+    /// handler being erased handles.
+    ///
+    /// # Specification
+    /// - ensures: the position [`Positions::model`] answers for `signature`.
+    /// - fails: [`Refusal::MachineInvariant`] when the environment holds no
+    ///   model of `signature` yet; the erasure then names `signature` as the
+    ///   seed it stopped at, which [`stage`] reports so the crossing admits the
+    ///   model and stages again.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler crosses through the model admitted at its
+    ///   declaration's first staging, and a second handler of the effect
+    ///   through the same one.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    #[spec(ensures: |ret| ret.is_ok() || matches!(self.unseeded, Some(Seed::Model(_))))]
+    fn free_model(
+        &mut self,
+        signature: &gandr_core_term::effect::EffectSig,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        match self.positions.model(signature, self.arena) {
+            Maybe::Present(model) => Ok(model.declaration),
+            Maybe::Absent(_) => {
+                self.unseeded = Some(Seed::Model(signature.clone()));
+                Err(Refusal::MachineInvariant)
+            },
+        }
     }
 
     /// The images the current mode minted.
@@ -6233,12 +6572,14 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
     ///   queues its motive and every branch after the scrutinee; a sum case
     ///   queues every branch after the scrutinee; a lazy product queues every
     ///   component after the first, and the empty one assembles at once. A
-    ///   split at the ambient motive and a send, a select, a close or a fork
-    ///   open the frame of the computation they rewrite to.
+    ///   split at the ambient motive, a send, a select, a close or a fork, and
+    ///   a handler or a capability scope, open the frame of the computation
+    ///   they rewrite to ([`Self::handler_reduct`]).
     /// - fails: [`Refusal::Cyclic`] for an open computation or
     ///   [`Refusal::DanglingNode`] for an absent source; [`Refusal::Session`]
     ///   for a receive or an offer; [`Refusal::OutOfFragment`] naming
-    ///   [`UnadmittedFormer::Memory`] for a placed buffer.
+    ///   [`UnadmittedFormer::Memory`] for a placed buffer, and the handler
+    ///   reduct's refusals for a handler outside the form it translates.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -6289,13 +6630,15 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 return self.prepare_native(target, node);
             },
             Computation::Perform { .. } => return Err(unadmitted(UnadmittedFormer::Perform)),
-            Computation::Handle { .. } => return Err(unadmitted(UnadmittedFormer::Handle)),
+            Computation::Handle { .. } | Computation::Scope { .. } => (
+                Frame::Rewritten { at },
+                TermNode::Computation(self.handler_reduct(at)?),
+            ),
             Computation::Resume(..) => return Err(unadmitted(UnadmittedFormer::Resume)),
             Computation::Abandon(_) => return Err(unadmitted(UnadmittedFormer::Abandon)),
             Computation::Reset(_) => return Err(unadmitted(UnadmittedFormer::Reset)),
             Computation::Shift(_) => return Err(unadmitted(UnadmittedFormer::Shift)),
             Computation::Exercise { .. } => return Err(unadmitted(UnadmittedFormer::Exercise)),
-            Computation::Scope { .. } => return Err(unadmitted(UnadmittedFormer::Scope)),
             Computation::Memory(_) => return Err(unadmitted(UnadmittedFormer::Memory)),
             Computation::Decompose(_) => return Err(unadmitted(UnadmittedFormer::Run)),
             Computation::World(_) => return Err(Refusal::Located { at: node }),
@@ -8033,6 +8376,289 @@ if let Offer::Data(signature) = matched_left_value && let Ok(Erased::Data { ref 
                 former: UnadmittedFormer::Memory,
             }),
         }
+    }
+
+    /// The computation a deep handler or a capability scope of one operation
+    /// is erased to, minted into the source arena: its subject read as a
+    /// program of the handled effect's free model, and its clauses as the
+    /// fold of that program. The kernel gains no effect former: it types the
+    /// program and the fold, which re-derives the row claim.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a handler of one operation `op : A ↠ B` whose payload and
+    ///   reply mention no binder, judged with subject result `R` and answer `C`
+    ///   ([`Source::handled`]), the computation `t ← T; ((fix f. λt. case t of
+    ///   Return(x) ⇒ r | op(p, k) ⇒ u′) : Free(R) → C) t`. `T` is the subject
+    ///   read along its bind spine, a split at the ambient motive read as the
+    ///   projection binds it reduces to: a request of `op`, performed by the
+    ///   interface's name or exercised through a scope's own capability, is
+    ///   `return op(v, thunk(λy. K))`, `K` the rest of the spine; any other
+    ///   step `M` runs as `y ← M; K`; the spine ends in `return Return(x)`. A
+    ///   scope's capability is bound to the unit, which none but its own
+    ///   requests read. `u′` is the clause with each resumption `resume(k, M)`
+    ///   read as `y ← M; t′ ← force k y; force f t′` and each abandonment as
+    ///   the unit returned ([`gandr_core_term::resume_through`]), so the fold
+    ///   handles the rest of the program deeply. A request off the spine, a
+    ///   resumption of another stack, or a type the fold does not inhabit is
+    ///   left to the erasure, which refuses it, or to the kernel, whose type
+    ///   error it is.
+    /// - fails: [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::Handle`]
+    ///   for a handler of other than one operation, one whose operation's
+    ///   payload or reply mentions a binder, or one the judgement recorded no
+    ///   types for; [`Refusal::MachineInvariant`] when the environment holds no
+    ///   free model of the handled effect yet, which the erasure names as the
+    ///   seed it stopped at; [`Refusal::DanglingNode`] for an absent source or
+    ///   one that is no handler.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `- fails:`.
+    ///
+    /// # Termination
+    /// - reason: the `loop` over the subject's bind spine, not recursion.
+    /// - measure: the binds and ambient splits of the spine not yet entered,
+    ///   plus the bound computations waiting: entering a bind replaces it by
+    ///   its body and one waiting computation, a split by its projection binds
+    ///   and its body, and a step consumes one waiting computation; the arena
+    ///   is finite and acyclic, and a split's reduct holds no split.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler whose clause resumes and one whose clause
+    ///   answers each cross and the kernel admits them, and a handler of two
+    ///   operations is refused by name at its node; an unshifted clause or a
+    ///   fold over the wrong model is the kernel's rejection instead.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    /// - witness: `bridge::tests::effectful_declarations_are_refused_by_name_at_the_pure_boundary`
+    #[spec(ensures: |ret| match ret {
+        | Ok(reduct) => self.arena.computation(reduct).is_some(),
+        | Err(Refusal::OutOfFragment { at: site, former: UnadmittedFormer::Handle } | Refusal::DanglingNode { node: site }) =>
+            site == CoreNode::Term(TermNode::Computation(at)),
+        | Err(Refusal::MachineInvariant) => matches!(self.unseeded, Some(Seed::Model(_))) || self.source.handled.contains_key(&at),
+        | Err(_) => false,
+    })]
+    fn handler_reduct(
+        &mut self,
+        at: ComputationId,
+    ) -> Result<ComputationId, Refusal>
+    {
+        use gandr_core_term::Binders;
+        let node = CoreNode::Term(TermNode::Computation(at));
+        let uncovered = Refusal::OutOfFragment {
+            at: node,
+            former: UnadmittedFormer::Handle,
+        };
+        let scoped = matches!(self.arena.computation(at), Some(Computation::Scope { .. }));
+        let Some(
+            &(Computation::Handle {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }
+            | Computation::Scope {
+                ref signature,
+                subject,
+                on_return,
+                ref clauses,
+            }),
+        ) = self.arena.computation(at)
+        else {
+            return Err(Refusal::DanglingNode { node });
+        };
+        let (signature, clauses) = (signature.clone(), alloc::sync::Arc::clone(clauses));
+        let (&[ref clause], Some(&handled)) = (&*clauses, self.source.handled.get(&at))
+        else {
+            return Err(uncovered);
+        };
+        let Maybe::Present(operation) = signature.operation(&clause.operation)
+        else {
+            return Err(Refusal::MachineInvariant);
+        };
+        if signature.operations().len() != 1 {
+            return Err(uncovered);
+        }
+        for ty in [operation.payload, operation.reply] {
+            if loose_reach(self.arena, CoreNode::Type(TypeNode::Value(ty))).map_err(fault)?
+                != BinderDepth::default()
+            {
+                return Err(uncovered);
+            }
+        }
+        let model = self.free_model(&signature)?;
+        let (operation, body) = (clause.operation.clone(), clause.body);
+        let variable = |arena: &mut CoreArena, index: u32| {
+            arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(index))
+        };
+        // `Free(R)` beneath `depth` binders past the handler's context.
+        let program = |arena: &mut CoreArena, depth: u32| {
+            let result =
+                gandr_core_term::shift_value_type(arena, handled.subject, Binders::from(depth))
+                    .settle(arena);
+            let code = arena.value_quote(result);
+            arena.value_type_data(model, Vec::from([code]))
+        };
+        let binder = u32::from(scoped);
+        let past = |depth: u32| binder.checked_add(depth).ok_or(Refusal::MachineInvariant);
+        // The spine's end, beneath the binder of the value it returns.
+        let datatype = program(self.arena, past(1)?);
+        let returned = variable(self.arena, 0);
+        let returned = self.arena.value_constructor(
+            datatype,
+            gandr_kernel_term::ConstructorTag::from(0_usize),
+            Vec::from([returned]),
+        );
+        let mut continuation = self.arena.computation_return(returned);
+        // Each bound computation waits, at its depth, for the program its
+        // bind's body reads as, which is its own continuation.
+        let mut waiting: Vec<(ComputationId, u32)> = Vec::new();
+        let (mut current, mut depth) = (subject, 0_u32);
+        let tree = loop {
+            if let Some(&Computation::Bind(bound, rest)) = self.arena.computation(current) {
+                waiting.push((bound, depth));
+                continuation = gandr_core_term::shift_computation_under(
+                    self.arena,
+                    continuation,
+                    Binders::from(1_u32),
+                    Binders::from(1_u32),
+                )
+                .settle(self.arena);
+                current = rest;
+                depth = depth.checked_add(1).ok_or(Refusal::MachineInvariant)?;
+                continue;
+            }
+            // A split at the ambient motive is the projection binds it
+            // reduces to, and a split of the unit, as a statement's `;`
+            // writes one, is its body.
+            if let Some(&Computation::Split {
+                scrutinee,
+                arity,
+                motive: SplitMotive::Ambient,
+                body: split,
+            }) = self.arena.computation(current)
+            {
+                current = self.split_reduct(scrutinee, arity, split);
+                continue;
+            }
+            let request = match self.arena.computation(current) {
+                Some(&Computation::Perform {
+                    signature: ref performed,
+                    operation: ref requested,
+                    payload,
+                }) if performed.name() == signature.name() && *requested == operation => {
+                    Some(payload)
+                },
+                Some(&Computation::Exercise {
+                    capability,
+                    operation: ref requested,
+                    payload,
+                    ..
+                }) if scoped
+                    && *requested == operation
+                    && matches!(
+                        self.arena.value(capability),
+                        Some(&Value::Variable { zone: Zone::Intuitionistic, index })
+                            if u32::from(index) == depth
+                    ) =>
+                {
+                    Some(payload)
+                },
+                _ => None,
+            };
+            let step = match request {
+                Some(payload) => {
+                    let rest = self.arena.computation_lambda(continuation);
+                    let rest = self.arena.value_thunk(rest);
+                    let datatype = program(self.arena, past(depth)?);
+                    let requested = self.arena.value_constructor(
+                        datatype,
+                        gandr_kernel_term::ConstructorTag::from(1_usize),
+                        Vec::from([payload, rest]),
+                    );
+                    self.arena.computation_return(requested)
+                },
+                None => self.arena.computation_bind(current, continuation),
+            };
+            match waiting.pop() {
+                Some((bound, at_depth)) => {
+                    (current, depth, continuation) = (bound, at_depth, step);
+                },
+                None => break step,
+            }
+        };
+        let tree = if scoped {
+            let unit = self.arena.value_unit();
+            let capability = self.arena.computation_return(unit);
+            self.arena.computation_bind(capability, tree)
+        }
+        else {
+            tree
+        };
+        // The fold stands beneath the program's binder; its clauses beneath
+        // that, the fold's own binder and its argument.
+        let motive =
+            gandr_core_term::shift_comp_type(self.arena, handled.answer, Binders::from(4_u32))
+                .settle(self.arena);
+        let returned = gandr_core_term::shift_computation_under(
+            self.arena,
+            on_return,
+            Binders::from(1_u32),
+            Binders::from(3_u32),
+        )
+        .settle(self.arena);
+        let returned = self.arena.computation_lambda(returned);
+        let clause = gandr_core_term::shift_computation_under(
+            self.arena,
+            body,
+            Binders::from(2_u32),
+            Binders::from(3_u32),
+        )
+        .settle(self.arena);
+        // The continuation field binds between the payload and the stack.
+        let clause = gandr_core_term::shift_computation_under(
+            self.arena,
+            clause,
+            Binders::from(1_u32),
+            Binders::from(1_u32),
+        )
+        .settle(self.arena);
+        // Beneath the reply: the continuation field is one, the fold five
+        // once the bind's binder stands.
+        let later = variable(self.arena, 1);
+        let later = self.arena.computation_force(later);
+        let reply = variable(self.arena, 0);
+        let resumed = self.arena.computation_application(later, reply);
+        let fold = variable(self.arena, 5);
+        let fold = self.arena.computation_force(fold);
+        let rest = variable(self.arena, 0);
+        let folded = self.arena.computation_application(fold, rest);
+        let resumed = self.arena.computation_bind(resumed, folded);
+        let clause = gandr_core_term::resume_through(self.arena, clause, resumed);
+        let clause = self.arena.computation_lambda(clause);
+        let clause = self.arena.computation_lambda(clause);
+        let scrutinee = variable(self.arena, 0);
+        let case = self.arena.computation_data_case(
+            scrutinee,
+            motive,
+            Vec::from([returned, clause]),
+            Vec::from([
+                gandr_kernel_term::FieldCount::from(1_usize),
+                gandr_kernel_term::FieldCount::from(2_usize),
+            ]),
+        );
+        let fold = self.arena.computation_lambda(case);
+        let fold = self
+            .arena
+            .computation_fixpoint(fold, gandr_kernel_term::FixpointEvidence::StructuralDescent);
+        let domain = program(self.arena, 1);
+        let codomain =
+            gandr_core_term::shift_comp_type(self.arena, handled.answer, Binders::from(1_u32))
+                .settle(self.arena);
+        let classifier = self.arena.comp_type_arrow(domain, codomain);
+        let fold = self.arena.computation_ascribe(fold, classifier);
+        let bound = variable(self.arena, 0);
+        let folded = self.arena.computation_application(fold, bound);
+        Ok(self.arena.computation_bind(tree, folded))
     }
 
     /// The projection binds a split of `scrutinee` into `body` reduces to,

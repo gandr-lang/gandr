@@ -513,6 +513,9 @@ pub struct ModuleReport
     /// The payload type each send and each receive the run checked moves, by
     /// node.
     payloads: BTreeMap<ComputationId, ValueTypeId>,
+    /// The types each handler and capability scope the run checked was judged
+    /// at, by node.
+    handled: BTreeMap<ComputationId, crate::handler::Handled>,
     /// The reflexivities the run checked, by node.
     reflexivities: BTreeMap<ValueId, Reflexivity>,
     /// The path endpoint pairs each accepted declaration's type conversions
@@ -734,6 +737,24 @@ impl ModuleReport
     pub const fn payloads(&self) -> &BTreeMap<ComputationId, ValueTypeId>
     {
         &self.payloads
+    }
+
+    /// The types each handler and capability scope the run checked was judged
+    /// at, by node: its subject's result and its answer, in the handler's own
+    /// context.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler crosses as the fold of its free model at
+    ///   the recorded types, so an emptied table leaves it refused.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    #[inline]
+    #[must_use]
+    pub const fn handled(&self) -> &BTreeMap<ComputationId, crate::handler::Handled>
+    {
+        &self.handled
     }
 
     /// The reflexivities the run checked, by node, with the dialogues relating
@@ -2120,6 +2141,7 @@ pub fn check_declaration_supported(
     && &ret.directed == context.directed()
     && &ret.motives == context.motives()
     && &ret.payloads == context.payloads()
+    && &ret.handled == context.handled()
     && &ret.reflexivities == context.reflexivities()
     && &ret.relations == context.relations()
     && &ret.natives == context.natives()
@@ -2446,6 +2468,7 @@ impl ModuleRun
             directed: context.directed().clone(),
             motives: context.motives().clone(),
             payloads: context.payloads().clone(),
+            handled: context.handled().clone(),
             reflexivities: context.reflexivities().clone(),
             relations: context.relations().clone(),
             laws: context.laws().clone(),
@@ -2567,7 +2590,8 @@ where
 #[spec(ensures: context.funexts().keys().all(|at| report.funexts.contains_key(at))
     && context.relations().keys().all(|at| report.relations.contains_key(at))
     && context.motives().keys().all(|at| report.motives.contains_key(at))
-    && context.payloads().keys().all(|at| report.payloads.contains_key(at)))]
+    && context.payloads().keys().all(|at| report.payloads.contains_key(at))
+    && context.handled().keys().all(|at| report.handled.contains_key(at)))]
 pub fn absorb(
     report: &mut ModuleReport,
     context: &CheckingContext<'_>,
@@ -2600,6 +2624,12 @@ pub fn absorb(
     report
         .payloads
         .extend(context.payloads().iter().map(|(&at, &moved)| (at, moved)));
+    report.handled.extend(
+        context
+            .handled()
+            .iter()
+            .map(|(&at, &handled)| (at, handled)),
+    );
     report.reflexivities.extend(
         context
             .reflexivities()

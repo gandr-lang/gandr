@@ -127,9 +127,10 @@ impl TrackingIssue
     pub const NESTED_OPERATION: Self = Self(1510);
     /// A circuit rule rewriting two redexes at once.
     pub const PARALLEL_REDEXES: Self = Self(1511);
-    /// A declaration with effects or control, which the pure kernel does not
-    /// replay.
-    pub const KERNEL_EFFECTS: Self = Self(1624);
+    /// A declaration with effects or control past a deep handler of one
+    /// operation, which the kernel replays as the fold of its effect's free
+    /// model: the pure kernel does not replay it yet.
+    pub const KERNEL_EFFECTS: Self = Self(2742);
     /// A declaration naming a capability, which the kernel does not replay.
     pub const KERNEL_CAPABILITY: Self = Self(1625);
     /// A declaration holding memory or a buffer, which the kernel does not

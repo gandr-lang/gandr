@@ -33,6 +33,26 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CoreNode;
 use crate::refusal::TermNode;
 
+/// The types a handler or a capability scope was judged at, in the handler's
+/// own context: what its subject returns, and the answer it delivers.
+///
+/// # Specification
+/// - executable: none — data declaration, not a callable boundary; the bridge
+///   reads it to translate the handler through its free model.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a handler whose clause resumes its subject and one whose
+///   clause answers for it each cross as their fold at the recorded types.
+/// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Handled
+{
+    /// The value type the subject returns, which the return clause binds.
+    pub subject: gandr_core_term::ValueTypeId,
+    /// The computation type the handler is checked at.
+    pub answer: gandr_core_term::CompTypeId,
+}
+
 /// Decide that every law in `laws` holds of the clauses it is read through.
 ///
 /// # Specification

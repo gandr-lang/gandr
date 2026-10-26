@@ -1029,11 +1029,12 @@ mod kernel_corpus_partition
     /// # Specification
     /// - requires: `shard` is below `SHARDS`.
     /// - ensures: no withheld declaration names one that crossed; each manifest
-    ///   counts its header, every native signature, session assumption and
-    ///   declaration that crossed; each session assumption is numbered in
-    ///   admission order; and besides the assumptions each artifact holds the
-    ///   declarations that crossed, in admission order, under their names, and
-    ///   between them only distinct natives the source uses.
+    ///   counts its header, every native signature, session assumption, free
+    ///   model and declaration that crossed; each session assumption and each
+    ///   free model is numbered in admission order; and besides them each
+    ///   artifact holds the declarations that crossed, in admission order,
+    ///   under their names, and between them only distinct natives the source
+    ///   uses.
     /// - panics: when any of those fails.
     ///
     /// # Adequacy
@@ -1080,16 +1081,38 @@ mod kernel_corpus_partition
                 },
                 _ => None,
             };
+            // A handled effect crosses through its free model, a data
+            // declaration the readmission admits ahead of the first
+            // declaration that handles it, named `effect.free.<n>` with `n`
+            // its admission ordinal.
+            let free_model = |name: &StructuredName| match *name.segments() {
+                [ref effect, ref free, ref ordinal]
+                    if effect.as_ref() == "effect" && free.as_ref() == "free" =>
+                {
+                    ordinal.as_ref().parse::<usize>().ok()
+                },
+                _ => None,
+            };
             let (assumed, held): (Vec<&StructuredName>, Vec<&StructuredName>) = read
                 .declarations()
                 .iter()
                 .map(|marked| marked.declaration().name())
                 .partition(|&name| session_assumption(name).is_some());
+            let (models, held): (Vec<&StructuredName>, Vec<&StructuredName>) = held
+                .into_iter()
+                .partition(|&name| free_model(name).is_some());
             for (ordinal, &name) in assumed.iter().enumerate() {
                 assert_eq!(
                     session_assumption(name),
                     Some(ordinal),
                     "{path}: the session assumptions are numbered in admission order: {assumed:?}"
+                );
+            }
+            for (ordinal, &name) in models.iter().enumerate() {
+                assert_eq!(
+                    free_model(name),
+                    Some(ordinal),
+                    "{path}: the free models are numbered in admission order: {models:?}"
                 );
             }
             // Every other record is a declaration that crossed, in admission
@@ -1102,9 +1125,10 @@ mod kernel_corpus_partition
                 }
                 assert!(
                     exported.natives.contains(name) && seeded.insert(name.clone()),
-                    "{path}: besides the session assumptions and the declarations that crossed, \
-                     in admission order under their names, the artifact holds only distinct \
-                     natives the source uses: {name:?} in {held:?} against {:?}",
+                    "{path}: besides the session assumptions, the free models and the \
+                     declarations that crossed, in admission order under their names, the \
+                     artifact holds only distinct natives the source uses: {name:?} in {held:?} \
+                     against {:?}",
                     exported.crossed_names,
                 );
             }
@@ -1122,14 +1146,15 @@ mod kernel_corpus_partition
                 })
                 .count()
                 .saturating_add(seeded.len())
-                .saturating_add(assumed.len());
+                .saturating_add(assumed.len())
+                .saturating_add(models.len());
             assert_eq!(
                 RecordCount(
                     u64::try_from(crossed.saturating_add(1)).expect("a count fits sixty-four bits")
                 ),
                 manifest.record_count(),
                 "{path}: the manifest counts the header, every native signature, every session \
-                 assumption and every declaration that crossed"
+                 assumption, every free model and every declaration that crossed"
             );
         }
     }
@@ -2915,6 +2940,121 @@ mod kernel_effect_tree_readmission
         assert!(
             matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
             "the kernel names the operation's type against the row's: {:?}",
+            refusal.error()
+        );
+    }
+}
+
+/// A deep handler of one operation readmits as the fold of its effect's free
+/// model, a data declaration the kernel admits ahead of the first handler of
+/// the effect; the kernel types the fold, so a twin whose model replies
+/// another type than the clauses resume with is refused by name.
+mod kernel_effect_handler_readmission
+{
+    use alloc::vec::Vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::CompType;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::ValueType;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_handler_crosses_as_the_fold_of_its_free_model_1624()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/exit.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("exit lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("exit's export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations)
+            .unwrap_or_else(|refusal| panic!("exit readmits, each handler a fold: {refusal:?}"));
+        let position = |segments: &[&str]| {
+            let named = StructuredName::from(
+                segments
+                    .iter()
+                    .map(|&segment| NameSegment::from_text(segment.into()).expect("a name segment"))
+                    .collect::<Vec<_>>(),
+            );
+            declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{}` crossed", segments.join(".")))
+        };
+        for handler in ["resumed", "answered", "coded", "summed", "printed"] {
+            assert!(
+                matches!(
+                    *declarations[position(&[handler])].declaration().content(),
+                    DeclarationContent::Def { .. }
+                ),
+                "`{handler}` crosses as a definition"
+            );
+        }
+        // `Proc`'s model crosses ahead of its first handler, `Console`'s
+        // ahead of its own.
+        let model = position(&["effect", "free", "0"]);
+        assert!(model < position(&["resumed"]));
+        assert!(position(&["summed"]) < position(&["effect", "free", "1"]));
+        assert!(position(&["effect", "free", "1"]) < position(&["printed"]));
+        let marked = &declarations[model];
+        let DeclarationContent::Data {
+            ref parameters,
+            ref constructors,
+            kind,
+            ..
+        } = *marked.declaration().content()
+        else {
+            panic!("`Proc`'s free model is a data declaration");
+        };
+        let (parameters, mut constructors) = (parameters.clone(), constructors.clone());
+        // The twin's `exit` continues from an integer, where `Proc` replies
+        // the unit every clause resumes with.
+        let Some(&ValueType::Thunk(continuation)) = arena.value_type(constructors[1][1])
+        else {
+            panic!("`exit`'s continuation is a thunk");
+        };
+        let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(continuation)
+        else {
+            panic!("`exit`'s continuation is a function of the reply");
+        };
+        let integer = arena.value_type_base(BaseType::Integer);
+        let forged = arena.comp_type_arrow(integer, codomain);
+        constructors[1][1] = arena.value_type_thunk(forged);
+        let twin_model = DeclarationBuilder::new(&mut arena)
+            .data(
+                marked.declaration().levels().clone(),
+                parameters,
+                constructors,
+                kind,
+            )
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[model] = MarkedDeclaration::new(marked.mark(), twin_model);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("a clause resuming with the unit has no integer to give");
+        assert_eq!(usize::from(refusal.position()), position(&["resumed"]));
+        assert!(
+            matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
+            "the kernel names the reply's type against the resumption's: {:?}",
             refusal.error()
         );
     }

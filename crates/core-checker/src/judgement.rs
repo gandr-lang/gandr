@@ -3411,6 +3411,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             ))
         };
         let on_return = *on_return;
+        self.context.record_handled(at, crate::handler::Handled {
+            subject: result,
+            answer,
+        });
         let natural = self
             .context
             .arena_mut()
@@ -3834,6 +3838,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 second: interface,
             });
         };
+        self.context.record_handled(at, crate::handler::Handled {
+            subject: result,
+            answer,
+        });
         let subject = self
             .context
             .arena_mut()

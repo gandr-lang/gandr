@@ -369,6 +369,9 @@ pub struct CheckingContext<'arena>
     /// receive opened its slot at — a value's payload type, or the session or
     /// buffer at the payload's weak head.
     payloads: BTreeMap<ComputationId, ValueTypeId>,
+    /// The types each handler and capability scope the judgement checked was
+    /// judged at, by node: its subject's result and its answer.
+    handled: BTreeMap<ComputationId, crate::handler::Handled>,
     /// The reflexivities the judgement checked, by node, with the dialogues
     /// relating each point to its endpoints.
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
@@ -578,6 +581,8 @@ pub struct Checkpoint
     motives: BTreeMap<ComputationId, ValueTypeId>,
     /// [`CheckingContext::payloads`].
     payloads: BTreeMap<ComputationId, ValueTypeId>,
+    /// [`CheckingContext::handled`].
+    handled: BTreeMap<ComputationId, crate::handler::Handled>,
     /// [`CheckingContext::reflexivities`].
     reflexivities: BTreeMap<ValueId, crate::code::Reflexivity>,
     /// [`CheckingContext::nesting`].
@@ -738,6 +743,7 @@ impl<'arena> CheckingContext<'arena>
             directed: BTreeMap::new(),
             motives: BTreeMap::new(),
             payloads: BTreeMap::new(),
+            handled: BTreeMap::new(),
             reflexivities: BTreeMap::new(),
             natives: BTreeMap::new(),
             nesting: BTreeMap::new(),
@@ -813,6 +819,7 @@ impl<'arena> CheckingContext<'arena>
             ref directed,
             ref motives,
             ref payloads,
+            ref handled,
             ref reflexivities,
             ref nesting,
             ref crossings,
@@ -863,6 +870,7 @@ impl<'arena> CheckingContext<'arena>
             directed: directed.clone(),
             motives: motives.clone(),
             payloads: payloads.clone(),
+            handled: handled.clone(),
             reflexivities: reflexivities.clone(),
             nesting: nesting.clone(),
             crossings: crossings.clone(),
@@ -937,6 +945,7 @@ impl<'arena> CheckingContext<'arena>
             directed,
             motives,
             payloads,
+            handled,
             reflexivities,
             nesting,
             crossings,
@@ -988,6 +997,7 @@ impl<'arena> CheckingContext<'arena>
             directed,
             motives,
             payloads,
+            handled,
             reflexivities,
             nesting,
             crossings,
@@ -3081,6 +3091,47 @@ SupportLog::Recording { ref data,.. } => data.last().is_some_and(|entry| entry.c
     )
     {
         let _first = self.payloads.entry(at).or_insert(moved);
+    }
+
+    /// The types each handler and capability scope the judgement checked was
+    /// judged at, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`ModuleReport::handled`], which a run copies from
+    ///   this table.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    ///
+    /// [`ModuleReport::handled`]: crate::ModuleReport::handled
+    #[inline]
+    #[must_use]
+    pub const fn handled(&self) -> &BTreeMap<ComputationId, crate::handler::Handled>
+    {
+        &self.handled
+    }
+
+    /// Record the types the handler or capability scope at `at` is judged at.
+    ///
+    /// # Specification
+    /// - requires: `handled` is read in the handler's own context.
+    /// - ensures: `at` has a record: the first recorded, when one node is
+    ///   judged more than once.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a handler crosses as the fold of its free model at
+    ///   the recorded types, and the kernel checks the fold there.
+    /// - witness: `bridge::tests::a_deep_handler_crosses_as_the_fold_of_its_free_model_1624`
+    #[spec(ensures: self.handled.contains_key(&at))]
+    pub(crate) fn record_handled(
+        &mut self,
+        at: ComputationId,
+        handled: crate::handler::Handled,
+    )
+    {
+        let _first = self.handled.entry(at).or_insert(handled);
     }
 
     /// The reflexivities the judgement checked, by node.
