@@ -1,0 +1,47 @@
+[
+  {
+    "name": "a commit carrying the owner co-author and the assistance line passes, under --empty too",
+    "commits": [
+      { "message": "docs(kernel): a change with its trailers", "trailers": true, "change": true }
+    ],
+    "flag": "--empty",
+    "exit": 0
+  },
+  {
+    "name": "#2640: a trailer-less copy of a merged commit is refused",
+    "commits": [
+      {
+        "message": "docs(kernel): state what kernel-core's items are for (#2612)",
+        "trailers": false,
+        "change": false
+      }
+    ],
+    "flag": "",
+    "exit": 1
+  },
+  {
+    "name": "an empty commit carrying its trailers keeps the commit rules",
+    "commits": [
+      {
+        "message": "docs(kernel): an empty commit with its trailers",
+        "trailers": true,
+        "change": false
+      }
+    ],
+    "flag": "",
+    "exit": 0
+  },
+  {
+    "name": "#2640: an empty commit is refused under --empty, past a commit that passes",
+    "commits": [
+      { "message": "docs(kernel): a change with its trailers", "trailers": true, "change": true },
+      {
+        "message": "docs(kernel): an empty commit with its trailers",
+        "trailers": true,
+        "change": false
+      }
+    ],
+    "flag": "--empty",
+    "exit": 1
+  }
+]

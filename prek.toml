@@ -84,3 +84,14 @@ entry = "mise exec -- bash .config/pr-stack/queued-push.bash"
 stages = ["pre-push"]
 always_run = true
 pass_filenames = false
+
+# A pushed commit failing the commit rules holds every pull request above it
+# in the queue (#2640): the commits past origin/main are linted first.
+[[repos.hooks]]
+id = "commit-rules"
+name = "the pushed commits keep the commit rules"
+language = "system"
+entry = "mise exec -- bash .config/commits/push.bash"
+stages = ["pre-push"]
+always_run = true
+pass_filenames = false
