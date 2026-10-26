@@ -13,6 +13,14 @@ final-status-level = "slow"
 failure-output = "immediate"
 slow-timeout = { period = "30s", terminate-after = 1 }
 
+# Measured priorities (`mise run ci:timing`, crates/workflow-test-timing): the
+# export gate's shards, 22.7–24.1 s each over queue runs 40316553727 to
+# 40323490056, start first. They are now split in eight (#2547); the next
+# window re-reads the level.
+[[profile.default.overrides]]
+filter = "test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_1) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_2) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_3) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_4) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_5) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_6) or test(=kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_7)"
+priority = 70
+
 [profile.ci]
 status-level = "slow"
 final-status-level = "slow"
