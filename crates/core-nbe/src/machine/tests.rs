@@ -3986,6 +3986,73 @@ fn a_continuation_handing_its_stuck_call_to_a_definition_reads_as_that_call_761(
 }
 
 #[test]
+fn a_continuation_handing_its_stuck_call_to_a_binder_reads_as_that_call_2773()
+{
+    // `λq. λp. return ⟨S to n. p n⟩` for the stuck call `S`, against `λq.
+    // λp. return ⟨p ⟨S⟩⟩`: a specification's `post((), s + 1)`, bound ahead,
+    // against the call a fold handing `post` the sum held reads to, in
+    // miniature. Under either stance the continuation stops at `p`'s call
+    // over the held call, so the endpoint reads as that call and meets the
+    // written one; against `q`'s call it refutes at the head, and the kernel
+    // replays both. Before, the reading kept the bind whole and the first
+    // pair refuted, though both sides denote one value.
+    let build = || {
+        let mut core = CoreArena::new();
+        let stuck = stuck_call(&mut core);
+        let occurrence = innermost(&mut core);
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let under_both = |core: &mut CoreArena, computation| {
+            let endpoint = core.value_returned(computation);
+            let returned = core.computation_return(endpoint);
+            let inner = core.computation_lambda(returned);
+            core.computation_lambda(inner)
+        };
+        let continuation = call(&mut core, outer, &[occurrence]);
+        let bound = core.computation_bind(stuck, continuation);
+        let held_call = core.value_returned(stuck);
+        let written = call(&mut core, occurrence, &[held_call]);
+        let other = call(&mut core, outer, &[held_call]);
+        let reading = under_both(&mut core, bound);
+        let written = under_both(&mut core, written);
+        let other = under_both(&mut core, other);
+        (
+            core,
+            Sides::Computations(reading, written),
+            Sides::Computations(reading, other),
+        )
+    };
+    let (core, converting, refuting) = build();
+    let read = World::new(core, &[]);
+    let (core, ..) = build();
+    let held = World::new(core, &[]).holding();
+
+    for world in [&read, &held] {
+        let (verdict, decisions) = world.traced(converting);
+        assert_eq!(
+            MachineVerdict::Convertible,
+            verdict,
+            "the endpoint reads as `p`'s call over the held call: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::Convertible,
+            world.replayed(converting, verdict, &decisions),
+            "the kernel reads the endpoint as the same call: {decisions:?}"
+        );
+        let (verdict, decisions) = world.traced(refuting);
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            verdict,
+            "`p`'s call refutes `q`'s at the head: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::NotConvertible,
+            world.replayed(refuting, verdict, &decisions),
+            "and the kernel refutes at the same head: {decisions:?}"
+        );
+    }
+}
+
+#[test]
 fn a_held_elimination_compares_with_a_bind_over_its_call_2326()
 {
     // `S to f. force f ()` against `force ⟨S⟩ ()` for the stuck call `S`:

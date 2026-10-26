@@ -1786,6 +1786,65 @@ fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761()
 }
 
 #[test]
+fn an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_binder_2773()
+{
+    // `⟨pred x to n. p n⟩` against `⟨p ⟨pred x⟩⟩`, `p` a binder: a
+    // specification's `post((), s + 1)`, bound ahead, against the call a fold
+    // handing `post` the sum held reads to, in miniature. The continuation
+    // stops at `p`'s call over the held call, so the endpoint reads as that
+    // call and meets the written one with no decision; against the binder
+    // `q`'s call it refutes at the head. Before, the reading kept the bind
+    // whole and the first pair stood apart.
+    let mut arena = TermArena::new();
+    let nat = arena.value_type_data(ConstantIndex::from(0_usize), Vec::new());
+    let zero = arena.value_constructor(nat, ConstructorTag::from(0_usize), Vec::new());
+    let motive = arena.comp_type_returner(nat);
+    let on_zero = arena.computation_return(zero);
+    let field = arena.value_variable(DeBruijnIndex::from(0_u32));
+    let on_successor = arena.computation_return(field);
+    let on_successor = arena.computation_lambda(on_successor);
+    let cases = arena.computation_data_case(field, motive, alloc::vec![on_zero, on_successor]);
+    let body = arena.computation_lambda(cases);
+    let pred = arena.computation_fixpoint(body, FixpointEvidence::StructuralDescent);
+    let stuck = arena.computation_application(pred, field);
+    let applied = |arena: &mut TermArena, head: u32, argument| {
+        let head = arena.value_variable(DeBruijnIndex::from(head));
+        let forced = arena.computation_force(head);
+        arena.computation_application(forced, argument)
+    };
+    let continuation = applied(&mut arena, 2_u32, field);
+    let bound = arena.computation_bind(stuck, continuation);
+    let endpoint = arena.value_returned(bound);
+    let call = arena.value_returned(stuck);
+    let written = applied(&mut arena, 1_u32, call);
+    let written = arena.value_returned(written);
+    let other = applied(&mut arena, 2_u32, call);
+    let other = arena.value_returned(other);
+
+    assert_eq!(
+        convert(
+            &mut arena,
+            &Unfoldings::default(),
+            ReplaySides::Values(endpoint, written),
+            ReplayBudget::default()
+        ),
+        KernelVerdict::Convertible
+    );
+    assert_eq!(
+        run(
+            &mut arena,
+            &Unfoldings::default(),
+            ReplaySides::Values(endpoint, other),
+            EngineClaim::Convertible,
+            &[]
+        ),
+        refused(ReplayRefusal::Contradicted {
+            at: TracePosition::from(0),
+        })
+    );
+}
+
+#[test]
 fn an_endpoint_read_twice_runs_its_call_once_1747()
 {
     // `x ← ⟨tag u⟩.0; y ← ⟨tag u⟩.1; return y` against `return t`, `tag =

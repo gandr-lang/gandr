@@ -4,7 +4,7 @@
 // `Either`, `StateOp` and `Prog`.
 import "../../model/effects/tree.gandr";
 
-// `incrTree`, `wp`, `incrSpec` and `isOne`.
+// `incrTree`, `wp` and `isOne`.
 import "../../model/specification/tree-state-wp.gandr";
 
 /// A precondition the increment does not meet: ending at one needs the
@@ -15,13 +15,14 @@ def incrMissesOne : #{
   meets : (s : Integer, isOne(unit, s)) => wp(m, isOne, s)
 } = (incrTree, fn (s) { fn (h) { h } });
 
-/// The increment paired with evidence at every postcondition, the order of
-/// the transformers itself: both sides run to a call of `post`, the
-/// specification's with the successor computed before the call and the
-/// fold's with it returned inside the argument, and the two do not convert
-/// yet (#2773).
+/// A specification asking two more than the increment stores.
+def incrByTwoSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 2) }
+
+/// The increment against two more: both sides read as `post`'s call over a
+/// held sum, and the sums differ (#2773).
 @[ refuses("TypeMismatch") ]
-def incrSpecifiedEverywhere : #{
-  m : Prog(Either(StateOp, Void), Unit),
-  meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
-} = (incrTree, fn (post) { fn (s) { fn (h) { h } } });
+def incrMissesTwo(
+  post : (Unit, Integer) => Type,
+  s : Integer,
+  h : incrByTwoSpec(post, s)
+) -> wp(incrTree, post, s) { h }

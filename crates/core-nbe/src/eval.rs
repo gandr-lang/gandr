@@ -1556,8 +1556,9 @@ enum Task
     },
     /// Finish reading a held computation through its bind at `bind`, once
     /// the continuation, stuck at a bind of its own, has been read: what that
-    /// reading returned, under the eliminations past the bind, or, when it did
-    /// not return, the computation read from the next position.
+    /// reading returned or the call a definition or a binder heads that it
+    /// stopped at, under the eliminations past the bind, or, when it did
+    /// neither, the computation read from the next position.
     ReadContinued
     {
         /// The held computation.
@@ -4327,9 +4328,11 @@ fn step(
             let read = machine.pop_comp()?;
             // A continuation that returns goes on past the bind; so does one
             // stuck at a call a definition heads, which the conversion unfolds
-            // by a recorded step where the endpoint reads it.
+            // by a recorded step where the endpoint reads it, and one stuck at
+            // a call a binder heads, which no step unfolds.
             if matches!(domain.computation(read), Some(&DomainComp::Return { .. }))
                 || definition_call(domain, read)?.is_some()
+                || binder_call(domain, read)?.is_some()
             {
                 return continue_past(domain, machine, computation, bind, delivery, read);
             }
@@ -8263,10 +8266,13 @@ fn resume_returned(
 /// An endpoint's computation is pure, so a bind over a call no unfolding
 /// reaches is its continuation run with the call, held as an endpoint, for
 /// the bound value: `wind(Loop(x))` sticks at `run n <- wind(x); return
-/// S(n)` and reads as `S(wind(x))`. The reading takes the continuation only
-/// when it returns, so an arm that cases on the call stays stuck at the
-/// bind; a call a definition heads waits for the conversion to unfold it as
-/// a recorded step. A continuation stuck at a bind of its own is read the same
+/// S(n)` and reads as `S(wind(x))`. The reading takes the continuation when
+/// it returns, so an arm that cases on the call stays stuck at the bind; a
+/// call a definition heads waits for the conversion to unfold it as a
+/// recorded step; and a call a binder heads stands as the reading, so
+/// `post((), s + 1)`, bound ahead as `run t <- add(s, 1); post((), t)`, reads
+/// as `post((), ⟨add(s, 1)⟩)`, the call a fold handing `post` the sum held
+/// reads to. A continuation stuck at a bind of its own is read the same
 /// way before it is judged, so a decoder's arm `run x <- el(a); run y <-
 /// el(b); return (x => y)` reads as `⟨el(a)⟩ => ⟨el(b)⟩`. The kernel mirrors
 /// the reading in its replay of an endpoint, by the same forced run, so it
@@ -8350,18 +8356,19 @@ fn read_from(
 }
 
 /// Go on past a held computation's bind at `bind` once its continuation
-/// returned or stopped at a call a definition heads: `continued` under the
-/// eliminations past the bind, read again.
+/// returned or stopped at a call a definition or a binder heads: `continued`
+/// under the eliminations past the bind, read again.
 ///
 /// # Specification
 /// - requires: `computation` is the neutral the bind sits in and `continued` a
-///   returner or a call [`definition_call`] finds.
+///   returner or a call [`definition_call`] or [`binder_call`] finds.
 /// - ensures: the eliminations past the bind queued over `continued`, beneath
 ///   the reading `delivery` names: [`Task::Returned`] for an endpoint's own
 ///   reading, with its unfolding under [`Endpoints::Run`]; [`Task::Reread`] for
 ///   a continuation's.
 /// - provides: the step a read-through takes once a continuation returns, or
-///   stops where the conversion unfolds a definition by a recorded step.
+///   stops where the conversion unfolds a definition by a recorded step or at a
+///   binder's call no step unfolds.
 /// - fails: [`EvalFault::MachineInvariant`] when `computation` is no neutral or
 ///   `bind` lies past its spine; [`DomainFault::Dangling`] for a node that does
 ///   not resolve.
@@ -8373,11 +8380,12 @@ fn read_from(
 /// # Adequacy
 /// - hypothesis: L3 — the outer bind of a decoder's arm goes on with what its
 ///   inner reading returned, and stopping at the inner bind leaves the decode
-///   stuck; an arm handing its stuck call to a definition reads as that
-///   definition's call, and stopping at the bind leaves the endpoint apart from
-///   the call the conversion unfolds.
+///   stuck; an arm handing its stuck call to a definition or to a binder reads
+///   as that call, and stopping at the bind leaves the endpoint apart from the
+///   call the conversion unfolds or the call written over the held one.
 /// - witness: `machine::tests::a_continuation_stuck_at_its_own_bind_reads_through_both`
 /// - witness: `machine::tests::a_continuation_handing_its_stuck_call_to_a_definition_reads_as_that_call_761`
+/// - witness: `machine::tests::a_continuation_handing_its_stuck_call_to_a_binder_reads_as_that_call_2773`
 #[spec(
     captures: [entry_tasks = machine.tasks.len(), entry_comps = machine.comps.len()],
     ensures: |ret| ret.is_err()
@@ -8423,7 +8431,8 @@ fn continue_past(
 /// - ensures: `Some` of the neutral [`crate::rules::held_call`] finds for
 ///   `computation` exactly when its head is a constant unfolding unforced or
 ///   forced to a value; `None` otherwise.
-/// - provides: the stop [`Task::ReadContinued`] reads a continuation at.
+/// - provides: the stop [`Task::ReadContinued`] reads a continuation at beside
+///   [`binder_call`]'s.
 /// - fails: [`DomainFault::Dangling`] when a node does not resolve.
 /// - panics: none.
 ///
@@ -8432,8 +8441,8 @@ fn continue_past(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a continuation stopped at a definition's call over the
-///   stuck call reads as that call, and one stopped at a rigid head or at its
-///   own elimination of the stuck call stays apart.
+///   stuck call reads as that call, and one stopped at a constant with no body
+///   or at its own elimination of the stuck call stays apart.
 /// - witness: `machine::tests::a_continuation_handing_its_stuck_call_to_a_definition_reads_as_that_call_761`
 /// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
 #[spec(ensures: |ret| match ret {
@@ -8461,6 +8470,59 @@ fn definition_call(
         )
     )
     .then_some(waits))
+}
+
+/// The call a binder heads that `computation` stops at: the neutral whose own
+/// head is a variable and whose spine holds no bind, a call no step unfolds.
+///
+/// The head is not read through returned heads: a continuation eliminating
+/// its own held call stands at that call's head, which may be a variable,
+/// and reading it as a stop would bind the same call again.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Some` of `computation`'s neutral exactly when `computation` is
+///   neutral, its head is a variable and its spine holds no bind; `None`
+///   otherwise.
+/// - provides: the stop [`Task::ReadContinued`] reads a continuation at beside
+///   [`definition_call`]'s.
+/// - fails: [`DomainFault::Dangling`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// [`EvalFault::Domain`], as above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a continuation stopped at a binder's call over the stuck
+///   call reads as that call and meets the call written over the held one, and
+///   against another binder's call refutes at the head; leaving the bind whole
+///   leaves the first apart.
+/// - witness: `machine::tests::a_continuation_handing_its_stuck_call_to_a_binder_reads_as_that_call_2773`
+/// - witness: `machine::tests::a_continuation_casing_on_a_stuck_call_stays_whole`
+#[spec(ensures: |ret| match ret {
+    Ok(Some(call)) => matches!(domain.computation(computation), Some(&DomainComp::Neutral { neutral, .. }) if neutral == call),
+    Ok(None) | Err(_) => true,
+})]
+fn binder_call(
+    domain: &DomainArena,
+    computation: DomainCompId,
+) -> Result<Option<NeutralId>, EvalFault>
+{
+    let DomainComp::Neutral { neutral, .. } = *domain
+        .computation(computation)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?
+    else {
+        return Ok(None);
+    };
+    let held = domain
+        .neutral(neutral)
+        .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+    Ok((matches!(held.head(), NeutralHead::Variable { .. })
+        && !held
+            .spine()
+            .iter()
+            .any(|elimination| matches!(*elimination, Elimination::Bind(_))))
+    .then_some(neutral))
 }
 
 /// The first bind at or past `from` in a stuck computation's spine, when the
