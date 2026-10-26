@@ -1423,6 +1423,33 @@ done < <(jq -c '.[]' .config/mutants/cases.json)
 echo "mutants check OK: $(jq length .config/mutants/cases.json) cases read as recorded"
 '''
 
+# The stall detector's readings (#2785): `facts.jq` reads the open pull
+# requests off one answer to `.config/stall/query.graphql`, and `detect.jq`
+# decides the stalls among them, what to page and what to remember. Each case
+# in `.config/stall/cases.json` holds a recorded reading, no network, and the
+# compact JSON it must give: a case per kind, its threshold's edge, and the
+# page-once memory.
+["check:stall"]
+description = "The stall detector's readings give each recorded case its findings"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  program=$(jq -r .program <<< "$case")
+  got=$(jq .input <<< "$case" | jq -c -f ".config/stall/$program")
+  want=$(jq -r .output <<< "$case")
+  if [[ "$got" != "$want" ]]; then
+    printf 'stall case FAILED (%s): %s\n  gave:   %s\n  wanted: %s\n' "$program" "$name" "$got" "$want" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/stall/cases.json)
+(( failed == 0 )) || exit 1
+echo "stall check OK: $(jq length .config/stall/cases.json) cases read as recorded"
+'''
+
 # The hotpath verdict's report (#1468): `report.jq` reads the head's hotpath
 # checks as the deltas `evidence:obligations` passes to `--hotpath`. Each case
 # in `.config/hotpath/cases.json` holds the checks and the compact JSON they

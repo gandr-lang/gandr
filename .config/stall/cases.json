@@ -1,0 +1,938 @@
+[
+  {
+    "name": "the open pull requests read as the detector reads them: removals, check verdicts and an app's pull request (#2785)",
+    "program": "facts.jq",
+    "input": {
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 2776,
+            "isDraft": false,
+            "author": {
+              "__typename": "User",
+              "login": "agent-shade"
+            },
+            "headRefName": "corpus-2444",
+            "baseRefName": "main",
+            "headRefOid": "5e1f",
+            "createdAt": "2026-10-26T20:00:00Z",
+            "mergeable": "MERGEABLE",
+            "isInMergeQueue": true,
+            "timelineItems": {
+              "nodes": [
+                {
+                  "createdAt": "2026-10-26T20:32:15Z",
+                  "reason": "stack_invalidated"
+                },
+                {}
+              ]
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "test the workspace (linux)",
+                            "status": "COMPLETED",
+                            "conclusion": "SUCCESS",
+                            "startedAt": "2026-10-26T21:00:00Z",
+                            "completedAt": "2026-10-26T21:20:00Z"
+                          },
+                          {
+                            "__typename": "CheckRun",
+                            "name": "check Clippy wall",
+                            "status": "IN_PROGRESS",
+                            "conclusion": null,
+                            "startedAt": "2026-10-26T21:01:00Z",
+                            "completedAt": null
+                          },
+                          {
+                            "__typename": "StatusContext",
+                            "context": "lint the pull request title",
+                            "state": "FAILURE",
+                            "createdAt": "2026-10-26T21:02:00Z"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 2800,
+            "isDraft": true,
+            "author": {
+              "__typename": "Bot",
+              "login": "dependabot"
+            },
+            "headRefName": "dependabot/cargo/serde",
+            "baseRefName": "main",
+            "headRefOid": "aa",
+            "createdAt": "2026-10-26T20:00:00Z",
+            "mergeable": "UNKNOWN",
+            "isInMergeQueue": false,
+            "timelineItems": {
+              "nodes": []
+            },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": null
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "output": "{\"prs\":[{\"number\":2776,\"draft\":false,\"bot\":false,\"head\":\"corpus-2444\",\"base\":\"main\",\"oid\":\"5e1f\",\"created\":1793044800,\"mergeable\":\"MERGEABLE\",\"queued\":true,\"removals\":[{\"at\":1793046735,\"reason\":\"stack_invalidated\"}],\"checks\":[{\"name\":\"test the workspace (linux)\",\"verdict\":\"pass\",\"conclusion\":\"SUCCESS\",\"started\":1793048400,\"completed\":1793049600},{\"name\":\"check Clippy wall\",\"verdict\":\"pending\",\"conclusion\":null,\"started\":1793048460,\"completed\":null},{\"name\":\"lint the pull request title\",\"verdict\":\"fail\",\"conclusion\":\"FAILURE\",\"started\":1793048520,\"completed\":1793048520}]},{\"number\":2800,\"draft\":true,\"bot\":true,\"head\":\"dependabot/cargo/serde\",\"base\":\"main\",\"oid\":\"aa\",\"created\":1793044800,\"mergeable\":\"UNKNOWN\",\"queued\":false,\"removals\":[],\"checks\":[]}]}"
+  },
+  {
+    "name": "a green mergeable root out of the queue past the threshold is root-unqueued (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"seen\":{},\"paged\":{\"2774:root-unqueued\":100000}}"
+  },
+  {
+    "name": "a green root whose last required check concluded inside the threshold is no stall yet (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 98800,
+              "completed": 99400
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  },
+  {
+    "name": "a green root in the merge queue is no stall (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  },
+  {
+    "name": "a root still pending on a required check is no stall (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pending",
+              "conclusion": null,
+              "started": 99400,
+              "completed": null
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  },
+  {
+    "name": "a pull request removed from the queue twice in the window is ejected, from its first removal (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2776,
+          "draft": false,
+          "bot": false,
+          "head": "corpus-2444",
+          "base": "main",
+          "oid": "o2776",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [
+            {
+              "at": 94000,
+              "reason": "stack_invalidated"
+            },
+            {
+              "at": 97000,
+              "reason": "CI failed"
+            }
+          ],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 95800,
+              "completed": 96400
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"ejected\",\"number\":2776,\"lane\":\"corpus\",\"placed\":true,\"age\":100,\"escalate\":false,\"line\":\"STALL ejected #2776 corpus 100m: left the merge queue unmerged 2 times in 360m (CI failed, stack_invalidated)\"}],\"pages\":[{\"kind\":\"ejected\",\"number\":2776,\"lane\":\"corpus\",\"placed\":true,\"age\":100,\"escalate\":false,\"line\":\"STALL ejected #2776 corpus 100m: left the merge queue unmerged 2 times in 360m (CI failed, stack_invalidated)\"}],\"seen\":{},\"paged\":{\"2776:ejected\":100000}}"
+  },
+  {
+    "name": "a removal its seat made by hand, or one past the window, is no ejection (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2776,
+          "draft": false,
+          "bot": false,
+          "head": "corpus-2444",
+          "base": "main",
+          "oid": "o2776",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [
+            {
+              "at": 94000,
+              "reason": "manual"
+            },
+            {
+              "at": 70000,
+              "reason": "CI failed"
+            },
+            {
+              "at": 97000,
+              "reason": "CI failed"
+            }
+          ],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 95800,
+              "completed": 96400
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  },
+  {
+    "name": "a stack deeper than the threshold is a pile-up at its root, aged from the member that took it past (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 2,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 1,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o1",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 99340,
+              "completed": 99940
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "draft": false,
+          "bot": false,
+          "head": "core-2",
+          "base": "surface",
+          "oid": "o2",
+          "created": 94600,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": []
+        },
+        {
+          "number": 3,
+          "draft": false,
+          "bot": false,
+          "head": "theory",
+          "base": "core-2",
+          "oid": "o3",
+          "created": 97600,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": []
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"pile-up\",\"number\":1,\"lane\":\"surface\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL pile-up #1 surface 40m: 3 open pull requests stacked from it, the top #3\"}],\"pages\":[{\"kind\":\"pile-up\",\"number\":1,\"lane\":\"surface\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL pile-up #1 surface 40m: 3 open pull requests stacked from it, the top #3\"}],\"seen\":{},\"paged\":{\"1:pile-up\":100000}}"
+  },
+  {
+    "name": "a stack as deep as the threshold is no pile-up (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 2,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 1,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o1",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 99340,
+              "completed": 99940
+            }
+          ]
+        },
+        {
+          "number": 2,
+          "draft": false,
+          "bot": false,
+          "head": "core-2",
+          "base": "surface",
+          "oid": "o2",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": []
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  },
+  {
+    "name": "a required check red past the threshold with no new head is red-unrevised, escalated for another lane (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2780,
+          "draft": false,
+          "bot": false,
+          "head": "core-2769-closure",
+          "base": "theory",
+          "oid": "o2780",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "FAILURE",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2780,\"lane\":\"core\",\"placed\":true,\"age\":90,\"escalate\":true,\"line\":\"STALL red-unrevised #2780 core 90m: `test` failure, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2780,\"lane\":\"core\",\"placed\":true,\"age\":90,\"escalate\":true,\"line\":\"STALL red-unrevised #2780 core 90m: `test` failure, no new head since\"}],\"seen\":{},\"paged\":{\"2780:red-unrevised\":100000}}"
+  },
+  {
+    "name": "a red pull request of the triage lane is the lane's own, not escalated (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2784,
+          "draft": false,
+          "bot": false,
+          "head": "triage-2783-stack-prefix",
+          "base": "corpus-2236",
+          "oid": "o2784",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "CANCELLED",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"escalate\":false,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"pages\":[{\"kind\":\"red-unrevised\",\"number\":2784,\"lane\":\"triage\",\"placed\":true,\"age\":90,\"escalate\":false,\"line\":\"STALL red-unrevised #2784 triage 90m: `test` cancelled, no new head since\"}],\"seen\":{},\"paged\":{\"2784:red-unrevised\":100000}}"
+  },
+  {
+    "name": "a check that is not required never makes a pull request red (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2780,
+          "draft": false,
+          "bot": false,
+          "head": "core-2769-closure",
+          "base": "theory",
+          "oid": "o2780",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 94000,
+              "completed": 94600
+            },
+            {
+              "name": "report the mutants",
+              "verdict": "fail",
+              "conclusion": "FAILURE",
+              "started": 94000,
+              "completed": 94600
+            }
+          ]
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  },
+  {
+    "name": "a conflicting pull request first read is remembered, no stall yet (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2777,
+          "draft": false,
+          "bot": false,
+          "head": "core-2751",
+          "base": "corpus-2444",
+          "oid": "o2777",
+          "created": 92800,
+          "mergeable": "CONFLICTING",
+          "queued": false,
+          "removals": [],
+          "checks": []
+        }
+      ]
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{\"2777:conflicting:o2777\":100000},\"paged\":{}}"
+  },
+  {
+    "name": "a conflicting pull request read so past the threshold at the same head is conflicting (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2777,
+          "draft": false,
+          "bot": false,
+          "head": "core-2751",
+          "base": "corpus-2444",
+          "oid": "o2777",
+          "created": 92800,
+          "mergeable": "CONFLICTING",
+          "queued": false,
+          "removals": [],
+          "checks": []
+        }
+      ],
+      "seen": {
+        "2777:conflicting:o2777": 97600
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"conflicting\",\"number\":2777,\"lane\":\"core\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL conflicting #2777 core 40m: conflicts with its base at the same head\"}],\"pages\":[{\"kind\":\"conflicting\",\"number\":2777,\"lane\":\"core\",\"placed\":true,\"age\":40,\"escalate\":true,\"line\":\"STALL conflicting #2777 core 40m: conflicts with its base at the same head\"}],\"seen\":{\"2777:conflicting:o2777\":97600},\"paged\":{\"2777:conflicting\":100000}}"
+  },
+  {
+    "name": "a new head starts the conflict's age again (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2777,
+          "draft": false,
+          "bot": false,
+          "head": "core-2751",
+          "base": "corpus-2444",
+          "oid": "o2777",
+          "created": 92800,
+          "mergeable": "CONFLICTING",
+          "queued": false,
+          "removals": [],
+          "checks": []
+        }
+      ],
+      "seen": {
+        "2777:conflicting:old": 92800
+      }
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{\"2777:conflicting:o2777\":100000},\"paged\":{}}"
+  },
+  {
+    "name": "a finding already paged is not paged again while it lasts (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "paged": {
+        "2774:root-unqueued": 99400
+      }
+    },
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[],\"seen\":{},\"paged\":{\"2774:root-unqueued\":99400}}"
+  },
+  {
+    "name": "a stall that cleared is forgotten, so its return is paged again (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": true,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "paged": {
+        "2774:root-unqueued": 99400
+      }
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  },
+  {
+    "name": "a finding on a lane outside the configured lanes is unplaced and escalated; one on a listed lane is placed (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2774,
+          "draft": false,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2774",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 2775,
+          "draft": false,
+          "bot": false,
+          "head": "corpus-2775-x",
+          "base": "main",
+          "oid": "o2775",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        }
+      ],
+      "lanes": ["triage", "corpus", "core"]
+    },
+    "output": "{\"findings\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":false,\"age\":30,\"escalate\":true,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"},{\"kind\":\"root-unqueued\",\"number\":2775,\"lane\":\"corpus\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2775 corpus 30m: green and mergeable on main, out of the merge queue\"}],\"pages\":[{\"kind\":\"root-unqueued\",\"number\":2774,\"lane\":\"surface\",\"placed\":false,\"age\":30,\"escalate\":true,\"line\":\"STALL root-unqueued #2774 surface 30m: green and mergeable on main, out of the merge queue\"},{\"kind\":\"root-unqueued\",\"number\":2775,\"lane\":\"corpus\",\"placed\":true,\"age\":30,\"escalate\":false,\"line\":\"STALL root-unqueued #2775 corpus 30m: green and mergeable on main, out of the merge queue\"}],\"seen\":{},\"paged\":{\"2774:root-unqueued\":100000,\"2775:root-unqueued\":100000}}"
+  },
+  {
+    "name": "a draft and a pull request an app opened are read by no kind (#2785)",
+    "program": "detect.jq",
+    "input": {
+      "now": 100000,
+      "trunk": "main",
+      "required": ["test"],
+      "thresholds": {
+        "root_unqueued": 20,
+        "ejections": 2,
+        "ejection_window": 360,
+        "depth": 6,
+        "red": 60,
+        "conflicting": 30
+      },
+      "prs": [
+        {
+          "number": 2790,
+          "draft": true,
+          "bot": false,
+          "head": "surface",
+          "base": "main",
+          "oid": "o2790",
+          "created": 92800,
+          "mergeable": "MERGEABLE",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "pass",
+              "conclusion": "SUCCESS",
+              "started": 97600,
+              "completed": 98200
+            }
+          ]
+        },
+        {
+          "number": 2791,
+          "draft": false,
+          "bot": true,
+          "head": "dependabot/cargo/serde",
+          "base": "main",
+          "oid": "o2791",
+          "created": 92800,
+          "mergeable": "CONFLICTING",
+          "queued": false,
+          "removals": [],
+          "checks": [
+            {
+              "name": "test",
+              "verdict": "fail",
+              "conclusion": "FAILURE",
+              "started": 90400,
+              "completed": 91000
+            }
+          ]
+        }
+      ],
+      "seen": {
+        "2791:conflicting:o2791": 91000
+      }
+    },
+    "output": "{\"findings\":[],\"pages\":[],\"seen\":{},\"paged\":{}}"
+  }
+]

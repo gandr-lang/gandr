@@ -1,0 +1,9 @@
+{
+  "root_unqueued": 20,
+  "ejections": 2,
+  "ejection_window": 360,
+  "depth": 6,
+  "red": 60,
+  "conflicting": 30,
+  "interval": 300
+}

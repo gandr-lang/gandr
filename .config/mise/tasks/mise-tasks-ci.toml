@@ -2512,3 +2512,90 @@ echo "pr-timeout #$number"
 exit 2
 {% endraw %}
 '''
+
+# The stall detector (#2785): the ways the fleet stops landing that no seat
+# sees from inside its own `pr:watch`, read off the open pull requests and
+# their merge-queue removals: a green root left unqueued, a pull request
+# ejected again and again, a stack piled past a depth, a red pull request no
+# new head revises, a conflicting one left so (`.config/stall/detect.jq`,
+# its cases held by `check:stall`). It queues, revises and comments nothing:
+# a stall is the triage lane's to answer, and one it cannot place is filed as
+# an issue whose `## Observation` is the finding's line.
+#
+# `stall:check` reads once, prints each finding's line and exits 1 on any;
+# it pages nothing and leaves the detector's memory as it found it.
+# `stall:watch` reads every `interval` seconds and pages each finding once
+# while it lasts: to the triage seat's target, and to the coordinator's as
+# well for a kind the triage lane cannot act on. The thresholds, the page
+# script and each target's arguments (its host and block) are
+# configuration, never the tree's (`.config/stall/stall.bash`).
+["stall:check"]
+description = "Read the open pull requests once for stalls; exit 1 on a finding"
+quiet = true
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/stall/stall.bash
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)") || { echo "stall:check: the reading failed" >&2; exit 2; }
+jq -r '.findings[].line' <<< "$reading"
+[[ $(jq '.findings | length' <<< "$reading") == 0 ]]
+{% endraw %}
+'''
+
+["stall:watch"]
+description = "Read the open pull requests for stalls every interval, paging each finding once"
+quiet = true
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+source .config/stall/stall.bash
+page=$(stall_configuration | jq -c '.page // empty')
+if [[ -z "$page" ]] || ! jq -e '[.command, .triage, .coordinator] | all(type == "array" and length > 0 and all(type == "string"))' <<< "$page" > /dev/null; then
+  echo "stall:watch pages through $stall_config's \`page\`: {\"command\": [<page script>, ...], \"triage\": [<the script's arguments before the line>, ...], \"coordinator\": [...]}" >&2
+  exit 2
+fi
+mapfile -t command < <(jq -r '.command[]' <<< "$page")
+mapfile -t triage < <(jq -r '.triage[]' <<< "$page")
+mapfile -t coordinator < <(jq -r '.coordinator[]' <<< "$page")
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+trunk=$(gh repo view "$repo" --json defaultBranchRef --jq .defaultBranchRef.name)
+mkdir -p "$(dirname "$stall_state")"
+while :; do
+  interval=$(stall_thresholds | jq .interval)
+  # A failed read is no finding; the next reading reads again.
+  if ! reading=$(stall_reading "$repo" "$trunk" "$(stall_memory)"); then
+    echo "stall:watch: the reading failed; reading again in ${interval}s" >&2
+    sleep "$interval"
+    continue
+  fi
+  paged=$(jq -c .paged <<< "$reading")
+  while IFS= read -r finding; do
+    line=$(jq -r .line <<< "$finding")
+    echo "$line"
+    sent=true
+    "${command[@]}" "${triage[@]}" "$line" || sent=false
+    if [[ $(jq .escalate <<< "$finding") == true ]]; then
+      "${command[@]}" "${coordinator[@]}" "$line" || sent=false
+    fi
+    # A finding no lane places is filed once its pages are sent, its line
+    # the observation, so a page sent again never files it twice.
+    if [[ "$sent" == true && $(jq .placed <<< "$finding") == false ]]; then
+      title=$(jq -r '"stall: \(.kind) on #\(.number), whose lane `\(.lane)` no seat holds"' <<< "$finding")
+      gh issue create -R "$repo" --title "$title" --body "$(printf '## Observation\n\n%s\n' "$line")" \
+        --label kind:defect --label area:workflow --label needs:triage || sent=false
+    fi
+    # A page or a filing that failed is tried again at the next reading.
+    if [[ "$sent" == false ]]; then
+      paged=$(jq -c --arg key "$(jq -r '"\(.number):\(.kind)"' <<< "$finding")" 'del(.[$key])' <<< "$paged")
+    fi
+  done < <(jq -c '.pages[]' <<< "$reading")
+  jq -c --argjson paged "$paged" '{seen, paged: $paged}' <<< "$reading" > "$stall_state.tmp"
+  mv "$stall_state.tmp" "$stall_state"
+  sleep "$interval"
+done
+{% endraw %}
+'''
