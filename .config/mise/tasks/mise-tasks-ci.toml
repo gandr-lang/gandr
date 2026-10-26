@@ -1410,6 +1410,71 @@ fi
 printf '#%s %s\n' "$number" "$title"
 '''
 
+# Nothing private reaches a public issue or pull request body (#2530; the
+# agents' guidance, § Public and private). `body:check [--title <text>]
+# <file>...` reads the private-names list at
+# `$XDG_CONFIG_HOME/gandr/private-names` (`~/.config` by default): one
+# extended regular expression per line, matched without regard to case, `#`
+# lines and blank lines skipped. The list is the owner's and never lives in
+# the tree. Each match is printed with its file (or `title`) and line, and
+# the check exits 1; a missing or empty list refuses too, naming its path,
+# never a silent pass. `pr:open` runs it on the title and the body before it
+# pushes, and `issue:file` before it files.
+["body:check"]
+description = "Refuse a body naming anything on the private-names list"
+usage = '''
+flag "--title <text>" help="a title to scan with the files"
+arg "<file>..." help="the body files to scan"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+list=${XDG_CONFIG_HOME:-$HOME/.config}/gandr/private-names
+patterns=$(mktemp)
+found=$(mktemp)
+trap 'rm -f "$patterns" "$found"' EXIT
+if [[ -f $list ]]; then
+  grep -vE '^[[:space:]]*(#|$)' "$list" > "$patterns" || true
+fi
+if [[ ! -s $patterns ]]; then
+  echo "body:check: no private-names list at $list (one pattern per line); write it before posting a body" >&2
+  exit 2
+fi
+eval "files=(${usage_file:?})"
+# grep exits 1 on no match, 2 on an unreadable file or a malformed pattern:
+# the second fails the check.
+scan() { grep -HniE -f "$patterns" "$@" >> "$found" || (($? == 1)); }
+if [[ -n ${usage_title:-} ]]; then printf '%s\n' "$usage_title" | scan --label=title; fi
+scan -- "${files[@]}"
+if [[ -s $found ]]; then
+  printf 'body:check FAILED: these lines name private material (%s); rewrite them:\n' "$list" >&2
+  sed 's/^/  /' "$found" >&2
+  exit 1
+fi
+echo "body check OK: nothing on the private-names list in ${usage_title:+the title and }${#files[@]} file(s)"
+{% endraw %}'''
+
+# The one way a seat files an issue: `issue:file <title> <body> [label]...`
+# runs `body:check` on the title and the body, then `gh issue create` with
+# each label, printing the issue's address.
+["issue:file"]
+description = "File an issue once its title and body name nothing private"
+usage = '''
+arg "<title>" help="the issue's title"
+arg "<body>" help="the body file"
+arg "[label]..." help="labels, each `kind:…`, `area:…` or another"
+'''
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+body=$(realpath "${usage_body:?}")
+mise run --quiet body:check --title "${usage_title:?}" "$body" >&2
+eval "labels=(${usage_label:-})"
+flags=()
+for label in "${labels[@]}"; do flags+=(--label "$label"); done
+gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}"
+{% endraw %}'''
+
 # The pull request's title becomes the header of its merge commit on main,
 # and the PR title workflow lints it with the commit rules: a conventional
 # header of at most 72 characters, its type and scope from
@@ -1602,6 +1667,9 @@ if [[ -z "$unblocks" ]]; then
     exit 2
   fi
 fi
+# The title and the body, as they will be posted, name nothing private
+# (`body:check`, #2530).
+mise run --quiet body:check --title "${usage_title:?}" "$body"
 git push --quiet --force-with-lease -u origin HEAD
 url=$(gh pr create -R "$repo" --base "$base" --head "$own" --title "${usage_title:?}" --body-file "$body")
 echo "$url"
