@@ -58,6 +58,92 @@ sqlite3 -bail "$fresh/concerns.db" < ledger/concerns.sql
 sqlite3 "$fresh/concerns.db" .dump > ledger/concerns.sql
 '''
 
+# The purposes ledger, `ledger/purposes.sql`, is edited by hand: an `INSERT`
+# added or changed. This task rewrites it as `sqlite3`'s own dump, rows in
+# key order, refusing a row that breaks a constraint and leaving the file as
+# it was. `check:purposes` holds the round trip.
+["ledger:purposes"]
+description = "Normalize ledger/purposes.sql as its own sqlite3 dump"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+sqlite3 -bail "$fresh/purposes.db" < ledger/purposes.sql
+sqlite3 "$fresh/purposes.db" .dump > ledger/purposes.sql
+'''
+
+# The entries the purposes ledger rows: each named crate's library documented
+# as rustdoc JSON without private items, each read by
+# `.config/purposes/items.jq`, one tab-separated line per entry: crate, path,
+# kind, location. With no crate named, every crate with a library; a name
+# with no library under `crates/` prints nothing. The JSON builds in a target
+# directory of its own, so `check:doc`'s HTML and `evidence:rustdoc`'s JSON,
+# both with private items, are not rebuilt under its flags.
+["purposes:items"]
+description = "Print the public items, modules and crate root of each named crate's library"
+tools.jq = "1.8.1"
+usage = '''
+arg "[crate]..." help="crate directories under crates/; every crate with a library when none is named" var=#true
+'''
+env.RUSTDOCFLAGS = "-Z unstable-options --output-format json"
+env.CARGO_TARGET_DIR = "{{ config_root }}/target/purposes"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+read -ra named <<< "${usage_crate:-}"
+selected=()
+packages=()
+while IFS=$'\t' read -r crate package library; do
+  if (( ${#named[@]} == 0 )) || [[ " ${named[*]} " == *" $crate "* ]]; then
+    selected+=("$crate:$library")
+    packages+=(--package "$package")
+  fi
+done < <(cargo metadata --locked --no-deps --format-version 1 | jq -r '
+  (.workspace_root + "/crates/") as $crates
+  | .packages[]
+  | select(.manifest_path | startswith($crates))
+  | (.manifest_path | ltrimstr($crates) | split("/")[0]) as $crate
+  | .name as $package
+  | .targets[]
+  | select(any(.kind[]; . == "lib"))
+  | [$crate, $package, (.name | gsub("-"; "_"))]
+  | @tsv')
+(( ${#selected[@]} )) || exit 0
+.config/mise/scope cargo doc --locked --no-deps --lib --quiet "${packages[@]}"
+for entry in "${selected[@]}"; do
+  jq -r --arg crate "${entry%%:*}" -f .config/purposes/items.jq "$CARGO_TARGET_DIR/doc/${entry#*:}.json"
+done
+{% endraw %}'''
+
+# Each entry of the named crate, or of every crate with a library, beside its
+# row of `ledger/purposes.sql`: one tab-separated line per entry under a
+# header, `no row` in the purpose column of an entry the ledger lacks.
+["purposes:list"]
+description = "List a crate's public items, modules and root beside their purposes"
+usage = '''
+arg "[crate]" help="the crate's directory under crates/; every crate with a library when omitted"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+mise run --quiet purposes:items ${usage_crate:+"$usage_crate"} > "$fresh/entries.tsv"
+if [[ ! -s $fresh/entries.tsv ]]; then
+  echo "${usage_crate:-}: no crate under crates/ with that directory has a library" >&2
+  exit 1
+fi
+db="$fresh/purposes.db"
+sqlite3 -bail "$db" < ledger/purposes.sql
+sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry"
+sqlite3 -bail -header -separator $'\t' "$db" "
+  SELECT e.crate, e.path, e.kind, e.location,
+    coalesce(p.purpose, 'no row') AS purpose, p.concerns, p.naming, p.doc, p.finding
+  FROM entry e LEFT JOIN purpose p USING (crate, path, kind)
+  ORDER BY e.crate, e.path, e.kind;"
+'''
+
 # The recovery sweep over the syntax exemplars (`gandr-surface-dispatcher`'s
 # `ledger::recovery` module): every literal tile written as its near miss and
 # deleted, each mutant's first error read against the mutation. The whole
