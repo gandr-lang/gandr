@@ -1,6 +1,6 @@
 /// `specification-monads`: Specification monads.
-/// Implemented: state's weakest-precondition observation as a handler of state into the predicate transformers, checked as a model of state's laws, and as a fold of the program's tree, so the normaliser computes a precondition, a program pairs with its evidence at one postcondition, and the stopped program with its evidence below the return specification at every postcondition.
-/// Not implemented: the increment's evidence at every postcondition, which waits on #2773; #2759 owes it.
+/// Implemented: state's weakest-precondition observation as a handler of state into the predicate transformers, checked as a model of state's laws, and as a fold of the program's tree, so the normaliser computes a precondition, the increment pairs with its evidence at one postcondition and at every postcondition, and the stopped program with its evidence below the return specification at every postcondition.
+/// Not implemented: the order named as a definition, `refines(v, w)`; a precondition through a scope, which waits on #2754; the monad's laws beside its order, on #1510; #2759 owes it.
 // A program over state is specified by the predicate transformer its
 // observation computes, `((A, S) => Type, S) => Type`: from a postcondition
 // on the answer and the final state, and an initial state, to the
@@ -71,6 +71,15 @@ def incrSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
 } = (incrTree, fn (s) { fn (h) { h } }) ;
+
+/// The increment paired with evidence at every postcondition: the
+/// specification's call over the successor computed first and the fold's
+/// over the successor held read as one call.
+@[ checks ]
+def incrSpecifiedEverywhere : #{
+  m : Prog(Either(StateOp, Void), Unit),
+  meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
+} = (incrTree, fn (post) { fn (s) { fn (h) { h } } }) ;
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.

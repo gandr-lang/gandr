@@ -5,8 +5,8 @@
 // monad pairs a program with evidence that its transformer is below a
 // specification (Maillard et al., "Dijkstra Monads for All", ICFP 2019,
 // § 2); here the pair is a dependent record: the increment below its
-// specification at one postcondition, and the stopped program below the
-// return specification at every postcondition.
+// specification at one postcondition and at every postcondition, and the
+// stopped program below the return specification at every postcondition.
 
 // `Either`, `StateOp` and `Prog`.
 import "../effects/tree.gandr";
@@ -52,6 +52,23 @@ def incrSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
 } = (incrTree, fn (s) { fn (h) { h } });
+
+/// The increment paired with evidence at every postcondition, the order of
+/// the transformers itself: the specification computes the successor before
+/// it calls `post`, the fold hands `post` the successor its store held, and
+/// the two read as one call (#2773).
+def incrSpecifiedEverywhere : #{
+  m : Prog(Either(StateOp, Void), Unit),
+  meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
+} = (incrTree, fn (post) { fn (s) { fn (h) { h } } });
+
+/// The same evidence unpaired: the specification's run and the fold's both
+/// read as `post`'s call over the successor held (#2773).
+def incrSpecBare(
+  post : (Unit, Integer) => Type,
+  s : Integer,
+  h : incrSpec(post, s)
+) -> wp(incrTree, post, s) { h }
 
 /// The return specification: the postcondition at the unit and the initial
 /// state.

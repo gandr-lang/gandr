@@ -148,10 +148,15 @@
 //! `⟨wind(x)⟩` and the other side's call is then an endpoint goal of its own.
 //! The engine reads each endpoint it delivers this way, and the kernel mirrors
 //! the reading by forced replay: [`Replay::whnf`] takes the innermost
-//! such bind whose continuation returns, and the next bind out over both when
-//! it does not. A continuation stuck at such a bind of its own is read the
-//! same way before it is judged: a decoder's arm `el(a) to x. el(b) to y.
-//! return ⌜x ⇒ y⌝`, stuck at both calls, reads as `⌜⟨el(a)⟩ ⇒ ⟨el(b)⟩⌝`. The
+//! such bind whose continuation returns or stops at a call a definition or a
+//! binder heads, and the next bind out over both when it does neither. A
+//! continuation stuck at such a bind of its own is read the same
+//! way before it is judged: a decoder's arm `el(a) to x. el(b) to y.
+//! return ⌜x ⇒ y⌝`, stuck at both calls, reads as `⌜⟨el(a)⟩ ⇒ ⟨el(b)⟩⌝`. A
+//! specification's `post((), s + 1)`, bound ahead as `add(s, 1) to t.
+//! post((), t)`, reads as `post((), ⟨add(s, 1)⟩)`, the call a fold handing
+//! `post` the sum held reads to: a binder's call is a stop no step unfolds,
+//! and the law is the same, so it needs no argument of its own. The
 //! run is deterministic, so no decision names it and the vocabulary is
 //! unchanged. It fires only in a goal [`Replay::open_returned`] opened, and in
 //! [`Replay::normalize_returned`]: a computation goal of its own may be
@@ -5694,11 +5699,12 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     ///   over a call stuck at a variable or an opaque head read through: the
     ///   innermost such bind whose continuation, run with the call as a
     ///   returned endpoint for its value, returns or stops at a call a
-    ///   definition heads, which then stands as the reading — a continuation
-    ///   stuck at such a bind of its own read the same way first, a bind whose
-    ///   continuation eliminates its own variable at its head passed over, and
-    ///   the next bind out tried over both when it does neither — until none
-    ///   fires at its head, and the original id when none fired at all.
+    ///   definition or a binder heads, a binder's call holding no bind, which
+    ///   then stands as the reading — a continuation stuck at such a bind of
+    ///   its own read the same way first, a bind whose continuation eliminates
+    ///   its own variable at its head passed over, and the next bind out tried
+    ///   over both when it does neither — until none fires at its head, and the
+    ///   original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
     ///   [`Stop::PartialFixpoint`] when a fixpoint without evidence stands at
@@ -5741,6 +5747,7 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
     /// - witness: `replay::tests::a_projection_runs_its_side_of_a_pairing`
     /// - witness: `replay::tests::an_endpoint_reads_a_bind_through_its_stuck_call`
     /// - witness: `replay::tests::an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_definition_761`
+    /// - witness: `replay::tests::an_endpoint_reads_a_bind_handing_its_stuck_call_to_a_binder_2773`
     /// - witness: `replay::tests::an_endpoint_passes_over_a_bind_its_own_elimination_built`
     /// - witness: `replay::tests::a_decode_reads_as_the_quote_its_code_returns`
     /// - witness: `replay::tests::an_endpoint_continuation_is_spent_only_with_its_frames`
@@ -6409,17 +6416,24 @@ if let Some(matched_left_node) = matched_left_value && let Value::Constructor { 
                                 break 'reading;
                             };
                             // The enclosing continuation stopped at a call a
-                            // definition heads: the reading is that call, under
-                            // the eliminations outside the bind, and the
-                            // conversion unfolds it by a recorded step.
+                            // definition heads, which the conversion unfolds by
+                            // a recorded step, or at a call a binder heads,
+                            // which no step unfolds: the reading is that call,
+                            // under the eliminations outside the bind. A bind
+                            // over a binder's call is no such stop: an
+                            // elimination of the continuation's own endpoint
+                            // builds one, binding the same call again.
+                            let stop = self.shape(
+                                Term::Computation(call),
+                                &Frozen::default(),
+                                ConversionSide::Left,
+                            );
                             if matches!(
-                                self.shape(
-                                    Term::Computation(call),
-                                    &Frozen::default(),
-                                    ConversionSide::Left
-                                ),
+                                stop,
                                 Ok(Shape::Neutral(Head::Constant(_, Status::Defined), _))
-                            ) {
+                            ) || matches!(stop, Ok(Shape::Neutral(Head::Variable(_), ref spine))
+                                    if !spine.iter().any(|elimination| matches!(*elimination, Elimination::Bind(_))))
+                            {
                                 frames = tried.outer;
                                 frames.append(&mut outer);
                                 focus = call;
