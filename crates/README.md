@@ -24,7 +24,9 @@ An arrow is one category's dependencies on another. Its label counts the `[depen
 
 A concern is an interface that cuts across crates. [`ledger/concerns.sql`](../ledger/concerns.sql) records each concern and its sites, each site a crate and module that defines, implements or consumes the concern. For `sharing`, each site also names the descent datum its mechanism glues: positions, cover, compatibility, gluing and the certificate the kernel replays. The per-crate map draws each concern as a dashed overlay through its crates. The check fails while a concern has no site, while a site names a module its crate lacks, or while a concern's interface trait is implemented outside a test where no site names it. Edit a row by hand, then run `mise run ledger:concerns` to normalize the file.
 
-[`ledger/purposes.sql`](../ledger/purposes.sql) says what each library's public items, modules and root are for: one row each, with a one-sentence purpose, its concerns, a naming verdict and a documentation verdict, each column defined in the schema there. `mise run purposes:list <crate>` prints a crate's entries beside their rows. `mise run check:purposes` fails while a crate with a row has a public item without one, or a row names no item; a crate with no row waits for its first pass.
+[`ledger/purposes.sql`](../ledger/purposes.sql) says what each library's public items, modules and root are for, with a naming and a documentation verdict, its schema defining each column. `mise run purposes:list <crate>` prints a crate's entries beside their rows; `mise run check:purposes` fails while a rowed crate has an item with no row, or a row names no item.
+
+[`ledger/references.sql`](../ledger/references.sql) maps each source the documentation cites to its module: a `# References` line, `` - `<key>` — <role>: <what it decides> ``, or a DOI or arXiv locator not yet keyed. `mise run ledger:references` writes it, `mise run refs:read` records a reading, `mise run refs:list` shows readings gone stale, and `mise run check:references` fails while it is not the tree's.
 
 <!-- crate-map:begin -->
 ```mermaid
@@ -134,7 +136,7 @@ Every crate README follows one order. A section is present when the crate has co
 1. `# <package>`, followed by one sentence stating what the crate is.
 2. A table of contents linking every section below.
 3. `## Synopsis`: three paragraphs, each opening with a bold word. **What.** names the thing the crate is, **Why.** the need it answers, and **How.** the mechanism, named concretely. The prose is dense, technical and in the present tense, and carries no history.
-4. `## References`: the papers and technical artifacts the crate draws on. Each entry gives the full title, the authors, the venue, the date and a stable identifier (DOI, ISBN, arXiv, HAL), and one clause on what the crate takes from it.
+4. `## References`: one entry per key the crate's modules cite, `` - `<key>` — <role>: `` then the full title, the authors, the venue, the date, a stable identifier (DOI, ISBN, arXiv, HAL) and one clause on what the crate takes from it.
 5. `## Provided features`: what the crate provides, as items.
 6. `## Expected features`: what the crate requires of its consumer or its environment to be useful, such as a digest function, a store implementation, a spawner, a target requirement or a specification facade's `cfg`. Absent or planned work is not listed here.
 7. `## Examples`: runnable usage and the command that runs the crate's tests.

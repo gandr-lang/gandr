@@ -1915,6 +1915,10 @@ jobs:
       # build grows with the ledger rather than with the workspace.
       - name: check the purposes ledger
         run: mise run check:purposes
+      # No library or vault is configured here, so keys are read for their
+      # shape; a seat's local run resolves them.
+      - name: check the references ledger
+        run: mise run check:references
       # One commitlint run per non-merge commit, so the agent-commit rules see
       # that commit's own author: the config resolves it from
       # COMMITLINT_COMMIT. A root commit has no parent to range from; its
