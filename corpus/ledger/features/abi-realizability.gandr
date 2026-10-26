@@ -1,0 +1,32 @@
+/// `abi-realizability`: Layouts as realizability predicates.
+/// Implemented: `Option<&T>`'s null niche as a realizability predicate over heaps written as data, equivalent at every heap to the two-word tagged layout with its marshallers meeting their triples, and a C `deref_or` specified by hand met by it, its `_Nonnull` neighbour refused.
+/// Not implemented: the logic as a theory with heaps its model, with the frame rule, the later modality and objects behind a reference count, which #2835 owes; the C side read from its source rather than specified by hand, which #327 owes.
+// A type's realisers are a predicate on a word and a heap, `V⟦T⟧ : (Nat,
+// Heap) => Type`, and a layout optimisation is another predicate, a
+// marshaller between two of them a proof (Wagner, Eisbach and Ahmed,
+// "Realistic Realizability: Specifying ABIs You Can Count On", OOPSLA 2024,
+// doi:10.1145/3689755, § 4.2). The heap is data, so the normaliser computes
+// every assertion and the kernel replays every declaration.
+
+// `Nat`.
+import "../../model/data/data-base.gandr";
+
+// `Heap`, the realisers, the equivalence and `deref_or`'s triple.
+import "../../model/specification/niche-realizability.gandr";
+
+/// The niche at a reference to an int and the tagged layout: equivalent at
+/// every heap.
+@[ checks ]
+def intLayouts(h : Heap) -> #{w : Nat, ok : vOpt(vInt, w, h)} ≃ #{
+  r : Tagged,
+  ok : vTag(vInt, r, h)
+} {
+  nicheTaggedEquiv(vInt, h)
+}
+
+/// `Option<&int>` passed to `deref_or`: `{V_opt(w)} deref_or(w, d)
+/// {V_opt(w)}`.
+@[ checks ]
+def passed(w : Nat, d : Nat, h : Heap) -> (vOpt(vInt, w, h)) => derefOrWp(w, d, keptOpt, h) {
+  derefOrMeets(w, d, h)
+}
