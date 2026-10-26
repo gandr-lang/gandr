@@ -1066,27 +1066,36 @@ cases next next.jq next.json
 echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims"
 '''
 
-# An epic closes when its last sub-issue closes (#2536): `close.jq` decides
-# what a closed issue's parent gets. Each case in `.config/epics/cases.json`
-# holds a parent, its sub-issues and the decision it must give.
-["check:epics"]
-description = "An epic's closing gives each recorded case its decision"
+# The issue automations' decisions. An epic closes when its last sub-issue
+# closes (#2536): `.config/epics/close.jq` decides what a closed issue's
+# parent gets, each case in `.config/epics/cases.json` a parent, its
+# sub-issues and the decision it must give. An issue is filed with a `kind:`
+# and an `area:` label (#2538): `.config/triage/triage.jq` decides whether
+# `needs:triage` is added, removed or kept, each case in
+# `.config/triage/cases.json` an issue's labels and that decision.
+["check:issues"]
+description = "The issue automations give each recorded case its decision"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 failed=0
-while IFS= read -r case; do
-  name=$(jq -r .name <<< "$case")
-  got=$(jq .input <<< "$case" | jq -r -f .config/epics/close.jq)
-  want=$(jq -r .output <<< "$case")
-  if [[ "$got" != "$want" ]]; then
-    printf 'epics case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$name" "$got" "$want" >&2
-    failed=1
-  fi
-done < <(jq -c '.[]' .config/epics/cases.json)
+cases() {
+  local kind=$1 program=$2 file=$3 case name got want
+  while IFS= read -r case; do
+    name=$(jq -r .name <<< "$case")
+    got=$(jq .input <<< "$case" | jq -r -f "$program")
+    want=$(jq -r .output <<< "$case")
+    if [[ "$got" != "$want" ]]; then
+      printf '%s case FAILED: %s\n  gave:\n%s\n  wanted:\n%s\n' "$kind" "$name" "$got" "$want" >&2
+      failed=1
+    fi
+  done < <(jq -c '.[]' "$file")
+}
+cases epics .config/epics/close.jq .config/epics/cases.json
+cases triage .config/triage/triage.jq .config/triage/cases.json
 (( failed == 0 )) || exit 1
-echo "epics check OK: $(jq length .config/epics/cases.json) parents gave their decisions"
+echo "issues check OK: $(jq length .config/epics/cases.json) parents gave their decisions, $(jq length .config/triage/cases.json) label sets theirs"
 '''
 
 # The witnessed mutation run's readings (#1456): `items.jq` reads each
