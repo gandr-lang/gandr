@@ -158,5 +158,70 @@
       "mentions": {}
     },
     "output": "the `## Sources read` item `- supersedes: `Girard-1993-lu` —` gives no confirmation: write `- supersedes: `<old key>` — <confirmation>`, then run `pr:open` again"
+  },
+  {
+    "name": "a selected axis left blank is refused, the axis listed",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Place | `resident` |  |\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes |\n| Locality | `oracle` | no |\n| Place | `resident` | yes |\n"
+        }
+      ]
+    },
+    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `resident` (#2522's `## Readings`)"
+  },
+  {
+    "name": "a selected axis marked `not selected` is refused, as is a status or an axis outside the vocabulary",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | not selected |\n| Place | `resident` | none: no representation moves |\n| Locality | `oracle` | maybe |\n| Identity | `univalence` | not selected |\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes |\n| Locality | `oracle` | no |\n| Place | `resident` | yes |\n"
+        }
+      ]
+    },
+    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `univalent` (#2522's `## Readings`)\nthe `## Readings` row `| Locality | `oracle` | maybe |` has a status outside `answered: <exemplar or site>`, `none: <reason>` or `not selected`: write one, then run `pr:open` again\nthe `## Readings` row `| Identity | `univalence` | not selected |` names no axis: its second cell is one of `univalent`, `oracle`, `descent`, `located`, `resident`, `rewriting`, then run `pr:open` again"
+  },
+  {
+    "name": "every selected axis answered opens, an unselected one answered too, and a subsection's table is not read as axes",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Place | `resident` | none: no representation moves |\n| Locality | `oracle` | answered: `strata::order` |\n| Locality | `descent` | not selected |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | yes |\n| Locality | `oracle` | no |\n| Place | `resident` | yes |\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "an issue selecting an axis by an item asks for it",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `descent` | not selected |\n",
+      "issues": [{ "number": 2522, "body": "## Readings\n\n- `descent` — the memo's reuse\n" }]
+    },
+    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `descent` (#2522's `## Readings`)"
+  },
+  {
+    "name": "an issue selecting no axis asks for none",
+    "input": {
+      "branch": "workflow-2522-readings",
+      "body": "Closes #2522\n",
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n"
+        }
+      ]
+    },
+    "output": ""
   }
 ]
