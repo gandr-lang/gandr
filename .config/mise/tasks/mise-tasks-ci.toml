@@ -1410,6 +1410,40 @@ fi
 printf '#%s %s\n' "$number" "$title"
 '''
 
+# A landing patches the features ledger rows it names, in the landing (#2525):
+# `ledger:patched <body> <base> [--head <ref>] [--pr <n>]` reads the rows the
+# change from `<base>` to the head (`HEAD` by default) adds, edits or removes
+# in `ledger/features.sql`, and the rows the body's `## Ledger` names, and
+# prints one refusal per row out of step (`.config/claims/ledger.jq`): a
+# named row untouched or unknown, a touched row unnamed, and with `--pr` a
+# named row whose `since` lacks `#<n>`. Exits 1 on a refusal. `pr:land` runs
+# it on the pull request with its number and refuses; `pr:open` runs it
+# without one and prints each line as a note.
+["ledger:patched"]
+description = "Refuse a landing whose ledger rows and its body's ## Ledger disagree"
+usage = '''
+arg "<body>" help="the body file"
+arg "<base>" help="the commit the change is read from"
+flag "--head <ref>" help="the change's head; HEAD by default"
+flag "--pr <number>" help="the pull request's number, which each named row's since carries"
+'''
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+rows_at() { { git show "$1:ledger/features.sql" 2> /dev/null || true; printf '%s\n' 'SELECT * FROM feature ORDER BY id;'; } | sqlite3 -json; }
+base_rows=$(rows_at "${usage_base:?}")
+head_rows=$(rows_at "${usage_head:-HEAD}")
+findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null}" \
+  --argjson base "${base_rows:-[]}" --argjson head "${head_rows:-[]}" \
+  '(INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
+   | {pr: $pr, body: $body, rows: [$head[].id],
+      touched: ([$head[] | select($was[.id] != .) | {id, since}] + [$base[] | select($now[.id] == null) | {id, since: null}])}' \
+  | jq -r -L "$root/.config/claims" -f "$root/.config/claims/ledger.jq")
+[[ -z "$findings" ]] || { echo "$findings"; exit 1; }
+{% endraw %}'''
+
 # Nothing private reaches a public issue or pull request body (#2530; the
 # agents' guidance, § Public and private). `body:check [--title <text>]
 # <file>...` reads the private-names list at
@@ -1612,6 +1646,11 @@ findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$i
 if [[ -n "$findings" ]]; then
   echo "$findings" >&2
   if grep -qv '^note: ' <<< "$findings"; then exit 2; fi
+fi
+# The features ledger rows the body names against those the change touches
+# (#2525), as notes: `pr:land` refuses them once the number is known.
+if ! ledger=$(mise run --quiet ledger:patched "$body" "$from" 2> /dev/null); then
+  printf '%s\n' "${ledger:-ledger:patched failed to read the ledger}" | sed 's/^/note: /' >&2
 fi
 # Landed worktrees go before anything else, and under the disk floor the
 # task refuses (`wt:sweep --guard`).
@@ -1854,6 +1893,22 @@ trap 'exit 143' TERM
 trap 'exit 129' HUP
 # Landed worktrees go first; a sweep that fails never holds a landing.
 mise run wt:sweep || echo "wt:sweep failed; landing regardless" >&2
+
+# The features ledger rows the body names are the rows the change patches,
+# each `since` carrying the pull request's number (#2525, `ledger:patched`),
+# read from its base's fork to its head; the landing is refused otherwise.
+IFS=$'\t' read -r ledger_base ledger_head < <(gh pr view "$number" -R "$repo" --json baseRefName,headRefName --jq '[.baseRefName, .headRefName] | @tsv')
+git fetch --quiet origin "$ledger_base" "$ledger_head"
+ledger_body=$(mktemp)
+gh pr view "$number" -R "$repo" --json body --jq .body > "$ledger_body"
+status=0
+ledger=$(mise run --quiet ledger:patched "$ledger_body" "$(git merge-base "origin/$ledger_base" "origin/$ledger_head")" \
+  --head "origin/$ledger_head" --pr "$number" 2> /dev/null) || status=$?
+rm -f "$ledger_body"
+if (( status != 0 )); then
+  printf 'PR #%s:\n%s\n' "$number" "${ledger:-ledger:patched failed to read the ledger}" | sed '2,$s/^/  /' >&2
+  exit 2
+fi
 
 # The prose obligations are measured on the checked-out tree when it is the
 # pull request's own branch, against its base, and written into its body, its
