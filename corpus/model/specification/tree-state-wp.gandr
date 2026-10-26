@@ -1,0 +1,54 @@
+// The weakest-precondition observation of state as data: the increment as a
+// tree over the row of state alone, and `state-wp.gandr`'s clauses as a fold
+// of the tree into a type, so the normaliser computes a program's
+// precondition and the kernel replays every declaration here. A Dijkstra
+// monad pairs a program with evidence that its transformer is below a
+// specification (Maillard et al., "Dijkstra Monads for All", ICFP 2019,
+// § 2); here the pair is a dependent record, below the specification at one
+// postcondition.
+
+// `Either`, `StateOp` and `Prog`.
+import "../effects/tree.gandr" ;
+
+/// The increment as a tree: read the counter, store one more, and answer the
+/// unit.
+def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fn (n) {
+  (Op(Left(Put(n + 1)), fn (_u) {
+    (Done(unit) : Prog(Either(StateOp, Void), Unit))
+  }) : Prog(Either(StateOp, Void), Unit))
+}) ;
+
+/// The observation as a fold: a program, a postcondition on its answer and
+/// the final state, and an initial state, to the precondition. A read
+/// continues at the current state, and a store continues from the stored
+/// value.
+def rec wp(
+  p : Prog(Either(StateOp, Void), Unit),
+  post : (Unit, Integer) => Type,
+  s : Integer
+) -> Type {
+  case p {
+    Done(x) => post(x, s),
+    Op(o, k) => case o {
+      Left(Get) => wp[<](k(s), post, s),
+      Left(Put(t)) => wp[<](k(0), post, t),
+      Right(none) => case none {}
+    }
+  }
+}
+
+/// The increment's specification: the postcondition at the unit and the
+/// successor of the initial state.
+def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
+
+/// The counter ends at one.
+def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
+
+/// The increment paired with evidence that its transformer is below its
+/// specification at `isOne`: the second entry's type reads the program, and
+/// both sides unfold to `Path(Integer, s + 1, 1)`.
+@[ checks ]
+def incrSpecified : #{
+  m : Prog(Either(StateOp, Void), Unit),
+  meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
+} = (incrTree, fn (s) { fn (h) { h } }) ;

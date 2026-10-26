@@ -25,3 +25,18 @@ theory StatePutKeepsFirst {
   rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
   rule putFirst : put(s, put(u, k)) <=> put(s, k);
 }
+
+/// The four laws of global state. Get-put holds only where its continuation
+/// does not read the state it drops, a condition on its instance, and its
+/// overlap with put-get is not decided under that condition yet (#1934).
+@[ refuses("RulesOverlapCondition") ]
+theory StateAllLaws {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putPut : put(s, put(u, k)) <=> put(u, k);
+  rule getPut : get(bind s . put(s, k)) <=> k;
+  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+}

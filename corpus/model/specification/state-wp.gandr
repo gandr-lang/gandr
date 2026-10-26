@@ -1,0 +1,31 @@
+// The weakest-precondition observation of state: a handler of state into the
+// predicate transformers `((A, S) => Type, S) => Type`, from a postcondition
+// on the answer and the final state, and an initial state, to the
+// precondition the program needs there (Maillard et al., "Dijkstra Monads
+// for All", ICFP 2019, § 3.4, uncurried, with propositions read as types).
+// A scope answers its carrier, so the program it runs ends in the
+// transformers' unit at its answer, and each clause is its operation's image:
+// a read hands the initial state to what runs after, and a store runs what
+// follows from the stored value. The scope is checked as a model of state's
+// laws, so the observation identifies what the laws identify, and is a monad
+// morphism from programs over state (§ 4.4 derives it from the state algebra
+// at the answer `S => Type`). The normaliser runs no scope yet (#2754), so a
+// precondition is computed through the fold `tree-state-wp.gandr` writes.
+
+// `StateLaws`.
+import "../effects/state.gandr" ;
+
+/// The increment observed: read the counter, store one more, and answer the
+/// unit. The scope answers the increment's predicate transformer.
+@[ checks ]
+def incrObserved() -> ((Unit, Integer) => Type, Integer) => Type {
+  handle st : StateLaws with sort S = Integer {
+    run n <- st.get();
+    st.put(n + 1);
+    pure fn (q) { fn (s) { q(unit, s) } }
+  } with {
+    pure(w) => pure w,
+    oper get(k) => pure fn (q) { fn (s) { run w <- k(s); w(q, s) } },
+    oper put(s, k) => pure fn (q) { fn (_old) { run w <- k(unit); w(q, s) } }
+  }
+}

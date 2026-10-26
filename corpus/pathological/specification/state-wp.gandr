@@ -1,0 +1,21 @@
+// The twin of `model/specification/state-wp.gandr`: where an observation of
+// state is refused.
+
+// `StateLaws`.
+import "../../model/effects/state.gandr" ;
+
+/// A store observed as keeping the state it replaces: a read after the store
+/// sees the old state through these clauses and the stored value by put-get,
+/// so the scope is no model of the laws.
+@[ refuses("HandlerUnlawful") ]
+def incrForgetful() -> ((Unit, Integer) => Type, Integer) => Type {
+  handle st : StateLaws with sort S = Integer {
+    run n <- st.get();
+    st.put(n + 1);
+    pure fn (q) { fn (s) { q(unit, s) } }
+  } with {
+    pure(w) => pure w,
+    oper get(k) => pure fn (q) { fn (s) { run w <- k(s); w(q, s) } },
+    oper put(_s, k) => pure fn (q) { fn (old) { run w <- k(unit); w(q, old) } }
+  }
+}

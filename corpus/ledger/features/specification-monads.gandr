@@ -1,0 +1,73 @@
+/// `specification-monads`: Specification monads.
+/// Implemented: state's weakest-precondition observation as a handler of state into the predicate transformers, checked as a model of state's laws, and as a fold of the program's tree, so the normaliser computes a precondition and a program pairs with its evidence at one postcondition.
+/// Not implemented: the evidence at every postcondition, which waits on #2751; #2553 owes it.
+// A program over state is specified by the predicate transformer its
+// observation computes, `((A, S) => Type, S) => Type`: from a postcondition
+// on the answer and the final state, and an initial state, to the
+// precondition the program needs there (Maillard et al., "Dijkstra Monads
+// for All", ICFP 2019, § 3.4, uncurried, with propositions read as types).
+// The observation is written twice. As a handler, each clause the image of
+// its operation, the scope is checked as a model of state's laws. As a fold
+// of the program's tree, the normaliser computes the precondition and the
+// kernel replays it, so a program pairs with evidence that its transformer
+// is below its specification.
+
+// `StateLaws`.
+import "../../model/effects/state.gandr" ;
+
+// `Either`, `StateOp` and `Prog`.
+import "../../model/effects/tree.gandr" ;
+
+/// The increment observed: read the counter, store one more, and answer the
+/// unit. A read hands the initial state to what runs after, and a store runs
+/// what follows from the stored value.
+@[ checks ]
+def incrObserved() -> ((Unit, Integer) => Type, Integer) => Type {
+  handle st : StateLaws with sort S = Integer {
+    run n <- st.get();
+    st.put(n + 1);
+    pure fn (q) { fn (s) { q(unit, s) } }
+  } with {
+    pure(w) => pure w,
+    oper get(k) => pure fn (q) { fn (s) { run w <- k(s); w(q, s) } },
+    oper put(s, k) => pure fn (q) { fn (_old) { run w <- k(unit); w(q, s) } }
+  }
+}
+
+/// The increment as a tree.
+def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fn (n) {
+  (Op(Left(Put(n + 1)), fn (_u) {
+    (Done(unit) : Prog(Either(StateOp, Void), Unit))
+  }) : Prog(Either(StateOp, Void), Unit))
+}) ;
+
+/// The observation as a fold of the tree.
+def rec wp(
+  p : Prog(Either(StateOp, Void), Unit),
+  post : (Unit, Integer) => Type,
+  s : Integer
+) -> Type {
+  case p {
+    Done(x) => post(x, s),
+    Op(o, k) => case o {
+      Left(Get) => wp[<](k(s), post, s),
+      Left(Put(t)) => wp[<](k(0), post, t),
+      Right(none) => case none {}
+    }
+  }
+}
+
+/// The increment's specification: the postcondition at the unit and the
+/// successor of the initial state.
+def incrSpec(post : (Unit, Integer) => Type, s : Integer) -> Type { post(unit, s + 1) }
+
+/// The counter ends at one.
+def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
+
+/// The increment paired with evidence that its transformer is below its
+/// specification at `isOne`.
+@[ checks ]
+def incrSpecified : #{
+  m : Prog(Either(StateOp, Void), Unit),
+  meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
+} = (incrTree, fn (s) { fn (h) { h } }) ;
