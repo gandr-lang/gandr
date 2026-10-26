@@ -1402,8 +1402,13 @@ wt step copy-ignored
 # The body must work the branch's issue: a branch `<lane>-<n>-<slug>` is
 # refused unless the body says `Advances #n` or closes #n, and a branch with
 # no number unless the body works some issue, so the merge takes the claim
-# off what it worked (`claims.yml`; the rule is `.config/claims/opening.jq`,
-# its cases held by `check:claims`, #2462).
+# off what it worked (`claims.yml`, #2462). It answers the sources the issues
+# it works request (#2499): every key an issue's `## Sources` names has an
+# item in the body's `## Sources read` with a disposition and its evidence,
+# and a `supersedes` item is refused while a tracked line still names the old
+# key without marking it demoted. The rule is `.config/claims/opening.jq`,
+# reading the sections through `sections.jq`, its cases held by
+# `check:claims`; a `note:` line it prints does not refuse.
 #
 # Before anything else the task sweeps the clone's landed worktrees and
 # refuses under the disk floor (`wt:sweep --guard`).
@@ -1427,9 +1432,19 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
   echo "$own already has PR #$existing open; land it with \`pr:land\`" >&2
   exit 2
 fi
-refusal=$(jq -rn --arg branch "$own" --rawfile body "$body" '{branch: $branch, body: $body}' \
-  | jq -r -L "$(git rev-parse --show-toplevel)/.config/claims" -f "$(git rev-parse --show-toplevel)/.config/claims/opening.jq")
-[[ -z "$refusal" ]] || { echo "$refusal" >&2; exit 2; }
+claims=$(git rev-parse --show-toplevel)/.config/claims
+issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$body" \
+  | while IFS= read -r number; do gh api "repos/$repo/issues/$number" --jq '{number, body: (.body // "")}'; done \
+  | jq -s .)
+mentions=$(jq -Rrs -L "$claims" 'include "sections"; superseded[]' "$body" \
+  | while IFS= read -r key; do { git grep -nIF -e "$key" || true; } | jq -R . | jq -s --arg key "$key" '{($key): .}'; done \
+  | jq -s 'add // {}')
+findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
+  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions}' | jq -r -L "$claims" -f "$claims/opening.jq")
+if [[ -n "$findings" ]]; then
+  echo "$findings" >&2
+  if grep -qv '^note: ' <<< "$findings"; then exit 2; fi
+fi
 # Landed worktrees go before anything else, and under the disk floor the
 # task refuses (`wt:sweep --guard`).
 mise run wt:sweep --guard
