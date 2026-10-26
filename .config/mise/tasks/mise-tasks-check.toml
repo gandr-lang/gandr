@@ -1299,14 +1299,17 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # `.config/claims/next.json` the open issues and the claim `claim:next` takes
 # from them, or none (`next.jq`, #2533); each in `.config/claims/ledger.json`
 # a body, the ledger rows a change touches and the lines `ledger:patched`
-# prints for them, or none (`ledger.jq`, #2525). Each case in
-# `.config/claims/patched.json` runs `ledger:patched` itself on a scratch
-# repository whose head adds `padding` rows of about 500 bytes to this
-# checkout's features table, under a body naming none, and holds its exit and
-# the count of lines it prints: a table past the argument limit is read, not
-# refused by the shell (#2671).
+# prints for them, or none (`ledger.jq`, #2525); each in
+# `.config/claims/reserved.json` the syntax ledger's reserved rows, their
+# status at the head and the issues they cite, and the lines
+# `ledger:reserved` prints for them, or none (`reserved.jq`, #2528). Each
+# case in `.config/claims/patched.json` runs `ledger:patched` itself on a
+# scratch repository whose head adds `padding` rows of about 500 bytes to
+# this checkout's features table, under a body naming none, and holds its
+# exit and the count of lines it prints: a table past the argument limit is
+# read, not refused by the shell (#2671).
 ["check:claims"]
-description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings, claim:next each board its claim and ledger:patched each landing its refusals"
+description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings, claim:next each board its claim, ledger:patched each landing its refusals and ledger:reserved each lowered reserved rule its refusal"
 tools.jq = "1.8.1"
 run = '''
 #!/usr/bin/env bash
@@ -1329,6 +1332,7 @@ cases opening opening.jq opening.json
 cases unit unit.jq unit.json
 cases next next.jq next.json
 cases ledger ledger.jq ledger.json
+cases reserved reserved.jq reserved.json
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
@@ -1356,7 +1360,7 @@ while IFS= read -r case; do
   fi
 done < <(jq -c '.[]' .config/claims/patched.json)
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/patched.json) tables their reading"
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/reserved.json) reserved rules their refusals, $(jq length .config/claims/patched.json) tables their reading"
 '''
 
 # The issue automations' decisions. An epic closes when its last sub-issue
