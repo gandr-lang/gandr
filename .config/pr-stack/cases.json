@@ -2,27 +2,44 @@
   {
     "name": "a chain whose stack kept its merged bottoms is linked by the stack's number",
     "program": "link.jq",
-    "input": { "chain": [1272, 1273], "stacks": [1269, 1269] },
+    "input": {
+      "chain": [1272, 1273],
+      "stacks": [1269, 1269]
+    },
     "output": "1269\n1272\n1273"
   },
   {
     "name": "a chain gaining a new top is linked into the stack its lower members hold",
     "program": "link.jq",
-    "input": { "chain": [1272, 1273, 1276], "stacks": [1269, 1269, null] },
+    "input": {
+      "chain": [1272, 1273, 1276],
+      "stacks": [1269, 1269, null]
+    },
     "output": "1269\n1272\n1273\n1276"
   },
   {
     "name": "a chain in no stack is linked by its numbers",
     "program": "link.jq",
-    "input": { "chain": [1272, 1273], "stacks": [null, null] },
+    "input": {
+      "chain": [1272, 1273],
+      "stacks": [null, null]
+    },
     "output": "1272\n1273"
   },
   {
     "name": "a stack is read from its middle down to main and up to its top",
     "program": "chain.jq",
-    "args": { "n": 1258, "trunk": "main" },
+    "args": {
+      "n": 1258,
+      "trunk": "main"
+    },
     "input": [
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
       {
         "number": 1258,
         "head": "pending-diag-1248",
@@ -35,27 +52,58 @@
         "base": "pending-diag-1248",
         "created": "2026-10-21T04:30:00Z"
       },
-      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" }
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
     ],
     "output": "[{\"number\":1262,\"head\":\"theory-solve\"},{\"number\":1258,\"head\":\"pending-diag-1248\"},{\"number\":1264,\"head\":\"triage-1264-stack-tasks\"}]"
   },
   {
     "name": "a pull request alone is a stack of one",
     "program": "chain.jq",
-    "args": { "n": 1240, "trunk": "main" },
+    "args": {
+      "n": 1240,
+      "trunk": "main"
+    },
     "input": [
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" },
-      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" }
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
     ],
     "output": "[{\"number\":1240,\"head\":\"chore-mise\"}]"
   },
   {
     "name": "where two pull requests share a base the older one is the chain",
     "program": "chain.jq",
-    "args": { "n": 1262, "trunk": "main" },
+    "args": {
+      "n": 1262,
+      "trunk": "main"
+    },
     "input": [
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" },
-      { "number": 1270, "head": "late", "base": "theory-solve", "created": "2026-10-21T05:00:00Z" },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
+      {
+        "number": 1270,
+        "head": "late",
+        "base": "theory-solve",
+        "created": "2026-10-21T05:00:00Z"
+      },
       {
         "number": 1258,
         "head": "pending-diag-1248",
@@ -68,23 +116,37 @@
   {
     "name": "a pull request that is not open has no stack",
     "program": "chain.jq",
-    "args": { "n": 1234, "trunk": "main" },
+    "args": {
+      "n": 1234,
+      "trunk": "main"
+    },
     "input": [
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" }
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
     ],
     "output": "[]"
   },
   {
     "name": "with nothing open a new pull request opens on main",
     "program": "top.jq",
-    "args": { "own": "triage-1264-stack-tasks", "trunk": "main" },
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
     "input": [],
     "output": "null"
   },
   {
     "name": "the branch being opened is left out of the reading",
     "program": "top.jq",
-    "args": { "own": "triage-1264-stack-tasks", "trunk": "main" },
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
     "input": [
       {
         "number": 1264,
@@ -98,33 +160,62 @@
   {
     "name": "the top is the end of the longest chain, over a newer pull request alone on main",
     "program": "top.jq",
-    "args": { "own": "triage-1264-stack-tasks", "trunk": "main" },
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
     "input": [
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
       {
         "number": 1258,
         "head": "pending-diag-1248",
         "base": "theory-solve",
         "created": "2026-10-21T03:40:00Z"
       },
-      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T04:20:00Z" }
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T04:20:00Z"
+      }
     ],
     "output": "{\"number\":1258,\"head\":\"pending-diag-1248\",\"depth\":2,\"held\":false,\"landing\":false}"
   },
   {
     "name": "between two chains of one the newest is the top",
     "program": "top.jq",
-    "args": { "own": "triage-1264-stack-tasks", "trunk": "main" },
+    "args": {
+      "own": "triage-1264-stack-tasks",
+      "trunk": "main"
+    },
     "input": [
-      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" },
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" }
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
     ],
     "output": "{\"number\":1262,\"head\":\"theory-solve\",\"depth\":1,\"held\":false,\"landing\":false}"
   },
   {
     "name": "a pull request a bot opened is never the top: with only it open a new pull request opens on main (#2550)",
     "program": "top.jq",
-    "args": { "own": "probe-kernel-boundary", "trunk": "main" },
+    "args": {
+      "own": "probe-kernel-boundary",
+      "trunk": "main"
+    },
     "input": [
       {
         "number": 2508,
@@ -139,7 +230,10 @@
   {
     "name": "beside a newer pull request a bot opened, the top is the agents' chain (#2550)",
     "program": "top.jq",
-    "args": { "own": "probe-kernel-boundary", "trunk": "main" },
+    "args": {
+      "own": "probe-kernel-boundary",
+      "trunk": "main"
+    },
     "input": [
       {
         "number": 2500,
@@ -161,7 +255,10 @@
   {
     "name": "a stack in the merge queue with nothing else open is the top: a new pull request opens on its top, unlinked (#1983)",
     "program": "top.jq",
-    "args": { "own": "witness-surface-driver", "trunk": "main" },
+    "args": {
+      "own": "witness-surface-driver",
+      "trunk": "main"
+    },
     "input": [
       {
         "number": 1444,
@@ -190,7 +287,10 @@
   {
     "name": "beside a landing stack the top is the longest chain not landing, though the landing one is longer (#1455, #1983)",
     "program": "top.jq",
-    "args": { "own": "witness-surface-driver", "trunk": "main" },
+    "args": {
+      "own": "witness-surface-driver",
+      "trunk": "main"
+    },
     "input": [
       {
         "number": 1444,
@@ -219,7 +319,10 @@
   {
     "name": "a top a pr:land is waiting to queue reads held, so pr:open waits for the hold to clear (#1556, #1983)",
     "program": "top.jq",
-    "args": { "own": "triage-1456-witnessed", "trunk": "main" },
+    "args": {
+      "own": "triage-1456-witnessed",
+      "trunk": "main"
+    },
     "input": [
       {
         "number": 1552,
@@ -251,7 +354,10 @@
   {
     "name": "a pull request stacked on a queued top is the top, its chain read down through the queued ones (#1983)",
     "program": "top.jq",
-    "args": { "own": "triage-1983-open-on-queued", "trunk": "main" },
+    "args": {
+      "own": "triage-1983-open-on-queued",
+      "trunk": "main"
+    },
     "input": [
       {
         "number": 1981,
@@ -281,9 +387,16 @@
     "name": "a green pull request alone lands alone",
     "program": "prefix.jq",
     "input": {
-      "server": [{ "number": 1242, "head": "triage-1167-receive" }],
+      "server": [
+        {
+          "number": 1242,
+          "head": "triage-1167-receive"
+        }
+      ],
       "queued": [],
-      "states": { "1242": "green" }
+      "states": {
+        "1242": "green"
+      }
     },
     "output": "land\t1242"
   },
@@ -292,12 +405,25 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1262, "head": "theory-solve" },
-        { "number": 1258, "head": "pending-diag-1248" },
-        { "number": 1264, "head": "triage-1264-stack-tasks" }
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        },
+        {
+          "number": 1264,
+          "head": "triage-1264-stack-tasks"
+        }
       ],
       "queued": [],
-      "states": { "1262": "green", "1258": "green", "1264": "green" }
+      "states": {
+        "1262": "green",
+        "1258": "green",
+        "1264": "green"
+      }
     },
     "output": "land\t1264"
   },
@@ -306,11 +432,26 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1939, "head": "surface-1834-imported-synonym" },
-        { "number": 1940, "head": "surface-1815-notebook" },
-        { "number": 1942, "head": "surface-1824-workspace-diagnostic" },
-        { "number": 1943, "head": "theory-1580-atom-occurrence" },
-        { "number": 1953, "head": "theory-1480-record-transport" }
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1940,
+          "head": "surface-1815-notebook"
+        },
+        {
+          "number": 1942,
+          "head": "surface-1824-workspace-diagnostic"
+        },
+        {
+          "number": 1943,
+          "head": "theory-1580-atom-occurrence"
+        },
+        {
+          "number": 1953,
+          "head": "theory-1480-record-transport"
+        }
       ],
       "queued": [],
       "states": {
@@ -328,12 +469,25 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1939, "head": "surface-1834-imported-synonym" },
-        { "number": 1940, "head": "surface-1815-notebook" },
-        { "number": 1942, "head": "surface-1824-workspace-diagnostic" }
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1940,
+          "head": "surface-1815-notebook"
+        },
+        {
+          "number": 1942,
+          "head": "surface-1824-workspace-diagnostic"
+        }
       ],
       "queued": [],
-      "states": { "1939": "green", "1940": "pending", "1942": "green" }
+      "states": {
+        "1939": "green",
+        "1940": "pending",
+        "1942": "green"
+      }
     },
     "output": "land\t1939\t1940\tpending"
   },
@@ -342,11 +496,20 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1262, "head": "theory-solve" },
-        { "number": 1258, "head": "pending-diag-1248" }
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        }
       ],
       "queued": [],
-      "states": { "1262": "red", "1258": "green" }
+      "states": {
+        "1262": "red",
+        "1258": "green"
+      }
     },
     "output": "hold\t1262\tred"
   },
@@ -355,11 +518,19 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1262, "head": "theory-solve" },
-        { "number": 1258, "head": "pending-diag-1248" }
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        }
       ],
       "queued": [],
-      "states": { "1262": "green" }
+      "states": {
+        "1262": "green"
+      }
     },
     "output": "land\t1262\t1258\tpending"
   },
@@ -368,13 +539,28 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1939, "head": "surface-1834-imported-synonym" },
-        { "number": 1969, "head": "core-1314-prune" },
-        { "number": 1970, "head": "triage-1966-sweep-witnesses" },
-        { "number": 1971, "head": "surface-1416-linear-run" }
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1969,
+          "head": "core-1314-prune"
+        },
+        {
+          "number": 1970,
+          "head": "triage-1966-sweep-witnesses"
+        },
+        {
+          "number": 1971,
+          "head": "surface-1416-linear-run"
+        }
       ],
       "queued": [1939, 1969],
-      "states": { "1970": "green", "1971": "green" },
+      "states": {
+        "1970": "green",
+        "1971": "green"
+      },
       "cap": 3
     },
     "output": "land\t1970\t1971\tcapped"
@@ -384,12 +570,23 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 2091, "head": "ci-2090-quenchant-pin" },
-        { "number": 2092, "head": "theory-1214-dialogue" },
-        { "number": 2095, "head": "surface-2051-stray-closer" }
+        {
+          "number": 2091,
+          "head": "ci-2090-quenchant-pin"
+        },
+        {
+          "number": 2092,
+          "head": "theory-1214-dialogue"
+        },
+        {
+          "number": 2095,
+          "head": "surface-2051-stray-closer"
+        }
       ],
       "queued": [2091, 2092],
-      "states": { "2095": "green" },
+      "states": {
+        "2095": "green"
+      },
       "cap": 3
     },
     "output": "land\t2095"
@@ -399,13 +596,27 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1939, "head": "surface-1834-imported-synonym" },
-        { "number": 1969, "head": "core-1314-prune" },
-        { "number": 1970, "head": "triage-1966-sweep-witnesses" },
-        { "number": 1971, "head": "surface-1416-linear-run" }
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1969,
+          "head": "core-1314-prune"
+        },
+        {
+          "number": 1970,
+          "head": "triage-1966-sweep-witnesses"
+        },
+        {
+          "number": 1971,
+          "head": "surface-1416-linear-run"
+        }
       ],
       "queued": [1939, 1969, 1970],
-      "states": { "1971": "green" },
+      "states": {
+        "1971": "green"
+      },
       "cap": 3
     },
     "output": "busy\t1970"
@@ -415,12 +626,24 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 2091, "head": "ci-2090-quenchant-pin" },
-        { "number": 2092, "head": "theory-1214-dialogue" },
-        { "number": 2095, "head": "surface-2051-stray-closer" }
+        {
+          "number": 2091,
+          "head": "ci-2090-quenchant-pin"
+        },
+        {
+          "number": 2092,
+          "head": "theory-1214-dialogue"
+        },
+        {
+          "number": 2095,
+          "head": "surface-2051-stray-closer"
+        }
       ],
       "queued": [2091],
-      "states": { "2092": "pending", "2095": "green" },
+      "states": {
+        "2092": "pending",
+        "2095": "green"
+      },
       "cap": 3
     },
     "output": "busy\t2091"
@@ -430,11 +653,26 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 2015, "head": "core-1959-atom-identity" },
-        { "number": 2016, "head": "triage-512-cc" },
-        { "number": 2017, "head": "triage-512-coherent" },
-        { "number": 2018, "head": "triage-512-computads" },
-        { "number": 2020, "head": "triage-512-dynamic" }
+        {
+          "number": 2015,
+          "head": "core-1959-atom-identity"
+        },
+        {
+          "number": 2016,
+          "head": "triage-512-cc"
+        },
+        {
+          "number": 2017,
+          "head": "triage-512-coherent"
+        },
+        {
+          "number": 2018,
+          "head": "triage-512-computads"
+        },
+        {
+          "number": 2020,
+          "head": "triage-512-dynamic"
+        }
       ],
       "queued": [],
       "states": {
@@ -453,12 +691,25 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1262, "head": "theory-solve" },
-        { "number": 1258, "head": "pending-diag-1248" },
-        { "number": 1264, "head": "triage-1264-stack-tasks" }
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        },
+        {
+          "number": 1264,
+          "head": "triage-1264-stack-tasks"
+        }
       ],
       "queued": [],
-      "states": { "1262": "green", "1258": "green", "1264": "green" },
+      "states": {
+        "1262": "green",
+        "1258": "green",
+        "1264": "green"
+      },
       "cap": 3
     },
     "output": "land\t1264"
@@ -468,13 +719,30 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1939, "head": "surface-1834-imported-synonym" },
-        { "number": 1940, "head": "surface-1815-notebook" },
-        { "number": 1942, "head": "surface-1824-workspace-diagnostic" },
-        { "number": 1943, "head": "theory-1580-atom-occurrence" }
+        {
+          "number": 1939,
+          "head": "surface-1834-imported-synonym"
+        },
+        {
+          "number": 1940,
+          "head": "surface-1815-notebook"
+        },
+        {
+          "number": 1942,
+          "head": "surface-1824-workspace-diagnostic"
+        },
+        {
+          "number": 1943,
+          "head": "theory-1580-atom-occurrence"
+        }
       ],
       "queued": [],
-      "states": { "1939": "green", "1940": "green", "1942": "green", "1943": "red" },
+      "states": {
+        "1939": "green",
+        "1940": "green",
+        "1942": "green",
+        "1943": "red"
+      },
       "cap": 3
     },
     "output": "land\t1942\t1943\tred"
@@ -484,8 +752,14 @@
     "program": "prefix.jq",
     "input": {
       "server": [
-        { "number": 1262, "head": "theory-solve" },
-        { "number": 1258, "head": "pending-diag-1248" }
+        {
+          "number": 1262,
+          "head": "theory-solve"
+        },
+        {
+          "number": 1258,
+          "head": "pending-diag-1248"
+        }
       ],
       "queued": [1262, 1258],
       "states": {}
@@ -496,17 +770,26 @@
     "name": "a pull request retargeted off a branch that lands on its own waits for it, though alone on main (#1420)",
     "program": "prefix.jq",
     "input": {
-      "server": [{ "number": 1417, "head": "witness-storage-artifact" }],
+      "server": [
+        {
+          "number": 1417,
+          "head": "witness-storage-artifact"
+        }
+      ],
       "queued": [],
       "carried": [1415],
-      "states": { "1417": "green" }
+      "states": {
+        "1417": "green"
+      }
     },
     "output": "wait\t1415"
   },
   {
     "name": "a bottom landing on its own retargets the pull request on its branch, not the one above that (#1420)",
     "program": "retarget.jq",
-    "args": { "landing": [1415] },
+    "args": {
+      "landing": [1415]
+    },
     "input": [
       {
         "number": 1415,
@@ -532,40 +815,71 @@
   {
     "name": "a stack landing whole retargets what stands on any of its branches outside it, and none of its own (#1420)",
     "program": "retarget.jq",
-    "args": { "landing": [1262, 1258] },
+    "args": {
+      "landing": [1262, 1258]
+    },
     "input": [
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      },
       {
         "number": 1258,
         "head": "pending-diag-1248",
         "base": "theory-solve",
         "created": "2026-10-21T04:00:00Z"
       },
-      { "number": 1270, "head": "late", "base": "theory-solve", "created": "2026-10-21T05:00:00Z" },
+      {
+        "number": 1270,
+        "head": "late",
+        "base": "theory-solve",
+        "created": "2026-10-21T05:00:00Z"
+      },
       {
         "number": 1264,
         "head": "triage-1264-stack-tasks",
         "base": "pending-diag-1248",
         "created": "2026-10-21T05:30:00Z"
       },
-      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" }
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      }
     ],
     "output": "[{\"number\":1264,\"base\":\"pending-diag-1248\"},{\"number\":1270,\"base\":\"theory-solve\"}]"
   },
   {
     "name": "a landing with nothing on its branches retargets nothing (#1420)",
     "program": "retarget.jq",
-    "args": { "landing": [1240] },
+    "args": {
+      "landing": [1240]
+    },
     "input": [
-      { "number": 1240, "head": "chore-mise", "base": "main", "created": "2026-10-21T01:00:00Z" },
-      { "number": 1262, "head": "theory-solve", "base": "main", "created": "2026-10-21T03:50:00Z" }
+      {
+        "number": 1240,
+        "head": "chore-mise",
+        "base": "main",
+        "created": "2026-10-21T01:00:00Z"
+      },
+      {
+        "number": 1262,
+        "head": "theory-solve",
+        "base": "main",
+        "created": "2026-10-21T03:50:00Z"
+      }
     ],
     "output": "[]"
   },
   {
     "name": "a landing read off part of its stack retargets a pull request beside it, never a queued member above it (#1455)",
     "program": "retarget.jq",
-    "args": { "landing": [1444, 1445] },
+    "args": {
+      "landing": [1444, 1445]
+    },
     "input": [
       {
         "number": 1444,
@@ -601,7 +915,9 @@
   {
     "name": "a landing retargets an unlinked pull request on its branch, never one its linked stack carries (#1520)",
     "program": "retarget.jq",
-    "args": { "landing": [1496, 1513] },
+    "args": {
+      "landing": [1496, 1513]
+    },
     "input": [
       {
         "number": 1496,
@@ -960,7 +1276,11 @@
         "primary": false,
         "cwd": false,
         "merged": false,
-        "scratch": { "holder": 41, "alive": false, "young": true }
+        "scratch": {
+          "holder": 41,
+          "alive": false,
+          "young": true
+        }
       }
     ],
     "output": "[{\"path\":\"/tmp/gandr-scratch-41.ab\",\"branch\":null,\"action\":\"force\",\"reason\":\"scratch whose process 41 is gone\"}]"
@@ -975,7 +1295,11 @@
         "primary": false,
         "cwd": false,
         "merged": false,
-        "scratch": { "holder": 42, "alive": true, "young": false }
+        "scratch": {
+          "holder": 42,
+          "alive": true,
+          "young": false
+        }
       }
     ],
     "output": "[{\"path\":\"/tmp/gandr-scratch-42.ab/0\",\"branch\":null,\"action\":\"keep\",\"reason\":\"scratch held by live process 42\"}]"
@@ -990,7 +1314,11 @@
         "primary": false,
         "cwd": false,
         "merged": false,
-        "scratch": { "holder": null, "alive": false, "young": false }
+        "scratch": {
+          "holder": null,
+          "alive": false,
+          "young": false
+        }
       },
       {
         "path": "/tmp/tmp.new",
@@ -998,7 +1326,11 @@
         "primary": false,
         "cwd": false,
         "merged": false,
-        "scratch": { "holder": null, "alive": false, "young": true }
+        "scratch": {
+          "holder": null,
+          "alive": false,
+          "young": true
+        }
       }
     ],
     "output": "[{\"path\":\"/tmp/tmp.old\",\"branch\":null,\"action\":\"force\",\"reason\":\"unnamed scratch unchanged for 4 hours\"},{\"path\":\"/tmp/tmp.new\",\"branch\":null,\"action\":\"keep\",\"reason\":\"unnamed scratch changed within 4 hours\"}]"
@@ -1017,5 +1349,145 @@
       }
     ],
     "output": "[{\"path\":\"/w/bisect\",\"branch\":null,\"action\":\"keep\",\"reason\":\"detached, not a scratch\"}]"
+  },
+  {
+    "name": "#2531: a push to a queued pull request's branch is refused, naming it",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-1-a"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[{\"number\":1,\"state\":\"queued\"}]"
+  },
+  {
+    "name": "#2531: a push below a queued member is refused, naming each queued or held member above",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-1-a"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 2,
+        "head": "w-2-b",
+        "base": "w-1-a",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 3,
+        "head": "w-3-c",
+        "base": "w-2-b",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": true,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 4,
+        "head": "w-4-d",
+        "base": "w-3-c",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[{\"number\":2,\"state\":\"queued\"},{\"number\":3,\"state\":\"held\"}]"
+  },
+  {
+    "name": "#2531: a push above the queued members, or beside the stack, goes",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-3-c"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 2,
+        "head": "w-2-b",
+        "base": "w-1-a",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 3,
+        "head": "w-3-c",
+        "base": "w-2-b",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": false,
+        "held": false,
+        "stack": null,
+        "bot": false
+      },
+      {
+        "number": 5,
+        "head": "w-5-e",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[]"
+  },
+  {
+    "name": "#2531: a branch with no pull request may be pushed",
+    "program": "queued.jq",
+    "args": {
+      "branch": "w-9-new"
+    },
+    "input": [
+      {
+        "number": 1,
+        "head": "w-1-a",
+        "base": "main",
+        "created": "2026-01-01T00:00:00Z",
+        "landing": true,
+        "held": false,
+        "stack": null,
+        "bot": false
+      }
+    ],
+    "output": "[]"
   }
 ]
