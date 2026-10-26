@@ -109,7 +109,7 @@ fn an_over_budget_lane_opens_the_issue()
     assert!(log.contains("/runs/2/jobs"), "{log}");
     assert!(!log.contains("/runs/1/jobs"), "{log}");
     assert!(
-        log.contains("issue create --title CI lane budgets --body-file -"),
+        log.contains("issue create --title CI lane budgets --body-file - --label collector"),
         "{log}"
     );
     std::fs::remove_dir_all(&scratch).unwrap();
@@ -139,19 +139,25 @@ fn an_issue_follows_the_budget_both_ways()
             "250",
             "OPEN",
             "Closed #4: every lane is within budget.",
-            &["issue edit 4 --body-file -", "issue close 4"][..],
+            &[
+                "issue edit 4 --body-file - --add-label collector",
+                "issue close 4",
+            ][..],
         ),
         (
             "150",
             "CLOSED",
             "Reopened #4.",
-            &["issue edit 4 --body-file -", "issue reopen 4"][..],
+            &[
+                "issue edit 4 --body-file - --add-label collector",
+                "issue reopen 4",
+            ][..],
         ),
         (
             "150",
             "OPEN",
             "Updated #4.",
-            &["issue edit 4 --body-file -"][..],
+            &["issue edit 4 --body-file - --add-label collector"][..],
         ),
         (
             "250",

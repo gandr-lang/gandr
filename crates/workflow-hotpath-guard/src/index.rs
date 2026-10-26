@@ -42,6 +42,10 @@ pub const TITLE_PREFIX: &str = "perf: ";
 /// The label every issue the guard files carries.
 pub const KIND: &str = "kind:performance";
 
+/// The label marking an issue the guard keeps: its body indexes rows, its
+/// open rows are its work, and settling every row closes it.
+pub const COLLECTOR: &str = "collector";
+
 /// The index table's heading row.
 const HEADER: &str = "| pull request | commit | series | metric | delta | status | report |";
 

@@ -373,13 +373,15 @@ fn a_failed_check_opens_one_issue_per_function()
     );
     assert_eq!(writes!(scratch), [
         "issue create --title perf: gandr_core_checker::module::decide --body-file - --label \
-         kind:performance --label area:core",
+         kind:performance --label collector --label area:core",
         "issue comment 4 --body-file -",
-        "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+        "issue edit 4 --body-file - --add-label kind:performance --add-label collector \
+         --add-label area:core",
         "issue create --title perf: lsp keystroke --body-file - --label kind:performance \
-         --label area:surface",
+         --label collector --label area:surface",
         "issue comment 7 --body-file -",
-        "issue edit 7 --body-file - --add-label kind:performance --add-label area:surface",
+        "issue edit 7 --body-file - --add-label kind:performance --add-label collector \
+         --add-label area:surface",
     ]);
     assert_eq!(
         body!(scratch, "comment", 4_u64),
@@ -470,7 +472,8 @@ fn a_second_pull_request_adds_a_row_and_a_comment()
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(writes!(scratch), [
         "issue comment 4 --body-file -",
-        "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+        "issue edit 4 --body-file - --add-label kind:performance --add-label collector \
+         --add-label area:core",
     ]);
     assert!(
         body!(scratch, "comment", 4_u64).starts_with("<!-- hotpath: pr=1400 -->\n"),
@@ -527,7 +530,8 @@ fn a_later_run_edits_its_comment_and_row()
         writes!(scratch),
         [
             "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
-            "issue edit 4 --body-file - --add-label kind:performance --add-label area:core"
+            "issue edit 4 --body-file - --add-label kind:performance --add-label collector \
+             --add-label area:core"
         ],
         "the pull request's own marked comment is edited; none is posted"
     );
@@ -638,7 +642,7 @@ fn a_passing_run_edits_its_comment_and_marks_its_row_fixed()
         writes!(scratch),
         [
             "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
-            "issue edit 4 --body-file - --add-label kind:performance",
+            "issue edit 4 --body-file - --add-label kind:performance --add-label collector",
             "issue close 4"
         ],
         "only the issue with the pull request's open row: its comment edited, none posted; \
@@ -700,9 +704,10 @@ fn a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress()
         writes!(scratch),
         [
             "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
-            "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+            "issue edit 4 --body-file - --add-label kind:performance --add-label collector \
+             --add-label area:core",
             "api --method PATCH repos/gandr-lang/gandr/issues/comments/1 -F body=@- --silent",
-            "issue edit 5 --body-file - --add-label kind:performance",
+            "issue edit 5 --body-file - --add-label kind:performance --add-label collector",
             "issue close 5"
         ],
         "the function the failed check names stays open; the other, which the pass touches, \
@@ -832,7 +837,8 @@ fn an_unaccepted_benchmark_beside_an_accepted_one_still_files()
     assert_eq!(
         writes.get(1 ..).unwrap_or_default(),
         [
-            "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+            "issue edit 4 --body-file - --add-label kind:performance --add-label collector \
+             --add-label area:core",
             "issue reopen 4"
         ],
         "its open timing row reopens the issue"
@@ -882,7 +888,10 @@ fn an_accepted_landing_settles_its_issue_without_a_comment()
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(
         writes!(scratch),
-        ["issue edit 4 --body-file - --add-label kind:performance --add-label area:core"],
+        [
+            "issue edit 4 --body-file - --add-label kind:performance --add-label collector \
+          --add-label area:core"
+        ],
         "no comment, and the issue stays closed"
     );
     let accepted = format!(
@@ -940,19 +949,20 @@ fn a_runner_shift_is_read_over_every_function()
     assert!(output.status.success());
     assert_eq!(writes!(scratch), [
         "issue create --title perf: gandr_core_checker::module::decide --body-file - --label \
-         kind:performance --label area:core",
+         kind:performance --label collector --label area:core",
         "issue close 8",
         "issue create --title perf: \
          gandr_theory_coherent_resolutions::overlap::interior_overlaps_between --body-file - \
-         --label kind:performance --label area:theory",
+         --label kind:performance --label collector --label area:theory",
         "issue close 10",
         "issue create --title perf: gandr_theory_coherent_resolutions::rewrite::normalize \
-         --body-file - --label kind:performance --label area:theory",
+         --body-file - --label kind:performance --label collector --label area:theory",
         "issue close 12",
         "issue create --title perf: rule completion --body-file - --label kind:performance \
-         --label area:surface",
+         --label collector --label area:surface",
         "issue comment 14 --body-file -",
-        "issue edit 14 --body-file - --add-label kind:performance --add-label area:surface",
+        "issue edit 14 --body-file - --add-label kind:performance --add-label collector \
+         --add-label area:surface",
     ]);
     let commit = format!("[`73f2e46`](https://github.com/gandr-lang/gandr/commit/{REPLAYED_HEAD})");
     assert_eq!(body!(scratch, "create", 8_u64), index![format!(
@@ -1031,9 +1041,10 @@ fn one_function_past_a_quiet_runner_files_alone()
         writes!(scratch),
         [
             "issue create --title perf: gandr_core_checker::module::decide --body-file - --label \
-             kind:performance --label area:core",
+             kind:performance --label collector --label area:core",
             "issue comment 8 --body-file -",
-            "issue edit 8 --body-file - --add-label kind:performance --add-label area:core",
+            "issue edit 8 --body-file - --add-label kind:performance --add-label collector \
+             --add-label area:core",
         ],
         "`normalize` at +8 % is +5.9 % beside the +2 % shift, under 7.5 %"
     );
@@ -1073,7 +1084,8 @@ fn a_new_regression_reopens_a_settled_issue()
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(writes!(scratch), [
         "issue comment 4 --body-file -",
-        "issue edit 4 --body-file - --add-label kind:performance --add-label area:core",
+        "issue edit 4 --body-file - --add-label kind:performance --add-label collector \
+         --add-label area:core",
         "issue reopen 4",
     ]);
     std::fs::remove_dir_all(&scratch).unwrap();

@@ -992,10 +992,11 @@ cat "$scratch/rows"
 # number that names no pull request is skipped with a note. Each pull
 # request whose report names a survivor gets one issue, `test: #<n> leaves <k>
 # mutant(s) alive`. A later landing of the same number updates it in place.
-# Its labels are kind:gap, the pull request's `area:` labels and the tier of
-# each crate a survivor lives in, so the lane that owns the crate picks it
-# up. Its body is the report. A commit without a pull request number, or a
-# pull request without a report, files nothing. GH_REPO names the repository.
+# Its labels are kind:gap, `collector` (#2537), the pull request's `area:`
+# labels and the tier of each crate a survivor lives in, so the lane that
+# owns the crate picks it up. Its body is the report. A commit without a pull
+# request number, or a pull request without a report, files nothing. GH_REPO
+# names the repository.
 ["ci:mutants-landed"]
 description = "File each landed pull request's surviving mutants on one issue"
 tools.jq = "1.8.1"
@@ -1033,7 +1034,7 @@ while IFS= read -r subject; do
     echo "#$pr leaves no mutant of its lines alive"
     continue
   fi
-  labels=(--label kind:gap)
+  labels=(--label kind:gap --label collector)
   while IFS= read -r label; do labels+=(--label "$label"); done < <({
     gh pr view "$pr" --repo "$repo" --json labels --jq '.labels[].name | select(startswith("area:"))'
     sed -n 's/^| `crates\/\([a-z]*\)-[^`]*` | .*/\1/p' "$scratch/report.md" \
@@ -1061,8 +1062,9 @@ done <<< "$landings"
 # issue per first error and mutation kind, never one per mutant or exemplar.
 # The report's `cause:` lines name each cause with its count and families. A
 # cause is filed as `recovery: <name> marks other bytes than a <kind> tile`,
-# kind:defect and area:surface, its body the cause's first findings and its
-# families as a checklist collapsed under their count. A cause already filed
+# kind:defect, area:surface and `collector` (#2537), its body the cause's
+# first findings and its families as a checklist collapsed under their
+# count. A cause already filed
 # is skipped: an issue in any state whose title opens with `recovery: <name> `
 # and names the kind's tile, or names neither kind's and so covers both
 # (#1829). A night opens at most
@@ -1138,7 +1140,7 @@ while IFS= read -r line; do
     echo "would file: $title ($count mutants)"
     continue
   fi
-  url=$(gh issue create --repo "$repo" --title "$title" --label kind:defect --label area:surface --body-file "$scratch/body.md")
+  url=$(gh issue create --repo "$repo" --title "$title" --label kind:defect --label area:surface --label collector --body-file "$scratch/body.md")
   echo "filed $url: $title ($count mutants)"
 done < "$report"
 {% endraw %}'''

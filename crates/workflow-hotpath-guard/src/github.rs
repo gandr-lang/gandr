@@ -26,6 +26,7 @@ use crate::check::Repository;
 use crate::check::SiteName;
 use crate::check::Unstated;
 use crate::error::GuardError;
+use crate::index::COLLECTOR;
 use crate::index::Comment;
 use crate::index::CommentUrl;
 use crate::index::Index;
@@ -919,15 +920,16 @@ fn marked_comment(
     Ok(None)
 }
 
-/// The labels a function's issue carries: [`KIND`], and its crate's area when
-/// the crate is known.
+/// The labels a function's issue carries: [`KIND`], [`COLLECTOR`], and its
+/// crate's area when the crate is known.
 ///
 /// # Specification
 /// trivial.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an opened issue labelled with its kind and its crate's
-///   area; a lost, empty or other label changes the `gh` invocation.
+/// - hypothesis: L3 — an opened issue labelled with its kind, as a collector
+///   and with its crate's area; a lost, empty or other label changes the `gh`
+///   invocation.
 /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
 fn labels(krate: &Maybe<CrateDir, Unstated>) -> Vec<String>
 {
@@ -938,5 +940,9 @@ fn labels(krate: &Maybe<CrateDir, Unstated>) -> Vec<String>
         },
         Maybe::Absent(_) => None,
     };
-    core::iter::once(KIND.to_owned()).chain(area).collect()
+    [KIND, COLLECTOR]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(area)
+        .collect()
 }

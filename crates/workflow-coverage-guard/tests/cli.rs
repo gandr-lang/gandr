@@ -125,7 +125,7 @@ fn a_drop_opens_the_issue()
     assert!(
         log.contains(
             "issue create --title coverage: main dropped from 94.50 to 87.90 (bbbbbbb) \
-             --body-file - --label kind:defect --label area:ci"
+             --body-file - --label kind:defect --label area:ci --label collector"
         ),
         "{log}"
     );
@@ -153,7 +153,8 @@ fn a_second_drop_updates_the_open_issue()
         .filter(|line| !line.starts_with("issue list"))
         .collect::<Vec<_>>();
     assert_eq!(writes, [
-        "issue edit 4 --title coverage: main dropped from 94.50 to 87.90 (bbbbbbb) --body-file -"
+        "issue edit 4 --title coverage: main dropped from 94.50 to 87.90 (bbbbbbb) --body-file - \
+         --add-label collector"
     ]);
     assert_eq!(std::fs::read_to_string(scratch.join("body")).unwrap(), DROP);
     std::fs::remove_dir_all(&scratch).unwrap();
