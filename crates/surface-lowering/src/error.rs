@@ -950,6 +950,16 @@ pub enum LoweringRefusal<'source>
         form: FormName,
     },
 
+    /// A universe level at or past the greatest the levels count: the
+    /// greatest has no universe above it, so `Type[s, n]` names none.
+    NoUniverseAbove
+    {
+        /// The bytes the level's numeral covers.
+        span: ByteSpan,
+        /// The level as it was written.
+        level: SurfaceName<'source>,
+    },
+
     /// A form whose pieces fall short of its rule, the parser's repairs
     /// included.
     MalformedForm
@@ -1600,6 +1610,15 @@ pub enum LoweringRefusal<'source>
         mold: MoldId,
     },
 
+    /// A capability form whose names the host's table cannot answer, the
+    /// table being in conflict with itself: a fault of the engine's own
+    /// table, never of the source.
+    HostConflict
+    {
+        /// The bytes of the capability form.
+        span: ByteSpan,
+    },
+
     /// A declaration the lowering collected and refused nothing in, whose
     /// type and body it minted neither of: a gap in the lowering, never a
     /// fault of the source.
@@ -1847,6 +1866,11 @@ impl fmt::Display for LoweringRefusal<'_>
             Self::MalformedLiteral { form, .. } => {
                 write!(f, "the text is not the lexeme of {form}")
             },
+            Self::NoUniverseAbove { level, .. } => write!(
+                f,
+                "the universe level `{level}` is at or past the greatest, which has no universe \
+                 above it"
+            ),
             Self::MalformedForm { form, fault, .. } => write!(f, "{form} {fault}"),
             Self::UnknownAttribute {
                 name, suggestion, ..
@@ -2145,6 +2169,10 @@ impl fmt::Display for LoweringRefusal<'_>
                 "the mold {} is not in the grammar's table",
                 u32::from(mold)
             ),
+            Self::HostConflict { .. } => f.write_str(
+                "the host's capability table is in conflict with itself, so it answers no \
+                 capability's names",
+            ),
             Self::Unminted { name, .. } => write!(
                 f,
                 "the lowering minted neither a type nor a body for `{name}`, and refused nothing \
@@ -2294,6 +2322,7 @@ impl LoweringRefusal<'_>
             | Self::IllFormedDescription { span, .. }
             | Self::GradedBridge { span, .. }
             | Self::MalformedLiteral { span, .. }
+            | Self::NoUniverseAbove { span, .. }
             | Self::MalformedForm { span, .. }
             | Self::UnknownAttribute { span, .. }
             | Self::DuplicateAttribute { span, .. }
@@ -2349,6 +2378,7 @@ impl LoweringRefusal<'_>
             | Self::GenericMisplaced { span }
             | Self::GenericUncovered { span, .. }
             | Self::UnknownMold { span, .. }
+            | Self::HostConflict { span }
             | Self::Unminted { span, .. } => Maybe::Present(span),
             Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
@@ -2415,7 +2445,7 @@ mod tests
             })
         },
     )]
-    fn every_variant() -> [LoweringRefusal<'static>; 69_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 71_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -2729,6 +2759,13 @@ mod tests
                     },
                 ),
             },
+            LoweringRefusal::NoUniverseAbove {
+                span: s(131_usize, 132_usize),
+                level: SurfaceName::from("18446744073709551615"),
+            },
+            LoweringRefusal::HostConflict {
+                span: s(133_usize, 134_usize),
+            },
         ]
     }
 
@@ -2809,6 +2846,8 @@ mod tests
             s(125_usize, 126_usize),
             s(127_usize, 128_usize),
             s(129_usize, 130_usize),
+            s(131_usize, 132_usize),
+            s(133_usize, 134_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {

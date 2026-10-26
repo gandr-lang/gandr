@@ -340,6 +340,11 @@ fn lowered(
         LoweringRefusal::MalformedLiteral { form, .. } => {
             write!(f, "this is not a well-formed {}", Spoken(form))
         },
+        LoweringRefusal::NoUniverseAbove { level, .. } => write!(
+            f,
+            "the universe level `{level}` is at or past the greatest, which has no universe above \
+             it"
+        ),
         LoweringRefusal::MalformedForm { form, fault, .. } => {
             let form = Spoken(form);
             match fault {
@@ -705,6 +710,10 @@ fn lowered(
         LoweringRefusal::UnknownMold { .. } => {
             f.write_str("internal error: the parser produced a form its grammar does not hold")
         },
+        LoweringRefusal::HostConflict { .. } => f.write_str(
+            "internal error: the host's capability table is in conflict with itself, so no \
+             capability's names can be read",
+        ),
         LoweringRefusal::Unminted { name, .. } => write!(
             f,
             "internal error: the reader produced neither a type nor a body for `{name}`, and \
@@ -1482,6 +1491,7 @@ mod tests
             },
             LoweringRefusal::GradedBridge { span, grade: name },
             LoweringRefusal::MalformedLiteral { span, form },
+            LoweringRefusal::NoUniverseAbove { span, level: name },
             LoweringRefusal::MalformedForm {
                 span,
                 form,
@@ -1660,6 +1670,7 @@ mod tests
                 span,
                 mold: MoldId::from(0_u32),
             },
+            LoweringRefusal::HostConflict { span },
             LoweringRefusal::Unminted {
                 span,
                 name: SurfaceName::from("windHom"),

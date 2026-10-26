@@ -174,10 +174,6 @@ impl TrackingIssue
     pub const TYPE_ABSTRACTION: Self = Self(2651);
     /// The statement `val p = e ;`.
     pub const VAL: Self = Self(2652);
-    /// An unknown constructor, the greatest universe level and a capability
-    /// host in conflict: author errors classed unimplemented until the defect
-    /// reclasses them.
-    pub const AUTHOR_ERROR_AS_UNBUILT: Self = Self(2653);
     /// A stated type or a method call whose declaration the collection does
     /// not carry.
     pub const UNCARRIED_DECLARATION: Self = Self(2654);

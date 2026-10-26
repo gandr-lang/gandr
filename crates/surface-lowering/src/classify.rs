@@ -111,9 +111,10 @@ impl LoweringRefusal<'_>
     ///   variable, and a member the description route or its cell layer has not
     ///   built a reading for are unimplemented, each naming its issue; the
     ///   exhausted allowance, the grammar mismatch, the unknown mold, an
-    ///   undecided coincidence check, an unminted declaration and a circuit
-    ///   redex off its own boundary are engine faults; every other refusal, a
-    ///   misplaced form and a stray root child among them, is malformed source.
+    ///   undecided coincidence check, an unminted declaration, a host table in
+    ///   conflict and a circuit redex off its own boundary are engine faults;
+    ///   every other refusal, a misplaced form and a stray root child among
+    ///   them, is malformed source.
     /// - provides: the fact a report groups by, and the issue every face of an
     ///   unimplemented refusal names.
     /// - fails: never.
@@ -206,6 +207,7 @@ impl LoweringRefusal<'_>
                 ..
             }
             | Self::UnknownMold { .. }
+            | Self::HostConflict { .. }
             | Self::GenericUncovered {
                 fault: Uncovered::BinderCeiling,
                 ..
@@ -234,6 +236,7 @@ impl LoweringRefusal<'_>
             | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
             | Self::MalformedLiteral { .. }
+            | Self::NoUniverseAbove { .. }
             | Self::MalformedForm { .. }
             | Self::UnknownAttribute { .. }
             | Self::DuplicateAttribute { .. }
@@ -302,6 +305,7 @@ impl LoweringRefusal<'_>
             | Self::UnexportedName { .. }
             | Self::ShadowedBuiltin { .. }
             | Self::MalformedLiteral { .. }
+            | Self::NoUniverseAbove { .. }
             | Self::MalformedForm { .. }
             | Self::UnknownAttribute { .. }
             | Self::DuplicateAttribute { .. }
@@ -370,6 +374,7 @@ impl LoweringRefusal<'_>
             | Self::GrammarMismatch { .. }
             | Self::RulesUndecided { .. }
             | Self::UnknownMold { .. }
+            | Self::HostConflict { .. }
             | Self::Unminted { .. } => FailureClass::EngineFault,
         }
     }
@@ -766,7 +771,7 @@ mod tests
             })
         },
     )]
-    fn vocabulary() -> [LoweringRefusal<'static>; 71_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 73_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -1060,6 +1065,11 @@ mod tests
                 data: SurfaceName::from("Box"),
                 fault: Uncovered::Applied(gandr_kernel_term::ConstantIndex::from(0_usize)),
             },
+            LoweringRefusal::NoUniverseAbove {
+                span: empty,
+                level: SurfaceName::from("18446744073709551615"),
+            },
+            LoweringRefusal::HostConflict { span: empty },
         ]
     }
 
@@ -1138,6 +1148,8 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unimplemented(TrackingIssue::GENERIC_EQUALITY),
+            FailureClass::MalformedSource,
+            FailureClass::EngineFault,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

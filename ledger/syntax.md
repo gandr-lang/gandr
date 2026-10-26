@@ -129,7 +129,7 @@ Each committed rule links its exemplar, a small source the exemplar gate parses 
 | [`abort_expression`](../corpus/ledger/syntax/abort_expression.gandr) | `abort ( ‹identifier› )` | `expression.atom` | `abort_expression` * | admitted | Keyword, Other, Variable |
 | [`shell_block`](../corpus/ledger/syntax/shell_block.gandr) | `#!{ ⦅ EXPRESSION ⦆? }` | `expression.atom` | `shell_block` | unadmitted | Other |
 | [`identifier.expression`](../corpus/ledger/syntax/identifier.expression.gandr) | `‹identifier›` | `expression.atom` | `identifier` | admitted | Variable |
-| [`constructor.expression`](../corpus/ledger/syntax/constructor.expression.gandr) | `‹constructor›` | `expression.atom` | `constructor` | unadmitted | Constructor |
+| [`constructor.expression`](../corpus/ledger/syntax/constructor.expression.gandr) | `‹constructor›` | `expression.atom` | `constructor` | admitted | Constructor |
 | [`boolean.expression`](../corpus/ledger/syntax/boolean.expression.gandr) | `true ‖ false` | `expression.atom` | `boolean` | admitted | Boolean |
 | [`unit.expression`](../corpus/ledger/syntax/unit.expression.gandr) | `unit` | `expression.atom` | `unit` | admitted | Keyword |
 | [`number.expression`](../corpus/ledger/syntax/number.expression.gandr) | `‹number›` | `expression.atom` | `number` | admitted | Number |
