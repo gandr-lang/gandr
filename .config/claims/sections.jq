@@ -63,10 +63,11 @@ def rows:
 def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting"];
 
 # The axes an issue's `## Readings` selects, read before its subsections: a
-# row whose `Selected` cell reads `yes`, or an item naming the axis.
+# row with a cell reading `yes`, alone or before its reason (`yes — <why>`),
+# or an item naming the axis.
 def selected:
   (section("Readings") // [] | lead) as $lines
   | [($lines | rows | .cells as $cells | first($cells[] | select(IN(axes[]))) as $axis
-      | select([$cells[] | ascii_downcase] | index("yes")) | $axis),
+      | select(any($cells[]; ascii_downcase | test("^yes\\b"))) | $axis),
      ($lines | items | first(match("`([^`]+)`"; "g").captures[0].string | select(IN(axes[]))))]
   | unique;

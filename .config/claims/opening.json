@@ -384,5 +384,19 @@
       "added": ["crates/surface-dispatcher/src/fork.rs"]
     },
     "output": ""
+  },
+  {
+    "name": "#2580: a `yes — <why>` cell selects its axis, so its `not selected` row is refused",
+    "input": {
+      "branch": "workflow-2580-selected-cell",
+      "body": "Closes #2580\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `oracle` | not selected |\n| Place | `resident` | none: no representation moves |\n",
+      "issues": [
+        {
+          "number": 2580,
+          "body": "## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | yes — a memo hit is the implemented-oracle case |\n| Place | `resident` | yes |\n"
+        }
+      ]
+    },
+    "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `oracle` (#2580's `## Readings`)"
   }
 ]
