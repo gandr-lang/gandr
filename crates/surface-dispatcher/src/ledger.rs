@@ -50,7 +50,12 @@
 //! otherwise. The exemplar states such a refusal as
 //! `refuses("OutOfFragment.<kind>…")`, and `check:exemplars` settles it, so the
 //! column says what a source of the form meets, proven by the source the row
-//! links. A committed rule whose exemplar cannot be read refuses the ledger
+//! links. The row's `status` reads the admission as a decision: `implemented`
+//! where it is admitted, `reserved` where the refusal is unbuilt and names
+//! the tracking issue the row carries as `issue`, `declined` where the
+//! refusal names none. `ledger:reserved` refuses a landing that lowers a
+//! reserved rule unless that issue is open and names the rule. A committed
+//! rule whose exemplar cannot be read refuses the ledger
 //! ([`LedgerFault::Unshown`]).
 //!
 //! - Choice: the exemplar's lowering. Whether the lowering reads a form is
@@ -150,6 +155,7 @@ use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::SurfaceName;
+use gandr_surface_lowering::TrackingIssue;
 use gandr_surface_lowering::lower_module;
 use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::CandidateLabel;
@@ -1064,6 +1070,13 @@ fn rule_json(row: &RuleRow) -> Value
     );
     if let Some(admission) = row.admission {
         fields.insert("admission".to_owned(), Value::from(admission.to_string()));
+        fields.insert(
+            "status".to_owned(),
+            Value::from(RuleStatus(admission).to_string()),
+        );
+        if let Some(issue) = admission.issue() {
+            fields.insert("issue".to_owned(), Value::from(issue.to_string()));
+        }
     }
     fields.insert("form".to_owned(), Value::from(row.form.clone()));
     if let Some(ref ascii) = row.ascii {
@@ -1702,10 +1715,53 @@ enum Admission
     /// `OutOfFragment.<kind>`.
     Admitted,
     /// The exemplar's lowering refuses a form of the rule's kind out of the
-    /// fragment at a boundary other than the reserved one.
-    Unadmitted,
-    /// The exemplar's lowering refuses a form of the rule's kind as reserved.
-    Reserved,
+    /// fragment at a boundary other than the reserved one, naming the issue
+    /// that builds it where its class is unimplemented.
+    Unadmitted(Option<TrackingIssue>),
+    /// The exemplar's lowering refuses a form of the rule's kind as reserved,
+    /// naming the issue that builds it.
+    Reserved(TrackingIssue),
+}
+
+impl Admission
+{
+    /// The issue the refusal names: none for an admitted form.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn issue(self) -> Option<TrackingIssue>
+    {
+        match self {
+            Self::Admitted => None,
+            Self::Unadmitted(issue) => issue,
+            Self::Reserved(issue) => Some(issue),
+        }
+    }
+}
+
+/// A rule's status as the ledger writes it, read off its admission.
+#[repr(transparent)]
+struct RuleStatus(Admission);
+
+impl core::fmt::Display for RuleStatus
+{
+    /// Writes `implemented` where the lowering admits the form, `reserved`
+    /// where it refuses it as unbuilt, naming the issue that builds it, and
+    /// `declined` where it refuses it by decision, naming none.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        f.write_str(match self.0 {
+            Admission::Admitted => "implemented",
+            Admission::Unadmitted(Some(_)) | Admission::Reserved(_) => "reserved",
+            Admission::Unadmitted(None) => "declined",
+        })
+    }
 }
 
 /// The admission of `row`'s form, read by lowering its exemplar under
@@ -1715,8 +1771,10 @@ enum Admission
 /// - requires: `row` is a committed rule's.
 /// - ensures: [`Admission::Reserved`] where a declaration of the exemplar, or
 ///   the whole source, is refused under the spelling `OutOfFragment.<kind>` (or
-///   a qualification of it) at the reserved boundary; [`Admission::Unadmitted`]
-///   where it is refused under that spelling at any other boundary;
+///   a qualification of it) at the reserved boundary, carrying that boundary's
+///   feature's tracking issue; [`Admission::Unadmitted`] where it is refused
+///   under that spelling at any other boundary, carrying the issue the
+///   refusal's class tracks, or none where its class is not unimplemented;
 ///   [`Admission::Admitted`] otherwise. The spelling is the corpus's, the one
 ///   an exemplar's `refuses` states.
 /// - fails: the exemplar cannot be read or parsed.
@@ -1781,13 +1839,17 @@ fn admission(
         .into_iter()
         .filter(|&refusal| names_the_kind(refusal))
     {
-        if matches!(refusal, LoweringRefusal::OutOfFragment {
-            boundary: FragmentBoundary::Reserved(_),
+        if let LoweringRefusal::OutOfFragment {
+            boundary: FragmentBoundary::Reserved(feature),
             ..
-        }) {
-            return Ok(Admission::Reserved);
+        } = refusal
+        {
+            return Ok(Admission::Reserved(feature.tracking()));
         }
-        admission = Admission::Unadmitted;
+        admission = Admission::Unadmitted(match refusal.classify().tracking() {
+            Maybe::Present(issue) => Some(issue),
+            Maybe::Absent(_) => None,
+        });
     }
     Ok(admission)
 }
@@ -1805,8 +1867,8 @@ impl core::fmt::Display for Admission
     {
         f.write_str(match *self {
             Self::Admitted => "admitted",
-            Self::Unadmitted => "unadmitted",
-            Self::Reserved => "reserved",
+            Self::Unadmitted(_) => "unadmitted",
+            Self::Reserved(_) => "reserved",
         })
     }
 }
@@ -2478,6 +2540,25 @@ mod tests
                 row.name,
                 if stated { "refuses" } else { "does not refuse" }
             );
+            let status = json_row["status"]
+                .as_str()
+                .expect("a committed rule's status is written");
+            let issue = json_row.get("issue").and_then(serde_json::Value::as_str);
+            assert_eq!(
+                (status == "implemented", status == "reserved"),
+                (admission == "admitted", issue.is_some()),
+                "`{}` is {status}: implemented exactly when admitted, reserved exactly when \
+                 its refusal names an issue ({issue:?})",
+                row.name
+            );
+            if admission == "reserved" {
+                assert_eq!(
+                    status, "reserved",
+                    "`{}` is refused at the reserved boundary, which names the issue that \
+                     builds it",
+                    row.name
+                );
+            }
             let _fresh = seen.insert(admission.to_owned());
         }
         assert!(
