@@ -1109,7 +1109,12 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # `.config/claims/next.json` the open issues and the claim `claim:next` takes
 # from them, or none (`next.jq`, #2533); each in `.config/claims/ledger.json`
 # a body, the ledger rows a change touches and the lines `ledger:patched`
-# prints for them, or none (`ledger.jq`, #2525).
+# prints for them, or none (`ledger.jq`, #2525). Each case in
+# `.config/claims/patched.json` runs `ledger:patched` itself on a scratch
+# repository whose head adds `padding` rows of about 500 bytes to this
+# checkout's features table, under a body naming none, and holds its exit and
+# the count of lines it prints: a table past the argument limit is read, not
+# refused by the shell (#2671).
 ["check:claims"]
 description = "The claim lifecycle gives each recorded case its removals, pr:open each body its refusal, unit:check each issue its findings, claim:next each board its claim and ledger:patched each landing its refusals"
 tools.jq = "1.8.1"
@@ -1135,7 +1140,33 @@ cases unit unit.jq unit.json
 cases next next.jq next.json
 cases ledger ledger.jq ledger.json
 (( failed == 0 )) || exit 1
-echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+printf '## Ledger\n\nNone.\n' > "$scratch/body.md"
+line=$(printf 'a padded row of the argument-limit case, %.0s' {1..11})
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  repo="$scratch/repo-$(jq -r .padding <<< "$case")"
+  git init --quiet --initial-branch=main "$repo"
+  git -C "$repo" config commit.gpgsign false
+  mkdir -p "$repo/ledger"
+  cp ledger/features.sql "$repo/ledger/features.sql"
+  git -C "$repo" add ledger && git -C "$repo" commit --quiet --no-verify -m base
+  for (( i = 0; i < $(jq .padding <<< "$case"); i++ )); do
+    printf "INSERT INTO feature VALUES('padding-%05d','padding','A padded row',NULL,'planned','ordinary',NULL,'%s',NULL,NULL,NULL,'#2671',NULL);\n" "$i" "$line"
+  done >> "$repo/ledger/features.sql"
+  git -C "$repo" add ledger && git -C "$repo" commit --quiet --no-verify --allow-empty -m head
+  got=0
+  out=$(GIT_DIR="$repo/.git" GIT_WORK_TREE="$repo" mise run --quiet ledger:patched "$scratch/body.md" HEAD~1 2> "$scratch/err") || got=$?
+  lines=$(grep -c . <<< "$out" || true)
+  if [[ $got != $(jq .exit <<< "$case") || $lines != $(jq .lines <<< "$case") ]]; then
+    printf 'patched case FAILED: %s\n  exit %s and %s lines, wanted exit %s and %s lines\n%s\n%s\n' "$name" "$got" "$lines" \
+      "$(jq .exit <<< "$case")" "$(jq .lines <<< "$case")" "$(printf '%s\n' "$out" | awk 'NR <= 3')" "$(cat "$scratch/err")" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/claims/patched.json)
+(( failed == 0 )) || exit 1
+echo "claims check OK: $(jq length .config/claims/cases.json) cases gave their removals, $(jq length .config/claims/opening.json) bodies their refusals, $(jq length .config/claims/unit.json) issues their findings, $(jq length .config/claims/next.json) boards their claims, $(jq length .config/claims/ledger.json) landings their ledger refusals, $(jq length .config/claims/patched.json) tables their reading"
 '''
 
 # The issue automations' decisions. An epic closes when its last sub-issue

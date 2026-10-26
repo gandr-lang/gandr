@@ -1418,7 +1418,10 @@ printf '#%s %s\n' "$number" "$title"
 # named row untouched or unknown, a touched row unnamed, and with `--pr` a
 # named row whose `since` lacks `#<n>`. Exits 1 on a refusal. `pr:land` runs
 # it on the pull request with its number and refuses; `pr:open` runs it
-# without one and prints each line as a note.
+# without one and prints each line as a note. The tables reach jq through
+# files, never as arguments: a table past the argument limit (#2671) would
+# refuse every landing with `Argument list too long`. The repository read is
+# the caller's (`GIT_DIR` honoured); the reading is this checkout's.
 ["ledger:patched"]
 description = "Refuse a landing whose ledger rows and its body's ## Ledger disagree"
 usage = '''
@@ -1428,16 +1431,20 @@ flag "--head <ref>" help="the change's head; HEAD by default"
 flag "--pr <number>" help="the pull request's number, which each named row's since carries"
 '''
 tools.jq = "1.8.1"
+env.LEDGER_READING_ROOT = "{{ config_root }}"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
-root=$(git rev-parse --show-toplevel)
+root=$LEDGER_READING_ROOT
+tables=$(mktemp -d)
+trap 'rm -rf "$tables"' EXIT
 rows_at() { { git show "$1:ledger/features.sql" 2> /dev/null || true; printf '%s\n' 'SELECT * FROM feature ORDER BY id;'; } | sqlite3 -json; }
-base_rows=$(rows_at "${usage_base:?}")
-head_rows=$(rows_at "${usage_head:-HEAD}")
+rows_at "${usage_base:?}" > "$tables/base.json"
+rows_at "${usage_head:-HEAD}" > "$tables/head.json"
 findings=$(jq -n --rawfile body "${usage_body:?}" --argjson pr "${usage_pr:-null}" \
-  --argjson base "${base_rows:-[]}" --argjson head "${head_rows:-[]}" \
-  '(INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
+  --slurpfile base "$tables/base.json" --slurpfile head "$tables/head.json" \
+  '($base | add // []) as $base | ($head | add // []) as $head
+   | (INDEX($base[]; .id)) as $was | (INDEX($head[]; .id)) as $now
    | {pr: $pr, body: $body, rows: [$head[].id],
       touched: ([$head[] | select($was[.id] != .) | {id, since}] + [$base[] | select($now[.id] == null) | {id, since: null}])}' \
   | jq -r -L "$root/.config/claims" -f "$root/.config/claims/ledger.jq")
