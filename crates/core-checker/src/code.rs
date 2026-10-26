@@ -899,8 +899,8 @@ impl CodeDefinitions
 
     /// One step of reduction at `code`'s head: a constant's δ-step, a static
     /// definition's δβ-step at a saturated instance, a static lambda's
-    /// β-step at a saturated application, or a closed returned code's run to
-    /// the code it returns, its reduct minted into `core`.
+    /// β-step at a saturated application, or a returned code's run to the
+    /// code it returns, its reduct minted into `core`.
     ///
     /// # Specification
     /// - requires: every body this table holds lives in `core`.
@@ -911,11 +911,10 @@ impl CodeDefinitions
     ///   constant whose body is one, unfolding the definition — and at least
     ///   `n` arguments, the innermost body instantiated at the first `n`
     ///   arguments outermost first, under the rest; with `n` zero, a constant's
-    ///   body itself under every argument. For a closed returned code standing
-    ///   alone, `returned(c)` where `c` runs to `return v`, the value `v` read
-    ///   back with every definition unfolded. [`unfolding::Absent::Rigid`] for
-    ///   every other code, an operator short of its arguments, an open returned
-    ///   code and a run that does not return included. A step fires at `code`
+    ///   body itself under every argument. For a returned code standing alone,
+    ///   the step [`Self::run_returned`] gives. [`unfolding::Absent::Rigid`]
+    ///   for every other code, an operator short of its arguments and a run
+    ///   [`Self::run_returned`] holds rigid included. A step fires at `code`
     ///   itself, and names a definition that has a body, a node that is a
     ///   static lambda, or a node that is a returned code.
     /// - provides: the one step every walk reduces a code by, whose reduct a
@@ -1056,16 +1055,18 @@ impl CodeDefinitions
     /// - ensures: for a `returned(c)` whose computation reads back — every
     ///   definition unfolded, a definition's own recursion named as the
     ///   definition, the binders `c` reaches read as rigid variables — to
-    ///   `return v` with `v` no returned code, the step unfolding the returned
-    ///   code at `code` to `v`. [`unfolding::Absent::Rigid`] for any other
-    ///   node, for a run that waits on a binder before it returns a code — it
-    ///   reads back as a returned code — and for a run that reads back stuck; a
-    ///   run whose head forces a binder, through applications, binds and
-    ///   ascriptions, is stuck before its first step and is rigid without being
-    ///   run.
+    ///   `return v`, with `v` either no returned code or a returned call of a
+    ///   binder, one whose head, through applications, binds and ascriptions,
+    ///   forces a variable, the step unfolding the returned code at `code` to
+    ///   `v`. [`unfolding::Absent::Rigid`] for any other node, for a run that
+    ///   waits on a binder in any other way before it returns a code — it reads
+    ///   back as a returned code — and for a run that reads back stuck; a run
+    ///   that is itself a call of a binder is stuck before its first step and
+    ///   is rigid without being run.
     /// - provides: the reduct of `El` as unquote: a function to a universe
     ///   returns a quote, and the type at the code position is the quoted one,
-    ///   open or closed.
+    ///   open or closed; a definition that unfolds to a call of a binder
+    ///   reduces to that call, which then converts with the call written out.
     /// - fails: [`CheckRefusal::Undecided`] at `code` when evaluation or
     ///   readback faults or runs out of fuel; [`CheckRefusal::DanglingNode`]
     ///   for a node `core` does not hold.
@@ -1084,9 +1085,12 @@ impl CodeDefinitions
     ///   `case` runs to that quote, and the same call on a variable is rigid; a
     ///   decoder's arm on a binder steps to the quote over the decodes its
     ///   source wrote, and an open decode forged to another quote is refused; a
-    ///   call of a binder, bare and bound first, is rigid with no node minted.
+    ///   call of a binder, bare and bound first, is rigid with no node minted;
+    ///   a call of a definition that applies a binder steps to that
+    ///   application.
     /// - witness: `code::tests::a_closed_returned_code_runs_to_the_quote_it_returns`
     /// - witness: `code::tests::a_call_of_a_binder_is_rigid_without_running_1369`
+    /// - witness: `code::tests::a_definition_unfolding_to_a_call_of_a_binder_steps_to_it_2751`
     /// - witness: `bridge::tests::an_open_decode_crosses_read_and_a_forged_one_is_refused`
     #[spec(ensures: |ret| match ret {
         | Ok(Maybe::Present(step)) => step.unfolded() == Unfolded::Returned(code)
@@ -1102,22 +1106,24 @@ impl CodeDefinitions
         code: ValueId,
     ) -> Result<Maybe<Reduction, unfolding::Absent>, CheckRefusal>
     {
+        let calls_a_binder = |core: &CoreArena, run: ComputationId| {
+            let mut head = run;
+            while let Some(
+                &(Computation::Application(applied, _)
+                | Computation::Bind(applied, _)
+                | Computation::Ascribe { body: applied, .. }),
+            ) = core.computation(head)
+            {
+                head = applied;
+            }
+            matches!(core.computation(head), Some(&Computation::Force(forced))
+                if matches!(core.value(forced), Some(&Value::Variable { .. })))
+        };
         let Some(&Value::Returned(run)) = core.value(code)
         else {
             return Ok(Maybe::Absent(unfolding::Absent::Rigid));
         };
-        let mut head = run;
-        while let Some(
-            &(Computation::Application(applied, _)
-            | Computation::Bind(applied, _)
-            | Computation::Ascribe { body: applied, .. }),
-        ) = core.computation(head)
-        {
-            head = applied;
-        }
-        if let Some(&Computation::Force(forced)) = core.computation(head)
-            && matches!(core.value(forced), Some(&Value::Variable { .. }))
-        {
+        if calls_a_binder(core, run) {
             return Ok(Maybe::Absent(unfolding::Absent::Rigid));
         }
         let reach = loose_reach(core, CoreNode::Term(TermNode::Value(code)))?;
@@ -1127,16 +1133,19 @@ impl CodeDefinitions
         }
         let claim = core.value_thunk(body);
         match self.read_back(core, claim, Recursion::Refolded) {
-            Ok(Readback::Returned { returned, .. })
-                if !matches!(core.value(returned), Some(&Value::Returned(_))) =>
-            {
+            Ok(Readback::Returned { returned, .. }) => {
+                if let Some(&Value::Returned(stuck)) = core.value(returned)
+                    && !calls_a_binder(core, stuck)
+                {
+                    return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+                }
                 Ok(Maybe::Present(Reduction {
                     unfolded: Unfolded::Returned(code),
                     redex: code,
                     reduct: returned,
                 }))
             },
-            Ok(Readback::Returned { .. } | Readback::Stuck(_) | Readback::Unsuspended) => {
+            Ok(Readback::Stuck(_) | Readback::Unsuspended) => {
                 Ok(Maybe::Absent(unfolding::Absent::Rigid))
             },
             Err(_undecided) => Err(CheckRefusal::Undecided { at: code }),

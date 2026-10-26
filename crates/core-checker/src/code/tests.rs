@@ -322,6 +322,50 @@ fn a_call_of_a_binder_is_rigid_without_running_1369()
     }
 }
 
+/// #2751: a call of a definition whose body applies a binder,
+/// `app(post, x)` with `app = λpost x. post(x)`, runs to that application,
+/// `returned(post(x))`, the call written out, where a weak head stops.
+#[test]
+fn a_definition_unfolding_to_a_call_of_a_binder_steps_to_it_2751()
+{
+    let mut arena = CoreArena::new();
+    let post = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let point = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let forced_post = arena.computation_force(post);
+    let applied = arena.computation_application(forced_post, point);
+    let body = arena.computation_lambda(applied);
+    let body = arena.computation_lambda(body);
+    let app = arena.value_thunk(body);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(ConstantIndex::from(0_usize), app);
+    let head = arena.value_constant(ConstantIndex::from(0_usize));
+    let forced = arena.computation_force(head);
+    let partial = arena.computation_application(forced, post);
+    let call = arena.computation_application(partial, point);
+    let code = arena.value_returned(call);
+    let written = arena.value_returned(applied);
+    let Maybe::Present(step) = definitions.reduce(&mut arena, code).unwrap()
+    else {
+        panic!("a call of `app` runs to the call of the binder it makes");
+    };
+    assert_eq!(step.unfolded(), Unfolded::Returned(code));
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, step.reduct(), written),
+        gandr_core_term::CertificateEquality::Equal,
+        "the run reads back to `post(x)`: {:?}",
+        arena.value(step.reduct())
+    );
+    assert_eq!(
+        definitions.reduce(&mut arena, step.reduct()).unwrap(),
+        Maybe::Absent(unfolding::Absent::Rigid),
+        "the call of the binder it reaches is rigid, so a weak head stops there"
+    );
+    assert!(
+        definitions.certify(&arena, step).is_ok(),
+        "the step is certified under its binders"
+    );
+}
+
 #[test]
 fn the_loose_reach_counts_only_binders_outside_the_root()
 {

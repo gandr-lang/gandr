@@ -16,9 +16,10 @@ def incrMissesOne : #{
 } = (incrTree, fn (s) { fn (h) { h } });
 
 /// The increment paired with evidence at every postcondition, the order of
-/// the transformers itself: both sides unfold to a call of `post`, and a
-/// definition unfolding to a variable's call does not convert with it yet
-/// (#2751).
+/// the transformers itself: both sides run to a call of `post`, the
+/// specification's with the successor computed before the call and the
+/// fold's with it returned inside the argument, and the two do not convert
+/// yet (#2773).
 @[ refuses("TypeMismatch") ]
 def incrSpecifiedEverywhere : #{
   m : Prog(Either(StateOp, Void), Unit),
