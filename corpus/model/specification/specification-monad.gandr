@@ -1,0 +1,28 @@
+// A specification monad as a theory: a monad whose computations are ordered
+// and whose extension is monotone in both its arguments (Maillard et al.,
+// "Dijkstra Monads for All", ICFP 2019, § 3.3). An operation lands in a sort,
+// not in `Type`, so the order is a sort indexed by two computations, and
+// evidence of it is a term its operations build. The monad's laws beside the
+// indexed sort are refused in the twin (#1510).
+
+/// Values `V`, computations `C` and the order between two computations:
+/// reflexive, transitive, and an extension below another where its
+/// computation and each of its continuations are.
+@[ checks ]
+theory SpecificationMonad {
+  sort V : Type+;
+  sort C : Type;
+  sort Below(w : C, v : C) : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  oper refl : (w : C) --> Below(w, w);
+  oper trans : (u : C, v : C, w : C, p : Below(u, v), q : Below(v, w)) --> Below(u, w);
+  oper mono : (
+    m : C,
+    n : C,
+    k : pi+ (x : V) . C,
+    l : pi+ (x : V) . C,
+    p : Below(m, n),
+    q : pi+ (x : V) . Below(k(x), l(x))
+  ) --> Below(ext(m, k), ext(n, l));
+}

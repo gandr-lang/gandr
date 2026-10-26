@@ -65,3 +65,19 @@ theory StateGetGet {
   oper get : (k : pi+ (s : S) . C) --> C;
   rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
 }
+
+/// Put-get, put-put and get-get together, the laws a state-passing handler
+/// is checked against (`../specification/state-wp.gandr`). A read of a read
+/// under a store is a redex of put-get and of get-get, and both reducts store
+/// the value and continue at it twice. Get-put beside them is refused in the
+/// twin (#1934).
+@[ checks ]
+theory StateLaws {
+  sort S : Type+;
+  sort C : Type;
+  oper get : (k : pi+ (s : S) . C) --> C;
+  oper put : (s : S, k : C) --> C;
+  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putPut : put(s, put(u, k)) <=> put(u, k);
+  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+}
