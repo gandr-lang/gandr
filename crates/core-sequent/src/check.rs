@@ -15,7 +15,16 @@
 //!   polarity: constructors, literals, thunks, recursive thunks, matches,
 //!   nominal matches, selections and force frames are positive; copattern
 //!   objects and application frames are negative; variables, constants, `μ`,
-//!   covariables, `μ̃` and `★` take the cut's polarity.
+//!   covariables, `μ̃` and `★` take the cut's polarity;
+//! - **second-class continuations** — a closure naming a covariable outside its
+//!   own binders. A closure is a thunk, a recursive thunk, a copattern object,
+//!   a `μ` a negative cut hands its binder by name, or a fold's cell branch:
+//!   what the machine allocates over the slots its support selects. A
+//!   covariable is a mark in the frame region and delivering to it shrinks the
+//!   region to the mark, so a closure holding one past its frame resumes
+//!   whatever frame took that place. No value refers to a stack variable
+//!   (Caspar and Munch-Maccagnoni 2026, Lemma 3.1); the IL carries no types to
+//!   state that, so the check states its syntactic form.
 //!
 //! Scope is carried, not walked (`il` § Scope is carried): minting alone
 //! writes a node's support, the union of what the node names and its
@@ -36,6 +45,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
@@ -117,6 +127,15 @@ pub enum CheckRefusal
     },
     /// A match or copattern object answering one head twice.
     DuplicateArm(ArityHead),
+    /// A closure naming a covariable outside its own binders: a mark in the
+    /// frame region that the closure may outlive.
+    OuterCovariable
+    {
+        /// The closure: its producer, or the fold whose cell branch it is.
+        closure: NodeAddress,
+        /// The innermost covariable it names, counted where it stands.
+        covariable: CovariableIndex,
+    },
 }
 
 impl fmt::Display for CheckRefusal
@@ -161,6 +180,16 @@ impl fmt::Display for CheckRefusal
                 )
             },
             Self::DuplicateArm(_) => f.write_str("a head is answered by two arms"),
+            Self::OuterCovariable {
+                closure,
+                covariable,
+            } => {
+                write!(
+                    f,
+                    "{closure} is a closure naming the covariable {covariable} outside its own \
+                     binders"
+                )
+            },
         }
     }
 }
@@ -237,8 +266,9 @@ impl FreeSet
 /// - requires: nothing.
 /// - ensures: on success the command's free producer variables and covariables,
 ///   each index counted from the command, as its carried support selects them;
-///   the command is then reference-intact, arity-correct, focused and
-///   polarity-consistent.
+///   the command is then reference-intact, arity-correct, focused,
+///   polarity-consistent and second-class: no closure below it names a
+///   covariable outside its own binders.
 /// - provides: the one well-formedness judgement over the IL.
 /// - fails: the first [`CheckRefusal`] a depth-first visit meets.
 /// - panics: none.
@@ -266,6 +296,8 @@ impl FreeSet
 /// - witness: `check::tests::destructor_consumer_arity_is_checked`
 /// - witness: `check::tests::consumer_arity_follows_the_head_not_a_constant`
 /// - witness: `check::tests::a_head_answered_twice_is_rejected`
+/// - witness: `check::tests::a_closure_naming_an_outer_covariable_is_refused_2769`
+/// - witness: `tests::run::a_thunk_escaping_its_covariable_is_refused_before_it_runs_2769`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 /// - witness: `tests::focus_properties::root_support_equals_the_walk_on_every_focused_term`
 #[inline]
@@ -323,9 +355,11 @@ impl Walk<'_>
     /// - requires: nothing.
     /// - ensures: on success the command's children are scheduled in edge
     ///   order, the first on top.
-    /// - provides: the polarity rule.
+    /// - provides: the polarity rule, and the second-class rule for a capture a
+    ///   negative cut hands its binder by name.
     /// - fails: a dangling command, side or child; a cut side observing the
-    ///   other polarity; an annotation the arena does not hold.
+    ///   other polarity; a capture handed by name that names a covariable
+    ///   outside its own binder; an annotation the arena does not hold.
     /// - panics: none.
     ///
     /// # Errors
@@ -340,6 +374,7 @@ impl Walk<'_>
     /// - witness: `check::tests::dangling_reference_is_rejected`
     /// - witness: `check::tests::polarity_mismatch_is_rejected`
     /// - witness: `check::tests::control_scopes_are_local_to_each_body`
+    /// - witness: `check::tests::a_closure_naming_an_outer_covariable_is_refused_2769`
     #[spec(
         captures: [work = self.stack.len()],
         ensures: |ref ret| ret.is_err() || self.arena.command(id).is_some_and(|node| {
@@ -384,6 +419,15 @@ impl Walk<'_>
                     });
                 }
             }
+            // The by-name side of a negative cut against a binder is
+            // suspended and bound, so the capture is a closure.
+            if polarity == Polarity::Negative
+                && let ConsumerNode::MuTilde { .. } = *received
+                && let ProducerNode::Mu { .. } = *sent
+            {
+                let closure = NodeAddress::Producer(producer);
+                self.second_class(closure, closure, ConsumerArity::ZERO)?;
+            }
         }
         if let Some(signature) = command_signature(node) {
             self.annotated(NodeAddress::Command(id), signature.types())?;
@@ -402,9 +446,10 @@ impl Walk<'_>
     /// - requires: nothing.
     /// - ensures: on success the producer's children are scheduled in edge
     ///   order, the first on top.
-    /// - provides: the arity and focus rules for producers.
-    /// - fails: a dangling address, an arity or duplicate-arm violation, or a
-    ///   `μ` field.
+    /// - provides: the arity, focus and second-class rules for producers.
+    /// - fails: a dangling address, an arity or duplicate-arm violation, a `μ`
+    ///   field, or a thunk, recursive thunk or copattern object naming a
+    ///   covariable outside its own binders.
     /// - panics: none.
     ///
     /// # Errors
@@ -419,6 +464,7 @@ impl Walk<'_>
     /// - witness: `check::tests::constructor_consumer_arity_is_checked`
     /// - witness: `check::tests::non_value_argument_is_rejected`
     /// - witness: `check::tests::a_head_answered_twice_is_rejected`
+    /// - witness: `check::tests::a_closure_naming_an_outer_covariable_is_refused_2769`
     /// - witness: `check::tests::child_refusals_follow_declared_precedence`
     /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
     #[spec(
@@ -465,6 +511,12 @@ impl Walk<'_>
                         )));
                     }
                 }
+                let closure = NodeAddress::Producer(id);
+                self.second_class(closure, closure, ConsumerArity::ZERO)?;
+            },
+            ProducerNode::Thunk { .. } | ProducerNode::Fixpoint { .. } => {
+                let closure = NodeAddress::Producer(id);
+                self.second_class(closure, closure, ConsumerArity::ZERO)?;
             },
             ProducerNode::Reify(_)
             | ProducerNode::Primitive { .. }
@@ -473,8 +525,6 @@ impl Walk<'_>
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_)
             | ProducerNode::Code(_)
-            | ProducerNode::Thunk { .. }
-            | ProducerNode::Fixpoint { .. }
             | ProducerNode::Mu { .. } => {},
         }
         let work = self.stack.len();
@@ -491,9 +541,10 @@ impl Walk<'_>
     /// - requires: nothing.
     /// - ensures: on success the consumer's children are scheduled in edge
     ///   order, the first on top.
-    /// - provides: the arity and focus rules for consumers.
+    /// - provides: the arity, focus and second-class rules for consumers.
     /// - fails: a dangling address, an arity or duplicate-arm violation, a `μ`
-    ///   argument, or an annotation the arena does not hold.
+    ///   argument, a fold whose cell branch names a covariable outside its own
+    ///   binders, or an annotation the arena does not hold.
     /// - panics: none.
     ///
     /// # Errors
@@ -507,6 +558,7 @@ impl Walk<'_>
     /// - witness: `check::tests::destructor_consumer_arity_is_checked`
     /// - witness: `check::tests::consumer_arity_follows_the_head_not_a_constant`
     /// - witness: `check::tests::a_head_answered_twice_is_rejected`
+    /// - witness: `check::tests::a_closure_naming_an_outer_covariable_is_refused_2769`
     /// - witness: `check::tests::child_refusals_follow_declared_precedence`
     /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
     #[spec(
@@ -573,9 +625,17 @@ impl Walk<'_>
                     }
                 }
             },
+            // The cell branch is a closure the walk allocates per cell, past
+            // the head, the folded tail and its own covariable.
+            ConsumerNode::ListFold { on_cons, .. } => {
+                self.second_class(
+                    NodeAddress::Consumer(id),
+                    NodeAddress::Command(on_cons),
+                    ConsumerArity::ONE,
+                )?;
+            },
             ConsumerNode::Covariable(_)
             | ConsumerNode::Top
-            | ConsumerNode::ListFold { .. }
             | ConsumerNode::MuTilde { .. }
             | ConsumerNode::Select { .. } => {},
         }
@@ -658,6 +718,61 @@ impl Walk<'_>
             }
         }
         Ok(())
+    }
+
+    /// Refuse the closure `closure` when `body`'s support names a covariable
+    /// past the `opened` covariable binders the closure opens over it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: success exactly when `body`'s carried support selects no
+    ///   covariable at or past `opened`; nothing is scheduled.
+    /// - provides: the second-class rule: no closure holds a mark of the frame
+    ///   region.
+    /// - fails: [`CheckRefusal::OuterCovariable`] naming `closure` and the
+    ///   innermost covariable so selected, counted past the `opened` binders; a
+    ///   dangling `body`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each closure former naming the covariable just
+    ///   outside its own binders is refused with that covariable as counted
+    ///   where the closure stands, and the same former naming only its own
+    ///   covariable is admitted; the fold's cell branch separates its own
+    ///   covariable, admitted, from the next one out, refused.
+    /// - witness: `check::tests::a_closure_naming_an_outer_covariable_is_refused_2769`
+    #[spec(ensures: |ref ret| match ret.as_ref() {
+        | Ok(&()) => self.arena.node_scope(body).is_some_and(|scope| scope
+            .covariables()
+            .outside(Zone::Intuitionistic, BinderDepth::from(usize::from(opened)))
+            .next()
+            .is_none()),
+        | Err(&CheckRefusal::OuterCovariable { closure: named, .. }) => named == closure,
+        | Err(_) => true,
+    })]
+    fn second_class(
+        &self,
+        closure: NodeAddress,
+        body: NodeAddress,
+        opened: ConsumerArity,
+    ) -> Result<(), CheckRefusal>
+    {
+        let scope = self.arena.node_scope(body).ok_or_else(|| dangling(body))?;
+        let crossed = BinderDepth::from(usize::from(opened));
+        scope
+            .covariables()
+            .outside(Zone::Intuitionistic, crossed)
+            .next()
+            .map_or(Ok(()), |index| {
+                let past = u32::try_from(usize::from(opened)).unwrap_or(u32::MAX);
+                Err(CheckRefusal::OuterCovariable {
+                    closure,
+                    covariable: CovariableIndex::from(u32::from(index).saturating_sub(past)),
+                })
+            })
     }
 
     /// Hold `node`'s annotations to the annotation arena.

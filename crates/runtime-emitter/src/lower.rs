@@ -57,18 +57,22 @@
 //!   in a delivery, so nothing falls through a label.
 //! - **A closure captures what it names.** A thunk, a fixpoint, a copattern
 //!   object and a fold's cell closure evaluate to a closure over the slots
-//!   their support selects past their own binders — producer variables, linear
-//!   cells and covariable marks alike, a falling-through covariable needing
-//!   none — each pushed in the creator's binding order and popped into the
-//!   closure. The body's entry, laid out after the creator's code, allocates a
-//!   fresh window in the window region, copies the captures into its first
-//!   slots and binds its own binders above them; in the body's scope every
-//!   binder the creator had still counts, so the body's indices resolve
-//!   unchanged, and one it does not capture holds no slot. A window is never
-//!   shared, so a frame resumed in it finds its slots as it left them. The
-//!   alternative, copying the creator's whole window prefix, kept every binding
-//!   in reach alive in every closure, which a counted runtime cannot afford: a
-//!   closure owns exactly what it names.
+//!   their support selects past their own binders — producer variables and
+//!   linear cells, never a covariable — each pushed in the creator's binding
+//!   order and popped into the closure. A closure is second-class in the frame
+//!   region: it holds no mark, since the frame a mark names may be popped and
+//!   its place taken before the closure runs. `check_command` refuses a closure
+//!   naming a covariable outside its own binders, and one that reaches the
+//!   lowering fails to lower: an outer covariable is unbound in its body. The
+//!   body's entry, laid out after the creator's code, allocates a fresh window
+//!   in the window region, copies the captures into its first slots and binds
+//!   its own binders above them; in the body's scope every binder the creator
+//!   had still counts, so the body's indices resolve unchanged, and one it does
+//!   not capture holds no slot. A window is never shared, so a frame resumed in
+//!   it finds its slots as it left them. The alternative, copying the creator's
+//!   whole window prefix, kept every binding in reach alive in every closure,
+//!   which a counted runtime cannot afford: a closure owns exactly what it
+//!   names.
 //! - **An observation enters code.** Delivering to `apply(p; c)` or `force(c)`
 //!   saves the observed value and the argument in slots, loads `c`, and jumps
 //!   to the closure's entry; loading `c` pushes, for each destructor on it, a
@@ -597,7 +601,9 @@ impl Scopes
 
     /// The base of a closure body's scope over the creator's `scope`: every
     /// binder that counts in an index space, outermost first, those `captured`
-    /// selects in a fresh slot each, in order, and the rest holding none.
+    /// selects in a fresh slot each, in order, and the rest holding none. A
+    /// covariable is never captured: each outside the body's own binders is
+    /// bound there as a mark it holds none of, unbound to load or deliver to.
     /// Answers the base and the creator's slot each capture copies, in slot
     /// order.
     ///
@@ -622,7 +628,7 @@ impl Scopes
     {
         let mut chain = Vec::new();
         let mut cursor = scope;
-        let (mut producers, mut linears, mut covariables) = (Index(0), Index(0), Index(0));
+        let (mut producers, mut linears) = (Index(0), Index(0));
         while let Scope::At(at) = cursor {
             let Some(&binder) = self.binders.get(at)
             else {
@@ -631,13 +637,10 @@ impl Scopes
             let kept = match binder.binding {
                 Binding::Producer => Some(captured.producers.contains(&next(&mut producers).0)),
                 Binding::Linear => Some(captured.linears.contains(&next(&mut linears).0)),
-                Binding::Covariable | Binding::Returns => {
-                    Some(captured.covariables.contains(&next(&mut covariables).0))
-                },
-                Binding::FallThrough | Binding::Returning => {
-                    let _index = next(&mut covariables);
-                    Some(false)
-                },
+                Binding::Covariable
+                | Binding::Returns
+                | Binding::FallThrough
+                | Binding::Returning => Some(false),
                 Binding::Temporary => None,
             };
             if let Some(kept) = kept {
@@ -658,7 +661,7 @@ impl Scopes
             };
             self.binders.push(Binder {
                 parent: base,
-                binding: binder.binding,
+                binding: binder.binding.space(),
                 slot,
                 depth: slot.map_or(depth, |taken| Slot(taken.0.saturating_add(1))),
             });
@@ -680,7 +683,8 @@ fn next(counter: &mut Index) -> Index
 }
 
 /// What a closure body names outside its own binders, as indices counted where
-/// the closure is created, per index space.
+/// the closure is created, per index space a capture copies from: no covariable
+/// is captured.
 #[derive(Debug, Default)]
 struct Captured
 {
@@ -688,27 +692,23 @@ struct Captured
     producers: BTreeSet<u32>,
     /// The linear variables.
     linears: BTreeSet<u32>,
-    /// The covariables.
-    covariables: BTreeSet<u32>,
 }
 
-/// The binders a closure body's own entry opens, which its captures lie past.
+/// The producer binders a closure body's own entry opens, which its captures
+/// lie past.
+#[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
 struct Crossed
 {
     /// The producer binders.
     producers: u32,
-    /// The covariables.
-    covariables: u32,
 }
 
 impl Crossed
 {
-    /// None: a producer's support already lies past its own binders.
-    const NONE: Self = Self {
-        producers: 0,
-        covariables: 0,
-    };
+    /// None: a producer's support already lies past its own binders, and a
+    /// fold's empty branch opens only a covariable.
+    const NONE: Self = Self { producers: 0 };
 }
 
 /// A de Bruijn index, as the lowering counts it.
@@ -1461,12 +1461,6 @@ impl Lowering<'_>
                 crossed.producers,
             ),
             linears: past(support.producers().outside(Zone::Linear, depth(0)), 0),
-            covariables: past(
-                support
-                    .covariables()
-                    .outside(Zone::Intuitionistic, depth(crossed.covariables)),
-                crossed.covariables,
-            ),
         };
         Ok(self.scopes.enclose(scope, &captured))
     }
@@ -1848,11 +1842,9 @@ impl Lowering<'_>
         let (with_tail, tail) = self.bind(with_head, Binding::Temporary);
         self.emit(StencilId::Field, tail.operand(), Slot(1).operand());
         // The cell branch binds the head, the tail's result and a covariable;
-        // the head is bound here, the other two by the closure's entry.
-        let crossed = Crossed {
-            producers: 1,
-            covariables: 1,
-        };
+        // the head is bound here, the other two by the closure's entry, and
+        // the covariable is captured by none.
+        let crossed = Crossed { producers: 1 };
         let (base, label) = self.suspend(
             with_head,
             NodeAddress::Command(on_cons),
@@ -1879,10 +1871,7 @@ impl Lowering<'_>
         self.function.bind(empty);
         self.emit(StencilId::Bind, list.operand(), Operand::Unused);
         self.emit(StencilId::Drop, list.operand(), Operand::Unused);
-        let past = Crossed {
-            producers: 2,
-            covariables: 1,
-        };
+        let past = Crossed { producers: 2 };
         for capture in self.named(NodeAddress::Command(on_cons), scope, past)? {
             self.emit(StencilId::Drop, capture.operand(), Operand::Unused);
         }
@@ -2073,7 +2062,6 @@ impl Lowering<'_>
     {
         let returned = self.owners(NodeAddress::Command(on_return), scope, Crossed {
             producers: 1,
-            covariables: 1,
         })?;
         let kept = self.kept(handle, scope)?;
         self.owners.extend(kept);
@@ -3073,7 +3061,6 @@ impl Lowering<'_>
                             let owners =
                                 self.owners(NodeAddress::Command(body), scope, Crossed {
                                     producers: 1,
-                                    covariables: 1,
                                 })?;
                             let label = self.frame_label(Some(owners));
                             self.blocks.push((label, Task::Bound(body, scope)));
@@ -3698,13 +3685,9 @@ impl Lowering<'_>
                 // The frame owns what the empty branch and the cell branch
                 // each select: the walk gives the cell branch's up at the
                 // empty list.
-                let empty = self.owners(NodeAddress::Command(on_nil), scope, Crossed {
-                    producers: 0,
-                    covariables: 1,
-                })?;
+                let empty = self.owners(NodeAddress::Command(on_nil), scope, Crossed::NONE)?;
                 let cells = self.owners(NodeAddress::Command(on_cons), scope, Crossed {
                     producers: 2,
-                    covariables: 1,
                 })?;
                 let label = self.frame_label(Some(OwnerRun(empty.0.start .. cells.0.end)));
                 self.blocks.push((label, Task::Fold(id, scope)));

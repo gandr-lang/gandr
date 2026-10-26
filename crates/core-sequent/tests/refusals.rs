@@ -14,6 +14,7 @@ use gandr_core_sequent::CheckRefusal;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::ConsumerArity;
 use gandr_core_sequent::ConsumerId;
+use gandr_core_sequent::CovariableIndex;
 use gandr_core_sequent::DestructorTag;
 use gandr_core_sequent::FocusRefusal;
 use gandr_core_sequent::HeapFamily;
@@ -106,8 +107,9 @@ fn mint_refusals_and_addresses_name_what_they_blame()
 }
 
 /// Each well-formedness refusal reads apart from the others, names its
-/// address, carries the node an annotation dangles from, and reads a
-/// declared arity before the found one.
+/// address, carries the node an annotation dangles from, reads a declared
+/// arity before the found one, and names a closure before the covariable it
+/// names.
 #[test]
 fn check_refusals_name_the_node_and_the_counts_in_order()
 {
@@ -135,6 +137,10 @@ fn check_refusals_name_the_node_and_the_counts_in_order()
             found: ConsumerArity::from(3_usize),
         },
         CheckRefusal::DuplicateArm(head),
+        CheckRefusal::OuterCovariable {
+            closure: NodeAddress::Producer(ProducerId::from(27_u32)),
+            covariable: CovariableIndex::from(28_u32),
+        },
     ]);
     let blamed: Vec<&[u64]> = messages
         .iter()
@@ -150,6 +156,7 @@ fn check_refusals_name_the_node_and_the_counts_in_order()
         &[1, 2],
         &[1, 3],
         &[],
+        &[27, 28],
     ]);
     assert!(messages[3].message.contains(&node.to_string()));
 }

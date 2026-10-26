@@ -11,6 +11,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use gandr_core_sequent::CheckRefusal;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::CommandNode;
@@ -27,9 +28,11 @@ use gandr_core_sequent::FreeSet;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::MotiveHead;
+use gandr_core_sequent::NodeAddress;
 use gandr_core_sequent::Outcome;
 use gandr_core_sequent::PatternArm;
 use gandr_core_sequent::ProducerArity;
+use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Provenance;
 use gandr_core_sequent::ReadbackRefusal;
@@ -3367,4 +3370,101 @@ fn reified_nested_frames_run_in_order()
     assert_eq!(second, Side::Left.into());
     assert_eq!(Some(&Value::unit()), core.value(first_unit));
     assert_eq!(Some(&Value::unit()), core.value(last_unit));
+}
+
+/// `⟨μα. ⟨{force(β) ⇒ ⟨5 |+ α⟩} |+ α⟩ |+ μ̃x. ⟨x |+ force(μ̃y. ⟨7 |+ ★⟩)⟩⟩`:
+/// a thunk naming the covariable `α` outside its own binder is delivered to
+/// `α` itself, and forced after `α`'s frame is gone.
+///
+/// # Specification
+/// trivial.
+fn escaping_thunk(arena: &mut CommandArena) -> (CommandId, ProducerId)
+{
+    let literal = |arena: &mut CommandArena, digits: &'static str| {
+        let magnitude = Magnitude::from_decimal_text(String::from(digits)).expect("decimal digits");
+        arena
+            .mint_producer(ProducerNode::Literal(Literal::Integer(
+                IntegerLiteral::new(Sign::NonNegative, magnitude),
+            )))
+            .expect("a literal mints")
+    };
+    let five = literal(arena, "5");
+    let outer = arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(1_u32)))
+        .expect("a covariable mints");
+    let delivered = arena
+        .mint_cut(Polarity::Positive, five, outer)
+        .expect("a cut mints");
+    let thunk = arena
+        .mint_producer(ProducerNode::Thunk { body: delivered })
+        .expect("a thunk mints");
+    let own = arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("a covariable mints");
+    let escaped = arena
+        .mint_cut(Polarity::Positive, thunk, own)
+        .expect("a cut mints");
+    let captured = arena
+        .mint_producer(ProducerNode::Mu { body: escaped })
+        .expect("a capture mints");
+    let seven = literal(arena, "7");
+    let top = arena
+        .mint_consumer(ConsumerNode::Top)
+        .expect("the top mints");
+    let answered = arena
+        .mint_cut(Polarity::Positive, seven, top)
+        .expect("a cut mints");
+    let then = arena
+        .mint_consumer(ConsumerNode::MuTilde { body: answered })
+        .expect("a binder mints");
+    let force = arena
+        .mint_consumer(ConsumerNode::Destructor {
+            tag: DestructorTag::Force,
+            producers: Box::from([]),
+            consumers: Box::from([then]),
+        })
+        .expect("a force frame mints");
+    let bound = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        })
+        .expect("a variable mints");
+    let forced = arena
+        .mint_cut(Polarity::Positive, bound, force)
+        .expect("a cut mints");
+    let binder = arena
+        .mint_consumer(ConsumerNode::MuTilde { body: forced })
+        .expect("a binder mints");
+    let root = arena
+        .mint_cut(Polarity::Positive, captured, binder)
+        .expect("a cut mints");
+    (root, thunk)
+}
+
+/// A thunk naming the covariable outside its own binder is refused by the
+/// check, and declined by the lowering as unbound: it ran to 7, resuming the
+/// force frame that took the covariable's frame's place, where the calculus
+/// gets stuck forcing 5.
+///
+/// # Specification
+/// trivial.
+#[test]
+fn a_thunk_escaping_its_covariable_is_refused_before_it_runs_2769()
+{
+    let mut arena = CommandArena::new();
+    let (root, thunk) = escaping_thunk(&mut arena);
+    assert_eq!(
+        check_command(&arena, root),
+        Err(CheckRefusal::OuterCovariable {
+            closure: NodeAddress::Producer(thunk),
+            covariable: CovariableIndex::from(0_u32),
+        })
+    );
+    let run = ran(&arena, &Definitions::new(), root, budget());
+    assert!(
+        matches!(run, Err(Declined::Lowering(Form::Unbound))),
+        "the escaping thunk declines as unbound: {}",
+        fingerprint(&run)
+    );
 }
