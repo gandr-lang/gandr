@@ -1,0 +1,122 @@
+[
+  {
+    "name": "the last sub-issue to close closes its epic, naming itself",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "parent": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "sub_issues": [
+        {
+          "number": 11,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        },
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ]
+    },
+    "output": "close\tClosed by its last sub-issue #12."
+  },
+  {
+    "name": "an open sibling keeps the epic open, named, in this repository or another",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "parent": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "sub_issues": [
+        {
+          "number": 11,
+          "repository": "gandr-lang/gandr",
+          "state": "open"
+        },
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        },
+        {
+          "number": 5,
+          "repository": "gandr-lang/domhringr",
+          "state": "open"
+        }
+      ]
+    },
+    "output": "keep\t#11, gandr-lang/domhringr#5 still open"
+  },
+  {
+    "name": "a parent that is not an epic is kept",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "parent": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "open",
+        "labels": ["kind:feature"]
+      },
+      "sub_issues": [
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ]
+    },
+    "output": "keep\tthe parent is not an epic"
+  },
+  {
+    "name": "a parent already closed is kept",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "parent": {
+        "number": 10,
+        "repository": "gandr-lang/gandr",
+        "state": "closed",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "sub_issues": [
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ]
+    },
+    "output": "keep\tthe parent is closed"
+  },
+  {
+    "name": "an epic in another repository is listed, not closed",
+    "input": {
+      "repo": "gandr-lang/gandr",
+      "closed": 12,
+      "parent": {
+        "number": 400,
+        "repository": "example-org/plans",
+        "state": "open",
+        "labels": ["kind:epic", "area:workflow"]
+      },
+      "sub_issues": [
+        {
+          "number": 12,
+          "repository": "gandr-lang/gandr",
+          "state": "closed"
+        }
+      ]
+    },
+    "output": "list\texample-org/plans#400 is in another repository"
+  }
+]
