@@ -1,7 +1,7 @@
 # The pull request a new one stacks on: the top of the server's open stacks.
 #
 # Input: the open pull requests, each `{number, head, base, created, landing,
-# held}`.
+# held, bot}`.
 # Arguments: `$own`, the branch being opened, left out of the reading;
 # `$trunk`, the default branch.
 # Output: `{number, head, depth, held, landing}` for the open pull request no
@@ -11,9 +11,11 @@
 # is the landing chain's (#1983): the new pull request opens on it unlinked,
 # for a queued stack takes no link (#1353), and when that top merges GitHub
 # moves it to the trunk. `held` is the top's `landing` label: a `pr:land` is
-# waiting to queue it, so `pr:open` waits for the hold to clear (#1556).
+# waiting to queue it, so `pr:open` waits for the hold to clear (#1556). A
+# pull request a bot opened is left out of the reading (#2550): it lands on
+# its own, and its app force-pushes its branch whenever the trunk moves.
 
-[.[] | select(.head != $own)] as $open
+[.[] | select(.head != $own and (.bot // false | not))] as $open
 | def depth($pr):
     [limit(64; $pr | recurse(. as $at | if $at.base == $trunk then empty else ([$open[] | select(.head == $at.base)] | first // empty) end))]
     | length;
