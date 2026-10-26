@@ -223,5 +223,166 @@
       ]
     },
     "output": ""
+  },
+  {
+    "name": "a module added under a concern whose sites all lie in other crates is refused",
+    "input": {
+      "branch": "workflow-2523-concerns",
+      "body": "Closes #2523\n\n## Concerns\n\n- `sharing` — within the memo\n",
+      "concerns": {
+        "ids": ["fork", "oracle", "sharing"],
+        "base": ["fork", "oracle", "sharing"],
+        "sites": [
+          { "concern": "fork", "crate": "core-checker", "module": "fork" },
+          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
+          { "concern": "sharing", "crate": "core-incremental", "module": "" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
+          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
+          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+        ]
+      },
+      "added": ["crates/surface-dispatcher/src/resharing.rs"]
+    },
+    "output": "the change adds `crates/surface-dispatcher/src/resharing.rs`, a module of the concern `sharing`, whose sites lie in `core-incremental`, `core-nbe::duplicate`, `core-nbe::machine`, `core-nbe::overlay`, `core-nbe::resharing`, `kernel-check-memo`, `kernel-core::admission`: declare `- `sharing` — consolidated: <what merged>` in `## Concerns`, or a `new concern` with its row, then run `pr:open` again"
+  },
+  {
+    "name": "the same module declared `consolidated` opens",
+    "input": {
+      "branch": "workflow-2523-concerns",
+      "body": "Closes #2523\n\n## Concerns\n\n- `sharing` — consolidated: the dispatcher's resharing reads core-nbe's memo\n",
+      "concerns": {
+        "ids": ["fork", "oracle", "sharing"],
+        "base": ["fork", "oracle", "sharing"],
+        "sites": [
+          { "concern": "fork", "crate": "core-checker", "module": "fork" },
+          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
+          { "concern": "sharing", "crate": "core-incremental", "module": "" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
+          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
+          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+        ]
+      },
+      "added": ["crates/surface-dispatcher/src/resharing.rs"]
+    },
+    "output": ""
+  },
+  {
+    "name": "a crate added under a concern's id is refused, a module in a crate the concern has a site in and a test file are not",
+    "input": {
+      "branch": "workflow-2523-concerns",
+      "body": "Closes #2523\n",
+      "concerns": {
+        "ids": ["fork", "oracle", "sharing"],
+        "base": ["fork", "oracle", "sharing"],
+        "sites": [
+          { "concern": "fork", "crate": "core-checker", "module": "fork" },
+          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
+          { "concern": "sharing", "crate": "core-incremental", "module": "" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
+          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
+          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+        ]
+      },
+      "added": [
+        "crates/surface-fork/src/lib.rs",
+        "crates/core-nbe/src/memo/resharing.rs",
+        "crates/surface-lowering/src/tests/oracle.rs"
+      ]
+    },
+    "output": "the change adds `crates/surface-fork/src/lib.rs`, a module of the concern `fork`, whose sites lie in `core-checker::fork`, `surface-dispatcher::pool`: declare `- `fork` — consolidated: <what merged>` in `## Concerns`, or a `new concern` with its row, then run `pr:open` again"
+  },
+  {
+    "name": "an unknown concern, an item without a verdict and an item naming none are refused",
+    "input": {
+      "branch": "workflow-2523-concerns",
+      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — within\n- `fork` — touched\n- the workflow tasks\n",
+      "concerns": {
+        "ids": ["fork", "oracle", "sharing"],
+        "base": ["fork", "oracle", "sharing"],
+        "sites": [
+          { "concern": "fork", "crate": "core-checker", "module": "fork" },
+          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
+          { "concern": "sharing", "crate": "core-incremental", "module": "" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
+          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
+          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+        ]
+      },
+      "added": []
+    },
+    "output": "the `## Concerns` item `- the workflow tasks` names no concern: write `- `<id>` — <verdict>`, the verdict `within`, `consolidated: <what merged>` or `new concern: <why none fits>`, then run `pr:open` again\nthe `## Concerns` item `- `pools` — within` names `pools`, no concern of `ledger/concerns.sql`: name one of `fork`, `oracle`, `sharing`, or add its row as a `new concern`, then run `pr:open` again\nthe `## Concerns` item `- `fork` — touched` gives `fork` no verdict: end it with `within`, `consolidated: <what merged>` or `new concern: <why none fits>`, then run `pr:open` again"
+  },
+  {
+    "name": "a new concern needs the row the change adds",
+    "input": {
+      "branch": "workflow-2523-concerns",
+      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — new concern: no fork reads a pool\n- `fork` — new concern: a second fork\n",
+      "concerns": {
+        "ids": ["fork", "oracle", "sharing"],
+        "base": ["fork", "oracle", "sharing"],
+        "sites": [
+          { "concern": "fork", "crate": "core-checker", "module": "fork" },
+          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
+          { "concern": "sharing", "crate": "core-incremental", "module": "" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
+          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
+          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+        ]
+      },
+      "added": []
+    },
+    "output": "the `## Concerns` item `- `pools` — new concern: no fork reads a pool` declares `pools` a new concern, and `ledger/concerns.sql` has no row for it: add the row in this change, then run `pr:open` again\nthe `## Concerns` item `- `fork` — new concern: a second fork` declares `fork` a new concern, and `ledger/concerns.sql` already had it: write `within` or `consolidated: <what merged>`, then run `pr:open` again"
+  },
+  {
+    "name": "a new concern with its row added opens, and lifts the refusal of the module it adds",
+    "input": {
+      "branch": "workflow-2523-concerns",
+      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — new concern: no fork reads a pool\n",
+      "concerns": {
+        "ids": ["fork", "oracle", "sharing", "pools"],
+        "base": ["fork", "oracle", "sharing"],
+        "sites": [
+          { "concern": "fork", "crate": "core-checker", "module": "fork" },
+          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
+          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
+          { "concern": "sharing", "crate": "core-incremental", "module": "" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
+          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
+          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
+          { "concern": "sharing", "crate": "kernel-core", "module": "admission" },
+          { "concern": "pools", "crate": "surface-dispatcher", "module": "fork" }
+        ]
+      },
+      "added": ["crates/surface-dispatcher/src/fork.rs"]
+    },
+    "output": ""
   }
 ]

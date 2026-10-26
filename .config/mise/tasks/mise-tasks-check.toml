@@ -928,10 +928,11 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # the removals it must give: a merge's `Advances` and closing targets, the
 # closed and epic sweep, 12 hours of silence, and an open pull
 # request that keeps a claim. Each case in `.config/claims/opening.json`
-# holds a branch, a body, the issues it works and the tree's lines naming
-# what it supersedes, and the lines `pr:open` prints for them, or none
-# (`opening.jq`): the body must work the branch's issue (#2462) and answer
-# the sources (#2499) and the reading axes (#2522) its issues request.
+# holds a branch, a body, the issues it works, the tree's lines naming what
+# it supersedes, the concerns ledger and the sources the change adds, and the
+# lines `pr:open` prints for them, or none (`opening.jq`): the body must work
+# the branch's issue (#2462), answer the sources (#2499) and the reading axes
+# (#2522) its issues request, and name the concerns it touches (#2523).
 ["check:claims"]
 description = "The claim lifecycle gives each recorded case its removals, and pr:open each body its refusal"
 tools.jq = "1.8.1"

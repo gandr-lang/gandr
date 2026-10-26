@@ -8,6 +8,9 @@
 #   issues    the issues the body works: [{number, body}]
 #   mentions  per key the body supersedes, the tree's lines naming it:
 #             {key: ["<path>:<line>:<text>"]}
+#   concerns  `ledger/concerns.sql` at the head and at the base:
+#             {ids: [id], base: [id], sites: [{concern, crate, module}]}
+#   added     the paths the change adds under `crates/*/src/`
 #
 # A merge takes the claim off what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -25,6 +28,14 @@
 # `## Readings` table, `Family · Axis · Status`, gives each selected axis
 # `answered: <exemplar or site>` or `none: <reason>`, and every row a status
 # from that vocabulary or `not selected`, on one of the six axes.
+#
+# The body names each concern it touches (#2523): an item of its
+# `## Concerns`, `` - `<id>` — <verdict> ``, names a concern of the ledger
+# with `within`, `consolidated: <what merged>` or `new concern: <why none
+# fits>`, the last only for a row the change adds. A module or crate the
+# change adds whose name is a concern's id, or the last segment of one of its
+# sites' modules, belongs to that concern; where every site of it lies in
+# another crate, the body declares it `consolidated`, or a `new concern`.
 
 include "targets";
 include "sections";
@@ -96,4 +107,46 @@ def readings:
         else "the `## Readings` row `\(.line)` has a status outside \(statuses): write one, then run `pr:open` again"
         end);
 
-claim, sources, readings
+# An added source path's module as {path, crate, name}: its last segment, or
+# for a crate root the crate's name past its category; null for a test file
+# or a path outside a crate's `src`.
+def addition:
+  . as $path
+  | (capture("^crates/(?<crate>[^/]+)/src/(?<rest>.+)\\.rs$") // null)
+  | if . == null or (.rest | test("(^|/)tests(/|$)")) then null
+    else .crate as $crate
+    | (.rest | sub("/mod$"; "")) as $rest
+    | {path: $path, crate: $crate, name: (if $rest == "lib" or $rest == "main" then $crate | sub("^[a-z]+-"; "") else $rest | split("/") | last end)}
+    end;
+
+# The refusals of `## Concerns` against the ledger and the modules added.
+def concerns:
+  (.concerns // {ids: [], base: [], sites: []}) as $ledger
+  | "`within`, `consolidated: <what merged>` or `new concern: <why none fits>`" as $verdicts
+  | "`\($ledger.ids | join("`, `"))`" as $known
+  | [(.body | section("Concerns") // []) | items] as $items
+  | [$items[] | keyed | select(. != null) | . as $item | .keys[]
+      | . as $key
+      | {key: $key, line: $item.line, known: ($ledger.ids | index($key) != null), had: ($ledger.base | index($key) != null),
+         verdict: ($item.text | if test("^within\\b") then "within" elif test("^consolidated:\\s*\\S") then "consolidated" elif test("^new concern:\\s*\\S") then "new concern" else null end)}] as $named
+  | ($items[] | select(keyed == null) | "the `## Concerns` item `\(.)` names no concern: write `- `<id>` — <verdict>`, the verdict \($verdicts), then run `pr:open` again"),
+    ($named[]
+      | if .verdict == null then "the `## Concerns` item `\(.line)` gives `\(.key)` no verdict: end it with \($verdicts), then run `pr:open` again"
+        elif .verdict == "new concern" and (.known | not) then "the `## Concerns` item `\(.line)` declares `\(.key)` a new concern, and `ledger/concerns.sql` has no row for it: add the row in this change, then run `pr:open` again"
+        elif .verdict == "new concern" and .had then "the `## Concerns` item `\(.line)` declares `\(.key)` a new concern, and `ledger/concerns.sql` already had it: write `within` or `consolidated: <what merged>`, then run `pr:open` again"
+        elif .known | not then "the `## Concerns` item `\(.line)` names `\(.key)`, no concern of `ledger/concerns.sql`: name one of \($known), or add its row as a `new concern`, then run `pr:open` again"
+        else empty
+        end),
+    ([$named[] | select(.verdict == "new concern" and .known and (.had | not))] | length > 0) as $new
+    | (.added // [])[]
+    | addition
+    | select(. != null)
+    | . as $added
+    | ([$ledger.ids[] | select(. == $added.name)] + [$ledger.sites[] | select(.module != "" and (.module | split("::") | last) == $added.name) | .concern] | unique)[]
+    | . as $concern
+    | [$ledger.sites[] | select(.concern == $concern)] as $sites
+    | select(([$sites[].crate] | index($added.crate)) == null)
+    | select($new or ([$named[] | select(.key == $concern and .verdict == "consolidated")] | length > 0) | not)
+    | "the change adds `\($added.path)`, a module of the concern `\($concern)`, whose sites lie in \($sites | map("`\(.crate)\(if .module == "" then "" else "::\(.module)" end)`") | join(", ")): declare `- `\($concern)` — consolidated: <what merged>` in `## Concerns`, or a `new concern` with its row, then run `pr:open` again";
+
+claim, sources, readings, concerns
