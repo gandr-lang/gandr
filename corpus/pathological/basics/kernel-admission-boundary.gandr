@@ -20,6 +20,6 @@ def wide = 1u32;
 @[ refuses("MalformedLiteral") ]
 def wider = 4294967296u32;
 
-/// The run target returns the string.
+/// The string, named again.
 @[ runs("\"the value zone\"") ]
-pure greeting
+def shown = greeting;

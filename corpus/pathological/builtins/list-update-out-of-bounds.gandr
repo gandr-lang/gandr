@@ -4,4 +4,4 @@
 
 /// The tenth element of a three-element list set to zero (#1106).
 @[ refuses("OutOfFragment.projection_expression") ]
-list.set([1, 2, 3], 9, 0)
+def set = list.set([1, 2, 3], 9, 0);

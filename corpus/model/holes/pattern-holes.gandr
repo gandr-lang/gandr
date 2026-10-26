@@ -35,6 +35,6 @@ def weigh(m : Option) -> Integer {
   }
 }
 
-/// The run target weighs nothing: it checks against `weigh`'s signature,
-/// whose body the hole above leaves refused, so it is not run.
-weigh(NoValue)
+/// Nothing weighed: it checks against `weigh`'s signature, whose body the hole
+/// above leaves refused, so it is not run.
+def weighed() -> Integer { weigh(NoValue) }

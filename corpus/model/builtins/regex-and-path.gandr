@@ -18,7 +18,7 @@ def leaf = path.basename(demo_path);
 @[ refuses("OutOfFragment.projection_expression") ]
 def suffix = path.extension(demo_path);
 
-/// The run target gathers the three in a record, each refused above, so it
-/// names a declaration whose type is not known.
+/// The three gathered in a record, each refused above, so it names a
+/// declaration whose type is not known.
 @[ refuses("UnknownConstant") ]
-#{capture = caps, leaf = leaf, path_ext = suffix}
+def gathered = #{capture = caps, leaf = leaf, path_ext = suffix};

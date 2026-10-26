@@ -20,7 +20,7 @@ def rec origin() -> Point {
   .y => 4
 }
 
-/// The run target sums the coordinates; `origin` is refused above, so it
-/// names a declaration whose type is not known.
+/// The coordinates summed; `origin` is refused above, so it names a
+/// declaration whose type is not known.
 @[ refuses("UnknownConstant") ]
-origin.x + origin.y
+def coordinates() -> Integer { origin.x + origin.y }

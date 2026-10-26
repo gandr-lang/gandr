@@ -26,7 +26,7 @@ def all_even = list.all(thunk { fn (x) { return x > 1 } }, doubled);
 @[ refuses("OutOfFragment.projection_expression") ]
 def flattened = list.flatten([[3, 1], [2, 2]]);
 
-/// The run target sorts the distinct elements; the lowering reads no `list`
-/// primitive yet (#1106).
+/// The distinct elements, sorted; the lowering reads no `list` primitive yet
+/// (#1106).
 @[ refuses("OutOfFragment.projection_expression") ]
-list.sort(list.uniq(flattened))
+def sorted = list.sort(list.uniq(flattened));

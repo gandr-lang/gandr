@@ -63,6 +63,6 @@ def negative() -> f64 {
   -0.6931471805599453f64
 }
 
-/// The run target is the exponential above.
+/// The exponential above, returned.
 @[ runs("1.6487212707001282f64") ]
-grown()
+def exponential() -> f64 { grown() }

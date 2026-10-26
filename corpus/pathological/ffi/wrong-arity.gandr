@@ -8,7 +8,7 @@ extern "c" from "m" {
   def pow(base : f64, exp : f64) -> f64;
 }
 
-/// The run target calls it with its base alone; the lowering reads no
-/// projection yet (#1106), and `m` is the extern block's (#327).
+/// A call with its base alone; the lowering reads no projection yet (#1106),
+/// and `m` is the extern block's (#327).
 @[ refuses("OutOfFragment.projection_expression") ]
-m.pow(2.0f64)
+def squared = m.pow(2.0f64);

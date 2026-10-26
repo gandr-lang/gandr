@@ -1,6 +1,6 @@
 // An ascription states the type its expression must check at: a string
 // ascribed `Integer` is refused at the string.
 
-/// A string ascribed `Integer`, as the run target.
+/// A string ascribed `Integer`.
 @[ refuses("TypeMismatch") ]
-("five" : Integer)
+def five = ("five" : Integer);

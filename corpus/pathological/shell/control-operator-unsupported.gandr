@@ -4,4 +4,4 @@
 
 /// `&&` between two commands (#1057).
 @[ refuses("OutOfFragment.shell_block") ]
-#!{ true && false; }
+def both() -> -F Unit { #!{ true && false; } }

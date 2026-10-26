@@ -1,6 +1,5 @@
 // An update three records deep rebuilds each record on the path, and its cost
-// grows with the depth, not with the records' width. The update is written as
-// the run target.
+// grows with the depth, not with the records' width.
 
 /// Three records, nested.
 def d = #{a = #{b = #{c = 1}}};
@@ -8,4 +7,6 @@ def d = #{a = #{b = #{c = 1}}};
 /// `d.a.b.c` updated, each level rebuilt; each inner base is the field of
 /// the record above it.
 @[ runs("#{.a = #{.b = #{.c = 9}}}") ]
-#{d | a = #{d.a | b = #{d.a.b | c = 9}}}
+def deep() -> #{a : #{b : #{c : Integer}}} {
+  #{d | a = #{d.a | b = #{d.a.b | c = 9}}}
+}

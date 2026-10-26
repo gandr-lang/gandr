@@ -3,4 +3,4 @@
 
 /// One divided by zero.
 @[ runs("stuck: native operation: native integer division by zero") ]
-int.div(1, 0)
+def quotient() -> Integer { int.div(1, 0) }

@@ -22,7 +22,7 @@ module Metrics : #{ type Ratio = Integer, base : Integer, double : Integer, scal
 @[ refuses("NotSynthesisable") ]
 def visible = Metrics.base + Metrics.double + Metrics.scale;
 
-/// The run target returns the sum in a record; `visible` is refused above,
-/// so it names a declaration whose type is not known.
+/// The sum in a record; `visible` is refused above, so it names a declaration
+/// whose type is not known.
 @[ refuses("UnknownConstant") ]
-#{visible = visible}
+def wrapped = #{visible = visible};

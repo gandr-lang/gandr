@@ -1,6 +1,6 @@
 /// `projection_expression`: a projection of a field, `x` off the record
 /// `point` holds.
 @[ checks ]
-def point = #{ x = 1, y = 2 } ;
+def point = #{x = 1, y = 2};
 @[ runs("1") ]
-point.x
+def x() -> Integer { point.x }

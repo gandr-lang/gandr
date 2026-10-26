@@ -4,4 +4,4 @@
 
 /// Three integers, no type stated.
 @[ refuses("NotSynthesisable") ]
-[1, 2, 3]
+def three = [1, 2, 3];

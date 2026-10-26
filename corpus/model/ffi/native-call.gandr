@@ -9,11 +9,10 @@ extern "c" from "./testlib" as testlib {
   def gandr_test_strlen(s : CStr) -> u64;
 }
 
-/// The run target adds twenty-one to itself and measures a string; the
-/// lowering reads no projection yet (#1106), and `testlib` is the extern
-/// block's (#327).
+/// Twenty-one added to itself and a string measured; the lowering reads no
+/// projection yet (#1106), and `testlib` is the extern block's (#327).
 @[ refuses("OutOfFragment.projection_expression") ]
-{
+def measured() -> -F (i64 * i64) {
   run doubled <- testlib.gandr_test_add(21i64, 21i64);
   run length <- testlib.gandr_test_strlen("hello");
   pure (doubled, length)

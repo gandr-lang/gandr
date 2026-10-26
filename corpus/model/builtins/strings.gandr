@@ -40,7 +40,6 @@ def has_suffix = string.ends_with(slogan, "machines");
 @[ refuses("UnknownMember") ]
 def escaped = string.escape("a+b.txt");
 
-/// The run target splits at a comma, which is no member of the native
-/// `string` namespace.
+/// A split at a comma, which is no member of the native `string` namespace.
 @[ refuses("UnknownMember") ]
-string.split("alpha,beta", ",")
+def halves = string.split("alpha,beta", ",");

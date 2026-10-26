@@ -1,5 +1,5 @@
 // Two data types with one shape stay distinct under a type former: a list of
-// `Celsius` is no list of `Fahrenheit`, in a definition or as the run target.
+// `Celsius` is no list of `Fahrenheit`, in any definition that ascribes it.
 
 /// A temperature in Celsius.
 data Celsius : Type {
@@ -16,7 +16,7 @@ data Fahrenheit : Type {
 @[ refuses("TypeMismatch") ]
 def listed = ([Cel(20)] : List(Fahrenheit));
 
-/// The same list as the run target, judged as a declaration is before anything
-/// runs it.
+/// The same list again, judged as every declaration is before anything runs
+/// it.
 @[ refuses("TypeMismatch") ]
-([Cel(20)] : List(Fahrenheit))
+def again = ([Cel(20)] : List(Fahrenheit));

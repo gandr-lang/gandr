@@ -1,9 +1,9 @@
-// A definition names a value, and a source's final expression is its run
-// target: the program's result, here the value the definition names.
+// A definition names a value, and another definition may name it again: both
+// run to the value the first names.
 
 /// A string, named.
 def greeting = "the value zone";
 
-/// The run target returns the named value.
+/// The named value, named again.
 @[ runs("\"the value zone\"") ]
-pure greeting
+def shown = greeting;

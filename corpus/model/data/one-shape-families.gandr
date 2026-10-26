@@ -69,7 +69,7 @@ def carriedScrutinised() -> Integer {
   case transport(\X. X, ua(relabel), Cel(20)) { Fah(x) => x }
 }
 
-/// The run target carries another Celsius value along the same path. No
-/// signature states its type: the transport's own type is `Fahrenheit`.
+/// Another Celsius value carried along the same path. No signature states its
+/// type: the transport's own type is `Fahrenheit`.
 @[ runs("Fah(36)") ]
-transport(\X. X, ua(relabel), Cel(36))
+def carried = transport(\X. X, ua(relabel), Cel(36));

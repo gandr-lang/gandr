@@ -4,6 +4,6 @@
 /// and `3`, ending in the empty list (#1544).
 def xs = ([1, 2, 3] : List(Integer));
 
-/// The run target prepends a zero; the lowering admits no `++` yet (#1997).
+/// A zero prepended; the lowering admits no `++` yet (#1997).
 @[ refuses("OutOfFragment.binary_expression") ]
-[0] ++ xs
+def prefixed = [0] ++ xs;

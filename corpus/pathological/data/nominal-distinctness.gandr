@@ -1,6 +1,6 @@
 // Two data types with one shape are distinct: a `Celsius` value is no
 // `Fahrenheit`, whether the source ascribes it the other type, names that
-// type through an alias or writes the ascription as its run target; its twin,
+// type through an alias or ascribes it in a definition; its twin,
 // `model/data/one-shape-families.gandr`, carries the value along the path an
 // equivalence makes.
 
@@ -26,7 +26,7 @@ def ascribed = (Cel(20) : Fahrenheit);
 @[ refuses("TypeMismatch") ]
 def aliased = (Cel(20) : Temp);
 
-/// A Celsius value ascribed Fahrenheit as the run target, judged as a
-/// declaration is before anything runs it.
+/// A Celsius value ascribed Fahrenheit, judged as every declaration is before
+/// anything runs it.
 @[ refuses("TypeMismatch") ]
-(Cel(20) : Fahrenheit)
+def mislabelled = (Cel(20) : Fahrenheit);

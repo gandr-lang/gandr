@@ -14,7 +14,7 @@ def open_it(p : package [T] +U[0] (-F #{seed : T})) -> -F Integer {
   return 1
 }
 
-/// The run target opens it; `open_it` is refused above, so it names a
-/// declaration whose type is not known.
+/// It opened; `open_it` is refused above, so it names a declaration whose type
+/// is not known.
 @[ refuses("UnknownConstant") ]
-open_it(closed)
+def opened() -> Integer { open_it(closed) }

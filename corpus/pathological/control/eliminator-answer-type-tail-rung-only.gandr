@@ -1,9 +1,12 @@
 // An `else if` chain whose answer is written on a later rung alone. A rung's
 // written answer types that rung's case; the chain is the head's case, whose
-// head writes none, so where nothing states its type the run target is not
-// synthesisable (#2089).
+// head writes none, so where nothing states its type, as at a `run` binding
+// it, the chain is not synthesisable (#2089).
 
 /// The answer written on the second rung only: the chain's head answers
-/// nothing.
+/// nothing, so the `run` binding it reads no type off it.
 @[ refuses("NotSynthesisable") ]
-if false { pure 0 } else if true -> -F Integer { pure 1 } else { pure 2 }
+def answered() -> Integer {
+  run n <- if false { pure 0 } else if true -> -F Integer { pure 1 } else { pure 2 };
+  pure n
+}

@@ -17,6 +17,6 @@ def classify(c : Color) -> Integer {
   }
 }
 
-/// The run target names the function: it checks against `classify`'s
-/// signature, whose body is refused above, so it is not run.
-classify
+/// The function, named again: it checks against `classify`'s signature, whose
+/// body is refused above, so it is not run.
+def named = classify;

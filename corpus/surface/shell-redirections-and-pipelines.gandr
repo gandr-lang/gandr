@@ -1,7 +1,7 @@
 // A shell block reads redirections, pipelines and control operators as
 // written. Every block but the last stands before another root form, a stray
-// refused where it stands; the last is the run target, which the lowering
-// admits no shell block for yet (#1057).
+// refused where it stands; the last is a definition's body, which the
+// lowering admits no shell block for yet (#1057).
 
 /// Standard output written to a file, a stray.
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
@@ -39,6 +39,6 @@
 @[ refuses("OutOfFragment.WrongSort.declaration") ]
 #!{ probe || abort; }
 
-/// A command sent to the background, the run target (#1057).
+/// A command sent to the background, in a definition (#1057).
 @[ refuses("OutOfFragment.shell_block") ]
-#!{ warm; run & }
+def backgrounded() -> -F Unit { #!{ warm; run & } }

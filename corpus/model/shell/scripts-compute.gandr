@@ -3,7 +3,7 @@
 
 /// A banner printed on the host, then searched for a word (#1057).
 @[ refuses("OutOfFragment.shell_block") ]
-{
+def searched() -> -F Bool {
   run banner <- #!{ printf 'hello from gandr\n'; };
   string.contains(banner.stdout, "gandr")
 }

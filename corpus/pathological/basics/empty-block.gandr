@@ -1,6 +1,6 @@
 // A block of no statements computes nothing: it is refused by its arity, as
-// the run target here.
+// a definition's body here.
 
 /// An empty block.
 @[ refuses("OutOfFragment.Arity") ]
-{}
+def nothing() -> -F Unit {}

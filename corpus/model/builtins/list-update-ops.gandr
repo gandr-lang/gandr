@@ -34,7 +34,11 @@ def appended = list.append(tens, [40, 50]);
 @[ refuses("OutOfFragment.projection_expression") ]
 def concatenated = list.concat([tens, [40, 50]]);
 
-/// The run target doubles every element over fifteen; the lowering reads no
-/// `list` primitive yet (#1106).
+/// Every element over fifteen doubled; the lowering reads no `list` primitive
+/// yet (#1106).
 @[ refuses("OutOfFragment.projection_expression") ]
-list.update_where(thunk { fn (n) { return n > 15 } }, thunk { fn (n) { return n * 2 } }, tens)
+def doubled_over_fifteen = list.update_where(
+  thunk { fn (n) { return n > 15 } },
+  thunk { fn (n) { return n * 2 } },
+  tens
+);
