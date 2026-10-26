@@ -1906,6 +1906,10 @@ jobs:
         run: mise run check:publish
       - name: check the crate map
         run: mise run check:crate-map
+      # The purposes ledger documents only the crates it rows, so its rustdoc
+      # build grows with the ledger rather than with the workspace.
+      - name: check the purposes ledger
+        run: mise run check:purposes
       # One commitlint run per non-merge commit, so the agent-commit rules see
       # that commit's own author: the config resolves it from
       # COMMITLINT_COMMIT. A root commit has no parent to range from; its

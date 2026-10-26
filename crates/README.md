@@ -24,6 +24,8 @@ An arrow is one category's dependencies on another. Its label counts the `[depen
 
 A concern is an interface that cuts across crates. [`ledger/concerns.sql`](../ledger/concerns.sql) records each concern and its sites, each site a crate and module that defines, implements or consumes the concern. For `sharing`, each site also names the descent datum its mechanism glues: positions, cover, compatibility, gluing and the certificate the kernel replays. The per-crate map draws each concern as a dashed overlay through its crates. The check fails while a concern has no site, while a site names a module its crate lacks, or while a concern's interface trait is implemented outside a test where no site names it. Edit a row by hand, then run `mise run ledger:concerns` to normalize the file.
 
+[`ledger/purposes.sql`](../ledger/purposes.sql) says what each library's public items, modules and root are for: one row each, with a one-sentence purpose, its concerns, a naming verdict and a documentation verdict, each column defined in the schema there. `mise run purposes:list <crate>` prints a crate's entries beside their rows. `mise run check:purposes` fails while a crate with a row has a public item without one, or a row names no item; a crate with no row waits for its first pass.
+
 <!-- crate-map:begin -->
 ```mermaid
 flowchart BT
@@ -125,7 +127,7 @@ The policy library and the gate binary are not members: they come from [quenchan
 
 ## Crate README shape
 
-A crate's `README.md` is its only document: an overview and conceptual entry that links into the crate's `src/lib.rs` `//!` docs and the owning module, where mechanism, invariants, decisions (choice, alternatives, reversal) and specification detail live and `check:doc` builds them. A crate carries no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, linked from the README once; a measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside `README.md`, `CHANGELOG.md`, `crates/README.md`, `crates/*/README.md` and `contrib/*/README.md`, and a README over its budget in `sizelint.toml`.
+A crate's `README.md` is its only document: an overview and conceptual entry that links into the crate's `src/lib.rs` `//!` docs and the owning module, where mechanism, invariants and specification detail live and `check:doc` builds them; a decision's choice, alternatives and reversal live in its pull request and issue. A crate carries no `docs/` directory and no changelog of its own. A behavioural floor or a deferred-row ledger is a tracking issue, linked from the README once; a measurement or a report belongs to neither. `check:markdown` refuses tracked markdown outside `README.md`, `CHANGELOG.md`, `crates/README.md`, `crates/*/README.md` and `contrib/*/README.md`, and a README over its budget in `sizelint.toml`.
 
 Every crate README follows one order. A section is present when the crate has content for it.
 

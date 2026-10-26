@@ -1,0 +1,73 @@
+[
+  {
+    "name": "an item keeps the private module that defines it; the module and the crate root have entries; a variant and a foreign item have none",
+    "args": { "crate": "x-y" },
+    "input": {
+      "format_version": 58,
+      "index": {
+        "0": { "span": { "filename": "crates/x-y/src/lib.rs", "begin": [1, 1], "end": [40, 1] } },
+        "1": { "span": { "filename": "crates/x-y/src/memo.rs", "begin": [3, 1], "end": [9, 2] } },
+        "2": { "span": { "filename": "crates/x-y/src/memo.rs", "begin": [5, 5], "end": [5, 10] } }
+      },
+      "paths": {
+        "0": { "crate_id": 0, "path": ["gandr_x_y"], "kind": "module" },
+        "1": { "crate_id": 0, "path": ["gandr_x_y", "memo", "Memo"], "kind": "struct" },
+        "2": { "crate_id": 0, "path": ["gandr_x_y", "memo", "Memo", "Fresh"], "kind": "variant" },
+        "3": { "crate_id": 1, "path": ["core", "option", "Option"], "kind": "enum" }
+      }
+    },
+    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\nx-y\tmemo\tmodule\tcrates/x-y/src/memo.rs\nx-y\tmemo::Memo\tstruct\tcrates/x-y/src/memo.rs:3"
+  },
+  {
+    "name": "the items one macro invocation generates with their module share its span and are its entry",
+    "args": { "crate": "x-y" },
+    "input": {
+      "format_version": 58,
+      "index": {
+        "0": { "span": { "filename": "crates/x-y/src/lib.rs", "begin": [1, 1], "end": [40, 1] } },
+        "1": { "span": { "filename": "crates/x-y/src/site.rs", "begin": [10, 1], "end": [20, 2] } },
+        "2": { "span": { "filename": "crates/x-y/src/site.rs", "begin": [10, 1], "end": [20, 2] } },
+        "3": { "span": { "filename": "crates/x-y/src/site.rs", "begin": [10, 1], "end": [20, 2] } },
+        "4": { "span": { "filename": "crates/x-y/src/site.rs", "begin": [10, 1], "end": [20, 2] } },
+        "5": { "span": { "filename": "crates/x-y/src/site.rs", "begin": [30, 1], "end": [34, 2] } }
+      },
+      "paths": {
+        "0": { "crate_id": 0, "path": ["gandr_x_y"], "kind": "module" },
+        "1": { "crate_id": 0, "path": ["gandr_x_y", "site", "reason"], "kind": "module" },
+        "2": { "crate_id": 0, "path": ["gandr_x_y", "site", "reason", "Absent"], "kind": "enum" },
+        "3": { "crate_id": 0, "path": ["gandr_x_y", "site", "reason", "Reason"], "kind": "trait" },
+        "4": {
+          "crate_id": 0,
+          "path": ["gandr_x_y", "site", "reason", "sealed", "Sealed"],
+          "kind": "trait"
+        },
+        "5": { "crate_id": 0, "path": ["gandr_x_y", "site", "Site"], "kind": "struct" }
+      }
+    },
+    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\nx-y\tsite\tmodule\tcrates/x-y/src/site.rs\nx-y\tsite::Site\tstruct\tcrates/x-y/src/site.rs:30\nx-y\tsite::reason\tmodule\tcrates/x-y/src/site.rs:10"
+  },
+  {
+    "name": "a module and a function with one name are two entries, the module at its declaration",
+    "args": { "crate": "x-y" },
+    "input": {
+      "format_version": 58,
+      "index": {
+        "0": { "span": { "filename": "crates/x-y/src/lib.rs", "begin": [1, 1], "end": [40, 1] } },
+        "1": { "span": { "filename": "crates/x-y/src/parse.rs", "begin": [1, 1], "end": [60, 1] } },
+        "2": { "span": { "filename": "crates/x-y/src/lib.rs", "begin": [20, 1], "end": [25, 2] } }
+      },
+      "paths": {
+        "0": { "crate_id": 0, "path": ["gandr_x_y"], "kind": "module" },
+        "1": { "crate_id": 0, "path": ["gandr_x_y", "parse"], "kind": "module" },
+        "2": { "crate_id": 0, "path": ["gandr_x_y", "parse"], "kind": "function" }
+      }
+    },
+    "output": "x-y\t\tcrate\tcrates/x-y/src/lib.rs:1\nx-y\tparse\tfunction\tcrates/x-y/src/lib.rs:20\nx-y\tparse\tmodule\tcrates/x-y/src/parse.rs:1"
+  },
+  {
+    "name": "another rustdoc JSON format is refused",
+    "args": { "crate": "x-y" },
+    "input": { "format_version": 59, "index": {}, "paths": {} },
+    "fails": true
+  }
+]

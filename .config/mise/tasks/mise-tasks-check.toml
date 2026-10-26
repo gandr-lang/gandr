@@ -893,6 +893,106 @@ fi
 echo "crate map check OK: $(jq '.packages | length' "$fresh/metadata.json") crates, every edge down the layering, $(concerns 'SELECT count(*) FROM concern;') concerns on $(concerns 'SELECT count(*) FROM site;') sites, the map current"
 '''
 
+# The purposes ledger (`ledger/purposes.sql`): the dump builds with every
+# constraint holding and is its own re-dump, and every concern tag is a key of
+# `ledger/concerns.sql`, once in its row. A crate with a row is held to its
+# entries as `purposes:items` reads them: every public item has a row, every
+# row names an entry, a crate row lands with a row for every module, and a
+# module row with the crate row. A crate with no row is not read: it waits
+# for its first pass. Each case in `.config/purposes/cases.json` holds the
+# entry program's arguments, an input, and the output it must give or that it
+# fails. Every finding is printed before the gate fails.
+["check:purposes"]
+description = "Every public item of a crate the purposes ledger rows has its row, and every row names an item"
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+fresh=$(mktemp -d)
+trap 'rm -rf "$fresh"' EXIT
+failed=0
+while IFS= read -r case; do
+  mapfile -t args < <(jq -r '.args | to_entries[] | "--argjson", .key, (.value | tojson)' <<< "$case")
+  fails=$(jq -r '.fails // false' <<< "$case")
+  if got=$(jq .input <<< "$case" | jq -r "${args[@]}" -f .config/purposes/items.jq 2> /dev/null); then
+    [[ $fails == false && "$got" == "$(jq -r .output <<< "$case")" ]] || got="gave: $got"
+  else
+    [[ $fails == true ]] || got='failed'
+  fi
+  if [[ $got == 'gave: '* || $got == failed ]]; then
+    printf 'purposes entry case FAILED: %s\n  %s\n' "$(jq -r .name <<< "$case")" "$got" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' .config/purposes/cases.json)
+db="$fresh/purposes.db"
+sqlite3 -bail "$db" < ledger/purposes.sql
+sqlite3 "$db" .dump > "$fresh/purposes.sql"
+if ! cmp -s "$fresh/purposes.sql" ledger/purposes.sql; then
+  diff -u ledger/purposes.sql "$fresh/purposes.sql" >&2 || true
+  echo 'ledger/purposes.sql is not its own re-dump; normalize it with `mise run ledger:purposes`' >&2
+  failed=1
+fi
+sqlite3 -bail "$db" < ledger/concerns.sql
+mapfile -t rowed < <(sqlite3 "$db" 'SELECT DISTINCT crate FROM purpose ORDER BY crate;')
+touch "$fresh/entries.tsv"
+if (( ${#rowed[@]} )); then mise run --quiet purposes:items "${rowed[@]}" > "$fresh/entries.tsv"; fi
+sqlite3 -bail -tabs "$db" 'CREATE TABLE entry(crate TEXT, path TEXT, kind TEXT, location TEXT);' ".import $fresh/entries.tsv entry"
+findings=$(sqlite3 -bail "$db" <<'SQL'
+WITH named(crate, path, kind, shown) AS (
+  SELECT crate, path, kind, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM purpose
+),
+listed(crate, path, kind, location, shown) AS (
+  SELECT crate, path, kind, location, crate || CASE path WHEN '' THEN '' ELSE '::' || path END FROM entry
+),
+tags(crate, path, kind, shown, tag) AS (
+  SELECT n.crate, n.path, n.kind, n.shown, t.value
+  FROM purpose p JOIN named n USING (crate, path, kind), json_each('["' || replace(p.concerns, ' ', '","') || '"]') t
+  WHERE p.concerns IS NOT NULL
+)
+SELECT crate || ': rows for no crate with a library under crates/; correct the crate or delete its rows'
+FROM (SELECT DISTINCT crate FROM purpose WHERE crate NOT IN (SELECT crate FROM entry))
+UNION ALL
+SELECT l.shown || ' (' || l.kind || ', ' || l.location || '): a public item with no row; add'
+  || ' INSERT INTO purpose VALUES(' || quote(l.crate) || ',' || quote(l.path) || ',' || quote(l.kind)
+  || ',''<purpose>'',<concerns>,''<naming>'',''<doc>'',<finding>);'
+  || ' to ledger/purposes.sql, each column as its schema there states, then run `mise run ledger:purposes`'
+FROM listed l
+WHERE l.kind NOT IN ('crate', 'module')
+  AND NOT EXISTS (SELECT 1 FROM purpose p WHERE (p.crate, p.path, p.kind) = (l.crate, l.path, l.kind))
+UNION ALL
+SELECT n.shown || ' (' || n.kind || '): a row naming no entry of `mise run purposes:list ' || n.crate || '`; correct its path or kind, or delete it'
+FROM named n
+WHERE n.crate IN (SELECT crate FROM entry)
+  AND NOT EXISTS (SELECT 1 FROM entry e WHERE (e.crate, e.path, e.kind) = (n.crate, n.path, n.kind))
+UNION ALL
+SELECT l.shown || ' (module, ' || l.location || '): no row, and its crate has the crate row; the crate row lands with a row for every module'
+FROM listed l
+WHERE l.kind = 'module'
+  AND EXISTS (SELECT 1 FROM purpose c WHERE c.crate = l.crate AND c.kind = 'crate')
+  AND NOT EXISTS (SELECT 1 FROM purpose p WHERE (p.crate, p.path, p.kind) = (l.crate, l.path, l.kind))
+UNION ALL
+SELECT n.shown || ' (module): a module row, and its crate has no crate row; module rows land with the crate row'
+FROM named n
+WHERE n.kind = 'module' AND NOT EXISTS (SELECT 1 FROM purpose c WHERE c.crate = n.crate AND c.kind = 'crate')
+UNION ALL
+SELECT shown || ' (' || kind || '): concern ' || tag || ' is no key of ledger/concerns.sql'
+FROM tags WHERE tag NOT IN (SELECT id FROM concern)
+UNION ALL
+SELECT shown || ' (' || kind || '): concern ' || tag || ' is tagged more than once'
+FROM tags GROUP BY crate, path, kind, tag HAVING count(*) > 1;
+SQL
+)
+if [[ -n $findings ]]; then
+  printf '%s\n' "$findings" >&2
+  failed=1
+fi
+if (( failed )); then
+  echo 'purposes check FAILED' >&2
+  exit 1
+fi
+echo "purposes check OK: $(sqlite3 "$db" 'SELECT count(*) FROM purpose;') rows, crates rowed: ${#rowed[@]}; every public item of a rowed crate has its row, every row names an entry, every concern tag is a key"
+{% endraw %}'''
+
 # The stacking rule's readings (#1264): `chain.jq` reads a pull request's
 # stack from the open pull requests, `top.jq` the top a new one stacks on,
 # `prefix.jq` what a landing queues (#1988), and `sweep.jq` which worktrees
