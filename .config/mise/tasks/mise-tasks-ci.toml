@@ -1778,7 +1778,8 @@ gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}"
 # crates is refused unless the body declares it `consolidated` or a
 # `new concern`. A change to the parser, its grammar or its syntax tree
 # states its surface form (#2527): a `### Surface form` subsection with a
-# `cost:` line and a `demand: <site>` line. The rule is
+# `cost:` line and a `demand: <site>` line; the goldens `corpus:goldens`
+# records there ask for none (#2756). The rule is
 # `.config/claims/opening.jq`, reading the sections through `sections.jq`, its
 # cases held by `check:claims`; a `note:` line it prints does not refuse.
 #
@@ -1827,7 +1828,7 @@ regressions=$(git diff -U0 --no-renames --no-color "$from" HEAD -- ':(glob)corpu
       else {path, text: (if ($line | startswith("+")) then $line[1:] else null end)} end;
       select(.text != null and (.text | test("[#_][0-9]"))))]')
 # The paths the change touches in the parser, its grammar and its syntax tree
-# (#2527).
+# (#2527); `opening.jq` sets aside the goldens among them (#2756).
 surface=$(git diff --no-renames --name-only "$from" HEAD -- crates/surface-parser crates/surface-grammar crates/surface-syntax | jq -R . | jq -s .)
 findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
   --argjson concerns "$concerns" --argjson added "$added" --argjson regressions "$regressions" --argjson surface "$surface" \

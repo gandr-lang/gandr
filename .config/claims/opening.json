@@ -932,5 +932,48 @@
       "surface": []
     },
     "output": ""
+  },
+  {
+    "name": "#2756: a change whose parser paths are only the goldens `corpus:goldens` records opens without a surface form",
+    "input": {
+      "branch": "core-9999-corpus",
+      "body": "Closes #9999\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:core"]
+        }
+      ],
+      "surface": [
+        "crates/surface-grammar/tests/highlight/fixture/model/specification/tree-state-wp.roles",
+        "crates/surface-grammar/tests/highlight/strict/values.roles",
+        "crates/surface-grammar/tests/highlight/unexercised.roles",
+        "crates/surface-parser/tests/recovery/fixture/model/specification/tree-state-wp.recovery",
+        "crates/surface-parser/tests/recovery/strict/values.recovery"
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#2756: a grammar change beside goldens is still refused, naming the grammar source and the golden test but no golden",
+    "input": {
+      "branch": "surface-9999-form",
+      "body": "Closes #9999\n",
+      "issues": [
+        {
+          "number": 9999,
+          "body": "",
+          "labels": ["kind:feature", "area:surface"]
+        }
+      ],
+      "surface": [
+        "crates/surface-grammar/src/grammar.rs",
+        "crates/surface-grammar/tests/highlight.rs",
+        "crates/surface-grammar/tests/highlight/fixture/model/data/vectors.roles",
+        "crates/surface-parser/tests/recovery/fixture/model/data/vectors.recovery"
+      ]
+    },
+    "output": "the change touches the parser (`crates/surface-grammar/src/grammar.rs`, `crates/surface-grammar/tests/highlight.rs`) and the body lacks a `### Surface form` subsection, and a non-blank `cost:` line (the keystroke scenario's numbers before and after, the molder's candidates and windows on the form), and a non-blank `demand: <site>` line naming the corpus source or program that needs the form (#2527); add it, then run `pr:open` again"
   }
 ]

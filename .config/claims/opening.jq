@@ -54,6 +54,8 @@
 # non-blank `cost:` line (the keystroke scenario's numbers before and after,
 # the molder's candidates and windows on the form) and a non-blank
 # `demand: <site>` line naming the corpus source or program that needs it.
+# The goldens `corpus:goldens` records there follow the corpus and ask for
+# none (#2756).
 
 include "targets";
 include "sections";
@@ -202,9 +204,17 @@ def subsection($name):
     | $rest[:$end]
     end;
 
+# A golden `corpus:goldens` records for the corpus: a source's role golden
+# and the `unexercised.roles` list under `crates/surface-grammar/`, and its
+# recovery record under `crates/surface-parser/`. It follows the corpus, not
+# the parser.
+def golden:
+  test("^crates/surface-grammar/tests/highlight/.+\\.roles$")
+  or test("^crates/surface-parser/tests/recovery/.+\\.recovery$");
+
 # The refusal of a change to the parser whose body states no surface form.
 def surface:
-  (.surface // []) as $paths
+  (.surface // [] | map(select(golden | not))) as $paths
   | select($paths | length > 0)
   | (.body | subsection("Surface form")) as $form
   | ($form // [] | map(select(test("^\\s*(?:[-*]\\s+)?(?:\\*\\*)?cost:(?:\\*\\*)?\\s*\\S")))) as $cost
