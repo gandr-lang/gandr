@@ -3839,6 +3839,14 @@ INSERT INTO purpose VALUES('theory-virtual-doctrines','vdc::RelationRef','struct
 INSERT INTO purpose VALUES('theory-virtual-doctrines','vdc::SigMorphism','struct','A **signature morphism** — the VDC tight arrow.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','vdc::TermRef','struct','A **term** in the free structure over a signature.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-virtual-doctrines','vdc::Vdc','trait','The **virtual-double-category interface** the dictionary test checks and the reflection face assumes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','error::BuildStateError','enum','Names why a target directory could not be pruned, so the refusal''s cause is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','prune::Pruned','struct','Holds what a prune removed and kept, so the prune''s counts are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','prune::UNIT_DIRECTORIES','constant','Names the directories of a profile directory whose entries carry a unit hash, so the directories'' names are read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','prune::prune','function','Removes from a profile every entry of the unit directories whose unit a set of units does not hold, so the profile''s size is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','units::Messages','struct','Holds the text of one build''s JSON messages, so the messages'' text is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','units::Unhashed','enum','Names why a name carries no unit hash, so the reason''s kind is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','units::UnitHash','struct','Names the hash Cargo appends to the name of every file and directory a unit writes, so the hash''s value is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('workflow-build-state','units::Units','struct','Holds the units one or more builds used, so the units'' hashes are read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::CommitSha','struct','A commit, by its full or abbreviated hexadecimal name.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::CrateName','struct','The crate a source file belongs to: the directory under `crates/`, or the first component of a path outside it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('workflow-coverage-guard','codecov::FileCount','struct','How many source files an upload covers.',NULL,'fits','sound',NULL);
