@@ -2687,6 +2687,13 @@ INSERT INTO purpose VALUES('surface-lsp','transport::Body','struct','One message
 INSERT INTO purpose VALUES('surface-lsp','transport::TransportFault','enum','Why the transport could not carry a frame.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','transport::read_frame','function','Read the next frame''s body from `input`.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-lsp','transport::write_frame','function','Write `body` to `output` as one frame, and flush it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','connection::Connection','struct','Holds one client''s place, so the messages it sends are answered over the shared workspace and the notifications its subscriptions owe it are sent when a document changes.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','connection::LEGACY','constant','Names the handshake-based revisions an `initialize` may name, so a legacy client''s version is answered.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','connection::MODERN','constant','Names the protocol revision that carries its version in every request, so a modern client''s version is answered.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','connection::Refusal','enum','Names why a message is refused, so the refusal''s kind is read.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','face::relay','function','Carries a client''s standard streams to the hub, so `gandr mcp` reaches the hub as `gandr lsp` does.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','face::serve','function','Serves the Model Context Protocol on a connection''s buffered stream, so the hub''s line face answers a model''s messages.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-mcp','tools::ToolRefusal','struct','Names why a tool call produced no result, so the refusal''s text is read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::Closing','struct','One way to close an open form: the steps from its frontier to a tile that ends the form, in source order.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::ClosingLimit','struct','How many closings closings keeps.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-parser','closing::LeadingSlot','enum','Whether anything already stands in the slot right after an open frontier.',NULL,'fits','sound',NULL);
