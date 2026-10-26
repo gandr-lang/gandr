@@ -25,7 +25,13 @@ title: "<area>: <what the unit lands>"
 
 ## Concerns
 
-<!-- The concerns from ledger/concerns.sql the unit expects to touch, or none and why. -->
+<!-- Mark each concern of ledger/concerns.sql yes or no; a yes carries how: `yes — <how>`. -->
+
+| Concern | Touched |
+| ------- | ------- |
+| `fork` | |
+| `oracle` | |
+| `sharing` | |
 
 ## Ledger
 

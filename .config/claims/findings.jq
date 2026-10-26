@@ -8,7 +8,9 @@
 # - `## Sources`: items `` - `<key>` — <what it decides> ``, each marked
 #   primary or secondary;
 # - `## Readings`: a table marking each of the six axes `yes` or `no`;
-# - `## Concerns`, `## Ledger` and `## Not in this slice`;
+# - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
+#   `yes` or `no` (#2795);
+# - `## Ledger` and `## Not in this slice`;
 # - `## The shape` and `## Try first`, when the body says it is new
 #   territory.
 #
@@ -39,7 +41,14 @@ def findings:
            else empty
            end)
      end),
-    need("Concerns"),
+    (if section("Concerns") == null then "`## Concerns` is missing"
+     else [concern_marks] as $marks
+     | (concerns[] | . as $concern
+         | if ([$marks[] | select(.concern == $concern)] | length) == 0 then "`## Concerns` has no row for `\($concern)`"
+           elif ([$marks[] | select(.concern == $concern and .mark != null)] | length) == 0 then "`## Concerns` marks `\($concern)` neither `yes` nor `no`"
+           else empty
+           end)
+     end),
     need("Ledger"),
     need("Not in this slice"),
     (if $body | gsub("(?s)<!--.*?-->"; "") | test("new territory"; "i") then need("The shape"), need("Try first") else empty end);

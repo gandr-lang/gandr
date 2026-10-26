@@ -79,5 +79,20 @@ def selected:
    ((section("Readings") // [] | lead) | items | first(match("`([^`]+)`"; "g").captures[0].string | select(IN(axes[]))))]
   | unique;
 
+# The concern ids of `ledger/concerns.sql` (#2795): the tasks that read the
+# ledger pass them as `--argjson concerns`; without the argument, the ids as
+# of that landing, which the `check:claims` cases are written against.
+def concerns: $ARGS.named.concerns // ["fork", "oracle", "sharing"];
+
+# The marks of an issue's `## Concerns` table: per row naming a concern,
+# {concern, mark}, the mark `yes` or `no` from a cell reading it alone or
+# before its how (`yes — <how>`), or null.
+def concern_marks:
+  (section("Concerns") // [] | lead)
+  | rows
+  | .cells as $cells
+  | first($cells[] | select(IN(concerns[]))) as $concern
+  | {concern: $concern, mark: (first($cells[] | ascii_downcase | capture("^(?<mark>yes|no)\\b").mark) // null)};
+
 # Whether a section has content once its HTML comments are dropped.
 def filled: join("\n") | gsub("(?s)<!--.*?-->"; "") | test("\\S");
