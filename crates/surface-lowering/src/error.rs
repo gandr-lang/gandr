@@ -2231,6 +2231,14 @@ fn uncovered(
                 "field {field} of constructor {tag} reads a field before it"
             )
         },
+        Uncovered::Uncoded(_, site) => {
+            let (tag, field) = at(site);
+            write!(
+                f,
+                "field {field} of constructor {tag} has a type its levitated code does not carry, \
+                 so it has no code to derive from"
+            )
+        },
         Uncovered::Cycle(_, site) => {
             let (tag, field) = at(site);
             write!(
@@ -3113,6 +3121,7 @@ mod tests
                 gandr_core_term::generic::Uncovered::Presented(at),
                 gandr_core_term::generic::Uncovered::Field(at, site),
                 gandr_core_term::generic::Uncovered::Dependent(at, site),
+                gandr_core_term::generic::Uncovered::Uncoded(at, site),
                 gandr_core_term::generic::Uncovered::Cycle(at, site),
                 gandr_core_term::generic::Uncovered::Nested(at, site),
                 gandr_core_term::generic::Uncovered::BinderCeiling,

@@ -56,7 +56,7 @@ fn derived(
     law(
         arena,
         position,
-        &|at| signatures.get(&at),
+        &|at| signatures.get(&at).ok_or(Uncovered::Unknown(at)),
         statement,
         &|base, _statement| {
             constants
@@ -167,10 +167,12 @@ fn a_point_and_a_line_derive_closed_laws_2302()
             "{position:?} {statement:?}: a branch per constructor"
         );
         // Past the equalities' own, which the proof writes in place.
-        let equalities = crate::generic::equality(&mut arena, position, &|at| signatures.get(&at))
-            .expect("the equality derives")
-            .cases()
-            .len();
+        let equalities = crate::generic::equality(&mut arena, position, &|at| {
+            signatures.get(&at).ok_or(Uncovered::Unknown(at))
+        })
+        .expect("the equality derives")
+        .cases()
+        .len();
         assert_eq!(
             proved.cases().len().checked_sub(equalities),
             Some(cases),
