@@ -418,8 +418,9 @@ jobs:
   #   (#2045). Its run is the lint, Clippy and formatting; the merge group
   #   tests its tree, and the reports run on the stack's bottom;
   # - `rebased`: a push that is GitHub's own rebase of the change, its patch
-  #   unchanged (#2070). Every lane skips, so the required checks pass at
-  #   once, and the group run tests the tree;
+  #   unchanged, over a replaced head whose required checks passed (#2070,
+  #   #2700). Every lane skips, so the required checks pass at once, and the
+  #   group run tests the tree;
   # - the pin-file tag of this checkout and whether it is published
   #   (`.github/actions/find-image`, shared with every image workflow): a
   #   pull request from a fork cannot publish with its read-only token, so a
@@ -446,6 +447,8 @@ jobs:
       contents: read
       packages: read
       actions: read
+      checks: read
+      statuses: read
     outputs:
       rust: ${{ github.event_name != 'push' && github.event_name != 'schedule' && (github.event_name != 'pull_request' || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.rust == 'true') && steps.rebased.outputs.rebased != 'true' }}
       extension: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.run.outputs.run-id == '' || github.event_name != 'push' && github.event_name != 'schedule' && ((github.event_name != 'pull_request' && github.event_name != 'merge_group') || steps.fetch.outcome != 'success' || steps.filter.outcome != 'success' || steps.filter.outputs.extension == 'true') && steps.rebased.outputs.rebased != 'true' }}
@@ -502,8 +505,11 @@ jobs:
       # (its committer is `web-flow`), and no setting turns that off (#2070).
       # A rebase that leaves the change's patch as it was, measured against
       # its fork from the trunk before and after, ran its checks already on
-      # the head it replaced; the group run tests the tree. Any other push,
-      # or a reading that fails, runs the lanes.
+      # the head it replaced; where every required context passed there
+      # (`required.jq` over that head's rollup, #2700), the group run tests
+      # the tree. The decision is `.config/pr-stack/rebased.jq`. Any other
+      # push, a replaced head that failed or is still running, or a reading
+      # that fails, runs the lanes.
       - id: rebased
         name: recognize GitHub's rebase of an unchanged change
         if: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}
@@ -534,7 +540,22 @@ jobs:
           }
           before=$(patch "$CI_BEFORE")
           after=$(patch "$CI_HEAD")
-          printf 'rebased=%s\n' "$([[ -n $before && $before == "$after" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          required=$(gh api "repos/$GH_REPO/rules/branches/$CI_TRUNK" \
+            --jq '[.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | unique')
+          reading=$(gh api graphql -F owner="${GH_REPO%%/*}" -F name="${GH_REPO#*/}" -F oid="$CI_BEFORE" -f query='
+            query($owner: String!, $name: String!, $oid: GitObjectID!) {
+              repository(owner: $owner, name: $name) { object(oid: $oid) { ... on Commit { statusCheckRollup {
+                contexts(first: 100) { nodes { __typename
+                  ... on CheckRun { name status conclusion startedAt }
+                  ... on StatusContext { context state startedAt: createdAt } } } } } } } }' \
+            --jq '.data.repository.object.statusCheckRollup.contexts.nodes // []' \
+            | jq -c --argjson required "$required" -f .config/pr-stack/required.jq)
+          rebased=$(jq -n --arg committer "$committer" --arg before "$before" --arg after "$after" \
+            --argjson required "$required" --argjson reading "$reading" \
+            '{committer: $committer, before: $before, after: $after, required: $required, reading: $reading}' \
+            | jq -f .config/pr-stack/rebased.jq)
+          echo "replaced head $CI_BEFORE: $reading; rebased=$rebased"
+          printf 'rebased=%s\n' "$rebased" >> "$GITHUB_OUTPUT"
       - id: image
         name: find the published image
         uses: ./.github/actions/find-image # zizmor: ignore[self-repository]
