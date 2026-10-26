@@ -40,6 +40,7 @@ use gandr_surface_lowering::Container;
 use gandr_surface_lowering::ENTRY;
 use gandr_surface_lowering::LoweredDeclaration;
 use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::Role;
 use gandr_surface_lowering::entry_shape;
 use quenchant_shape::shape::Maybe;
 
@@ -325,8 +326,9 @@ fn argument_list(
 /// - requires: `verdicts` judged `module` over `core`.
 /// - ensures: the admission position of the declaration named [`ENTRY`] at the
 ///   top level of the last source any top-level declaration of `module` stands
-///   in, with the arguments its declared type reads, when its verdict states a
-///   type [`entry_shape()`] answers; the undeclared absence otherwise.
+///   in — a run target or a stray, named by the token it opens with, is none —
+///   with the arguments its declared type reads, when its verdict states a type
+///   [`entry_shape()`] answers; the undeclared absence otherwise.
 /// - fails: never.
 /// - panics: none.
 /// - executable: none — the clause reads the module's sources and the verdicts
@@ -334,8 +336,8 @@ fn argument_list(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a source declaring `main` of each entry type beside
-///   another name, one declaring none, and one whose module's member is the
-///   only `main`.
+///   another name, one declaring none, one whose module's member is the only
+///   `main`, and one running `main()` after declaring it.
 /// - witness: `evaluate::entry::tests::the_entry_is_the_main_of_the_source_run_1881`
 pub(super) fn entry_of(
     core: &CoreArena,
@@ -359,7 +361,11 @@ pub(super) fn entry_of(
     let Some(constant) = module
         .declarations()
         .iter()
-        .filter(|lowered| lowered.name().as_ref() == ENTRY && top(lowered.container()) == Some(run))
+        .filter(|lowered| {
+            lowered.name().as_ref() == ENTRY
+                && !matches!(lowered.role(), Role::Held | Role::RunTarget)
+                && top(lowered.container()) == Some(run)
+        })
         .map(LoweredDeclaration::constant)
         .next_back()
     else {

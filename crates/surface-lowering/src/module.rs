@@ -268,6 +268,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::Node;
 use gandr_surface_syntax::NodeCount;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
@@ -3594,6 +3595,40 @@ enum Exported
     Declines,
 }
 
+/// The first token `at` writes — a tile, or grout over bytes no label molds —
+/// as the name of a stray or a run target: `#{` for `#{ s | b = 2 }` and
+/// `#{s | b = 2}` alike, so the spacing inside the child never renames it.
+///
+/// # Specification
+/// trivial.
+fn first_token<'source>(
+    tree: &SyntaxTree<'source>,
+    at: NodeIndex,
+) -> SurfaceName<'source>
+{
+    // The nodes still to read, the next one last.
+    let mut pending = Vec::from([at]);
+    while let Some(next) = pending.pop() {
+        match tree.node(next).map(Node::label) {
+            Some(NodeLabel::Tile(_) | NodeLabel::Grout { .. }) => {
+                let written = tree.fragment(next).map_or("", <&str>::from);
+                if !written.is_empty() {
+                    return SurfaceName::from(written);
+                }
+            },
+            Some(NodeLabel::Meld(_) | NodeLabel::Wald) => {
+                let added = pending.len();
+                pending.extend(tree.children(next));
+                if let Some(children) = pending.get_mut(added ..) {
+                    children.reverse();
+                }
+            },
+            Some(NodeLabel::GhostClose { .. } | NodeLabel::Space | NodeLabel::Doc) | None => {},
+        }
+    }
+    SurfaceName::from("")
+}
+
 /// Whether an import's address names a scheme or a path.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Address
@@ -4021,7 +4056,7 @@ impl<'source> Collector<'_, 'source>
     ///   it, `stray.torn` the later pieces of its line a doubled closer tore
     ///   from it, and `stray.terminator` the `;` written right after it.
     /// - ensures: one held slot, entered in no name table, named by the child's
-    ///   first word, refused at the child; it owns the child, its decorations,
+    ///   first token, refused at the child; it owns the child, its decorations,
     ///   its torn pieces and its terminator, and carries the decorations'
     ///   attributes, so an expectation written before a stray states its
     ///   refusal. The first unreadable decoration refuses the slot instead: at
@@ -4037,10 +4072,11 @@ impl<'source> Collector<'_, 'source>
     ///   a byte no label molds, each between two declarations, refuse
     ///   themselves alone and leave both declarations completed; an expectation
     ///   before one states its refusal, and the `;` ending one is no second
-    ///   stray.
+    ///   stray; a stray respaced inside keeps its name.
     /// - witness: `module::tests::a_stray_root_child_refuses_itself_alone_1058`
     /// - witness: `module::tests::a_closer_doubled_on_its_line_is_refused_where_it_was_written_2051`
     /// - witness: `module::tests::a_fault_before_a_declaration_is_refused_where_it_was_written_2082`
+    /// - witness: `module::tests::a_respaced_stray_and_run_target_keep_their_names_2758`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() == before.0.saturating_add(1)
@@ -4067,15 +4103,9 @@ impl<'source> Collector<'_, 'source>
                     .map_err(|unread| (block.node, unread));
             }
         }
-        let name = self
-            .tree
-            .fragment(child.node)
-            .map_or("", <&str>::from)
-            .split_whitespace()
-            .next()
-            .unwrap_or_default();
+        let name = first_token(self.tree, child.node);
         let top = self.collected.top(child.span.start());
-        let held = self.refuse_held(top, SurfaceName::from(name), child, child, refusal);
+        let held = self.refuse_held(top, name, child, child, refusal);
         self.collected.own(child.node, held);
         for block in decorations.into_iter().chain(torn).chain(terminator) {
             self.collected.own(block.node, held);
@@ -4112,7 +4142,7 @@ impl<'source> Collector<'_, 'source>
     ///   their own before it, and `target.terminator` the `;` written right
     ///   after it.
     /// - ensures: one [`Role::RunTarget`] slot, entered in no name table, named
-    ///   by the expression's first word as a stray is, whose definition is the
+    ///   by the expression's first token as a stray is, whose definition is the
     ///   expression; it owns the expression and every piece the stray carried
     ///   (its decorations, any piece a doubled closer tore from its line, and
     ///   its terminator), and carries the decorations' attributes. An
@@ -4124,8 +4154,10 @@ impl<'source> Collector<'_, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a final expression after a definition lowers as the
     ///   last declaration and is no name the source declares; one before a
-    ///   definition, and the first of two, stay strays.
+    ///   definition, and the first of two, stay strays; a target respaced
+    ///   inside keeps its name.
     /// - witness: `module::tests::the_last_root_expression_is_the_run_target_1105`
+    /// - witness: `module::tests::a_respaced_stray_and_run_target_keep_their_names_2758`
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
         ensures: self.collected.slots.len() == before.0.saturating_add(1)
@@ -4154,15 +4186,9 @@ impl<'source> Collector<'_, 'source>
                 attributed = self.decoration(block, child.node, &mut attributes);
             }
         }
-        let name = self
-            .tree
-            .fragment(child.node)
-            .map_or("", <&str>::from)
-            .split_whitespace()
-            .next()
-            .unwrap_or_default();
+        let name = first_token(self.tree, child.node);
         let top = self.collected.top(child.span.start());
-        let slot = self.held(top, SurfaceName::from(name), child, child);
+        let slot = self.held(top, name, child, child);
         self.collected.own(child.node, slot);
         for block in decorations.into_iter().chain(torn).chain(terminator) {
             self.collected.own(block.node, slot);
@@ -12624,6 +12650,43 @@ mod tests
             roles(&repaired(&pbg, SourceText::from("def a = 1 ;\n}\n"))),
             [Role::Declared, Role::Held],
             "a closer standing alone is a stray, not the run target"
+        );
+    }
+
+    /// A stray and a run target are named by the first token they write,
+    /// whatever spacing follows it, so a source respaced inside its root
+    /// expressions collects the same names (#2758).
+    #[test]
+    fn a_respaced_stray_and_run_target_keep_their_names_2758()
+    {
+        let pbg = grammar();
+        let names = |text: &'static str| {
+            collect(
+                &pbg,
+                &parsed(&pbg, SourceText::from(text)),
+                &Unit::single(),
+                &mut tank(),
+            )
+            .expect("the source collects")
+            .slots
+            .iter()
+            .map(|slot| (slot.name, slot.role))
+            .collect::<Vec<_>>()
+        };
+        let hugged = names("(1, 2);\ndef s = #{b = 1};\n#{s | b = 2}\n");
+        assert_eq!(
+            hugged,
+            [
+                (SurfaceName::from("("), Role::Held),
+                (SurfaceName::from("s"), Role::Declared),
+                (SurfaceName::from("#{"), Role::RunTarget),
+            ],
+            "each is named by its first token"
+        );
+        assert_eq!(
+            names("( 1 , 2 );\ndef s = #{ b = 1 };\n#{ s | b = 2 }\n"),
+            hugged,
+            "the spaced spelling collects the same names"
         );
     }
 
