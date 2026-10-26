@@ -133,6 +133,7 @@ digraph crates {
   "kernel-core" -> "kernel-conversion-trace";
   "kernel-core" -> "kernel-strata";
   "kernel-core" -> "kernel-term";
+  "kernel-term" -> "kernel-check-memo";
   "kernel-term" -> "kernel-conversion-trace";
   "kernel-term" -> "kernel-strata";
   "kernel-term" -> "theory-path-orders";

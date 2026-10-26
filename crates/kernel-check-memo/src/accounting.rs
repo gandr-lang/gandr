@@ -138,6 +138,45 @@ impl From<MemoEntryCount> for usize
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MemoBucketCount(usize);
 
+impl MemoBucketCount
+{
+    /// No bucket.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn zero() -> Self
+    {
+        Self(0)
+    }
+
+    /// One more bucket, saturating at the ceiling.
+    ///
+    /// A memo opens a bucket only beside an entry its census admitted, and
+    /// buckets never outnumber entries, so the saturation is never reached.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `self + 1`, or `self` at `usize::MAX`.
+    /// - provides: the bucket count a fresh digest moves.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two distinct digests and one colliding pair count two
+    ///   and one buckets exactly.
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+    /// - witness: `memo::tests::distinct_supports_take_distinct_entries`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
+    pub(crate) const fn opened(self) -> Self
+    {
+        Self(self.0.saturating_add(1))
+    }
+}
+
 impl From<usize> for MemoBucketCount
 {
     /// The count of `value` buckets.

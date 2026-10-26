@@ -1,9 +1,7 @@
-//! The seam: one interface, a null implementation and an ordered one.
+//! The seam: one interface, a null implementation and a hashed one.
 
-use alloc::collections::BTreeMap;
-use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
-use core::iter;
+use core::cell::Cell;
 
 use anodized::spec;
 
@@ -14,6 +12,10 @@ use crate::accounting::MemoError;
 use crate::digest::ContentAgreement;
 use crate::digest::ContentDigest;
 use crate::key::MemoKey;
+use crate::table::HashIndex;
+use crate::table::Probe;
+use crate::table::TableHash;
+use crate::table::TablePosition;
 
 /// Whether a [`CheckMemo`] implementation ever answers.
 ///
@@ -74,7 +76,7 @@ pub enum MemoRecord
 /// - hypothesis: L3 — distinct recorded supports with distinct outcomes, plus
 ///   two colliding supports, distinguish crossed support/outcome pairs and
 ///   digest-only selection by exact returned fields.
-/// - witness: `memo::tests::an_ordered_memo_serves_what_it_was_told`
+/// - witness: `memo::tests::a_hashed_memo_serves_what_it_was_told`
 /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MemoHit<'memo, Support, Outcome>
@@ -177,7 +179,7 @@ where
     ///   distinguish false hits and missed entries by exact outcomes or
     ///   absence. The null implementation must still miss after a recording
     ///   attempt.
-    /// - witness: `memo::tests::an_ordered_memo_serves_what_it_was_told`
+    /// - witness: `memo::tests::a_hashed_memo_serves_what_it_was_told`
     /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
     fn recall<'memo>(
@@ -389,133 +391,30 @@ struct MemoEntry<Support, Outcome>
     outcome: Outcome,
 }
 
-/// The entries one digest selects: the first held inline, collisions spilled.
-///
-/// Digests are near-injective, so almost every bucket holds exactly one entry.
-/// Holding that entry inline, and spilling only a colliding one to a vector
-/// that stays unallocated until a collision, keeps recording a fresh digest
-/// free of a heap allocation of its own; the entry lives in the map's node.
-///
-/// # Specification
-/// - requires: every entry's support digests to the key the bucket is held
-///   under.
-/// - ensures: the entries are `first` followed by `collisions`, in recording
-///   order, and no two of their supports agree.
-/// - provides: a collision chain whose common case costs no allocation.
-/// - panics: none.
-/// - executable: none — agreement is the consumer's relation, and the data-item
-///   expansion does not check construction; the memo's recall and record
-///   operations check the observable boundaries.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a lone entry and a colliding pair, with replacement of
-///   the spilled entry, distinguish a bucket that loses, crosses or overwrites
-///   an entry through exact answers.
-/// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
-/// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Bucket<Support, Outcome>
-{
-    /// The entry recorded first under this digest.
-    first: MemoEntry<Support, Outcome>,
-    /// Entries whose supports collided with `first`'s digest, in recording
-    /// order; empty, and unallocated, until a collision.
-    collisions: Vec<MemoEntry<Support, Outcome>>,
-}
-
-impl<Support, Outcome> Bucket<Support, Outcome>
-where
-    Support: MemoKey,
-{
-    /// A bucket holding one entry, allocating nothing.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    const fn new(first: MemoEntry<Support, Outcome>) -> Self
-    {
-        Self {
-            first,
-            collisions: Vec::new(),
-        }
-    }
-
-    /// The entry whose support agrees with `support`, if any.
-    ///
-    /// # Specification
-    /// - ensures: the first entry, in recording order, whose support answers
-    ///   `ContentAgreement::Agree` against `support`, or `None`.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — an agreeing first entry, an agreeing spilled entry
-    ///   and a colliding miss distinguish a search that skips either half.
-    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
-    #[spec(ensures: |ret| ret.is_none_or(|entry| {
-        matches!(entry.support.agreement(support), ContentAgreement::Agree)
-    }))]
-    #[inline]
-    fn find(
-        &self,
-        support: &Support,
-    ) -> Option<&MemoEntry<Support, Outcome>>
-    {
-        iter::once(&self.first)
-            .chain(&self.collisions)
-            .find(|entry| matches!(entry.support.agreement(support), ContentAgreement::Agree))
-    }
-
-    /// The entry whose support agrees with `support`, if any, to replace its
-    /// outcome.
-    ///
-    /// # Specification
-    /// - ensures: the first entry, in recording order, whose support answers
-    ///   `ContentAgreement::Agree` against `support`, or `None`.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — replacing the spilled entry of a colliding pair
-    ///   distinguishes a search that overwrites the first entry instead.
-    /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
-    #[spec(ensures: |ret| ret.as_ref().is_none_or(|entry| {
-        matches!(entry.support.agreement(support), ContentAgreement::Agree)
-    }))]
-    #[inline]
-    fn find_mut(
-        &mut self,
-        support: &Support,
-    ) -> Option<&mut MemoEntry<Support, Outcome>>
-    {
-        iter::once(&mut self.first)
-            .chain(&mut self.collisions)
-            .find(|entry| matches!(entry.support.agreement(support), ContentAgreement::Agree))
-    }
-}
-
-/// An ordered in-memory memo: the storage half, owned here so the checker holds
+/// A hashed in-memory memo: the storage half, owned here so the checker holds
 /// none of it.
 ///
-/// **Ordered rather than hashed on purpose.** No hasher enters the kernel's
-/// dependency wall, and iteration order is deterministic — which is what makes
-/// a measurement over the memo re-derivable rather than run-dependent.
+/// **Entries in recording order, filed by digest.** The entries sit in one
+/// vector in the order they were recorded, and the crate's own
+/// [`HashIndex`] files each entry's position under its support's
+/// [`ContentDigest`]. The hash is unkeyed, so a run records and probes alike
+/// on every host, and a measurement over the memo is re-derivable.
 ///
-/// **Bucketed by digest, decided by content.** The map is keyed by the
-/// support's [`ContentDigest`], and each key holds the bucket of supports that
-/// digested to it. A lookup picks the bucket, then scans it with the deciding
-/// comparison. So a digest collision costs one comparison and degrades to a
-/// miss; it cannot answer for the wrong support. That is the
-/// positive-fast-path-only discipline as a data structure rather than as a rule
-/// to remember, and it is what lets the key be content-derived, and therefore
-/// arena-free.
+/// **Filed by digest, decided by content.** A lookup walks the positions filed
+/// under the support's digest and decides with the deciding comparison. So a
+/// digest collision costs one comparison and degrades to a miss; it cannot
+/// answer for the wrong support. That is the positive-fast-path-only discipline
+/// as a data structure rather than as a rule to remember, and it is what lets
+/// the key be content-derived, and therefore arena-free.
 ///
-/// **The first entry inline.** A bucket holds its first entry in the map's own
-/// node and spills only collisions to a vector, so recording a fresh digest —
-/// nearly every recording — allocates nothing beyond the map's own growth.
+/// **No allocation per entry.** Recording an entry pushes it onto the vector
+/// and files one slot, so a recording allocates only when either grows.
 ///
 /// # Specification
 /// - requires: supports obey the consumer laws of `MemoKey`.
-/// - ensures: each digest bucket retains one entry per agreeing support; the
-///   census counts entries, partitioned by their support's plane.
+/// - ensures: the memo holds one entry per agreeing support; the census counts
+///   entries, partitioned by their support's plane, and the bucket count counts
+///   the distinct digests among them.
 /// - provides: collision-safe reuse with exact incremental accounting.
 /// - panics: none.
 /// - executable: none — the data-item expansion does not check construction;
@@ -530,17 +429,31 @@ where
 /// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
 /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OrderedMemo<Support, Outcome>
+pub struct HashedMemo<Support, Outcome>
 where
     Support: MemoKey,
 {
-    /// The recorded answers, bucketed by digest and ordered by it.
-    buckets: BTreeMap<ContentDigest, Bucket<Support, Outcome>>,
+    /// The recorded answers, in recording order.
+    entries: Vec<MemoEntry<Support, Outcome>>,
+    /// Each entry's position, filed under its support's digest.
+    index: HashIndex,
+    /// How many distinct digests the entries carry.
+    buckets: MemoBucketCount,
     /// The entry counts, maintained as entries are recorded.
     census: EntryCensus<Support::Plane>,
 }
 
-impl<Support, Outcome> OrderedMemo<Support, Outcome>
+/// Whether a recorded support's digest was already carried by an entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DigestShare
+{
+    /// No entry carried the digest: the support opens a bucket.
+    Fresh,
+    /// An entry carried it: the support joins that bucket.
+    Shared,
+}
+
+impl<Support, Outcome> HashedMemo<Support, Outcome>
 where
     Support: MemoKey,
 {
@@ -553,11 +466,68 @@ where
     pub const fn new() -> Self
     {
         Self {
-            buckets: BTreeMap::new(),
+            entries: Vec::new(),
+            index: HashIndex::new(),
+            buckets: MemoBucketCount::zero(),
             census: EntryCensus::empty(),
         }
     }
 
+    /// The probe for the entry whose support agrees with `support`, filed
+    /// under its digest `digest` and hash `hash`, beside whether any entry
+    /// carries that digest.
+    ///
+    /// # Specification
+    /// - requires: `digest` is `support`'s digest and `hash` the digest's hash.
+    /// - ensures: [`Probe::Found`] the position of the entry whose support
+    ///   carries `digest` and answers `ContentAgreement::Agree` against
+    ///   `support`, or [`Probe::Vacant`] the slot it would be filed at;
+    ///   [`DigestShare::Shared`] when some entry met on the way carries
+    ///   `digest`, which every entry carrying it is, since its hash is filed on
+    ///   the same probe run.
+    /// - provides: the one probe both recall and record decide over.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal content with equal digests (found), distinct
+    ///   content with equal digests (absent, shared) and equal content with
+    ///   distinct digests (absent, fresh) separate a digest-only and a
+    ///   content-only search.
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+    /// - witness: `memo::tests::a_disagreeing_digest_costs_collapse_and_not_correctness`
+    #[inline]
+    #[spec(ensures: |ret| match ret.0 {
+        Probe::Found(position) => self.entries.get(usize::from(position)).is_some_and(|entry|
+            entry.support.digest() == digest
+                && matches!(entry.support.agreement(support), ContentAgreement::Agree))
+            && ret.1 == DigestShare::Shared,
+        Probe::Vacant(_) => true,
+    })]
+    fn find(
+        &self,
+        support: &Support,
+        (digest, hash): (ContentDigest, TableHash),
+    ) -> (Probe, DigestShare)
+    {
+        let share = Cell::new(DigestShare::Fresh);
+        let probe = self.index.probe(hash, |position| {
+            self.entries
+                .get(usize::from(position))
+                .filter(|entry| entry.support.digest() == digest)
+                .is_some_and(|entry| {
+                    share.set(DigestShare::Shared);
+                    matches!(entry.support.agreement(support), ContentAgreement::Agree)
+                })
+        });
+        (probe, share.get())
+    }
+}
+
+impl<Support, Outcome> HashedMemo<Support, Outcome>
+where
+    Support: MemoKey,
+{
     /// How many digest buckets are held.
     ///
     /// # Specification
@@ -571,22 +541,22 @@ where
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the surface is which map is measured, separated
-    ///   by a colliding pair (two entries, one bucket) against a non-colliding
+    /// - hypothesis: L3 only — the surface is which count is read, separated by
+    ///   a colliding pair (two entries, one bucket) against a non-colliding
     ///   pair (two entries, two buckets), both asserted exactly.
     /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     /// - witness: `memo::tests::distinct_supports_take_distinct_entries`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| usize::from(ret) == self.buckets.len()
+    #[spec(ensures: |ret| ret == self.buckets
         && usize::from(ret) <= usize::from(self.census.total()))]
     pub fn bucket_count(&self) -> MemoBucketCount
     {
-        MemoBucketCount::from(self.buckets.len())
+        self.buckets
     }
 }
 
-impl<Support, Outcome> Default for OrderedMemo<Support, Outcome>
+impl<Support, Outcome> Default for HashedMemo<Support, Outcome>
 where
     Support: MemoKey,
 {
@@ -601,7 +571,7 @@ where
     }
 }
 
-impl<Support, Outcome> CheckMemo<Support, Outcome> for OrderedMemo<Support, Outcome>
+impl<Support, Outcome> CheckMemo<Support, Outcome> for HashedMemo<Support, Outcome>
 where
     Support: MemoKey,
 {
@@ -613,23 +583,23 @@ where
     /// - requires: `support` is the complete input to the computation whose
     ///   outcome is being recalled.
     /// - ensures: a served hit's own support answers `ContentAgreement::Agree`
-    ///   against `support`. The digest picks the bucket and the deciding
-    ///   comparison scans it, so a collision costs one comparison and degrades
-    ///   to a miss rather than answering for the wrong support, and a support
-    ///   whose digest disagrees costs collapse rather than correctness.
+    ///   against `support`. The digest picks the positions and the deciding
+    ///   comparison scans them, so a collision costs one comparison and
+    ///   degrades to a miss rather than answering for the wrong support, and a
+    ///   support whose digest disagrees costs collapse rather than correctness.
     /// - provides: the hit, carrying the support it was recorded under beside
     ///   its outcome.
     /// - fails: never; a miss is `None`.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the bucket lookup and the
-    ///   deciding scan inside it, separated by three cases that a digest-only
+    /// - hypothesis: L3 — the decision surfaces are the digest's probe and the
+    ///   deciding scan along it, separated by three cases that a digest-only
     ///   implementation and a content-only implementation answer differently:
     ///   equal content with equal digests (a hit), distinct content with equal
     ///   digests (a miss), and equal content with distinct digests (a miss),
     ///   each asserted as an exact outcome or `None`.
-    /// - witness: `memo::tests::an_ordered_memo_serves_what_it_was_told`
+    /// - witness: `memo::tests::a_hashed_memo_serves_what_it_was_told`
     /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     /// - witness: `memo::tests::a_disagreeing_digest_costs_collapse_and_not_correctness`
     #[spec(ensures: |ret| ret.as_ref().is_none_or(|hit| {
@@ -641,7 +611,12 @@ where
         support: &Support,
     ) -> Option<MemoHit<'memo, Support, Outcome>>
     {
-        let entry = self.buckets.get(&support.digest())?.find(support)?;
+        let digest = support.digest();
+        let Probe::Found(position) = self.find(support, (digest, TableHash::of(&digest))).0
+        else {
+            return None;
+        };
+        let entry = self.entries.get(usize::from(position))?;
         Some(MemoHit {
             support: &entry.support,
             outcome: &entry.outcome,
@@ -653,13 +628,15 @@ where
     /// # Specification
     /// - requires: `support` is the complete input to the computation `outcome`
     ///   answers.
-    /// - ensures: a fresh support takes a new entry in its digest's bucket and
-    ///   leaves the entry count one greater; a support an agreeing entry
+    /// - ensures: a fresh support takes a new entry, filed under its digest,
+    ///   and leaves the entry count one greater, and the bucket count one
+    ///   greater when no entry carried its digest; a support an agreeing entry
     ///   already holds has that entry's outcome replaced and leaves every count
-    ///   where it was.
-    /// - provides: the record path, one map lookup deep, with the accounting
-    ///   bumped before the entry is stored, so a refusal at the ceiling leaves
-    ///   the memo exactly as it was.
+    ///   where it was. A memo already holding `u32::MAX` entries discards a
+    ///   fresh support, which costs reuse alone.
+    /// - provides: the record path, one probe deep, with the accounting bumped
+    ///   before the entry is stored, so a refusal at the ceiling leaves the
+    ///   memo exactly as it was.
     /// - fails: `MemoError::EntryCountOverflow` when the accounting cannot
     ///   admit another entry.
     /// - panics: none.
@@ -680,18 +657,19 @@ where
     /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
     /// - witness: `memo::tests::ceiling_refuses_insertion_but_allows_replacement`
     #[spec(
-        captures: [entry_count = self.entry_count(), entry_buckets = self.buckets.len(),
+        captures: [entry_count = self.entry_count(), entry_buckets = self.buckets,
             was_held = self.recall(&support).is_some()],
         ensures: |ret| match ret {
             Ok(MemoRecord::Recorded) => !was_held
                 && usize::from(entry_count).checked_add(1)
                     == Some(usize::from(self.entry_count())),
             Ok(MemoRecord::Replaced) => was_held && self.entry_count() == entry_count
-                && self.buckets.len() == entry_buckets,
-            Ok(MemoRecord::Discarded) => false,
+                && self.buckets == entry_buckets,
+            Ok(MemoRecord::Discarded) => !was_held && self.entry_count() == entry_count
+                && self.buckets == entry_buckets,
             Err(MemoError::EntryCountOverflow) => !was_held
                 && usize::from(entry_count) == usize::MAX
-                && self.entry_count() == entry_count && self.buckets.len() == entry_buckets,
+                && self.entry_count() == entry_count && self.buckets == entry_buckets,
         }
     )]
     #[inline]
@@ -701,23 +679,33 @@ where
         outcome: Outcome,
     ) -> Result<MemoRecord, MemoError>
     {
-        match self.buckets.entry(support.digest()) {
-            Entry::Occupied(mut held) => {
-                let bucket = held.get_mut();
-                if let Some(entry) = bucket.find_mut(&support) {
+        let digest = support.digest();
+        let hash = TableHash::of(&digest);
+        let (probe, share) = self.find(&support, (digest, hash));
+        let slot = match probe {
+            Probe::Found(position) => {
+                if let Some(entry) = self.entries.get_mut(usize::from(position)) {
                     entry.outcome = outcome;
-                    return Ok(MemoRecord::Replaced);
                 }
-                // The accounting is bumped before the entry is stored, so a
-                // refusal at the ceiling leaves the memo exactly as it was.
-                self.census.record(support.plane())?;
-                bucket.collisions.push(MemoEntry { support, outcome });
+                return Ok(MemoRecord::Replaced);
             },
-            Entry::Vacant(fresh) => {
-                self.census.record(support.plane())?;
-                fresh.insert(Bucket::new(MemoEntry { support, outcome }));
-            },
+            Probe::Vacant(slot) => slot,
+        };
+        // Past the index's position ceiling the memo declines to keep the
+        // entry, which costs reuse alone.
+        let Ok(position) = TablePosition::try_from(self.entries.len())
+        else {
+            return Ok(MemoRecord::Discarded);
+        };
+        // The accounting is bumped before the entry is stored, so a refusal at
+        // the ceiling leaves the memo exactly as it was.
+        self.census.record(support.plane())?;
+        if share == DigestShare::Fresh {
+            // The bucket count is at most the entry count the census admitted.
+            self.buckets = self.buckets.opened();
         }
+        self.index.insert(slot, hash, position);
+        self.entries.push(MemoEntry { support, outcome });
         Ok(MemoRecord::Recorded)
     }
 
@@ -760,9 +748,9 @@ mod tests
     use anodized::spec;
 
     use super::CheckMemo;
+    use super::HashedMemo;
     use super::MemoRecord;
     use super::NullMemo;
-    use super::OrderedMemo;
     use crate::accounting::MemoBucketCount;
     use crate::accounting::MemoEntryCount;
     use crate::digest::ContentAgreement;
@@ -911,9 +899,9 @@ mod tests
     }
 
     #[test]
-    fn an_ordered_memo_serves_what_it_was_told()
+    fn a_hashed_memo_serves_what_it_was_told()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let first = TestSupport::honest(TestPlane::Term, TestContent(1));
         let second = TestSupport::honest(TestPlane::Term, TestContent(2));
         let unasked = TestSupport::honest(TestPlane::Term, TestContent(3));
@@ -953,7 +941,7 @@ mod tests
     #[test]
     fn remembering_an_agreeing_support_replaces_rather_than_accumulates()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let support = TestSupport::honest(TestPlane::Term, TestContent(1));
         assert_eq!(
             Ok(MemoRecord::Recorded),
@@ -980,7 +968,7 @@ mod tests
     #[test]
     fn distinct_supports_take_distinct_entries()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let first = TestSupport::honest(TestPlane::Term, TestContent(1));
         let second = TestSupport::honest(TestPlane::Term, TestContent(2));
         assert_eq!(
@@ -1002,7 +990,7 @@ mod tests
     #[test]
     fn entries_are_accounted_to_their_own_plane()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let term = TestSupport::honest(TestPlane::Term, TestContent(1));
         let other_term = TestSupport::honest(TestPlane::Term, TestContent(2));
         // Same content as `term`, different plane: the plane is part of the
@@ -1048,7 +1036,7 @@ mod tests
     #[test]
     fn colliding_digests_share_a_bucket_and_still_decide()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let first = TestSupport {
             plane: TestPlane::Term,
             content: TestContent(1),
@@ -1099,7 +1087,7 @@ mod tests
     #[test]
     fn a_disagreeing_digest_costs_collapse_and_not_correctness()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let recorded = TestSupport {
             plane: TestPlane::Term,
             content: TestContent(1),
@@ -1132,7 +1120,7 @@ mod tests
     #[test]
     fn absent_plane_has_zero_entries()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let support = TestSupport::honest(TestPlane::Term, TestContent(1));
         assert_eq!(
             Ok(MemoRecord::Recorded),
@@ -1177,7 +1165,7 @@ mod tests
     #[test]
     fn replacement_inside_a_collision_bucket_preserves_its_neighbour()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let first = TestSupport::honest(TestPlane::Term, TestContent(1));
         let second = TestSupport {
             content: TestContent(2),
@@ -1210,7 +1198,7 @@ mod tests
     #[test]
     fn ceiling_refuses_insertion_but_allows_replacement()
     {
-        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<TestSupport, TestOutcome> = HashedMemo::new();
         let first = TestSupport::honest(TestPlane::Term, TestContent(1));
         assert_eq!(
             Ok(MemoRecord::Recorded),

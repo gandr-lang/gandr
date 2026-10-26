@@ -52,7 +52,6 @@
 //! manufacture a hit.
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -82,6 +81,8 @@ use crate::encoding::ContentTable;
 use crate::encoding::SupportGoal;
 use crate::encoding::Telescope;
 use crate::encoding::support_key;
+use crate::hashed::HashedMap;
+use crate::hashed::hashed_entry;
 use crate::rewrite::RewriteMemo;
 use crate::rewrite::RewritePlane;
 
@@ -997,13 +998,13 @@ fn read_binders<'buffer>(
 pub struct Reaches<R>
 {
     /// Reaches already computed for value nodes.
-    values: BTreeMap<ValueId, R>,
+    values: HashedMap<ValueId, R>,
     /// Reaches already computed for computation nodes.
-    computations: BTreeMap<ComputationId, R>,
+    computations: HashedMap<ComputationId, R>,
     /// Reaches already computed for value-type nodes.
-    value_types: BTreeMap<ValueTypeId, R>,
+    value_types: HashedMap<ValueTypeId, R>,
     /// Reaches already computed for computation-type nodes.
-    comp_types: BTreeMap<CompTypeId, R>,
+    comp_types: HashedMap<CompTypeId, R>,
     /// The walk's task stack, reused across walks.
     tasks: Vec<ReachTask>,
 }
@@ -1021,10 +1022,10 @@ impl<R> Default for Reaches<R>
     fn default() -> Self
     {
         Self {
-            values: BTreeMap::new(),
-            computations: BTreeMap::new(),
-            value_types: BTreeMap::new(),
-            comp_types: BTreeMap::new(),
+            values: HashedMap::default(),
+            computations: HashedMap::default(),
+            value_types: HashedMap::default(),
+            comp_types: HashedMap::default(),
             tasks: Vec::new(),
         }
     }
@@ -1092,7 +1093,7 @@ impl<R: Reach> Reaches<R>
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
     /// - witness: `support::tests::reads_are_exactly_the_free_indices`
-    #[spec(ensures: |ret| self.values.get(&root) == Some(&ret)
+    #[spec(ensures: |ret| self.values.get(&root) == Maybe::Present(&ret)
         && (arena.value(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn value_reach(
@@ -1120,7 +1121,7 @@ impl<R: Reach> Reaches<R>
     ///   binding formers, whose bound positions each step out by one.
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::a_bind_closes_only_its_body`
-    #[spec(ensures: |ret| self.computations.get(&root) == Some(&ret)
+    #[spec(ensures: |ret| self.computations.get(&root) == Maybe::Present(&ret)
         && (arena.computation(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn comp_reach(
@@ -1150,7 +1151,7 @@ impl<R: Reach> Reaches<R>
     ///   variable code (`i + 1`), and a dependent arrow whose codomain reads
     ///   only its own binder (closed from outside).
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
-    #[spec(ensures: |ret| self.value_types.get(&root) == Some(&ret)
+    #[spec(ensures: |ret| self.value_types.get(&root) == Maybe::Present(&ret)
         && (arena.value_type(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn value_type_reach(
@@ -1180,7 +1181,7 @@ impl<R: Reach> Reaches<R>
     ///   dependent arrow, whose codomain steps out by one and whose domain does
     ///   not.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
-    #[spec(ensures: |ret| self.comp_types.get(&root) == Some(&ret)
+    #[spec(ensures: |ret| self.comp_types.get(&root) == Maybe::Present(&ret)
         && (arena.comp_type(root).is_some() || ret == R::widest()))]
     #[inline]
     pub fn comp_type_reach(
@@ -1227,10 +1228,10 @@ impl<R: Reach> Reaches<R>
         requires: matches!(root, ReachTask::OpenValue(_) | ReachTask::OpenComp(_)
             | ReachTask::OpenValueType(_) | ReachTask::OpenCompType(_)),
         ensures: match root {
-            ReachTask::OpenValue(id) | ReachTask::CloseValue(id) => self.values.contains_key(&id),
-            ReachTask::OpenComp(id) | ReachTask::CloseComp(id) => self.computations.contains_key(&id),
-            ReachTask::OpenValueType(id) | ReachTask::CloseValueType(id) => self.value_types.contains_key(&id),
-            ReachTask::OpenCompType(id) | ReachTask::CloseCompType(id) => self.comp_types.contains_key(&id),
+            ReachTask::OpenValue(id) | ReachTask::CloseValue(id) => matches!(self.values.get(&id), Maybe::Present(_)),
+            ReachTask::OpenComp(id) | ReachTask::CloseComp(id) => matches!(self.computations.get(&id), Maybe::Present(_)),
+            ReachTask::OpenValueType(id) | ReachTask::CloseValueType(id) => matches!(self.value_types.get(&id), Maybe::Present(_)),
+            ReachTask::OpenCompType(id) | ReachTask::CloseCompType(id) => matches!(self.comp_types.get(&id), Maybe::Present(_)),
         },
     )]
     fn run(
@@ -1245,12 +1246,12 @@ impl<R: Reach> Reaches<R>
         while let Some(task) = tasks.pop() {
             match task {
                 ReachTask::OpenValue(id) => {
-                    if self.values.contains_key(&id) {
+                    if matches!(self.values.get(&id), Maybe::Present(_)) {
                         continue;
                     }
                     let Some(node) = arena.value(id)
                     else {
-                        let _prior = self.values.insert(id, R::widest());
+                        self.values.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseValue(id));
@@ -1361,15 +1362,15 @@ impl<R: Reach> Reaches<R>
                 },
                 ReachTask::CloseValue(id) => {
                     let reach = self.combine_value(arena, id);
-                    let _prior = self.values.insert(id, reach);
+                    self.values.insert(id, reach);
                 },
                 ReachTask::OpenComp(id) => {
-                    if self.computations.contains_key(&id) {
+                    if matches!(self.computations.get(&id), Maybe::Present(_)) {
                         continue;
                     }
                     let Some(node) = arena.computation(id)
                     else {
-                        let _prior = self.computations.insert(id, R::widest());
+                        self.computations.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseComp(id));
@@ -1510,15 +1511,15 @@ impl<R: Reach> Reaches<R>
                 },
                 ReachTask::CloseComp(id) => {
                     let reach = self.combine_comp(arena, id);
-                    let _prior = self.computations.insert(id, reach);
+                    self.computations.insert(id, reach);
                 },
                 ReachTask::OpenValueType(id) => {
-                    if self.value_types.contains_key(&id) {
+                    if matches!(self.value_types.get(&id), Maybe::Present(_)) {
                         continue;
                     }
                     let Some(node) = arena.value_type(id)
                     else {
-                        let _prior = self.value_types.insert(id, R::widest());
+                        self.value_types.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseValueType(id));
@@ -1583,15 +1584,15 @@ impl<R: Reach> Reaches<R>
                 },
                 ReachTask::CloseValueType(id) => {
                     let reach = self.combine_value_type(arena, id);
-                    let _prior = self.value_types.insert(id, reach);
+                    self.value_types.insert(id, reach);
                 },
                 ReachTask::OpenCompType(id) => {
-                    if self.comp_types.contains_key(&id) {
+                    if matches!(self.comp_types.get(&id), Maybe::Present(_)) {
                         continue;
                     }
                     let Some(node) = arena.comp_type(id)
                     else {
-                        let _prior = self.comp_types.insert(id, R::widest());
+                        self.comp_types.insert(id, R::widest());
                         continue;
                     };
                     tasks.push(ReachTask::CloseCompType(id));
@@ -1617,7 +1618,7 @@ impl<R: Reach> Reaches<R>
                 },
                 ReachTask::CloseCompType(id) => {
                     let reach = self.combine_comp_type(arena, id);
-                    let _prior = self.comp_types.insert(id, reach);
+                    self.comp_types.insert(id, reach);
                 },
             }
         }
@@ -1642,14 +1643,20 @@ impl<R: Reach> Reaches<R>
     /// - witness: `support::tests::a_closed_value_reaches_no_binder`
     /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.values.get(&id).cloned().unwrap_or_else(R::widest))]
+    #[spec(ensures: |ret| ret == match self.values.get(&id) {
+        Maybe::Present(reach) => reach.clone(),
+        Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+    })]
     #[inline]
     fn cached_value(
         &self,
         id: ValueId,
     ) -> R
     {
-        self.values.get(&id).cloned().unwrap_or_else(R::widest)
+        match self.values.get(&id) {
+            Maybe::Present(reach) => reach.clone(),
+            Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+        }
     }
 
     /// A cached computation reach, conservatively widest when absent.
@@ -1667,17 +1674,20 @@ impl<R: Reach> Reaches<R>
     ///   a missing answer.
     /// - witness: `support::tests::a_binder_closes_its_body`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.computations.get(&id).cloned().unwrap_or_else(R::widest))]
+    #[spec(ensures: |ret| ret == match self.computations.get(&id) {
+        Maybe::Present(reach) => reach.clone(),
+        Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+    })]
     #[inline]
     fn cached_comp(
         &self,
         id: ComputationId,
     ) -> R
     {
-        self.computations
-            .get(&id)
-            .cloned()
-            .unwrap_or_else(R::widest)
+        match self.computations.get(&id) {
+            Maybe::Present(reach) => reach.clone(),
+            Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+        }
     }
 
     /// A cached value-type reach, conservatively widest when absent.
@@ -1695,14 +1705,20 @@ impl<R: Reach> Reaches<R>
     ///   and fallback faults.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.value_types.get(&id).cloned().unwrap_or_else(R::widest))]
+    #[spec(ensures: |ret| ret == match self.value_types.get(&id) {
+        Maybe::Present(reach) => reach.clone(),
+        Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+    })]
     #[inline]
     fn cached_value_type(
         &self,
         id: ValueTypeId,
     ) -> R
     {
-        self.value_types.get(&id).cloned().unwrap_or_else(R::widest)
+        match self.value_types.get(&id) {
+            Maybe::Present(reach) => reach.clone(),
+            Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+        }
     }
 
     /// A cached computation-type reach, conservatively widest when absent.
@@ -1720,14 +1736,20 @@ impl<R: Reach> Reaches<R>
     ///   conservative fallback.
     /// - witness: `support::tests::a_type_reaches_through_its_codes`
     /// - witness: `support::tests::an_unreadable_node_reaches_widest`
-    #[spec(ensures: |ret| ret == self.comp_types.get(&id).cloned().unwrap_or_else(R::widest))]
+    #[spec(ensures: |ret| ret == match self.comp_types.get(&id) {
+        Maybe::Present(reach) => reach.clone(),
+        Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+    })]
     #[inline]
     fn cached_comp_type(
         &self,
         id: CompTypeId,
     ) -> R
     {
-        self.comp_types.get(&id).cloned().unwrap_or_else(R::widest)
+        match self.comp_types.get(&id) {
+            Maybe::Present(reach) => reach.clone(),
+            Maybe::Absent(hashed_entry::Absent::Unrecorded) => R::widest(),
+        }
     }
 
     /// Combine one value-type node's children's reaches into its own.

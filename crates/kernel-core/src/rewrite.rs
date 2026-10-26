@@ -57,7 +57,6 @@
 //! make a comparison finish earlier and can never change a verdict; the trusted
 //! base still takes no interning table of *decoded* values.
 
-use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
@@ -65,9 +64,9 @@ use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
+use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
-use gandr_kernel_check_memo::OrderedMemo;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -87,6 +86,8 @@ use crate::encoding::ContentEncoding;
 use crate::encoding::ContentTable;
 use crate::encoding::RewriteGoal;
 use crate::encoding::encode_rewrite;
+use crate::hashed::HashedMap;
+use crate::hashed::hashed_entry;
 
 /// A count of binders: a cutoff, a shift amount, or the depth a walk has
 /// reached.
@@ -498,10 +499,10 @@ impl MemoKey for RewriteSupport
 }
 
 /// The rewrite memo a session builds for itself: the default path.
-pub type RewriteMemo = OrderedMemo<RewriteSupport, RewriteOutcome>;
+pub type RewriteMemo = HashedMemo<RewriteSupport, RewriteOutcome>;
 
 /// Which rewrite the engine is running, with its parameter.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Rewrite
 {
     /// Raise every free index at or above `cutoff` by `amount`.
@@ -1477,7 +1478,8 @@ where
     // rotation it carries a body with — are memoized within this walk, beside
     // the nodes an instantiation found reading its binder and, for each node it
     // has open, whether that node reads it, innermost last.
-    let mut local: BTreeMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome> = BTreeMap::new();
+    let mut local: HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome> =
+        HashedMap::default();
     let mut reads: BTreeSet<(AnyNode, BinderDepth)> = BTreeSet::new();
     let mut reading: Vec<Mention> = Vec::new();
     tasks.push(RewriteTask::Open(root, initial_depth, rewrite));
@@ -1493,7 +1495,10 @@ where
                         memo.recall(&support).map(|hit| *hit.outcome())
                     },
                     Maybe::Present(_) => None,
-                    Maybe::Absent(keyed::Absent::Local) => local.get(&(node, depth, step)).copied(),
+                    Maybe::Absent(keyed::Absent::Local) => match local.get(&(node, depth, step)) {
+                        Maybe::Present(&outcome) => Some(outcome),
+                        Maybe::Absent(hashed_entry::Absent::Unrecorded) => None,
+                    },
                 };
                 if let Some(outcome) = hit {
                     if instantiating && reads.contains(&(node, depth)) {
@@ -1718,10 +1723,10 @@ fn note_read(
 ///   session's goals.
 /// - witness: `rewrite::tests::an_instantiation_at_a_call_binds_it_ahead_of_each_decode_reading_it`
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
-#[spec(ensures: !matches!(step.goal(node, depth), Maybe::Absent(_)) || local.get(&(node, depth, step)) == Some(&outcome))]
+#[spec(ensures: !matches!(step.goal(node, depth), Maybe::Absent(_)) || local.get(&(node, depth, step)) == Maybe::Present(&outcome))]
 fn remember_rewrite<M>(
     (table, arena, memo): (&mut ContentTable, &TermArena, &mut M),
-    local: &mut BTreeMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome>,
+    local: &mut HashedMap<(AnyNode, BinderDepth, Rewrite), RewriteOutcome>,
     (node, depth, step): (AnyNode, BinderDepth, Rewrite),
     outcome: RewriteOutcome,
 ) where
@@ -1735,7 +1740,7 @@ fn remember_rewrite<M>(
             }
         },
         Maybe::Absent(keyed::Absent::Local) => {
-            let _previous = local.insert((node, depth, step), outcome);
+            local.insert((node, depth, step), outcome);
         },
     }
 }

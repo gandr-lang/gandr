@@ -80,16 +80,20 @@
 //! key buys over an identity key on a real corpus is unmeasured; a measurement
 //! showing that pass dominating the reuse payoff re-keys the memo.
 
-use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
+use gandr_kernel_check_memo::HashIndex;
+use gandr_kernel_check_memo::Probe;
+use gandr_kernel_check_memo::TableHash;
+use gandr_kernel_check_memo::TablePosition;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelOffset;
 use gandr_kernel_strata::LevelVar;
 use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::ArenaLength;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -137,6 +141,20 @@ impl From<ContentId> for DigestWord
     fn from(id: ContentId) -> Self
     {
         Self::from(id.0)
+    }
+}
+
+impl From<TablePosition> for ContentId
+{
+    /// The id of the record at `position` in its table's stream: ids are
+    /// assigned in stream order, so a record's position is its id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: TablePosition) -> Self
+    {
+        Self(u64::try_from(usize::from(position)).unwrap_or(u64::MAX))
     }
 }
 
@@ -689,10 +707,11 @@ enum EncodeTask
 /// memo key's — pairs, covers, contexts and goals — so a goal's key is a name
 /// in the same merged graph, built from its members' names.
 ///
-/// Every record's bytes are held once, in the stream; the index maps a record's
-/// digest to its id, and a lookup compares the bytes there. Records are built
-/// in one reused buffer and walks run on one reused stack, so asking about
-/// content the table already holds allocates nothing.
+/// Every record's bytes are held once, in the stream; the index files each
+/// record's id under its digest's hash, and a lookup compares the bytes there.
+/// Each arena node's id sits in a dense column for its family. Records are
+/// built in one reused buffer and walks run on one reused stack, so asking
+/// about content the table already holds allocates nothing.
 #[derive(Clone, Debug, Default)]
 pub struct ContentTable
 {
@@ -700,13 +719,10 @@ pub struct ContentTable
     stream: ContentEncoding,
     /// Where each record's bytes sit in the stream, by id.
     spans: Vec<RecordSpan>,
-    /// The first id whose record has each digest.
-    interned: BTreeMap<ContentDigest, ContentId>,
-    /// The next id whose record shares this id's digest; empty unless two
-    /// records' digests collide.
-    colliding: BTreeMap<ContentId, ContentId>,
+    /// Each record's id, filed under its digest's hash.
+    interned: HashIndex,
     /// The id already assigned to each arena node.
-    placed: BTreeMap<AnyNode, ContentId>,
+    placed: Placements,
     /// How many records the stream holds.
     records: u64,
     /// The record being built.
@@ -725,6 +741,291 @@ struct RecordSpan
     start: usize,
     /// The offset past its last byte.
     end: usize,
+}
+
+/// The content id each arena node was assigned: one dense column per node
+/// family, read at the node's offset.
+///
+/// A column is paged. A page of [`PLACEMENT_PAGE_SLOTS`] slots is allocated
+/// the first time a node on it is placed, so a table asked about a few nodes
+/// of a wide arena holds a few pages rather than the arena's width.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a node holds at most one id, the one last placed for it; nodes of
+///   distinct families or offsets never share a slot.
+/// - provides: an untouched read and write per node in place of an ordered
+///   search.
+/// - panics: none.
+/// - executable: none — a data declaration; its operations carry the
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one offset in two families, offsets on two pages, and a
+///   repeated placement separate a family-blind column, a page-blind slot and a
+///   double count.
+/// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
+#[derive(Clone, Debug, Default)]
+struct Placements
+{
+    /// Ids placed for value nodes.
+    values: PlacementColumn,
+    /// Ids placed for computation nodes.
+    computations: PlacementColumn,
+    /// Ids placed for value-type nodes.
+    value_types: PlacementColumn,
+    /// Ids placed for computation-type nodes.
+    comp_types: PlacementColumn,
+    /// How many nodes hold an id.
+    count: PlacementCount,
+}
+
+/// One family's column of placements, in pages allocated on first write.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default)]
+struct PlacementColumn
+{
+    /// The pages, by page number; an empty page has never been written.
+    pages: Vec<Vec<PlacementSlot>>,
+}
+
+/// One node's slot in its column.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Placement
+{
+    /// The node has not been placed.
+    Unplaced,
+    /// The node was placed with this id.
+    Placed(ContentId),
+}
+
+/// How many nodes a [`Placements`] holds an id for.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+struct PlacementCount(usize);
+
+/// One node's slot as a column page stores it: the placed id, or
+/// [`PlacementSlot::UNPLACED`], an id no table assigns.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PlacementSlot(ContentId);
+
+impl PlacementSlot
+{
+    /// The slot of a node not yet placed. A table's ids count its records,
+    /// which allocated memory bounds far below this one.
+    const UNPLACED: Self = Self(ContentId(u64::MAX));
+
+    /// The placement the slot stores.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn placement(self) -> Placement
+    {
+        if self == Self::UNPLACED {
+            Placement::Unplaced
+        }
+        else {
+            Placement::Placed(self.0)
+        }
+    }
+}
+
+/// How many offsets one column page covers.
+const PLACEMENT_PAGE_SLOTS: usize = 128;
+
+/// The shift from an offset to its page number: the page size's logarithm.
+const PLACEMENT_PAGE_SHIFT: u32 = PLACEMENT_PAGE_SLOTS.trailing_zeros();
+
+/// The mask from an offset to its slot within its page.
+const PLACEMENT_SLOT_MASK: usize = PLACEMENT_PAGE_SLOTS.saturating_sub(1);
+
+quenchant_shape::reason_enum! {
+    /// Why a table holds no id for a node.
+    mod placement {
+        /// The node has no id yet.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The table's walk has not placed the node.
+            Unplaced,
+        }
+    }
+}
+
+impl PlacementColumn
+{
+    /// The slot at `offset`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the placement last written at `offset`, or
+    ///   [`Placement::Unplaced`] when its page or slot was never written.
+    /// - provides: the column read.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Placements`].
+    /// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
+    #[inline]
+    #[spec(ensures: |ret| matches!(ret, Placement::Unplaced)
+        || usize::from(offset).checked_shr(PLACEMENT_PAGE_SHIFT)
+            .and_then(|page| self.pages.get(page))
+            .and_then(|page| page.get(usize::from(offset) & PLACEMENT_SLOT_MASK))
+            .map(|slot| slot.placement()) == Some(ret))]
+    fn get(
+        &self,
+        offset: ArenaLength,
+    ) -> Placement
+    {
+        let offset = usize::from(offset);
+        offset
+            .checked_shr(PLACEMENT_PAGE_SHIFT)
+            .and_then(|page| self.pages.get(page))
+            .and_then(|page| page.get(offset & PLACEMENT_SLOT_MASK))
+            .map_or(Placement::Unplaced, |slot| slot.placement())
+    }
+
+    /// Write `id` at `offset`, returning what the slot held.
+    ///
+    /// # Specification
+    /// - requires: `offset` is an arena offset, below `u32::MAX`, and `id` an
+    ///   id the table assigned, so never [`PlacementSlot::UNPLACED`]'s.
+    /// - ensures: [`PlacementColumn::get`] answers `Placed(id)` at `offset`;
+    ///   every other offset reads as before. The slot's previous placement is
+    ///   returned.
+    /// - provides: the column write; it allocates the offset's page the first
+    ///   time the page is written.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Placements`].
+    /// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
+    #[inline]
+    #[spec(ensures: |ret| self.get(offset) == Placement::Placed(id))]
+    fn set(
+        &mut self,
+        offset: ArenaLength,
+        id: ContentId,
+    ) -> Placement
+    {
+        let offset = usize::from(offset);
+        let number = offset.checked_shr(PLACEMENT_PAGE_SHIFT).unwrap_or(0);
+        if self.pages.len() <= number {
+            self.pages.resize_with(number.saturating_add(1), Vec::new);
+        }
+        let Some(page) = self.pages.get_mut(number)
+        else {
+            return Placement::Unplaced;
+        };
+        if page.is_empty() {
+            page.resize(PLACEMENT_PAGE_SLOTS, PlacementSlot::UNPLACED);
+        }
+        page.get_mut(offset & PLACEMENT_SLOT_MASK)
+            .map_or(Placement::Unplaced, |slot| {
+                core::mem::replace(slot, PlacementSlot(id)).placement()
+            })
+    }
+}
+
+impl Placements
+{
+    /// The column `node`'s family is placed in.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn column(
+        &self,
+        node: AnyNode,
+    ) -> &PlacementColumn
+    {
+        match node {
+            AnyNode::Value(_) => &self.values,
+            AnyNode::Computation(_) => &self.computations,
+            AnyNode::ValueType(_) => &self.value_types,
+            AnyNode::CompType(_) => &self.comp_types,
+        }
+    }
+
+    /// The id placed for `node`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the id last placed for `node`, or
+    ///   [`placement::Absent::Unplaced`] when none was.
+    /// - provides: the placement read every record's children go through.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Placements`].
+    /// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Maybe::Present(id) => self.column(node).get(node.offset()) == Placement::Placed(id),
+        Maybe::Absent(placement::Absent::Unplaced) => self.column(node).get(node.offset()) == Placement::Unplaced,
+    })]
+    fn get(
+        &self,
+        node: AnyNode,
+    ) -> Maybe<ContentId, placement::Absent>
+    {
+        match self.column(node).get(node.offset()) {
+            Placement::Placed(id) => Maybe::Present(id),
+            Placement::Unplaced => Maybe::Absent(placement::Absent::Unplaced),
+        }
+    }
+
+    /// Place `node` with `id`.
+    ///
+    /// # Specification
+    /// - requires: `node` belongs to the arena every other placement does.
+    /// - ensures: [`Placements::get`] answers `id` for `node`; the count rises
+    ///   by one exactly when `node` held no id before.
+    /// - provides: the placement write.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Placements`].
+    /// - witness: `encoding::tests::placements_keep_families_and_pages_apart`
+    #[inline]
+    #[spec(
+        captures: [held = self.get(node), count_before = self.count],
+        ensures: self.get(node) == Maybe::Present(id) && match held {
+            Maybe::Present(_) => self.count == count_before,
+            Maybe::Absent(_) => self.count.0 == count_before.0.saturating_add(1),
+        }
+    )]
+    fn insert(
+        &mut self,
+        node: AnyNode,
+        id: ContentId,
+    )
+    {
+        let column = match node {
+            AnyNode::Value(_) => &mut self.values,
+            AnyNode::Computation(_) => &mut self.computations,
+            AnyNode::ValueType(_) => &mut self.value_types,
+            AnyNode::CompType(_) => &mut self.comp_types,
+        };
+        if column.set(node.offset(), id) == Placement::Unplaced {
+            self.count = PlacementCount(self.count.0.saturating_add(1));
+        }
+    }
+
+    /// How many nodes hold an id.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    const fn count(&self) -> PlacementCount
+    {
+        self.count
+    }
 }
 
 quenchant_shape::reason_enum! {
@@ -797,12 +1098,16 @@ impl ContentTable
     /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
     /// - witness: `encoding::tests::structurally_equal_nodes_encode_alike`
     #[spec(
-        captures: [held = self.placed.get(&node).copied(), records_before = self.records,
-            stream_before = self.stream.0.len(), placed_before = self.placed.len()],
-        ensures: |ret| self.placed.get(&node) == Some(&ret) && ret.0 < self.records
-            && self.records >= records_before && self.placed.len() >= placed_before
-            && held.is_none_or(|prior| ret == prior && self.records == records_before
-                && self.stream.0.len() == stream_before && self.placed.len() == placed_before)
+        captures: [held = self.placed.get(node), records_before = self.records,
+            stream_before = self.stream.0.len(), placed_before = self.placed.count()],
+        ensures: |ret| self.placed.get(node) == Maybe::Present(ret) && ret.0 < self.records
+            && self.records >= records_before && self.placed.count() >= placed_before
+            && match held {
+                Maybe::Present(prior) => ret == prior && self.records == records_before
+                    && self.stream.0.len() == stream_before
+                    && self.placed.count() == placed_before,
+                Maybe::Absent(placement::Absent::Unplaced) => true,
+            }
     )]
     fn place(
         &mut self,
@@ -810,7 +1115,7 @@ impl ContentTable
         node: AnyNode,
     ) -> ContentId
     {
-        if let Some(&held) = self.placed.get(&node) {
+        if let Maybe::Present(held) = self.placed.get(node) {
             return held;
         }
         let mut tasks = core::mem::take(&mut self.tasks);
@@ -819,21 +1124,21 @@ impl ContentTable
         while let Some(task) = tasks.pop() {
             match task {
                 EncodeTask::Open(open) => {
-                    if self.placed.contains_key(&open) {
+                    if let Maybe::Present(_) = self.placed.get(open) {
                         continue;
                     }
                     tasks.push(EncodeTask::Close(open));
                     push_children(arena, open, &mut tasks);
                 },
                 EncodeTask::Close(close) => {
-                    if self.placed.contains_key(&close) {
+                    if let Maybe::Present(_) = self.placed.get(close) {
                         continue;
                     }
                     let mut record = core::mem::take(&mut self.scratch);
                     self.write_record(&mut record, arena, close);
                     self.scratch = record;
                     let id = self.intern_scratch();
-                    let _prior = self.placed.insert(close, id);
+                    self.placed.insert(close, id);
                 },
             }
         }
@@ -865,15 +1170,18 @@ impl ContentTable
     /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
     #[inline]
     #[spec(
-        requires: self.placed.contains_key(&node),
-        ensures: |ret| self.placed.get(&node) == Some(&ret)
+        requires: matches!(self.placed.get(node), Maybe::Present(_)),
+        ensures: |ret| self.placed.get(node) == Maybe::Present(ret)
     )]
     fn content_of(
         &self,
         node: AnyNode,
     ) -> ContentId
     {
-        self.placed.get(&node).copied().unwrap_or(ContentId(0))
+        match self.placed.get(node) {
+            Maybe::Present(id) => id,
+            Maybe::Absent(placement::Absent::Unplaced) => ContentId(0),
+        }
     }
 
     /// The id this table holds for `record`, found by its digest `digest` and
@@ -905,18 +1213,46 @@ impl ContentTable
         digest: ContentDigest,
     ) -> Maybe<ContentId, record_held::Absent>
     {
-        let mut cursor = self.interned.get(&digest).copied();
-        while let Some(id) = cursor {
-            let bytes = usize::try_from(id.0)
-                .ok()
-                .and_then(|index| self.spans.get(index))
-                .and_then(|span| self.stream.0.get(span.start .. span.end));
-            if bytes == Some(record.0.as_slice()) {
-                return Maybe::Present(id);
-            }
-            cursor = self.colliding.get(&id).copied();
+        match self.probe_record(record, TableHash::of(&digest)) {
+            Probe::Found(position) => Maybe::Present(ContentId::from(position)),
+            Probe::Vacant(_) => Maybe::Absent(record_held::Absent::Fresh),
         }
-        Maybe::Absent(record_held::Absent::Fresh)
+    }
+
+    /// The probe for `record`, whose digest hashes to `hash`: the position of
+    /// the byte-equal record, or the slot a fresh one is filed at.
+    ///
+    /// # Specification
+    /// - requires: `hash` is the table hash of `record`'s digest.
+    /// - ensures: [`Probe::Found`] the position of the record whose bytes equal
+    ///   `record`'s, or [`Probe::Vacant`] the slot it would be filed at.
+    /// - provides: the one probe lookups and admissions decide over; it reads
+    ///   the stream in place and allocates nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::held`].
+    /// - witness: `encoding::tests::records_sharing_a_digest_keep_their_own_ids`
+    #[inline]
+    #[spec(ensures: |ret| match ret {
+        Probe::Found(position) => self.spans.get(usize::from(position))
+            .and_then(|span| self.stream.0.get(span.start .. span.end))
+            == Some(record.0.as_slice()),
+        Probe::Vacant(_) => true,
+    })]
+    fn probe_record(
+        &self,
+        record: &ContentEncoding,
+        hash: TableHash,
+    ) -> Probe
+    {
+        self.interned.probe(hash, |position| {
+            self.spans
+                .get(usize::from(position))
+                .and_then(|span| self.stream.0.get(span.start .. span.end))
+                == Some(record.0.as_slice())
+        })
     }
 
     /// Assign the record in the scratch buffer an id, reusing the one its bytes
@@ -951,14 +1287,15 @@ impl ContentTable
     ///   ids are already assigned.
     /// - ensures: the id this table already holds for those exact bytes, or a
     ///   fresh id whose record is appended to the stream and filed under
-    ///   `digest` — first under it, or at the end of the records already
-    ///   sharing it. Ids are assigned in stream order, byte-equal records take
-    ///   one id however many nodes spell them, and records sharing a digest
-    ///   keep their own ids. The record count is at most the stream's byte
-    ///   length: each fresh record appends a nonempty length-prefixed image
-    ///   before the count advances. On supported targets that allocation is
-    ///   bounded by `isize::MAX`, below `u64::MAX`; no representable table
-    ///   overflows it.
+    ///   `digest`'s hash. Ids are assigned in stream order, byte-equal records
+    ///   take one id however many nodes spell them, and records sharing a
+    ///   digest keep their own ids. The record count is at most the stream's
+    ///   byte length: each fresh record appends a nonempty length-prefixed
+    ///   image before the count advances. On supported targets that allocation
+    ///   is bounded by `isize::MAX`, below `u64::MAX`; no representable table
+    ///   overflows it. Past `u32::MAX` records the index files no more, so a
+    ///   record equal to a later one takes its own id: sharing stops there, and
+    ///   nothing else does.
     /// - provides: the step that makes a re-minted spine reuse its untouched
     ///   leaf, which an arena-identity key forfeits. A held record is found in
     ///   place; only a fresh one grows the stream, the spans and the index.
@@ -969,8 +1306,8 @@ impl ContentTable
     /// - hypothesis: L1/L3 — complete records with placed children enter a
     ///   valid table. Fresh ids, exact-byte reuse and count/stream bounds are
     ///   executable; shared and re-minted depth-16 graphs exercise both
-    ///   branches, and two records forced under one digest exercise the
-    ///   collision chain, not an unallocatable u64 ceiling.
+    ///   branches, and two records forced under one digest exercise records
+    ///   filed under one hash, not an unallocatable u64 ceiling.
     /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
     /// - witness: `encoding::tests::records_sharing_a_digest_keep_their_own_ids`
     #[spec(
@@ -979,7 +1316,8 @@ impl ContentTable
         ensures: |ret| u128::try_from(self.stream.0.len())
             .is_ok_and(|bytes| u128::from(self.records) <= bytes)
             && u64::try_from(self.spans.len()) == Ok(self.records) && ret.0 < self.records
-            && self.held(&self.scratch, digest) == Maybe::Present(ret)
+            && (self.held(&self.scratch, digest) == Maybe::Present(ret)
+                || ret.0 >= u64::from(u32::MAX))
             && match held {
                 Maybe::Present(prior) => ret == prior && self.records == records_before
                     && self.stream.0.len() == stream_before,
@@ -992,10 +1330,13 @@ impl ContentTable
         digest: ContentDigest,
     ) -> ContentId
     {
-        if let Maybe::Present(held) = self.held(&self.scratch, digest) {
-            return held;
-        }
+        let hash = TableHash::of(&digest);
+        let slot = match self.probe_record(&self.scratch, hash) {
+            Probe::Found(position) => return ContentId::from(position),
+            Probe::Vacant(slot) => slot,
+        };
         let id = ContentId(self.records);
+        let filed = TablePosition::try_from(self.spans.len());
         self.stream.put_record(&self.scratch);
         let end = self.stream.0.len();
         self.spans.push(RecordSpan {
@@ -1007,17 +1348,10 @@ impl ContentTable
             arith::Int::from(self.records),
             arith::Int::from(1_u64),
         ));
-        match self.interned.get(&digest).copied() {
-            None => {
-                let _prior = self.interned.insert(digest, id);
-            },
-            Some(first) => {
-                let mut tail = first;
-                while let Some(&next) = self.colliding.get(&tail) {
-                    tail = next;
-                }
-                let _prior = self.colliding.insert(tail, id);
-            },
+        // Past the index's position ceiling a record is held but not filed:
+        // a later equal record takes a fresh id, which costs sharing alone.
+        if let Ok(position) = filed {
+            self.interned.insert(slot, hash, position);
         }
         id
     }
@@ -1077,7 +1411,7 @@ impl ContentTable
     /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
     /// - witness: `encoding::tests::one_key_record_per_distinct_question`
     #[spec(ensures: |ret| ret.0 < self.records
-        && read.iter().all(|&(_, entry)| self.placed.contains_key(&AnyNode::ValueType(entry))))]
+        && read.iter().all(|&(_, entry)| matches!(self.placed.get(AnyNode::ValueType(entry)), Maybe::Present(_))))]
     fn cover(
         &mut self,
         arena: &TermArena,
@@ -1116,7 +1450,7 @@ impl ContentTable
     /// - witness: `encoding::tests::the_telescope_is_folded_in_order`
     /// - witness: `encoding::tests::the_read_positions_are_part_of_the_key`
     #[spec(ensures: |ret| ret.0 < self.records
-        && context.iter().all(|&entry| self.placed.contains_key(&AnyNode::ValueType(entry))))]
+        && context.iter().all(|&entry| matches!(self.placed.get(AnyNode::ValueType(entry)), Maybe::Present(_))))]
     fn context(
         &mut self,
         arena: &TermArena,
@@ -1227,23 +1561,23 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     #[spec(
         requires: match *value {
-            Value::Constructor { datatype, ref fields, .. } => self.placed.contains_key(&AnyNode::ValueType(datatype)) && fields.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => self.placed.contains_key(&AnyNode::ValueType(classifier)) && self.placed.contains_key(&AnyNode::Value(payload_paths)),
-            Value::PathEquiv { path_type, forward, backward, .. } => self.placed.contains_key(&AnyNode::ValueType(path_type)) && self.placed.contains_key(&AnyNode::Value(forward)) && self.placed.contains_key(&AnyNode::Value(backward)),
+            Value::Constructor { datatype, ref fields, .. } => matches!(self.placed.get(AnyNode::ValueType(datatype)), Maybe::Present(_)) && fields.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            Value::Record(ref fields) => fields.values().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            Value::SessionPath { path_type: classifier, payload_paths, .. } | Value::SessionFlow { flow_type: classifier, payload_paths, .. } => matches!(self.placed.get(AnyNode::ValueType(classifier)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(payload_paths)), Maybe::Present(_)),
+            Value::PathEquiv { path_type, forward, backward, .. } => matches!(self.placed.get(AnyNode::ValueType(path_type)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(forward)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(backward)), Maybe::Present(_)),
             Value::ListNil | Value::Variable(_) | Value::Constant(_) | Value::Literal(_) => true,
-            Value::Tuple(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => self.placed.contains_key(&AnyNode::Value(first))
-                            && self.placed.contains_key(&AnyNode::Value(second)),
-            Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
-            Value::ForwardFlow { flow_type, translator, ref outputs, .. } => self.placed.contains_key(&AnyNode::ValueType(flow_type)) && self.placed.contains_key(&AnyNode::Value(translator)) && outputs.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::FunctionFlow { flow_type, domain, codomain } => self.placed.contains_key(&AnyNode::ValueType(flow_type)) && self.placed.contains_key(&AnyNode::Value(domain)) && self.placed.contains_key(&AnyNode::Value(codomain)),
-            Value::Higher { ref evidence, .. } => evidence.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| [component.left, component.right, component.evidence].iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id)))),
-            Value::QuantifiedEvaluation { ref children, .. } => children.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            Value::Thunk(body) | Value::Returned(body) => self.placed.contains_key(&AnyNode::Computation(body)),
-            Value::Quote(quoted) => self.placed.contains_key(&AnyNode::ValueType(quoted)),
-            Value::QuoteComputation(quoted) => self.placed.contains_key(&AnyNode::CompType(quoted)),
+            Value::Tuple(ref components) => components.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            Value::ListCons(first, second) | Value::PathProduct(first, second) | Value::FlowProduct(first, second) | Value::StaticApplication(first, second) | Value::Then { first, second, .. } => matches!(self.placed.get(AnyNode::Value(first)), Maybe::Present(_))
+                            && matches!(self.placed.get(AnyNode::Value(second)), Maybe::Present(_)),
+            Value::PathRefl(body) | Value::Univalence(body) | Value::Here { point: body, .. } | Value::Stay { point: body, .. } | Value::Injection(_, body) | Value::Lift { body, .. } => matches!(self.placed.get(AnyNode::Value(body)), Maybe::Present(_)),
+            Value::ForwardFlow { flow_type, translator, ref outputs, .. } => matches!(self.placed.get(AnyNode::ValueType(flow_type)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(translator)), Maybe::Present(_)) && outputs.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            Value::FunctionFlow { flow_type, domain, codomain } => matches!(self.placed.get(AnyNode::ValueType(flow_type)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(domain)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(codomain)), Maybe::Present(_)),
+            Value::Higher { ref evidence, .. } => evidence.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            Value::HigherEvaluation { ref components, .. } => components.iter().all(|component| [component.left, component.right, component.evidence].iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_)))),
+            Value::QuantifiedEvaluation { ref children, .. } => children.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            Value::Thunk(body) | Value::Returned(body) => matches!(self.placed.get(AnyNode::Computation(body)), Maybe::Present(_)),
+            Value::Quote(quoted) => matches!(self.placed.get(AnyNode::ValueType(quoted)), Maybe::Present(_)),
+            Value::QuoteComputation(quoted) => matches!(self.placed.get(AnyNode::CompType(quoted)), Maybe::Present(_)),
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *value {
@@ -1533,25 +1867,25 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
     #[spec(
         requires: match *computation {
-            Computation::DataCase { scrutinee, motive, ref branches, .. } => self.placed.contains_key(&AnyNode::Value(scrutinee)) && self.placed.contains_key(&AnyNode::CompType(motive)) && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
-            Computation::SigmaSplit { scrutinee, motive, body } => [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].iter().all(|child| self.placed.contains_key(child)),
-            Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => self.placed.contains_key(&AnyNode::Value(record)),
-            Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
-            Computation::ListCase { list, on_nil, on_cons } => [AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| self.placed.contains_key(child)),
-            Computation::Transport(path, value) => self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
-            Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value } => self.placed.contains_key(&AnyNode::ValueType(motive)) && self.placed.contains_key(&AnyNode::Value(path)) && self.placed.contains_key(&AnyNode::Value(value)),
-            Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value } => [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)].iter().all(|child| self.placed.contains_key(child)),
-            Computation::RelatedApplication { path, left, right, evidence, body } => [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)].iter().all(|child| self.placed.contains_key(child)),
-            Computation::Lambda(body) | Computation::Fixpoint { body, .. } => self.placed.contains_key(&AnyNode::Computation(body)),
-            Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
-                            && self.placed.contains_key(&AnyNode::Value(argument)),
-            Computation::Return(value) | Computation::Force(value) => self.placed.contains_key(&AnyNode::Value(value)),
-            Computation::Bind(bound, body) => self.placed.contains_key(&AnyNode::Computation(bound))
-                            && self.placed.contains_key(&AnyNode::Computation(body)),
-            Computation::With(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
-            Computation::Project(_, pair) => self.placed.contains_key(&AnyNode::Computation(pair)),
-            Computation::Case { scrutinee, ref branches } => self.placed.contains_key(&AnyNode::Value(scrutinee))
-                            && branches.iter().all(|id| self.placed.contains_key(&AnyNode::Computation(*id))),
+            Computation::DataCase { scrutinee, motive, ref branches, .. } => matches!(self.placed.get(AnyNode::Value(scrutinee)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::CompType(motive)), Maybe::Present(_)) && branches.iter().all(|id| matches!(self.placed.get(AnyNode::Computation(*id)), Maybe::Present(_))),
+            Computation::SigmaSplit { scrutinee, motive, body } => [AnyNode::Value(scrutinee), AnyNode::CompType(motive), AnyNode::Computation(body)].iter().all(|child| matches!(self.placed.get(*child), Maybe::Present(_))),
+            Computation::RecordProjection(record, _) | Computation::TupleProjection(record, _) => matches!(self.placed.get(AnyNode::Value(record)), Maybe::Present(_)),
+            Computation::ListFold { element, result, list, on_nil, on_cons } => [AnyNode::ValueType(element), AnyNode::ValueType(result), AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| matches!(self.placed.get(*child), Maybe::Present(_))),
+            Computation::ListCase { list, on_nil, on_cons } => [AnyNode::Value(list), AnyNode::Computation(on_nil), AnyNode::Computation(on_cons)].iter().all(|child| matches!(self.placed.get(*child), Maybe::Present(_))),
+            Computation::Transport(path, value) => matches!(self.placed.get(AnyNode::Value(path)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(value)), Maybe::Present(_)),
+            Computation::PathTransport { motive, path, value } | Computation::Ride { motive, flow: path, value } => matches!(self.placed.get(AnyNode::ValueType(motive)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(path)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(value)), Maybe::Present(_)),
+            Computation::TelescopeTransport { motive, path, start, over, value } | Computation::TelescopeRide { motive, flow: path, start, over, value } => [AnyNode::CompType(motive), AnyNode::Value(path), AnyNode::Value(start), AnyNode::Value(over), AnyNode::Value(value)].iter().all(|child| matches!(self.placed.get(*child), Maybe::Present(_))),
+            Computation::RelatedApplication { path, left, right, evidence, body } => [AnyNode::Value(path), AnyNode::Value(left), AnyNode::Value(right), AnyNode::Value(evidence), AnyNode::Computation(body)].iter().all(|child| matches!(self.placed.get(*child), Maybe::Present(_))),
+            Computation::Lambda(body) | Computation::Fixpoint { body, .. } => matches!(self.placed.get(AnyNode::Computation(body)), Maybe::Present(_)),
+            Computation::Application(head, argument) => matches!(self.placed.get(AnyNode::Computation(head)), Maybe::Present(_))
+                            && matches!(self.placed.get(AnyNode::Value(argument)), Maybe::Present(_)),
+            Computation::Return(value) | Computation::Force(value) => matches!(self.placed.get(AnyNode::Value(value)), Maybe::Present(_)),
+            Computation::Bind(bound, body) => matches!(self.placed.get(AnyNode::Computation(bound)), Maybe::Present(_))
+                            && matches!(self.placed.get(AnyNode::Computation(body)), Maybe::Present(_)),
+            Computation::With(ref components) => components.iter().all(|id| matches!(self.placed.get(AnyNode::Computation(*id)), Maybe::Present(_))),
+            Computation::Project(_, pair) => matches!(self.placed.get(AnyNode::Computation(pair)), Maybe::Present(_)),
+            Computation::Case { scrutinee, ref branches } => matches!(self.placed.get(AnyNode::Value(scrutinee)), Maybe::Present(_))
+                            && branches.iter().all(|id| matches!(self.placed.get(AnyNode::Computation(*id)), Maybe::Present(_))),
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *computation {
@@ -1830,18 +2164,18 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
     #[spec(
         requires: match *value_type {
-            ValueType::Data { ref arguments, .. } => arguments.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
-            ValueType::Record(ref fields) => fields.values().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
-            ValueType::Session { payloads, .. } => self.placed.contains_key(&AnyNode::ValueType(payloads)),
-            ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => self.placed.contains_key(&AnyNode::Value(source)) && self.placed.contains_key(&AnyNode::Value(target)),
-            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => self.placed.contains_key(&AnyNode::ValueType(domain)) && self.placed.contains_key(&AnyNode::Value(left)) && self.placed.contains_key(&AnyNode::Value(right)),
+            ValueType::Data { ref arguments, .. } => arguments.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
+            ValueType::Record(ref fields) => fields.values().all(|id| matches!(self.placed.get(AnyNode::ValueType(*id)), Maybe::Present(_))),
+            ValueType::Session { payloads, .. } => matches!(self.placed.get(AnyNode::ValueType(payloads)), Maybe::Present(_)),
+            ValueType::PathUniverse(source, target) | ValueType::FlowUniverse(source, target) => matches!(self.placed.get(AnyNode::Value(source)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(target)), Maybe::Present(_)),
+            ValueType::Path { domain, left, right } | ValueType::Flow { domain, source: left, target: right } | ValueType::Bridge { domain, left, right } => matches!(self.placed.get(AnyNode::ValueType(domain)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(left)), Maybe::Present(_)) && matches!(self.placed.get(AnyNode::Value(right)), Maybe::Present(_)),
             ValueType::Base(_) | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
-            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|id| self.placed.contains_key(&AnyNode::ValueType(*id))),
-            ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => self.placed.contains_key(&AnyNode::ValueType(first))
-                            && self.placed.contains_key(&AnyNode::ValueType(second)),
-            ValueType::Thunk(body) => self.placed.contains_key(&AnyNode::CompType(body)),
-            ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => self.placed.contains_key(&AnyNode::ValueType(inner)),
-            ValueType::Element { code, .. } => self.placed.contains_key(&AnyNode::Value(code)),
+            ValueType::Product(ref parts) | ValueType::Sum(ref parts) => parts.iter().all(|id| matches!(self.placed.get(AnyNode::ValueType(*id)), Maybe::Present(_))),
+            ValueType::StaticPi { domain: first, codomain: second } | ValueType::Sigma { first, second } => matches!(self.placed.get(AnyNode::ValueType(first)), Maybe::Present(_))
+                            && matches!(self.placed.get(AnyNode::ValueType(second)), Maybe::Present(_)),
+            ValueType::Thunk(body) => matches!(self.placed.get(AnyNode::CompType(body)), Maybe::Present(_)),
+            ValueType::Lift { inner, .. } | ValueType::List(inner) | ValueType::Staged { base: inner, .. } => matches!(self.placed.get(AnyNode::ValueType(inner)), Maybe::Present(_)),
+            ValueType::Element { code, .. } => matches!(self.placed.get(AnyNode::Value(code)), Maybe::Present(_)),
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *value_type {
@@ -2062,12 +2396,12 @@ AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
     /// - witness: `encoding::tests::computation_type_formers_keep_distinct_content`
     #[spec(
         requires: match *comp_type {
-            CompType::Returner(result) => self.placed.contains_key(&AnyNode::ValueType(result)),
-            CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.placed.contains_key(&AnyNode::ValueType(domain))
-                            && self.placed.contains_key(&AnyNode::CompType(codomain)),
-            CompType::Element { code, .. } => self.placed.contains_key(&AnyNode::Value(code)),
-            CompType::With(ref components) => components.iter().all(|id| self.placed.contains_key(&AnyNode::CompType(*id))),
-            CompType::Codata { ref arguments, .. } => arguments.iter().all(|id| self.placed.contains_key(&AnyNode::Value(*id))),
+            CompType::Returner(result) => matches!(self.placed.get(AnyNode::ValueType(result)), Maybe::Present(_)),
+            CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => matches!(self.placed.get(AnyNode::ValueType(domain)), Maybe::Present(_))
+                            && matches!(self.placed.get(AnyNode::CompType(codomain)), Maybe::Present(_)),
+            CompType::Element { code, .. } => matches!(self.placed.get(AnyNode::Value(code)), Maybe::Present(_)),
+            CompType::With(ref components) => components.iter().all(|id| matches!(self.placed.get(AnyNode::CompType(*id)), Maybe::Present(_))),
+            CompType::Codata { ref arguments, .. } => arguments.iter().all(|id| matches!(self.placed.get(AnyNode::Value(*id)), Maybe::Present(_))),
         },
         captures: entry_len = record.0.len(),
         ensures: record.0.get(entry_len) == Some(&u8::from(match *comp_type {
@@ -3029,12 +3363,12 @@ impl Telescope<'_>
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| ret.0 < table.records
-    && table.placed.contains_key(&goal.subject())
+    && matches!(table.placed.get(goal.subject()), Maybe::Present(_))
     && match goal.expected() {
-        Maybe::Present(node) => table.placed.contains_key(&node),
+        Maybe::Present(node) => matches!(table.placed.get(node), Maybe::Present(_)),
         Maybe::Absent(_) => true,
     }
-    && telescope.types().iter().all(|&entry| table.placed.contains_key(&AnyNode::ValueType(entry))))]
+    && telescope.types().iter().all(|&entry| matches!(table.placed.get(AnyNode::ValueType(entry)), Maybe::Present(_))))]
 pub fn support_key(
     table: &mut ContentTable,
     arena: &TermArena,
@@ -3177,10 +3511,10 @@ impl RewriteGoal
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| ret.0.first() == Some(&u8::from(goal.direction()))
-    && table.placed.contains_key(&goal.subject())
+    && matches!(table.placed.get(goal.subject()), Maybe::Present(_))
     && match goal {
         RewriteGoal::Shift { .. } | RewriteGoal::Abstract { .. } => true,
-        RewriteGoal::Substitute { replacement, .. } => table.placed.contains_key(&AnyNode::Value(replacement)),
+        RewriteGoal::Substitute { replacement, .. } => matches!(table.placed.get(AnyNode::Value(replacement)), Maybe::Present(_)),
     })]
 pub fn encode_rewrite(
     table: &mut ContentTable,
@@ -3283,6 +3617,7 @@ mod tests
 {
     use alloc::string::String;
     use alloc::vec;
+    use alloc::vec::Vec;
 
     use anodized::spec;
     use gandr_kernel_term::AnyNode;
@@ -3296,16 +3631,21 @@ mod tests
     use gandr_kernel_term::Sign;
     use gandr_kernel_term::StringLiteral;
     use gandr_kernel_term::TermArena;
+    use quenchant_shape::shape::Maybe;
 
     use super::BinderDepth;
     use super::ContentEncoding;
+    use super::ContentId;
     use super::ContentTable;
     use super::EncodedWord;
+    use super::PlacementCount;
+    use super::Placements;
     use super::RewriteGoal;
     use super::SupportGoal;
     use super::Telescope;
     use super::content_digest;
     use super::encode_rewrite;
+    use super::placement;
     use super::support_key;
 
     /// A magnitude from digit text, for a literal fixture.
@@ -3975,15 +4315,58 @@ mod tests
         let second = admit(&mut table, 0x02);
         let third = admit(&mut table, 0x03);
         assert_ne!(first, second, "one digest never merges two records");
-        assert_ne!(second, third, "nor a third filed behind them");
+        assert_ne!(second, third, "nor a third filed beside them");
         assert_eq!(
             admit(&mut table, 0x03),
             third,
-            "the end of the chain is found again"
+            "the last filed is found again"
         );
-        assert_eq!(admit(&mut table, 0x01), first, "and so is its head");
-        assert_eq!(admit(&mut table, 0x02), second, "and its middle");
+        assert_eq!(admit(&mut table, 0x01), first, "and so is the first");
+        assert_eq!(admit(&mut table, 0x02), second, "and the one between");
         assert_eq!(table.records, 3_u64, "and asking again adds no record");
+    }
+
+    #[test]
+    fn placements_keep_families_and_pages_apart()
+    {
+        let mut arena = TermArena::new();
+        let values: Vec<_> = (0_u32 .. 600)
+            .map(|index| arena.value_variable(DeBruijnIndex::from(index)))
+            .collect();
+        let first_type = arena.value_type_unit();
+        let (Some(&first_value), Some(&far_value)) = (values.first(), values.get(599))
+        else {
+            panic!("six hundred values were minted");
+        };
+        let mut placements = Placements::default();
+        let near = AnyNode::Value(first_value);
+        let far = AnyNode::Value(far_value);
+        let other_family = AnyNode::ValueType(first_type);
+        assert_eq!(
+            near.offset(),
+            other_family.offset(),
+            "one offset, two families"
+        );
+        placements.insert(near, ContentId(10));
+        placements.insert(far, ContentId(20));
+        assert_eq!(placements.get(near), Maybe::Present(ContentId(10)));
+        assert_eq!(placements.get(far), Maybe::Present(ContentId(20)));
+        assert_eq!(
+            placements.get(other_family),
+            Maybe::Absent(placement::Absent::Unplaced),
+            "a family's column is its own"
+        );
+        assert_eq!(placements.count(), PlacementCount(2));
+        placements.insert(far, ContentId(30));
+        assert_eq!(placements.get(far), Maybe::Present(ContentId(30)));
+        assert_eq!(
+            placements.count(),
+            PlacementCount(2),
+            "placing a node again counts it once"
+        );
+        placements.insert(other_family, ContentId(40));
+        assert_eq!(placements.get(near), Maybe::Present(ContentId(10)));
+        assert_eq!(placements.count(), PlacementCount(3));
     }
 
     #[test]
@@ -4296,8 +4679,7 @@ mod tests
         );
         // The 17 distinct nodes, then the key's empty context and its goal.
         assert_eq!(table.records, 19_u64);
-        assert_eq!(table.interned.len(), 19_usize);
-        assert_eq!(table.placed.len(), 17_usize);
+        assert_eq!(table.placed.count(), PlacementCount(17));
         let length = usize::from(table.stream().length());
         assert!(
             length < 512,
@@ -4314,7 +4696,7 @@ mod tests
         );
         assert_eq!(again, key);
         assert_eq!(table.records, 19_u64);
-        assert_eq!(table.placed.len(), 17_usize);
+        assert_eq!(table.placed.count(), PlacementCount(17));
         assert_eq!(
             before,
             usize::from(table.stream().length()),
@@ -4333,8 +4715,7 @@ mod tests
         );
         assert_eq!(reminted_key, key);
         assert_eq!(table.records, 19_u64);
-        assert_eq!(table.interned.len(), 19_usize);
-        assert_eq!(table.placed.len(), 34_usize);
+        assert_eq!(table.placed.count(), PlacementCount(34));
         assert_eq!(usize::from(table.stream().length()), before);
     }
 
@@ -4356,8 +4737,8 @@ mod tests
         );
         assert_ne!(shifted, subject, "the free variable rises");
         assert_eq!(
-            (table.records, table.placed.len()),
-            (0_u64, 0_usize),
+            (table.records, table.placed.count()),
+            (0_u64, PlacementCount(0)),
             "a memo that keeps nothing is keyed by nothing: the walk encodes no node"
         );
         let mut memo = crate::rewrite::RewriteMemo::new();

@@ -91,7 +91,7 @@ Mechanism, decisions and specification detail live in the rustdoc beside the cod
 | The encoder and its canonical order | [`src/encode.rs`](src/encode.rs) |
 | Decode acceptance and its limits | [`src/decode.rs`](src/decode.rs) |
 | The rejection vocabulary | [`src/error.rs`](src/error.rs) |
-| The stage arena, its lookup table and extents | [`src/stage.rs`](src/stage.rs), [`src/stage/lookup.rs`](src/stage/lookup.rs) |
+| The stage arena and its extents; its lookup files on `gandr-kernel-check-memo`'s hash index | [`src/stage.rs`](src/stage.rs) |
 
 ## License
 
