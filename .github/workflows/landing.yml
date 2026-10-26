@@ -21,9 +21,7 @@ name: landing
 # `LANDING_APP_PRIVATE_KEY` (#2706), the run acts as the App: it queues a
 # green stack's ready prefix and has GitHub rebase a dequeued pull request
 # onto its base, the rebased commits signed by GitHub. The App's token is
-# minted by `.config/pr-stack/app-token.bash`: the repository's Actions
-# allowlist admits no token action, and `actions/create-github-app-token`
-# failed the run at startup.
+# minted by `actions/create-github-app-token`, the run's only App-facing step.
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -64,9 +62,18 @@ jobs:
       - name: mint the landing App's token
         id: app
         if: ${{ env.LANDING_APP_ID != '' }}
-        env:
-          LANDING_APP_PRIVATE_KEY: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
-        run: .config/pr-stack/app-token.bash
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LANDING_APP_ID }}
+          private-key: ${{ secrets.LANDING_APP_PRIVATE_KEY }}
+          # The watcher's needs, no more: queue and restack, comment; read
+          # the checks that decide green.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-merge-queues: write
+          permission-issues: write
+          permission-checks: read
+          permission-statuses: read
       - name: install gh-stack
         env:
           GH_TOKEN: ${{ github.token }}
