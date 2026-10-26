@@ -1,0 +1,40 @@
+// `exit.gandr`'s handlers written by hand as the kernel replays them: the
+// handled body as a tree over `Proc`'s one operation, the free model, and the
+// handler as a fold of the tree. A deep handler reinstalls itself in the
+// continuation, so the fold's clause resumes by folding what the continuation
+// answers.
+
+/// `Proc`'s free model at an answer `a`: the body's result, or `exit` with its
+/// code and the continuation awaiting its reply.
+data ProcTree(a : Type) : Type {
+  Return : (x : a) --> ProcTree(a);
+  Exit : (code : Integer, k : Unit => ProcTree(a)) --> ProcTree(a);
+}
+
+/// `resumed`'s body as a tree: exit with five, then answer one.
+def exitThenOne : ProcTree(Integer) = Exit(5, fn (_u) { (Return(1) : ProcTree(Integer)) }) ;
+
+/// `resumed`'s handler as a fold: the result passes a hundred on, and `exit`
+/// resumes the body with the unit.
+def rec resuming(p : ProcTree(Integer)) -> Integer {
+  case p {
+    Return(x) => x + 100,
+    Exit(_code, k) => resuming[<](k(unit))
+  }
+}
+
+/// A hundred and one, as `resumed` runs to.
+@[ runs("101") ]
+def resumedByFold() -> Integer { resuming(exitThenOne) }
+
+/// `discarded`'s handler as a fold: `exit` answers nine and drops the rest.
+def rec discarding(p : ProcTree(Integer)) -> Integer {
+  case p {
+    Return(x) => x + 100,
+    Exit(_code, _k) => 9
+  }
+}
+
+/// Nine, as `discarded` runs to.
+@[ runs("9") ]
+def discardedByFold() -> Integer { discarding(exitThenOne) }

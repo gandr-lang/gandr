@@ -292,6 +292,7 @@ pub use crate::rewrite::raise_linear_traced;
 pub use crate::rewrite::relevel_value_type;
 pub use crate::rewrite::rename_value_traced;
 pub use crate::rewrite::rename_value_type_traced;
+pub use crate::rewrite::resume_through;
 pub use crate::rewrite::shift_comp_type;
 pub use crate::rewrite::shift_comp_type_under;
 pub use crate::rewrite::shift_computation_under;

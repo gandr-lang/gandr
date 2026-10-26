@@ -633,6 +633,7 @@ pub use crate::forward::Directed;
 pub use crate::forward::Forward;
 pub use crate::funext::Funext;
 pub use crate::funext::Step as FunextStep;
+pub use crate::handler::Handled;
 pub use crate::judgement::Checked;
 pub use crate::judgement::Direction;
 pub use crate::judgement::Elaboration;

@@ -25,6 +25,7 @@ CREATE TABLE reference(
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
+INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','d80cf51a2b5f45a033dc269ad267fe6e8697bfdc','2026-10-26','c5cc3177f1cc673169ca8d6c3338716e83f45f94');
 INSERT INTO reference VALUES('arXiv:0809.3341','theory-sites','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0906.4931','theory-levitation','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('arXiv:0907.4553','theory-sites','','background',NULL,NULL,NULL);

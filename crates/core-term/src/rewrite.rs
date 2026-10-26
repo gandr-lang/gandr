@@ -6972,10 +6972,11 @@ pub fn instantiate_computation_traced(
     }
 }
 
-/// Read a handler clause's resumptions through the continuation they resume:
-/// the clause's stack binder instantiated at the function `λx. continuation`,
-/// and each `resume(k, M)` of it then run as `x ← M; continuation`, each
-/// `abandon(k)` as the unit returned.
+/// Read a handler clause's resumptions through the continuation they resume.
+///
+/// The clause's stack binder is instantiated at the function `λx.
+/// continuation`, each `resume(k, M)` of it then run as `x ← M;
+/// continuation`, and each `abandon(k)` as the unit returned.
 ///
 /// # Specification
 /// - requires: `body` is a computation of `arena` scoped beneath one binder,
@@ -6996,6 +6997,7 @@ pub fn instantiate_computation_traced(
 ///   value and an index past the binder each read as stated.
 /// - witness: `rewrite::tests::a_clause_resumes_through_its_continuation_2272`
 #[spec(ensures: |ret| arena.computation(ret).is_some())]
+#[inline]
 #[must_use]
 pub fn resume_through(
     arena: &mut CoreArena,

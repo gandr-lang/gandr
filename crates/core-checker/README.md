@@ -8,6 +8,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -44,7 +45,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `CheckRefusal::classify` assigns producer-failure classes ([`refusal`](src/refusal.rs)).
 - `CheckRefusal::compared`, `Compared` and `compared::Absent`: the types a refusal sets against each other, the one its rule expected and the one it found, as nodes a face spells.
 - `Failure`, `Obligation`, `FrameRole`, `FoldPremise`, `Pursuit`, `Stage`, `judged` and `ModuleReport::failures`: what the checking machine held when it refused, kept per refused body by position ([`failure`](src/failure.rs)).
-- `bridge`: independent readmission of accepted declarations into a fresh kernel environment — `readmit` and `Readmission`; `readmit_resuming`, `Crossed` and `export_resuming`: leading declarations and their export resumed from a record; `Readmitted` and `Outcome`, what became of each origin; `ArtifactAudit`, the owed-hole and native-runtime assumptions admitted declarations use; `Replayed` and `Readmitted::certificates`, kernel replays of distinct reduction instances; `Readmission::export`, the canonical artifact; `Refusal` and its classification, why an accepted declaration did not cross.
+- `bridge`: independent readmission of accepted declarations into a fresh kernel environment — `readmit`, `Readmission` and its canonical `export`; `readmit_resuming`, `Crossed` and `export_resuming`, a prefix resumed from a record; `Readmitted`, `Outcome`, `ArtifactAudit`, `Replayed` and `Refusal`: what became of each origin, what it rests on, what was replayed, why it did not cross.
 - `Retirement`, `Demand`, `Polled`, `Unretired` and `bridge::readmit_retiring`: a run polled between its steps ([`retire`](src/retire.rs)).
 - The hole surface: term holes, marks and the unknown type in the faces; `elaborate_value`, `elaborate_comp`, `Elaboration`, `MarkEntry` and `Direction`; `cover`, `Coverage`, `Exhaustiveness`, `Redundancy` and `CoverageFault`; `bridge::Refusal::Hole` and `bridge::Refusal::Unknown`.
 - `fork::Fork` and `fork::Serial`: the shape a program check forks by, and the serial reference.
@@ -131,11 +132,15 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 | Coverage | [`coverage`](src/coverage.rs) |
 | Nominal data | [`former`](src/former.rs) |
 | Accessibility, stage typing, derived eliminators, divergence | [`occurrence`](src/occurrence.rs), [`recursion`](src/recursion.rs), [`eliminator`](src/eliminator.rs), [`divergence`](src/divergence.rs) |
-| Readmission, erasure, lifts and unfoldings, static operators, holes and marks, the audit, splits and export | [`bridge`](src/bridge.rs) |
+| Readmission, erasure, lifts and unfoldings, static operators, holes and marks, the audit, splits, deep handlers and export | [`bridge`](src/bridge.rs) |
 | Staged programs and their forks | [`staging`](src/staging.rs), [`fork`](src/fork.rs), [`stage`](src/stage.rs) |
 | Guarded staging families, drafts and their controller | [`template`](src/template.rs), [`template::memo`](src/template/memo.rs), [`template::draft`](src/template/draft.rs) |
 | Measurement dependencies and the admission observer | [`examples/staging_templates.rs`](examples/staging_templates.rs) |
 | References | [`src/lib.rs`](src/lib.rs) |
+
+## References
+
+- `Plotkin-2013-handling_algebraic_effects` — background: Plotkin and Pretnar, "Handling Algebraic Effects", _LMCS_, 2013 — handlers as free-model folds.
 
 ## License
 

@@ -1,6 +1,6 @@
 /// `effects-as-data`: Effects as data, replayed by the kernel.
-/// Implemented: a program over a row of operations written as a tree, the free model of its operations, each handler a fold, so the kernel replays the declaration whole.
-/// Not implemented: native handlers crossing by this translation: a declaration with effects or control is not replayed; #1624 owes it.
+/// Implemented: a program over a row of operations written as a tree, the free model of its operations, each handler a fold, so the kernel replays the declaration whole; a native deep handler of one operation crosses by this translation (`corpus/model/effects/exit.gandr`).
+/// Not implemented: native handlers past that form crossing by this translation: several operations, a request off the bind spine, a reset, a shallow handler and control are not replayed; #2742 owes them.
 // Rows as data: two effects in one row, each handler a fold that answers the
 // operation at the front of the row and forwards the rest, so handling
 // peels the row one effect at a time down to `Void`, where a program is its
