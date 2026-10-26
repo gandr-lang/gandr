@@ -20,11 +20,18 @@
 # evidence. A `supersedes` item is refused while the tree still names the old
 # key on a line that does not mark it demoted. An issue's `## Sources` line
 # that names no key is noted, not refused.
+#
+# The body answers the reading axes its issues select (#2522): its
+# `## Readings` table, `Family · Axis · Status`, gives each selected axis
+# `answered: <exemplar or site>` or `none: <reason>`, and every row a status
+# from that vocabulary or `not selected`, on one of the six axes.
 
 include "targets";
 include "sections";
 
 def vocabulary: "`taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>` or `n/a: <reason>`";
+def statuses: "`answered: <exemplar or site>`, `none: <reason>` or `not selected`";
+def answered: test("^(answered|none):\\s*\\S");
 
 # The refusal when the body does not work the branch's issue, or works none.
 def claim:
@@ -71,4 +78,22 @@ def sources:
           end
         end);
 
-claim, sources
+# The refusals of `## Readings` against the axes the issues select.
+def readings:
+  [(.issues // [])[] | .number as $n | .body | selected[] | {n: $n, axis: .}] as $asked
+  | [(.body | section("Readings") // [] | lead) | rows | select((.cells[1] // "" | ascii_downcase) != "axis")] as $rows
+  | ($asked
+      | map(select(.axis as $axis | [$rows[] | select(.cells[1] == $axis and (.cells[2] // "" | answered))] | length == 0))
+      | unique_by(.axis)
+      | if length == 0 then empty
+        else "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n" + (map("  - `\(.axis)` (#\(.n)'s `## Readings`)") | join("\n"))
+        end),
+    ($rows[]
+      | (.cells[1] // "") as $axis
+      | (.cells[2] // "") as $status
+      | if ($axis | IN(axes[]) | not) then "the `## Readings` row `\(.line)` names no axis: its second cell is one of `\(axes | join("`, `"))`, then run `pr:open` again"
+        elif ($status | answered) or $status == "not selected" or ([$asked[].axis] | index($axis)) then empty
+        else "the `## Readings` row `\(.line)` has a status outside \(statuses): write one, then run `pr:open` again"
+        end);
+
+claim, sources, readings

@@ -5,7 +5,8 @@
 # heading; the heading may carry a remark after a colon
 # (`## Sources read: none requested`). An item is a line `- <head> — <text>`:
 # its keys are the head's backquoted spans, so `` - `units.md` § units-pr —
-# … `` keys `units.md`, and one line may key several sources.
+# … `` keys `units.md`, and one line may key several sources. A row is a
+# table line, read as its cells.
 
 # The body's lines, a carriage return dropped from each.
 def lines: split("\n") | map(sub("\r$"; ""));
@@ -43,3 +44,29 @@ def supersession:
 
 # The old keys the body's `## Sources read` supersedes.
 def superseded: [(section("Sources read") // []) | items | supersession | select(. != null) | .old] | unique;
+
+# A section's lines before its first `### ` subsection.
+def lead: ([range(0; length) as $i | select(.[$i] | test("^### ")) | $i] | first) as $end | if $end == null then . else .[:$end] end;
+
+# A section's table rows but the header's rule, each as {line, cells}: the
+# cells trimmed, a cell wrapped whole in backquotes unwrapped.
+def rows:
+  .[]
+  | select(test("^\\s*\\|"))
+  | . as $line
+  | sub("^\\s*\\|"; "") | sub("\\|\\s*$"; "") | split("|")
+  | map(gsub("^\\s+|\\s+$"; "") | if test("^`[^`]*`$") then .[1:-1] else . end)
+  | select(all(test("^:?-+:?$")) | not)
+  | {line: $line, cells: .};
+
+# The six reading axes (`units.md` § units-readings).
+def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting"];
+
+# The axes an issue's `## Readings` selects, read before its subsections: a
+# row whose `Selected` cell reads `yes`, or an item naming the axis.
+def selected:
+  (section("Readings") // [] | lead) as $lines
+  | [($lines | rows | .cells as $cells | first($cells[] | select(IN(axes[]))) as $axis
+      | select([$cells[] | ascii_downcase] | index("yes")) | $axis),
+     ($lines | items | first(match("`([^`]+)`"; "g").captures[0].string | select(IN(axes[]))))]
+  | unique;

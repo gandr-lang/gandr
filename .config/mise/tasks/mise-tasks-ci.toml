@@ -1406,9 +1406,12 @@ wt step copy-ignored
 # it works request (#2499): every key an issue's `## Sources` names has an
 # item in the body's `## Sources read` with a disposition and its evidence,
 # and a `supersedes` item is refused while a tracked line still names the old
-# key without marking it demoted. The rule is `.config/claims/opening.jq`,
-# reading the sections through `sections.jq`, its cases held by
-# `check:claims`; a `note:` line it prints does not refuse.
+# key without marking it demoted. It answers the reading axes the issues
+# select (#2522): each selected axis's row in the body's `## Readings` reads
+# `answered: <exemplar or site>` or `none: <reason>`, and every row's status
+# is from that vocabulary or `not selected`. The rule is
+# `.config/claims/opening.jq`, reading the sections through `sections.jq`,
+# its cases held by `check:claims`; a `note:` line it prints does not refuse.
 #
 # Before anything else the task sweeps the clone's landed worktrees and
 # refuses under the disk floor (`wt:sweep --guard`).
