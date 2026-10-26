@@ -100,25 +100,20 @@
     "output": "123\tadvanced"
   },
   {
-    "name": "a tracking issue and an epic lose the claim however fresh",
+    "name": "an epic loses the claim however fresh",
     "input": {
       "now": 1760000000,
       "claimed": [
-        {
-          "number": 1,
-          "labels": ["kind:tracking", "status:claimed"],
-          "updated_at": "2025-10-09T08:53:20Z"
-        },
         {
           "number": 2,
           "labels": ["kind:epic", "status:claimed"],
           "updated_at": "2025-10-09T08:53:20Z"
         }
       ],
-      "open_prs": [{ "number": 9, "body": "Advances #1\nAdvances #2", "head": "lane-1" }],
+      "open_prs": [{ "number": 9, "body": "Advances #2", "head": "lane-1" }],
       "merged_body": null
     },
-    "output": "1\ttracking\n2\tepic"
+    "output": "2\tepic"
   },
   {
     "name": "a claim silent for 12 hours with no pull request naming it comes off; one a second fresher stays",

@@ -941,7 +941,7 @@ if [[ ! -s $scratch/rows ]]; then
   echo "no hotpath regression or improvement past the band in $landed landing(s)"
   exit 0
 fi
-ledger=$(gh issue list --repo "$repo" --state open --label kind:tracking --search "\"$ledger_title\" in:title" --json number,title \
+ledger=$(gh issue list --repo "$repo" --state open --label collector --search "\"$ledger_title\" in:title" --json number,title \
   | jq -r --arg title "$ledger_title" '[.[] | select(.title == $title)] | first | .number // empty')
 header='| Commit | PR | Benchmark | Verdict | Issue |'
 : > "$scratch/kept"
@@ -975,7 +975,7 @@ improved=$(cut -d'|' -f5 "$scratch/kept" | grep -ci improv || true)
   printf '\n</details>\n'
 } > "$scratch/ledger.md"
 if [[ -z $ledger ]]; then
-  ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label kind:tracking --label area:workflow \
+  ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label collector --label area:workflow \
     --body-file "$scratch/ledger.md" | sed 's|.*/||')
 else
   gh issue edit "$ledger" --repo "$repo" --body-file "$scratch/ledger.md" > /dev/null

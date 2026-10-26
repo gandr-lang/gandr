@@ -12,9 +12,9 @@
 # (`Advances #n`: that slice is done, and a seat working the next one claims
 # it again) or closes (`Closes`, `Fixes` or `Resolves #n`: GitHub closes the
 # issue and leaves its labels). Without one, the sweep: a closed issue keeps
-# no claim, a `kind:tracking` or `kind:epic` issue is never claimed, and a
-# claim untouched for 12 hours that no open pull request names (one of those
-# keywords in its body, or the number in its branch) has no seat on it.
+# no claim, a `kind:epic` issue is never claimed, and a claim untouched for
+# 12 hours that no open pull request names (one of those keywords in its
+# body, or the number in its branch) has no seat on it.
 
 include "targets";
 
@@ -38,7 +38,6 @@ def silent($now): ($now - (.updated_at | fromdateiso8601)) >= 43200;
     .claimed[]
     | . as $issue
     | if .state == "closed" then "\(.number)\tclosed"
-      elif (.labels | index("kind:tracking")) then "\(.number)\ttracking"
       elif (.labels | index("kind:epic")) then "\(.number)\tepic"
       elif silent($now) and ([$prs[] | names($issue.number)] | any | not) then "\(.number)\tsilent"
       else empty

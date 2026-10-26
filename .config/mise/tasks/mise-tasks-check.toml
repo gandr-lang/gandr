@@ -926,7 +926,7 @@ echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as 
 # The claim lifecycle (`.config/claims/decide.jq`, #1270) picks the claims
 # that come off. Each case in `.config/claims/cases.json` holds an input and
 # the removals it must give: a merge's `Advances` and closing targets, the
-# closed, tracking and epic sweep, 12 hours of silence, and an open pull
+# closed and epic sweep, 12 hours of silence, and an open pull
 # request that keeps a claim. Each case in `.config/claims/opening.json`
 # holds a branch and a body and the refusal `pr:open` prints for them, or
 # none (`opening.jq`, #2462): the body must work the branch's issue.
