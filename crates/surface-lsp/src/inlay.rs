@@ -285,9 +285,12 @@ mod tests
     #[test]
     fn each_binder_that_writes_no_type_is_hinted()
     {
-        // The hints over the lines `lines` of the corpus source at `file`, each
-        // as its line and character, one-based, and its label.
-        let hinted = |file: &str, lines: core::ops::Range<usize>| -> Vec<String> {
+        // The hints over the zero-based lines `window` finds in the corpus
+        // source at `file`, each as its line, named by the declaration it
+        // stands in (#2786), its character, one-based, and its label.
+        let hinted = |file: &str,
+                      window: &dyn Fn(&str) -> core::ops::Range<usize>|
+         -> Vec<String> {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
                 .join("corpus")
@@ -315,11 +318,9 @@ mod tests
                         .sum::<usize>(),
                 )
             };
-            let window = ByteSpan::new(
-                offset(lines.start.saturating_sub(1)),
-                offset(lines.end.saturating_sub(1)),
-            )
-            .expect("an ordered window");
+            let lines = window(&written);
+            let window =
+                ByteSpan::new(offset(lines.start), offset(lines.end)).expect("an ordered window");
             let style = gandr_surface_pretty::Style {
                 form: Form::Sugared,
                 spelling: Spelling::Unicode,
@@ -334,9 +335,13 @@ mod tests
             .into_iter()
             .map(|hint| {
                 let at = serde_json::to_value(hint.position).expect("a position serializes");
+                let line = at["line"].as_u64().unwrap_or_default();
                 std::format!(
                     "{}:{} {}",
-                    at["line"].as_u64().unwrap_or_default().saturating_add(1),
+                    crate::anchor::anchored(
+                        crate::anchor::Source(&written),
+                        crate::anchor::Row(u32::try_from(line).unwrap_or(u32::MAX))
+                    ),
                     at["character"]
                         .as_u64()
                         .unwrap_or_default()
@@ -346,39 +351,50 @@ mod tests
             })
             .collect()
         };
+        let whole = |_: &str| 0 .. usize::MAX;
+        let line_of = |text: &str, held: &str| {
+            let crate::anchor::Row(at) =
+                crate::anchor::line_of(crate::anchor::Source(text), crate::anchor::Held(held));
+            usize::try_from(at).unwrap_or(usize::MAX)
+        };
         assert_eq!(
-            hinted("surface/control-flow.gandr", 1 .. 1_000),
+            hinted("surface/control-flow.gandr", &whole),
             [
-                "27:8 : Nat",
-                "38:8 : Nat",
-                "41:13 : Nat",
-                "57:13 : Nat",
-                "97:13 : Nat",
-                "111:10 : Nat",
-                "114:11 : Nat",
-                "115:19 : Integer",
-                "115:22 : Stack(-F [Div] Unit, -F [Div] Nat)",
-                "146:8 : Nat",
-                "149:13 : Nat",
-                "167:8 : Nat",
-                "174:8 : Nat",
-                "174:17 : Nat",
+                "def first+1:8 : Nat",
+                "def pick+1:8 : Nat",
+                "def pick+4:13 : Nat",
+                "def leave+4:13 : Nat",
+                "def sift+4:13 : Nat",
+                "def handled+2:10 : Nat",
+                "def handled+5:11 : Nat",
+                "def handled+6:19 : Integer",
+                "def handled+6:22 : Stack(-F [Div] Unit, -F [Div] Nat)",
+                "def find_succ+1:8 : Nat",
+                "def find_succ+4:13 : Nat",
+                "def for_each+1:8 : Nat",
+                "def for_value+1:8 : Nat",
+                "def for_value+1:17 : Nat",
             ],
             "each `run`, `for`, pattern and handler binder, an unread one among them (#1439), and \
              no parameter, use or constructor"
         );
         assert_eq!(
-            hinted("surface/typed-bind.gandr", 1 .. 1_000),
-            ["25:35 : Nat"],
+            hinted("surface/typed-bind.gandr", &whole),
+            ["def apply+1:35 : Nat"],
             "the lambda's binder, and no annotated `run`"
         );
         assert_eq!(
-            hinted("surface/control-flow.gandr", 167 .. 168),
-            ["167:8 : Nat"],
+            hinted("surface/control-flow.gandr", &|text| {
+                let at = line_of(text, "for x in xs { tick(x); }");
+                at .. at.saturating_add(1)
+            }),
+            ["def for_each+1:8 : Nat"],
             "a window holds the hints inside it alone"
         );
         assert_eq!(
-            hinted("surface/typed-bind.gandr", 27 .. 1_000),
+            hinted("surface/typed-bind.gandr", &|text| {
+                line_of(text, "def mistyped(") .. usize::MAX
+            }),
             [""; 0],
             "a window past every unannotated binder holds none"
         );

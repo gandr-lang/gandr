@@ -1054,11 +1054,20 @@ mod tests
             env!("CARGO_MANIFEST_DIR"),
             "/../../corpus/model/higher-cells/ua-corolla.gandr"
         );
+        // `agree`'s line is found where its head is written (#2786).
+        let source = include_str!("../../../corpus/model/higher-cells/ua-corolla.gandr");
         assert_eq!(
             hovered(
                 corolla,
-                include_str!("../../../corpus/model/higher-cells/ua-corolla.gandr"),
-                (47, 4),
+                source,
+                (
+                    crate::anchor::line_of(
+                        crate::anchor::Source(source),
+                        crate::anchor::Held("def agree :")
+                    )
+                    .0,
+                    4,
+                ),
             ),
             Some(serde_json::json!(format!(
                 "<pre><code>{} : {}({} {} {}, {}, {})</code></pre>\n\nThe swap and the swap three \

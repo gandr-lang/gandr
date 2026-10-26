@@ -1,331 +1,326 @@
 9:1-9:29 import "./circle-base.ga… ⇒ import "./circle-base.gandr";⏎⏎Reads `<corpus>/corpus/model/identity/circle-base.gandr`.⏎⏎The identity subject's shared declarations, written once and imported by⏎every source that reads them (`import "./circle-base.gandr";`): the empty⏎type, the circle, the presented integers and the free naturals, the⏎winding number and spinning with their round trips (the book's § 8.1), and⏎the maps out of the circle the circle sources state their laws over, after⏎cubical Agda's `Cubical/HITs/S1/Base.agda`. `circle.gandr` states the⏎equivalence `winding` the round trips make and what it computes; this⏎source states only what the others read. @9:1-9:30
-12:1-12:11 @[ checks ] ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-13:1
-13:1-13:3 def ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @13:1-23:22
-13:5-13:11 reduced ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @13:5-13:12
-13:13-13:13 : ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @13:1-23:22
-13:15-13:19 Path( ⇒ Type @13:15-23:2
-14:3-14:5 Nat ⇒ Nat : Type @14:3-14:6
-14:6-14:6 , ⇒ Type @13:15-23:2
-15:3-15:12 transport( ⇒ -F Nat @15:3-21:4
-16:5-16:5 ( ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @16:5-16:41
-16:6-16:6 y ⇒ y : Nat @16:6-16:7
-16:8-16:8 : ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @16:5-16:41
-16:10-16:12 Nat ⇒ Nat : Type @16:10-16:13
-16:13-16:13 , ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @16:5-16:41
-16:15-16:19 Path( ⇒ Path(Nat, Zero, y) : Type @16:15-16:33
-16:20-16:22 Nat ⇒ Nat : Type @16:20-16:23
-16:23-16:23 , ⇒ Path(Nat, Zero, y) : Type @16:15-16:33
-16:25-16:28 Zero ⇒ Zero : Nat @16:25-16:29
-16:29-16:29 , ⇒ Path(Nat, Zero, y) : Type @16:15-16:33
-16:31-16:31 y ⇒ y : Nat @16:31-16:32
-16:32-16:32 ) ⇒ Path(Nat, Zero, y) : Type @16:15-16:33
-16:33-16:36 ) => ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @16:5-16:41
-16:38-16:40 Nat ⇒ Nat : Type @16:38-16:41
-16:41-16:41 , ⇒ -F Nat @15:3-21:4
+12:1-12:3 def ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-22:22
+12:5-12:11 reduced ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:5-12:12
+12:13-12:13 : ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-22:22
+12:15-12:19 Path( ⇒ Type @12:15-22:2
+13:3-13:5 Nat ⇒ Nat : Type @13:3-13:6
+13:6-13:6 , ⇒ Type @12:15-22:2
+14:3-14:12 transport( ⇒ -F Nat @14:3-20:4
+15:5-15:5 ( ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @15:5-15:41
+15:6-15:6 y ⇒ y : Nat @15:6-15:7
+15:8-15:8 : ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @15:5-15:41
+15:10-15:12 Nat ⇒ Nat : Type @15:10-15:13
+15:13-15:13 , ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @15:5-15:41
+15:15-15:19 Path( ⇒ Path(Nat, Zero, y) : Type @15:15-15:33
+15:20-15:22 Nat ⇒ Nat : Type @15:20-15:23
+15:23-15:23 , ⇒ Path(Nat, Zero, y) : Type @15:15-15:33
+15:25-15:28 Zero ⇒ Zero : Nat @15:25-15:29
+15:29-15:29 , ⇒ Path(Nat, Zero, y) : Type @15:15-15:33
+15:31-15:31 y ⇒ y : Nat @15:31-15:32
+15:32-15:32 ) ⇒ Path(Nat, Zero, y) : Type @15:15-15:33
+15:33-15:36 ) => ⇒ (y : Nat, Path(Nat, Zero, y)) => Nat : Type[-] @15:5-15:41
+15:38-15:40 Nat ⇒ Nat : Type @15:38-15:41
+15:41-15:41 , ⇒ -F Nat @14:3-20:4
+16:5-16:9 here( ⇒ Path(Nat, Zero, Zero) @16:5-16:15
+16:10-16:13 Zero ⇒ Zero : Nat @16:10-16:14
+16:14-16:14 ) ⇒ Path(Nat, Zero, Zero) @16:5-16:15
+16:15-16:15 , ⇒ -F Nat @14:3-20:4
 17:5-17:9 here( ⇒ Path(Nat, Zero, Zero) @17:5-17:15
 17:10-17:13 Zero ⇒ Zero : Nat @17:10-17:14
 17:14-17:14 ) ⇒ Path(Nat, Zero, Zero) @17:5-17:15
-17:15-17:15 , ⇒ -F Nat @15:3-21:4
-18:5-18:9 here( ⇒ Path(Nat, Zero, Zero) @18:5-18:15
-18:10-18:13 Zero ⇒ Zero : Nat @18:10-18:14
-18:14-18:14 ) ⇒ Path(Nat, Zero, Zero) @18:5-18:15
-18:15-18:15 , ⇒ -F Nat @15:3-21:4
-19:5-19:9 here( ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @19:5-19:21
-19:10-19:14 here( ⇒ Path(Nat, Zero, Zero) @19:10-19:20
-19:15-19:18 Zero ⇒ Zero : Nat @19:15-19:19
-19:19-19:19 ) ⇒ Path(Nat, Zero, Zero) @19:10-19:20
-19:20-19:20 ) ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @19:5-19:21
-19:21-19:21 , ⇒ -F Nat @15:3-21:4
-20:5-20:9 Succ( ⇒ Succ(Zero) : Nat @20:5-20:15
-20:10-20:13 Zero ⇒ Zero : Nat @20:10-20:14
-20:14-20:14 ) ⇒ Succ(Zero) : Nat @20:5-20:15
-21:3-21:3 ) ⇒ -F Nat @15:3-21:4
-21:4-21:4 , ⇒ Type @13:15-23:2
-22:3-22:7 Succ( ⇒ Succ(Zero) : Nat @22:3-22:13
-22:8-22:11 Zero ⇒ Zero : Nat @22:8-22:12
-22:12-22:12 ) ⇒ Succ(Zero) : Nat @22:3-22:13
-23:1-23:1 ) ⇒ Type @13:15-23:2
-23:3-23:3 = ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @13:1-23:22
-23:5-23:9 here( ⇒ Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero)) @23:5-23:21
-23:10-23:14 Succ( ⇒ Succ(Zero) : Nat @23:10-23:20
-23:15-23:18 Zero ⇒ Zero : Nat @23:15-23:19
-23:19-23:19 ) ⇒ Succ(Zero) : Nat @23:10-23:20
-23:20-23:20 ) ⇒ Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero)) @23:5-23:21
-23:21-23:21 ; ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @13:1-23:22
-27:1-27:11 @[ checks ] ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @27:1-28:1
-28:1-28:3 def ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @28:1-28:46
-28:5-28:12 unitPath ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @28:5-28:13
-28:14-28:14 : ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @28:1-28:46
-28:16-28:20 Path( ⇒ Path(Unit, unit, unit) : Type @28:16-28:38
-28:21-28:24 Unit ⇒ Unit : Type @28:21-28:25
-28:25-28:25 , ⇒ Path(Unit, unit, unit) : Type @28:16-28:38
-28:27-28:30 unit ⇒ Unit @28:27-28:31
-28:31-28:31 , ⇒ Path(Unit, unit, unit) : Type @28:16-28:38
-28:33-28:36 unit ⇒ Unit @28:33-28:37
-28:37-28:37 ) ⇒ Path(Unit, unit, unit) : Type @28:16-28:38
-28:39-28:39 = ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @28:1-28:46
-28:41-28:44 unit ⇒ Unit⏎⏎checked against⏎⏎Path(Unit, unit, unit) @28:41-28:45
-28:45-28:45 ; ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @28:1-28:46
-32:1-32:11 @[ checks ] ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @32:1-33:1
-33:1-33:3 def ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @33:1-43:22
-33:5-33:15 carriedUnit ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @33:5-33:16
-33:17-33:17 : ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @33:1-43:22
-33:19-33:23 Path( ⇒ Type @33:19-43:2
-34:3-34:5 Nat ⇒ Nat : Type @34:3-34:6
-34:6-34:6 , ⇒ Type @33:19-43:2
-35:3-35:12 transport( ⇒ -F Nat @35:3-41:4
-36:5-36:5 ( ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @36:5-36:43
-36:6-36:6 y ⇒ y : Unit @36:6-36:7
-36:8-36:8 : ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @36:5-36:43
-36:10-36:13 Unit ⇒ Unit : Type @36:10-36:14
-36:14-36:14 , ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @36:5-36:43
-36:16-36:20 Path( ⇒ Path(Unit, unit, y) : Type @36:16-36:35
-36:21-36:24 Unit ⇒ Unit : Type @36:21-36:25
-36:25-36:25 , ⇒ Path(Unit, unit, y) : Type @36:16-36:35
-36:27-36:30 unit ⇒ Unit @36:27-36:31
-36:31-36:31 , ⇒ Path(Unit, unit, y) : Type @36:16-36:35
-36:33-36:33 y ⇒ y : Unit @36:33-36:34
-36:34-36:34 ) ⇒ Path(Unit, unit, y) : Type @36:16-36:35
-36:35-36:38 ) => ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @36:5-36:43
-36:40-36:42 Nat ⇒ Nat : Type @36:40-36:43
-36:43-36:43 , ⇒ -F Nat @35:3-41:4
-37:5-37:12 unitPath ⇒ unitPath : Path(Unit, unit, unit) @37:5-37:13
-37:13-37:13 , ⇒ -F Nat @35:3-41:4
-38:5-38:9 here( ⇒ Path(Unit, unit, unit) @38:5-38:15
-38:10-38:13 unit ⇒ Unit @38:10-38:14
-38:14-38:14 ) ⇒ Path(Unit, unit, unit) @38:5-38:15
-38:15-38:15 , ⇒ -F Nat @35:3-41:4
-39:5-39:9 here( ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @39:5-39:19
-39:10-39:17 unitPath ⇒ unitPath : Path(Unit, unit, unit) @39:10-39:18
-39:18-39:18 ) ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @39:5-39:19
-39:19-39:19 , ⇒ -F Nat @35:3-41:4
-40:5-40:9 Succ( ⇒ Succ(Zero) : Nat @40:5-40:15
-40:10-40:13 Zero ⇒ Zero : Nat @40:10-40:14
-40:14-40:14 ) ⇒ Succ(Zero) : Nat @40:5-40:15
-41:3-41:3 ) ⇒ -F Nat @35:3-41:4
-41:4-41:4 , ⇒ Type @33:19-43:2
-42:3-42:7 Succ( ⇒ Succ(Zero) : Nat @42:3-42:13
-42:8-42:11 Zero ⇒ Zero : Nat @42:8-42:12
-42:12-42:12 ) ⇒ Succ(Zero) : Nat @42:3-42:13
-43:1-43:1 ) ⇒ Type @33:19-43:2
-43:3-43:3 = ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @33:1-43:22
-43:5-43:9 here( ⇒ Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero)) @43:5-43:21
-43:10-43:14 Succ( ⇒ Succ(Zero) : Nat @43:10-43:20
-43:15-43:18 Zero ⇒ Zero : Nat @43:15-43:19
-43:19-43:19 ) ⇒ Succ(Zero) : Nat @43:10-43:20
-43:20-43:20 ) ⇒ Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero)) @43:5-43:21
-43:21-43:21 ; ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @33:1-43:22
-47:1-47:11 @[ checks ] ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @47:1-48:1
-48:1-48:3 def ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @48:1-58:16
-48:5-48:12 backUnit ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @48:5-48:13
-48:14-48:14 : ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @48:1-58:16
-48:16-48:20 Path( ⇒ Type @48:16-58:2
-49:3-49:7 Path( ⇒ Path(Unit, unit, unit) : Type @49:3-49:25
-49:8-49:11 Unit ⇒ Unit : Type @49:8-49:12
-49:12-49:12 , ⇒ Path(Unit, unit, unit) : Type @49:3-49:25
-49:14-49:17 unit ⇒ Unit @49:14-49:18
-49:18-49:18 , ⇒ Path(Unit, unit, unit) : Type @49:3-49:25
-49:20-49:23 unit ⇒ Unit @49:20-49:24
-49:24-49:24 ) ⇒ Path(Unit, unit, unit) : Type @49:3-49:25
-49:25-49:25 , ⇒ Type @48:16-58:2
-50:3-50:12 transport( ⇒ -F Path(Unit, unit, unit) @50:3-56:4
-51:5-51:5 ( ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @51:5-51:59
-51:6-51:6 y ⇒ y : Unit @51:6-51:7
-51:8-51:8 : ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @51:5-51:59
-51:10-51:13 Unit ⇒ Unit : Type @51:10-51:14
-51:14-51:14 , ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @51:5-51:59
-51:16-51:20 Path( ⇒ Path(Unit, unit, y) : Type @51:16-51:35
-51:21-51:24 Unit ⇒ Unit : Type @51:21-51:25
-51:25-51:25 , ⇒ Path(Unit, unit, y) : Type @51:16-51:35
-51:27-51:30 unit ⇒ Unit @51:27-51:31
-51:31-51:31 , ⇒ Path(Unit, unit, y) : Type @51:16-51:35
-51:33-51:33 y ⇒ y : Unit @51:33-51:34
-51:34-51:34 ) ⇒ Path(Unit, unit, y) : Type @51:16-51:35
-51:35-51:38 ) => ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @51:5-51:59
-51:40-51:44 Path( ⇒ Path(Unit, y, unit) : Type @51:40-51:59
-51:45-51:48 Unit ⇒ Unit : Type @51:45-51:49
-51:49-51:49 , ⇒ Path(Unit, y, unit) : Type @51:40-51:59
-51:51-51:51 y ⇒ y : Unit @51:51-51:52
-51:52-51:52 , ⇒ Path(Unit, y, unit) : Type @51:40-51:59
-51:54-51:57 unit ⇒ Unit @51:54-51:58
-51:58-51:58 ) ⇒ Path(Unit, y, unit) : Type @51:40-51:59
-51:59-51:59 , ⇒ -F Path(Unit, unit, unit) @50:3-56:4
-52:5-52:12 unitPath ⇒ unitPath : Path(Unit, unit, unit) @52:5-52:13
-52:13-52:13 , ⇒ -F Path(Unit, unit, unit) @50:3-56:4
-53:5-53:9 here( ⇒ Path(Unit, unit, unit) @53:5-53:15
-53:10-53:13 unit ⇒ Unit @53:10-53:14
-53:14-53:14 ) ⇒ Path(Unit, unit, unit) @53:5-53:15
-53:15-53:15 , ⇒ -F Path(Unit, unit, unit) @50:3-56:4
-54:5-54:9 here( ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @54:5-54:19
-54:10-54:17 unitPath ⇒ unitPath : Path(Unit, unit, unit) @54:10-54:18
-54:18-54:18 ) ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @54:5-54:19
-54:19-54:19 , ⇒ -F Path(Unit, unit, unit) @50:3-56:4
-55:5-55:9 here( ⇒ Path(Unit, unit, unit) @55:5-55:15
-55:10-55:13 unit ⇒ Unit @55:10-55:14
-55:14-55:14 ) ⇒ Path(Unit, unit, unit) @55:5-55:15
-56:3-56:3 ) ⇒ -F Path(Unit, unit, unit) @50:3-56:4
-56:4-56:4 , ⇒ Type @48:16-58:2
-57:3-57:6 unit ⇒ Unit⏎⏎checked against⏎⏎Path(Unit, unit, unit) @57:3-57:7
-58:1-58:1 ) ⇒ Type @48:16-58:2
-58:3-58:3 = ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @48:1-58:16
-58:5-58:9 here( ⇒ Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit) @58:5-58:15
-58:10-58:13 unit ⇒ Unit⏎⏎checked against⏎⏎Path(Unit, unit, unit) @58:10-58:14
-58:14-58:14 ) ⇒ Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit) @58:5-58:15
-58:15-58:15 ; ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @48:1-58:16
-62:1-62:11 @[ checks ] ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @62:1-63:1
-63:1-63:3 def ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-63:72
-63:5-63:13 reversed( ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:5-63:13
-63:14-63:14 a ⇒ a : Nat @63:14-63:15
-63:16-63:16 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-63:72
-63:18-63:20 Nat ⇒ Nat : Type @63:18-63:21
-63:21-63:21 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-63:72
-63:23-63:23 b ⇒ b : Nat @63:23-63:24
-63:25-63:25 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-63:72
-63:27-63:29 Nat ⇒ Nat : Type @63:27-63:30
-63:30-63:30 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-63:72
-63:32-63:32 q ⇒ q : Path(Nat, a, b) @63:32-63:33
-63:34-63:34 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-63:72
-63:36-63:40 Path( ⇒ Path(Nat, a, b) : Type @63:36-63:51
-63:41-63:43 Nat ⇒ Nat : Type @63:41-63:44
-63:44-63:44 , ⇒ Path(Nat, a, b) : Type @63:36-63:51
-63:46-63:46 a ⇒ a : Nat @63:46-63:47
-63:47-63:47 , ⇒ Path(Nat, a, b) : Type @63:36-63:51
-63:49-63:49 b ⇒ b : Nat @63:49-63:50
-63:50-63:50 ) ⇒ Path(Nat, a, b) : Type @63:36-63:51
-63:51-63:54 ) -> ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-63:72
-63:56-63:60 Path( ⇒ Path(Nat, b, a) : Type @63:56-63:71
-63:61-63:63 Nat ⇒ Nat : Type @63:61-63:64
-63:64-63:64 , ⇒ Path(Nat, b, a) : Type @63:56-63:71
-63:66-63:66 b ⇒ b : Nat @63:66-63:67
-63:67-63:67 , ⇒ Path(Nat, b, a) : Type @63:56-63:71
-63:69-63:69 a ⇒ a : Nat @63:69-63:70
-63:70-63:70 ) ⇒ Path(Nat, b, a) : Type @63:56-63:71
-63:72-63:72 { ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-71:2
-64:3-64:12 transport( ⇒ -F Path(Nat, b, a) @64:3-70:4
-65:5-65:5 ( ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @65:5-65:50
-65:6-65:6 y ⇒ y : Nat @65:6-65:7
-65:8-65:8 : ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @65:5-65:50
-65:10-65:12 Nat ⇒ Nat : Type @65:10-65:13
-65:13-65:13 , ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @65:5-65:50
-65:15-65:19 Path( ⇒ Path(Nat, a, y) : Type @65:15-65:30
-65:20-65:22 Nat ⇒ Nat : Type @65:20-65:23
-65:23-65:23 , ⇒ Path(Nat, a, y) : Type @65:15-65:30
-65:25-65:25 a ⇒ a : Nat @65:25-65:26
-65:26-65:26 , ⇒ Path(Nat, a, y) : Type @65:15-65:30
-65:28-65:28 y ⇒ y : Nat @65:28-65:29
-65:29-65:29 ) ⇒ Path(Nat, a, y) : Type @65:15-65:30
-65:30-65:33 ) => ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @65:5-65:50
-65:35-65:39 Path( ⇒ Path(Nat, y, a) : Type @65:35-65:50
-65:40-65:42 Nat ⇒ Nat : Type @65:40-65:43
-65:43-65:43 , ⇒ Path(Nat, y, a) : Type @65:35-65:50
-65:45-65:45 y ⇒ y : Nat @65:45-65:46
-65:46-65:46 , ⇒ Path(Nat, y, a) : Type @65:35-65:50
-65:48-65:48 a ⇒ a : Nat @65:48-65:49
-65:49-65:49 ) ⇒ Path(Nat, y, a) : Type @65:35-65:50
-65:50-65:50 , ⇒ -F Path(Nat, b, a) @64:3-70:4
-66:5-66:5 q ⇒ q : Path(Nat, a, b) @66:5-66:6
-66:6-66:6 , ⇒ -F Path(Nat, b, a) @64:3-70:4
-67:5-67:9 here( ⇒ Path(Nat, a, a) @67:5-67:12
-67:10-67:10 a ⇒ a : Nat @67:10-67:11
-67:11-67:11 ) ⇒ Path(Nat, a, a) @67:5-67:12
-67:12-67:12 , ⇒ -F Path(Nat, b, a) @64:3-70:4
-68:5-68:9 here( ⇒ Path(Path(Nat, a, b), q, q) @68:5-68:12
-68:10-68:10 q ⇒ q : Path(Nat, a, b) @68:10-68:11
-68:11-68:11 ) ⇒ Path(Path(Nat, a, b), q, q) @68:5-68:12
-68:12-68:12 , ⇒ -F Path(Nat, b, a) @64:3-70:4
-69:5-69:9 here( ⇒ Path(Nat, a, a) @69:5-69:12
-69:10-69:10 a ⇒ a : Nat @69:10-69:11
-69:11-69:11 ) ⇒ Path(Nat, a, a) @69:5-69:12
-70:3-70:3 ) ⇒ -F Path(Nat, b, a) @64:3-70:4
-71:1-71:1 } ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @63:1-71:2
-74:1-74:23 @[ refuses("NotOver") ] ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @74:1-75:1
-75:1-75:3 def ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:5-75:11 astray( ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:5-75:11
-75:12-75:12 a ⇒ a : Nat @75:12-75:13
-75:14-75:14 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:16-75:18 Nat ⇒ Nat : Type @75:16-75:19
-75:19-75:19 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:21-75:21 b ⇒ b : Nat @75:21-75:22
-75:23-75:23 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:25-75:27 Nat ⇒ Nat : Type @75:25-75:28
-75:28-75:28 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:30-75:30 q ⇒ q : Path(Nat, a, b) @75:30-75:31
-75:32-75:32 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:34-75:38 Path( ⇒ Path(Nat, a, b) : Type @75:34-75:49
-75:39-75:41 Nat ⇒ Nat : Type @75:39-75:42
-75:42-75:42 , ⇒ Path(Nat, a, b) : Type @75:34-75:49
-75:44-75:44 a ⇒ a : Nat @75:44-75:45
-75:45-75:45 , ⇒ Path(Nat, a, b) : Type @75:34-75:49
-75:47-75:47 b ⇒ b : Nat @75:47-75:48
-75:48-75:48 ) ⇒ Path(Nat, a, b) : Type @75:34-75:49
-75:49-75:49 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:51-75:51 v ⇒ v : Nat @75:51-75:52
-75:53-75:53 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:55-75:57 Nat ⇒ Nat : Type @75:55-75:58
-75:58-75:61 ) -> ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-75:67
-75:63-75:65 Nat ⇒ Nat : Type @75:63-75:66
-75:67-75:67 { ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-77:2
-76:3-76:12 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @76:3-76:77
-76:13-76:13 ( ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @76:13-76:46
-76:14-76:14 y ⇒ y : Nat @76:14-76:15
-76:16-76:16 : ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @76:13-76:46
-76:18-76:20 Nat ⇒ Nat : Type @76:18-76:21
-76:21-76:21 , ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @76:13-76:46
-76:23-76:27 Path( ⇒ Path(Nat, a, y) : Type @76:23-76:38
-76:28-76:30 Nat ⇒ Nat : Type @76:28-76:31
-76:31-76:31 , ⇒ Path(Nat, a, y) : Type @76:23-76:38
-76:33-76:33 a ⇒ a : Nat @76:33-76:34
-76:34-76:34 , ⇒ Path(Nat, a, y) : Type @76:23-76:38
-76:36-76:36 y ⇒ y : Nat @76:36-76:37
-76:37-76:37 ) ⇒ Path(Nat, a, y) : Type @76:23-76:38
-76:38-76:41 ) => ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @76:13-76:46
-76:43-76:45 Nat ⇒ Nat : Type @76:43-76:46
-76:46-76:46 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @76:3-76:77
-76:48-76:48 q ⇒ q : Path(Nat, a, b) @76:48-76:49
-76:49-76:49 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @76:3-76:77
-76:51-76:55 here( ⇒ Path(Nat, a, a) @76:51-76:58
-76:56-76:56 a ⇒ a : Nat @76:56-76:57
-76:57-76:57 ) ⇒ Path(Nat, a, a) @76:51-76:58
-76:58-76:58 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @76:3-76:77
-76:60-76:64 here( ⇒ Path(Path(Nat, a, a), here(a), here(a)) @76:60-76:73
-76:65-76:69 here( ⇒ Path(Nat, a, a) @76:65-76:72
-76:70-76:70 a ⇒ a : Nat @76:70-76:71
-76:71-76:71 ) ⇒ Path(Nat, a, a) @76:65-76:72
-76:72-76:72 ) ⇒ Path(Path(Nat, a, a), here(a), here(a)) @76:60-76:73
-76:73-76:76 , v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @76:3-76:77
-77:1-77:1 } ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @75:1-77:2
-80:1-80:29 @[ refuses("ShapeMismatc… ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @80:1-81:1
-81:1-81:3 def ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:5-81:9 flat( ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:5-81:9
-81:10-81:10 a ⇒ a : Nat @81:10-81:11
-81:12-81:12 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:14-81:16 Nat ⇒ Nat : Type @81:14-81:17
-81:17-81:17 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:19-81:19 b ⇒ b : Nat @81:19-81:20
-81:21-81:21 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:23-81:25 Nat ⇒ Nat : Type @81:23-81:26
-81:26-81:26 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:28-81:28 q ⇒ q : Path(Nat, a, b) @81:28-81:29
-81:30-81:30 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:32-81:36 Path( ⇒ Path(Nat, a, b) : Type @81:32-81:47
-81:37-81:39 Nat ⇒ Nat : Type @81:37-81:40
-81:40-81:40 , ⇒ Path(Nat, a, b) : Type @81:32-81:47
-81:42-81:42 a ⇒ a : Nat @81:42-81:43
-81:43-81:43 , ⇒ Path(Nat, a, b) : Type @81:32-81:47
-81:45-81:45 b ⇒ b : Nat @81:45-81:46
-81:46-81:46 ) ⇒ Path(Nat, a, b) : Type @81:32-81:47
-81:47-81:47 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:49-81:49 v ⇒ v : Nat @81:49-81:50
-81:51-81:51 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:53-81:55 Nat ⇒ Nat : Type @81:53-81:56
-81:56-81:59 ) -> ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-81:65
-81:61-81:63 Nat ⇒ Nat : Type @81:61-81:64
-81:65-81:65 { ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-83:2
-82:3-82:12 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @82:3-82:36
-82:13-82:15 Nat ⇒ Nat : Type @82:13-82:16
-82:17-82:18 => ⇒ Nat => Nat : Type[-] @82:13-82:23
-82:20-82:22 Nat ⇒ Nat : Type @82:20-82:23
-82:23-82:23 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @82:3-82:36
-82:25-82:25 q ⇒ q : Path(Nat, a, b) @82:25-82:26
-82:26-82:35 , v, v, v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @82:3-82:36
-83:1-83:1 } ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @81:1-83:2
+17:15-17:15 , ⇒ -F Nat @14:3-20:4
+18:5-18:9 here( ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @18:5-18:21
+18:10-18:14 here( ⇒ Path(Nat, Zero, Zero) @18:10-18:20
+18:15-18:18 Zero ⇒ Zero : Nat @18:15-18:19
+18:19-18:19 ) ⇒ Path(Nat, Zero, Zero) @18:10-18:20
+18:20-18:20 ) ⇒ Path(Path(Nat, Zero, Zero), here(Zero), here(Zero)) @18:5-18:21
+18:21-18:21 , ⇒ -F Nat @14:3-20:4
+19:5-19:9 Succ( ⇒ Succ(Zero) : Nat @19:5-19:15
+19:10-19:13 Zero ⇒ Zero : Nat @19:10-19:14
+19:14-19:14 ) ⇒ Succ(Zero) : Nat @19:5-19:15
+20:3-20:3 ) ⇒ -F Nat @14:3-20:4
+20:4-20:4 , ⇒ Type @12:15-22:2
+21:3-21:7 Succ( ⇒ Succ(Zero) : Nat @21:3-21:13
+21:8-21:11 Zero ⇒ Zero : Nat @21:8-21:12
+21:12-21:12 ) ⇒ Succ(Zero) : Nat @21:3-21:13
+22:1-22:1 ) ⇒ Type @12:15-22:2
+22:3-22:3 = ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-22:22
+22:5-22:9 here( ⇒ Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero)) @22:5-22:21
+22:10-22:14 Succ( ⇒ Succ(Zero) : Nat @22:10-22:20
+22:15-22:18 Zero ⇒ Zero : Nat @22:15-22:19
+22:19-22:19 ) ⇒ Succ(Zero) : Nat @22:10-22:20
+22:20-22:20 ) ⇒ Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero)) @22:5-22:21
+22:21-22:21 ; ⇒ reduced : Path(Nat, transport((a : Nat, Path(Nat, Zero, a)) => Nat, here(Zero), here(Zero⏎), here(here(Zero)), Succ(Zero)), Succ(Zero))⏎⏎Transport along reflexivity at zero returns the element given. @12:1-22:22
+26:1-26:3 def ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @26:1-26:46
+26:5-26:12 unitPath ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @26:5-26:13
+26:14-26:14 : ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @26:1-26:46
+26:16-26:20 Path( ⇒ Path(Unit, unit, unit) : Type @26:16-26:38
+26:21-26:24 Unit ⇒ Unit : Type @26:21-26:25
+26:25-26:25 , ⇒ Path(Unit, unit, unit) : Type @26:16-26:38
+26:27-26:30 unit ⇒ Unit @26:27-26:31
+26:31-26:31 , ⇒ Path(Unit, unit, unit) : Type @26:16-26:38
+26:33-26:36 unit ⇒ Unit @26:33-26:37
+26:37-26:37 ) ⇒ Path(Unit, unit, unit) : Type @26:16-26:38
+26:39-26:39 = ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @26:1-26:46
+26:41-26:44 unit ⇒ Unit⏎⏎checked against⏎⏎Path(Unit, unit, unit) @26:41-26:45
+26:45-26:45 ; ⇒ unitPath : Path(Unit, unit, unit)⏎⏎The unit type's evidence between its point and itself, a closed path⏎that is no reflexivity. @26:1-26:46
+30:1-30:3 def ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @30:1-40:22
+30:5-30:15 carriedUnit ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @30:5-30:16
+30:17-30:17 : ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @30:1-40:22
+30:19-30:23 Path( ⇒ Type @30:19-40:2
+31:3-31:5 Nat ⇒ Nat : Type @31:3-31:6
+31:6-31:6 , ⇒ Type @30:19-40:2
+32:3-32:12 transport( ⇒ -F Nat @32:3-38:4
+33:5-33:5 ( ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @33:5-33:43
+33:6-33:6 y ⇒ y : Unit @33:6-33:7
+33:8-33:8 : ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @33:5-33:43
+33:10-33:13 Unit ⇒ Unit : Type @33:10-33:14
+33:14-33:14 , ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @33:5-33:43
+33:16-33:20 Path( ⇒ Path(Unit, unit, y) : Type @33:16-33:35
+33:21-33:24 Unit ⇒ Unit : Type @33:21-33:25
+33:25-33:25 , ⇒ Path(Unit, unit, y) : Type @33:16-33:35
+33:27-33:30 unit ⇒ Unit @33:27-33:31
+33:31-33:31 , ⇒ Path(Unit, unit, y) : Type @33:16-33:35
+33:33-33:33 y ⇒ y : Unit @33:33-33:34
+33:34-33:34 ) ⇒ Path(Unit, unit, y) : Type @33:16-33:35
+33:35-33:38 ) => ⇒ (y : Unit, Path(Unit, unit, y)) => Nat : Type[-] @33:5-33:43
+33:40-33:42 Nat ⇒ Nat : Type @33:40-33:43
+33:43-33:43 , ⇒ -F Nat @32:3-38:4
+34:5-34:12 unitPath ⇒ unitPath : Path(Unit, unit, unit) @34:5-34:13
+34:13-34:13 , ⇒ -F Nat @32:3-38:4
+35:5-35:9 here( ⇒ Path(Unit, unit, unit) @35:5-35:15
+35:10-35:13 unit ⇒ Unit @35:10-35:14
+35:14-35:14 ) ⇒ Path(Unit, unit, unit) @35:5-35:15
+35:15-35:15 , ⇒ -F Nat @32:3-38:4
+36:5-36:9 here( ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @36:5-36:19
+36:10-36:17 unitPath ⇒ unitPath : Path(Unit, unit, unit) @36:10-36:18
+36:18-36:18 ) ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @36:5-36:19
+36:19-36:19 , ⇒ -F Nat @32:3-38:4
+37:5-37:9 Succ( ⇒ Succ(Zero) : Nat @37:5-37:15
+37:10-37:13 Zero ⇒ Zero : Nat @37:10-37:14
+37:14-37:14 ) ⇒ Succ(Zero) : Nat @37:5-37:15
+38:3-38:3 ) ⇒ -F Nat @32:3-38:4
+38:4-38:4 , ⇒ Type @30:19-40:2
+39:3-39:7 Succ( ⇒ Succ(Zero) : Nat @39:3-39:13
+39:8-39:11 Zero ⇒ Zero : Nat @39:8-39:12
+39:12-39:12 ) ⇒ Succ(Zero) : Nat @39:3-39:13
+40:1-40:1 ) ⇒ Type @30:19-40:2
+40:3-40:3 = ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @30:1-40:22
+40:5-40:9 here( ⇒ Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero)) @40:5-40:21
+40:10-40:14 Succ( ⇒ Succ(Zero) : Nat @40:10-40:20
+40:15-40:18 Zero ⇒ Zero : Nat @40:15-40:19
+40:19-40:19 ) ⇒ Succ(Zero) : Nat @40:10-40:20
+40:20-40:20 ) ⇒ Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero)) @40:5-40:21
+40:21-40:21 ; ⇒ carriedUnit : Path(Nat, transport((a : Unit, Path(Unit, unit, a)) => Nat, unitPath, here(unit⏎), here(unitPath), Succ(Zero)), Succ(Zero))⏎⏎Transport along that evidence, in a family that reads neither the point⏎nor the path, returns the element given (#1854). @30:1-40:22
+44:1-44:3 def ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @44:1-54:16
+44:5-44:12 backUnit ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @44:5-44:13
+44:14-44:14 : ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @44:1-54:16
+44:16-44:20 Path( ⇒ Type @44:16-54:2
+45:3-45:7 Path( ⇒ Path(Unit, unit, unit) : Type @45:3-45:25
+45:8-45:11 Unit ⇒ Unit : Type @45:8-45:12
+45:12-45:12 , ⇒ Path(Unit, unit, unit) : Type @45:3-45:25
+45:14-45:17 unit ⇒ Unit @45:14-45:18
+45:18-45:18 , ⇒ Path(Unit, unit, unit) : Type @45:3-45:25
+45:20-45:23 unit ⇒ Unit @45:20-45:24
+45:24-45:24 ) ⇒ Path(Unit, unit, unit) : Type @45:3-45:25
+45:25-45:25 , ⇒ Type @44:16-54:2
+46:3-46:12 transport( ⇒ -F Path(Unit, unit, unit) @46:3-52:4
+47:5-47:5 ( ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @47:5-47:59
+47:6-47:6 y ⇒ y : Unit @47:6-47:7
+47:8-47:8 : ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @47:5-47:59
+47:10-47:13 Unit ⇒ Unit : Type @47:10-47:14
+47:14-47:14 , ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @47:5-47:59
+47:16-47:20 Path( ⇒ Path(Unit, unit, y) : Type @47:16-47:35
+47:21-47:24 Unit ⇒ Unit : Type @47:21-47:25
+47:25-47:25 , ⇒ Path(Unit, unit, y) : Type @47:16-47:35
+47:27-47:30 unit ⇒ Unit @47:27-47:31
+47:31-47:31 , ⇒ Path(Unit, unit, y) : Type @47:16-47:35
+47:33-47:33 y ⇒ y : Unit @47:33-47:34
+47:34-47:34 ) ⇒ Path(Unit, unit, y) : Type @47:16-47:35
+47:35-47:38 ) => ⇒ (y : Unit, Path(Unit, unit, y)) => Path(Unit, y, unit) : Type[-] @47:5-47:59
+47:40-47:44 Path( ⇒ Path(Unit, y, unit) : Type @47:40-47:59
+47:45-47:48 Unit ⇒ Unit : Type @47:45-47:49
+47:49-47:49 , ⇒ Path(Unit, y, unit) : Type @47:40-47:59
+47:51-47:51 y ⇒ y : Unit @47:51-47:52
+47:52-47:52 , ⇒ Path(Unit, y, unit) : Type @47:40-47:59
+47:54-47:57 unit ⇒ Unit @47:54-47:58
+47:58-47:58 ) ⇒ Path(Unit, y, unit) : Type @47:40-47:59
+47:59-47:59 , ⇒ -F Path(Unit, unit, unit) @46:3-52:4
+48:5-48:12 unitPath ⇒ unitPath : Path(Unit, unit, unit) @48:5-48:13
+48:13-48:13 , ⇒ -F Path(Unit, unit, unit) @46:3-52:4
+49:5-49:9 here( ⇒ Path(Unit, unit, unit) @49:5-49:15
+49:10-49:13 unit ⇒ Unit @49:10-49:14
+49:14-49:14 ) ⇒ Path(Unit, unit, unit) @49:5-49:15
+49:15-49:15 , ⇒ -F Path(Unit, unit, unit) @46:3-52:4
+50:5-50:9 here( ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @50:5-50:19
+50:10-50:17 unitPath ⇒ unitPath : Path(Unit, unit, unit) @50:10-50:18
+50:18-50:18 ) ⇒ Path(Path(Unit, unit, unit), unitPath, unitPath) @50:5-50:19
+50:19-50:19 , ⇒ -F Path(Unit, unit, unit) @46:3-52:4
+51:5-51:9 here( ⇒ Path(Unit, unit, unit) @51:5-51:15
+51:10-51:13 unit ⇒ Unit @51:10-51:14
+51:14-51:14 ) ⇒ Path(Unit, unit, unit) @51:5-51:15
+52:3-52:3 ) ⇒ -F Path(Unit, unit, unit) @46:3-52:4
+52:4-52:4 , ⇒ Type @44:16-54:2
+53:3-53:6 unit ⇒ Unit⏎⏎checked against⏎⏎Path(Unit, unit, unit) @53:3-53:7
+54:1-54:1 ) ⇒ Type @44:16-54:2
+54:3-54:3 = ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @44:1-54:16
+54:5-54:9 here( ⇒ Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit) @54:5-54:15
+54:10-54:13 unit ⇒ Unit⏎⏎checked against⏎⏎Path(Unit, unit, unit) @54:10-54:14
+54:14-54:14 ) ⇒ Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit) @54:5-54:15
+54:15-54:15 ; ⇒ backUnit : Path(Path(Unit, unit, unit), transport((a : Unit, Path(Unit, unit, a)) =>⏎  Path(Unit, a, unit), unitPath, here(unit), here(unitPath), here(unit)), unit)⏎⏎Transport along that evidence in the family of paths back to the point⏎returns the unit, the one inhabitant of the unit fibre (#1886). @44:1-54:16
+58:1-58:3 def ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-58:72
+58:5-58:13 reversed( ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:5-58:13
+58:14-58:14 a ⇒ a : Nat @58:14-58:15
+58:16-58:16 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-58:72
+58:18-58:20 Nat ⇒ Nat : Type @58:18-58:21
+58:21-58:21 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-58:72
+58:23-58:23 b ⇒ b : Nat @58:23-58:24
+58:25-58:25 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-58:72
+58:27-58:29 Nat ⇒ Nat : Type @58:27-58:30
+58:30-58:30 , ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-58:72
+58:32-58:32 q ⇒ q : Path(Nat, a, b) @58:32-58:33
+58:34-58:34 : ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-58:72
+58:36-58:40 Path( ⇒ Path(Nat, a, b) : Type @58:36-58:51
+58:41-58:43 Nat ⇒ Nat : Type @58:41-58:44
+58:44-58:44 , ⇒ Path(Nat, a, b) : Type @58:36-58:51
+58:46-58:46 a ⇒ a : Nat @58:46-58:47
+58:47-58:47 , ⇒ Path(Nat, a, b) : Type @58:36-58:51
+58:49-58:49 b ⇒ b : Nat @58:49-58:50
+58:50-58:50 ) ⇒ Path(Nat, a, b) : Type @58:36-58:51
+58:51-58:54 ) -> ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-58:72
+58:56-58:60 Path( ⇒ Path(Nat, b, a) : Type @58:56-58:71
+58:61-58:63 Nat ⇒ Nat : Type @58:61-58:64
+58:64-58:64 , ⇒ Path(Nat, b, a) : Type @58:56-58:71
+58:66-58:66 b ⇒ b : Nat @58:66-58:67
+58:67-58:67 , ⇒ Path(Nat, b, a) : Type @58:56-58:71
+58:69-58:69 a ⇒ a : Nat @58:69-58:70
+58:70-58:70 ) ⇒ Path(Nat, b, a) : Type @58:56-58:71
+58:72-58:72 { ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-66:2
+59:3-59:12 transport( ⇒ -F Path(Nat, b, a) @59:3-65:4
+60:5-60:5 ( ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @60:5-60:50
+60:6-60:6 y ⇒ y : Nat @60:6-60:7
+60:8-60:8 : ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @60:5-60:50
+60:10-60:12 Nat ⇒ Nat : Type @60:10-60:13
+60:13-60:13 , ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @60:5-60:50
+60:15-60:19 Path( ⇒ Path(Nat, a, y) : Type @60:15-60:30
+60:20-60:22 Nat ⇒ Nat : Type @60:20-60:23
+60:23-60:23 , ⇒ Path(Nat, a, y) : Type @60:15-60:30
+60:25-60:25 a ⇒ a : Nat @60:25-60:26
+60:26-60:26 , ⇒ Path(Nat, a, y) : Type @60:15-60:30
+60:28-60:28 y ⇒ y : Nat @60:28-60:29
+60:29-60:29 ) ⇒ Path(Nat, a, y) : Type @60:15-60:30
+60:30-60:33 ) => ⇒ (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a) : Type[-] @60:5-60:50
+60:35-60:39 Path( ⇒ Path(Nat, y, a) : Type @60:35-60:50
+60:40-60:42 Nat ⇒ Nat : Type @60:40-60:43
+60:43-60:43 , ⇒ Path(Nat, y, a) : Type @60:35-60:50
+60:45-60:45 y ⇒ y : Nat @60:45-60:46
+60:46-60:46 , ⇒ Path(Nat, y, a) : Type @60:35-60:50
+60:48-60:48 a ⇒ a : Nat @60:48-60:49
+60:49-60:49 ) ⇒ Path(Nat, y, a) : Type @60:35-60:50
+60:50-60:50 , ⇒ -F Path(Nat, b, a) @59:3-65:4
+61:5-61:5 q ⇒ q : Path(Nat, a, b) @61:5-61:6
+61:6-61:6 , ⇒ -F Path(Nat, b, a) @59:3-65:4
+62:5-62:9 here( ⇒ Path(Nat, a, a) @62:5-62:12
+62:10-62:10 a ⇒ a : Nat @62:10-62:11
+62:11-62:11 ) ⇒ Path(Nat, a, a) @62:5-62:12
+62:12-62:12 , ⇒ -F Path(Nat, b, a) @59:3-65:4
+63:5-63:9 here( ⇒ Path(Path(Nat, a, b), q, q) @63:5-63:12
+63:10-63:10 q ⇒ q : Path(Nat, a, b) @63:10-63:11
+63:11-63:11 ) ⇒ Path(Path(Nat, a, b), q, q) @63:5-63:12
+63:12-63:12 , ⇒ -F Path(Nat, b, a) @59:3-65:4
+64:5-64:9 here( ⇒ Path(Nat, a, a) @64:5-64:12
+64:10-64:10 a ⇒ a : Nat @64:10-64:11
+64:11-64:11 ) ⇒ Path(Nat, a, a) @64:5-64:12
+65:3-65:3 ) ⇒ -F Path(Nat, b, a) @59:3-65:4
+66:1-66:1 } ⇒ reversed : (a : Nat, b : Nat, Path(Nat, a, b)) => Path(Nat, b, a)⏎⏎A path reversed by transport in the family of paths back to its start,⏎reflexivity at the start carried to the end. @58:1-66:2
+69:1-69:23 @[ refuses("NotOver") ] ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @69:1-70:1
+70:1-70:3 def ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:5-70:11 astray( ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:5-70:11
+70:12-70:12 a ⇒ a : Nat @70:12-70:13
+70:14-70:14 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:16-70:18 Nat ⇒ Nat : Type @70:16-70:19
+70:19-70:19 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:21-70:21 b ⇒ b : Nat @70:21-70:22
+70:23-70:23 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:25-70:27 Nat ⇒ Nat : Type @70:25-70:28
+70:28-70:28 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:30-70:30 q ⇒ q : Path(Nat, a, b) @70:30-70:31
+70:32-70:32 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:34-70:38 Path( ⇒ Path(Nat, a, b) : Type @70:34-70:49
+70:39-70:41 Nat ⇒ Nat : Type @70:39-70:42
+70:42-70:42 , ⇒ Path(Nat, a, b) : Type @70:34-70:49
+70:44-70:44 a ⇒ a : Nat @70:44-70:45
+70:45-70:45 , ⇒ Path(Nat, a, b) : Type @70:34-70:49
+70:47-70:47 b ⇒ b : Nat @70:47-70:48
+70:48-70:48 ) ⇒ Path(Nat, a, b) : Type @70:34-70:49
+70:49-70:49 , ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:51-70:51 v ⇒ v : Nat @70:51-70:52
+70:53-70:53 : ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:55-70:57 Nat ⇒ Nat : Type @70:55-70:58
+70:58-70:61 ) -> ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-70:67
+70:63-70:65 Nat ⇒ Nat : Type @70:63-70:66
+70:67-70:67 { ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-72:2
+71:3-71:12 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @71:3-71:77
+71:13-71:13 ( ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @71:13-71:46
+71:14-71:14 y ⇒ y : Nat @71:14-71:15
+71:16-71:16 : ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @71:13-71:46
+71:18-71:20 Nat ⇒ Nat : Type @71:18-71:21
+71:21-71:21 , ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @71:13-71:46
+71:23-71:27 Path( ⇒ Path(Nat, a, y) : Type @71:23-71:38
+71:28-71:30 Nat ⇒ Nat : Type @71:28-71:31
+71:31-71:31 , ⇒ Path(Nat, a, y) : Type @71:23-71:38
+71:33-71:33 a ⇒ a : Nat @71:33-71:34
+71:34-71:34 , ⇒ Path(Nat, a, y) : Type @71:23-71:38
+71:36-71:36 y ⇒ y : Nat @71:36-71:37
+71:37-71:37 ) ⇒ Path(Nat, a, y) : Type @71:23-71:38
+71:38-71:41 ) => ⇒ (y : Nat, Path(Nat, a, y)) => Nat : Type[-] @71:13-71:46
+71:43-71:45 Nat ⇒ Nat : Type @71:43-71:46
+71:46-71:46 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @71:3-71:77
+71:48-71:48 q ⇒ q : Path(Nat, a, b) @71:48-71:49
+71:49-71:49 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @71:3-71:77
+71:51-71:55 here( ⇒ Path(Nat, a, a) @71:51-71:58
+71:56-71:56 a ⇒ a : Nat @71:56-71:57
+71:57-71:57 ) ⇒ Path(Nat, a, a) @71:51-71:58
+71:58-71:58 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @71:3-71:77
+71:60-71:64 here( ⇒ Path(Path(Nat, a, a), here(a), here(a)) @71:60-71:73
+71:65-71:69 here( ⇒ Path(Nat, a, a) @71:65-71:72
+71:70-71:70 a ⇒ a : Nat @71:70-71:71
+71:71-71:71 ) ⇒ Path(Nat, a, a) @71:65-71:72
+71:72-71:72 ) ⇒ Path(Path(Nat, a, a), here(a), here(a)) @71:60-71:73
+71:73-71:76 , v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @71:3-71:77
+72:1-72:1 } ⇒ astray : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: a telescope transport requires its second identity to lie over its path, from the start transported along it⏎⏎A lift whose path is not over `q` is refused. @70:1-72:2
+75:1-75:29 @[ refuses("ShapeMismatc… ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @75:1-76:1
+76:1-76:3 def ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:5-76:9 flat( ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:5-76:9
+76:10-76:10 a ⇒ a : Nat @76:10-76:11
+76:12-76:12 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:14-76:16 Nat ⇒ Nat : Type @76:14-76:17
+76:17-76:17 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:19-76:19 b ⇒ b : Nat @76:19-76:20
+76:21-76:21 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:23-76:25 Nat ⇒ Nat : Type @76:23-76:26
+76:26-76:26 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:28-76:28 q ⇒ q : Path(Nat, a, b) @76:28-76:29
+76:30-76:30 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:32-76:36 Path( ⇒ Path(Nat, a, b) : Type @76:32-76:47
+76:37-76:39 Nat ⇒ Nat : Type @76:37-76:40
+76:40-76:40 , ⇒ Path(Nat, a, b) : Type @76:32-76:47
+76:42-76:42 a ⇒ a : Nat @76:42-76:43
+76:43-76:43 , ⇒ Path(Nat, a, b) : Type @76:32-76:47
+76:45-76:45 b ⇒ b : Nat @76:45-76:46
+76:46-76:46 ) ⇒ Path(Nat, a, b) : Type @76:32-76:47
+76:47-76:47 , ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:49-76:49 v ⇒ v : Nat @76:49-76:50
+76:51-76:51 : ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:53-76:55 Nat ⇒ Nat : Type @76:53-76:56
+76:56-76:59 ) -> ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-76:65
+76:61-76:63 Nat ⇒ Nat : Type @76:61-76:64
+76:65-76:65 { ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-78:2
+77:3-77:12 transport( ⇒ ?⏎⏎checked against⏎⏎-F Nat @77:3-77:36
+77:13-77:15 Nat ⇒ Nat : Type @77:13-77:16
+77:17-77:18 => ⇒ Nat => Nat : Type[-] @77:13-77:23
+77:20-77:22 Nat ⇒ Nat : Type @77:20-77:23
+77:23-77:23 , ⇒ ?⏎⏎checked against⏎⏎-F Nat @77:3-77:36
+77:25-77:25 q ⇒ q : Path(Nat, a, b) @77:25-77:26
+77:26-77:35 , v, v, v) ⇒ ?⏎⏎checked against⏎⏎-F Nat @77:3-77:36
+78:1-78:1 } ⇒ flat : (a : Nat, b : Nat, Path(Nat, a, b), Nat) => Nat⏎⏎refused: the rule here requires a telescope motive `Π (y : A). Π (z : B). F C`⏎⏎A family that reads no path is the wrong shape for a dependent transport. @76:1-78:2

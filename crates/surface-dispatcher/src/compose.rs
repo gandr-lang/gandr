@@ -6276,6 +6276,20 @@ def delivered() -> -F Unit {
             )
             .expect("the corpus source reads")
         };
+        // A corpus binder is named by the one line that declares it, so an
+        // edit elsewhere in the source moves the expectation with it (#2786).
+        let declared = |source: &str, declaration: &str, binder: &str| {
+            let mut lines = source
+                .lines()
+                .enumerate()
+                .filter(|&(_, line)| line.contains(declaration));
+            let (index, _) = lines.next().expect("the declaration is written");
+            assert!(
+                lines.next().is_none(),
+                "`{declaration}` names one line of the source"
+            );
+            std::format!("{}:{binder}", index.saturating_add(1))
+        };
         assert_eq!(
             unused(
                 "data Nat : Type {\n  Zero : Nat;\n  Succ : (n : Nat) --> Nat;\n}\ndef pick(n : Nat, \
@@ -6310,15 +6324,20 @@ def delivered() -> -F Unit {
             "an unused consumable capability is the checker's refusal, and its declaration \
              answers nothing"
         );
+        let misused = corpus("pathological/completion/buffer-misused.gandr");
         assert_eq!(
-            unused(&corpus("pathological/completion/buffer-misused.gandr")),
-            ["26:first", "40:copied"],
+            unused(&misused),
+            [
+                declared(&misused, "run first <-", "first"),
+                declared(&misused, "run copied : Buf <-", "copied")
+            ],
             "each misused buffer is refused, yet a `run` binder no use reads may be dropped, \
              even one whose own head the checker refused (#1504)"
         );
+        let flow = corpus("surface/control-flow.gandr");
         assert_eq!(
-            unused(&corpus("surface/control-flow.gandr")),
-            ["14:n"],
+            unused(&flow),
+            [declared(&flow, "def tick(n : Nat)", "n")],
             "`tick` leaves its parameter unused; the capability `handled` handles is no lambda's \
              or bind's, and every other binder is used"
         );

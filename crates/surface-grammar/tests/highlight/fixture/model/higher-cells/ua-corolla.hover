@@ -1,258 +1,253 @@
 10:1-10:28 import "./magma-base.gan… ⇒ import "./magma-base.gandr";⏎⏎Reads `<corpus>/corpus/model/higher-cells/magma-base.gandr`. @10:1-10:29
-13:1-13:11 @[ checks ] ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-14:1
-14:1-14:3 def ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:28
-14:5-14:9 flip( ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:5-14:9
-14:10-14:10 b ⇒ b : Bool @14:10-14:11
-14:12-14:12 : ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:28
-14:14-14:17 Bool ⇒ Bool : Type @14:14-14:18
-14:18-14:21 ) -> ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-14:28
-14:23-14:26 Bool ⇒ Bool : Type @14:23-14:27
-14:28-14:28 { ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
-15:3-15:5 run ⇒ -F Bool @15:3-15:6
-15:7-15:7 c ⇒ c : Bool @15:7-15:8
-15:9-15:10 <- ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
+13:1-13:3 def ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-13:28
+13:5-13:9 flip( ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:5-13:9
+13:10-13:10 b ⇒ b : Bool @13:10-13:11
+13:12-13:12 : ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-13:28
+13:14-13:17 Bool ⇒ Bool : Type @13:14-13:18
+13:18-13:21 ) -> ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-13:28
+13:23-13:26 Bool ⇒ Bool : Type @13:23-13:27
+13:28-13:28 { ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
+14:3-14:5 run ⇒ -F Bool @14:3-14:6
+14:7-14:7 c ⇒ c : Bool @14:7-14:8
+14:9-14:10 <- ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
+14:12-14:19 exchange ⇒ exchange : Bool => Bool @14:12-14:20
+14:20-14:20 ( ⇒ -F Bool @14:12-14:23
+14:21-14:21 b ⇒ b : Bool @14:21-14:22
+14:22-14:22 ) ⇒ -F Bool @14:12-14:23
+14:23-14:23 ; ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
+15:3-15:10 exchange ⇒ exchange : Bool => Bool @15:3-15:11
+15:11-15:11 ( ⇒ -F Bool @15:3-15:24
 15:12-15:19 exchange ⇒ exchange : Bool => Bool @15:12-15:20
 15:20-15:20 ( ⇒ -F Bool @15:12-15:23
-15:21-15:21 b ⇒ b : Bool @15:21-15:22
+15:21-15:21 c ⇒ c : Bool @15:21-15:22
 15:22-15:22 ) ⇒ -F Bool @15:12-15:23
-15:23-15:23 ; ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
-16:3-16:10 exchange ⇒ exchange : Bool => Bool @16:3-16:11
-16:11-16:11 ( ⇒ -F Bool @16:3-16:24
-16:12-16:19 exchange ⇒ exchange : Bool => Bool @16:12-16:20
-16:20-16:20 ( ⇒ -F Bool @16:12-16:23
-16:21-16:21 c ⇒ c : Bool @16:21-16:22
-16:22-16:22 ) ⇒ -F Bool @16:12-16:23
-16:23-16:23 ) ⇒ -F Bool @16:3-16:24
-17:1-17:1 } ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @14:1-17:2
-20:1-20:11 @[ checks ] ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @20:1-21:1
-21:1-21:3 def ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @21:1-24:83
-21:5-21:12 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @21:5-21:13
-21:14-21:14 = ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @21:1-24:83
-21:16-24:2 ua[⏎  1,⏎  4⏎]( ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @21:16-24:82
-24:3-24:7 Magma ⇒ Magma : Type @24:3-24:8
-24:8-24:8 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @21:16-24:82
-24:10-24:14 Magma ⇒ Magma : Type @24:10-24:15
-24:15-24:15 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @21:16-24:82
-24:17-24:19 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:17-24:48
-24:20-24:22 mul ⇒ mul : Bool => Bool @24:20-24:23
-24:24-24:24 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:17-24:48
-24:26-24:33 exchange ⇒ exchange : Bool => Bool @24:26-24:34
-24:34-24:36 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:17-24:48
-24:37-24:39 one ⇒ one : +{Unit} => +{Unit} @24:37-24:40
-24:41-24:41 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:17-24:48
-24:43-24:46 keep ⇒ keep : +{Unit} => +{Unit} @24:43-24:47
-24:47-24:47 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:17-24:48
-24:48-24:48 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @21:16-24:82
-24:50-24:52 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:50-24:81
-24:53-24:55 mul ⇒ mul : Bool => Bool @24:53-24:56
-24:57-24:57 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:50-24:81
-24:59-24:66 exchange ⇒ exchange : Bool => Bool @24:59-24:67
-24:67-24:69 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:50-24:81
-24:70-24:72 one ⇒ one : +{Unit} => +{Unit} @24:70-24:73
-24:74-24:74 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:50-24:81
-24:76-24:79 keep ⇒ keep : +{Unit} => +{Unit} @24:76-24:80
-24:80-24:80 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @24:50-24:81
-24:81-24:81 ) ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @21:16-24:82
-24:82-24:82 ; ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @21:1-24:83
-27:1-27:11 @[ checks ] ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @27:1-28:1
-28:1-28:3 def ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @28:1-32:48
-28:5-28:9 moves ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @28:5-28:10
-28:11-28:11 : ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @28:1-32:48
-28:13-28:17 Path( ⇒ Type @28:13-32:2
-29:3-29:6 Unit ⇒ Unit : Type @29:3-29:7
-29:8-29:10 * ( ⇒ Unit * (+{Unit} * Bool) : Type @29:3-29:26
-29:11-29:12 +{ ⇒ +{Unit} : Type @29:11-29:18
-29:13-29:16 Unit ⇒ Unit : Type @29:13-29:17
-29:17-29:17 } ⇒ +{Unit} : Type @29:11-29:18
-29:19-29:19 * ⇒ +{Unit} * Bool : Type @29:11-29:25
-29:21-29:24 Bool ⇒ Bool : Type @29:21-29:25
-29:25-29:25 ) ⇒ Unit * (+{Unit} * Bool) : Type @29:3-29:26
-29:26-29:26 , ⇒ Type @28:13-32:2
-30:3-30:12 transport( ⇒ -F (Unit * (+{Unit} * Bool)) @30:3-30:67
-30:13-30:15 \X. ⇒ \X. X : Type @30:13-30:18
-30:17-30:17 X ⇒ X : Type @30:17-30:18
-30:18-30:18 , ⇒ -F (Unit * (+{Unit} * Bool)) @30:3-30:67
-30:20-30:27 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @30:20-30:28
-30:28-30:28 , ⇒ -F (Unit * (+{Unit} * Bool)) @30:3-30:67
-30:30-30:30 ( ⇒ Unit * (+{Unit} * Bool) @30:30-30:66
-30:31-30:34 unit ⇒ Unit @30:31-30:35
-30:35-30:35 , ⇒ Unit * (+{Unit} * Bool) @30:30-30:66
-30:37-30:37 ( ⇒ +{Unit} * Bool @30:37-30:65
-30:38-30:43 +{.0 = ⇒ +{Unit} @30:38-30:50
-30:45-30:48 unit ⇒ Unit @30:45-30:49
-30:49-30:49 } ⇒ +{Unit} @30:38-30:50
-30:50-30:50 , ⇒ +{Unit} * Bool @30:37-30:65
-30:52-30:57 +{.0 = ⇒ Bool @30:52-30:64
-30:59-30:62 unit ⇒ Unit @30:59-30:63
-30:63-30:63 } ⇒ Bool @30:52-30:64
-30:64-30:64 ) ⇒ +{Unit} * Bool @30:37-30:65
-30:65-30:65 ) ⇒ Unit * (+{Unit} * Bool) @30:30-30:66
-30:66-30:66 ) ⇒ -F (Unit * (+{Unit} * Bool)) @30:3-30:67
-30:67-30:67 , ⇒ Type @28:13-32:2
-31:3-31:3 ( ⇒ Unit * (+{Unit} * Bool) @31:3-31:39
-31:4-31:7 unit ⇒ Unit @31:4-31:8
-31:8-31:8 , ⇒ Unit * (+{Unit} * Bool) @31:3-31:39
-31:10-31:10 ( ⇒ +{Unit} * Bool @31:10-31:38
-31:11-31:16 +{.0 = ⇒ +{Unit} @31:11-31:23
-31:18-31:21 unit ⇒ Unit @31:18-31:22
-31:22-31:22 } ⇒ +{Unit} @31:11-31:23
-31:23-31:23 , ⇒ +{Unit} * Bool @31:10-31:38
-31:25-31:30 +{.1 = ⇒ Bool @31:25-31:37
-31:32-31:35 unit ⇒ Unit @31:32-31:36
-31:36-31:36 } ⇒ Bool @31:25-31:37
-31:37-31:37 ) ⇒ +{Unit} * Bool @31:10-31:38
-31:38-31:38 ) ⇒ Unit * (+{Unit} * Bool) @31:3-31:39
-32:1-32:1 ) ⇒ Type @28:13-32:2
-32:3-32:3 = ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @28:1-32:48
-32:5-32:9 here( ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @32:5-32:47
-32:10-32:10 ( ⇒ Unit * (+{Unit} * Bool) @32:10-32:46
-32:11-32:14 unit ⇒ Unit @32:11-32:15
-32:15-32:15 , ⇒ Unit * (+{Unit} * Bool) @32:10-32:46
-32:17-32:17 ( ⇒ +{Unit} * Bool @32:17-32:45
-32:18-32:23 +{.0 = ⇒ +{Unit} @32:18-32:30
-32:25-32:28 unit ⇒ Unit @32:25-32:29
-32:29-32:29 } ⇒ +{Unit} @32:18-32:30
-32:30-32:30 , ⇒ +{Unit} * Bool @32:17-32:45
-32:32-32:37 +{.1 = ⇒ Bool @32:32-32:44
-32:39-32:42 unit ⇒ Unit @32:39-32:43
-32:43-32:43 } ⇒ Bool @32:32-32:44
-32:44-32:44 ) ⇒ +{Unit} * Bool @32:17-32:45
-32:45-32:45 ) ⇒ Unit * (+{Unit} * Bool) @32:10-32:46
-32:46-32:46 ) ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @32:5-32:47
-32:47-32:47 ; ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @28:1-32:48
-35:1-35:32 @[ refuses("EndpointMism… ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @35:1-36:1
-36:1-36:3 def ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @36:1-40:48
-36:5-36:9 stays ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @36:5-36:10
-36:11-36:11 : ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @36:1-40:48
-36:13-36:17 Path( ⇒ Type @36:13-40:2
-37:3-37:6 Unit ⇒ Unit : Type @37:3-37:7
-37:8-37:10 * ( ⇒ Unit * (+{Unit} * Bool) : Type @37:3-37:26
-37:11-37:12 +{ ⇒ +{Unit} : Type @37:11-37:18
-37:13-37:16 Unit ⇒ Unit : Type @37:13-37:17
-37:17-37:17 } ⇒ +{Unit} : Type @37:11-37:18
-37:19-37:19 * ⇒ +{Unit} * Bool : Type @37:11-37:25
-37:21-37:24 Bool ⇒ Bool : Type @37:21-37:25
-37:25-37:25 ) ⇒ Unit * (+{Unit} * Bool) : Type @37:3-37:26
-37:26-37:26 , ⇒ Type @36:13-40:2
-38:3-38:12 transport( ⇒ -F (Unit * (+{Unit} * Bool)) @38:3-38:67
-38:13-38:15 \X. ⇒ \X. X : Type @38:13-38:18
-38:17-38:17 X ⇒ X : Type @38:17-38:18
-38:18-38:18 , ⇒ -F (Unit * (+{Unit} * Bool)) @38:3-38:67
-38:20-38:27 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @38:20-38:28
-38:28-38:28 , ⇒ -F (Unit * (+{Unit} * Bool)) @38:3-38:67
-38:30-38:30 ( ⇒ Unit * (+{Unit} * Bool) @38:30-38:66
-38:31-38:34 unit ⇒ Unit @38:31-38:35
-38:35-38:35 , ⇒ Unit * (+{Unit} * Bool) @38:30-38:66
-38:37-38:37 ( ⇒ +{Unit} * Bool @38:37-38:65
-38:38-38:43 +{.0 = ⇒ +{Unit} @38:38-38:50
-38:45-38:48 unit ⇒ Unit @38:45-38:49
-38:49-38:49 } ⇒ +{Unit} @38:38-38:50
-38:50-38:50 , ⇒ +{Unit} * Bool @38:37-38:65
-38:52-38:57 +{.0 = ⇒ Bool @38:52-38:64
-38:59-38:62 unit ⇒ Unit @38:59-38:63
-38:63-38:63 } ⇒ Bool @38:52-38:64
-38:64-38:64 ) ⇒ +{Unit} * Bool @38:37-38:65
-38:65-38:65 ) ⇒ Unit * (+{Unit} * Bool) @38:30-38:66
-38:66-38:66 ) ⇒ -F (Unit * (+{Unit} * Bool)) @38:3-38:67
-38:67-38:67 , ⇒ Type @36:13-40:2
-39:3-39:3 ( ⇒ Unit * (+{Unit} * Bool) @39:3-39:39
-39:4-39:7 unit ⇒ Unit @39:4-39:8
-39:8-39:8 , ⇒ Unit * (+{Unit} * Bool) @39:3-39:39
-39:10-39:10 ( ⇒ +{Unit} * Bool @39:10-39:38
-39:11-39:16 +{.0 = ⇒ +{Unit} @39:11-39:23
-39:18-39:21 unit ⇒ Unit @39:18-39:22
-39:22-39:22 } ⇒ +{Unit} @39:11-39:23
-39:23-39:23 , ⇒ +{Unit} * Bool @39:10-39:38
-39:25-39:30 +{.0 = ⇒ Bool @39:25-39:37
-39:32-39:35 unit ⇒ Unit @39:32-39:36
-39:36-39:36 } ⇒ Bool @39:25-39:37
-39:37-39:37 ) ⇒ +{Unit} * Bool @39:10-39:38
-39:38-39:38 ) ⇒ Unit * (+{Unit} * Bool) @39:3-39:39
-40:1-40:1 ) ⇒ Type @36:13-40:2
-40:3-40:3 = ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @36:1-40:48
-40:5-40:9 here( ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @40:5-40:47
-40:10-40:10 ( ⇒ Unit * (+{Unit} * Bool) @40:10-40:46
-40:11-40:14 unit ⇒ Unit @40:11-40:15
-40:15-40:15 , ⇒ Unit * (+{Unit} * Bool) @40:10-40:46
-40:17-40:17 ( ⇒ +{Unit} * Bool @40:17-40:45
-40:18-40:23 +{.0 = ⇒ +{Unit} @40:18-40:30
-40:25-40:28 unit ⇒ Unit @40:25-40:29
-40:29-40:29 } ⇒ +{Unit} @40:18-40:30
-40:30-40:30 , ⇒ +{Unit} * Bool @40:17-40:45
-40:32-40:37 +{.0 = ⇒ Bool @40:32-40:44
-40:39-40:42 unit ⇒ Unit @40:39-40:43
-40:43-40:43 } ⇒ Bool @40:32-40:44
-40:44-40:44 ) ⇒ +{Unit} * Bool @40:17-40:45
-40:45-40:45 ) ⇒ Unit * (+{Unit} * Bool) @40:10-40:46
-40:46-40:46 ) ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @40:5-40:47
-40:47-40:47 ; ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @36:1-40:48
-43:1-43:11 @[ checks ] ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @43:1-44:1
-44:1-44:3 def ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @44:1-44:99
-44:5-44:14 reopposite ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @44:5-44:15
-44:16-44:16 = ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @44:1-44:99
-44:18-44:26 ua[1, 4]( ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
-44:27-44:31 Magma ⇒ Magma : Type @44:27-44:32
-44:32-44:32 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
-44:34-44:38 Magma ⇒ Magma : Type @44:34-44:39
-44:39-44:39 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
-44:41-44:43 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
-44:44-44:46 mul ⇒ mul : Bool => Bool @44:44-44:47
-44:48-44:48 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
-44:50-44:53 flip ⇒ flip : Bool => Bool @44:50-44:54
-44:54-44:56 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
-44:57-44:59 one ⇒ one : +{Unit} => +{Unit} @44:57-44:60
-44:61-44:61 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
-44:63-44:66 keep ⇒ keep : +{Unit} => +{Unit} @44:63-44:67
-44:67-44:67 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:41-44:68
-44:68-44:68 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
-44:70-44:72 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
-44:73-44:75 mul ⇒ mul : Bool => Bool @44:73-44:76
-44:77-44:77 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
-44:79-44:82 flip ⇒ flip : Bool => Bool @44:79-44:83
-44:83-44:85 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
-44:86-44:88 one ⇒ one : +{Unit} => +{Unit} @44:86-44:89
-44:90-44:90 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
-44:92-44:95 keep ⇒ keep : +{Unit} => +{Unit} @44:92-44:96
-44:96-44:96 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @44:70-44:97
-44:97-44:97 ) ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @44:18-44:98
-44:98-44:98 ; ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @44:1-44:99
-47:1-47:11 @[ checks ] ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @47:1-48:1
-48:1-48:3 def ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @48:1-48:73
-48:5-48:9 agree ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @48:5-48:10
-48:11-48:11 : ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @48:1-48:73
-48:13-48:17 Path( ⇒ Path(Bool => Bool, exchange, flip) : Type @48:13-48:47
-48:18-48:21 Bool ⇒ Bool : Type @48:18-48:22
-48:23-48:24 => ⇒ Bool => Bool : Type[-] @48:18-48:30
-48:26-48:29 Bool ⇒ Bool : Type @48:26-48:30
-48:30-48:30 , ⇒ Path(Bool => Bool, exchange, flip) : Type @48:13-48:47
-48:32-48:39 exchange ⇒ exchange : Bool => Bool @48:32-48:40
-48:40-48:40 , ⇒ Path(Bool => Bool, exchange, flip) : Type @48:13-48:47
-48:42-48:45 flip ⇒ flip : Bool => Bool @48:42-48:46
-48:46-48:46 ) ⇒ Path(Bool => Bool, exchange, flip) : Type @48:13-48:47
-48:48-48:48 = ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @48:1-48:73
-48:50-48:56 funext( ⇒ Path(Bool => Bool, exchange, flip) @48:50-48:72
-48:57-48:64 exchange ⇒ exchange : Bool => Bool @48:57-48:65
-48:65-48:65 , ⇒ Path(Bool => Bool, exchange, flip) @48:50-48:72
-48:67-48:70 flip ⇒ flip : Bool => Bool @48:67-48:71
-48:71-48:71 ) ⇒ Path(Bool => Bool, exchange, flip) @48:50-48:72
-48:72-48:72 ; ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @48:1-48:73
-51:1-51:33 @[ refuses("PointwiseDis… ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @51:1-52:1
-52:1-52:3 def ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @52:1-52:80
-52:5-52:12 disagree ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @52:5-52:13
-52:14-52:14 : ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @52:1-52:80
-52:16-52:20 Path( ⇒ Path(Bool => Bool, exchange, boolId) : Type @52:16-52:52
-52:21-52:24 Bool ⇒ Bool : Type @52:21-52:25
-52:26-52:27 => ⇒ Bool => Bool : Type[-] @52:21-52:33
-52:29-52:32 Bool ⇒ Bool : Type @52:29-52:33
-52:33-52:33 , ⇒ Path(Bool => Bool, exchange, boolId) : Type @52:16-52:52
-52:35-52:42 exchange ⇒ exchange : Bool => Bool @52:35-52:43
-52:43-52:43 , ⇒ Path(Bool => Bool, exchange, boolId) : Type @52:16-52:52
-52:45-52:50 boolId ⇒ boolId : Bool => Bool @52:45-52:51
-52:51-52:51 ) ⇒ Path(Bool => Bool, exchange, boolId) : Type @52:16-52:52
-52:53-52:53 = ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @52:1-52:80
-52:55-52:61 funext( ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, boolId) @52:55-52:79
-52:62-52:69 exchange ⇒ exchange : Bool => Bool @52:62-52:70
-52:70-52:70 , ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, boolId) @52:55-52:79
-52:72-52:77 boolId ⇒ boolId : Bool => Bool @52:72-52:78
-52:78-52:78 ) ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, boolId) @52:55-52:79
-52:79-52:79 ; ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @52:1-52:80
+15:23-15:23 ) ⇒ -F Bool @15:3-15:24
+16:1-16:1 } ⇒ flip : Bool => Bool⏎⏎The swap three times, which is the swap. @13:1-16:2
+19:1-19:3 def ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @19:1-22:83
+19:5-19:12 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @19:5-19:13
+19:14-19:14 = ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @19:1-22:83
+19:16-22:2 ua[⏎  1,⏎  4⏎]( ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @19:16-22:82
+22:3-22:7 Magma ⇒ Magma : Type @22:3-22:8
+22:8-22:8 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @19:16-22:82
+22:10-22:14 Magma ⇒ Magma : Type @22:10-22:15
+22:15-22:15 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @19:16-22:82
+22:17-22:19 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:17-22:48
+22:20-22:22 mul ⇒ mul : Bool => Bool @22:20-22:23
+22:24-22:24 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:17-22:48
+22:26-22:33 exchange ⇒ exchange : Bool => Bool @22:26-22:34
+22:34-22:36 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:17-22:48
+22:37-22:39 one ⇒ one : +{Unit} => +{Unit} @22:37-22:40
+22:41-22:41 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:17-22:48
+22:43-22:46 keep ⇒ keep : +{Unit} => +{Unit} @22:43-22:47
+22:47-22:47 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:17-22:48
+22:48-22:48 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @19:16-22:82
+22:50-22:52 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:50-22:81
+22:53-22:55 mul ⇒ mul : Bool => Bool @22:53-22:56
+22:57-22:57 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:50-22:81
+22:59-22:66 exchange ⇒ exchange : Bool => Bool @22:59-22:67
+22:67-22:69 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:50-22:81
+22:70-22:72 one ⇒ one : +{Unit} => +{Unit} @22:70-22:73
+22:74-22:74 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:50-22:81
+22:76-22:79 keep ⇒ keep : +{Unit} => +{Unit} @22:76-22:80
+22:80-22:80 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @22:50-22:81
+22:81-22:81 ) ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @19:16-22:82
+22:82-22:82 ; ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap at the binary corolla. @19:1-22:83
+25:1-25:3 def ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @25:1-29:48
+25:5-25:9 moves ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @25:5-25:10
+25:11-25:11 : ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @25:1-29:48
+25:13-25:17 Path( ⇒ Type @25:13-29:2
+26:3-26:6 Unit ⇒ Unit : Type @26:3-26:7
+26:8-26:10 * ( ⇒ Unit * (+{Unit} * Bool) : Type @26:3-26:26
+26:11-26:12 +{ ⇒ +{Unit} : Type @26:11-26:18
+26:13-26:16 Unit ⇒ Unit : Type @26:13-26:17
+26:17-26:17 } ⇒ +{Unit} : Type @26:11-26:18
+26:19-26:19 * ⇒ +{Unit} * Bool : Type @26:11-26:25
+26:21-26:24 Bool ⇒ Bool : Type @26:21-26:25
+26:25-26:25 ) ⇒ Unit * (+{Unit} * Bool) : Type @26:3-26:26
+26:26-26:26 , ⇒ Type @25:13-29:2
+27:3-27:12 transport( ⇒ -F (Unit * (+{Unit} * Bool)) @27:3-27:67
+27:13-27:15 \X. ⇒ \X. X : Type @27:13-27:18
+27:17-27:17 X ⇒ X : Type @27:17-27:18
+27:18-27:18 , ⇒ -F (Unit * (+{Unit} * Bool)) @27:3-27:67
+27:20-27:27 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @27:20-27:28
+27:28-27:28 , ⇒ -F (Unit * (+{Unit} * Bool)) @27:3-27:67
+27:30-27:30 ( ⇒ Unit * (+{Unit} * Bool) @27:30-27:66
+27:31-27:34 unit ⇒ Unit @27:31-27:35
+27:35-27:35 , ⇒ Unit * (+{Unit} * Bool) @27:30-27:66
+27:37-27:37 ( ⇒ +{Unit} * Bool @27:37-27:65
+27:38-27:43 +{.0 = ⇒ +{Unit} @27:38-27:50
+27:45-27:48 unit ⇒ Unit @27:45-27:49
+27:49-27:49 } ⇒ +{Unit} @27:38-27:50
+27:50-27:50 , ⇒ +{Unit} * Bool @27:37-27:65
+27:52-27:57 +{.0 = ⇒ Bool @27:52-27:64
+27:59-27:62 unit ⇒ Unit @27:59-27:63
+27:63-27:63 } ⇒ Bool @27:52-27:64
+27:64-27:64 ) ⇒ +{Unit} * Bool @27:37-27:65
+27:65-27:65 ) ⇒ Unit * (+{Unit} * Bool) @27:30-27:66
+27:66-27:66 ) ⇒ -F (Unit * (+{Unit} * Bool)) @27:3-27:67
+27:67-27:67 , ⇒ Type @25:13-29:2
+28:3-28:3 ( ⇒ Unit * (+{Unit} * Bool) @28:3-28:39
+28:4-28:7 unit ⇒ Unit @28:4-28:8
+28:8-28:8 , ⇒ Unit * (+{Unit} * Bool) @28:3-28:39
+28:10-28:10 ( ⇒ +{Unit} * Bool @28:10-28:38
+28:11-28:16 +{.0 = ⇒ +{Unit} @28:11-28:23
+28:18-28:21 unit ⇒ Unit @28:18-28:22
+28:22-28:22 } ⇒ +{Unit} @28:11-28:23
+28:23-28:23 , ⇒ +{Unit} * Bool @28:10-28:38
+28:25-28:30 +{.1 = ⇒ Bool @28:25-28:37
+28:32-28:35 unit ⇒ Unit @28:32-28:36
+28:36-28:36 } ⇒ Bool @28:25-28:37
+28:37-28:37 ) ⇒ +{Unit} * Bool @28:10-28:38
+28:38-28:38 ) ⇒ Unit * (+{Unit} * Bool) @28:3-28:39
+29:1-29:1 ) ⇒ Type @25:13-29:2
+29:3-29:3 = ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @25:1-29:48
+29:5-29:9 here( ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @29:5-29:47
+29:10-29:10 ( ⇒ Unit * (+{Unit} * Bool) @29:10-29:46
+29:11-29:14 unit ⇒ Unit @29:11-29:15
+29:15-29:15 , ⇒ Unit * (+{Unit} * Bool) @29:10-29:46
+29:17-29:17 ( ⇒ +{Unit} * Bool @29:17-29:45
+29:18-29:23 +{.0 = ⇒ +{Unit} @29:18-29:30
+29:25-29:28 unit ⇒ Unit @29:25-29:29
+29:29-29:29 } ⇒ +{Unit} @29:18-29:30
+29:30-29:30 , ⇒ +{Unit} * Bool @29:17-29:45
+29:32-29:37 +{.1 = ⇒ Bool @29:32-29:44
+29:39-29:42 unit ⇒ Unit @29:39-29:43
+29:43-29:43 } ⇒ Bool @29:32-29:44
+29:44-29:44 ) ⇒ +{Unit} * Bool @29:17-29:45
+29:45-29:45 ) ⇒ Unit * (+{Unit} * Bool) @29:10-29:46
+29:46-29:46 ) ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit}))) @29:5-29:47
+29:47-29:47 ; ⇒ moves : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.1 = unit})))⏎⏎Transport along it swaps the binary corolla's boolean. @25:1-29:48
+32:1-32:32 @[ refuses("EndpointMism… ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @32:1-33:1
+33:1-33:3 def ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @33:1-37:48
+33:5-33:9 stays ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @33:5-33:10
+33:11-33:11 : ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @33:1-37:48
+33:13-33:17 Path( ⇒ Type @33:13-37:2
+34:3-34:6 Unit ⇒ Unit : Type @34:3-34:7
+34:8-34:10 * ( ⇒ Unit * (+{Unit} * Bool) : Type @34:3-34:26
+34:11-34:12 +{ ⇒ +{Unit} : Type @34:11-34:18
+34:13-34:16 Unit ⇒ Unit : Type @34:13-34:17
+34:17-34:17 } ⇒ +{Unit} : Type @34:11-34:18
+34:19-34:19 * ⇒ +{Unit} * Bool : Type @34:11-34:25
+34:21-34:24 Bool ⇒ Bool : Type @34:21-34:25
+34:25-34:25 ) ⇒ Unit * (+{Unit} * Bool) : Type @34:3-34:26
+34:26-34:26 , ⇒ Type @33:13-37:2
+35:3-35:12 transport( ⇒ -F (Unit * (+{Unit} * Bool)) @35:3-35:67
+35:13-35:15 \X. ⇒ \X. X : Type @35:13-35:18
+35:17-35:17 X ⇒ X : Type @35:17-35:18
+35:18-35:18 , ⇒ -F (Unit * (+{Unit} * Bool)) @35:3-35:67
+35:20-35:27 opposite ⇒ opposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @35:20-35:28
+35:28-35:28 , ⇒ -F (Unit * (+{Unit} * Bool)) @35:3-35:67
+35:30-35:30 ( ⇒ Unit * (+{Unit} * Bool) @35:30-35:66
+35:31-35:34 unit ⇒ Unit @35:31-35:35
+35:35-35:35 , ⇒ Unit * (+{Unit} * Bool) @35:30-35:66
+35:37-35:37 ( ⇒ +{Unit} * Bool @35:37-35:65
+35:38-35:43 +{.0 = ⇒ +{Unit} @35:38-35:50
+35:45-35:48 unit ⇒ Unit @35:45-35:49
+35:49-35:49 } ⇒ +{Unit} @35:38-35:50
+35:50-35:50 , ⇒ +{Unit} * Bool @35:37-35:65
+35:52-35:57 +{.0 = ⇒ Bool @35:52-35:64
+35:59-35:62 unit ⇒ Unit @35:59-35:63
+35:63-35:63 } ⇒ Bool @35:52-35:64
+35:64-35:64 ) ⇒ +{Unit} * Bool @35:37-35:65
+35:65-35:65 ) ⇒ Unit * (+{Unit} * Bool) @35:30-35:66
+35:66-35:66 ) ⇒ -F (Unit * (+{Unit} * Bool)) @35:3-35:67
+35:67-35:67 , ⇒ Type @33:13-37:2
+36:3-36:3 ( ⇒ Unit * (+{Unit} * Bool) @36:3-36:39
+36:4-36:7 unit ⇒ Unit @36:4-36:8
+36:8-36:8 , ⇒ Unit * (+{Unit} * Bool) @36:3-36:39
+36:10-36:10 ( ⇒ +{Unit} * Bool @36:10-36:38
+36:11-36:16 +{.0 = ⇒ +{Unit} @36:11-36:23
+36:18-36:21 unit ⇒ Unit @36:18-36:22
+36:22-36:22 } ⇒ +{Unit} @36:11-36:23
+36:23-36:23 , ⇒ +{Unit} * Bool @36:10-36:38
+36:25-36:30 +{.0 = ⇒ Bool @36:25-36:37
+36:32-36:35 unit ⇒ Unit @36:32-36:36
+36:36-36:36 } ⇒ Bool @36:25-36:37
+36:37-36:37 ) ⇒ +{Unit} * Bool @36:10-36:38
+36:38-36:38 ) ⇒ Unit * (+{Unit} * Bool) @36:3-36:39
+37:1-37:1 ) ⇒ Type @33:13-37:2
+37:3-37:3 = ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @33:1-37:48
+37:5-37:9 here( ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @37:5-37:47
+37:10-37:10 ( ⇒ Unit * (+{Unit} * Bool) @37:10-37:46
+37:11-37:14 unit ⇒ Unit @37:11-37:15
+37:15-37:15 , ⇒ Unit * (+{Unit} * Bool) @37:10-37:46
+37:17-37:17 ( ⇒ +{Unit} * Bool @37:17-37:45
+37:18-37:23 +{.0 = ⇒ +{Unit} @37:18-37:30
+37:25-37:28 unit ⇒ Unit @37:25-37:29
+37:29-37:29 } ⇒ +{Unit} @37:18-37:30
+37:30-37:30 , ⇒ +{Unit} * Bool @37:17-37:45
+37:32-37:37 +{.0 = ⇒ Bool @37:32-37:44
+37:39-37:42 unit ⇒ Unit @37:39-37:43
+37:43-37:43 } ⇒ Bool @37:32-37:44
+37:44-37:44 ) ⇒ +{Unit} * Bool @37:17-37:45
+37:45-37:45 ) ⇒ Unit * (+{Unit} * Bool) @37:10-37:46
+37:46-37:46 ) ⇒ Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit}))) @37:5-37:47
+37:47-37:47 ; ⇒ stays : Path(Unit * (+{Unit} * Bool), transport(\a. a, opposite, (unit, (+{.0 = unit},⏎  +{.0 = unit}))), (unit, (+{.0 = unit}, +{.0 = unit})))⏎⏎refused: reflexivity requires its point to convert to both endpoints of the path type⏎⏎It does not leave the boolean where it was. @33:1-37:48
+40:1-40:3 def ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @40:1-40:99
+40:5-40:14 reopposite ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @40:5-40:15
+40:16-40:16 = ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @40:1-40:99
+40:18-40:26 ua[1, 4]( ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @40:18-40:98
+40:27-40:31 Magma ⇒ Magma : Type @40:27-40:32
+40:32-40:32 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @40:18-40:98
+40:34-40:38 Magma ⇒ Magma : Type @40:34-40:39
+40:39-40:39 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @40:18-40:98
+40:41-40:43 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:41-40:68
+40:44-40:46 mul ⇒ mul : Bool => Bool @40:44-40:47
+40:48-40:48 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:41-40:68
+40:50-40:53 flip ⇒ flip : Bool => Bool @40:50-40:54
+40:54-40:56 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:41-40:68
+40:57-40:59 one ⇒ one : +{Unit} => +{Unit} @40:57-40:60
+40:61-40:61 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:41-40:68
+40:63-40:66 keep ⇒ keep : +{Unit} => +{Unit} @40:63-40:67
+40:67-40:67 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:41-40:68
+40:68-40:68 , ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @40:18-40:98
+40:70-40:72 #{. ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:70-40:97
+40:73-40:75 mul ⇒ mul : Bool => Bool @40:73-40:76
+40:77-40:77 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:70-40:97
+40:79-40:82 flip ⇒ flip : Bool => Bool @40:79-40:83
+40:83-40:85 , . ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:70-40:97
+40:86-40:88 one ⇒ one : +{Unit} => +{Unit} @40:86-40:89
+40:90-40:90 = ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:70-40:97
+40:92-40:95 keep ⇒ keep : +{Unit} => +{Unit} @40:92-40:96
+40:96-40:96 } ⇒ #{mul : Bool => Bool, one : +{Unit} => +{Unit}} @40:70-40:97
+40:97-40:97 ) ⇒ Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool)) @40:18-40:98
+40:98-40:98 ; ⇒ reopposite : Path(Type, Unit * (+{Unit} * Bool), Unit * (+{Unit} * Bool))⏎⏎The magma to itself by the swap written three times. @40:1-40:99
+43:1-43:3 def ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @43:1-43:73
+43:5-43:9 agree ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @43:5-43:10
+43:11-43:11 : ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @43:1-43:73
+43:13-43:17 Path( ⇒ Path(Bool => Bool, exchange, flip) : Type @43:13-43:47
+43:18-43:21 Bool ⇒ Bool : Type @43:18-43:22
+43:23-43:24 => ⇒ Bool => Bool : Type[-] @43:18-43:30
+43:26-43:29 Bool ⇒ Bool : Type @43:26-43:30
+43:30-43:30 , ⇒ Path(Bool => Bool, exchange, flip) : Type @43:13-43:47
+43:32-43:39 exchange ⇒ exchange : Bool => Bool @43:32-43:40
+43:40-43:40 , ⇒ Path(Bool => Bool, exchange, flip) : Type @43:13-43:47
+43:42-43:45 flip ⇒ flip : Bool => Bool @43:42-43:46
+43:46-43:46 ) ⇒ Path(Bool => Bool, exchange, flip) : Type @43:13-43:47
+43:48-43:48 = ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @43:1-43:73
+43:50-43:56 funext( ⇒ Path(Bool => Bool, exchange, flip) @43:50-43:72
+43:57-43:64 exchange ⇒ exchange : Bool => Bool @43:57-43:65
+43:65-43:65 , ⇒ Path(Bool => Bool, exchange, flip) @43:50-43:72
+43:67-43:70 flip ⇒ flip : Bool => Bool @43:67-43:71
+43:71-43:71 ) ⇒ Path(Bool => Bool, exchange, flip) @43:50-43:72
+43:72-43:72 ; ⇒ agree : Path(Bool => Bool, exchange, flip)⏎⏎The swap and the swap three times agree at every boolean. @43:1-43:73
+46:1-46:33 @[ refuses("PointwiseDis… ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @46:1-47:1
+47:1-47:3 def ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @47:1-47:80
+47:5-47:12 disagree ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @47:5-47:13
+47:14-47:14 : ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @47:1-47:80
+47:16-47:20 Path( ⇒ Path(Bool => Bool, exchange, boolId) : Type @47:16-47:52
+47:21-47:24 Bool ⇒ Bool : Type @47:21-47:25
+47:26-47:27 => ⇒ Bool => Bool : Type[-] @47:21-47:33
+47:29-47:32 Bool ⇒ Bool : Type @47:29-47:33
+47:33-47:33 , ⇒ Path(Bool => Bool, exchange, boolId) : Type @47:16-47:52
+47:35-47:42 exchange ⇒ exchange : Bool => Bool @47:35-47:43
+47:43-47:43 , ⇒ Path(Bool => Bool, exchange, boolId) : Type @47:16-47:52
+47:45-47:50 boolId ⇒ boolId : Bool => Bool @47:45-47:51
+47:51-47:51 ) ⇒ Path(Bool => Bool, exchange, boolId) : Type @47:16-47:52
+47:53-47:53 = ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @47:1-47:80
+47:55-47:61 funext( ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, boolId) @47:55-47:79
+47:62-47:69 exchange ⇒ exchange : Bool => Bool @47:62-47:70
+47:70-47:70 , ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, boolId) @47:55-47:79
+47:72-47:77 boolId ⇒ boolId : Bool => Bool @47:72-47:78
+47:78-47:78 ) ⇒ ?⏎⏎checked against⏎⏎Path(Bool => Bool, exchange, boolId) @47:55-47:79
+47:79-47:79 ; ⇒ disagree : Path(Bool => Bool, exchange, boolId)⏎⏎refused: function extensionality requires both functions to agree at every input, returning one value or applying their argument at one input⏎⏎The swap and the identity do not. @47:1-47:80
