@@ -1,5 +1,5 @@
 # The sections of an issue or pull request body, read the one way
-# `opening.jq` reads them (#2499).
+# `opening.jq` and `unit.jq` read them (#2499, #2532).
 #
 # A section is the lines under a `## <name>` heading, up to the next `## `
 # heading; the heading may carry a remark after a colon
@@ -62,12 +62,22 @@ def rows:
 # The six reading axes (`units.md` § units-readings).
 def axes: ["univalent", "oracle", "descent", "located", "resident", "rewriting"];
 
-# The axes an issue's `## Readings` selects, read before its subsections: a
-# row with a cell reading `yes`, alone or before its reason (`yes — <why>`),
-# or an item naming the axis.
+# The marks of an issue's `## Readings` table, read before its subsections:
+# per row naming an axis, {axis, mark}, the mark `yes` or `no` from a cell
+# reading it alone or before its reason (`yes — <why>`), or null.
+def marks:
+  (section("Readings") // [] | lead)
+  | rows
+  | .cells as $cells
+  | first($cells[] | select(IN(axes[]))) as $axis
+  | {axis: $axis, mark: (first($cells[] | ascii_downcase | capture("^(?<mark>yes|no)\\b").mark) // null)};
+
+# The axes an issue's `## Readings` selects: a row marked `yes`, or an item
+# naming the axis.
 def selected:
-  (section("Readings") // [] | lead) as $lines
-  | [($lines | rows | .cells as $cells | first($cells[] | select(IN(axes[]))) as $axis
-      | select(any($cells[]; ascii_downcase | test("^yes\\b"))) | $axis),
-     ($lines | items | first(match("`([^`]+)`"; "g").captures[0].string | select(IN(axes[]))))]
+  [(marks | select(.mark == "yes") | .axis),
+   ((section("Readings") // [] | lead) | items | first(match("`([^`]+)`"; "g").captures[0].string | select(IN(axes[]))))]
   | unique;
+
+# Whether a section has content once its HTML comments are dropped.
+def filled: join("\n") | gsub("(?s)<!--.*?-->"; "") | test("\\S");
