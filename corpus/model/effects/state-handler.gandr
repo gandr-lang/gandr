@@ -8,9 +8,9 @@
 // fold of `State`'s free model, one constructor per operation.
 
 // The theory `State`.
-import "./state.gandr" ;
+import "./state.gandr";
 // `Passing`, the state-passing model of `State`.
-import "./state-model.gandr" ;
+import "./state-model.gandr";
 
 /// Reading always answers four, and storing is forgotten: the two reads
 /// answer four each, and the subject adds them and one.

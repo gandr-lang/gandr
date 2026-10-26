@@ -10,7 +10,7 @@
 def keptPastHold() -> Integer {
   handle inner : Proc {
     hold l = 42;
-    run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } } ;
+    run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } };
     force q
   } with {
     pure(y) => pure y,
@@ -25,12 +25,12 @@ def keptPastNestedHold() -> Integer {
   handle outer : Proc {
     run x : Integer <- handle inner : Proc {
       hold l = 42;
-      run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } } ;
+      run q : (() => Integer) at inner <- access shared l as w { pure thunk { pure w } };
       force q
     } with {
       pure(y) => pure y,
       oper exit(code, k) => pure 0
-    } ;
+    };
     pure x
   } with {
     pure(y) => pure y,

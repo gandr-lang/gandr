@@ -10,19 +10,19 @@
 // C++ proposal P0847R7, 2021).
 
 // The list each call below holds.
-import "./accessor-place.gandr" ;
+import "./accessor-place.gandr";
 
 /// A list's places, each at the mode its call asks.
 module Places {
   /// The first element.
   @[ checks ]
-  def first @[m : Mode] (self : m List(Integer)) -> View[m](Integer) { self[0] }
+  def first @[ m : Mode ] (self : m List(Integer)) -> View[m](Integer) { self[0] }
   /// The element at an index.
   @[ checks ]
-  def nth @[m : Mode] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i] }
+  def nth @[ m : Mode ] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i] }
   /// The element after an index: the index is any value, here a sum.
   @[ checks ]
-  def after @[m : Mode] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i + 1] }
+  def after @[ m : Mode ] (self : m List(Integer), i : Integer) -> View[m](Integer) { self[i + 1] }
 }
 
 /// The first element, read by a call without a block.

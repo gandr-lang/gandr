@@ -32,7 +32,7 @@ The source formatter: a parsed gandr source laid out at a page width through `ga
 ## Provided features
 
 - `format`: a parsed source formatted at a page width. Witnesses: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`, `tests::format::top_level_forms_and_comments_keep_their_lines`, `tests::format::a_repaired_form_is_copied_as_written`, `tests::format::the_source_line_ending_is_kept`, `tests::format::pieces_place_each_top_level_form`.
-- The layout of a form. Witnesses: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`, `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `tests::format::attributes_and_documentation_keep_their_lines`, `tests::format::a_continuation_line_indents_under_its_statement`, `tests::format::strings_shell_blocks_and_holes_are_copied_as_written`.
+- The layout of a form. Witnesses: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`, `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`, `tests::format::attributes_and_documentation_keep_their_lines`, `tests::format::a_continuation_line_indents_under_its_statement`, `tests::format::strings_shell_blocks_and_holes_are_copied_as_written`, `tests::format::the_printer_decides_every_inner_space`, `tests::format::a_terminator_touches_the_form_it_ends`.
 - `Formatted`, `Piece`, `Layout`: the text, and each top-level form's source and formatted spans, for an editor that applies a formatting change form by form.
 - `FormatOptions`, and `PageWidth` re-exported from `gandr-surface-layout`.
 - `Form`, `Selection`, `REWRITES`, `RewriteName`: the spelling a source is laid out in — its own, every token kept, or the explicit or sugared one through the table's named rewrites — asked for by `FormatOptions` and declared at a source's head with `@[ form(explicit) ]` or `@[ form(sugared) ]`, the declaration winning (crate docs, § The form a source is spelled in). Witnesses: `tests::rewrite::each_rewrite_moves_its_pair_both_ways`, `tests::rewrite::a_declared_form_wins_over_the_option`.
@@ -55,7 +55,7 @@ use gandr_surface_syntax::SourceText;
 let grammar = built_in().expect("the built-in grammar builds");
 let parsed = parse(&grammar, SourceText::from("def  answer =  42 ;")).expect("the source parses");
 let formatted = format(&grammar, &parsed, FormatOptions::default()).expect("the source formats");
-assert_eq!(<&str>::from(formatted.text()), "def answer = 42 ;\n");
+assert_eq!(<&str>::from(formatted.text()), "def answer = 42;\n");
 ```
 
 ## The tree, never the core
@@ -64,26 +64,34 @@ The formatter reads the concrete syntax tree, because the core drops comments an
 
 ## What moves and what does not
 
-Only layout changes. Every token and comment is written once, in source order, with its own bytes. Between two tokens the source wrote touching, nothing is inserted; between two it separated, the formatter writes one space or a line break. Spacing inside a line is therefore the author's, normalised to one space.
+Only layout changes. Every token and comment is written once, in source order, with its own bytes. Where a line breaks is the source's (below); the space between two tokens on one line is the printer's, whatever the source wrote, as rustfmt decides Rust's. The parse reads no space inside a line. The rules, each form's cases in `src/space.rs`:
+
+- **Separators.** A `,` or `;` touches what precedes it and is followed by one space: `f(a, b)`, `def a = 1;`.
+- **Brackets.** `(`, `[`, a record's `#{`, a sum's `+{`, a lazy record's `&{`, a shape face's `{` and an implicit telescope's `@[` hug: `(x)`, `#{a = 1}`, `left = {0, 2}`, `@[r : Row]`. A block's `{`, an attribute block's `@[` and a module signature's `#{` pad: `{ x }`, `@[ checks ]`, `#{ type T }`. An empty group hugs.
+- **Application.** A `(` or `[` touches the word or hugging bracket it applies to, `f(x)`, `x[0]`; one opening an operand, an effect row, a world or a binder list stands apart: `-F (A)`, `-F [Div] A`, `fn (x)`, `@[r : Row] (k : K)`.
+- **Dots and prefixes.** A path's `.` touches both sides, `r.a`; a binder's is followed by one space, `\x. x`. A prefix operator touches its operand: `-2`, `!A`.
+- **Everything else.** One space, a comment included: `x : T`, `a = b`, `a + b`.
+
+Kept as written: a string the grammar reads as tiles between two `"` (an import's path), whose spacing is its text, and the spacing a rewrite writes between its own tokens.
+
+The line structure is the source's:
 
 - **Top level.** Each top-level form starts on a line of its own; a blank line the source wrote between two forms is kept, one at most. A comment the source wrote at the end of a form's last line stays there, and so does a `;` ending a top-level statement. A shebang stays first. The text ends in one line break.
 - **Documentation.** A `///` line and a `doc` attribute block keep the line they stand on, since the parser attaches documentation by the lines between it and its declaration.
 - **Comments.** A line comment is followed by a line break; a comment the source wrote on its own line stays on its own line.
 - **Line endings.** The text uses the ending most of the source's line breaks use, `\r\n` or `\n`; a comment or a copied form keeps its own.
 
-The choice was to keep the author's horizontal spacing and decide only the line structure. The alternative was a token-pair spacing table — no space after `(`, one around `=`, and so on — which also canonicalises spacing; it was not taken yet because a gap the source wrote touching can be one the lexer or the molder reads (a call's `(` absorbs leftwards), and the corpus spells several forms both ways. Reversal: when the surface records one spelling per form, a spacing table replaces the source's gaps.
-
 ## Groups are brackets
 
 A group is a bracket pair — `(`, `[`, `{`, `@[` or `#{` and its closer — matched within one top-level form. An item of a group runs up to and including a `,` or `;`, with a comment written after it on the same line; an element the source started on a new line starts an item too, so a module's members and a block's statements keep their lines.
 
-- **Flat or broken.** A group is laid on one line, with the spacing the source wrote inside its brackets, when that fits the page. Otherwise each item stands on its own line, indented two columns past the line holding the opener, and the closer returns to that line's indentation. A blank line the source wrote between two items is kept, one at most; none is kept just inside a bracket.
+- **Flat or broken.** A group is laid on one line, hugged or padded as above, when that fits the page. Otherwise each item stands on its own line, indented two columns past the line holding the opener, and the closer returns to that line's indentation. A blank line the source wrote between two items is kept, one at most; none is kept just inside a bracket.
 - **Kept broken.** A group whose opener the source ended a line with, or that holds a line comment, stays broken, so the formatter never joins lines an author split a block over.
 - **Lists and blocks.** Only a `{` group and a group holding a separator break. A bracket around one item — a parenthesised type, a single argument — stays on the line around it, and a group inside it breaks instead; breaking it would only move one expression to a line of its own.
 - **Continuation.** A line the source indented deeper than the statement before it, after no separator, continues that statement and is indented two further columns.
 - **Flat means flat.** A group laid on one line lays every group inside it on one line too, unless an inner group must stay broken, which the outer line then holds as written.
 
-The engine chooses among the flat and broken layout of every group at once, by least overflow and then fewest lines, so the outermost list that does not fit breaks first only when breaking it saves lines. The alternative of rules per grammar form — one document builder per form, naming its break points — was the recorded plan; it is the follow-up, since the bracket rule already lays out declarations, parameter lists, blocks, records, lists and attribute blocks, and a per-form rule can refine a form without changing the others. Reversal: a form whose layout needs a break point that is not a bracket gets its own rule.
+The engine chooses among the flat and broken layout of every group at once, by least overflow and then fewest lines, so the outermost list that does not fit breaks first only when breaking it saves lines.
 
 ## Copied as written
 

@@ -665,7 +665,7 @@ mod tests
                 Path::new("tree/a.gandr"),
                 SourceText::from("def  a =  1 ;\n"),
             );
-            scratch.file(Path::new("tree/b.gandr"), SourceText::from("def b = 2 ;\n"));
+            scratch.file(Path::new("tree/b.gandr"), SourceText::from("def b = 2;\n"));
             scratch.file(
                 Path::new("tree/nested/c.gandr"),
                 SourceText::from("def c   = 3 ;\n"),
@@ -693,11 +693,11 @@ mod tests
                 ],
                 "{name}: every path answers in order, and only sources out of layout change"
             );
-            assert_eq!(read(&root.join("tree/a.gandr")), "def a = 1 ;\n", "{name}");
-            assert_eq!(read(&root.join("tree/b.gandr")), "def b = 2 ;\n", "{name}");
+            assert_eq!(read(&root.join("tree/a.gandr")), "def a = 1;\n", "{name}");
+            assert_eq!(read(&root.join("tree/b.gandr")), "def b = 2;\n", "{name}");
             assert_eq!(
                 read(&root.join("tree/nested/c.gandr")),
-                "def c = 3 ;\n",
+                "def c = 3;\n",
                 "{name}"
             );
             assert_eq!(
@@ -723,7 +723,7 @@ mod tests
     {
         let scratch = Scratch::new(Path::new("format-check"));
         scratch.file(Path::new("a.gandr"), SourceText::from("def  a =  1 ;\n"));
-        scratch.file(Path::new("b.gandr"), SourceText::from("def b = 2 ;\n"));
+        scratch.file(Path::new("b.gandr"), SourceText::from("def b = 2;\n"));
         let root = scratch.root();
         for width in [Width::SERIAL, three()] {
             assert_eq!(
@@ -748,7 +748,7 @@ mod tests
         let scratch = Scratch::new(Path::new("format-mapped"));
         scratch.file(Path::new("a.gandr"), SourceText::from("def  a =  1 ;\n"));
         scratch.file(Path::new("b.gandr"), SourceText::from("def b   = 2 ;\n"));
-        scratch.file(Path::new("c.gandr"), SourceText::from("def c = 3 ;\n"));
+        scratch.file(Path::new("c.gandr"), SourceText::from("def c = 3;\n"));
         let root = scratch.root();
         let mut formatting = Formatting::new(
             vec![root.to_path_buf()],
@@ -773,9 +773,9 @@ mod tests
             "def  a =  1 ;\n",
             "a mapping held across the rewrite keeps the text it mapped"
         );
-        assert_eq!(read(&root.join("a.gandr")), "def a = 1 ;\n");
-        assert_eq!(read(&root.join("b.gandr")), "def b = 2 ;\n");
-        assert_eq!(read(&root.join("c.gandr")), "def c = 3 ;\n");
+        assert_eq!(read(&root.join("a.gandr")), "def a = 1;\n");
+        assert_eq!(read(&root.join("b.gandr")), "def b = 2;\n");
+        assert_eq!(read(&root.join("c.gandr")), "def c = 3;\n");
     }
 
     #[test]
@@ -792,13 +792,13 @@ mod tests
                       \n\
                       def apply(t : () => Nat) -> Nat { force t }\n\
                       \n\
-                      def field(n : Nat) -> Nat {\n  run m <- twice(n) ;\n  Succ(m)\n}\n\
+                      def field(n : Nat) -> Nat {\n  run m <- twice(n);\n  Succ(m)\n}\n\
                       \n\
-                      def paired(n : Nat) -> Nat {\n  run p <- twice(n) ;\n  run q <- twice(Zero) ;\n  second(p, q)\n}\n\
+                      def paired(n : Nat) -> Nat {\n  run p <- twice(n);\n  run q <- twice(Zero);\n  second(p, q)\n}\n\
                       \n\
-                      def chained(n : Nat) -> Nat {\n  run a <- twice(n) ;\n  run b <- twice(a) ;\n  become twice(b)\n}\n\
+                      def chained(n : Nat) -> Nat {\n  run a <- twice(n);\n  run b <- twice(a);\n  become twice(b)\n}\n\
                       \n\
-                      def suspended(n : Nat) -> Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
+                      def suspended(n : Nat) -> Nat {\n  run t <- make(n);\n  apply(t)\n}\n";
         let sugared = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
                        \n\
                        def twice(n : Nat) -> Nat { Succ(Succ(n)) }\n\
@@ -813,9 +813,9 @@ mod tests
                        \n\
                        def paired(n : Nat) -> Nat {\n  second(twice(n), twice(Zero))\n}\n\
                        \n\
-                       def chained(n : Nat) -> Nat {\n  run a <- twice(n) ;\n  become twice(twice(a))\n}\n\
+                       def chained(n : Nat) -> Nat {\n  run a <- twice(n);\n  become twice(twice(a))\n}\n\
                        \n\
-                       def suspended(n : Nat) -> Nat {\n  run t <- make(n) ;\n  apply(t)\n}\n";
+                       def suspended(n : Nat) -> Nat {\n  run t <- make(n);\n  apply(t)\n}\n";
         let options = FormatOptions {
             form: gandr_surface_format::Form::Sugared,
             ..FormatOptions::default()
@@ -873,34 +873,34 @@ mod tests
                       \n\
                       def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
                       \n\
-                      def bump : Nat => Nat ;\n\
-                      def bump = thunk { fn (n) { Succ(n) } } ;\n\
+                      def bump : Nat => Nat;\n\
+                      def bump = thunk { fn (n) { Succ(n) } };\n\
                       \n\
-                      def counted : () => Nat ;\n\
-                      def counted = thunk { twice(Zero) } ;\n\
+                      def counted : () => Nat;\n\
+                      def counted = thunk { twice(Zero) };\n\
                       \n\
-                      def tailed : () => Nat ;\n\
-                      def tailed = thunk { become twice(Zero) } ;\n\
+                      def tailed : () => Nat;\n\
+                      def tailed = thunk { become twice(Zero) };\n\
                       \n\
-                      def none : () => Nat ;\n\
-                      def none = thunk { Zero } ;\n";
+                      def none : () => Nat;\n\
+                      def none = thunk { Zero };\n";
         let sugared = "data Nat : Type { Zero : Nat; Succ : (n : Nat) --> Nat; }\n\
                        \n\
                        def twice(n : Nat) -> -F Nat { Succ(Succ(n)) }\n\
                        \n\
                        def make(n : Nat) -> -F (() => Nat) { thunk { twice(n) } }\n\
                        \n\
-                       def bump : Nat => Nat ;\n\
-                       def bump = fn (n) { Succ(n) } ;\n\
+                       def bump : Nat => Nat;\n\
+                       def bump = fn (n) { Succ(n) };\n\
                        \n\
-                       def counted : () => Nat ;\n\
-                       def counted = twice(Zero) ;\n\
+                       def counted : () => Nat;\n\
+                       def counted = twice(Zero);\n\
                        \n\
-                       def tailed : () => Nat ;\n\
-                       def tailed = thunk { become twice(Zero) } ;\n\
+                       def tailed : () => Nat;\n\
+                       def tailed = thunk { become twice(Zero) };\n\
                        \n\
-                       def none : () => Nat ;\n\
-                       def none = thunk { Zero } ;\n";
+                       def none : () => Nat;\n\
+                       def none = thunk { Zero };\n";
         // The thunk rewrite alone: the function form would merge each signed
         // thunk, which a witness of its own pins.
         let options = FormatOptions {
@@ -952,7 +952,7 @@ mod tests
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
         let base = include_str!("../../../corpus/model/include/monoid.gandr");
         let (_, uses) = include_str!("../../../corpus/model/include/reduct.gandr")
-            .split_once("import \"./monoid.gandr\" ;\n")
+            .split_once("import \"./monoid.gandr\";\n")
             .expect("the exemplar imports its base");
         let written = format!("{base}{uses}");
         let format = |text: &str, form, checker: Option<&dyn gandr_surface_format::Elaborate>| {
@@ -1020,7 +1020,7 @@ mod tests
         let grammar = gandr_surface_grammar::built_in().expect("the built-in grammar builds");
         let base = include_str!("../../../corpus/model/identity/model-counter.gandr");
         let (_, uses) = include_str!("../../../corpus/model/identity/model-counter-manifest.gandr")
-            .split_once("import \"./model-counter.gandr\" ;\n")
+            .split_once("import \"./model-counter.gandr\";\n")
             .expect("the exemplar imports its base");
         let written = format!("{base}{uses}");
         let format = |text: &str, form, checker: Option<&dyn gandr_surface_format::Elaborate>| {

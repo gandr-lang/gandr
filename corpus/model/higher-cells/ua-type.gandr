@@ -7,9 +7,9 @@
 // is owed (`pathological/identity/univalence-owed.gandr`, #520).
 
 // The magma, the swap and the unit's identity.
-import "./magma-base.gandr" ;
+import "./magma-base.gandr";
 // Univalence over the user universe: `idtoequiv`, `univalence`.
-import "../identity/univalence.gandr" ;
+import "../identity/univalence.gandr";
 
 /// The magma's degree telescope at degree one, and the swap's path on it.
 module AtStratum {
@@ -20,7 +20,7 @@ module AtStratum {
   def opposite : Path(Type, Tel, Tel) = ua[
     1,
     4
-  ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+  ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
   /// The statement over the user universe, at the stratum code.
   @[ checks ]
@@ -41,5 +41,5 @@ module AtStratum {
     Tel => Tel,
     thunk { fn (x) { fwdAlong(Tel, Tel, ua(idtoequiv(Tel, Tel, opposite)), x) } },
     thunk { fn (x) { fwdAlong(Tel, Tel, opposite, x) } }
-  ) = here(thunk { fn (x) { fwdAlong(Tel, Tel, opposite, x) } }) ;
+  ) = here(thunk { fn (x) { fwdAlong(Tel, Tel, opposite, x) } });
 }

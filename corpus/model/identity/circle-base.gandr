@@ -1,5 +1,5 @@
 //! The identity subject's shared declarations, written once and imported by
-//! every source that reads them (`import "./circle-base.gandr" ;`): the empty
+//! every source that reads them (`import "./circle-base.gandr";`): the empty
 //! type, the circle, the presented integers and the free naturals, the
 //! winding number and spinning with their round trips (the book's § 8.1), and
 //! the maps out of the circle the circle sources state their laws over, after

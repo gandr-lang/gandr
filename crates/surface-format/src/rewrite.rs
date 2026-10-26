@@ -44,6 +44,7 @@ use crate::merge::Returning;
 use crate::reduct::Applied;
 use crate::reduct::Reduct;
 use crate::reduct::Reducts;
+use crate::space::Context as Spacing;
 use crate::tail::Exit;
 use crate::tail::Tails;
 use crate::thunk::Thunk;
@@ -3523,6 +3524,7 @@ impl<'source> Builder<'source>
             material,
             owner: self.owner,
             documentation: Documentation::Outside,
+            context: Spacing::Written,
         }
     }
 
@@ -3643,7 +3645,13 @@ impl<'source> Builder<'source>
             self.leaves.extend(operand.leaves.iter().copied());
             return;
         }
-        self.token(OPEN_PAREN);
+        // The parenthesis opens an operand of its own, spaced from a word
+        // before it as the spacing table spaces the source's.
+        let open = Leaf {
+            context: Spacing::Operand,
+            ..self.written(SourceFragment::from(OPEN_PAREN.0), Material::Token)
+        };
+        self.leaves.push(open);
         self.leaves.extend(operand.leaves.iter().copied());
         self.token(CLOSE_PAREN);
     }

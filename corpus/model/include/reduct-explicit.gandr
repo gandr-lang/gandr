@@ -6,9 +6,9 @@
 // forms.
 
 // The semigroup, the monoid, and the endomorphism monoid.
-import "./monoid.gandr" ;
+import "./monoid.gandr";
 // The endomorphism monoid and a reader of a semigroup.
-import "./reduct.gandr" ;
+import "./reduct.gandr";
 
 /// The monoid where a semigroup is asked, with the reduct the checker applies
 /// written out.

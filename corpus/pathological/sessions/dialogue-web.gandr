@@ -4,7 +4,7 @@
 // send before its receipt; each failure is refused at its move (#1214).
 
 // The seat's dialogues that report and that hand off.
-import "../../model/sessions/dialogue-web.gandr" ;
+import "../../model/sessions/dialogue-web.gandr";
 
 /// A protocol that sends one string and ends.
 module Ask {
@@ -14,12 +14,12 @@ module Ask {
 /// Reporting and handing off are different plays: no path joins them
 /// (#1214).
 @[ refuses("EndpointMismatch") ]
-def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = here(retiring) ;
+def apart : Path(Dialogue(Seat.SeatEnd), retiring, handedOff) = here(retiring);
 
 /// Their webs differ as well: one is series-parallel and the other leaves a
 /// prime node (#2078).
 @[ refuses("EndpointMismatch") ]
-def apartWebs : Path(Web, decompose(retiring), decompose(handedOff)) = here(decompose(retiring)) ;
+def apartWebs : Path(Web, decompose(retiring), decompose(handedOff)) = here(decompose(retiring));
 
 /// A receipt that hears other than was sent has no send to match it
 /// (#1214).
@@ -29,7 +29,7 @@ def misheard : Dialogue(Ask.Asking) = dialogue(
   right(received("no")),
   left(closed),
   right(closed)
-) ;
+);
 
 /// A receipt logged before its send is no order a recorder saw (#1214).
 @[ refuses("DialogueInverted") ]
@@ -38,7 +38,7 @@ def foretold : Dialogue(Ask.Asking) = dialogue(
   left(sent("yes")),
   left(closed),
   right(closed)
-) ;
+);
 
 /// The left endpoint receiving where its protocol sends is off the protocol
 /// (#1214).
@@ -48,4 +48,4 @@ def answered : Dialogue(Ask.Asking) = dialogue(
   right(sent("yes")),
   left(closed),
   right(closed)
-) ;
+);

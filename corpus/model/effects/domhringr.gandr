@@ -114,8 +114,8 @@ theory StoreIdempotent {
   sort Value : Type+;
   sort Digest : Type+;
   sort C : Type;
-  oper put : (v : Value, k : pi+ (d : Digest) . C) --> C;
-  rule idem : put(v, bind d . put(v, k)) <=> put(v, k);
+  oper put : (v : Value, k : pi+ (d : Digest). C) --> C;
+  rule idem : put(v, bind d. put(v, k)) <=> put(v, k);
 }
 
 /// A lookup is read-only: looking a name up twice is looking it up once.
@@ -124,8 +124,8 @@ theory WitnessIdempotent {
   sort Name : Type+;
   sort Claim : Type+;
   sort C : Type;
-  oper lookup : (n : Name, k : pi+ (c : Claim) . C) --> C;
-  rule idem : lookup(n, bind c . lookup(n, k)) <=> lookup(n, k);
+  oper lookup : (n : Name, k : pi+ (c : Claim). C) --> C;
+  rule idem : lookup(n, bind c. lookup(n, k)) <=> lookup(n, k);
 }
 
 /// The store commutes with every effect, a lookup among them: a put before
@@ -137,11 +137,11 @@ theory StoreWitness {
   sort Name : Type+;
   sort Claim : Type+;
   sort C : Type;
-  oper put : (v : Value, k : pi+ (d : Digest) . C) --> C;
-  oper lookup : (n : Name, k : pi+ (c : Claim) . C) --> C;
-  rule commute : put(v, bind d . lookup(n, bind c . k(d, c))) <=> lookup(
+  oper put : (v : Value, k : pi+ (d : Digest). C) --> C;
+  oper lookup : (n : Name, k : pi+ (c : Claim). C) --> C;
+  rule commute : put(v, bind d. lookup(n, bind c. k(d, c))) <=> lookup(
     n,
-    bind c . put(v, bind d . k(d, c))
+    bind c. put(v, bind d. k(d, c))
   );
 }
 
@@ -153,8 +153,8 @@ theory TraceWitness {
   sort Claim : Type+;
   sort C : Type;
   oper emit : (e : Event, k : C) --> C;
-  oper lookup : (n : Name, k : pi+ (c : Claim) . C) --> C;
-  rule commute : emit(e, lookup(n, k)) <=> lookup(n, bind c . emit(e, k(c)));
+  oper lookup : (n : Name, k : pi+ (c : Claim). C) --> C;
+  rule commute : emit(e, lookup(n, k)) <=> lookup(n, bind c. emit(e, k(c)));
 }
 
 /// An emit commutes with a journal's read, though appends do not commute.
@@ -165,8 +165,8 @@ theory TraceJournal {
   sort Entry : Type+;
   sort C : Type;
   oper emit : (e : Event, k : C) --> C;
-  oper read : (i : Index, k : pi+ (x : Entry) . C) --> C;
-  rule commute : emit(e, read(i, k)) <=> read(i, bind x . emit(e, k(x)));
+  oper read : (i : Index, k : pi+ (x : Entry). C) --> C;
+  rule commute : emit(e, read(i, k)) <=> read(i, bind x. emit(e, k(x)));
 }
 
 /// A judge commutes with the store: asking before a put is asking after it.
@@ -177,11 +177,11 @@ theory JudgeStore {
   sort Value : Type+;
   sort Digest : Type+;
   sort C : Type;
-  oper ask : (q : Question, k : pi+ (r : Readout) . C) --> C;
-  oper put : (v : Value, k : pi+ (d : Digest) . C) --> C;
-  rule commute : ask(q, bind r . put(v, bind d . k(r, d))) <=> put(
+  oper ask : (q : Question, k : pi+ (r : Readout). C) --> C;
+  oper put : (v : Value, k : pi+ (d : Digest). C) --> C;
+  rule commute : ask(q, bind r. put(v, bind d. k(r, d))) <=> put(
     v,
-    bind d . ask(q, bind r . k(r, d))
+    bind d. ask(q, bind r. k(r, d))
   );
 }
 
@@ -193,9 +193,9 @@ theory JudgeTrace {
   sort Readout : Type+;
   sort Event : Type+;
   sort C : Type;
-  oper ask : (q : Question, k : pi+ (r : Readout) . C) --> C;
+  oper ask : (q : Question, k : pi+ (r : Readout). C) --> C;
   oper emit : (e : Event, k : C) --> C;
-  rule commute : emit(e, ask(q, k)) <=> ask(q, bind r . emit(e, k(r)));
+  rule commute : emit(e, ask(q, k)) <=> ask(q, bind r. emit(e, k(r)));
 }
 
 /// A draw commutes with every effect, an emit among them.
@@ -205,7 +205,7 @@ theory RandomTrace {
   sort Draw : Type+;
   sort Event : Type+;
   sort C : Type;
-  oper sample : (s : Distribution, k : pi+ (x : Draw) . C) --> C;
+  oper sample : (s : Distribution, k : pi+ (x : Draw). C) --> C;
   oper emit : (e : Event, k : C) --> C;
-  rule commute : emit(e, sample(s, k)) <=> sample(s, bind x . emit(e, k(x)));
+  rule commute : emit(e, sample(s, k)) <=> sample(s, bind x. emit(e, k(x)));
 }

@@ -6,7 +6,7 @@
 // answers its element type as `-> -F List(T)` does (#2255).
 
 /// Optional values, `None` and `Some(x)`.
-import "./data-maybe.gandr" ;
+import "./data-maybe.gandr";
 
 /// A present value and an absent one, at the type the function returns.
 @[ checks ]

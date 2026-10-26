@@ -7,14 +7,14 @@ def desk_receives_first() -> Unit {
 
 @[ refuses("UnofferedLabel") ]
 def desk_selects_no_offered_label() -> Unit {
-  fork (seat : &{ next : end }) { offer(seat) { next => close(seat) } } as desk;
+  fork (seat : &{next : end}) { offer(seat) { next => close(seat) } } as desk;
   select(desk, retire);
   close(desk)
 }
 
 @[ refuses("OfferArms") ]
 def seat_arms_one_label_of_two() -> Unit {
-  fork (seat : &{ next : end, retire : end }) { offer(seat) { next => close(seat) } } as desk;
+  fork (seat : &{next : end, retire : end}) { offer(seat) { next => close(seat) } } as desk;
   select(desk, next);
   close(desk)
 }
@@ -23,6 +23,6 @@ def seat_arms_one_label_of_two() -> Unit {
 /// not dropped: the desk drops where it offers.
 @[ refuses("SessionMismatch") ]
 def desk_drops_a_live_endpoint() -> Unit {
-  fork (seat : +{ done : end }) { select(seat, done); drop(seat) } as desk;
+  fork (seat : +{done : end}) { select(seat, done); drop(seat) } as desk;
   drop(desk)
 }

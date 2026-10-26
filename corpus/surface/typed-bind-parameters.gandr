@@ -11,14 +11,14 @@ def same(a : Type, y : a) -> a {
 /// The annotation names the type parameter just outside the value (#662).
 @[ checks ]
 def kept(a : Type, y : a) -> a {
-  run x : a <- same(a, y) ;
+  run x : a <- same(a, y);
   x
 }
 
 /// Another parameter stands between the binder and the one it names (#662).
 @[ checks ]
 def keptPast(a : Type, y : a, z : Integer) -> a {
-  run x : a <- same(a, y) ;
+  run x : a <- same(a, y);
   x
 }
 
@@ -31,13 +31,13 @@ def samePair(a : Type, b : Type, p : a * b) -> a * b {
 /// The annotation names two parameters at once (#662).
 @[ checks ]
 def keptPair(a : Type, b : Type, p : a * b) -> a * b {
-  run x : a * b <- samePair(a, b, p) ;
+  run x : a * b <- samePair(a, b, p);
   x
 }
 
 /// A computation returning an `a` is not ascribed a `b`.
 @[ refuses("TypeMismatch") ]
 def misnamed(a : Type, b : Type, y : a) -> a {
-  run x : b <- same(a, y) ;
+  run x : b <- same(a, y);
   y
 }

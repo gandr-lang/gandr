@@ -5,7 +5,7 @@
 // abandoned frame.
 
 // The ring's protocol and its entries.
-import "../../model/completion/ring-base.gandr" ;
+import "../../model/completion/ring-base.gandr";
 
 /// A pending completion handed to a reaping peer while its frame ends.
 /// Delegation admits the handover, and nothing ties the buffer to a region. A

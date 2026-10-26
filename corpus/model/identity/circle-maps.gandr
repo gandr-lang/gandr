@@ -8,7 +8,7 @@
 // it.
 
 // The circle, every point's loop and the multiplication.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// The identity on the circle, its loop arm the loop's name.
 @[ checks ]

@@ -138,7 +138,7 @@ fn top_level_forms_and_comments_keep_their_lines()
     let source = "#!/usr/bin/env gandr\n\n\n// leading\ndef a = 1 ; def b = 2 ; // trailing\n\n\n\n/* own */\nf(a)   ;\ng(b);";
     assert_eq!(
         text(&grammar, source, WIDE),
-        "#!/usr/bin/env gandr\n\n// leading\ndef a = 1 ;\ndef b = 2 ; // trailing\n\n/* own */\nf(a) ;\ng(b);\n",
+        "#!/usr/bin/env gandr\n\n// leading\ndef a = 1;\ndef b = 2; // trailing\n\n/* own */\nf(a);\ng(b);\n",
         "forms take a line each, a trailing comment stays, a blank line is kept once, and a statement keeps its separator"
     );
     assert_eq!(text(&grammar, "", WIDE), "", "an empty source stays empty");
@@ -151,7 +151,7 @@ fn a_rule_s_freshness_conditions_stay_on_its_line()
     let source = "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name) . Proc) --> Proc;\n  rule gc : nu(bind a . q) <=> q where a # q, a # q;\n}\n";
     assert_eq!(
         text(&grammar, source, WIDE),
-        source,
+        "theory Gc {\n  sort Name : Atom;\n  sort Proc : Type;\n  oper nu : (p : bind (a : Name). Proc) --> Proc;\n  rule gc : nu(bind a. q) <=> q where a # q, a # q;\n}\n",
         "a theory's members end at `;`, so the comma between two conditions keeps them on the rule's line"
     );
 }
@@ -162,8 +162,58 @@ fn a_form_written_against_the_one_before_starts_its_own_line()
     let grammar = grammar();
     assert_eq!(
         text(&grammar, "def a = 1 ;def b = 2 ;", WIDE),
-        "def a = 1 ;\ndef b = 2 ;\n",
+        "def a = 1;\ndef b = 2;\n",
         "only a separator touches the form it ends"
+    );
+}
+
+#[test]
+fn the_printer_decides_every_inner_space()
+{
+    let grammar = grammar();
+    let source = "@[checks]\n\
+                  def  f ( x:Integer , y : Integer ) -> -F Integer{ return x+y ;}\n\
+                  def p = #{ a = 1 , b = - 2 } ;\n\
+                  def q : +{ A : Integer , B : Unit } ;\n\
+                  def g @[ r : Row ]( k : Integer ) -> [ Div | r ] Unit { pure unit }\n\
+                  def l = \\ x . x ;\n\
+                  def c = thunk { fn( x ) { x } } ;\n\
+                  def m = r . a [ 0 ] ;\n\
+                  module M :> #{type T} { type T = Integer ; }\n\
+                  theory S { shape Q : 2 {left = { 0 , 1 } ;} ; }\n";
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        "@[ checks ]\n\
+         def f(x : Integer, y : Integer) -> -F Integer { return x + y; }\n\
+         def p = #{a = 1, b = -2};\n\
+         def q : +{A : Integer, B : Unit};\n\
+         def g @[r : Row] (k : Integer) -> [Div | r] Unit { pure unit }\n\
+         def l = \\x. x;\n\
+         def c = thunk { fn (x) { x } };\n\
+         def m = r.a[0];\n\
+         module M :> #{ type T } { type T = Integer; }\n\
+         theory S { shape Q : 2 { left = {0, 1}; }; }\n",
+        "each space inside a line is the printer's, whatever the source wrote"
+    );
+}
+
+#[test]
+fn a_terminator_touches_the_form_it_ends()
+{
+    let grammar = grammar();
+    let source = "import \"./base.gandr\" as prelude ;\n\
+                  world seat ;\n\
+                  def a = 1 ;\n\
+                  def f(a : Type, y : a) -> -F a {\n  run x : a <- same(a, y) ;\n  loop { break } ;\n  return x\n}\n\
+                  def t = (1, 2) ;\n";
+    assert_eq!(
+        text(&grammar, source, WIDE),
+        "import \"./base.gandr\" as prelude;\n\
+         world seat;\n\
+         def a = 1;\n\
+         def f(a : Type, y : a) -> -F a {\n  run x : a <- same(a, y);\n  loop { break };\n  return x\n}\n\
+         def t = (1, 2);\n",
+        "no space stands before a `;`, whatever ends the form it closes"
     );
 }
 
@@ -173,7 +223,7 @@ fn a_separator_written_on_the_next_line_joins_its_statement()
     let grammar = grammar();
     assert_eq!(
         text(&grammar, "f(a)\n;\ng(b)\n\n;", WIDE),
-        "f(a) ;\ng(b) ;\n",
+        "f(a);\ng(b);\n",
         "a separator after a break or a blank line ends the statement on its line"
     );
 }
@@ -198,7 +248,7 @@ fn strings_shell_blocks_and_holes_are_copied_as_written()
         "def s = \"a  ${  b }\tc\" ;\ndef h = #!{\n    printf 'hi'\n} ;\ndef k = (  ?hole  ) ;\n";
     assert_eq!(
         text(&grammar, source, NARROW),
-        "def s = \"a  ${  b }\tc\" ;\ndef h = #!{\n    printf 'hi'\n} ;\ndef k = ( ?hole ) ;\n",
+        "def s = \"a  ${  b }\tc\";\ndef h = #!{\n    printf 'hi'\n};\ndef k = (?hole);\n",
         "a string's, a shell block's and a hole's bytes are their own"
     );
 }
@@ -211,7 +261,7 @@ fn a_repaired_form_is_copied_as_written()
     let formatted = formatted(&grammar, source, WIDE);
     assert_eq!(
         <&str>::from(formatted.text()),
-        "def z = 0 ;\ndef   a = (1 ;\ndef b = 2 ;\n",
+        "def z = 0;\ndef   a = (1 ;\ndef b = 2;\n",
         "the repaired form keeps its bytes and its neighbours on either side are laid out"
     );
     let layouts: Vec<Layout> = formatted
@@ -244,7 +294,7 @@ fn a_source_split_evenly_between_endings_keeps_line_feeds()
     let grammar = grammar();
     assert_eq!(
         text(&grammar, "def a = 1 ;\r\ndef b = 2 ;\n", WIDE),
-        "def a = 1 ;\ndef b = 2 ;\n",
+        "def a = 1;\ndef b = 2;\n",
         "carriage returns win only when most breaks carry them"
     );
 }
@@ -272,8 +322,8 @@ fn pieces_place_each_top_level_form()
     assert_eq!(
         spans,
         [
-            ("def  a = 1 ;  // note", "def a = 1 ; // note"),
-            ("def b = 2 ;", "def b = 2 ;")
+            ("def  a = 1 ;  // note", "def a = 1; // note"),
+            ("def b = 2 ;", "def b = 2;")
         ],
         "a form's piece runs from its first token to its trailing comment"
     );
@@ -294,19 +344,23 @@ const EXPLICIT: &str = "@[ form(explicit) ]\ndef  shown : +U (-F Integer) ;\ndef
 fn an_explicit_source_keeps_its_explicit_spelling()
 {
     let grammar = grammar();
-    let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer) ;\ndef shown = thunk { run n \
-                    <- force one ; become read(n) } ;\n";
+    let kept = "@[ form(explicit) ]\ndef shown : +U (-F Integer);\ndef shown = thunk { run n <- \
+                force one; become read(n) };\n";
     let imported = "import \"./base.gandr\" ;\n";
+    let imported_kept = "import \"./base.gandr\";\n";
     let grouped = "rec {\n@[ form(explicit) ]\ndef shown : +U (-F Integer) ;\ndef shown = \
                    thunk {   run n <- force one ;  become read(n) } ;\n}\n";
-    let grouped_kept = "rec {\n  @[ form(explicit) ]\n  def shown : +U (-F Integer) ;\n  def \
-                        shown = thunk { run n <- force one ; become read(n) } ;\n}\n";
+    let grouped_kept = "rec {\n  @[ form(explicit) ]\n  def shown : +U (-F Integer);\n  def \
+                        shown = thunk { run n <- force one; become read(n) };\n}\n";
     for (written, expected) in [
         (String::from(EXPLICIT), String::from(kept)),
-        (format!("{imported}{EXPLICIT}"), format!("{imported}{kept}")),
+        (
+            format!("{imported}{EXPLICIT}"),
+            format!("{imported_kept}{kept}"),
+        ),
         (
             format!("{imported}{grouped}"),
-            format!("{imported}{grouped_kept}"),
+            format!("{imported_kept}{grouped_kept}"),
         ),
     ] {
         let parsed =

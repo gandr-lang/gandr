@@ -8,9 +8,9 @@
 // `transport`.
 
 // The naturals; the syntax; the congruences.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./congruence.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./congruence.gandr";
 
 /// A pointwise agreement of `a1` then `a2` with `a3` holds of their lifts.
 @[ checks ]

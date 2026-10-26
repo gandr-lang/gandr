@@ -22,6 +22,11 @@ use crate::FormatError;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
+use crate::space;
+use crate::space::Context;
+use crate::space::Join;
+use crate::space::Kind as Neighbour;
+use crate::space::Padding;
 
 /// The brackets that open a group, each beside the closer that ends it.
 pub const BRACKETS: [(&str, &str); 6] = [
@@ -162,12 +167,16 @@ enum Kind
     BlockComment,
 }
 
-/// An element beside the gap the source wrote before it.
+/// An element beside the gap the source wrote before it and the space the
+/// spacing table decides there.
 #[derive(Clone, Copy, Debug)]
 struct Placed<'source>
 {
-    /// The gap before the element.
+    /// The gap the source wrote before the element.
     gap: Gap,
+    /// The space before the element when it shares a line with the element
+    /// before it.
+    join: Join,
     /// The element's column in the source when the gap breaks the line.
     indent: Indent,
     /// Whether documentation starts or ends at the element.
@@ -206,10 +215,14 @@ enum Frame<'source>
         open: SourceFragment<'source>,
         /// The closer the opening bracket expects.
         expects: &'static str,
+        /// Whether the brackets hug what they hold.
+        padding: Padding,
+        /// The part the opening bracket plays, which its closer plays too.
+        context: space::Context,
         /// The closing bracket, once read.
         close: SourceFragment<'source>,
-        /// The gap before the closing bracket.
-        closing: Gap,
+        /// The space before the closing bracket.
+        closing: Join,
     },
 }
 
@@ -230,14 +243,15 @@ struct Group<'source>
 ///   order, whitespace included, and `ending` spells `options`' physical line
 ///   ending.
 /// - ensures: the text spells every token and comment of `leaves` once, in
-///   order. A bracketed group is laid on one line, with the source's spacing
-///   inside its brackets, when that fits the page and the source did not break
-///   the line after its opening bracket and no line comment stands directly in
-///   it; otherwise each of its items — the elements up to and including a `,`
-///   or `;`, with a comment on the same line — stands on its own line indented
-///   by two, and a blank line before an item is kept. Two tokens the source
-///   wrote touching still touch, and two it separated are separated by one
-///   space or a line break.
+///   order. A bracketed group is laid on one line, padded as its bracket
+///   decides, when that fits the page and the source did not break the line
+///   after its opening bracket and no line comment stands directly in it;
+///   otherwise each of its items — the elements up to and including a `,` or
+///   `;`, with a comment on the same line — stands on its own line indented by
+///   two, and a blank line before an item is kept. Two elements on one line are
+///   as far apart as [`space::join`] decides, except inside a string the
+///   grammar reads as tiles and beside a token a rewrite wrote, where the
+///   source's spacing stands as one space or none.
 /// - provides: the layout of each top-level form [`crate::format`] joins.
 /// - fails: [`FormatError::Unbalanced`] when a bracket closes a group it does
 ///   not open or a group is left open; a layout ceiling as
@@ -252,6 +266,7 @@ struct Group<'source>
 /// - witness: `tests::format::a_block_breaks_one_item_per_line_when_it_does_not_fit`
 /// - witness: `tests::format::a_long_declaration_breaks_its_parameters_before_its_type`
 /// - witness: `tests::format::a_continuation_line_indents_under_its_statement`
+/// - witness: `tests::format::the_printer_decides_every_inner_space`
 /// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
 #[spec(ensures: |ret| ret.as_ref().is_err() || !leaves.is_empty())]
 pub fn lay_out(
@@ -284,7 +299,8 @@ pub fn lay_out(
 }
 
 /// The groups of one form, the form itself first and each group before the
-/// groups inside it.
+/// groups inside it, each element beside the space the spacing table decides
+/// before it.
 ///
 /// # Specification
 /// trivial.
@@ -297,10 +313,13 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
     let mut open: Vec<GroupId> = Vec::from([GroupId(0)]);
     let mut gap = Gap::Adjacent;
     let mut indent = Indent::default();
+    let mut before = Before::Start;
+    let mut quoted = Quoted::No;
     let mut documented = leaves
         .iter()
         .find(|leaf| leaf.material != Material::Whitespace)
         .map_or(Documentation::Outside, |leaf| leaf.documentation);
+    let mut rewrote = Rewrote::No;
     for leaf in leaves {
         if leaf.material == Material::Whitespace {
             let text = <&str>::from(leaf.text);
@@ -310,6 +329,9 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
             };
             indent = Indent(column);
             gap = gap.widen(Gap::of(leaf.text));
+            if leaf.context == Context::Written {
+                rewrote = Rewrote::Yes;
+            }
             continue;
         }
         let edge = if leaf.documentation == documented {
@@ -319,28 +341,40 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
             Edge::Documentation
         };
         documented = leaf.documentation;
-        let element = match leaf.material {
+        let (inside, opened) = inside_of(&groups, &open);
+        let (element, here) = match leaf.material {
             Material::Token => {
                 let text = <&str>::from(leaf.text);
                 if let Some(&(_, expects)) = BRACKETS.iter().find(|&&(opener, _)| opener == text) {
+                    let here = space::Token {
+                        text: leaf.text,
+                        context: leaf.context,
+                        kind: Neighbour::Open,
+                    };
+                    let join = between(before, here, (gap, rewrote), inside, quoted);
                     let id = GroupId(groups.len());
                     groups.push(Group {
                         frame: Frame::Bracketed {
                             open: leaf.text,
                             expects,
+                            padding: space::padding(here),
+                            context: leaf.context,
                             close: leaf.text,
-                            closing: Gap::Adjacent,
+                            closing: Join::Touch,
                         },
                         placed: Vec::new(),
                     });
                     place(&mut groups, &open, Placed {
                         gap,
+                        join,
                         indent,
                         edge,
                         element: Element::Group(id),
                     })?;
                     open.push(id);
+                    before = Before::After(here);
                     gap = Gap::Adjacent;
+                    rewrote = Rewrote::No;
                     indent = Indent::default();
                     continue;
                 }
@@ -349,6 +383,12 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                     else {
                         return Err(FormatError::Unbalanced);
                     };
+                    let here = space::Token {
+                        text: leaf.text,
+                        context: opened,
+                        kind: Neighbour::Close(inside),
+                    };
+                    let join = between(before, here, (gap, rewrote), inside, quoted);
                     match groups.get_mut(top).map(|group| &mut group.frame) {
                         Some(&mut Frame::Bracketed {
                             expects,
@@ -357,36 +397,165 @@ fn nest<'source>(leaves: &[Leaf<'source>]) -> Result<Vec<Group<'source>>, Format
                             ..
                         }) if expects == text => {
                             *close = leaf.text;
-                            *closing = gap;
+                            *closing = join;
                         },
                         Some(&mut (Frame::Form | Frame::Bracketed { .. })) | None => {
                             return Err(FormatError::Unbalanced);
                         },
                     }
                     let _closed = open.pop();
+                    before = Before::After(here);
                     gap = Gap::Adjacent;
+                    rewrote = Rewrote::No;
                     indent = Indent::default();
                     continue;
                 }
-                Element::Text(leaf.text)
+                (Element::Text(leaf.text), Neighbour::Token)
             },
-            Material::Verbatim | Material::Shebang | Material::Whitespace => material(leaf.text),
-            Material::LineComment => Element::LineComment(leaf.text),
-            Material::BlockComment => Element::BlockComment(leaf.text),
+            Material::Verbatim | Material::Shebang | Material::Whitespace => {
+                (material(leaf.text), Neighbour::Material)
+            },
+            Material::LineComment => (Element::LineComment(leaf.text), Neighbour::Comment),
+            Material::BlockComment => (Element::BlockComment(leaf.text), Neighbour::Comment),
+        };
+        let here = space::Token {
+            text: leaf.text,
+            context: leaf.context,
+            kind: here,
+        };
+        // A string the grammar reads as tiles between two `"` keeps the
+        // spacing it holds: that spacing is its text.
+        let quote = here.kind == Neighbour::Token && <&str>::from(leaf.text) == "\"";
+        let join = match (quote, quoted) {
+            (true, Quoted::Yes) => {
+                quoted = Quoted::No;
+                written(gap)
+            },
+            (true, Quoted::No) => {
+                let join = between(before, here, (gap, rewrote), inside, quoted);
+                quoted = Quoted::Yes;
+                join
+            },
+            (false, _) => between(before, here, (gap, rewrote), inside, quoted),
         };
         place(&mut groups, &open, Placed {
             gap,
+            join,
             indent,
             edge,
             element,
         })?;
+        before = Before::After(here);
         gap = Gap::Adjacent;
+        rewrote = Rewrote::No;
         indent = Indent::default();
     }
     if open.len() != 1 {
         return Err(FormatError::Unbalanced);
     }
     Ok(groups)
+}
+
+/// The neighbour before the next element of a form.
+#[derive(Clone, Copy, Debug)]
+enum Before<'source>
+{
+    /// None: the next element starts the form.
+    Start,
+    /// This one.
+    After(space::Token<'source>),
+}
+
+/// Whether the next element stands inside a string the grammar reads as
+/// tiles.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Quoted
+{
+    /// It does not.
+    No,
+    /// It does: a `"` opened the string and none has closed it.
+    Yes,
+}
+
+/// The padding of the innermost open group of `groups`, `open` naming the
+/// open ones, and the part its opening bracket plays; a form hugs and plays
+/// no part.
+///
+/// # Specification
+/// trivial.
+fn inside_of(
+    groups: &[Group<'_>],
+    open: &[GroupId],
+) -> (Padding, space::Context)
+{
+    match open
+        .last()
+        .and_then(|&GroupId(top)| groups.get(top))
+        .map(|group| group.frame)
+    {
+        Some(Frame::Bracketed {
+            padding, context, ..
+        }) => (padding, context),
+        Some(Frame::Form) | None => (Padding::Hug, space::Context::Plain),
+    }
+}
+
+/// Whether a rewrite wrote the gap before the next element.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Rewrote
+{
+    /// It did not: the source wrote it, or nothing stands there.
+    No,
+    /// It did.
+    Yes,
+}
+
+/// The space the source wrote as `gap`, kept where the spacing is a
+/// string's text or a rewrite wrote it.
+///
+/// # Specification
+/// trivial.
+const fn written(gap: Gap) -> Join
+{
+    match gap {
+        Gap::Adjacent => Join::Touch,
+        Gap::Space | Gap::Break | Gap::Blank => Join::Space,
+    }
+}
+
+/// The space before `here` on a line, `before` the neighbour before it,
+/// `gap` the layout written between them, `inside` the padding of the
+/// innermost open group, `quoted` whether a string holds them and `rewrote`
+/// whether a rewrite wrote the gap.
+///
+/// # Specification
+/// trivial.
+fn between(
+    before: Before<'_>,
+    here: space::Token<'_>,
+    (gap, rewrote): (Gap, Rewrote),
+    inside: Padding,
+    quoted: Quoted,
+) -> Join
+{
+    let Before::After(previous) = before
+    else {
+        return Join::Touch;
+    };
+    if quoted == Quoted::Yes
+        || rewrote == Rewrote::Yes
+        || (previous.context == Context::Written && here.context == Context::Written)
+    {
+        return written(gap);
+    }
+    match (previous.kind, here.kind) {
+        (Neighbour::Open, Neighbour::Close(_)) => Join::Touch,
+        (Neighbour::Open, _) | (_, Neighbour::Close(_)) => inside.join(),
+        (
+            Neighbour::Token | Neighbour::Close(_) | Neighbour::Material | Neighbour::Comment,
+            Neighbour::Token | Neighbour::Open | Neighbour::Material | Neighbour::Comment,
+        ) => space::join(previous, here),
+    }
 }
 
 /// The element for material laid down as written: text when a text leaf can
@@ -485,7 +654,7 @@ fn group_doc(
     let close = builder.text(TextSource::from(<&str>::from(close)))?;
     let Some(first) = group.placed.first()
     else {
-        let inside = spacing(builder, closing)?;
+        let inside = join_doc(builder, closing)?;
         let only = builder.concat_all([open, inside, close])?;
         return Ok(Built {
             flat: Flat::Fits(only),
@@ -529,9 +698,10 @@ fn group_doc(
             best: broken,
         });
     }
-    let pad = spacing(builder, first.gap)?;
+    let opening = join_doc(builder, first.join)?;
+    let closing = join_doc(builder, closing)?;
     let content = run(builder, &group.placed, docs, Mode::Flat)?;
-    let inline = builder.concat_all([open, pad, content, pad, close])?;
+    let inline = builder.concat_all([open, opening, content, closing, close])?;
     let hugs = group.placed.iter().any(|placed| match placed.element {
         Element::Group(GroupId(inner)) => docs
             .get(inner)
@@ -549,7 +719,7 @@ fn group_doc(
     };
     if !listed {
         let content = run(builder, &group.placed, docs, Mode::Best)?;
-        let best = builder.concat_all([open, pad, content, pad, close])?;
+        let best = builder.concat_all([open, opening, content, closing, close])?;
         return Ok(Built { flat, best });
     }
     Ok(Built {
@@ -558,19 +728,18 @@ fn group_doc(
     })
 }
 
-/// The space one line gives `gap` between a bracket and the element beside
-/// it: none when the source touched, one space otherwise.
+/// The document of `join`: nothing, or one space.
 ///
 /// # Specification
 /// trivial.
-fn spacing(
+fn join_doc(
     builder: &mut DocBuilder<'_>,
-    gap: Gap,
+    join: Join,
 ) -> Result<DocId, FormatError>
 {
-    Ok(match gap {
-        Gap::Adjacent => builder.empty(),
-        Gap::Space | Gap::Break | Gap::Blank => builder.text(TextSource::from(" "))?,
+    Ok(match join {
+        Join::Touch => builder.empty(),
+        Join::Space => builder.text(TextSource::from(" "))?,
     })
 }
 
@@ -662,9 +831,9 @@ fn items<'group, 'source>(placed: &'group [Placed<'source>]) -> Vec<Item<'group,
 }
 
 /// The elements of `placed` on as few lines as their comments allow: two
-/// elements the source wrote touching touch, any other two are one space
-/// apart, and a line break follows a line comment and surrounds a comment
-/// the source wrote on its own line.
+/// elements on one line are as far apart as the spacing table decides, and a
+/// line break follows a line comment and surrounds a comment the source wrote
+/// on its own line.
 ///
 /// # Specification
 /// trivial.
@@ -686,12 +855,11 @@ fn run(
                 let comment = kind != Kind::Code
                     || before != Kind::Code
                     || current.edge == Edge::Documentation;
-                match current.gap {
-                    Gap::Adjacent => {},
-                    Gap::Break | Gap::Blank if comment => parts.push(builder.hard_line()),
-                    Gap::Space | Gap::Break | Gap::Blank => {
-                        parts.push(builder.text(TextSource::from(" "))?);
-                    },
+                if comment && current.gap.breaks() == Breaks::Yes {
+                    parts.push(builder.hard_line());
+                }
+                else {
+                    parts.push(join_doc(builder, current.join)?);
                 }
             },
         }

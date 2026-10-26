@@ -5,7 +5,7 @@
 // (doi:10.2168/LMCS-9(4:23)2013).
 
 // The ring's protocol and its entries.
-import "../../model/completion/ring-base.gandr" ;
+import "../../model/completion/ring-base.gandr";
 
 /// The pending completion opened before the operation and reaped after it,
 /// in a body the operation's clause resumes twice: the clause owes that body
@@ -24,6 +24,6 @@ def resumedTwice() -> Unit {
     close(ring)
   } with {
     pure(x) => pure x,
-    oper exit(code, k) => { run first <- k(unit) ; k(unit) }
+    oper exit(code, k) => { run first <- k(unit); k(unit) }
   }
 }

@@ -4,7 +4,7 @@
 // declaration reads.
 
 // The circle, unqualified.
-import "../../model/identity/circle-base.gandr" ;
+import "../../model/identity/circle-base.gandr";
 
 /// The circle stated again over the imported one, refused naming both.
 @[ refuses("ImportShadows") ]

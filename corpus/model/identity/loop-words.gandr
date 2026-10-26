@@ -30,19 +30,19 @@ def built() -> Words { around(Loop(Nil)) }
 
 /// Conversion reads a word by its normal form: a cancelled loop is a loop.
 @[ checks ]
-def cancelled_word : Path(Words, Loop(Unloop(Loop(Nil))), Loop(Nil)) = here(Loop(Nil)) ;
+def cancelled_word : Path(Words, Loop(Unloop(Loop(Nil))), Loop(Nil)) = here(Loop(Nil));
 
 /// A path between words stands at the path between their normal forms.
 @[ checks ]
-def respelled : Path(Words, Loop(Nil), Loop(Nil)) = cancelled_word ;
+def respelled : Path(Words, Loop(Nil), Loop(Nil)) = cancelled_word;
 
 /// Two words that both cancel to the empty word are one word.
 @[ checks ]
-def both_cancel : Path(Words, Unloop(Loop(Nil)), Loop(Unloop(Nil))) = here(Nil) ;
+def both_cancel : Path(Words, Unloop(Loop(Nil)), Loop(Unloop(Nil))) = here(Nil);
 
 /// No rule identifies a loop with the empty word.
 @[ refuses("EndpointMismatch") ]
-def loop_not_nil : Path(Words, Loop(Nil), Nil) = here(Nil) ;
+def loop_not_nil : Path(Words, Loop(Nil), Nil) = here(Nil);
 
 /// A case that tells a loop from its inverse, refused: `Unloop(Loop(Nil))`
 /// and `Loop(Unloop(Nil))` are one word, which it would read as 2 and 1.
@@ -84,7 +84,7 @@ def mirrored() -> Words { mirror(Loop(Nil)) }
 /// letter by letter, the mirror is `Unloop(Loop(Nil))`, which is `Nil`
 /// again. The two readings agree because the mirror respects the rules.
 @[ checks ]
-def mirror_cancelled : Path(Words, mirror(Loop(Unloop(Nil))), Nil) = here(Nil) ;
+def mirror_cancelled : Path(Words, mirror(Loop(Unloop(Nil))), Nil) = here(Nil);
 
 /// The mirror of a respelled loop is the inverse of the loop.
 @[ checks ]
@@ -92,4 +92,4 @@ def mirror_respelled : Path(
   Words,
   mirror(Loop(Unloop(Loop(Nil)))),
   Unloop(Nil)
-) = here(Unloop(Nil)) ;
+) = here(Unloop(Nil));

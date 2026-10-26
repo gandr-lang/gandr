@@ -7,7 +7,7 @@
 // and two tables that agree at every element give the same path.
 
 // The magma, the swap, the identity on the booleans and the unit's identity.
-import "./magma-base.gandr" ;
+import "./magma-base.gandr";
 
 /// The swap three times, which is the swap.
 @[ checks ]
@@ -21,7 +21,7 @@ def flip(b : Bool) -> Bool {
 def opposite = ua[
   1,
   4
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// Transport along it swaps the binary corolla's boolean.
 @[ checks ]
@@ -29,7 +29,7 @@ def moves : Path(
   Unit * (+{Unit} * Bool),
   transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
   (unit, (+{.0 = unit}, +{.1 = unit}))
-) = here((unit, (+{.0 = unit}, +{.1 = unit}))) ;
+) = here((unit, (+{.0 = unit}, +{.1 = unit})));
 
 /// It does not leave the boolean where it was.
 @[ refuses("EndpointMismatch") ]
@@ -37,16 +37,16 @@ def stays : Path(
   Unit * (+{Unit} * Bool),
   transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
   (unit, (+{.0 = unit}, +{.0 = unit}))
-) = here((unit, (+{.0 = unit}, +{.0 = unit}))) ;
+) = here((unit, (+{.0 = unit}, +{.0 = unit})));
 
 /// The magma to itself by the swap written three times.
 @[ checks ]
-def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = flip, .one = keep}) ;
+def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = flip, .one = keep});
 
 /// The swap and the swap three times agree at every boolean.
 @[ checks ]
-def agree : Path(Bool => Bool, exchange, flip) = funext(exchange, flip) ;
+def agree : Path(Bool => Bool, exchange, flip) = funext(exchange, flip);
 
 /// The swap and the identity do not.
 @[ refuses("PointwiseDistinct") ]
-def disagree : Path(Bool => Bool, exchange, boolId) = funext(exchange, boolId) ;
+def disagree : Path(Bool => Bool, exchange, boolId) = funext(exchange, boolId);

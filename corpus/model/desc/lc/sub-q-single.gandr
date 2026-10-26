@@ -4,8 +4,8 @@
 // binder.
 
 // The naturals; the syntax and its substitution.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
 
 /// Substituting `b` for the newest variable at that variable is `b`.
 @[ checks ]

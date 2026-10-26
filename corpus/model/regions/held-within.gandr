@@ -10,7 +10,7 @@
 def keptAtHold() -> Integer {
   handle inner : Proc {
     hold l = 42;
-    run q : (() => Integer) at l <- access shared l as w { pure pure w } ;
+    run q : (() => Integer) at l <- access shared l as w { pure pure w };
     force q
   } with {
     pure(y) => pure y,
@@ -25,12 +25,12 @@ def keptAtNestedHold() -> Integer {
   handle outer : Proc {
     run x : Integer <- handle inner : Proc {
       hold l = 42;
-      run q : (() => Integer) at l <- access shared l as w { pure pure w } ;
+      run q : (() => Integer) at l <- access shared l as w { pure pure w };
       force q
     } with {
       pure(y) => pure y,
       oper exit(code, k) => pure 0
-    } ;
+    };
     pure x
   } with {
     pure(y) => pure y,

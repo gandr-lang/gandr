@@ -3,7 +3,7 @@
 // without the interface `log` performs is not `log`'s row (#2270).
 
 // `log` prints through `Console`, its row open through `r`.
-import "../../model/control/row-variable.gandr" ;
+import "../../model/control/row-variable.gandr";
 
 /// A suspended computation taken and never run: its row variable occurs in
 /// its argument alone.

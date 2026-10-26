@@ -9,25 +9,25 @@ def neutral = 0;
 
 /// The sum of two integers.
 @[ checks ]
-def combine(x: Integer, y: Integer) -> Integer {
+def combine(x : Integer, y : Integer) -> Integer {
   x + y
 }
 
 /// Zero on the left, not by reflexivity.
 @[ refuses("EndpointMismatch") ]
-def unitL(x: Integer) -> Path(Integer, combine(neutral, x), x) {
+def unitL(x : Integer) -> Path(Integer, combine(neutral, x), x) {
   here(x)
 }
 
 /// Zero on the right, not by reflexivity.
 @[ refuses("EndpointMismatch") ]
-def unitR(x: Integer) -> Path(Integer, combine(x, neutral), x) {
+def unitR(x : Integer) -> Path(Integer, combine(x, neutral), x) {
   here(x)
 }
 
 /// Associativity, not by reflexivity.
 @[ refuses("EndpointMismatch") ]
-def assoc(x: Integer, y: Integer, z: Integer) -> Path(
+def assoc(x : Integer, y : Integer, z : Integer) -> Path(
   Integer,
   combine(combine(x, y), z),
   combine(x, combine(y, z))

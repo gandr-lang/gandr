@@ -3,13 +3,13 @@
 
 /// One more than its argument.
 @[ checks ]
-def inc(x: Integer) -> Integer {
+def inc(x : Integer) -> Integer {
   x + 1
 }
 
 /// `inc` twice: the first call runs, the second is the tail call.
 @[ checks ]
-def twice(x: Integer) -> Integer {
+def twice(x : Integer) -> Integer {
   become inc(inc(x))
 }
 

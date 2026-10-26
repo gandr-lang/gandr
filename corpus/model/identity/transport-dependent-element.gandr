@@ -4,12 +4,12 @@
 // reflexivity carried to reflexivity at `q`.
 
 // The free naturals.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// Reflexivity at `q`, by transport along `q` in the family of each path's
 /// reflexivity.
 @[ checks ]
-def looped(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Path(Nat, a, b), q, q) {
+def looped(a : Nat, b : Nat, q : Path(Nat, a, b)) -> Path(Path(Nat, a, b), q, q) {
   transport(
     (y : Nat, z : Path(Nat, a, y)) => Path(Path(Nat, a, y), z, z),
     q,

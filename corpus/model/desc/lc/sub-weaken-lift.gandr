@@ -8,11 +8,11 @@
 
 // The naturals; the syntax; the weakened lookup, the composites' square and
 // the substitution that renames.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./lookup-weaken.gandr" ;
-import "./subst-subst.gandr" ;
-import "./subst-as-rename.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./lookup-weaken.gandr";
+import "./subst-subst.gandr";
+import "./subst-as-rename.gandr";
 
 /// A lookup under one binder is the lookup under the substitution shifting
 /// by one.

@@ -8,7 +8,7 @@
 // `../../pathological/data/descent.gandr`.
 
 // The naturals and the numerals two and three.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Addition by recursion on the first argument, the second an accumulator
 /// each call grows: `plus(Succ(p), n) = plus(p, Succ(n))`.
@@ -78,27 +78,27 @@ def rec pairwise(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
 
 /// Four.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def four : Nat = Succ(three) ;
+def four : Nat = Succ(three);
 
 /// Two and three by the accumulator: five.
 @[ runs("Succ(Succ(Succ(Succ(Succ(Zero)))))") ]
-def five_accumulated : () => Nat = plusFirst(two, three) ;
+def five_accumulated : () => Nat = plusFirst(two, three);
 
 /// Half of four.
 @[ runs("Succ(Succ(Zero))") ]
-def halved : () => Nat = half(four) ;
+def halved : () => Nat = half(four);
 
 /// The fourth Fibonacci number, three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def fibbed : () => Nat = fib(four) ;
+def fibbed : () => Nat = fib(four);
 
 /// Two and three reversed: three, then two.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Nil))") ]
-def reversed : () => List(Nat) = reverseOnto(Nat, Cons(two, Cons(three, Nil)), Nil) ;
+def reversed : () => List(Nat) = reverseOnto(Nat, Cons(two, Cons(three, Nil)), Nil);
 
 /// One, zero and two summed with ten and twenty: the zero is skipped.
 @[ runs("Cons(11, Cons(22, Nil))") ]
 def sumsSkippingZero : () => List(Integer) = pairwise(
   Cons(1, Cons(0, Cons(2, Nil))),
   Cons(10, Cons(20, Nil))
-) ;
+);

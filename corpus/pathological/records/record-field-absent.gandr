@@ -3,7 +3,7 @@
 
 /// A record of two fields.
 @[ checks ]
-def pair = #{ x = 1, y = 2 };
+def pair = #{x = 1, y = 2};
 
 /// `z` is no label of `pair`.
 @[ refuses("AbsentRecordField") ]

@@ -1,9 +1,9 @@
 @[ checks ]
-def constantly(x: Integer) -> Integer -> -F Integer {
+def constantly(x : Integer) -> Integer -> -F Integer {
   fn (y) { x }
 }
 
 @[ refuses("CompoundEndpoint") ]
-def refuted(x: Integer) -> Path(Integer, constantly(x), x) {
+def refuted(x : Integer) -> Path(Integer, constantly(x), x) {
   here(x)
 }

@@ -8,7 +8,7 @@ def p = here(7);
 
 /// A path between two integers, reversed.
 @[ checks ]
-def flip(a: Integer, b: Integer, q: Path(Integer, a, b)) -> Path(Integer, b, a) {
+def flip(a : Integer, b : Integer, q : Path(Integer, a, b)) -> Path(Integer, b, a) {
   become back(q)
 }
 

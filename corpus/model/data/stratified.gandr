@@ -8,7 +8,7 @@
 // `../../pathological/data/curry.gandr`.
 
 // The naturals the length counts in, and the two answers a test gives.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Chains whose every link holds the chain before it and a test of chains:
 /// `Chain` stands to the left of the test's arrow, below the link.
@@ -24,7 +24,7 @@ def linked(c : Chain) -> Two { case c -> -F Two { Start => L, Link(p, t) => R } 
 
 /// Two links over the start, each holding `linked`.
 @[ checks ]
-def twice : Chain = Link(Link(Start, linked), linked) ;
+def twice : Chain = Link(Link(Start, linked), linked);
 
 /// The test a link holds, applied to the chain before it: the chain stands
 /// at the stage the test takes.
@@ -47,8 +47,8 @@ def rec chainLength(c : Chain) -> Nat {
 
 /// The outer link's test of the inner link.
 @[ runs("R") ]
-def judged : () => Two = judge(twice) ;
+def judged : () => Two = judge(twice);
 
 /// The chain's two links.
 @[ runs("Succ(Succ(Zero))") ]
-def measured : () => Nat = chainLength(twice) ;
+def measured : () => Nat = chainLength(twice);

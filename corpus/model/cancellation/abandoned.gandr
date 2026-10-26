@@ -2,7 +2,7 @@
 // which holds its task's end, so the end is cancelled rather than left open.
 
 // The task's protocol.
-import "./cancel-base.gandr" ;
+import "./cancel-base.gandr";
 
 /// A scope cancelled at its exit while its task's end is open (#1334).
 @[ checks ]

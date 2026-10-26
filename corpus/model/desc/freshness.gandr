@@ -20,8 +20,8 @@ theory Pi {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where a # q;
 }
 
 /// Structural recursion over a rule chain: one per `Fresh` link, the

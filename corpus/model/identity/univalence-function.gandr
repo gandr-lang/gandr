@@ -6,9 +6,9 @@
 // forward by the record's map.
 
 // The circle, the presented integers, the winding number and spinning.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The loops at the point as the integers, `loopsAreIntegers`.
-import "./univalence.gandr" ;
+import "./univalence.gandr";
 
 /// A function on the loops at the point, carried along `ua(winding)`, is the
 /// function on the integers that spins its argument back to a loop, applies
@@ -26,6 +26,6 @@ def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> Path(
 /// spins back to its word, gains a loop and winds to its successor, by a run.
 @[ runs("S(S(S(Z)))") ]
 def funRun() -> Int {
-  run g <- transport(\X. X => X, loopsAreIntegers, fn (l) { loopOn(l) }) ;
+  run g <- transport(\X. X => X, loopsAreIntegers, fn (l) { loopOn(l) });
   g(S(S(Z)))
 }

@@ -3,7 +3,7 @@
 // refuses it whether or not the task still holds its end.
 
 // The task's protocol.
-import "../../model/tasks/task-base.gandr" ;
+import "../../model/tasks/task-base.gandr";
 
 /// A task exiting through its scope's capability after closing its end.
 @[ refuses("CapabilityEscaped") ]

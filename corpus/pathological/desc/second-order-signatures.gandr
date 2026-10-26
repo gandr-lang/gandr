@@ -8,7 +8,7 @@
 @[ refuses("IllFormedDescription") ]
 theory Unbindable {
   sort Tm : Type;
-  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
 }
 
 /// A sort's index is a plain variable: an operation's input port binds, an
@@ -16,9 +16,9 @@ theory Unbindable {
 @[ refuses("MalformedForm") ]
 theory BoundIndex {
   sort Tm : Type+;
-  sort Scoped(i : pi+ (x : Tm) . Tm) : Type;
+  sort Scoped(i : pi+ (x : Tm). Tm) : Type;
 }
 
 /// The universe of representable sorts classifies a sort member only.
 @[ refuses("OutOfFragment.Misplaced") ]
-def universeOutside : Type+ ;
+def universeOutside : Type+;

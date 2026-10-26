@@ -6,7 +6,7 @@
 
 // The shapes, the figures and `Shapes.toFigure`, the map from the one to the
 // other.
-import "./flow-data.gandr" ;
+import "./flow-data.gandr";
 
 /// A shape's width: a circle's radius, a rectangle's first side.
 @[ checks ]
@@ -35,7 +35,7 @@ def throughFigure(shape : Shape) -> Integer {
 /// The two readings are one function: they agree at a circle and at a
 /// rectangle, whatever their sides.
 @[ checks ]
-def widths : Path(Shape => Integer, width, throughFigure) = funext(width, throughFigure) ;
+def widths : Path(Shape => Integer, width, throughFigure) = funext(width, throughFigure);
 
 /// A shape drawn as its figure, the sides swapped in the other order of
 /// binding.
@@ -50,7 +50,7 @@ def drawn(shape : Shape) -> Figure {
 /// The two drawings are one function: at each shape they return the same
 /// figure, constructor and fields.
 @[ checks ]
-def drawings : Path(Shape => Figure, Shapes.toFigure, drawn) = funext(Shapes.toFigure, drawn) ;
+def drawings : Path(Shape => Figure, Shapes.toFigure, drawn) = funext(Shapes.toFigure, drawn);
 
 /// A light's two states, neither holding a field.
 @[ checks ]
@@ -86,4 +86,4 @@ def unswitched(light : Light) -> Light {
 def switchedTwice : Path(Light => Light, switchTwice, unswitched) = funext(
   switchTwice,
   unswitched
-) ;
+);

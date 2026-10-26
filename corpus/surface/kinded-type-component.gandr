@@ -3,4 +3,4 @@ module Indexed : #{ type Hom : Integer -> Integer } {
   type Hom(n : Integer) = Integer;
 }
 
-module Manifest : #{ type Hom = Integer } { }
+module Manifest : #{ type Hom = Integer } {}

@@ -316,7 +316,7 @@ mod tests
     }
 
     /// Two forms out of layout, a comment between them in layout.
-    const LOOSE: &str = "def  a =  1 ;\n// kept\ndef b   = 2 ;\n";
+    const LOOSE: &str = "def  a =  1;\n// kept\ndef b   = 2;\n";
 
     #[test]
     fn the_whole_document_is_one_trimmed_edit()
@@ -326,12 +326,12 @@ mod tests
             vec![replace(
                 at(0_u32, 4_u32),
                 at(2_u32, 7_u32),
-                "a = 1 ;\n// kept\ndef b"
+                "a = 1;\n// kept\ndef b"
             )],
             "one edit, from the first change to the last"
         );
         assert_eq!(
-            edits(SourceText::from("def a = 1 ;\n"), Scope::Whole).expect("the document formats"),
+            edits(SourceText::from("def a = 1;\n"), Scope::Whole).expect("the document formats"),
             Vec::new(),
             "a document in layout answers no edit"
         );
@@ -374,7 +374,7 @@ mod tests
         };
         assert_eq!(
             edits(
-                SourceText::from("def  a =  1 ;\n\ndef b   = 2 ;\n"),
+                SourceText::from("def  a =  1;\n\ndef b   = 2;\n"),
                 Scope::Within(&[blank])
             )
             .expect("the document formats"),
@@ -417,7 +417,7 @@ mod tests
             "a range ending where the next form starts leaves that form"
         );
         let from_the_end = Range {
-            start: at(0_u32, 13_u32),
+            start: at(0_u32, 12_u32),
             end: at(2_u32, 2_u32),
         };
         assert_eq!(
@@ -479,13 +479,13 @@ mod tests
     fn a_closing_position_formats_the_form_it_ends()
     {
         assert_eq!(
-            edits(SourceText::from(LOOSE), Scope::Closing(at(0_u32, 13_u32)))
+            edits(SourceText::from(LOOSE), Scope::Closing(at(0_u32, 12_u32)))
                 .expect("the document formats"),
             vec![replace(at(0_u32, 4_u32), at(0_u32, 9_u32), "a =")],
             "after the first form's `;`: that form alone"
         );
         assert_eq!(
-            edits(SourceText::from(LOOSE), Scope::Closing(at(2_u32, 13_u32)))
+            edits(SourceText::from(LOOSE), Scope::Closing(at(2_u32, 12_u32)))
                 .expect("the document formats"),
             vec![replace(at(2_u32, 6_u32), at(2_u32, 8_u32), "")],
             "after the second form's `;`: that form alone"

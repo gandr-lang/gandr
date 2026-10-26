@@ -5,8 +5,8 @@
 // congruence in its term is a `transport` along the path.
 
 // The naturals; the syntax and its substitution.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
 
 /// The successor, as a function `cong` can take.
 @[ checks ]

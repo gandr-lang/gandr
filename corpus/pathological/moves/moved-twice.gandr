@@ -3,7 +3,7 @@
 // with nothing to move.
 
 // The file's protocols.
-import "../../model/moves/file-base.gandr" ;
+import "../../model/moves/file-base.gandr";
 
 /// The handle moved into one closer and then into another: the first send
 /// spent the mover's end, so the second sends a spent slot.

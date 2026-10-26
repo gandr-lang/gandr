@@ -10,7 +10,7 @@
 // 1994, doi:10.1145/174675.176926).
 
 // The counter: a carrier, a start and a step.
-import "./model-ascription.gandr" ;
+import "./model-ascription.gandr";
 
 /// Three states nested to the right, renested to the left.
 @[ checks ]
@@ -34,7 +34,7 @@ def toRight(c : (Unit + Unit) + Unit) -> Unit + (Unit + Unit) {
 
 /// The two nestings are one type, the two maps inverse by computation.
 @[ checks ]
-def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(toLeft, toRight) ;
+def nestings : Path(Type, Unit + (Unit + Unit), (Unit + Unit) + Unit) = equiv(toLeft, toRight);
 
 /// The counters whose carrier is `x`.
 @[ checks ]
@@ -73,7 +73,7 @@ def first() -> Unit + (Unit + Unit) {
 def rightward : Model(Counter) with sort C = Unit + (Unit + Unit) = #{
   .start = first,
   .step = onward
-} ;
+};
 
 /// The same counter carried to the left nesting.
 @[ checks ]
@@ -81,7 +81,7 @@ def leftward : Model(Counter) with sort C = (Unit + Unit) + Unit = transport(
   \x. Model(Counter) with sort C = x,
   nestings,
   rightward
-) ;
+);
 
 /// A counter over the right nesting stepped once from its start.
 @[ checks ]

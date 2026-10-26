@@ -2,7 +2,7 @@
 // scope, and neither the rest of the subject nor the `pure` clause runs.
 
 // The subject's shared declarations.
-import "./cancel-base.gandr" ;
+import "./cancel-base.gandr";
 
 /// A scope cancelled at its exit answers nine, not one hundred and one
 /// (#1334).

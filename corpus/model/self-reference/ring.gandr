@@ -4,7 +4,7 @@
 // (Sterling, Gratzer and Birkedal, CSL 2024, doi:10.4230/LIPIcs.CSL.2024.19).
 
 // The lists.
-import "../data/data-base.gandr" ;
+import "../data/data-base.gandr";
 
 /// The node an arena holds at `i`.
 @[ checks ]

@@ -7,11 +7,11 @@
 
 // The naturals; the syntax; the congruences; the lemmas the lifted step
 // uses.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./congruence.gandr" ;
-import "./lookup-weaken.gandr" ;
-import "./subst-rename.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./congruence.gandr";
+import "./lookup-weaken.gandr";
+import "./subst-rename.gandr";
 
 /// Two substitutions at an abstraction are the abstraction of the body
 /// under both lifts, by conversion.

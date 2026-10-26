@@ -2,10 +2,10 @@
 // evidence against its specification is refused.
 
 // `Either`, `StateOp` and `Prog`.
-import "../../model/effects/tree.gandr" ;
+import "../../model/effects/tree.gandr";
 
 // `incrTree`, `wp`, `incrSpec` and `isOne`.
-import "../../model/specification/tree-state-wp.gandr" ;
+import "../../model/specification/tree-state-wp.gandr";
 
 /// A precondition the increment does not meet: ending at one needs the
 /// successor of the initial state to be one, not the state itself.
@@ -13,7 +13,7 @@ import "../../model/specification/tree-state-wp.gandr" ;
 def incrMissesOne : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, isOne(unit, s)) => wp(m, isOne, s)
-} = (incrTree, fn (s) { fn (h) { h } }) ;
+} = (incrTree, fn (s) { fn (h) { h } });
 
 /// The increment paired with evidence at every postcondition, the order of
 /// the transformers itself: both sides unfold to a call of `post`, and a
@@ -23,4 +23,4 @@ def incrMissesOne : #{
 def incrSpecifiedEverywhere : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (post : (Unit, Integer) => Type, s : Integer, incrSpec(post, s)) => wp(m, post, s)
-} = (incrTree, fn (post) { fn (s) { fn (h) { h } } }) ;
+} = (incrTree, fn (post) { fn (s) { fn (h) { h } } });

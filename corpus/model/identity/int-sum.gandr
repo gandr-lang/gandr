@@ -4,7 +4,7 @@
 // `circle-group.gandr` reads these laws through the winding number.
 
 // The integers, one successor more and one predecessor more.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// The sum of two integers (cubical's `_+_` on `ℤ`), by recursion on the
 /// second. It respects `Int`'s rules: at `S(P(x))` it builds `S(P(plus(a,

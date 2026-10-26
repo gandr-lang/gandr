@@ -4,7 +4,7 @@
 // expectation of the name it binds (#1274).
 
 // The counter functor and its seed.
-import "../../model/modules/functor-pair.gandr" ;
+import "../../model/modules/functor-pair.gandr";
 
 /// A counter with no reader: it exports three of the four components
 /// `MkCounter`'s parameter states.
@@ -21,4 +21,4 @@ module Unread :> #{ type T, zero : T, next : T => T } {
 /// The functor applied to the counter with no reader, refused at its
 /// binding: `Unread` exports no `read`.
 @[ refuses("UnknownMember") ]
-module Unreadable = MkCounter(Unread) ;
+module Unreadable = MkCounter(Unread);

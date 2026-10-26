@@ -20,17 +20,17 @@ theory Wider {
 
 /// A code the module owes.
 @[ owes(1) ]
-def code : Type ;
+def code : Type;
 
 /// A second code the module owes.
 @[ owes(1) ]
-def other : Type ;
+def other : Type;
 
 /// A value the module owes at the second code's decode.
 @[ owes(1) ]
-def held : other ;
+def held : other;
 
 /// A value at one owed code's decode where another's is wanted: two holes and
 /// no rigid side, and no reduct crosses between them.
 @[ refuses("TypeMismatch") ]
-def acrossHoles : code = held ;
+def acrossHoles : code = held;

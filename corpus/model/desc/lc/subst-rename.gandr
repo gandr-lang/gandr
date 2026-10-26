@@ -7,12 +7,12 @@
 
 // The naturals; the syntax; the congruences; the shift's lookup, the fusion of
 // renamings and the weakened lookup.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./congruence.gandr" ;
-import "./shift-lookup.gandr" ;
-import "./rename-rename.gandr" ;
-import "./lookup-weaken.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./congruence.gandr";
+import "./shift-lookup.gandr";
+import "./rename-rename.gandr";
+import "./lookup-weaken.gandr";
 
 /// A lookup under one binder, weakened, renamed by a lift: the step that
 /// carries `lookWeakens` under the lifted renaming.

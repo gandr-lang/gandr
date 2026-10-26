@@ -8,13 +8,13 @@
 // computation (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 // The presented integers and the free naturals.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The loop's words.
-import "./loop-words.gandr" ;
+import "./loop-words.gandr";
 // The winding number into the integers.
-import "./loop-winding.gandr" ;
+import "./loop-winding.gandr";
 // Spinning back.
-import "./loop-space.gandr" ;
+import "./loop-space.gandr";
 
 /// The step case at a variable: the `Loop` arm's bind over `windWords(x)`
 /// reads as `S` over the held call.

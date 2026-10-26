@@ -5,7 +5,7 @@
 // (#1833, #1876).
 
 // The lists.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// The length of a list of integers.
 @[ checks ]

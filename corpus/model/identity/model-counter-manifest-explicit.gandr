@@ -8,10 +8,10 @@
 
 // The counter, counting up and down modulo three, and `observe`, which reads
 // any counter.
-import "./model-counter.gandr" ;
+import "./model-counter.gandr";
 // The manifest counters, the counter whose readings have a sort of their own,
 // and its reader.
-import "./model-counter-manifest.gandr" ;
+import "./model-counter-manifest.gandr";
 
 /// The manifest counter where a counter is asked, the map written out.
 @[ runs("1"), form(explicit) ]

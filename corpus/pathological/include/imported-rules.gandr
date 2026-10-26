@@ -3,7 +3,7 @@
 // one block, exactly as for a block of the same source.
 
 // The semigroup and the monoid.
-import "../../model/include/monoid.gandr" ;
+import "../../model/include/monoid.gandr";
 
 /// The unit against a pair, read as the pair swapped: with the imported
 /// left unit law, `mul(one(), pair(x, y))` reads `pair(x, y)` and

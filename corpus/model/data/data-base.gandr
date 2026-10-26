@@ -1,5 +1,5 @@
 // The data subject's shared declarations, written once and imported by every
-// source that reads them (`import "./data-base.gandr" ;`): the free naturals,
+// source that reads them (`import "./data-base.gandr";`): the free naturals,
 // their addition and the numerals two and three, the integers presented by
 // two cancelling constructors, a three-colour enumeration, the two branches
 // of a binary node and the polymorphic lists. A data block is an inductive
@@ -28,11 +28,11 @@ def rec plus(n : Nat, m : Nat) -> Nat {
 
 /// Two.
 @[ runs("Succ(Succ(Zero))") ]
-def two : Nat = Succ(Succ(Zero)) ;
+def two : Nat = Succ(Succ(Zero));
 
 /// Three.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def three : Nat = Succ(two) ;
+def three : Nat = Succ(two);
 
 /// The integers as a presented type: a successor and a predecessor that
 /// cancel, each rule invertible.

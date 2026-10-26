@@ -34,7 +34,7 @@ module Counted : Model(Counting) {
 /// Two steps from the start, read out through the model's operations.
 @[ runs("2") ]
 def counted_two() -> Integer {
-  run one <- Counted.next(Counted.zero) ;
+  run one <- Counted.next(Counted.zero);
   Counted.read(Counted.next(one))
 }
 

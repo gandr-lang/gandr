@@ -8,12 +8,12 @@
 
 // Two points, one point, the collapse of the first onto the second and the
 // map back with its one round trip.
-import "./equiv-fibres.gandr" ;
+import "./equiv-fibres.gandr";
 // The paths between types packaged as records, `idtoequiv`.
-import "../../model/identity/univalence.gandr" ;
+import "../../model/identity/univalence.gandr";
 // The circle, the presented integers and `winding`.
-import "../../model/identity/circle-base.gandr" ;
-import "../../model/identity/circle.gandr" ;
+import "../../model/identity/circle-base.gandr";
+import "../../model/identity/circle.gandr";
 
 /// The collapse made a path between `Two` and `One`, refused at the left
 /// inverse's round trip: `pick(collapse(x))` is `Yes` at every `x`, so
@@ -22,7 +22,7 @@ import "../../model/identity/circle.gandr" ;
 def collapsedPath : Path(Type, Two, One) = ua((
   collapse,
   ((pick, thunk { fn (x) { here(x) } }), (pick, single))
-)) ;
+));
 
 /// A transport along `ua` of a bi-invertible map from `Type` to itself,
 /// refused at the code `ua` reads off the record: `Type` is a code of
@@ -70,4 +70,4 @@ def loopsAreUnit : Path(Type, Path(Circle, Base, Base), Unit) = (ua(winding) : P
   Type,
   Path(Circle, Base, Base),
   _
-)) ;
+));

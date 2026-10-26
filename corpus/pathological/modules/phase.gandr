@@ -4,7 +4,7 @@
 // and it is reported once, at the member (#1087).
 
 // The sign and the point the model fixture defines.
-import "../../model/modules/phase.gandr" ;
+import "../../model/modules/phase.gandr";
 
 /// A module whose type member reads its own value member.
 module Counted {

@@ -5,8 +5,8 @@
 
 /// The stationary flow at a product of two components.
 @[ checks ]
-def quoted_product : Flow(Type, Unit * Integer, Unit * Integer) = stay(type(Unit * Integer)) ;
+def quoted_product : Flow(Type, Unit * Integer, Unit * Integer) = stay(type(Unit * Integer));
 
 /// The stationary flow at a sum of two summands.
 @[ checks ]
-def quoted_chain : Flow(Type, Integer + Unit, Integer + Unit) = stay(type(Integer + Unit)) ;
+def quoted_chain : Flow(Type, Integer + Unit, Integer + Unit) = stay(type(Integer + Unit));

@@ -12,7 +12,7 @@ theory Nested {
   sort P : Type;
   oper z : () --> P;
   oper w : () --> P;
-  oper nu : (p : bind (a : Name) . P) --> P;
-  rule inner : nu(bind a . z()) ==> w();
-  rule outer : nu(bind a . nu(bind b . p)) ==> p where a # p, b # p;
+  oper nu : (p : bind (a : Name). P) --> P;
+  rule inner : nu(bind a. z()) ==> w();
+  rule outer : nu(bind a. nu(bind b. p)) ==> p where a # p, b # p;
 }

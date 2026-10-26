@@ -5,11 +5,11 @@
 
 // The circle, the presented integers, the winding number, spinning and their
 // round trips.
-import "../../model/identity/circle-base.gandr" ;
+import "../../model/identity/circle-base.gandr";
 
 /// The loops at the point and the integers with `retr` written where `sect`
 /// belongs, refused at the section: `retr` reads `Path(Int, wind(spin(n)),
 /// n)` over the integers, where the section reads `Path(Path(Circle, Base,
 /// Base), spin(wind(p)), p)` over the loops (#514).
 @[ refuses("TypeMismatch") ]
-def wrongEndpoint : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (retr, retr))) ;
+def wrongEndpoint : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (retr, retr)));

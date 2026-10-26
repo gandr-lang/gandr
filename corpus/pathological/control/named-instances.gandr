@@ -5,7 +5,7 @@
 // instance in scope or nothing (#2271).
 
 // `say` prints through its instance `out`.
-import "../../model/control/named-instances.gandr" ;
+import "../../model/control/named-instances.gandr";
 
 /// Two instances of `Console` handled around a call naming neither: the
 /// call is refused naming both, never routed to the innermost.

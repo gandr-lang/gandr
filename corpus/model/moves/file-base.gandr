@@ -1,5 +1,5 @@
 // The moves subject's shared declarations, written once and imported by every
-// source that reads them (`import "./file-base.gandr" ;`): a file after POSIX
+// source that reads them (`import "./file-base.gandr";`): a file after POSIX
 // open(2) and close(2), whose descriptor its holder releases by closing it,
 // once. The handle is a linear resident, the end of a forked owner, so moving
 // it is delegation (Honda, Vasconcelos and Kubo, doi:10.1007/BFb0053567).

@@ -12,7 +12,7 @@ def pair = (greeting, greeting);
 
 /// The identity on integers.
 @[ checks ]
-def identity(x: Integer) -> Integer {
+def identity(x : Integer) -> Integer {
   x
 }
 

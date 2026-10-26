@@ -16,12 +16,12 @@ module MkCounter(S : #{ type T, zero : T, next : T => T }) :> #{
   def step = S.next;
 }
 
-module A = MkCounter(Seed) ;
-module B = MkCounter(Seed) ;
+module A = MkCounter(Seed);
+module B = MkCounter(Seed);
 
 @[ refuses("TypeMismatch") ]
-def mixed : A.T = B.seed ;
+def mixed : A.T = B.seed;
 
 @[ refuses("ProjectionFromApplication") ]
-def projected : Integer ;
-def projected = MkCounter(Seed).seed ;
+def projected : Integer;
+def projected = MkCounter(Seed).seed;

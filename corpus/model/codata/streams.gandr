@@ -15,21 +15,21 @@ codata Stream(a : Type) : Type[-] {
 /// The integers from `n` upward, one observation at a time.
 @[ checks ]
 def rec upward(n : Integer) -> Stream(Integer) {
-  &{ .head => n, .tail => upward[>](n + 1) }
+  &{.head => n, .tail => upward[>](n + 1)}
 }
 
 /// `n` forever, its clauses written tail first: a copattern block answers
 /// the observations in the order the declaration states them.
 @[ checks ]
 def rec always(n : Integer) -> Stream(Integer) {
-  &{ .tail => always[>](n), .head => n }
+  &{.tail => always[>](n), .head => n}
 }
 
 /// One forever: a corecursive constant, which binds its own name over its
 /// copattern block though it takes no parameter (#1499).
 @[ checks ]
 def rec ones() -> Stream(Integer) {
-  &{ .head => 1, .tail => ones[>]() }
+  &{.head => 1, .tail => ones[>]()}
 }
 
 /// The head of a stream: observing a thunk of it.
@@ -68,7 +68,7 @@ def add(x : Integer, y : Integer) -> Integer {
 
 /// The integers from three, observed at the head.
 @[ runs("3") ]
-def three : () => Integer = first(upward(3)) ;
+def three : () => Integer = first(upward(3));
 
 /// The integers from three, observed one further.
 @[ runs("4") ]
@@ -93,7 +93,7 @@ def onward(s : +U Stream(Integer)) -> Integer {
 
 /// The integers from three, observed one further by position.
 @[ runs("4") ]
-def fourth : () => Integer = onward(upward(3)) ;
+def fourth : () => Integer = onward(upward(3));
 
 /// The integers from three, observed at the head off the call itself: the
 /// call runs to the stream, and the stream is observed.

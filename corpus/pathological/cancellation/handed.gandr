@@ -3,7 +3,7 @@
 // a continuation that owes an end is never handed on.
 
 // The task's protocol.
-import "../../model/cancellation/cancel-base.gandr" ;
+import "../../model/cancellation/cancel-base.gandr";
 
 /// Resumes the stack it is handed: a stack a parameter holds owes nothing
 /// (#1387).

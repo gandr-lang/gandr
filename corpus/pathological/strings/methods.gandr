@@ -4,9 +4,9 @@
 // one of whose arms took it. A mode word is a receiver's alone.
 
 // The lists; the byte lists; the string's methods.
-import "../../model/data/data-base.gandr" ;
-import "../../model/strings/string-base.gandr" ;
-import "../../model/strings/methods.gandr" ;
+import "../../model/data/data-base.gandr";
+import "../../model/strings/string-base.gandr";
+import "../../model/strings/methods.gandr";
 
 /// A string read after it was taken: the take ended its hold.
 @[ refuses("HeldConsumed") ]
@@ -21,7 +21,7 @@ def readAfterTaken() -> Integer {
 @[ refuses("HeldCaptured") ]
 def readInThunk() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  run k : () => Integer <- pure thunk { s.len() } ;
+  run k : () => Integer <- pure thunk { s.len() };
   force k
 }
 
@@ -35,7 +35,7 @@ def pushedUnheld(t : Repr) -> -F Unit {
 @[ refuses("HeldLent") ]
 def readWhileLent() -> Unit {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access s as v { run n <- s.len() ; resume(v, v) }
+  access s as v { run n <- s.len(); resume(v, v) }
 }
 
 /// A push onto a string a read lends: the push would write the string the
@@ -43,7 +43,7 @@ def readWhileLent() -> Unit {
 @[ refuses("HeldLent") ]
 def pushedWhileRead() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access shared s as w { s.push(33) ; run bs <- bytes(w) ; count(bs) }
+  access shared s as w { s.push(33); run bs <- bytes(w); count(bs) }
 }
 
 /// A string read after a match one of whose arms took it: the match ends the
@@ -55,7 +55,7 @@ def readAfterTakenInOneArm(t : Repr) -> Integer {
   run xs <- case t -> -F List(Integer) {
     Inline(bs) => s.bytes(),
     Shared(n, bs) => pure bs
-  } ;
+  };
   s.len()
 }
 

@@ -4,7 +4,7 @@
 // and the kernel's replay (#626).
 
 // The integers, one successor more and one predecessor more.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// The sum of two integers with the first as an accumulator: each step moves
 /// one successor or predecessor of `b` onto `acc`. It respects `Int`'s rules:
@@ -21,4 +21,4 @@ def rec count(acc : Int, b : Int) -> Int {
 
 /// One and two by the accumulator: three.
 @[ runs("S(S(S(Z)))") ]
-def accumulated : () => Int = count(S(Z), S(S(Z))) ;
+def accumulated : () => Int = count(S(Z), S(S(Z)));

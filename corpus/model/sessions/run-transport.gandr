@@ -56,7 +56,7 @@ def decoded(a : Answer) -> Path(Answer, decode(encode(a)), a) {
 
 /// The bits and the answers are one type, by univalence.
 @[ checks ]
-def codes : Path(Type, Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded)))) ;
+def codes : Path(Type, Bit, Answer) = ua((decode, ((encode, encoded), (encode, decoded))));
 
 /// A protocol that hears a bit, and one that hears an answer.
 module Ask {
@@ -66,7 +66,7 @@ module Ask {
 
 /// A run that heard a one.
 @[ checks ]
-def heard : Run(Ask.Coded) = recorded(received(One), closed) ;
+def heard : Run(Ask.Coded) = recorded(received(One), closed);
 
 /// Carried along the path, the run heard the one decoded: a yes.
 @[ checks ]
@@ -74,7 +74,7 @@ def heardDecoded : Path(
   Run(Ask.Decoded),
   transport(\X. Run(?X. end), codes, heard),
   recorded(received(Yes), closed)
-) = here(recorded(received(Yes), closed)) ;
+) = here(recorded(received(Yes), closed));
 
 /// The payload moves: the carried run is no run that heard a no.
 @[ refuses("EndpointMismatch") ]
@@ -82,7 +82,7 @@ def heardKept : Path(
   Run(Ask.Decoded),
   transport(\X. Run(?X. end), codes, heard),
   recorded(received(No), closed)
-) = here(recorded(received(No), closed)) ;
+) = here(recorded(received(No), closed));
 
 /// The carried run, computed.
 @[ checks ]

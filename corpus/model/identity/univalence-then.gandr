@@ -7,9 +7,9 @@
 // not compute, as `p` here, is carried on as the value it stands for.
 
 // The circle, the presented integers, the winding number and spinning.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // Transport forward along a path between types.
-import "./univalence.gandr" ;
+import "./univalence.gandr";
 
 /// Transport along a composite whose second path is a `ua` applies the first
 /// path's transport, then the record's map.
@@ -37,4 +37,4 @@ def loopsRound(
 
 /// A loop carried to the integers and back again is the loop, by a run.
 @[ runs("loop ∷ here(Base)") ]
-def roundRun : () => Path(Circle, Base, Base) = loopsRound(loopsAreIntegers, loop) ;
+def roundRun : () => Path(Circle, Base, Base) = loopsRound(loopsAreIntegers, loop);

@@ -9,7 +9,7 @@
 /// A conditional a `run` binds: its written answer types the bound value.
 @[ runs("2") ]
 def boundIf() -> Integer {
-  run m <- if true -> -F Integer { pure 1 } else { pure 0 } ;
+  run m <- if true -> -F Integer { pure 1 } else { pure 0 };
   pure (m + 1)
 }
 
@@ -17,7 +17,7 @@ def boundIf() -> Integer {
 /// comparison it tests, answers what the match writes.
 @[ runs("10") ]
 def boundCase() -> Integer {
-  run m <- case 3 -> -F Integer { 0 => pure 0, _ => pure 5 } ;
+  run m <- case 3 -> -F Integer { 0 => pure 0, _ => pure 5 };
   pure (m + m)
 }
 
@@ -25,7 +25,7 @@ def boundCase() -> Integer {
 /// the chain, and the later rung is checked against it.
 @[ runs("1") ]
 def chained() -> Integer {
-  run m <- if false -> -F Integer { pure 0 } else if true { pure 1 } else { pure 2 } ;
+  run m <- if false -> -F Integer { pure 0 } else if true { pure 1 } else { pure 2 };
   pure m
 }
 
@@ -33,7 +33,7 @@ def chained() -> Integer {
 /// result does: `-> Integer` answers `-F Integer`.
 @[ runs("1") ]
 def valued() -> Integer {
-  run m <- if true -> Integer { pure 1 } else { pure 2 } ;
+  run m <- if true -> Integer { pure 1 } else { pure 2 };
   pure m
 }
 

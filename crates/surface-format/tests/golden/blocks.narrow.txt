@@ -14,11 +14,11 @@ def from_left() -> -F Integer {
 }
 
 module Facts : #{
-  inner: #{ answer: Integer },
-  total: Integer
+  inner : #{answer : Integer},
+  total : Integer
 } {
   def base = 40;
-  module inner : #{ answer: Integer } {
+  module inner : #{ answer : Integer } {
     def answer = base + 1;
   }
 
@@ -28,11 +28,11 @@ module Facts : #{
 def pairs = thunk {
   fn (m) {
     fn (k) {
-      run p <- force m ;
+      run p <- force m;
       become (force k)(1)
     }
   }
-} ;
+};
 def listed = [
   1,
   2,
@@ -54,4 +54,4 @@ def listed = [
   18,
   19,
   20
-] ;
+];

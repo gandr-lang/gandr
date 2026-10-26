@@ -18,7 +18,7 @@ def succ(n : Integer) -> Integer {
 @[ runs("1") ]
 def counter() -> Integer {
   hold c = 0;
-  access c as v { run n <- succ(v) ; resume(v, n) };
+  access c as v { run n <- succ(v); resume(v, n) };
   access c as v { abort(v) } unwind { pure unit };
   pure c
 }
@@ -45,4 +45,4 @@ def add_to(n : Integer) -> Integer {
 
 /// One held, five added.
 @[ runs("6") ]
-def add_five : () => Integer = add_to(5) ;
+def add_five : () => Integer = add_to(5);

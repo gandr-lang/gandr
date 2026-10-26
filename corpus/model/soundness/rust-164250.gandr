@@ -9,7 +9,7 @@
 def kept() -> Integer {
   hold l = 42;
   handle inner : Proc {
-    run q2 : (() => Integer) at inner <- access shared l as w { pure pure w } ;
+    run q2 : (() => Integer) at inner <- access shared l as w { pure pure w };
     force q2
   } with {
     pure(y) => pure y,

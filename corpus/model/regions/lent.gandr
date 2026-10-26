@@ -11,7 +11,7 @@ def read @[r : Region] (k : (() => Integer) at r) -> Integer { force k }
 def lent() -> Integer {
   hold s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
+    run k : (() => Integer) at c <- access shared s as w { pure pure w };
     read(k)
   } with {
     pure(x) => pure x,

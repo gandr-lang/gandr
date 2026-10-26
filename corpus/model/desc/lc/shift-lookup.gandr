@@ -4,9 +4,9 @@
 // is, by cases on the index.
 
 // The naturals; the syntax; the congruences.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./congruence.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./congruence.gandr";
 
 /// A shift by `k` sends `n` to `n + k`.
 @[ checks ]

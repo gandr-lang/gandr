@@ -25,11 +25,11 @@ def shadowed(rounds : Nat) -> Integer {
 
 /// Past the arm that holds, the rest reads the outer count.
 @[ runs("100") ]
-def shadowedHeld : () => Integer = shadowed(Succ(Zero)) ;
+def shadowedHeld : () => Integer = shadowed(Succ(Zero));
 
 /// The early exit leaves before the rest runs.
 @[ runs("7") ]
-def shadowedExited : () => Integer = shadowed(Zero) ;
+def shadowedExited : () => Integer = shadowed(Zero);
 
 /// The arm forks, and its parent end closes before the rest: the rest reads
 /// the held count, not the end.

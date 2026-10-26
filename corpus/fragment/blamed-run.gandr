@@ -1,5 +1,5 @@
 @[ owes(1), form(explicit) ]
-def later : +U (-F Integer) ;
+def later : +U (-F Integer);
 
 @[ runs("blame: `later` is owed its body") ]
 def main() -> -F Integer { become force later }

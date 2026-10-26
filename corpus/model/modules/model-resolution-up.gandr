@@ -1,5 +1,5 @@
 // A tally of integers, in a source of its own (#739).
-import "./model-resolution-tally.gandr" ;
+import "./model-resolution-tally.gandr";
 
 /// Counting up by one.
 module Up : Model(Count) {

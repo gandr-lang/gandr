@@ -1,21 +1,21 @@
 @[ checks, form(explicit) ]
-def one : +{Integer} ;
-def one = +{.0 = 1} ;
+def one : +{Integer};
+def one = +{.0 = 1};
 
 @[ runs("+{.2 = unit}") ]
-def third : +{Integer, String, Unit} ;
-def third = +{.2 = unit} ;
+def third : +{Integer, String, Unit};
+def third = +{.2 = unit};
 
 @[ checks ]
-def failed : +{ok : Integer, err : String} ;
-def failed = (+{.err = "no"} : +{ok : Integer, err : String}) ;
+def failed : +{ok : Integer, err : String};
+def failed = (+{.err = "no"} : +{ok : Integer, err : String});
 
 @[ checks ]
-def only : +{only : Integer} ;
-def only = (+{.only = 4} : +{only : Integer}) ;
+def only : +{only : Integer};
+def only = (+{.only = 4} : +{only : Integer});
 
 @[ refuses("OutOfFragment.Unannotated") ]
-def unstated = +{.err = "no"} ;
+def unstated = +{.err = "no"};
 
 @[ checks ]
 def absurd(x : +{}) -> -F Integer {

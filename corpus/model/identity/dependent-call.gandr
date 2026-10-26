@@ -7,9 +7,9 @@
 // `IsoFunSpaceS¹` (`Cubical/HITs/S1/Properties.agda`).
 
 // The circle and the integers.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The map a point and a loop there determine, `fromLoopAt`.
-import "./circle-rotation.gandr" ;
+import "./circle-rotation.gandr";
 
 /// A map's image of the loop, at the map's image of the point: `cong` of the
 /// parameter `f` along the loop.

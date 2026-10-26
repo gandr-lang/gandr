@@ -71,7 +71,7 @@ def branch(n : Integer) -> Integer {
     run m <- case n {
       0 => return 8,
       _ => pure n,
-    } ;
+    };
     c.exit(2);
     pure m + 1
   } with {
@@ -96,7 +96,7 @@ def looped() -> [Div] Integer {
   handle c : Proc {
     run v <- loop {
       break(5)
-    } ;
+    };
     pure v
   } with {
     pure(x) => pure x + 100,

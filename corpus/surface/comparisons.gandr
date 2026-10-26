@@ -7,7 +7,7 @@
 /// Its argument when that is not zero, else zero.
 @[ checks ]
 def unlessZero(n : Integer) -> [Div] Integer {
-  while n != 0 { return n } ;
+  while n != 0 { return n };
   0
 }
 
@@ -22,7 +22,7 @@ def unlessZeroZero() -> [Div] Integer { unlessZero(0) }
 /// Its argument when that is at most zero, else zero.
 @[ checks ]
 def atMostZero(n : Integer) -> [Div] Integer {
-  while n <= 0 { return n } ;
+  while n <= 0 { return n };
   0
 }
 
@@ -33,7 +33,7 @@ def atMostZeroZero() -> [Div] Integer { atMostZero(0) }
 /// Its argument when that is at least one, else zero.
 @[ checks ]
 def atLeastOne(n : Integer) -> [Div] Integer {
-  while n >= 1 { return n } ;
+  while n >= 1 { return n };
   0
 }
 

@@ -6,7 +6,7 @@
 
 // The operator's and the seat's worlds, and the seat's sealed side of the
 // exchange, its report alone marked mobile.
-import "../../model/worlds/seat-and-operator.gandr" ;
+import "../../model/worlds/seat-and-operator.gandr";
 
 /// The dispatch taken back from the seat, refused: `Dispatch` is not marked,
 /// so its representation stays with the seal.

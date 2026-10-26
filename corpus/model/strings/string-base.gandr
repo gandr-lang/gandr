@@ -1,5 +1,5 @@
 // The strings subject's shared declarations, imported by every source that
-// reads them (`import "./string-base.gandr" ;`): where a string's bytes live,
+// reads them (`import "./string-base.gandr";`): where a string's bytes live,
 // and the byte lists every claim reads and builds. A string is a value: a copy
 // is a new string, and no write to one is seen through another (Racordon et
 // al., "Implementation strategies for mutable value semantics", _Journal of
@@ -8,7 +8,7 @@
 // as the C++ and Rust small-string representations do.
 
 // The lists the bytes are held in.
-import "../data/data-base.gandr" ;
+import "../data/data-base.gandr";
 
 /// Where a string's bytes live: inline, in the string itself, when they fit;
 /// otherwise in a buffer on the heap that every copy of the string shares,
@@ -48,4 +48,4 @@ def rec concat(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
 
 /// The number of bytes a string keeps inline, its terminating zero included.
 @[ runs("24") ]
-def inlineCapacity : Integer = 24 ;
+def inlineCapacity : Integer = 24;

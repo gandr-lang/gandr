@@ -1,4 +1,4 @@
-def peek(c : Cap {read}) -> [Fs] String {
+def peek(c : Cap { read }) -> [Fs] String {
   c.read("notes")
 }
 

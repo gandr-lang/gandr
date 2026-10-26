@@ -24,7 +24,7 @@ def spin(n : Nat) -> [Div] Nat {
 /// A `break` with a value leaves the loop with it, and what follows reads it.
 @[ checks ]
 def first(n : Nat) -> [Div] Nat {
-  run m <- loop { break(Succ(n)) } ;
+  run m <- loop { break(Succ(n)) };
   Succ(m)
 }
 
@@ -40,7 +40,7 @@ def pick(n : Nat) -> [Div] Nat {
       Zero => break(n),
       Succ(p) => break(p),
     }
-  } ;
+  };
   Succ(m)
 }
 
@@ -76,7 +76,7 @@ def hand_one() -> [Div] Nat { become hand(Succ(Zero)) }
 /// A `while` that returns from its first pass when its condition holds.
 @[ checks ]
 def until_done(n : Integer) -> [Div] Integer {
-  while n > 0 { return n } ;
+  while n > 0 { return n };
   0
 }
 
@@ -96,7 +96,7 @@ def sift(n : Nat) -> [Div] Nat {
       Zero => { break; },
       Succ(p) => { tick(p); continue; },
     }
-  } ;
+  };
   n
 }
 
@@ -108,7 +108,7 @@ def sift_zero() -> [Div] Nat { become sift(Zero) }
 @[ checks ]
 def handled(n : Nat) -> [Div] Nat {
   handle c : Proc {
-    run m <- loop { break(Succ(n)) } ;
+    run m <- loop { break(Succ(n)) };
     pure m
   } with {
     pure(x) => pure Succ(x),
@@ -133,7 +133,7 @@ def skip(n : Nat) -> -F Nat {
 @[ refuses("OutsideLoop") ]
 def held(n : Nat) -> -F Nat {
   loop {
-    run t <- pure thunk { break(n) } ;
+    run t <- pure thunk { break(n) };
     continue
   }
 }
@@ -148,7 +148,7 @@ def find_succ(xs : List(Nat), otherwise : Nat) -> Nat {
       Zero => continue,
       Succ(p) => return p,
     }
-  } ;
+  };
   otherwise
 }
 
@@ -171,6 +171,6 @@ def for_each(xs : List(Nat)) -> Unit {
 /// another type does not check (#283).
 @[ refuses("TypeMismatch") ]
 def for_value(xs : List(Nat)) -> Nat {
-  run m <- for x in xs { break(x) } ;
+  run m <- for x in xs { break(x) };
   m
 }

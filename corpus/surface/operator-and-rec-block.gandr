@@ -6,27 +6,27 @@
 
 /// A left-associative infix operator at precedence six (#1111).
 @[ refuses("OutOfFragment.operator_declaration") ]
-op infixl 6 "<|>" ;
+op infixl 6 "<|>";
 
 /// A right-associative infix operator at precedence five (#1111).
 @[ refuses("OutOfFragment.operator_declaration") ]
-op infixr 5 "<>" ;
+op infixr 5 "<>";
 
 /// A prefix operator at precedence nine (#1111).
 @[ refuses("OutOfFragment.operator_declaration") ]
-op prefix 9 "!" ;
+op prefix 9 "!";
 
 /// A postfix operator at precedence nine (#1111).
 @[ refuses("OutOfFragment.operator_declaration") ]
-op postfix 9 "?" ;
+op postfix 9 "?";
 
 /// Evenness and oddness, each by the other.
 rec {
   /// Even when its predecessor is odd; a plain definition claims no
   /// descent.
   @[ refuses("OutOfFragment.ForeignClaim") ]
-  def even(n: Integer) -> -F Bool { return odd[<](n) }
+  def even(n : Integer) -> -F Bool { return odd[<](n) }
   /// Odd when its predecessor is even, refused for the same reason.
   @[ refuses("OutOfFragment.ForeignClaim") ]
-  def odd(n: Integer) -> -F Bool { return even[<](n) }
+  def odd(n : Integer) -> -F Bool { return even[<](n) }
 }

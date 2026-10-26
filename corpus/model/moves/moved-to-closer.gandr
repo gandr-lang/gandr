@@ -7,7 +7,7 @@
 // wherever it is bound.
 
 // The file's protocols.
-import "./file-base.gandr" ;
+import "./file-base.gandr";
 
 /// A handle moved into a closer, which closes it: the send spends the mover's
 /// end, so the mover has nothing left to close.

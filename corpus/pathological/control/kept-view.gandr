@@ -11,7 +11,7 @@
 def unkept() -> Integer {
   hold s = 3;
   handle c : Proc {
-    run k : () => Integer <- access shared s as w { pure thunk { pure w } } ;
+    run k : () => Integer <- access shared s as w { pure thunk { pure w } };
     force k
   } with {
     pure(x) => pure x,
@@ -26,7 +26,7 @@ def keptExclusive() -> Integer {
   hold s = 3;
   handle c : Proc {
     access s as v {
-      run k : (() => Integer) at c <- pure thunk { pure v } ;
+      run k : (() => Integer) at c <- pure thunk { pure v };
       resume(v, v)
     };
     pure 0
@@ -42,7 +42,7 @@ def keptExclusive() -> Integer {
 def written() -> Integer {
   hold s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
     access s as v { resume(v, v + 1) };
     force k
   } with {
@@ -57,8 +57,8 @@ def written() -> Integer {
 def rewrapped() -> Integer {
   hold s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
-    run j : () => Integer <- pure thunk { force k } ;
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
+    run j : () => Integer <- pure thunk { force k };
     force j
   } with {
     pure(x) => pure x,
@@ -72,7 +72,7 @@ def rewrapped() -> Integer {
 def answered() -> () => Integer {
   hold s = 3;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } } ;
+    run k : (() => Integer) at c <- access shared s as w { pure thunk { pure w } };
     pure k
   } with {
     pure(x) => pure x,
@@ -85,7 +85,7 @@ def answered() -> () => Integer {
 @[ refuses("HeldKept") ]
 def writtenInHold() -> Integer {
   hold s = 3;
-  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
+  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } };
   access s as v { resume(v, v + 1) };
   force k
 }
@@ -95,7 +95,7 @@ def writtenInHold() -> Integer {
 @[ refuses("KeptEscaped") ]
 def leftHold() -> Integer {
   hold s = 3;
-  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } } ;
-  run j : () => Integer <- pure thunk { force k } ;
+  run k : (() => Integer) at s <- access shared s as w { pure thunk { pure w } };
+  run j : () => Integer <- pure thunk { force k };
   force j
 }

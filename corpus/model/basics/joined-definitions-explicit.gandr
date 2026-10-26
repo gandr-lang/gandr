@@ -1,11 +1,11 @@
 // The pair a joined definition writes, in the explicit form: a signature and
 // the definition directly after it, which the sugared form joins into
-// `def pairedThree : Integer = 3 ;` (#2228).
+// `def pairedThree : Integer = 3;` (#2228).
 
 /// Three, its signature and definition apart.
 @[ checks, form(explicit) ]
-def pairedThree : Integer ;
-def pairedThree = 3 ;
+def pairedThree : Integer;
+def pairedThree = 3;
 
 /// Three again, read through the pair.
 @[ runs("3") ]

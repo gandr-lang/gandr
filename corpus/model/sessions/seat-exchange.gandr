@@ -5,7 +5,7 @@
 // desk drives its dual through every branch the seat may take.
 
 // The seat's protocol and its messages.
-import "./seat-base.gandr" ;
+import "./seat-base.gandr";
 
 /// A desk dispatching a task to a forked seat and following its reports to a
 /// retirement or a handoff.

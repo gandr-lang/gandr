@@ -1,17 +1,17 @@
 def first(n : Nat) -> -F Nat {
-  run m <- loop { break(Succ(n)) } ;
+  run m <- loop { break(Succ(n)) };
   return Succ(m)
 }
 
 def sift(n : Nat) -> -F Nat {
   loop {
     case n { Zero => { break; }, Succ(p) => { tick(p); continue; } }
-  } ;
+  };
   return n
 }
 
 def until_done(n : Integer) -> -F Integer {
-  while n > 0 { return n } ;
+  while n > 0 { return n };
   return 0
 }
 

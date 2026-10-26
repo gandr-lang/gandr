@@ -94,7 +94,7 @@ def applyAt @[g : t => t] (t : Type, v : t) -> t { become g(v) }
 /// for `t`, which `g`'s type names, and is a function of a type and a value
 /// of it (#1498).
 @[ checks ]
-def identityAt : (t : Type, t) => t = applyAt[g = fn (y) { y }] ;
+def identityAt : (t : Type, t) => t = applyAt[g = fn (y) { y }];
 
 /// `identityAt` at the integers.
 @[ runs("5") ]

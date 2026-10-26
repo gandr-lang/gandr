@@ -22,6 +22,6 @@ def captured(
   }
 }
 
-def answer : Integer ;
-def answer = 42 ;
-def again = answer ;
+def answer : Integer;
+def answer = 42;
+def again = answer;

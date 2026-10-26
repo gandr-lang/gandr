@@ -12,11 +12,11 @@
 // the write the grade licenses, and on what.
 
 // The lists; the byte lists; the owned bytes; where they live; the writes.
-import "../data/data-base.gandr" ;
-import "./string-base.gandr" ;
-import "./nul-terminated.gandr" ;
-import "./small-string.gandr" ;
-import "./copy-on-write.gandr" ;
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+import "./nul-terminated.gandr";
+import "./small-string.gandr";
+import "./copy-on-write.gandr";
 
 /// `b` appended with no holder count read: inline bytes as `push` writes
 /// them, a heap buffer written where it is, whoever holds it.
@@ -40,13 +40,13 @@ def holders(s : Repr) -> Integer {
 /// On a long string held once, the write that reads no count copies nothing,
 /// as copy-on-write does.
 @[ runs("0") ]
-def aloneCopies() -> [Div] Integer { run s <- force long ; copies(pushInPlace(s, 33)) }
+def aloneCopies() -> [Div] Integer { run s <- force long; copies(pushInPlace(s, 33)) }
 
 /// And its written buffer has the one holder copy-on-write's has.
 @[ runs("1") ]
 def aloneHolders() -> [Div] Integer {
-  run s <- force long ;
-  run w <- pushInPlace(s, 33) ;
+  run s <- force long;
+  run w <- pushInPlace(s, 33);
   holders(written(w))
 }
 
@@ -55,9 +55,9 @@ def aloneHolders() -> [Div] Integer {
 /// write a grade must keep from a shared string.
 @[ runs("2") ]
 def sharedHolders() -> [Div] Integer {
-  run s <- force long ;
-  run c <- copy(s) ;
-  run w <- pushInPlace(c, 33) ;
+  run s <- force long;
+  run c <- copy(s);
+  run w <- pushInPlace(c, 33);
   holders(written(w))
 }
 
@@ -65,15 +65,15 @@ def sharedHolders() -> [Div] Integer {
 /// no count, through the hold's exclusive view, copies nothing.
 @[ runs("0") ]
 def heldOnce() -> [Div] Integer {
-  run bs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
+  run bs <- repeatOnto(97, 24, (Nil : List(Integer)));
   hold[1] s = Shared(1, bs);
-  access s as v { run w <- pushInPlace(v, 33) ; run t <- written(w) ; resume(v, t) ; copies(w) }
+  access s as v { run w <- pushInPlace(v, 33); run t <- written(w); resume(v, t); copies(w) }
 }
 
 /// And the buffer it wrote back still has its one holder.
 @[ runs("1") ]
 def heldOnceHolders() -> [Div] Integer {
-  run bs <- repeatOnto(97, 24, (Nil : List(Integer))) ;
+  run bs <- repeatOnto(97, 24, (Nil : List(Integer)));
   hold[1] s = Shared(1, bs);
-  access s as v { run w <- pushInPlace(v, 33) ; run t <- written(w) ; resume(v, t) ; holders(t) }
+  access s as v { run w <- pushInPlace(v, 33); run t <- written(w); resume(v, t); holders(t) }
 }

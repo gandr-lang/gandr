@@ -24,7 +24,7 @@ data Boxed : Type[+, 1] {
 
 /// The stationary flow at a large code.
 @[ checks ]
-def packedKept : Flow(Type[+, 1], Packed, Packed) = stay(Packed) ;
+def packedKept : Flow(Type[+, 1], Packed, Packed) = stay(Packed);
 
 /// The stationary flow, then itself: the unit composes at the level it is
 /// stated at.
@@ -41,16 +41,16 @@ def after(f : Flow(Type[+, 1], Packed, Boxed)) -> Flow(Type[+, 1], Packed, Boxed
 
 /// The stationary flow at the smallest universe itself, read one level up.
 @[ checks ]
-def types : Flow(Type[+, 1], Type, Type) = stay(Type) ;
+def types : Flow(Type[+, 1], Type, Type) = stay(Type);
 
 /// A large code at a universe two levels up: a flow is stated at any level
 /// its codes inhabit.
 @[ checks ]
-def lifted : Flow(Type[+, 2], Packed, Packed) = stay(Packed) ;
+def lifted : Flow(Type[+, 2], Packed, Packed) = stay(Packed);
 
 /// Reflexivity at a large code: a path at the universe its codes inhabit.
 @[ checks ]
-def packedSame : Path(Type[+, 1], Packed, Packed) = here(Packed) ;
+def packedSame : Path(Type[+, 1], Packed, Packed) = here(Packed);
 
 /// A packed list carried along reflexivity at its large type: the motive's
 /// binder ranges over `Type[+, 1]`, so its body decodes a code there.

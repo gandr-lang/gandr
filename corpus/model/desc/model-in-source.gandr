@@ -9,7 +9,7 @@
 // inhabit it.
 
 // The naturals' signature, `theory Nat`.
-import "./second-order-signatures.gandr" ;
+import "./second-order-signatures.gandr";
 
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
@@ -33,14 +33,14 @@ module SyntaxNat : Model(Nat) {
 def syntaxModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
   N,
   (SyntaxNat.zero, SyntaxNat.succ)
-) ;
+);
 
 /// A second model, on the integers: zero is `0` and the successor adds one.
 @[ checks ]
 def countingModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
   Integer,
   (thunk { 0 }, thunk { fn (n) { n + 1 } })
-) ;
+);
 
 /// The syntax model's successor at its zero builds the data's one: the
 /// module's operations run.

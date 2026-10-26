@@ -14,10 +14,10 @@ def exitWritten() -> Integer {
 /// The same answer, bound by a written run, as `explicit_runs` asks.
 @[ checks, explicit_runs ]
 def runWritten() -> Integer {
-  run m <- exitWritten() ;
+  run m <- exitWritten();
   m
 }
 
 /// A value laid out in the sugared form.
 @[ checks, form(sugared) ]
-def sugared = 42 ;
+def sugared = 42;

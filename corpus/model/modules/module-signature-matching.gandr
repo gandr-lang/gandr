@@ -3,7 +3,7 @@
 // signature leaves out stays inside.
 
 /// Metrics whose signature states a type member and three values.
-module Metrics : #{ type Ratio = Integer, base: Integer, double: Integer, scale: Ratio } {
+module Metrics : #{ type Ratio = Integer, base : Integer, double : Integer, scale : Ratio } {
   /// A member the signature leaves out.
   @[ checks ]
   def scratch = 2;

@@ -9,15 +9,15 @@
 // sealed signature says its representation crosses.
 
 // The seat's protocol and its messages, sealed, its report marked mobile.
-import "../sessions/seat-base.gandr" ;
+import "../sessions/seat-base.gandr";
 
 /// The world the operator stands at.
 @[ checks ]
-world operator ;
+world operator;
 
 /// The world a seat works at.
 @[ checks ]
-world seat ;
+world seat;
 
 /// The operator's turn: at its own world, holding one capability to the
 /// seat's, it runs the seat's work there and takes the report back. The

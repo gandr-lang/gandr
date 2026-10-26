@@ -4,4 +4,4 @@
 
 /// The stationary flow at a product, its argument written bare.
 @[ refuses("TypeMismatch") ]
-def bare_product : Flow(Type, Unit * Integer, Unit * Integer) = stay(Unit * Integer) ;
+def bare_product : Flow(Type, Unit * Integer, Unit * Integer) = stay(Unit * Integer);

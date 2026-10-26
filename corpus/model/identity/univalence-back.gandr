@@ -6,9 +6,9 @@
 // inverse `g`.
 
 // The circle, the presented integers, the winding number and spinning.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // Transport forward and back along a path between types.
-import "./univalence.gandr" ;
+import "./univalence.gandr";
 
 /// Transport back along `ua` applies the record's left inverse.
 @[ checks ]
@@ -36,4 +36,4 @@ def loopsBack(
 
 /// Two carried back along the loops' path is the word of two loops, by a run.
 @[ runs("loop ∷ loop ∷ here(Base)") ]
-def backRun : () => Path(Circle, Base, Base) = loopsBack(loopsAreIntegers, S(S(Z))) ;
+def backRun : () => Path(Circle, Base, Base) = loopsBack(loopsAreIntegers, S(S(Z)));

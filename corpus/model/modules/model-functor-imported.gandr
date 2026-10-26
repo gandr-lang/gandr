@@ -2,11 +2,11 @@
 // level, read through an unqualified import as any module path is.
 
 // The magma, its integer models and the squaring functor.
-import "./model-functor.gandr" ;
+import "./model-functor.gandr";
 
 /// Squaring the imported integers under multiplication: the argument is
 /// the imported model (#1993).
-module ImportedSquared = Squaring(Times) ;
+module ImportedSquared = Squaring(Times);
 
 /// Four squared, through the instance of the imported model.
 @[ runs("16") ]

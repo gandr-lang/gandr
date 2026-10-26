@@ -6,7 +6,7 @@
 /// drops its own.
 @[ checks ]
 def finished() -> Unit {
-  fork (seat : +{ done : end }) { select(seat, done); drop(seat) } as desk;
+  fork (seat : +{done : end}) { select(seat, done); drop(seat) } as desk;
   offer(desk) { done => drop(desk) }
 }
 

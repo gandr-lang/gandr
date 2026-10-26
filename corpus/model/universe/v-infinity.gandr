@@ -8,10 +8,10 @@
 // so every item here checks and none runs.
 
 // The type with no element.
-import "../data/empty.gandr" ;
+import "../data/empty.gandr";
 
 // The two branches a pair picks its members by.
-import "../data/data-base.gandr" ;
+import "../data/data-base.gandr";
 
 /// Sets: a type of members, and the member at each of its elements.
 @[ checks, form(explicit) ]
@@ -60,8 +60,8 @@ def none(x : Empty) -> -F Vinf { absurdSet(x) }
 
 /// The empty set.
 @[ checks ]
-def zero : Vinf ;
-def zero = Sup(Empty, none) ;
+def zero : Vinf;
+def zero = Sup(Empty, none);
 
 /// The set whose one member is `v`.
 @[ checks ]

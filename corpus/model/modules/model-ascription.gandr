@@ -38,11 +38,11 @@ module Sealed :> Model(Counter) {
 
 /// Two steps on the transparent counter, read as an integer.
 @[ runs("2") ]
-def openTwice() -> Integer { run s <- Open.start() ; Open.step(Open.step(s)) }
+def openTwice() -> Integer { run s <- Open.start(); Open.step(Open.step(s)) }
 
 /// Two steps on the sealed counter, at its abstract carrier.
 @[ checks ]
-def sealedTwice() -> Sealed.C { run s <- Sealed.start() ; Sealed.step(Sealed.step(s)) }
+def sealedTwice() -> Sealed.C { run s <- Sealed.start(); Sealed.step(Sealed.step(s)) }
 
 /// A toggle: a step that undoes itself. A law, so the models give its proof.
 @[ checks ]

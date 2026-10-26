@@ -1,2 +1,2 @@
 @[ refuses("TypeMismatch") ]
-def wrong : Integer = "text" ;
+def wrong : Integer = "text";

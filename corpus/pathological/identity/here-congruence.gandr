@@ -4,7 +4,7 @@
 // integers' cancellations, so `here(P(x))` is no path from `S(x)` to `S(x)`.
 
 // The integers, presented by their two cancellations.
-import "../../model/identity/circle-base.gandr" ;
+import "../../model/identity/circle-base.gandr";
 
 /// The reflexivity at a successor beside the reflexivity at a predecessor,
 /// refused: no rule relates `P(x)` to `S(x)` (#1723).

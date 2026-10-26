@@ -23,8 +23,8 @@ theory Unheard {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule unheard : nu(bind a . out(a, p)) ==> nil();
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule unheard : nu(bind a. out(a, p)) ==> nil();
 }
 
 /// The law below a second restriction, sending on the outer channel: the
@@ -37,8 +37,8 @@ theory Overheard {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule unheard : nu(bind a . out(a, p)) ==> nil();
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule unheard : nu(bind a. out(a, p)) ==> nil();
 }
 
 /// An inner restriction of the outer one's name shadows it: the channel sent
@@ -49,8 +49,8 @@ theory Shadowed {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule unheard : nu(bind a . out(a, p)) ==> nil();
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule unheard : nu(bind a. out(a, p)) ==> nil();
 }
 
 /// Scope extrusion where `out` takes a channel: `q` moves under the
@@ -64,8 +64,8 @@ theory Extruding {
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where a # q;
 }
 
 /// Garbage collection where `out` takes a channel: a restriction whose process
@@ -78,8 +78,8 @@ theory Collected {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule gc : nu(bind a . p) <=> p where a # p;
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule gc : nu(bind a. p) <=> p where a # p;
 }
 
 /// Scope extrusion beside garbage collection where `out` takes a channel
@@ -99,9 +99,9 @@ theory Collecting {
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
-  rule gc : nu(bind a . p) <=> p where a # p;
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where a # q;
+  rule gc : nu(bind a. p) <=> p where a # p;
 }
 
 /// Garbage collection beside the law that a restriction sending only on its
@@ -114,7 +114,7 @@ theory Quiet {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (c : Name, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule gc : nu(bind a . p) <=> p where a # p;
-  rule quiet : nu(bind a . out(a, nil())) <=> nil();
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule gc : nu(bind a. p) <=> p where a # p;
+  rule quiet : nu(bind a. out(a, nil())) <=> nil();
 }

@@ -3,9 +3,9 @@
 
 /// A record holding a record.
 @[ checks ]
-def outer = #{ tag = "t", inner = #{ x = 1, y = 2 } };
+def outer = #{tag = "t", inner = #{x = 1, y = 2}};
 
 /// The run target updates `inner.y`: the inner record, read off `outer` by
 /// its field, updated, then put back at `inner`.
 @[ runs("#{.inner = #{.x = 1, .y = 9}, .tag = \"t\"}") ]
-#{ outer | inner = #{ outer.inner | y = 9 } }
+#{outer | inner = #{outer.inner | y = 9}}

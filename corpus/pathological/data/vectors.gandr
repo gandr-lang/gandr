@@ -3,10 +3,10 @@
 // on a vector cannot leave out is `vector-head.gandr`.
 
 // The naturals the lengths count in.
-import "../../model/data/data-base.gandr" ;
+import "../../model/data/data-base.gandr";
 
 // The vectors.
-import "../../model/data/vectors.gandr" ;
+import "../../model/data/vectors.gandr";
 
 /// One integer said to be two long: `VCons` stands one past its tail, which
 /// is empty.

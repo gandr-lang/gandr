@@ -8,7 +8,7 @@
 // in `recursive-nat-lists.gandr`.
 
 // The naturals and the lists.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// The length of a list, returned, the run written at its read.
 @[ checks ]

@@ -7,7 +7,7 @@
 // universe and univalence; here it is the apartness rule at the words.
 
 // The empty type and the circle.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// The loop is not the empty word.
 @[ checks ]

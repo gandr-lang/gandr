@@ -3,12 +3,12 @@
 
 /// A declaration written before the member does not see it.
 @[ refuses("UnresolvedTypeHead") ]
-def early : Band ;
-def early = #{low = 200000, high = 800000} ;
+def early : Band;
+def early = #{low = 200000, high = 800000};
 
 /// A rubric's band, in millionths.
-type Band = #{low : Integer, high : Integer} ;
+type Band = #{low : Integer, high : Integer};
 
 /// A record without the high bound is no band.
 @[ refuses("MissingRecordField") ]
-def partial : Band = #{low = 200000} ;
+def partial : Band = #{low = 200000};

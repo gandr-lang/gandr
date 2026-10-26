@@ -14,7 +14,7 @@
 // `../../pathological/data/sized-higher-order.gandr`.
 
 // The naturals the recursion takes apart.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// A function applied to an argument, both at one type parameter.
 @[ checks ]
@@ -53,7 +53,7 @@ def rec helped(n : Nat) -> Nat {
 
 /// Two rebuilt through `applyAt`.
 @[ runs("Succ(Succ(Zero))") ]
-def helpedTwo : () => Nat = helped(Succ(Succ(Zero))) ;
+def helpedTwo : () => Nat = helped(Succ(Succ(Zero)));
 
 /// The predecessor of a number at a stage `i`, zero's its own: the result
 /// stands at `i` too, as the signature states, the returner inserted over the
@@ -79,7 +79,7 @@ def rec halvedAt(n : Nat) -> Nat {
 
 /// Half of four: two.
 @[ runs("Succ(Succ(Zero))") ]
-def halvedAtFour : () => Nat = halvedAt(Succ(three)) ;
+def halvedAtFour : () => Nat = halvedAt(Succ(three));
 
 /// A number below a stage `j` handed back, the stage `k` it stands at bounded
 /// below `j`: the result stands below `j`, as the body was checked with `k`
@@ -104,7 +104,7 @@ def rec boundedHelped(n : Nat) -> Nat {
 
 /// Two rebuilt through `boundedAt`.
 @[ runs("Succ(Succ(Zero))") ]
-def boundedTwo : () => Nat = boundedHelped(Succ(Succ(Zero))) ;
+def boundedTwo : () => Nat = boundedHelped(Succ(Succ(Zero)));
 
 /// A function applied to a number at a stage `i` itself, not below it.
 @[ checks ]
@@ -128,7 +128,7 @@ def rec agreed(n : Nat) -> Nat {
 
 /// Two rebuilt through `sameAt`.
 @[ runs("Succ(Succ(Zero))") ]
-def agreedTwo : () => Nat = agreed(Succ(Succ(Zero))) ;
+def agreedTwo : () => Nat = agreed(Succ(Succ(Zero)));
 
 /// A function applied to a number below a stage `j` through `applyAt`, its
 /// stage supplied by name: the arguments show `i` at `j`, the stage the

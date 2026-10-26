@@ -14,15 +14,15 @@ theory SpecificationMonad {
   sort C : Type;
   sort Below(w : C, v : C) : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
   oper refl : (w : C) --> Below(w, w);
   oper trans : (u : C, v : C, w : C, p : Below(u, v), q : Below(v, w)) --> Below(u, w);
   oper mono : (
     m : C,
     n : C,
-    k : pi+ (x : V) . C,
-    l : pi+ (x : V) . C,
+    k : pi+ (x : V). C,
+    l : pi+ (x : V). C,
     p : Below(m, n),
-    q : pi+ (x : V) . Below(k(x), l(x))
+    q : pi+ (x : V). Below(k(x), l(x))
   ) --> Below(ext(m, k), ext(n, l));
 }

@@ -3,7 +3,7 @@
 // descriptor can outlive every holder; here the holder must close it.
 
 // The file's protocols.
-import "../../model/moves/file-base.gandr" ;
+import "../../model/moves/file-base.gandr";
 
 /// A handle opened and neither closed nor moved: the program ends with its end
 /// still open.

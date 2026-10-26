@@ -4,13 +4,13 @@
 
 /// A package of a grade-zero thunk (#1108).
 @[ refuses("OutOfFragment.package_type") ]
-def closed : package [ T ] +U[0] (-F #{ seed: T });
-def closed = pack [ Integer ] thunk[0] { return #{ seed = 7 } };
+def closed : package [T] +U[0] (-F #{seed : T});
+def closed = pack [Integer] thunk[0] { return #{seed = 7} };
 
 /// Opens a grade-zero package (#1108).
 @[ refuses("OutOfFragment.unpack_statement") ]
-def open_it(p: package [ T ] +U[0] (-F #{ seed: T })) -> -F Integer {
-  unpack m : package [ T ] +U[0] (-F #{ seed: T }) = p;
+def open_it(p : package [T] +U[0] (-F #{seed : T})) -> -F Integer {
+  unpack m : package [T] +U[0] (-F #{seed : T}) = p;
   return 1
 }
 

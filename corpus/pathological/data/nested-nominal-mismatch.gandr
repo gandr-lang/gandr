@@ -16,7 +16,7 @@ data Fahrenheit : Type {
 /// A list of one Celsius value ascribed a list of Fahrenheit: its element
 /// keeps its own family (#2075).
 @[ refuses("TypeMismatch") ]
-def listed = ([Cel(20)] : List(Fahrenheit)) ;
+def listed = ([Cel(20)] : List(Fahrenheit));
 
 /// The same list as the run target, judged as a declaration is before anything
 /// runs it.

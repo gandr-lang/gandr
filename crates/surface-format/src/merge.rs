@@ -32,6 +32,7 @@ use gandr_surface_syntax::SyntaxTree;
 use crate::leaf::Documentation;
 use crate::leaf::Leaf;
 use crate::leaf::Material;
+use crate::space::Context;
 
 /// The tokens that open a bracketed group.
 const OPENERS: [&str; 7] = ["(", "[", "{", "#{", "&{", "+{", "@["];
@@ -238,11 +239,12 @@ pub fn separated<'source>(
         material,
         owner: first.owner,
         documentation: Documentation::Outside,
+        context: Context::Written,
     };
     let mut signed: Vec<Leaf<'source>> =
         Vec::with_capacity(head.saturating_add(last).saturating_add(3));
     signed.extend_from_slice(joined.get(..= head.saturating_add(last))?);
-    signed.extend([made(" ", Material::Whitespace), made(";", Material::Token)]);
+    signed.push(made(";", Material::Token));
     let mut defined: Vec<Leaf<'source>> =
         Vec::with_capacity(joined.len().saturating_sub(at).saturating_add(5));
     defined.extend([
@@ -334,6 +336,7 @@ pub fn joined<'leaves, 'source>(
         material,
         owner: first.owner,
         documentation: Documentation::Outside,
+        context: Context::Written,
     };
     let mut out: Vec<Leaf<'source>> =
         Vec::with_capacity(signature.len().saturating_add(definition.len()));
@@ -495,6 +498,7 @@ pub fn members<'source>(
                 material: Material::Whitespace,
                 owner: first.owner,
                 documentation: Documentation::Outside,
+                context: Context::Written,
             });
             out.extend(defined);
             copied = range.end;
@@ -668,6 +672,7 @@ pub fn merged<'leaves, 'source>(
         material,
         owner: first.owner,
         documentation: Documentation::Outside,
+        context: Context::Written,
     };
     let mut out: Vec<Leaf<'source>> = Vec::with_capacity(
         signature

@@ -3,7 +3,7 @@
 // (boats, _Notes on io-uring_, 2020).
 
 // The ring's protocol and its entries.
-import "../../model/completion/ring-base.gandr" ;
+import "../../model/completion/ring-base.gandr";
 
 /// The buffer finished by its submitter after it was moved into the
 /// submission: the send consumed the submitter's end, so the close acts on a

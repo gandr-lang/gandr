@@ -5,7 +5,7 @@
 // needs the tail's own round trip, a hypothesis it does not assume.
 
 // The booleans, lists of them and `keep`, the identity on lists.
-import "../../model/identity/transport-list.gandr" ;
+import "../../model/identity/transport-list.gandr";
 
 /// Every list of booleans to the empty list.
 @[ checks ]
@@ -16,4 +16,4 @@ def emptied(xs : List(Bool)) -> List(Bool) {
 /// To the empty list and back by the identity: the empty pattern returns,
 /// the first cell does not, refused at that cell.
 @[ refuses("UncertifiedStratum") ]
-def collapsed = equiv(emptied, keep) ;
+def collapsed = equiv(emptied, keep);

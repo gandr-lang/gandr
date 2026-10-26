@@ -6,7 +6,7 @@
 // completion over its session and reaps it.
 
 // The ring's protocol and its entries.
-import "./ring-base.gandr" ;
+import "./ring-base.gandr";
 
 /// The target's completion reaped before the cancellation's.
 @[ checks ]

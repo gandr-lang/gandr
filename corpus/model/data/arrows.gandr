@@ -37,7 +37,7 @@ data IntOp : Type {
 /// A rule identifies: `S(P(Z))` and `Z` are one term, so reflexivity proves
 /// the path between them.
 @[ checks ]
-def collapsed : Path(IntOp, S(P(Z)), Z) = here(Z) ;
+def collapsed : Path(IntOp, S(P(Z)), Z) = here(Z);
 
 /// The circle: one point and one invertible cell at it, bound as `loop :
 /// Path(Circle, Base, Base)`.
@@ -54,9 +54,9 @@ def cancelled : Path(
   Path(Circle, Base, Base),
   loop then back(loop),
   here(Base)
-) = here(here(Base)) ;
+) = here(here(Base));
 
 /// A cell is not a rule: no rule identifies the loop with the empty word, so
 /// reflexivity does not prove it.
 @[ refuses("EndpointMismatch") ]
-def notARule : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base)) ;
+def notARule : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base));

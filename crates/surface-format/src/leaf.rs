@@ -13,6 +13,9 @@ use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
+use gandr_theory_graphs::Dir;
+
+use crate::space::Context;
 
 /// The forms the formatter copies byte for byte, by the grammar rule's name
 /// before any sort suffix: a string's fragments are its text, a shell
@@ -61,6 +64,9 @@ pub struct Leaf<'source>
     pub owner: Owner,
     /// Whether it is documentation's material.
     pub documentation: Documentation,
+    /// The part a token plays where its text alone does not decide its
+    /// spacing.
+    pub context: Context,
 }
 
 /// Whether a leaf is documentation's material.
@@ -203,12 +209,28 @@ pub fn flatten<'source>(
             ) if form == at => Owner::Root,
             (owner, _) => owner,
         };
+        let context = match node.label() {
+            NodeLabel::Tile(mold) => grammar.rule_of(mold).map_or(Context::Plain, |rule| {
+                let before = grammar
+                    .mold(mold)
+                    .and_then(|def| grammar.step(def.rctx, Dir::Left))
+                    .unwrap_or_default();
+                Context::of(rule.name(), text, before)
+            }),
+            NodeLabel::Wald
+            | NodeLabel::Meld(_)
+            | NodeLabel::Grout { .. }
+            | NodeLabel::GhostClose { .. }
+            | NodeLabel::Space
+            | NodeLabel::Doc => Context::Plain,
+        };
         leaves.push(Leaf {
             span: node.span(),
             text,
             material,
             owner,
             documentation,
+            context,
         });
     }
     leaves.sort_by_key(|leaf| (leaf.span.start(), leaf.span.end()));

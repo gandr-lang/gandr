@@ -59,7 +59,7 @@ def seat_returned() -> Unit {
 
 @[ refuses("ArmsDisagree") ]
 def seat_arms_leave_it_apart() -> Unit {
-  fork (seat : &{ next : end, retire : end }) {
+  fork (seat : &{next : end, retire : end}) {
     offer(seat) { next => close(seat), retire => pure unit }
   } as desk;
   select(desk, next);

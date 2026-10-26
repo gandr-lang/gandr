@@ -6,7 +6,7 @@
 // _Constructive mathematics and computer programming_, 1982).
 
 // The naturals the fold counts in, their addition, and the two branches.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Binary trees with the branching written as a function: a node picks its
 /// subtree at each branch.
@@ -36,16 +36,16 @@ def leaves(x : Two) -> Tree { Leaf }
 
 /// A node over two leaves.
 @[ checks ]
-def cherry : Tree = Node(leaves) ;
+def cherry : Tree = Node(leaves);
 
 /// A node whose left branch is a cherry and whose right is a leaf.
 @[ checks ]
-def lopsided : Tree = Node(fn (x) { case x -> -F Tree { L => cherry, R => Leaf } }) ;
+def lopsided : Tree = Node(fn (x) { case x -> -F Tree { L => cherry, R => Leaf } });
 
 /// The cherry's two leaves, counted through its function.
 @[ runs("Succ(Succ(Zero))") ]
-def cherry_leaves : () => Nat = size(cherry) ;
+def cherry_leaves : () => Nat = size(cherry);
 
 /// Three leaves, the left two reached through two functions.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def deeper : () => Nat = size(lopsided) ;
+def deeper : () => Nat = size(lopsided);

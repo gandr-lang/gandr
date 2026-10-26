@@ -5,7 +5,7 @@
 /// The test library's string length (#327).
 @[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "testlib" {
-  def gandr_test_strlen(s: CStr) -> u64;
+  def gandr_test_strlen(s : CStr) -> u64;
 }
 
 /// The run target measures a string holding a NUL; the lowering reads no

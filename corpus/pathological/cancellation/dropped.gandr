@@ -3,7 +3,7 @@
 // end open with no one left to close it, so the clause is refused.
 
 // The task's protocol.
-import "../../model/cancellation/cancel-base.gandr" ;
+import "../../model/cancellation/cancel-base.gandr";
 
 /// A scope whose exit clause drops the rest while its task's end is open
 /// (#1334).

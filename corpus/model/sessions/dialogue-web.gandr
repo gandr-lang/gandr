@@ -9,7 +9,7 @@
 // doi:10.1007/BF02020961).
 
 // The seat's protocol and its messages.
-import "./seat-base.gandr" ;
+import "./seat-base.gandr";
 
 /// A dialogue that reports once and retires, the seat's send of its report
 /// logged before the operator takes the choice. Its web is series-parallel:
@@ -37,7 +37,7 @@ def retiring : Dialogue(Seat.SeatEnd) = dialogue(
   left(offered(retire)),
   left(closed),
   right(closed)
-) ;
+);
 
 /// The same play, the operator taking the choice before the seat's report is
 /// logged: the two moves are independent, so the log reads back the web
@@ -55,17 +55,17 @@ def retiringLater : Dialogue(Seat.SeatEnd) = dialogue(
   left(offered(retire)),
   right(closed),
   left(closed)
-) ;
+);
 
 /// The two logs are one dialogue: they share every endpoint's moves and
 /// every send's receipt, so the path is reflexivity.
 @[ checks ]
-def commuted : Path(Dialogue(Seat.SeatEnd), retiring, retiringLater) = here(retiring) ;
+def commuted : Path(Dialogue(Seat.SeatEnd), retiring, retiringLater) = here(retiring);
 
 /// The two logs decompose to one web: a web is read off the dialogue it
 /// decomposes, so the path between the logs' webs is reflexivity too.
 @[ checks ]
-def sameWeb : Path(Web, decompose(retiring), decompose(retiringLater)) = here(decompose(retiring)) ;
+def sameWeb : Path(Web, decompose(retiring), decompose(retiringLater)) = here(decompose(retiring));
 
 /// A dialogue that hands off: the seat's notes sent before the operator takes
 /// the choice. Its web leaves a prime node: the seat's notes precede its
@@ -94,4 +94,4 @@ def handedOff : Dialogue(Seat.SeatEnd) = dialogue(
   right(offered(handoff)),
   right(received(Seat.notes)),
   right(closed)
-) ;
+);

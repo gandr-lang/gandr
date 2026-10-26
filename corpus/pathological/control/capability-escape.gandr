@@ -1,5 +1,5 @@
 @[ refuses("CapabilityEscaped") ]
-def leak() -> Cap {exit} {
+def leak() -> Cap { exit } {
   handle c : Proc {
     return c
   } with {

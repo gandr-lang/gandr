@@ -11,8 +11,8 @@ data Color : Type {
 
 // An answer stated before its definition, its block's second entry unknown.
 @[ refuses("UnknownAttribute"), note("the answer, stated before its definition") ]
-def answer : Integer ;
-def answer = 42 ;
+def answer : Integer;
+def answer = 42;
 
 // The first of two integers, its block's second entry unknown.
 @[ refuses("UnknownAttribute"), note("the first of two integers") ]

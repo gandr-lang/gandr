@@ -1,27 +1,27 @@
 @[ refuses("StageNotBelow") ]
-def rec fact(n: Integer) -> Integer {
+def rec fact(n : Integer) -> Integer {
   fact[<](n)
 }
 
 @[ refuses("MalformedForm") ]
-def rec nats(n: Integer) -> Stream(Integer) {
+def rec nats(n : Integer) -> Stream(Integer) {
   .head => n,
   .tail => nats[>](plus(n, 1))
 }
 
 @[ refuses("MalformedForm") ]
-def rec loopy(n: Integer) -> Stream(Integer) {
+def rec loopy(n : Integer) -> Stream(Integer) {
   .head => n,
   _ => nats(n)
 }
 
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
-def rec measured(n: Integer) -> -F Integer { return measured[n <](n) }
+def rec measured(n : Integer) -> -F Integer { return measured[n <](n) }
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
-def rec explicit(n: Integer) -> -F Integer { return explicit[n = 1](n) }
+def rec explicit(n : Integer) -> -F Integer { return explicit[n = 1](n) }
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
-def rec sized(n: Integer) -> -F Integer { return sized[size = 1](n) }
+def rec sized(n : Integer) -> -F Integer { return sized[size = 1](n) }
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
-def rec bounded(n: Integer) -> -F Integer { return bounded[cost = 1](n) }
+def rec bounded(n : Integer) -> -F Integer { return bounded[cost = 1](n) }
 @[ refuses("OutOfFragment.instantiation_expression.computation") ]
-def rec tailing(n: Integer) -> -F Integer { return tailing[tail](n) }
+def rec tailing(n : Integer) -> -F Integer { return tailing[tail](n) }

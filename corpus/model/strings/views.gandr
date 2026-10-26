@@ -11,11 +11,11 @@
 // doi:10.1145/3747532).
 
 // The lists; the byte lists; the owned bytes; where they live; the writes.
-import "../data/data-base.gandr" ;
-import "./string-base.gandr" ;
-import "./nul-terminated.gandr" ;
-import "./small-string.gandr" ;
-import "./copy-on-write.gandr" ;
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+import "./nul-terminated.gandr";
+import "./small-string.gandr";
+import "./copy-on-write.gandr";
 
 /// The length of `hi` read through a view, which writes it back unchanged:
 /// its two bytes and the zero.
@@ -31,7 +31,7 @@ def readThrough() -> Integer {
 @[ runs("Cons(104, Cons(105, Cons(33, Cons(0, Nil))))") ]
 def writeThrough() -> List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access s as v { run w <- push(v, 33) ; run t <- written(w) ; resume(v, t) };
+  access s as v { run w <- push(v, 33); run t <- written(w); resume(v, t) };
   bytes(s)
 }
 
@@ -48,8 +48,8 @@ def abandoned() -> List(Integer) {
 @[ runs("Cons(104, Cons(105, Cons(33, Cons(33, Cons(0, Nil)))))") ]
 def twiceThrough() -> List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
-  access s as v { run w <- push(v, 33) ; run t <- written(w) ; resume(v, t) };
-  access s as v { run w <- push(v, 33) ; run t <- written(w) ; resume(v, t) };
+  access s as v { run w <- push(v, 33); run t <- written(w); resume(v, t) };
+  access s as v { run w <- push(v, 33); run t <- written(w); resume(v, t) };
   bytes(s)
 }
 
@@ -63,7 +63,7 @@ def keptInRegion() -> Integer {
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
       pure count(bytes(w))
-    } ;
+    };
     force k
   } with {
     pure(x) => pure x,

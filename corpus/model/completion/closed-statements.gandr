@@ -3,7 +3,7 @@
 // the unit, as one ending in `close(e)` does (#1205).
 
 // The ring's protocol and its entries.
-import "./ring-base.gandr" ;
+import "./ring-base.gandr";
 
 /// The target's completion reaped first, each half and the body ending in a
 /// closing statement.

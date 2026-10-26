@@ -6,24 +6,24 @@
 // other lends to end.
 
 // The list each call below holds; the list's places.
-import "../../model/control/accessor-place.gandr" ;
-import "../../model/control/accessor-method.gandr" ;
+import "../../model/control/accessor-place.gandr";
+import "../../model/control/accessor-method.gandr";
 
 /// A list's places out of shape.
 module Misplaced {
   /// A method at a deduced mode whose result is a value, not a view.
   @[ refuses("ViewNotPlace") ]
-  def valued @[m : Mode] (self : m List(Integer)) -> -F Integer { self[0] }
+  def valued @[ m : Mode ] (self : m List(Integer)) -> -F Integer { self[0] }
   /// A method answering a view whose body computes a value rather than
   /// naming a place.
   @[ refuses("ViewNotPlace") ]
-  def computed @[m : Mode] (self : m List(Integer)) -> -F View[m](Integer) { pure 0 }
+  def computed @[ m : Mode ] (self : m List(Integer)) -> -F View[m](Integer) { pure 0 }
   /// A view at a mode other than the receiver's.
   @[ refuses("ViewNotPlace") ]
-  def crossed @[m : Mode, n : Mode] (self : m List(Integer)) -> -F View[n](Integer) { self[0] }
+  def crossed @[ m : Mode, n : Mode ] (self : m List(Integer)) -> -F View[n](Integer) { self[0] }
   /// A view whose element type is not the list's.
   @[ refuses("TypeMismatch") ]
-  def mistyped @[m : Mode] (self : m List(Integer)) -> -F View[m](String) { self[0] }
+  def mistyped @[ m : Mode ] (self : m List(Integer)) -> -F View[m](String) { self[0] }
   /// The length, read from a list lent for reading: a method answering no
   /// place.
   @[ checks ]
@@ -48,7 +48,7 @@ def unheld(ys : List(Integer)) -> -F Integer {
 @[ refuses("HeldLent") ]
 def raisedWhileRead() -> Integer {
   hold xs = pair;
-  access shared xs as v { xs.first() as w { resume(w, 3) } ; pure 0 }
+  access shared xs as v { xs.first() as w { resume(w, 3) }; pure 0 }
 }
 
 /// A bare index of a list no hold holds: there is no place to lend.

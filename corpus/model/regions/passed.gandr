@@ -11,8 +11,8 @@ def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) {
 def passed() -> Integer {
   hold s = 4;
   handle c : Proc {
-    run k : (() => Integer) at c <- access shared s as w { pure pure w } ;
-    run back : (() => Integer) at c <- pass(k) ;
+    run k : (() => Integer) at c <- access shared s as w { pure pure w };
+    run back : (() => Integer) at c <- pass(k);
     force back
   } with {
     pure(x) => pure x,

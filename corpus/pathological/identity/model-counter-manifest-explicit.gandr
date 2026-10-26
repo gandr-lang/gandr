@@ -8,9 +8,9 @@
 
 // The counter, counting up modulo three, and `observe`, which reads any
 // counter.
-import "../../model/identity/model-counter.gandr" ;
+import "../../model/identity/model-counter.gandr";
 // Counting up modulo three, its carrier manifest.
-import "../../model/identity/model-counter-manifest.gandr" ;
+import "../../model/identity/model-counter-manifest.gandr";
 
 /// Counting up modulo three, forgotten as though its carrier were the
 /// integers: the map at the integers asks a counter over the integers.

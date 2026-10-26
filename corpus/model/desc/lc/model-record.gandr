@@ -8,9 +8,9 @@
 // its operations run: β-reduction is a single substitution.
 
 // The naturals; the syntax; the syntax model.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./syntax-model.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./syntax-model.gandr";
 
 /// The syntax model packed into the record of `LC`'s models: its carriers,
 /// then its operations and laws in the order `Model(LC)` mints them.
@@ -96,13 +96,13 @@ def lcSyntax : #{
       )
     )
   )
-) ;
+);
 
 /// The record is `Model(LC)`: the packed syntax model stands at the type the
 /// derivation states, the families over contexts read applied and a term in an
 /// extended context read after its extension runs.
 @[ checks ]
-def lcModel : Model(LC) = lcSyntax ;
+def lcModel : Model(LC) = lcSyntax;
 
 /// `(λx. x)(λx. x)` contracts, by the model's single substitution of the
 /// argument into the body, to `λx. x`.

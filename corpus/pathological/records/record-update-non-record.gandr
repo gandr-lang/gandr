@@ -8,4 +8,4 @@ def n = 5;
 /// The integer updated as if a record: a shape mismatch at `n`, wanting a
 /// record.
 @[ refuses("ShapeMismatch") ]
-#{ n | x = 1 }
+#{n | x = 1}

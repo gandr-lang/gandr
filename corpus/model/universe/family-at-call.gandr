@@ -60,5 +60,5 @@ def fieldAt(
 /// the family the record holds before it reads `unit` against it (#721); the
 /// family drops its argument, so the field prints as `Unit => Unit` (#736).
 @[ checks ]
-def familyRecord : #{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))} ;
-def familyRecord = #{Unit, #{thunk { fn (g) { return Unit } }, thunk { fn (g) { return unit } }}} ;
+def familyRecord : #{con : Type, tm : +U (con -> -F Type), f : +U ((g : con) -> -F tm(g))};
+def familyRecord = #{Unit, #{thunk { fn (g) { return Unit } }, thunk { fn (g) { return unit } }}};

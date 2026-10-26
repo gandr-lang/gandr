@@ -3,7 +3,7 @@
 
 /// A record of two fields.
 @[ checks ]
-def r = #{ x = 1, y = 2 };
+def r = #{x = 1, y = 2};
 
 /// A first name for it.
 @[ checks ]
@@ -15,7 +15,7 @@ def b = r;
 
 /// The record updated at `x`: a new record, `a` and `b` untouched.
 @[ checks ]
-def updated = #{ r | x = 99 };
+def updated = #{r | x = 99};
 
 /// The run target returns the first name, its `x` still one.
 @[ checks ]

@@ -47,13 +47,13 @@ codata Spot : Type[-] {
 /// A block that leaves the `depth` observation unanswered.
 @[ refuses("MalformedForm") ]
 def shallow(n : Integer) -> Spot {
-  &{ .x => return n, .y => return n }
+  &{.x => return n, .y => return n}
 }
 
 /// A block answering an observation the family does not have.
 @[ refuses("UnresolvedName") ]
 def stray(n : Integer) -> Spot {
-  &{ .x => return n, .y => return n, .z => return n }
+  &{.x => return n, .y => return n, .z => return n}
 }
 
 /// The head of a stream.
@@ -90,7 +90,7 @@ def rec fibs(n : Integer) -> Stream {
 /// A productive call under `become` is not the arm itself.
 @[ refuses("UnguardedCorecursion") ]
 def rec deferred(n : Integer) -> Stream {
-  &{ .head => return n, .tail => become deferred[>](n) }
+  &{.head => return n, .tail => become deferred[>](n)}
 }
 
 /// A productive call outside any copattern block: nothing is observed before

@@ -4,5 +4,5 @@
 
 // A greeting, its documentation given by the attribute alone.
 @[ checks ]
-@[doc("Returns a fixed greeting.")]
+@[ doc("Returns a fixed greeting.") ]
 def greet = "hello";

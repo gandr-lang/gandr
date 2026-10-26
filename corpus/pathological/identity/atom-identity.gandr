@@ -5,7 +5,7 @@
 // own and the relation's evidence is no path between its points.
 
 // The relation, its reflexivity and its transport law over the unit type.
-import "../../model/identity/atom-identity.gandr" ;
+import "../../model/identity/atom-identity.gandr";
 
 /// The unit type sealed, stating the relation and its reflexivity alone.
 module Lawless :> #{ type T, origin : T, other : T } {
@@ -26,14 +26,14 @@ module Lawless :> #{ type T, origin : T, other : T } {
 /// The relation's evidence between two sealed points, refused: the interface
 /// names no transport law (#1784).
 @[ refuses("AtomTransport") ]
-def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) = unit ;
+def lawlessOriginOther : Path(Lawless.T, Lawless.origin, Lawless.other) = unit;
 
 /// The transport law at the paths of the unit type written as no pair,
 /// refused: an identity in the singleton's total space is a path in the
 /// unit type and one over it (#1959).
 @[ refuses("TypeMismatch") ]
 def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
-  #{ y : Unit, s : pathRelated(a, y) },
+  #{y : Unit, s : pathRelated(a, y)},
   (b, r),
   (a, pathReflexivity(a))
 ) { unit }

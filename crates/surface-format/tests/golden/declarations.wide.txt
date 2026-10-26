@@ -20,6 +20,6 @@ def captured(
   return thunk { become compose(a, d, d, u, h) }
 }
 
-def answer : Integer ;
-def answer = 42 ;
-def again = answer ;
+def answer : Integer;
+def answer = 42;
+def again = answer;

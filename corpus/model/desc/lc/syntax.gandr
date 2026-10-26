@@ -20,7 +20,7 @@
 // (`model-record`).
 
 // The naturals, the de Bruijn indices.
-import "../model-in-source.gandr" ;
+import "../model-in-source.gandr";
 
 /// The single-substitution calculus of the pure λ-calculus: contexts,
 /// substitutions between them and terms in a context; the empty context,

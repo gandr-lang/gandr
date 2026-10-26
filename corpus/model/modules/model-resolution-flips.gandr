@@ -1,5 +1,5 @@
 // A resetting tally of flags, in a source of its own (#739).
-import "./model-resolution-tally.gandr" ;
+import "./model-resolution-tally.gandr";
 
 /// Flipping a flag, and resetting it.
 module Flips : Model(ResetCount) {

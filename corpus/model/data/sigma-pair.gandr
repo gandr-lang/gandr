@@ -11,7 +11,7 @@ data Ix(n : Integer) : Type {
 
 /// A label a later entry names binds there: the type is a dependent pair.
 @[ checks ]
-def tagged : #{n : Integer, w : Ix(n)} = (3, (MkIx : Ix(3))) ;
+def tagged : #{n : Integer, w : Ix(n)} = (3, (MkIx : Ix(3)));
 
 /// The first component of a dependent pair, by a match.
 @[ checks ]
@@ -37,7 +37,7 @@ def index() -> Integer { index_of(tagged) }
 
 /// A pair whose second component is a loop at its first.
 @[ checks ]
-def ring : #{n : Integer, v : Path(Integer, n, n)} = (2, here(2)) ;
+def ring : #{n : Integer, v : Path(Integer, n, n)} = (2, here(2));
 
 /// The second projection's type reads the first.
 @[ checks ]
@@ -76,8 +76,8 @@ def rebuilt(p : #{
 @[ checks ]
 def againAt(
   b : Type,
-  w : #{ x : b, y : b, p : Path(b, x, y) }
-) -> Path(#{ x : b, y : b, p : Path(b, x, y) }, w, w) {
+  w : #{x : b, y : b, p : Path(b, x, y)}
+) -> Path(#{x : b, y : b, p : Path(b, x, y)}, w, w) {
   case w {
     #{.x = u, .y = v, .p = q} => here((u, (v, q)))
   }
@@ -86,7 +86,7 @@ def againAt(
 /// A record of three over a type parameter is equivalent to itself; each
 /// entry reads the ones before it on both sides.
 @[ checks ]
-def selfEquiv(b : Type) -> #{ x : b, y : b, p : Path(b, x, y) } ≃ #{
+def selfEquiv(b : Type) -> #{x : b, y : b, p : Path(b, x, y)} ≃ #{
   x : b,
   y : b,
   p : Path(b, x, y)
@@ -115,21 +115,21 @@ def middle(t : #{a : Integer, b : Integer, c : Path(Integer, a, a)}) -> Integer 
 def both : Path(#{n : Integer, v : Path(Integer, n, n)}, (2, here(2)), (2, here(2))) = (
   here(2),
   here(here(2))
-) ;
+);
 
 /// A declared pair's path reads the pair it unfolds to.
 @[ checks ]
 def ring_around : Path(#{n : Integer, v : Path(Integer, n, n)}, ring, ring) = (
   here(2),
   here(here(2))
-) ;
+);
 
 /// The constant path at `tagged`, the second component's over the first's.
 @[ checks ]
 def tagged_around : Path(#{n : Integer, w : Ix(n)}, tagged, tagged) = (
   here(3),
   here((MkIx : Ix(3)))
-) ;
+);
 
 /// Five, carried along `both` through the constant family.
 @[ checks ]

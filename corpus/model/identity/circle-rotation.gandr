@@ -10,15 +10,15 @@
 
 // The empty type, the circle, the integers, every point's loop and
 // reflexivity, the flip and the multiplication.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The loop is not the empty word.
-import "./circle-apart.gandr" ;
+import "./circle-apart.gandr";
 
 /// The unit squared: `mul(Base, Base)` computes the point without spelling
 /// it, so the path from it to itself is the circle's words, and reflexivity
 /// at the point inhabits it.
 @[ checks ]
-def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = here(Base) ;
+def unitSquared : Path(Circle, mul(Base, Base), mul(Base, Base)) = here(Base);
 
 /// Rotating by `b` and back is the identity (cubical's `rotInv-1`, `b · a ·
 /// invLooper b ≡ a`, `_·_` associating to the left). The obligation over `a`

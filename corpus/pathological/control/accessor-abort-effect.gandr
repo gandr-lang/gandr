@@ -2,7 +2,7 @@
 /// access is torn down, under the empty row, so no handler may be asked for
 /// anything there.
 @[ refuses("UnwindEffect") ]
-def noisy(p : Cap {exit}) -> Integer {
+def noisy(p : Cap { exit }) -> Integer {
   hold c = 0;
   access c as v { abort(v) } unwind { p.exit(1) };
   pure c

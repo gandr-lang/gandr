@@ -9,7 +9,7 @@
 // `Group.invMul`.
 
 // The group's unit, associativity and inverse laws.
-import "./group-laws.gandr" ;
+import "./group-laws.gandr";
 
 /// The inverse of a product, in every group.
 @[ checks ]
@@ -81,7 +81,7 @@ module Parity : Model(Group) {
 
 /// The parity group, as a model.
 @[ checks ]
-def parityGroup : Model(Group) = pack Parity at Model(Group) ;
+def parityGroup : Model(Group) = pack Parity at Model(Group);
 
 /// The derived rule read at the parity group, at one and zero: both sides are
 /// one.

@@ -3,9 +3,9 @@
 // presents or one theory twice.
 
 // The theory `State`.
-import "../../model/effects/state.gandr" ;
+import "../../model/effects/state.gandr";
 // The theories `Sink` and `Marks`.
-import "../../model/effects/rows.gandr" ;
+import "../../model/effects/rows.gandr";
 
 /// `Marks` without the rules a row holding `State` and `Sink` erases marks
 /// by: there `flush(mark(k))` reaches `k` one way and `mark(k)` the other,

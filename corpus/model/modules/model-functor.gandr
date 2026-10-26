@@ -28,7 +28,7 @@ module Squaring(S : Model(Mag)) {
 }
 
 /// Squaring the integers under multiplication.
-module TimesSquared = Squaring(Times) ;
+module TimesSquared = Squaring(Times);
 
 /// Three squared.
 @[ runs("9") ]
@@ -43,7 +43,7 @@ module Plus : #{ type M, mul : (M, M) => M } {
 }
 
 /// Doubling, as squaring the integers under addition.
-module PlusSquared = Squaring(Plus) ;
+module PlusSquared = Squaring(Plus);
 
 /// Three doubled.
 @[ runs("6") ]
@@ -89,7 +89,7 @@ module OnePoint : Model(Semi) {
 }
 
 /// The law turned round at the one-point semigroup.
-module OnePointReassociated = Reassociating(OnePoint) ;
+module OnePointReassociated = Reassociating(OnePoint);
 
 /// The turned law at three units, whose products are all the unit.
 @[ checks ]

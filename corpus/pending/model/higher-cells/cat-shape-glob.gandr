@@ -6,6 +6,6 @@ codata Glob : Type {
 def path_glob(A : Type) -> Glob {
   glob {
     cells = A;
-    hom(x, y) = path_glob(Path(A, x, y));
+    hom (x, y) = path_glob(Path(A, x, y));
   }
 }

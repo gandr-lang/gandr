@@ -6,7 +6,7 @@
 // one that reads no path.
 
 // The free naturals.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// Transport along reflexivity at zero returns the element given.
 @[ checks ]
@@ -60,7 +60,7 @@ def backUnit : Path(
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
 @[ checks ]
-def reversed(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
+def reversed(a : Nat, b : Nat, q : Path(Nat, a, b)) -> Path(Nat, b, a) {
   transport(
     (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a),
     q,
@@ -72,12 +72,12 @@ def reversed(a: Nat, b: Nat, q: Path(Nat, a, b)) -> Path(Nat, b, a) {
 
 /// A lift whose path is not over `q` is refused.
 @[ refuses("NotOver") ]
-def astray(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> Nat {
+def astray(a : Nat, b : Nat, q : Path(Nat, a, b), v : Nat) -> Nat {
   transport((y : Nat, Path(Nat, a, y)) => Nat, q, here(a), here(here(a)), v)
 }
 
 /// A family that reads no path is the wrong shape for a dependent transport.
 @[ refuses("ShapeMismatch") ]
-def flat(a: Nat, b: Nat, q: Path(Nat, a, b), v: Nat) -> Nat {
+def flat(a : Nat, b : Nat, q : Path(Nat, a, b), v : Nat) -> Nat {
   transport(Nat => Nat, q, v, v, v)
 }

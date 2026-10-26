@@ -5,7 +5,7 @@
 // counter's carrier.
 
 // The counter: a carrier, a start and a step.
-import "./model-ascription.gandr" ;
+import "./model-ascription.gandr";
 
 /// The unit as the first state.
 @[ checks ]
@@ -21,20 +21,20 @@ def unitStep(u : Unit) -> Unit {
 
 /// A counter over the unit where the carrier is fixed as the integers.
 @[ refuses("TypeMismatch") ]
-def unitCounter : Model(Counter) with sort C = Integer = #{.start = unitStart, .step = unitStep} ;
+def unitCounter : Model(Counter) with sort C = Integer = #{.start = unitStart, .step = unitStep};
 
 /// A sort the counter does not have.
 @[ refuses("UnknownMember") ]
-def noSuchSort : Model(Counter) with sort D = Integer ;
+def noSuchSort : Model(Counter) with sort D = Integer;
 
 /// The carrier fixed twice.
 @[ refuses("DuplicateDefinition") ]
-def fixedTwice : Model(Counter) with sort C = Integer with sort C = Unit ;
+def fixedTwice : Model(Counter) with sort C = Integer with sort C = Unit;
 
 /// A sort fixed on a list, which has none.
 @[ refuses("MalformedForm") ]
-def listed : List(Integer) with sort C = Integer ;
+def listed : List(Integer) with sort C = Integer;
 
 /// A `with` whose right is a type, not a sort it fixes.
 @[ refuses("MalformedForm") ]
-def unbound : Model(Counter) with Integer ;
+def unbound : Model(Counter) with Integer;

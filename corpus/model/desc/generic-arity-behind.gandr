@@ -5,9 +5,9 @@
 // it lays before a source (#1078).
 
 // A presentation `generic-arity.gandr` does not import, laid first.
-import "../higher-cells/magma-base.gandr" ;
+import "../higher-cells/magma-base.gandr";
 // The generic program over presentations, laid after it.
-import "./generic-arity.gandr" ;
+import "./generic-arity.gandr";
 
 /// #1078: `Monoid`'s two operations, counted by `arity` behind `Magma`'s
 /// block. That block's code was every block's, and `generic-arity.gandr`

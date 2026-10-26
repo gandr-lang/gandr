@@ -8,7 +8,7 @@
 // (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 // The free naturals, the presented integers and their steps `up` and `down`.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// Doubling the free naturals by structural recursion.
 @[ checks ]
@@ -26,7 +26,7 @@ def quadrupled : Path(
   Nat,
   doubleNat(doubleNat(Succ(Zero))),
   Succ(Succ(Succ(Succ(Zero))))
-) = here(Succ(Succ(Succ(Succ(Zero))))) ;
+) = here(Succ(Succ(Succ(Succ(Zero)))));
 
 /// The nested call's value is four, not three.
 @[ refuses("EndpointMismatch") ]
@@ -34,12 +34,12 @@ def miscounted : Path(
   Nat,
   doubleNat(doubleNat(Succ(Zero))),
   Succ(Succ(Succ(Zero)))
-) = here(Succ(Succ(Succ(Zero)))) ;
+) = here(Succ(Succ(Succ(Zero))));
 
 /// `up(down(Z))` is `S` over the held call `down(Z)`; read, that call is
 /// `P(Z)`, and `S(P(Z))` rewrites to `Z`.
 @[ checks ]
-def turned_back : Path(Int, up(down(Z)), Z) = here(Z) ;
+def turned_back : Path(Int, up(down(Z)), Z) = here(Z);
 
 /// The same law at every integer: the inner call's argument is a variable,
 /// and the rule cancels around it.
@@ -50,12 +50,12 @@ def turn_unturn(n : Int) -> Path(Int, up(down(n)), n) {
 
 /// Reading the inner call cancels a step; it does not add one.
 @[ refuses("EndpointMismatch") ]
-def overturned : Path(Int, up(down(Z)), S(Z)) = here(S(Z)) ;
+def overturned : Path(Int, up(down(Z)), S(Z)) = here(S(Z));
 
 /// The function a call returns, bound and applied.
 @[ checks ]
 def bound(k : Integer => Integer => Integer, s : Integer) -> Integer {
-  run f <- k(s) ;
+  run f <- k(s);
   f(s)
 }
 
@@ -86,14 +86,14 @@ def applied_elsewhere(
 /// The call bound before a function that applies what it binds.
 @[ checks ]
 def bound_outside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
-  run v <- k(s) ;
+  run v <- k(s);
   return fn (_old) { v(s) }
 }
 
 /// The call bound inside the function.
 @[ checks ]
 def bound_inside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
-  return fn (_old) { run f <- k(s) ; f(s) }
+  return fn (_old) { run f <- k(s); f(s) }
 }
 
 /// Binding the call outside the function or inside it gives one function

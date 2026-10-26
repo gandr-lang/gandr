@@ -5,13 +5,13 @@
 // integers, `ua(winding)`, where a loop is carried to its winding number.
 
 // The circle, the presented integers, the winding number and spinning.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The equivalence of the loops at the point with the integers, `winding`.
-import "./circle.gandr" ;
+import "./circle.gandr";
 
 /// A family that never reads its argument keeps the value, by conversion.
 @[ checks ]
-def constantBeta : Path(Int, transport(\X. Int, ua(winding), Z), Z) = here(Z) ;
+def constantBeta : Path(Int, transport(\X. Int, ua(winding), Z), Z) = here(Z);
 
 /// A family that never reads its argument keeps the value, by a run.
 @[ runs("Z") ]
@@ -24,7 +24,7 @@ def pairBeta : Path(
   Int * Int,
   transport(\X. X * X, ua(winding), (loop, loop)),
   (S(Z), S(Z))
-) = here((S(Z), S(Z))) ;
+) = here((S(Z), S(Z)));
 
 /// A pair carried along the loops' path carries each component, by a run.
 @[ runs("(S(Z), S(Z))") ]
@@ -37,7 +37,7 @@ def sumBeta : Path(
   Unit + Int,
   transport(\X. Unit + X, ua(winding), +{.1 = loop}),
   +{.1 = S(Z)}
-) = here(+{.1 = S(Z)}) ;
+) = here(+{.1 = S(Z)});
 
 /// An injection carried along the loops' path carries its payload, by a run.
 @[ runs("+{.1 = S(Z)}") ]
@@ -49,7 +49,7 @@ def listBeta : Path(
   List(Int),
   transport(\X. List(X), ua(winding), cons(loop, nil)),
   cons(S(Z), nil)
-) = here(cons(S(Z), nil)) ;
+) = here(cons(S(Z), nil));
 
 /// A list carried along the loops' path carries every cell, by a run.
 @[ runs("cons(S(Z), nil)") ]

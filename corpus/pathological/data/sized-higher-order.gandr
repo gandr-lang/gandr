@@ -11,10 +11,10 @@
 // with `../../model/data/sized-higher-order.gandr`.
 
 // The naturals the recursions take apart.
-import "../../model/data/data-base.gandr" ;
+import "../../model/data/data-base.gandr";
 
 // `apply`, the higher-order function the model's recursion goes through.
-import "../../model/data/sized-higher-order.gandr" ;
+import "../../model/data/sized-higher-order.gandr";
 
 /// The parameter itself handed on: `apply`'s type parameter is the number at
 /// its own stage, not below it, and `applied_again[<]` takes only what stands

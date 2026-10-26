@@ -17,7 +17,7 @@
 theory State {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
 }
 
@@ -27,9 +27,9 @@ theory State {
 theory StatePutGet {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
 }
 
 /// Storing twice keeps the second value.
@@ -37,7 +37,7 @@ theory StatePutGet {
 theory StatePutPut {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
   rule putPut : put(s, put(u, k)) <=> put(u, k);
 }
@@ -49,9 +49,9 @@ theory StatePutPut {
 theory StatePutLaws {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
   rule putPut : put(s, put(u, k)) <=> put(u, k);
 }
 
@@ -62,8 +62,8 @@ theory StatePutLaws {
 theory StateGetGet {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
-  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+  oper get : (k : pi+ (s : S). C) --> C;
+  rule getGet : get(bind s. get(bind t. k(s, t))) <=> get(bind s. k(s, s));
 }
 
 /// Put-get, put-put and get-get together, the laws a state-passing handler
@@ -75,9 +75,9 @@ theory StateGetGet {
 theory StateLaws {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
   rule putPut : put(s, put(u, k)) <=> put(u, k);
-  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+  rule getGet : get(bind s. get(bind t. k(s, t))) <=> get(bind s. k(s, s));
 }
