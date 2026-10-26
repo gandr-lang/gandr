@@ -33,5 +33,130 @@
     "name": "a branch with no issue and a body working none is refused",
     "input": { "branch": "perf-index-sweep", "body": "See #7 for the background." },
     "output": "the body names no issue it works: add `Advances #n` for the issue the change advances, or `Closes #n` for one it finishes, then run `pr:open` again"
+  },
+  {
+    "name": "a source the issue names and the body lacks is refused, the missing key listed",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` — taken: `opening.jq`\n",
+      "issues": [
+        {
+          "number": 2499,
+          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": "the body's `## Sources read` lacks the sources its issue names: add one item per key, `- `<key>` — <disposition>`, the disposition `taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>` or `n/a: <reason>`, then run `pr:open` again:\n  - `Caspar-2026-s4` (#2499's `## Sources`)"
+  },
+  {
+    "name": "a body with no `## Sources read` is refused every key its issue names",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read: none requested\n",
+      "issues": [
+        {
+          "number": 2499,
+          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": "the body's `## Sources read` lacks the sources its issue names: add one item per key, `- `<key>` — <disposition>`, the disposition `taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>` or `n/a: <reason>`, then run `pr:open` again:\n  - `Caspar-2026-s4` (#2499's `## Sources`)\n  - `units.md` (#2499's `## Sources`)"
+  },
+  {
+    "name": "a disposition left blank is refused",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` § units-pr — taken: `opening.jq`\n- `Caspar-2026-s4` — taken:\n",
+      "issues": [
+        {
+          "number": 2499,
+          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": "the `## Sources read` item `- `Caspar-2026-s4` — taken:` leaves its `taken` blank: give its evidence, `taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>` or `n/a: <reason>`, then run `pr:open` again"
+  },
+  {
+    "name": "a disposition outside the vocabulary is refused, and an item naming no source",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` — read it\n- `Caspar-2026-s4` — n/a: no calculus here\n- the rest of the vault\n",
+      "issues": [
+        {
+          "number": 2499,
+          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": "the `## Sources read` item `- `units.md` — read it` has no disposition: end it with `taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>` or `n/a: <reason>`, then run `pr:open` again\nthe `## Sources read` item `- the rest of the vault` names no source: write `- `<key>` — <disposition>`, the disposition `taken: <site>` (the function, test or fixture), `departed: <the recorded design, the change, why>`, `declined: <reason>` or `n/a: <reason>`, then run `pr:open` again"
+  },
+  {
+    "name": "every key dispositioned opens, one item keying two sources",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md`, `Caspar-2026-s4` — declined: a workflow check reads no calculus\n- `tracker.md` — n/a: no issue filed\n\n## Ledger\n\n- `nothing` — whatever\n",
+      "issues": [
+        {
+          "number": 2499,
+          "body": "## Sources\n\n- `units.md` § units-pr — **primary**: the vocabulary\n- `Caspar-2026-s4` — **secondary**: the calculus\n\n## Readings\n"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "an issue line naming no key is noted, and the body opens",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n",
+      "issues": [{ "number": 2499, "body": "## Sources\n\n- the vault's listing\n" }]
+    },
+    "output": "note: #2499's `## Sources` line `- the vault's listing` is not `- `<key>` — <text>`, so no key is read from it"
+  },
+  {
+    "name": "an issue with no `## Sources` asks for none",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n",
+      "issues": [{ "number": 2499, "body": "Counts the rows." }]
+    },
+    "output": ""
+  },
+  {
+    "name": "a supersession is refused while the tree names the old key undemoted",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read\n\n- `Caspar-2026-s4` — taken: `sequent.rs`\n- supersedes: `Girard-1993-lu` — the S4 calculus replaces LU whole\n",
+      "issues": [],
+      "mentions": {
+        "Girard-1993-lu": [
+          "docs/logic.md:12:the sequent calculus of `Girard-1993-lu`",
+          "docs/logic.md:14:`Girard-1993-lu`, demoted: `Caspar-2026-s4` leads"
+        ]
+      }
+    },
+    "output": "the `## Sources read` item `- supersedes: `Girard-1993-lu` — the S4 calculus replaces LU whole` supersedes `Girard-1993-lu`, and the tree still names it undemoted: remove each reference, or mark it demoted on its line, then run `pr:open` again:\n  docs/logic.md:12:the sequent calculus of `Girard-1993-lu`"
+  },
+  {
+    "name": "a supersession opens once every line naming the old key marks it demoted",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read\n\n- `Caspar-2026-s4` — taken: `sequent.rs`\n- supersedes: `Girard-1993-lu` — the S4 calculus replaces LU whole\n",
+      "issues": [],
+      "mentions": {
+        "Girard-1993-lu": ["docs/logic.md:14:`Girard-1993-lu`, demoted: `Caspar-2026-s4` leads"]
+      }
+    },
+    "output": ""
+  },
+  {
+    "name": "a supersession with no confirmation is refused",
+    "input": {
+      "branch": "workflow-2499-sources",
+      "body": "Closes #2499\n\n## Sources read\n\n- supersedes: `Girard-1993-lu` —\n",
+      "issues": [],
+      "mentions": {}
+    },
+    "output": "the `## Sources read` item `- supersedes: `Girard-1993-lu` —` gives no confirmation: write `- supersedes: `<old key>` — <confirmation>`, then run `pr:open` again"
   }
 ]
