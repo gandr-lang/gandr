@@ -1,0 +1,54 @@
+/// `indexed-sorts`: Dependent sorts in signatures.
+/// Implemented: sorts indexed by other sorts in a `theory` block and in `Model(S)`, an indexed sort stated as a function from its indices into the universe.
+/// Not implemented: rules over indexed sorts; #522 owes it.
+/// The shape of a category without its laws: a sort of morphisms indexed by
+/// two objects, an identity at each object and composition.
+@[ checks ]
+theory CatShape {
+  sort Ob : Type;
+  sort Hom(dom: Ob, cod: Ob) : Type;
+
+  oper id : (a : Ob) --> Hom(a, a);
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+}
+
+/// Types and the functions between them as a model of the shape: `Hom` is a
+/// function from its two indices into the universe.
+module SetoidCat : Model(CatShape) {
+  type Ob = Type;
+  type Hom(a : Ob, b : Ob) = a => b;
+
+  /// The identity function at a type.
+  @[ runs("fn (a) { fn (b) { b } }") ]
+  def ident(t : Type, x : t) -> t { x }
+
+  /// Composition of two functions, applied.
+  @[ runs("fn (a) { fn (b) { fn (c) { fn (d) { fn (e) { fn (f) { e(d(f)) } } } } } }") ]
+  def compose(
+    t : Type,
+    u : Type,
+    v : Type,
+    f : t => u,
+    g : u => v,
+    x : t
+  ) -> v {
+    g(f(x))
+  }
+
+  /// The interface's identity runs to a function that applies `ident`, which
+  /// the signature hides, so the run is opaque at the model.
+  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type) => a => a") ]
+  def id(t : Type) -> t => t { thunk { become ident(t) } }
+
+  /// Composition likewise runs through the hidden `compose`.
+  @[ runs("⟨opaque at SetoidCat⟩ : (a : Type, b : Type, c : Type, a => b, b => c) => a => c") ]
+  def comp(
+    t : Type,
+    u : Type,
+    v : Type,
+    f : t => u,
+    g : u => v
+  ) -> t => v {
+    thunk { become compose(t, u, v, f, g) }
+  }
+}

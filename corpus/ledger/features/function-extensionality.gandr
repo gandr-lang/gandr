@@ -1,0 +1,31 @@
+/// `function-extensionality`: Function extensionality by computation.
+/// Implemented: `funext(f, g)` decided by evaluating both functions over their finite inputs and replayed by the kernel, and at the empty row derived from `ua` for functions.
+/// Not implemented: funext at open functions and at a type holding itself, refused by name; funext in full generality; #312 owes it.
+// Function extensionality, the HoTT book's § 2.9 (`funext`) and cubical
+// Agda's `funExt`: two functions that agree at every argument are one path.
+// At the booleans, negation twice is the identity, and negation once is not.
+
+/// Negation on the booleans, `+{Unit, Unit}`.
+@[ checks ]
+def not(b : Unit + Unit) -> Unit + Unit {
+  case b {
+    +{.0 = u} => +{.1 = u},
+    +{.1 = u} => +{.0 = u}
+  }
+}
+
+/// Negation twice.
+@[ checks ]
+def not_not(b : Unit + Unit) -> Unit + Unit {
+  not(not(b))
+}
+
+/// The identity on the booleans.
+@[ checks ]
+def same(b : Unit + Unit) -> Unit + Unit {
+  b
+}
+
+/// Negation twice is the identity: they agree at both booleans.
+@[ checks ]
+def involution : Path(Unit + Unit => Unit + Unit, not_not, same) = funext(not_not, same) ;

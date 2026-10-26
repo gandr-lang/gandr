@@ -1,0 +1,31 @@
+/// `circuit-algebras`: Circuit algebras.
+/// Implemented: a circuit rule's body read as a monogamous acyclic wiring, matched by embedding with a convexity check and compared by its diagram normal form; a wheel's feed kept beside its cut-open wiring.
+/// Not implemented: a model of a theory holding a circuit rule, which is refused, so no wheel runs; #1323 owes it.
+// A circuit rule in a `theory` block: a rule whose inputs are a rewrite and two
+// data wires, and whose body wires two nodes. `Theory` codes no circuit rule yet,
+// so the rule is kept beside the block's value rather than in it. The wiring
+// follows Lafont's interaction nets (_Interaction Nets_, POPL 1990,
+// doi:10.1145/96709.96718).
+
+/// A data family whose constructors are written with the circuit arrow.
+@[ checks ]
+data Nat : Type {
+  Zero : Nat;
+  Succ : (n : Nat) --> Nat;
+}
+
+/// Congruence in `add`'s first argument as a circuit: `p` rewrites `x`, then
+/// `add` takes the result and `y`. The block binds `NatSum : Theory`.
+theory NatSum {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+
+  rule cong1 : (
+    rule p : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) <=> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : add(x′, y) --> (z);
+  };
+}

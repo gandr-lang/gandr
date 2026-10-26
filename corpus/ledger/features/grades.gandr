@@ -1,0 +1,38 @@
+/// `grades`: Grades on a hold.
+/// Implemented: `hold[1] s = e`, a value held at grade one: made in place, never copied while held, a copying read refused by name, and a string held at grade one written in place.
+/// Not implemented: the emitter reading the grade to drop the holder count on a write-back; #1175 owes it.
+// A hold at grade one. `hold[1] c = e;` holds a value no one else holds: the
+// value is made where the hold stands, and it is never copied while held. An
+// exclusive access moves the value out to its view, the view is read once,
+// and `resume` writes the new value back, so the write-back needs no count of
+// the value's other holders. `hold c = e;` holds at the default grade ω, and
+// each read of it copies. The grades are those of graded modal
+// types (Orchard, Liepelt and Eades, "Quantitative program reasoning with
+// graded modal types", ICFP 2019).
+
+// The successor, a call whose type synthesises where a statement binds it.
+import "../../model/control/accessor-counter.gandr" ;
+
+/// A count made in place, bumped through its exclusive view: the read moves the
+/// count out, `resume` writes its successor back, and the access answers what
+/// it wrote.
+@[ runs("1") ]
+def counted() -> Integer {
+  hold[1] c = 0;
+  access c as v { run n <- succ(v) ; resume(v, n) ; pure n }
+}
+
+/// A tuple made in place and an abort before any read: nothing was moved out,
+/// so the held tuple stands as it was.
+@[ checks ]
+def untouched() -> Unit {
+  hold[1] p = (1, 2);
+  access p as v { abort(v) } unwind { pure unit }
+}
+
+/// A hold at the default grade, under which each read copies.
+@[ runs("2") ]
+def copied() -> Integer {
+  hold c = 1;
+  pure c + c
+}

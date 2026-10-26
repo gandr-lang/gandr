@@ -1,0 +1,30 @@
+/// `sized-atoms`: Width atoms and their literals.
+/// Implemented: `u32`, `u64`, `i32` and `i64` as base atoms apart from `Integer` and from one another, and literals stating their width with a range-checked suffix.
+/// Not implemented: the `f32` atom and its literal; #2563 owes it.
+// Integers at a stated width: `u32`, `u64`, `i32` and `i64`, each an atom of
+// its own. A literal states its width with a suffix and its digits must fit
+// it, so no width is the integers and no width is another.
+
+/// An unsigned word at a stated `u32`.
+@[ checks ]
+def word32 : u32 = 7u32 ;
+
+/// The greatest `u64`.
+@[ runs("18446744073709551615u64") ]
+def greatest_u64() -> u64 { 18446744073709551615u64 }
+
+/// The greatest `i32`.
+@[ runs("2147483647i32") ]
+def greatest_i32() -> i32 { 2147483647i32 }
+
+/// Leading zeros are not part of the value.
+@[ runs("7i64") ]
+def padded_i64() -> i64 { 007i64 }
+
+/// The identity at `i64`.
+@[ checks ]
+def same_i64(n : i64) -> i64 { n }
+
+/// A width literal passes through a function at its width unchanged.
+@[ runs("42i64") ]
+def same_i64_called() -> i64 { same_i64(42i64) }

@@ -1,0 +1,18 @@
+/// `termination-certificates`: Replayable termination certificates.
+/// Implemented: one termination evidence form, a path order's derivation over the precedence as data, replayed by the kernel for an operation's and a theory's rules and read by the front end and the cell layer.
+/// Not implemented: a size measure for a fixpoint; #392 owes it.
+// A rule written as an equation, `<=>`: one term spelled two ways, with the
+// left side the one a reader would rewrite to. The order of terms chooses the
+// direction, so `x <=> S(P(x))` still runs `S(P(x))` to `x` (Huet, _Confluent
+// reductions_, doi:10.1145/322217.322230). The integers are named apart from
+// the base's, whose rules are written the other way round.
+
+/// The integers with their first rule written smaller side first.
+@[ normalizes("S(P(Z)) ~> Z") ]
+data IntEq : Type {
+  Z : IntEq;
+  S : (x : IntEq) --> IntEq;
+  P : (x : IntEq) --> IntEq;
+  rule x <=> S(P(x));
+  rule P(S(x)) <=> x;
+}

@@ -1,0 +1,72 @@
+/// `second-order-rules`: Second-order rules.
+/// Implemented: a rule over a binding operation, instantiation `t(u)`, the abstraction `bind x . t` at a port, sorted at its binders, oriented by HORPO's metavariable case and its critical pairs joined in the second-order reading.
+/// Not implemented: two binders at one port, which waits on the grammar; completing a parting pair (#2361); a law relating a term at its port (#1324); #2347 owes it.
+// Second-order rules. A rule whose right side applies a variable that a
+// binding port of its left side binds instantiates it: `t(u)` substitutes `u`
+// for the variable `t`'s port binds, one argument per bound variable (Klop,
+// van Oostrom and van Raamsdonk, _Combinatory reduction systems: introduction
+// and survey_, TCS 121, 1993). The rules terminate by the higher-order
+// recursive path order (Jouannaud and Rubio, _The higher-order recursive path
+// ordering_, LICS 1999): the instantiation is below an application that holds
+// the variable and every argument directly. A pair a second-order rule takes
+// part in is found by pattern unification and joined in the second-order
+// reading (Mayr and Nipkow, _Higher-order rewrite systems and their
+// confluence_, TCS 192, 1998).
+
+/// ζ: `let` binds a term over its body, and its rule substitutes the bound
+/// term into the body.
+@[ checks ]
+theory Let {
+  sort Tm : Type+;
+  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  rule zeta : let(u, t) <=> t(u);
+}
+
+/// A body binding two terms is instantiated at two arguments, outermost
+/// binder first.
+@[ checks ]
+theory LetPair {
+  sort Tm : Type+;
+  oper let2 : (u : Tm, v : Tm, t : pi+ (x : Tm) . pi+ (y : Tm) . Tm) --> Tm;
+  rule zeta2 : let2(u, v, t) <=> t(u, v);
+}
+
+/// ζ beside first-order rules whose pair parts: completion joins `f`'s two
+/// rules as it would without ζ, which overlaps neither.
+@[ checks ]
+theory LetBeside {
+  sort Tm : Type+;
+  oper zero : () --> Tm;
+  oper one : () --> Tm;
+  oper f : (a : Tm) --> Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  rule zeta : let(u, t) <=> t(u);
+  rule fZero : f(a) <=> zero();
+  rule fOne : f(a) <=> one();
+}
+
+/// ζ beside a rule rewriting `let` at `zero()`: their left sides overlap at
+/// the root, the pair is found by pattern unification, and both reducts are
+/// `t(zero())` (#2328).
+@[ checks ]
+theory LetOverlap {
+  sort Tm : Type+;
+  oper zero : () --> Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  rule zeta : let(u, t) <=> t(u);
+  rule zetaZero : let(zero(), t) <=> t(zero());
+}
+
+/// ζ's right side is the instantiation of `t`, which the presentation keeps
+/// as an `Inst` node.
+@[ runs("1") ]
+def instantiates() -> Integer { case Let {
+  Presents(sorts, opers, rules) => case rules {
+    Rule(name, left, right, rest) => case right {
+      Inst(variable, arguments) => 1,
+      _ => 0
+    },
+    _ => 0
+  },
+  _ => 0
+} }

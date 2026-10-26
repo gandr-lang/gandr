@@ -1,0 +1,54 @@
+/// `string-model`: A string written in the language.
+/// Implemented: a string written in the language: inline bytes or a counted buffer, UTF-8 code points, a C reading's trailing zero, copy-on-write, the in-place write a one-holder string licenses, and lent views.
+/// Not implemented: replacing the builtin `String` with it; #628 owes it.
+// The strings subject's shared declarations, imported by every source that
+// reads them (`import "../../model/strings/string-base.gandr" ;`): where a string's bytes live,
+// and the byte lists every claim reads and builds. A string is a value: a copy
+// is a new string, and no write to one is seen through another (Racordon et
+// al., "Implementation strategies for mutable value semantics", _Journal of
+// Object Technology_ 21(2), 2022, doi:10.5381/jot.2022.21.2.a2). Short
+// strings keep their bytes inline and long ones share a buffer until a write,
+// as the C++ and Rust small-string representations do.
+
+// The lists the bytes are held in.
+import "../../model/data/data-base.gandr" ;
+
+/// Where a string's bytes live: inline, in the string itself, when they fit;
+/// otherwise in a buffer on the heap that every copy of the string shares,
+/// beside the number of strings that hold it.
+@[ checks ]
+data Repr : Type {
+  Inline : (bytes : List(Integer)) --> Repr;
+  Shared : (holders : Integer, bytes : List(Integer)) --> Repr;
+}
+
+/// The bytes a string holds, wherever they live.
+@[ checks ]
+def bytes(s : Repr) -> List(Integer) {
+  case s {
+    Inline(bs) => bs,
+    Shared(n, bs) => bs
+  }
+}
+
+/// The number of bytes in a list.
+@[ checks ]
+def rec count(bs : List(Integer)) -> Integer {
+  case bs {
+    Nil => 0,
+    Cons(b, rest) => { run n <- count[<](rest); n + 1 }
+  }
+}
+
+/// One byte list followed by another.
+@[ checks ]
+def rec concat(xs : List(Integer), ys : List(Integer)) -> List(Integer) {
+  case xs {
+    Nil => ys,
+    Cons(x, rest) => (Cons(x, concat[<](rest, ys)) : List(Integer))
+  }
+}
+
+/// The number of bytes a string keeps inline, its terminating zero included.
+@[ runs("24") ]
+def inlineCapacity : Integer = 24 ;

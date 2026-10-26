@@ -1,0 +1,51 @@
+/// `glf-model-in-source`: A model of a signature written in source; the shape parameter.
+/// Implemented: a first-order model of a signature written as a record type in source, its syntax model inhabiting it, and the finite shape a theory block's cells are over.
+/// Not implemented: the λ-calculus single-substitution model as a record, and its syntax model; #640 owes it.
+// A first-order model of `theory Nat` written in gandr source (#640). For a
+// first-order signature, Kaposi and Xie's first-order models (_Second-Order
+// Generalised Algebraic Theories_, FSCD 2024,
+// doi:10.4230/LIPIcs.FSCD.2024.10) are its algebras: a carrier for the sort
+// and a function per operation. Written in source, the models of `Nat` are
+// the record type `#{nat : Type, zero : () => nat, succ : (n : nat) => nat}`,
+// one field per component of `Model(Nat)` in the order the derivation mints
+// them, and the syntax model, a counting model and a `Model(Nat)` module each
+// inhabit it.
+
+// The naturals' signature, `theory Nat`.
+import "../../model/desc/second-order-signatures.gandr" ;
+
+/// The naturals as data: the syntax model's carrier, its constructors the
+/// operations.
+@[ checks ]
+data N : Type {
+  Z : N;
+  S : (n : N) --> N;
+}
+
+/// The syntax model as a `Model(Nat)` module: the carrier is the data and
+/// each operation its constructor.
+module SyntaxNat : Model(Nat) {
+  type Nat = N;
+  def zero() -> N { Z }
+  def succ(n : N) -> N { S(n) }
+}
+
+/// The module packed into the record type of `Nat`'s models: its carrier and
+/// its two operations, in the order `Model(Nat)` mints them.
+@[ checks ]
+def syntaxModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
+  N,
+  (SyntaxNat.zero, SyntaxNat.succ)
+) ;
+
+/// A second model, on the integers: zero is `0` and the successor adds one.
+@[ checks ]
+def countingModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
+  Integer,
+  (thunk { 0 }, thunk { fn (n) { n + 1 } })
+) ;
+
+/// The syntax model's successor at its zero builds the data's one: the
+/// module's operations run.
+@[ runs("S(Z)") ]
+def one() -> N { SyntaxNat.succ(SyntaxNat.zero()) }

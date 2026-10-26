@@ -1,0 +1,92 @@
+/// `colimit-layer`: The colimit layer (recursive codes past the base stratum).
+/// Implemented: a recursive type code past the base stratum carrying one transport cell over its rigid tail.
+/// Not implemented: the coinductive hypothesis at the tail; every other recursive code past the base stratum is refused by name; #524 owes it.
+// Transport along a path between types built from an equivalence, the HoTT
+// book's § 2.10 (`ua`) and Lemma 2.10.5 (transport along `ua(e)` is `e`),
+// in the family of lists: negation, its own inverse, makes a path from the
+// booleans to themselves, and transport along it negates every element, by
+// conversion and by a run. A pair of maps whose round trips differ makes no
+// path. Between types of lists, `equiv` covers one cell over a rigid tail:
+// the empty list, then one cell per element pattern, the tail a fresh
+// variable a round trip returns without reading.
+
+// Negation and the identity on the booleans.
+import "../../model/identity/funext.gandr" ;
+
+/// The booleans to themselves by negation, its own inverse.
+@[ checks ]
+def negation : Path(Type, Bool, Bool) = equiv(not, not) ;
+
+/// A list of booleans transported along negation, in the family of lists.
+@[ checks ]
+def moved_list(xs : List(Bool)) -> List(Bool) {
+  transport(\X. List(X), negation, xs)
+}
+
+/// Truth then falsity.
+@[ runs("cons(+{.0 = unit}, cons(+{.1 = unit}, nil))") ]
+def both : List(Bool) = cons(+{.0 = unit}, cons(+{.1 = unit}, nil)) ;
+
+/// Truth then falsity transported along negation is falsity then truth, by
+/// conversion.
+@[ checks ]
+def flipped_beta : Path(
+  List(Bool),
+  transport(\X. List(X), negation, cons(+{.0 = unit}, cons(+{.1 = unit}, nil))),
+  cons(+{.1 = unit}, cons(+{.0 = unit}, nil))
+) = here(cons(+{.1 = unit}, cons(+{.0 = unit}, nil))) ;
+
+/// `both` transported along negation by a run, which negates every element.
+@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
+def flipped_list() -> List(Bool) { moved_list(both) }
+
+/// #1480: `both` transported along negation as a value, whose computation
+/// runs the first time a run reads it. A declaration computed by a transport
+/// had no producer for the machine to unfold.
+@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
+def flipped_value : List(Bool) = transport(\X. List(X), negation, both) ;
+
+/// #1064: a list transported along negation written in place, as along the
+/// named `negation`. The kernel read the inline equivalence's type,
+/// `Path_U(Bool, Bool)`, as no path and refused the transport by shape.
+@[ checks ]
+def moved_inline(xs : List(Bool)) -> List(Bool) {
+  transport(\X. List(X), equiv(not, not), xs)
+}
+
+/// #1064: `both` transported along negation written in place, by a run.
+@[ runs("cons(+{.1 = unit}, cons(+{.0 = unit}, nil))") ]
+def flipped_inline() -> List(Bool) { moved_inline(both) }
+
+/// The identity on lists of booleans.
+@[ checks ]
+def keep(xs : List(Bool)) -> List(Bool) {
+  xs
+}
+
+/// Lists of booleans to themselves by the identity: its round trip returns
+/// the empty list and each cell over a rigid tail.
+@[ checks ]
+def lists : Path(Type, List(Bool), List(Bool)) = equiv(keep, keep) ;
+
+/// A list transported along the identity's path is itself, by conversion.
+@[ checks ]
+def kept_beta : Path(List(Bool), transport(\X. X, lists, both), both) = here(both) ;
+
+/// A flag beside a list of booleans, negated, the list left as it is.
+@[ checks ]
+def flip_flag(entry : Bool * List(Bool)) -> Bool * List(Bool) {
+  case entry {
+    #{b, xs} => (not(b), xs)
+  }
+}
+
+/// Negating the flag is its own inverse: at each boolean beside the empty
+/// list and beside each cell over a rigid tail.
+@[ checks ]
+def flagged : Path(Type, Bool * List(Bool), Bool * List(Bool)) = equiv(flip_flag, flip_flag) ;
+
+/// Truth beside `both`, transported along the flag's path by a run: the flag
+/// negates and the list stays.
+@[ runs("(+{.1 = unit}, cons(+{.0 = unit}, cons(+{.1 = unit}, nil)))") ]
+def flagged_run() -> Bool * List(Bool) { transport(\X. X, flagged, (+{.0 = unit}, both)) }

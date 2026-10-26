@@ -650,7 +650,12 @@ run = ".config/mise/scope cargo run --locked --quiet --profile test --package ga
 # names an exemplar; and every implemented or partial row naming neither a
 # `corpus` witness nor an `exemplar` names in `issue` an open `kind:gap`
 # issue, the issue stating what the witness still needs (#2526), its state
-# read through `gh`. Every finding is printed before the gate fails.
+# read through `gh`. A partial row whose exemplar is a source has its own,
+# `corpus/ledger/features/<id>.gandr` (#2635), opening with a head of `///`
+# lines: the row's `id`, a `/// Implemented:` line, and a
+# `/// Not implemented:` line naming an open issue that owes the rest; the
+# shared sources it was drawn from stay in `corpus`. Every finding is printed
+# before the gate fails.
 ["check:ledger"]
 description = "The features ledger round-trips, keeps its constraints, names paths that exist, an exemplar for every language feature and a witness or an open gap for every implemented one"
 run = '''
@@ -723,6 +728,39 @@ while IFS='|' read -r id issues; do
 done < <(sqlite3 -separator '|' "$db" "
   SELECT id, coalesce(issue, '') FROM feature
   WHERE status IN ('implemented', 'partial') AND coalesce(corpus, '') = '' AND exemplar IS NULL
+  ORDER BY id;")
+declare -A open_issue=()
+while IFS='|' read -r id exemplar; do
+  own=corpus/ledger/features/$id.gandr
+  if [[ $exemplar != "$own" ]]; then
+    echo "$id: a partial row's exemplar is its own, \`$own\`, not \`$exemplar\`; state there what is and is not implemented (#2635)" >&2
+    failed=1
+    continue
+  fi
+  [[ -f $own ]] || continue
+  head=$(awk '/^\/\/\// { print; next } { exit }' "$own")
+  owed=$(grep -m1 '^/// Not implemented: ' <<< "$head" || true)
+  missing=()
+  grep -qF "\`$id\`" <<< "$head" || missing+=("the row's id, \`$id\`")
+  grep -q '^/// Implemented: ' <<< "$head" || missing+=('a `/// Implemented:` line')
+  [[ -n $owed ]] || missing+=('a `/// Not implemented:` line')
+  if [[ -n $owed ]]; then
+    owing=
+    for number in $(grep -oE '#[0-9]+' <<< "$owed" | tr -d '#'); do
+      if [[ -z ${open_issue[$number]:-} ]]; then
+        open_issue[$number]=$(gh issue view "$number" --json state --jq .state 2> /dev/null || echo UNREAD)
+      fi
+      if [[ ${open_issue[$number]} == OPEN ]]; then owing=$number; break; fi
+    done
+    [[ -n $owing ]] || missing+=('an open issue on its `/// Not implemented:` line that owes the rest')
+  fi
+  for lack in "${missing[@]}"; do
+    printf '%s: the head of `%s` lacks %s (#2635)\n' "$id" "$own" "$lack" >&2
+    failed=1
+  done
+done < <(sqlite3 -separator '|' "$db" "
+  SELECT id, exemplar FROM feature
+  WHERE status = 'partial' AND exemplar LIKE '%.gandr'
   ORDER BY id;")
 if (( failed )); then
   echo 'ledger check FAILED' >&2

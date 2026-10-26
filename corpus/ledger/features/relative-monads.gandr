@@ -1,0 +1,89 @@
+/// `relative-monads`: Monads relative to the shift.
+/// Implemented: a monad relative to `-F` declared as a theory, its unit and extension over a family of computation types, the option monad's operations and code polymorphic in the carrier, and the left and right unit laws as rules.
+/// Not implemented: associativity, which waits on critical pairs between second-order rules, and the monadic block elaborated away; #1951 owes it.
+// A monad relative to the shift `-F`: a unit returning a value and an
+// extension running a computation into a continuation, over a family of
+// computation types (Altenkirch, Chapman and Uustalu, _Monads need not be
+// endofunctors_, LMCS 11(1), 2015; Jiang, Xue and New, _Notions of
+// stack-manipulating computation and relative monads_, OOPSLA 2025). Its
+// host half is ordinary definitions: the option monad's two operations, a
+// program sequenced through them, and code polymorphic in the carrier. Of
+// the laws, the left unit is a second-order rule and the right unit
+// abstracts the variable the continuation binds; associativity overlaps
+// itself and both units, and every pair joins, so the three are one theory.
+
+// `Maybe`, the option monad's values.
+import "../../model/data/data-maybe.gandr" ;
+
+/// The left unit: returning a value to an extension runs its continuation at
+/// that value, a second-order rule over values `V` and computations `C`.
+@[ checks ]
+theory MonadLeftUnit {
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  rule unitL : ext(ret(a), k) <=> k(a);
+}
+
+/// The right unit: extending a computation by the unit is the computation.
+/// `bind x . ret(x)` abstracts the variable `k`'s port binds, and `ret` names
+/// it at its port of the sort `V` (#2115).
+@[ checks ]
+theory MonadRightUnit {
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  rule unitR : ext(m, bind x . ret(x)) <=> m;
+}
+
+/// The three laws together. Associativity's inner `ext(m, k)` is an instance
+/// of its own left side and of both unit laws', and its right side
+/// substitutes `k` under `bind x .`: each pair is found by pattern
+/// unification, and its two reducts normalize to one term (#2116).
+@[ checks ]
+theory RelativeMonad {
+  sort V : Type+;
+  sort C : Type;
+  oper ret : (a : V) --> C;
+  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  rule unitL : ext(ret(a), k) <=> k(a);
+  rule unitR : ext(m, bind x . ret(x)) <=> m;
+  rule assoc : ext(ext(m, k), l) <=> ext(m, bind x . ext(k(x), l));
+}
+
+/// The option monad's unit: the value, present.
+@[ checks ]
+def ret(A : Type, a : A) -> Maybe(A) { Some(a) }
+
+/// The option monad's extension: run the computation once, first, then pass
+/// a present value to the continuation and stop at an absent one.
+@[ checks ]
+def ext(A : Type, B : Type, m : () => Maybe(A), k : A => Maybe(B)) -> Maybe(B) {
+  run r <- force m;
+  case r {
+    None => None,
+    Some(x) => k(x)
+  }
+}
+
+/// One, then its successor, through the extension: the value read back.
+@[ runs("2") ]
+def two() -> Integer {
+  run r <- ext(
+    Integer,
+    Integer,
+    ret(Integer, 1),
+    fn (x) { ret(Integer, x + 1) }
+  );
+  case r {
+    None => 0,
+    Some(y) => y
+  }
+}
+
+/// Code polymorphic in the carrier: a computation of any family of
+/// computation types, run again.
+@[ checks ]
+def again(T : Type -> Type[-], m : +U T(Integer)) -> T(Integer) { force m }

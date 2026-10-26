@@ -1,0 +1,129 @@
+/// `sized-types`: Sized types.
+/// Implemented: a staged type read off a call's arguments, erased on the wire and re-derived by the kernel, explicit stage binders in the prefix block solved from the arguments, and the size and map over the direct rose tree.
+/// Not implemented: a stage on a signature with successor and infinity, the consistency gate, measures, and what the erasure cannot re-derive; #392 owes it.
+// Rose trees: a node holds its children, in two forms. Written directly, a
+// node holds a `List` of nodes: the list's parameter is strictly positive, so
+// each child stands below the node and the family declares (#517); a measure
+// recurses through the list's `map`, which a call instantiates at the
+// children's stage (#393), and a run passes `map` the children's type as a
+// code (#452). Written as a block, a node holds a forest and a forest
+// is empty or a tree before a forest: the two families name each other, so
+// they are one block, admitted as one and sharing one stage; and the two
+// measures name each other, so they are one fixpoint over the sum of their
+// domains, each measure that fixpoint at its own summand. A call through
+// either stands one stage below the node or forest it was read from (Abel,
+// _Termination checking with types_, doi:10.1051/ita:2004015). What the direct
+// form refuses is in `../../pathological/data/rose.gandr`.
+
+// The naturals the measures count in, their addition, and the lists the
+// direct form nests through.
+import "../../model/data/data-base.gandr" ;
+
+// The lists' `map`, which the direct form's measures recurse through.
+import "../../model/data/recursive-lists.gandr" ;
+
+/// The direct form: a node over a list of nodes, nested through `List`'s
+/// strictly positive parameter (#517).
+@[ checks ]
+data Bush : Type {
+  Sprout : (kids : List(Bush)) --> Bush;
+}
+
+/// A node without children, written directly.
+@[ checks ]
+def sprig : Bush = Sprout((Nil : List(Bush))) ;
+
+/// A node over two childless nodes, written directly.
+@[ checks ]
+def shrub : Bush = Sprout((Cons(
+  sprig,
+  (Cons(sprig, (Nil : List(Bush))) : List(Bush))
+) : List(Bush))) ;
+
+/// A list of numbers, summed.
+@[ checks ]
+def rec sum(xs : List(Nat)) -> Nat {
+  case xs {
+    Nil => Zero,
+    Cons(x, rest) => plus(x, sum[<](rest))
+  }
+}
+
+/// The nodes of a bush, its children's measured through `map`: the call
+/// instantiates `map`'s element at the children's stage, below the node's,
+/// so `nodes[<]` takes each child (#393).
+@[ checks ]
+def rec nodes(t : Bush) -> Nat {
+  case t {
+    Sprout(kids) => Succ(sum(map(Bush, Nat, nodes[<], kids)))
+  }
+}
+
+/// A map over the tree: every node gains a childless node beside its
+/// children, each child grown through `map` at its stage.
+@[ checks ]
+def rec grow(t : Bush) -> Bush {
+  case t {
+    Sprout(kids) => Sprout((Cons(sprig, map(Bush, Bush, grow[<], kids)) : List(Bush)))
+  }
+}
+
+/// The shrub's three nodes, its children counted through `map` at the
+/// children's type (#452).
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def shrub_nodes : () => Nat = nodes(shrub) ;
+
+/// The shrub grown, then counted: the root gains a childless node and each
+/// of its two children gains one, six nodes in all (#452).
+@[ runs("Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))") ]
+def grown_nodes : () => Nat = nodes(grow(shrub)) ;
+
+/// The tree and its forest, one block: each family names the other, and
+/// the two measures recurse through each other.
+rec {
+  /// A node over its forest of children.
+  @[ checks ]
+  data Rose : Type {
+    Node : (kids : Forest) --> Rose;
+  }
+
+  /// The children of a node, in order.
+  @[ checks ]
+  data Forest : Type {
+    Empty : Forest;
+    More : (head : Rose, tail : Forest) --> Forest;
+  }
+
+  /// The nodes of a tree: its own and its children's.
+  @[ checks ]
+  def rec treeSize(t : Rose) -> Nat {
+    case t {
+      Node(kids) => { run s <- forestSize[<](kids); Succ(s) }
+    }
+  }
+
+  /// The nodes of a forest: each tree's, summed.
+  @[ checks ]
+  def rec forestSize(ts : Forest) -> Nat {
+    case ts {
+      Empty => Zero,
+      More(t, rest) => { run a <- treeSize[<](t); run b <- forestSize[<](rest); plus(a, b) }
+    }
+  }
+}
+
+/// A node without children.
+@[ checks ]
+def leaf : Rose = Node(Empty) ;
+
+/// A node over two leaves.
+@[ checks ]
+def sapling : Rose = Node(More(leaf, More(leaf, Empty))) ;
+
+/// The sapling's three nodes.
+@[ runs("Succ(Succ(Succ(Zero)))") ]
+def sapling_nodes : () => Nat = treeSize(sapling) ;
+
+/// A forest of a sapling and a leaf: four nodes.
+@[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
+def forested : () => Nat = forestSize(More(sapling, More(leaf, Empty))) ;

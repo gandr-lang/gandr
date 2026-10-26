@@ -1,0 +1,187 @@
+/// `univalence-axiom`: Univalence on a record's laws (ua).
+/// Implemented: `ua(e)` making a bi-invertible record a path between any two codes, transport along it by the record's maps in both checkers and on the machine, and transport back and along composites.
+/// Not implemented: `ua ∘ idtoequiv` and `idtoequiv ∘ ua`, owed until the theorem is proved; #520 owes it.
+// Univalence over the user universe, after the HoTT book's § 2.10 and cubical
+// Agda's `Cubical/Foundations/Univalence.agda`. `ua(e)` makes the
+// bi-invertible map `e : A ≃ B` between two types of `Type` a path
+// `Path(Type, A, B)`, admitted on the record's two laws as its evidence, at any
+// two codes: two variables, or a path type and a presented type, which no
+// finite round-trip coverage reaches. Transport along it applies the map, by
+// conversion (cubical's `uaβ`) and by a run. Transport along a path between
+// types, packaged as the record, is `idtoequiv` (the book's `idtoeqv`,
+// cubical's `pathToEquiv`); `ua` and `idtoequiv` make a quasi-inverse and so
+// an equivalence, `univalence`, on two owed laws: `ua` after `idtoequiv`,
+// which no rule converts, and `idtoequiv` after `ua`, which needs the record's
+// inverses to be determined by its map.
+
+// The circle, the presented integers, the winding number and spinning.
+import "../../model/identity/circle-base.gandr" ;
+// The equivalence of the loops at the point with the integers, `winding`.
+import "../../model/identity/circle.gandr" ;
+
+/// Transport forward along a path between types, the map `idtoequiv` packages.
+@[ checks ]
+def fwdAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> b {
+  transport(\X. X, p, x)
+}
+
+/// Transport back along a path between types: the map the round trips are
+/// stated over.
+@[ checks ]
+def bwdAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> a {
+  transport(\X. X, back(p), y)
+}
+
+/// The transport back written out in a record's field converts, under the
+/// field's binder, with the same transport in the law's type (#650).
+@[ checks ]
+def oneBack(a : Type, b : Type, p : Path(Type, a, b)) -> #{
+  g : b => a,
+  law : (z : b) => Path(a, g(z), transport(\X. X, back(p), z))
+} {
+  (
+    fn (z) { transport(\X. X, back(p), z) },
+    fn (z) { here(transport(\X. X, back(p), z)) }
+  )
+}
+
+/// Back after forward is the identity, by `J` on the path: at reflexivity
+/// both transports compute away.
+@[ checks ]
+def sectAlong(a : Type, b : Type, p : Path(Type, a, b), x : a) -> Path(
+  a,
+  bwdAlong(a, b, p, fwdAlong(a, b, p, x)),
+  x
+) {
+  become transport(
+    (y : Type, z : Path(Type, a, y)) => Path(
+      a,
+      bwdAlong(a, y, z, fwdAlong(a, y, z, x)),
+      x
+    ),
+    p,
+    here(a),
+    here(p),
+    here(x)
+  )
+}
+
+/// Forward after back is the identity at every point, by `J` on the path.
+@[ checks ]
+def retrAll(a : Type, b : Type, p : Path(Type, a, b)) -> (w : b) => Path(
+  b,
+  fwdAlong(a, b, p, bwdAlong(a, b, p, w)),
+  w
+) {
+  become transport(
+    (y : Type, z : Path(Type, a, y)) => (w : y) => Path(
+      y,
+      fwdAlong(a, y, z, bwdAlong(a, y, z, w)),
+      w
+    ),
+    p,
+    here(a),
+    here(p),
+    fn (w) { here(w) }
+  )
+}
+
+/// Forward after back is the identity at `y`.
+@[ checks ]
+def retrAlong(a : Type, b : Type, p : Path(Type, a, b), y : b) -> Path(
+  b,
+  fwdAlong(a, b, p, bwdAlong(a, b, p, y)),
+  y
+) {
+  run r <- retrAll(a, b, p);
+  become r(y)
+}
+
+/// Transport along a path between types as the bi-invertible map: the book's
+/// `idtoeqv`, cubical's `pathToEquiv`. Both inverses are the transport
+/// written out, which converts under its field's binder with the named map
+/// its law is stated over (#650), and `univalence`'s laws replay over them
+/// (#695, #698).
+@[ checks ]
+def idtoequiv(a : Type, b : Type, p : Path(Type, a, b)) -> a ≃ b {
+  (
+    fn (x) { fwdAlong(a, b, p, x) },
+    (
+      (
+        fn (y) { transport(\X. X, back(p), y) },
+        fn (x) { sectAlong(a, b, p, x) }
+      ),
+      (
+        fn (y) { transport(\X. X, back(p), y) },
+        fn (y) { retrAlong(a, b, p, y) }
+      )
+    )
+  )
+}
+
+/// A record written out at two variables is a path between them: the record
+/// checks against `a ≃ b`, its laws the evidence.
+@[ checks ]
+def uaLiteral(
+  a : Type,
+  b : Type,
+  t : a => b,
+  g : b => a,
+  s : (x : a) => Path(a, g(t(x)), x),
+  h : b => a,
+  r : (y : b) => Path(b, t(h(y)), y)
+) -> Path(Type, a, b) {
+  ua((t, ((g, s), (h, r))))
+}
+
+/// The loops at the point are the integers, as types: `winding`'s laws admit
+/// the path between a path type and a presented type.
+@[ checks ]
+def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(winding) ;
+
+/// The same path ascribed a type whose right end is left as a wildcard:
+/// `ua(winding)` forces that end to the integers, so the elaborator reads the
+/// equivalence's codomain off the path it makes (#1979).
+@[ checks ]
+def loopsAreTheirWinding : Path(Type, Path(Circle, Base, Base), Int) = (ua(winding) : Path(
+  Type,
+  Path(Circle, Base, Base),
+  _
+)) ;
+
+/// Transport along `ua` applies the record's map, by conversion: cubical's
+/// `uaβ`, at two variables, the record written out and checked against the
+/// path `fwdAlong` takes.
+@[ checks ]
+def uaBeta(
+  a : Type,
+  b : Type,
+  t : a => b,
+  g : b => a,
+  s : (x : a) => Path(a, g(t(x)), x),
+  h : b => a,
+  r : (y : b) => Path(b, t(h(y)), y),
+  x : a
+) -> Path(b, fwdAlong(a, b, ua((t, ((g, s), (h, r)))), x), t(x)) {
+  here(t(x))
+}
+
+/// `uaβ` run at the loops' record: a loop carried along `ua(winding)` runs to
+/// the record's map at it. The record's laws are carried, never run.
+@[ runs("S(Z)") ]
+def uaBetaRun() -> Int { transport(\X. X, ua(winding), loop) }
+
+/// A loop carried along the loops' path to the integers is its winding
+/// number, by conversion.
+@[ checks ]
+def windingBeta(x : Path(Circle, Base, Base)) -> Path(
+  Int,
+  transport(\X. X, loopsAreIntegers, x),
+  wind(x)
+) {
+  here(wind(x))
+}
+
+/// A loop carried to the integers runs to its winding number.
+@[ runs("S(Z)") ]
+def windingRun() -> Int { transport(\X. X, loopsAreIntegers, loop) }
