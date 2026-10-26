@@ -1255,7 +1255,7 @@ default-features = false
 # consumers:
 # - surface-repl
 [workspace.dependencies.rustyline]
-version = "18.0.1"
+version = "19.0.0"
 default-features = false
 
 # A value that borrows a value it owns: the lowering's import-closure state,
