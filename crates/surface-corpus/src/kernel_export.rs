@@ -12,8 +12,8 @@
 //! # The kernel export suite
 //!
 //! `kernel_export` takes each readable source through parse, lower, check,
-//! readmission and export. Each sweep runs as four tests, `_in_shard_0` to
-//! `_in_shard_3`, each over every fourth source of each root.
+//! readmission and export. Each sweep runs as eight tests, `_in_shard_0` to
+//! `_in_shard_7`, each over every eighth source of each root.
 //! `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
 //! checks repeat-sweep byte and identity determinism, decoder/re-encoder
 //! agreement, record-plane readback and admission from each root.
@@ -708,11 +708,12 @@ fn export(
     })
 }
 
-/// How many tests share each corpus sweep, each taking every fourth source of
-/// each root: the export gate sweeps the corpus twice, six seconds of one core
-/// where specifications are enforced and past the per-test limit on a loaded
-/// machine, and a quarter of it stays inside.
-const SHARDS: usize = 4;
+/// How many tests share each corpus sweep, each taking every eighth source of
+/// each root. The export gate sweeps each source twice: four shards took
+/// 22.7–24.1 s each on the queue's enforcing runner (`ci:timing`, #2547), and
+/// 19–20 s alone on a local machine, where every gate at once pushed all four
+/// past the 30 s per-test limit. An eighth stays well inside it under load.
+const SHARDS: usize = 8;
 
 /// Which of the `SHARDS` tests of a sweep a corpus source is exported in.
 #[repr(transparent)]
@@ -736,8 +737,8 @@ struct Shard(usize);
 ///   artifact is decoded and read through its records. Root/path order and
 ///   unique membership are executable invariants; byte identity across sweeps
 ///   is determinism evidence, while the partition witness compares admitted
-///   names to the reconstructed artifact. The four shards together take every
-///   source of each root, each in one shard.
+///   names to the reconstructed artifact. The `SHARDS` shards together take
+///   every source of each root, each in one shard.
 /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
 /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_3`
 #[spec(
@@ -829,6 +830,7 @@ mod kernel_export_gate
     use super::Shard;
     use super::commit;
     use super::corpus;
+    use super::sources;
 
     #[test]
     fn the_kernel_export_exit_gate_holds_in_shard_0()
@@ -854,6 +856,30 @@ mod kernel_export_gate
         gate(Shard(3));
     }
 
+    #[test]
+    fn the_kernel_export_exit_gate_holds_in_shard_4()
+    {
+        gate(Shard(4));
+    }
+
+    #[test]
+    fn the_kernel_export_exit_gate_holds_in_shard_5()
+    {
+        gate(Shard(5));
+    }
+
+    #[test]
+    fn the_kernel_export_exit_gate_holds_in_shard_6()
+    {
+        gate(Shard(6));
+    }
+
+    #[test]
+    fn the_kernel_export_exit_gate_holds_in_shard_7()
+    {
+        gate(Shard(7));
+    }
+
     /// The sources of `shard` exported twice: each artifact is a function of
     /// its text and reads back through the record plane and the decoder as
     /// itself.
@@ -863,14 +889,15 @@ mod kernel_export_gate
     /// - ensures: both sweeps of `shard` export the same sources to the same
     ///   bytes and identities; each artifact decodes, re-encodes byte for byte
     ///   and reads back through its records; and the sources of `shard` export
-    ///   a definition or an assumption from each root.
+    ///   a definition or an assumption from each root that has a source in
+    ///   `shard` (the strict root's few sources fill only the first shards).
     /// - panics: when any of those fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the four shards together take every source of each
-    ///   root, each in one shard; a shard past `SHARDS` would take none.
+    /// - hypothesis: L3 — the `SHARDS` shards together take every source of
+    ///   each root, each in one shard; a shard past `SHARDS` would take none.
     /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_0`
-    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_3`
+    /// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds_in_shard_7`
     #[spec(requires: shard.0 < SHARDS)]
     fn gate(shard: Shard)
     {
@@ -915,10 +942,13 @@ mod kernel_export_gate
                 exporting.insert(one.root);
             }
         }
+        let held: BTreeSet<Root> = [Root::Strict, Root::Fixture]
+            .into_iter()
+            .filter(|&root| sources(root).len() > shard.0)
+            .collect();
         assert_eq!(
-            BTreeSet::from([Root::Strict, Root::Fixture]),
-            exporting,
-            "the sources of shard {} export a declaration from each root",
+            held, exporting,
+            "the sources of shard {} export a declaration from each root it holds a source of",
             shard.0
         );
     }
@@ -968,6 +998,30 @@ mod kernel_corpus_partition
         partition(Shard(3));
     }
 
+    #[test]
+    fn corpus_partition_matches_the_manifest_in_shard_4()
+    {
+        partition(Shard(4));
+    }
+
+    #[test]
+    fn corpus_partition_matches_the_manifest_in_shard_5()
+    {
+        partition(Shard(5));
+    }
+
+    #[test]
+    fn corpus_partition_matches_the_manifest_in_shard_6()
+    {
+        partition(Shard(6));
+    }
+
+    #[test]
+    fn corpus_partition_matches_the_manifest_in_shard_7()
+    {
+        partition(Shard(7));
+    }
+
     /// The sources of `shard` exported once, each declaration classified by
     /// what became of it at the kernel boundary and held against the artifact
     /// that holds what crossed.
@@ -983,10 +1037,10 @@ mod kernel_corpus_partition
     /// - panics: when any of those fails.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the four shards together take every source of each
-    ///   root, each in one shard; a shard past `SHARDS` would take none.
+    /// - hypothesis: L3 — the `SHARDS` shards together take every source of
+    ///   each root, each in one shard; a shard past `SHARDS` would take none.
     /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_0`
-    /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_3`
+    /// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest_in_shard_7`
     #[spec(requires: shard.0 < SHARDS)]
     fn partition(shard: Shard)
     {
