@@ -376,6 +376,10 @@ fn declarations(
     // optional ascription, whose body is the same repetition, so nesting depth
     // is unbounded.
     //
+    // The name is a dotted path, `module Gandr.Workspace { … }`: its segments
+    // before the last name the modules it is declared in, each opened where
+    // the source declares none of that name.
+    //
     // After the name, a functor declares its parameter in parentheses,
     // `module MkSet(Elt : #{ … }) :> #{ … } { … }` (`functor_parameter`), and a
     // functor application binds its instance, `module IntSet = MkSet(IntOrd) ;`
@@ -392,6 +396,10 @@ fn declarations(
         seq([
             t(TileLabel("module")),
             alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+            repeat(seq([
+                t(TileLabel(".")),
+                alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+            ])),
             alt([
                 functor_application_tail(),
                 seq([
@@ -665,12 +673,15 @@ fn functor_application_tail() -> Regex
 /// Build an applied signature former, `Model(CatShape)`, and the manifest
 /// sorts it fixes, `Model(Metering) with sort Ratio = Integer`: a former's
 /// name, the declaration it is applied to in parentheses, then any number of
-/// `with sort` clauses, each a sort's name and the type it is.
+/// `with sort` clauses, each a sort's name and the type it is. The declaration
+/// is a path, `Model(Gandr.Package)`, its segments before the last naming the
+/// modules it is declared in, as a functor application's argument is.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a type name, an opening parenthesis, one type name and its
-///   closer, then a repetition of `with`, `sort`, a type name, `=` and a type.
+/// - ensures: a type name, an opening parenthesis, a type name followed by any
+///   number of dotted segments of either name case and its closer, then a
+///   repetition of `with`, `sort`, a type name, `=` and a type.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -680,13 +691,17 @@ fn functor_application_tail() -> Regex
 ///   finite corpus are not exhausted.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
-#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 5 && parts.iter().zip(["type_identifier", "(", "type_identifier", ")"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 6 && parts.iter().zip(["type_identifier", "(", "type_identifier"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label)) && parts.get(3).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_))) && parts.get(4).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ")")) && parts.get(5).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(_)))))]
 fn signature_former() -> Regex
 {
     seq([
         t(TileLabel("type_identifier")),
         t(TileLabel("(")),
         t(TileLabel("type_identifier")),
+        repeat(seq([
+            t(TileLabel(".")),
+            alt([t(TileLabel("type_identifier")), t(TileLabel("identifier"))]),
+        ])),
         t(TileLabel(")")),
         repeat(seq([
             t(TileLabel("with")),

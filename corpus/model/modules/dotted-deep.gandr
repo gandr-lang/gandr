@@ -1,0 +1,31 @@
+// #2687: a dotted name more than one step deep declares in the modules each
+// segment of its prefix names, a lowercase segment among them below the top,
+// and a path as deep reads it.
+
+/// A shape three modules deep.
+theory Deep.Mid.Low.Shape {
+  /// Its size.
+  oper size : Integer;
+}
+
+/// Tools in the same three modules.
+module Deep.Mid.Low.Tools {
+  /// A step.
+  def step = 1;
+}
+
+/// Tools under a lowercase segment below the top.
+module Top.inner.Tools {
+  /// A lift.
+  def lift = 10;
+}
+
+/// A model of the shape, read by its whole path.
+module Sized : Model(Deep.Mid.Low.Shape) {
+  /// Its size.
+  def size = 3;
+}
+
+/// Each member, read by its path.
+@[ runs("#{.lift = 10, .size = 3, .step = 1}") ]
+#{step = Deep.Mid.Low.Tools.step, lift = Top.inner.Tools.lift, size = Sized.size}

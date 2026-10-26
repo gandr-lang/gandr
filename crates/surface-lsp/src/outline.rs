@@ -600,15 +600,43 @@ fn declared(
             Ok(
                 role @ (HlRole::FunctionDef | HlRole::VariableDef | HlRole::Type | HlRole::Label),
             ) => {
-                let name = tree.fragment(child)?;
-                let named = tree.node(child)?.span();
+                let first = tree.fragment(child)?;
+                let mut name = String::from(<&str>::from(first));
+                let mut named = tree.node(child)?.span();
+                // A dotted name, `theory Gandr.Package`, is the symbol's name
+                // whole: the modules its prefix names are written by no form
+                // of their own.
+                let after: Vec<NodeIndex> = tree
+                    .children(at)
+                    .skip_while(|&later| later != child)
+                    .skip(1)
+                    .filter(|&later| {
+                        matches!(tree.node(later).map(Node::label), Some(NodeLabel::Tile(_)))
+                    })
+                    .collect();
+                for pair in after.chunks_exact(2) {
+                    let &[dot, segment] = pair
+                    else {
+                        break;
+                    };
+                    let Some(written) = tree.fragment(segment)
+                    else {
+                        break;
+                    };
+                    if tree.fragment(dot).map(<&str>::from) != Some(".") {
+                        break;
+                    }
+                    name.push('.');
+                    name.push_str(<&str>::from(written));
+                    named = named.join(tree.node(segment)?.span());
+                }
                 let body = tree
                     .children(at)
                     .skip_while(|&later| later != child)
                     .find_map(|later| body_start(tree, later))
                     .unwrap_or_else(|| node.span().end());
                 return Some(DocumentSymbol {
-                    name: String::from(<&str>::from(name)),
+                    name,
                     kind: kind_of(role, keyword),
                     range: range_of(
                         index,
@@ -1468,7 +1496,8 @@ mod tests
 
     /// Each declaration carries what it writes between its name and its body
     /// or definition, its layout collapsed and a leading `:` dropped; one
-    /// that writes nothing there, a member among them, carries none.
+    /// that writes nothing there, a member among them, carries none. A dotted
+    /// name is the symbol's whole name (#2687).
     #[test]
     fn each_symbol_carries_what_it_writes_after_its_name()
     {
@@ -1476,7 +1505,8 @@ mod tests
                       ;\ndef later : Integer ;\ndata Color : Type { Red : Color; }\ntheory Shapes {\n  \
                       sort M : Type;\n  oper mul : (x : M, y : M) --> M;\n  rule spin : (data s : \
                       M) ==> (out : M) {\n    node : mul(s, s) --> (out);\n  };\n}\nmodule Plain \
-                      {\n  def one = 1 ;\n}\nworld seat ;\n";
+                      {\n  def one = 1 ;\n}\nworld seat ;\nmodule Kit.Tools : #{ two : Integer } \
+                      {\n  def two = 2 ;\n}\n";
         let details: Vec<(String, Option<String>)> = Reading::of(SourceText::from(source))
             .symbols()
             .0
@@ -1497,6 +1527,8 @@ mod tests
             row("Plain", None),
             row("one", None),
             row("seat", None),
+            row("Kit.Tools", Some("#{two : Integer}")),
+            row("two", None),
         ]);
     }
 

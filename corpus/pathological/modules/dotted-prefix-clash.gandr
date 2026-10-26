@@ -1,0 +1,31 @@
+// #2687: a dotted name's prefix opens a module only where the source declares
+// none of that name; one naming a module a form of its own writes is refused
+// at the segment, as the module defined twice. A lowercase top segment is
+// refused as any top-level module named in lowercase is.
+
+/// A written module.
+module Kit {
+  /// Its one member.
+  def width = 4;
+}
+
+/// A theory declared through the written module's name.
+@[ refuses("DuplicateDefinition") ]
+theory Kit.Labelled {
+  /// The label.
+  oper label : String;
+}
+
+/// A model of a theory the path names in no module.
+@[ refuses("UnknownMember") ]
+module Tag : Model(Kit.Missing) {
+  /// Its label.
+  def label : String = "tag";
+}
+
+/// A dotted module whose top segment is lowercase.
+@[ refuses("LowercaseModuleName") ]
+module low.Tools {
+  /// A value.
+  def k = 1;
+}

@@ -1565,6 +1565,70 @@ fn deeply_nested_modules_lower_and_resolve_at_every_depth()
     );
 }
 
+/// #2687: a dotted name declares in the modules its prefix names, each opened
+/// where the source declares none: a theory and a module written through one
+/// prefix share its module, a path reads the module's member, and a model
+/// reads the theory by its path.
+#[test]
+fn a_dotted_name_declares_in_the_modules_its_prefix_names_2687()
+{
+    let source = "theory Gandr.Shape {\n  oper label : String;\n}\nmodule Gandr.Tools {\n  def \
+                  answer : Integer = 42;\n}\nmodule Shaped : Model(Gandr.Shape) {\n  def label : \
+                  String = \"shaped\";\n}\ndef asked : Integer = Gandr.Tools.answer;\n";
+    let mut lowered = lower(source);
+    assert_eq!(
+        rows(&lowered),
+        [
+            row("Theory", Role::Declared, Amounts::Data),
+            row("Gandr.Shape", Role::Declared, Amounts::Completed),
+            row("Gandr.Tools.answer", Role::Declared, Amounts::Completed),
+            row("Shaped.label", Role::Declared, Amounts::Completed),
+            row("Shaped.label", Role::Witness, Amounts::Completed),
+            row("asked", Role::Declared, Amounts::Completed),
+        ],
+        "the theory and the module stand in `Gandr`, the model at the top level"
+    );
+    assert_eq!(
+        constant_read_by(&lowered, "asked"),
+        ConstantIndex::from(2_usize),
+        "the member resolves through the module the prefix opened"
+    );
+    let judgements = verdicts(&mut lowered);
+    assert!(
+        judgements.iter().all(|&(_, judgement)| matches!(
+            judgement,
+            Judgement::Declared | Judgement::Checked | Judgement::Synthesised
+        )),
+        "and every declaration checks, the `Theory` code declared: {judgements:?}"
+    );
+}
+
+/// #2687: a dotted name's prefix naming a module a form of its own writes is
+/// refused at the segment, naming the module's own name.
+#[test]
+fn a_dotted_prefix_naming_a_written_module_is_refused_2687()
+{
+    let source = "module Gandr {\n  def x : Integer = 1;\n}\ntheory Gandr.Shape {\n  oper label \
+                  : String;\n}\n";
+    assert_eq!(
+        rows(&lower(source)),
+        [
+            row("Gandr.x", Role::Declared, Amounts::Completed),
+            row("Theory", Role::Declared, Amounts::Data),
+            row(
+                "Shape",
+                Role::Declared,
+                Amounts::Refused(LoweringRefusal::DuplicateDefinition {
+                    span: span_of(source, "Gandr", 1_usize),
+                    name: name("Gandr"),
+                    first: span_of(source, "Gandr", 0_usize),
+                })
+            ),
+        ],
+        "the theory is refused as `Gandr` defined twice, at the top level"
+    );
+}
+
 #[test]
 fn a_reordered_signature_matches_and_canonicalizes()
 {

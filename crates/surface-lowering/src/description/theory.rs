@@ -174,6 +174,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::format;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -471,7 +472,16 @@ impl Reader<'_, '_>
         diagnostics: &mut Vec<DescriptionDiagnostic>,
     ) -> Result<DescribedDeclaration, DescriptionDiagnostic>
     {
-        let named = run.take()?;
+        let mut named = run.take()?;
+        // A dotted name, `Gandr.Package`, declares the block in the modules its
+        // segments before the last name: the presentation is named by the
+        // whole path, and the declaration by its last segment.
+        let mut path = String::from(self.text(named).0);
+        while run.eat(Spelling(".")).0 {
+            named = run.take()?;
+            path.push('.');
+            path.push_str(self.text(named).0);
+        }
         if !run.eat(Spelling("{")).0 {
             return Err(run.fault(DescriptionFault::Malformed));
         }
@@ -599,11 +609,9 @@ impl Reader<'_, '_>
             });
         }
         let direct: Vec<&NominalId> = inclusions.iter().map(|included| &included.theory).collect();
-        if let Some(fault) = super::joins::ambiguous_join(
-            &NominalId::new(serial, self.text(named).0),
-            &direct,
-            visible,
-        ) {
+        if let Some(fault) =
+            super::joins::ambiguous_join(&NominalId::new(serial, path.as_str()), &direct, visible)
+        {
             diagnostics.push(run.signature_fault(SignatureFault::AmbiguousJoin(fault)));
         }
         for member in &members {
@@ -773,7 +781,7 @@ impl Reader<'_, '_>
             .collect();
         let description = presentation
             .value
-            .description(NominalId::new(serial, self.text(named).0), &faces)
+            .description(NominalId::new(serial, path), &faces)
             .map_err(|_unread| DescriptionDiagnostic {
                 span: at.span,
                 fault: DescriptionFault::Malformed,

@@ -366,31 +366,134 @@ impl<'source> Collected<'source>
                 },
             },
         };
-        let presented = position.and_then(|position| {
-            let slot = self.slots.get(position.0)?;
-            if !matches!(
-                slot.definition,
-                Maybe::Present(Half {
-                    operand: Operand::Presented,
-                    ..
-                })
-            ) {
-                return None;
-            }
-            match self
-                .descriptions
-                .get(&slot.introduced_by.node)?
-                .presentation
-            {
-                Maybe::Present(ref presentation) => Some((position, presentation)),
-                Maybe::Absent(_) => None,
-            }
+        position
+            .and_then(|position| self.presentation_of(position))
+            .ok_or(LoweringRefusal::UnresolvedTypeHead {
+                span,
+                name,
+                arity: HeadArity::Nullary,
+            })
+    }
+
+    /// The `theory` block the path `prefix` then `name` names where a form
+    /// starting at `at` stands, `Gandr.Package`: the block declared under
+    /// `name` in the module the segments of `prefix` name, each in the one
+    /// before, the first as [`Self::included_module`] finds it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`Self::presented_theory`] for an empty prefix; otherwise
+    ///   the slot under `name` in the module the prefix names, and the
+    ///   presentation its `theory` block defines.
+    /// - provides: the lookup a module's ascription `Model(M.S)` reads `M.S`
+    ///   with.
+    /// - fails: as [`Self::included_module`] at the first segment; an unknown
+    ///   member at a later segment naming no module in the one before, and at
+    ///   `span` for a name the last declares nothing under; an unexported name,
+    ///   at `span`, for a block another source keeps private; an unresolved
+    ///   head, at `span`, for a name no `theory` block defines.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::presented_theory`], and [`LoweringRefusal::UnresolvedName`]
+    /// and [`LoweringRefusal::UnknownMember`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a theory a dotted name declares, read through the
+    ///   source's own module and through the prelude's; a private theory read
+    ///   through another source's module.
+    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    /// - witness: `tests::namespace::the_prelude_s_package_theory_is_read_by_its_path_2687`
+    /// - witness: `tests::namespace::a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&(position, _)| self.slots.get(position.0).is_some_and(|slot| slot.name == name)))]
+    pub(crate) fn presented_theory_in(
+        &self,
+        at: ByteOffset,
+        prefix: &[(ByteSpan, SurfaceName<'source>)],
+        span: ByteSpan,
+        name: SurfaceName<'source>,
+    ) -> Result<(SlotIndex, &Presentation), LoweringRefusal<'source>>
+    {
+        let Some((&(first_span, first), rest)) = prefix.split_first()
+        else {
+            return self.presented_theory(at, span, name);
+        };
+        let mut module = self.included_module(at, first_span, first)?;
+        let crossed = self.structures.get(module.0).is_some_and(|entry| {
+            self.unit.source_at(entry.declared_by.span.start()) != self.unit.source_at(at)
         });
-        presented.ok_or(LoweringRefusal::UnresolvedTypeHead {
-            span,
-            name,
-            arity: HeadArity::Nullary,
-        })
+        let named = |module: StructureIndex| {
+            self.structures
+                .get(module.0)
+                .map_or(first, |entry| entry.name)
+        };
+        for &(segment_span, segment) in rest {
+            module = self
+                .modules
+                .get(&(Container::Module(module), segment))
+                .copied()
+                .ok_or_else(|| LoweringRefusal::UnknownMember {
+                    span: segment_span,
+                    module: named(module),
+                    member: segment,
+                })?;
+        }
+        let position = self
+            .by_name
+            .get(&(Container::Module(module), name))
+            .copied()
+            .ok_or_else(|| LoweringRefusal::UnknownMember {
+                span,
+                module: named(module),
+                member: name,
+            })?;
+        if crossed && self.slot_visibility(position) == Visibility::Private {
+            return Err(LoweringRefusal::UnexportedName {
+                span,
+                name,
+                declared: self
+                    .slots
+                    .get(position.0)
+                    .map_or(span, |slot| slot.named.span),
+                reason: Unexported::Private,
+            });
+        }
+        self.presentation_of(position)
+            .ok_or(LoweringRefusal::UnresolvedTypeHead {
+                span,
+                name,
+                arity: HeadArity::Nullary,
+            })
+    }
+
+    /// The slot `position` and the presentation it holds, when a `theory`
+    /// block defines it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn presentation_of(
+        &self,
+        position: SlotIndex,
+    ) -> Option<(SlotIndex, &Presentation)>
+    {
+        let slot = self.slots.get(position.0)?;
+        if !matches!(
+            slot.definition,
+            Maybe::Present(Half {
+                operand: Operand::Presented,
+                ..
+            })
+        ) {
+            return None;
+        }
+        match self
+            .descriptions
+            .get(&slot.introduced_by.node)?
+            .presentation
+        {
+            Maybe::Present(ref presentation) => Some((position, presentation)),
+            Maybe::Absent(_) => None,
+        }
     }
 
     /// The module `name` names where a model include starting at `at` stands:
@@ -607,10 +710,26 @@ impl<'source> Collector<'_, 'source>
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
-        let Maybe::Present(theory) = cursor.tile(TileName::TYPE_IDENTIFIER)
+        let Maybe::Present(mut theory) = cursor.tile(TileName::TYPE_IDENTIFIER)
         else {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         };
+        // `Model(Gandr.Package)`: the segments before the last name the
+        // modules the theory is declared in.
+        let mut prefix = Vec::new();
+        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+            let next = match cursor.tile(TileName::TYPE_IDENTIFIER) {
+                Maybe::Present(next) => next,
+                Maybe::Absent(_) => match cursor.tile(TileName::IDENTIFIER) {
+                    Maybe::Present(next) => next,
+                    Maybe::Absent(_) => {
+                        return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                    },
+                },
+            };
+            let segment = core::mem::replace(&mut theory, next);
+            prefix.push((segment.span, self.name_of(segment)));
+        }
         if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_CLOSE) {
             return Err(misplaced_in(FormName::MODULE, cursor.here()));
         }
@@ -640,7 +759,7 @@ impl<'source> Collector<'_, 'source>
         let name = self.name_of(theory);
         let (position, presentation) =
             self.collected
-                .presented_theory(form.span.start(), theory.span, name)?;
+                .presented_theory_in(form.span.start(), &prefix, theory.span, name)?;
         let Ok(model) = crate::model::derive(presentation)
         else {
             return Err(LoweringRefusal::OutOfFragment {
