@@ -1,6 +1,9 @@
 // The twin of `model/specification/specification-monad.gandr`: where a
 // specification monad's laws are refused.
 
+// `RelativeMonad`.
+import "../../model/desc/relative-monad.gandr" ;
+
 /// The monad's laws beside the order: right unit rewrites an extension whose
 /// continuation returns, an operation nested in producer position, which the
 /// description does not read beside an indexed sort yet (#1510).
@@ -15,4 +18,15 @@ theory LawfulSpecificationMonad {
   rule unitL : ext(ret(a), k) <=> k(a);
   rule unitR : ext(m, bind x . ret(x)) <=> m;
   rule assoc : ext(ext(m, k), l) <=> ext(m, bind x . ext(k(x), l));
+}
+
+/// The monad's laws included beside the order: the included right unit is
+/// refused as the written one is, at the `include` that brings it, in the
+/// block that includes it rather than in `RelativeMonad`, which checks alone
+/// (#2752).
+@[ refuses("UndescribedMember.NestedOperation") ]
+theory IncludedSpecificationMonad {
+  include RelativeMonad;
+  sort Below(w : C, v : C) : Type;
+  oper refl : (w : C) --> Below(w, w);
 }

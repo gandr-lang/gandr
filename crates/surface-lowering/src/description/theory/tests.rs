@@ -2246,6 +2246,64 @@ fn an_include_is_refused_at_its_member()
     );
 }
 
+/// #2752: a member the including block refuses, and the included one reads,
+/// is refused at the `include` that brings it, in the including block; the
+/// included block stays clean.
+#[test]
+fn an_included_member_is_refused_at_its_include_2752()
+{
+    let source = "theory Monad {\n  sort V : Type+;\n  sort C : Type;\n  oper ret : (a : V) --> C;\n  oper ext : (m : C, k : pi+ (x : V) . C) --> C;\n  rule unitR : ext(m, bind x . ret(x)) <=> m;\n}\ntheory Ordered {\n  include Monad;\n  sort Below(w : C, v : C) : Type;\n  oper refl : (w : C) --> Below(w, w);\n}\n";
+    let grammar = grammar();
+    let tree = parse(&grammar, SourceText::from(source))
+        .unwrap()
+        .into_tree();
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = crate::lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        crate::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+    )
+    .unwrap();
+    let text = |span: ByteSpan| source.get(usize::from(span.start()) .. usize::from(span.end()));
+    let refused: alloc::vec::Vec<_> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            let crate::DeclarationOutcome::Refused(refusal) = declaration.outcome()
+            else {
+                return None;
+            };
+            Some((
+                text(declaration.span()).and_then(|block| block.split_whitespace().nth(1)),
+                refusal,
+            ))
+        })
+        .collect();
+    let [(block, ref refusal)] = *refused.as_slice()
+    else {
+        panic!("one refusal: {refused:?}")
+    };
+    assert_eq!(
+        block,
+        Some("Ordered"),
+        "the including block is refused, the included one reads"
+    );
+    let crate::LoweringRefusal::UndescribedMember {
+        span,
+        fault: MemberFault::NestedOperation,
+    } = *refusal
+    else {
+        panic!("the included rule is refused for its nesting: {refusal:?}")
+    };
+    assert_eq!(
+        text(span),
+        Some("include Monad"),
+        "the refusal stands at the include"
+    );
+}
+
 /// #2356: a `law` member is kept beside the value — its binders, its
 /// hypotheses and its path — an included theory's laws first; a statement
 /// that is no path, a sort binder after a hypothesis and a law named as an
