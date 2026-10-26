@@ -449,6 +449,16 @@ INSERT INTO purpose VALUES('core-session','session::NodeId','struct','A position
 INSERT INTO purpose VALUES('core-session','session::Session','struct','A closed session type whose recursion is guarded by observable actions.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-session','session::TypeError','enum','A malformed syntax arena or a broken arena reference.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-session','session::ValueTypeId','struct','An opaque payload-type identity assigned by the protocol''s owner.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','meta::MetaCount','struct','A count of metavariables.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','meta::MetaId','struct','A metavariable''s place in its metacontext, in declaration order.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','meta::Metas','struct','The metavariables of one problem, each with its context and its solution, and the equations that wait on them.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Equation','struct','One equation, posed under a set of intuitionistic binders.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Postponed','struct','An equation the solver could not answer most generally when it met it.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Reason','enum','Why an equation waits in the store.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Refutation','enum','Evidence that no solution exists, stable under every instantiation.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Side','enum','One side of an equation, in the family both sides share.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::Verdict','enum','What a run decided.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-unify','solve::solve','function','Solve equations in order, binding metas where an equation forces it and postponing in its store what no step answers most generally.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-check-memo','','crate','Lets a checker skip a goal it already decided in this process, and gives the kernel its one hash index: the kernel layer''s check-memo seam, inside the validity wall, generic in support and outcome so it names no kernel type.','sharing','fits','unplaced','The lead paragraph names neither the kernel layer nor the validity wall. The # Boundaries hit paragraph repeats CheckMemo''s, the #[non_exhaustive] paragraph restates the workspace rule rather than this crate''s code, and # Witnesses narrates the specification facade''s evaluation order.');
 INSERT INTO purpose VALUES('kernel-check-memo','accounting','module','Counts a memo''s entries per plane and in total with checked arithmetic, so a measurement never reads a wrapped count.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('kernel-check-memo','accounting::MemoBucketCount','struct','Counts the distinct digests a memo''s entries are bucketed under; read against the entry count, a smaller number shows a collision.',NULL,'fits','sound',NULL);
