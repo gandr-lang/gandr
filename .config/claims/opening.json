@@ -1,37 +1,58 @@
 [
   {
     "name": "a branch's issue the body does not name refuses it, naming the line to add",
-    "input": { "branch": "triage-2341-probe", "body": "Counts the rows.\n\nRelated: #2341." },
+    "input": {
+      "branch": "triage-2341-probe",
+      "body": "Counts the rows.\n\nRelated: #2341."
+    },
     "output": "the body names no `Advances` or `Closes` line for #2341, the issue `triage-2341-probe` names: add `Advances #2341` for a slice, or `Closes #2341` if it finishes the issue, then run `pr:open` again"
   },
   {
     "name": "a body advancing the branch's issue opens",
-    "input": { "branch": "triage-2341-probe", "body": "Counts the rows.\n\nAdvances #2341" },
+    "input": {
+      "branch": "triage-2341-probe",
+      "body": "Counts the rows.\n\nAdvances #2341"
+    },
     "output": ""
   },
   {
     "name": "any closing keyword in any case opens",
-    "input": { "branch": "surface-2341-probe", "body": "fixes #2341" },
+    "input": {
+      "branch": "surface-2341-probe",
+      "body": "fixes #2341"
+    },
     "output": ""
   },
   {
     "name": "a body working another issue but not the branch's is refused",
-    "input": { "branch": "triage-2341-probe", "body": "Closes #2340" },
+    "input": {
+      "branch": "triage-2341-probe",
+      "body": "Closes #2340"
+    },
     "output": "the body names no `Advances` or `Closes` line for #2341, the issue `triage-2341-probe` names: add `Advances #2341` for a slice, or `Closes #2341` if it finishes the issue, then run `pr:open` again"
   },
   {
     "name": "the branch's number is read whole",
-    "input": { "branch": "triage-23410-probe", "body": "Advances #2341" },
+    "input": {
+      "branch": "triage-23410-probe",
+      "body": "Advances #2341"
+    },
     "output": "the body names no `Advances` or `Closes` line for #23410, the issue `triage-23410-probe` names: add `Advances #23410` for a slice, or `Closes #23410` if it finishes the issue, then run `pr:open` again"
   },
   {
     "name": "a branch with no issue opens a body working some issue",
-    "input": { "branch": "perf-index-sweep", "body": "Advances #7" },
+    "input": {
+      "branch": "perf-index-sweep",
+      "body": "Advances #7"
+    },
     "output": ""
   },
   {
     "name": "a branch with no issue and a body working none is refused",
-    "input": { "branch": "perf-index-sweep", "body": "See #7 for the background." },
+    "input": {
+      "branch": "perf-index-sweep",
+      "body": "See #7 for the background."
+    },
     "output": "the body names no issue it works: add `Advances #n` for the issue the change advances, or `Closes #n` for one it finishes, then run `pr:open` again"
   },
   {
@@ -109,7 +130,12 @@
     "input": {
       "branch": "workflow-2499-sources",
       "body": "Closes #2499\n",
-      "issues": [{ "number": 2499, "body": "## Sources\n\n- the vault's listing\n" }]
+      "issues": [
+        {
+          "number": 2499,
+          "body": "## Sources\n\n- the vault's listing\n"
+        }
+      ]
     },
     "output": "note: #2499's `## Sources` line `- the vault's listing` is not `- `<key>` — <text>`, so no key is read from it"
   },
@@ -118,7 +144,12 @@
     "input": {
       "branch": "workflow-2499-sources",
       "body": "Closes #2499\n",
-      "issues": [{ "number": 2499, "body": "Counts the rows." }]
+      "issues": [
+        {
+          "number": 2499,
+          "body": "Counts the rows."
+        }
+      ]
     },
     "output": ""
   },
@@ -206,7 +237,12 @@
     "input": {
       "branch": "workflow-2522-readings",
       "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `descent` | not selected |\n",
-      "issues": [{ "number": 2522, "body": "## Readings\n\n- `descent` — the memo's reuse\n" }]
+      "issues": [
+        {
+          "number": 2522,
+          "body": "## Readings\n\n- `descent` — the memo's reuse\n"
+        }
+      ]
     },
     "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `descent` (#2522's `## Readings`)"
   },
@@ -233,17 +269,61 @@
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
         "sites": [
-          { "concern": "fork", "crate": "core-checker", "module": "fork" },
-          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
-          { "concern": "sharing", "crate": "core-incremental", "module": "" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
-          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
-          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+          {
+            "concern": "fork",
+            "crate": "core-checker",
+            "module": "fork"
+          },
+          {
+            "concern": "fork",
+            "crate": "surface-dispatcher",
+            "module": "pool"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "level"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "order"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-incremental",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "duplicate"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "machine"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "overlay"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "resharing"
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-check-memo",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-core",
+            "module": "admission"
+          }
         ]
       },
       "added": ["crates/surface-dispatcher/src/resharing.rs"]
@@ -259,17 +339,61 @@
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
         "sites": [
-          { "concern": "fork", "crate": "core-checker", "module": "fork" },
-          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
-          { "concern": "sharing", "crate": "core-incremental", "module": "" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
-          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
-          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+          {
+            "concern": "fork",
+            "crate": "core-checker",
+            "module": "fork"
+          },
+          {
+            "concern": "fork",
+            "crate": "surface-dispatcher",
+            "module": "pool"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "level"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "order"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-incremental",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "duplicate"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "machine"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "overlay"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "resharing"
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-check-memo",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-core",
+            "module": "admission"
+          }
         ]
       },
       "added": ["crates/surface-dispatcher/src/resharing.rs"]
@@ -285,17 +409,61 @@
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
         "sites": [
-          { "concern": "fork", "crate": "core-checker", "module": "fork" },
-          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
-          { "concern": "sharing", "crate": "core-incremental", "module": "" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
-          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
-          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+          {
+            "concern": "fork",
+            "crate": "core-checker",
+            "module": "fork"
+          },
+          {
+            "concern": "fork",
+            "crate": "surface-dispatcher",
+            "module": "pool"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "level"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "order"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-incremental",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "duplicate"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "machine"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "overlay"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "resharing"
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-check-memo",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-core",
+            "module": "admission"
+          }
         ]
       },
       "added": [
@@ -315,17 +483,61 @@
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
         "sites": [
-          { "concern": "fork", "crate": "core-checker", "module": "fork" },
-          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
-          { "concern": "sharing", "crate": "core-incremental", "module": "" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
-          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
-          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+          {
+            "concern": "fork",
+            "crate": "core-checker",
+            "module": "fork"
+          },
+          {
+            "concern": "fork",
+            "crate": "surface-dispatcher",
+            "module": "pool"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "level"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "order"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-incremental",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "duplicate"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "machine"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "overlay"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "resharing"
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-check-memo",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-core",
+            "module": "admission"
+          }
         ]
       },
       "added": []
@@ -341,17 +553,61 @@
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
         "sites": [
-          { "concern": "fork", "crate": "core-checker", "module": "fork" },
-          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
-          { "concern": "sharing", "crate": "core-incremental", "module": "" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
-          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
-          { "concern": "sharing", "crate": "kernel-core", "module": "admission" }
+          {
+            "concern": "fork",
+            "crate": "core-checker",
+            "module": "fork"
+          },
+          {
+            "concern": "fork",
+            "crate": "surface-dispatcher",
+            "module": "pool"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "level"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "order"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-incremental",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "duplicate"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "machine"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "overlay"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "resharing"
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-check-memo",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-core",
+            "module": "admission"
+          }
         ]
       },
       "added": []
@@ -367,18 +623,66 @@
         "ids": ["fork", "oracle", "sharing", "pools"],
         "base": ["fork", "oracle", "sharing"],
         "sites": [
-          { "concern": "fork", "crate": "core-checker", "module": "fork" },
-          { "concern": "fork", "crate": "surface-dispatcher", "module": "pool" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "level" },
-          { "concern": "oracle", "crate": "kernel-strata", "module": "order" },
-          { "concern": "sharing", "crate": "core-incremental", "module": "" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "duplicate" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "machine" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "overlay" },
-          { "concern": "sharing", "crate": "core-nbe", "module": "resharing" },
-          { "concern": "sharing", "crate": "kernel-check-memo", "module": "" },
-          { "concern": "sharing", "crate": "kernel-core", "module": "admission" },
-          { "concern": "pools", "crate": "surface-dispatcher", "module": "fork" }
+          {
+            "concern": "fork",
+            "crate": "core-checker",
+            "module": "fork"
+          },
+          {
+            "concern": "fork",
+            "crate": "surface-dispatcher",
+            "module": "pool"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "level"
+          },
+          {
+            "concern": "oracle",
+            "crate": "kernel-strata",
+            "module": "order"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-incremental",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "duplicate"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "machine"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "overlay"
+          },
+          {
+            "concern": "sharing",
+            "crate": "core-nbe",
+            "module": "resharing"
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-check-memo",
+            "module": ""
+          },
+          {
+            "concern": "sharing",
+            "crate": "kernel-core",
+            "module": "admission"
+          },
+          {
+            "concern": "pools",
+            "crate": "surface-dispatcher",
+            "module": "fork"
+          }
         ]
       },
       "added": ["crates/surface-dispatcher/src/fork.rs"]
@@ -398,5 +702,155 @@
       ]
     },
     "output": "the body's `## Readings` leaves an axis its issue selects unanswered: give its row `answered: <exemplar or site>` or `none: <reason>`, then run `pr:open` again:\n  - `oracle` (#2580's `## Readings`)"
+  },
+  {
+    "name": "#2524: a defect closed with neither observation nor regression is refused, naming both",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Fixes #2621\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": []
+    },
+    "output": "the body closes #2621, a `kind:defect`, without `## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there, and without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, or a `.config` case whose name cites it, added by the change; add both, then run `pr:open` again"
+  },
+  {
+    "name": "#2524: a defect closed with an observation, its only test naming another issue, is refused naming the regression",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": "crates/core-checker/src/judgement/tests.rs",
+          "text": "fn a_claim_passes_a_collector_26210()"
+        },
+        {
+          "path": "corpus/fragment/exits.gandr",
+          "text": "/// #26210: the same, one digit on"
+        }
+      ]
+    },
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, or a `.config` case whose name cites it, added by the change; add it, then run `pr:open` again"
+  },
+  {
+    "name": "#2524: an observation and a `.config` case citing the issue opens",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": ".config/claims/next.json",
+          "text": "    \"name\": \"#2621: a collector is passed over\","
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#2524: a corpus `///` line citing the issue is a regression; an observation left as a comment is none",
+    "input": {
+      "branch": "surface-2621-probe",
+      "body": "Closes #2621\n\n## Observation\n\n<!-- the instrument and the value -->\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": "corpus/fragment/exits.gandr",
+          "text": "/// A collector is never claimed (#2621)."
+        }
+      ]
+    },
+    "output": "the body closes #2621, a `kind:defect`, without `## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there; add it, then run `pr:open` again"
+  },
+  {
+    "name": "#2524: a defect only advanced, and a gap closed, ask for neither",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Advances #2621\nCloses #2622\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        },
+        {
+          "number": 2622,
+          "body": "",
+          "labels": ["kind:gap"]
+        }
+      ],
+      "regressions": []
+    },
+    "output": ""
+  },
+  {
+    "name": "#2524: a Rust test named for the issue is a regression",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": "crates/core-checker/src/judgement/tests.rs",
+          "text": "fn a_claim_passes_a_collector_2621()"
+        }
+      ]
+    },
+    "output": ""
+  },
+  {
+    "name": "#2524: a `.config` line citing the issue outside a JSON case's name is no regression",
+    "input": {
+      "branch": "workflow-2621-collector",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "issues": [
+        {
+          "number": 2621,
+          "body": "",
+          "labels": ["kind:defect", "area:workflow"]
+        }
+      ],
+      "regressions": [
+        {
+          "path": ".config/claims/next.jq",
+          "text": "# `collector`, whose rows a guard keeps (#2621)."
+        },
+        {
+          "path": ".config/claims/opening.json",
+          "text": "      \"body\": \"Fixes #2621\\n\","
+        }
+      ]
+    },
+    "output": "the body closes #2621, a `kind:defect`, without a regression naming #2621: a corpus `///` line citing it, a Rust test named `…_2621`, or a `.config` case whose name cites it, added by the change; add it, then run `pr:open` again"
   }
 ]

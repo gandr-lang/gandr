@@ -5,12 +5,14 @@
 #   branch    the branch being opened, `<lane>-<n>-<slug>` when it works an
 #             issue
 #   body      the body file's text
-#   issues    the issues the body works: [{number, body}]
+#   issues    the issues the body works: [{number, body, labels: [name]}]
 #   mentions  per key the body supersedes, the tree's lines naming it:
 #             {key: ["<path>:<line>:<text>"]}
 #   concerns  `ledger/concerns.sql` at the head and at the base:
 #             {ids: [id], base: [id], sites: [{concern, crate, module}]}
 #   added     the paths the change adds under `crates/*/src/`
+#   regressions  the lines the change adds to corpus sources, Rust test files
+#             and `.config` cases: [{path, text}]
 #
 # A merge takes the claim off what the body works (`decide.jq`), so the body
 # must name it (#2462): a branch that carries an issue number needs
@@ -36,6 +38,12 @@
 # change adds whose name is a concern's id, or the last segment of one of its
 # sites' modules, belongs to that concern; where every site of it lies in
 # another crate, the body declares it `consolidated`, or a `new concern`.
+#
+# A defect fix lands with what was observed and the check that failed before
+# it (#2524): a body closing a `kind:defect` issue `#n` has a non-empty
+# `## Observation`, and the change adds a regression naming `#n`: a corpus
+# `///` line citing `#n`, a Rust test whose name ends `_n` (or carries `_n_`),
+# or a `.config` JSON case whose `"name"` cites `#n`.
 
 include "targets";
 include "sections";
@@ -149,4 +157,28 @@ def concerns:
     | select($new or ([$named[] | select(.key == $concern and .verdict == "consolidated")] | length > 0) | not)
     | "the change adds `\($added.path)`, a module of the concern `\($concern)`, whose sites lie in \($sites | map("`\(.crate)\(if .module == "" then "" else "::\(.module)" end)`") | join(", ")): declare `- `\($concern)` — consolidated: <what merged>` in `## Concerns`, or a `new concern` with its row, then run `pr:open` again";
 
-claim, sources, readings, concerns
+# Whether an added line `{path, text}` is a regression naming issue `$n`.
+def regression($n):
+  ($n | tostring) as $n
+  | if (.path | endswith(".gandr")) then .text | test("^\\s*///.*#\($n)\\b")
+    elif (.path | endswith(".rs")) then .text | test("\\bfn\\s+\\w*_\($n)(_\\w*)?\\s*[(<]")
+    elif (.path | startswith(".config/") and endswith(".json")) then .text | test("\"name\":\\s*\"[^\"]*#\($n)\\b")
+    else false
+    end;
+
+# The refusals of a defect fix missing its observation or its regression.
+def defects:
+  (.body | targets(closing)) as $closed
+  | (.regressions // []) as $added
+  | (.body | section("Observation") // [] | filled) as $observed
+  | (.issues // [])[]
+  | select((.labels // []) | index("kind:defect"))
+  | .number as $n
+  | select($closed | index($n))
+  | [if $observed then empty else "`## Observation`: the instrument used (a debugger, a trace, a failing fixture) and the value read there" end,
+     if ([$added[] | select(regression($n))] | length) > 0 then empty
+     else "a regression naming #\($n): a corpus `///` line citing it, a Rust test named `…_\($n)`, or a `.config` case whose name cites it, added by the change" end]
+  | select(length > 0)
+  | "the body closes #\($n), a `kind:defect`, without \(join(", and without ")); add \(if length > 1 then "both" else "it" end), then run `pr:open` again";
+
+claim, sources, readings, concerns, defects

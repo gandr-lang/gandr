@@ -1585,7 +1585,7 @@ if existing=$(gh pr view "$own" -R "$repo" --json number,state --jq 'select(.sta
 fi
 claims=$(git rev-parse --show-toplevel)/.config/claims
 issues=$(jq -Rrs -L "$claims" 'include "targets"; targets(working) | unique[]' "$body" \
-  | while IFS= read -r number; do gh api "repos/$repo/issues/$number" --jq '{number, body: (.body // "")}'; done \
+  | while IFS= read -r number; do gh api "repos/$repo/issues/$number" --jq '{number, body: (.body // ""), labels: [.labels[].name]}'; done \
   | jq -s .)
 mentions=$(jq -Rrs -L "$claims" 'include "sections"; superseded[]' "$body" \
   | while IFS= read -r key; do { git grep -nIF -e "$key" || true; } | jq -R . | jq -s --arg key "$key" '{($key): .}'; done \
@@ -1598,9 +1598,16 @@ sites=$(concerns_at HEAD 'SELECT concern, crate, module FROM site ORDER BY conce
 concerns=$(jq -n --argjson ids "${ids:-[]}" --argjson had "${had:-[]}" --argjson sites "${sites:-[]}" \
   '{ids: [$ids[].id], base: [$had[].id], sites: $sites}')
 added=$(git diff --no-renames --name-only --diff-filter=A "$from" HEAD -- ':(glob)crates/*/src/**/*.rs' | jq -R . | jq -s .)
+# The lines the change adds where a defect's regression is named (#2524),
+# those that can name an issue alone, to keep the argument small.
+regressions=$(git diff -U0 --no-renames --no-color "$from" HEAD -- ':(glob)corpus/**/*.gandr' ':(glob)**/*.rs' ':(glob).config/**/*.json' \
+  | jq -Rs '[foreach (split("\n")[]) as $line ({path: null};
+      if ($line | startswith("+++ ")) then {path: ($line | sub("^\\+\\+\\+ (b/)?"; ""))}
+      else {path, text: (if ($line | startswith("+")) then $line[1:] else null end)} end;
+      select(.text != null and (.text | test("[#_][0-9]"))))]')
 findings=$(jq -n --arg branch "$own" --rawfile body "$body" --argjson issues "$issues" --argjson mentions "$mentions" \
-  --argjson concerns "$concerns" --argjson added "$added" \
-  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added}' \
+  --argjson concerns "$concerns" --argjson added "$added" --argjson regressions "$regressions" \
+  '{branch: $branch, body: $body, issues: $issues, mentions: $mentions, concerns: $concerns, added: $added, regressions: $regressions}' \
   | jq -r -L "$claims" -f "$claims/opening.jq")
 if [[ -n "$findings" ]]; then
   echo "$findings" >&2
