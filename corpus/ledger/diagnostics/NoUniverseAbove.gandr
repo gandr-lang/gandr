@@ -1,0 +1,3 @@
+/// `NoUniverseAbove`: a universe at the greatest level, which no universe stands above.
+@[ refuses("NoUniverseAbove") ]
+def greatest : Type[+, 18446744073709551615] ;

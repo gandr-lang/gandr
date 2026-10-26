@@ -7720,7 +7720,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - fails: yields the wrong-sort refusal for a resolved name or a type
     ///   where its position reads neither; a constructor's own refusals; the
     ///   arity refusal for a family of parameters named alone; a name nothing
-    ///   answers is unadmitted.
+    ///   answers is unresolved.
     /// - panics: none.
     ///
     /// # Errors
@@ -7729,14 +7729,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — a declaration, a type atom, the universe and an
     ///   unanswered constructor each written where a value is read, asserted as
-    ///   the exact core node or refusal; an unknown constructor unadmitted.
+    ///   the exact core node or refusal; an unknown constructor unresolved.
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::native::tests::a_constructor_applies_to_its_fields`
     /// - witness: `lower::native::tests::a_data_family_named_where_a_value_is_read_is_quoted`
     /// - witness: `lower::identity::tests::session_statements_lower_to_their_formers`
-    /// - witness: `lower::tests::an_unknown_constructor_where_a_value_is_read_is_unadmitted`
+    /// - witness: `lower::tests::an_unknown_capital_where_a_value_is_read_is_unresolved_2653`
     #[spec(
         ensures: |ret| {
             ret.is_err()
@@ -7806,7 +7806,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Plan::Universe(Universe::FUSS_FREE)
             },
             Maybe::Absent(_) => {
-                return Err(site.out(FragmentBoundary::Unadmitted(Unbuilt::UnknownConstructor)));
+                return Err(LoweringRefusal::UnresolvedName {
+                    span: site.at.span,
+                    name,
+                });
             },
         };
         let _frame = self.require(site, Produced::ValueType)?;
@@ -11861,9 +11864,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   sort and level zero for whichever is left off.
     /// - provides: the one reading of a universe's spelling, shared by the
     ///   universe former and the decode that reads a binder's written type.
-    /// - fails: a misplaced-tile fault for a bracket out of shape; the
-    ///   unadmitted refusal for a level numeral wider than a level constant or
-    ///   spelling the greatest one, whose universe no universe stands above.
+    /// - fails: a misplaced-tile fault for a bracket out of shape;
+    ///   [`LoweringRefusal::NoUniverseAbove`] for a level numeral wider than a
+    ///   level constant or spelling the greatest one, whose universe no
+    ///   universe stands above.
     /// - panics: none.
     ///
     /// # Errors
@@ -11922,7 +11926,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   refused at its numeral.
     /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
     /// - witness: `lower::identity::tests::a_path_at_a_universe_reads_its_endpoints_as_types_402`
-    /// - witness: `lower::tests::a_universe_level_at_or_past_the_greatest_is_refused_at_its_numeral`
+    /// - witness: `lower::tests::a_universe_level_at_or_past_the_greatest_has_none_above_2653`
     fn universe_tiles(
         &self,
         site: Site,
@@ -11954,11 +11958,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     .map(LevelConstant::from)
                     .filter(|level| level.succ().is_ok())
                 else {
-                    let level = Site {
-                        at: numeral,
-                        ..site
-                    };
-                    return Err(level.out(FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel)));
+                    return Err(LoweringRefusal::NoUniverseAbove {
+                        span: numeral.span,
+                        level: self.name_at(numeral),
+                    });
                 };
                 level
             },
@@ -26540,18 +26543,22 @@ mod tests
     }
 
     #[test]
-    fn an_unknown_constructor_where_a_value_is_read_is_unadmitted()
+    fn an_unknown_capital_where_a_value_is_read_is_unresolved_2653()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let refused = refusal(SourceText::from("def a = Foo ;"));
         assert_eq!(
-            refusal(SourceText::from("def a = Foo ;")),
-            LoweringRefusal::OutOfFragment {
+            refused,
+            LoweringRefusal::UnresolvedName {
                 span: at(8_usize, 11_usize),
-                form: FormName::from(NamedKind("constructor")),
-                sort: FragmentSort::Value,
-                boundary: FragmentBoundary::Unadmitted(Unbuilt::UnknownConstructor),
+                name: SurfaceName::from("Foo"),
             },
-            "only `Type` is a universe; another unanswered capital is no form the fragment has"
+            "only `Type` is a universe; another unanswered capital names nothing"
+        );
+        assert_eq!(
+            refused.classify(),
+            FailureClass::MalformedSource,
+            "a capital naming nothing is the author's mistake, never an unbuilt form"
         );
     }
 
@@ -26662,30 +26669,32 @@ mod tests
     }
 
     #[test]
-    fn a_universe_level_at_or_past_the_greatest_is_refused_at_its_numeral()
+    fn a_universe_level_at_or_past_the_greatest_has_none_above_2653()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
         assert_eq!(
             refusal(SourceText::from(
                 "def d : Type[+, 99999999999999999999999] ;"
             )),
-            LoweringRefusal::OutOfFragment {
+            LoweringRefusal::NoUniverseAbove {
                 span: at(16_usize, 39_usize),
-                form: FormName::from(NamedKind("universe_type")),
-                sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel),
+                level: SurfaceName::from("99999999999999999999999"),
             },
             "the refusal stands at the level, not the whole universe"
         );
+        let greatest = refusal(SourceText::from("def d : Type[+, 18446744073709551615] ;"));
         assert_eq!(
-            refusal(SourceText::from("def d : Type[+, 18446744073709551615] ;")),
-            LoweringRefusal::OutOfFragment {
+            greatest,
+            LoweringRefusal::NoUniverseAbove {
                 span: at(16_usize, 36_usize),
-                form: FormName::from(NamedKind("universe_type")),
-                sort: FragmentSort::ValueType,
-                boundary: FragmentBoundary::Unadmitted(Unbuilt::UniverseLevel),
+                level: SurfaceName::from("18446744073709551615"),
             },
             "the greatest level has no universe above it, so the lowering refuses it too"
+        );
+        assert_eq!(
+            greatest.classify(),
+            FailureClass::MalformedSource,
+            "the language has no universe above the greatest, so the source asks for none"
         );
     }
 

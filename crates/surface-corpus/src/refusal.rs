@@ -649,6 +649,8 @@ pub enum RefusalName
     GradedBridge,
     /// A literal whose text is not a lexeme of its kind.
     MalformedLiteral,
+    /// A universe level past the greatest, which no universe stands above.
+    NoUniverseAbove,
     /// A form whose pieces fall short of its rule.
     MalformedForm,
     /// An attribute name the registry does not hold.
@@ -794,6 +796,8 @@ pub enum RefusalName
     GrammarMismatch,
     /// A mold the grammar's table does not hold.
     UnknownMold,
+    /// A capability form over a host table in conflict with itself.
+    HostConflict,
     /// A declaration the lowering minted neither a type nor a body for, and
     /// refused nothing in.
     Unminted,
@@ -971,7 +975,7 @@ impl RefusalName
     ///   expectation settlement; this does not establish completeness or
     ///   uniqueness of the enumeration independently of its implementation.
     /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
-    pub const VOCABULARY: [Self; 214_usize] = [
+    pub const VOCABULARY: [Self; 216_usize] = [
         Self::NotADataType,
         Self::DataKindNotUniverse,
         Self::DataFieldLevel,
@@ -1052,6 +1056,7 @@ impl RefusalName
         Self::IllFormedDescription,
         Self::GradedBridge,
         Self::MalformedLiteral,
+        Self::NoUniverseAbove,
         Self::MalformedForm,
         Self::UnknownAttribute,
         Self::DuplicateAttribute,
@@ -1110,6 +1115,7 @@ impl RefusalName
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
+        Self::HostConflict,
         Self::Unminted,
         Self::TypeMismatch,
         Self::ShapeMismatch,
@@ -1258,7 +1264,8 @@ impl RefusalName
         (Self::BareFeedback, b"BareFeedback") |
         (Self::IllFormedDescription, b"IllFormedDescription") |
         (Self::GradedBridge, b"GradedBridge") | (Self::MalformedLiteral,
-        b"MalformedLiteral") | (Self::MalformedForm, b"MalformedForm") |
+        b"MalformedLiteral") | (Self::NoUniverseAbove, b"NoUniverseAbove") |
+        (Self::MalformedForm, b"MalformedForm") |
         (Self::UnknownAttribute, b"UnknownAttribute") | (Self::DuplicateAttribute,
         b"DuplicateAttribute") | (Self::MissingPayload, b"MissingPayload") |
         (Self::NonValuePayload, b"NonValuePayload") | (Self::IllTypedPayload,
@@ -1312,7 +1319,7 @@ impl RefusalName
         (Self::GenericMisplaced, b"GenericMisplaced") |
         (Self::GenericUncovered(_), b"GenericUncovered") |
         (Self::BudgetExceeded, b"BudgetExceeded") | (Self::GrammarMismatch,
-        b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
+        b"GrammarMismatch") | (Self::UnknownMold, b"UnknownMold") | (Self::HostConflict, b"HostConflict") | (Self::Unminted, b"Unminted") | (Self::TypeMismatch,
         b"TypeMismatch") | (Self::ShapeMismatch, b"ShapeMismatch") |
         (Self::NotSynthesisable, b"NotSynthesisable") | (Self::UnknownConstant,
         b"UnknownConstant") | (Self::UnboundIndex, b"UnboundIndex") |
@@ -1593,6 +1600,7 @@ impl RefusalName
             Self::IllFormedDescription => "IllFormedDescription",
             Self::GradedBridge => "GradedBridge",
             Self::MalformedLiteral => "MalformedLiteral",
+            Self::NoUniverseAbove => "NoUniverseAbove",
             Self::MalformedForm => "MalformedForm",
             Self::UnknownAttribute => "UnknownAttribute",
             Self::DuplicateAttribute => "DuplicateAttribute",
@@ -1653,6 +1661,7 @@ impl RefusalName
             Self::BudgetExceeded => "BudgetExceeded",
             Self::GrammarMismatch => "GrammarMismatch",
             Self::UnknownMold => "UnknownMold",
+            Self::HostConflict => "HostConflict",
             Self::Unminted => "Unminted",
             Self::TypeMismatch => "TypeMismatch",
             Self::ShapeMismatch => "ShapeMismatch",
@@ -2182,7 +2191,8 @@ impl Refusal<'_>
         RefusalName::IllFormedDescription) | (Self::Lowering(LoweringRefusal::GradedBridge { ..
         }), RefusalName::GradedBridge) |
         (Self::Lowering(LoweringRefusal::MalformedLiteral { .. }),
-        RefusalName::MalformedLiteral) | (Self::Lowering(LoweringRefusal::MalformedForm {
+        RefusalName::MalformedLiteral) | (Self::Lowering(LoweringRefusal::NoUniverseAbove { .. }),
+        RefusalName::NoUniverseAbove) | (Self::Lowering(LoweringRefusal::MalformedForm {
         .. }), RefusalName::MalformedForm) |
         (Self::Lowering(LoweringRefusal::UnknownAttribute { .. }),
         RefusalName::UnknownAttribute) |
@@ -2291,7 +2301,7 @@ impl Refusal<'_>
         Self::Checking(CheckRefusal::BudgetExceeded { .. }), RefusalName::BudgetExceeded)
         | (Self::Lowering(LoweringRefusal::GrammarMismatch { .. }),
         RefusalName::GrammarMismatch) | (Self::Lowering(LoweringRefusal::UnknownMold { ..
-        }), RefusalName::UnknownMold) | (Self::Lowering(LoweringRefusal::Unminted { .. }), RefusalName::Unminted) | (Self::Checking(CheckRefusal::PathCode(_)), RefusalName::PathCode) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
+        }), RefusalName::UnknownMold) | (Self::Lowering(LoweringRefusal::HostConflict { .. }), RefusalName::HostConflict) | (Self::Lowering(LoweringRefusal::Unminted { .. }), RefusalName::Unminted) | (Self::Checking(CheckRefusal::PathCode(_)), RefusalName::PathCode) | (Self::Checking(CheckRefusal::TypeMismatch(_)),
         RefusalName::TypeMismatch) | (Self::Checking(CheckRefusal::ShapeMismatch { .. }),
         RefusalName::ShapeMismatch) | (Self::Checking(CheckRefusal::NotSynthesisable { ..
         }), RefusalName::NotSynthesisable) |
@@ -2472,7 +2482,8 @@ impl Refusal<'_>
         RefusalName::BareFeedback) | (LoweringRefusal::IllFormedDescription { .. },
         RefusalName::IllFormedDescription) | (LoweringRefusal::GradedBridge { .. },
         RefusalName::GradedBridge) | (LoweringRefusal::MalformedLiteral { .. },
-        RefusalName::MalformedLiteral) | (LoweringRefusal::MalformedForm { .. },
+        RefusalName::MalformedLiteral) | (LoweringRefusal::NoUniverseAbove { .. },
+        RefusalName::NoUniverseAbove) | (LoweringRefusal::MalformedForm { .. },
         RefusalName::MalformedForm) | (LoweringRefusal::UnknownAttribute { .. },
         RefusalName::UnknownAttribute) | (LoweringRefusal::DuplicateAttribute { .. },
         RefusalName::DuplicateAttribute) | (LoweringRefusal::MissingPayload { .. },
@@ -2529,7 +2540,8 @@ impl Refusal<'_>
         RefusalName::GenericUncovered(_)) | (LoweringRefusal::BudgetExceeded { .. },
         RefusalName::BudgetExceeded) | (LoweringRefusal::GrammarMismatch { .. },
         RefusalName::GrammarMismatch) | (LoweringRefusal::UnknownMold { .. },
-        RefusalName::UnknownMold) | (LoweringRefusal::Unminted { .. },
+        RefusalName::UnknownMold) | (LoweringRefusal::HostConflict { .. },
+        RefusalName::HostConflict) | (LoweringRefusal::Unminted { .. },
         RefusalName::Unminted)
     ) && if let LoweringRefusal::OutOfFragment { form, sort, boundary, .. } = refusal {
         ret == RefusalName::OutOfFragment(fragment(FragmentFeature::of(form, sort, boundary)))
@@ -2570,6 +2582,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::IllFormedDescription { .. } => RefusalName::IllFormedDescription,
         LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
         LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,
+        LoweringRefusal::NoUniverseAbove { .. } => RefusalName::NoUniverseAbove,
         LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
         LoweringRefusal::UnknownAttribute { .. } => RefusalName::UnknownAttribute,
         LoweringRefusal::DuplicateAttribute { .. } => RefusalName::DuplicateAttribute,
@@ -2635,6 +2648,7 @@ fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,
+        LoweringRefusal::HostConflict { .. } => RefusalName::HostConflict,
         LoweringRefusal::Unminted { .. } => RefusalName::Unminted,
     }
 }

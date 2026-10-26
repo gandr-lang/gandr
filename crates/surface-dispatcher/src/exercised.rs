@@ -757,6 +757,7 @@ fn is_whole_unsigned_body(
             LoweringRefusal::MismatchedPattern { .. } |
             LoweringRefusal::PartialField { .. } |
             LoweringRefusal::InstanceUnanswered { .. } | LoweringRefusal::InstanceAmbiguous { .. } |
+            LoweringRefusal::NoUniverseAbove { .. } | LoweringRefusal::HostConflict { .. } |
             LoweringRefusal::ImportUnresolved { .. } | LoweringRefusal::ImportCycle { .. } | LoweringRefusal::ImportShadows { .. } | LoweringRefusal::UnexportedName { .. } | LoweringRefusal::UnresolvedDocLink { .. } | LoweringRefusal::DuplicateSignature { .. } | LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::DuplicateImportAlias { .. } | LoweringRefusal::ShadowedBuiltin { .. } | LoweringRefusal::OutOfFragment { .. } | LoweringRefusal::BareFeedback { .. } | LoweringRefusal::GradedBridge { .. } | LoweringRefusal::MalformedLiteral { .. } | LoweringRefusal::MalformedForm { .. } | LoweringRefusal::UnknownAttribute { .. } | LoweringRefusal::DuplicateAttribute { .. } | LoweringRefusal::MissingPayload { .. } | LoweringRefusal::NonValuePayload { .. } | LoweringRefusal::IllTypedPayload { .. } | LoweringRefusal::ForwardMemberReference { .. } | LoweringRefusal::PhaseDependence { .. } | LoweringRefusal::UnknownMember { .. } | LoweringRefusal::UnprovenLaw { .. } | LoweringRefusal::NotAFunctor { .. } | LoweringRefusal::ProjectionFromApplication { .. } | LoweringRefusal::UnreadAscription { .. } | LoweringRefusal::UnstatedComponent { .. } | LoweringRefusal::FamilyTelescope { .. } | LoweringRefusal::UninterfacedMember { .. } | LoweringRefusal::LowercaseModuleName { .. } | LoweringRefusal::ImplicitTelescope { .. } | LoweringRefusal::TelescopeCycle { .. } | LoweringRefusal::ImplicitUnsupplied { .. } | LoweringRefusal::ImplicitInParentheses { .. } | LoweringRefusal::ModelImplicitValue { .. } | LoweringRefusal::RegionAsValue { .. } | LoweringRefusal::StrayReceiverMode { .. } | LoweringRefusal::AmbiguousMethod { .. } | LoweringRefusal::ViewNotPlace { .. } | LoweringRefusal::ViewOfNoPlace { .. } | LoweringRefusal::NonExhaustiveMatch { .. } | LoweringRefusal::UnmarkedSelfReference { .. } | LoweringRefusal::UnguardedCorecursion { .. } | LoweringRefusal::DescentOnSeveralParameters { .. } | LoweringRefusal::Unreachable { .. } | LoweringRefusal::OutsideLoop { .. } | LoweringRefusal::AcrossHandler { .. } | LoweringRefusal::WithoutK { .. } | LoweringRefusal::DirectedCell { .. } | LoweringRefusal::CellNotALoop { .. } | LoweringRefusal::RulesUnoriented { .. } | LoweringRefusal::RulesNonLinear { .. } | LoweringRefusal::RulesDiverge { .. } | LoweringRefusal::RulesOverlapSecondOrder { .. } | LoweringRefusal::RulesOverlapCondition { .. } | LoweringRefusal::RulesUncompleted { .. } | LoweringRefusal::RulesNeverComplete { .. } | LoweringRefusal::RulesUndecided { .. } | LoweringRefusal::BudgetExceeded { .. } | LoweringRefusal::GrammarMismatch { .. } | LoweringRefusal::UnknownMold { .. } | LoweringRefusal::Unminted { .. } => None,
         };
         Row::ALL.into_iter().all(|row| rows.count(row)
@@ -813,6 +814,7 @@ fn lowering_row(
         | LoweringRefusal::UnexportedName { .. }
         | LoweringRefusal::ShadowedBuiltin { .. }
         | LoweringRefusal::MalformedLiteral { .. }
+        | LoweringRefusal::NoUniverseAbove { .. }
         | LoweringRefusal::MalformedForm { .. }
         | LoweringRefusal::UnknownAttribute { .. }
         | LoweringRefusal::DuplicateAttribute { .. }
@@ -870,6 +872,7 @@ fn lowering_row(
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. }
+        | LoweringRefusal::HostConflict { .. }
         | LoweringRefusal::Unminted { .. } => {},
     }
 }

@@ -170,6 +170,7 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::IllFormedDescription { .. } => "what the description check refuses",
         LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
         LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
+        LoweringRefusal::NoUniverseAbove { .. } => "no universe stands above this level",
         LoweringRefusal::MalformedForm { fault, .. } => match fault {
             FormFault::Repaired(Repair::Grout(GroutShape::Convex)) => "a term is missing here",
             FormFault::Repaired(Repair::Grout(GroutShape::Prefix | GroutShape::Postfix))
@@ -263,6 +264,9 @@ const fn lowered(refusal: LoweringRefusal<'_>) -> Culprit
         LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
         LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
         LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",
+        LoweringRefusal::HostConflict { .. } => {
+            "a capability the conflicted host table cannot answer"
+        },
         LoweringRefusal::Unminted { .. } => "a declaration the lowering dropped",
     })
 }
@@ -591,6 +595,7 @@ mod tests
             LoweringRefusal::IllFormedDescription { .. } => "what the description check refuses",
             LoweringRefusal::GradedBridge { .. } => "a grade other than `ω`",
             LoweringRefusal::MalformedLiteral { .. } => "not this literal's lexeme",
+            LoweringRefusal::NoUniverseAbove { .. } => "no universe stands above this level",
             LoweringRefusal::MalformedForm { fault, .. } => match fault {
                 FormFault::Repaired(Repair::Grout(GroutShape::Convex)) => "a term is missing here",
                 FormFault::Repaired(Repair::Grout(GroutShape::Prefix | GroutShape::Postfix))
@@ -686,6 +691,9 @@ mod tests
             LoweringRefusal::BudgetExceeded { .. } => "the lowering's allowance ran out",
             LoweringRefusal::GrammarMismatch { .. } => "molded under another grammar",
             LoweringRefusal::UnknownMold { .. } => "a mold the grammar does not hold",
+            LoweringRefusal::HostConflict { .. } => {
+                "a capability the conflicted host table cannot answer"
+            },
             LoweringRefusal::Unminted { .. } => "a declaration the lowering dropped",
         })
     }
@@ -1034,7 +1042,12 @@ mod tests
                 span: at,
                 mold: MoldId::from(1_u32),
             },
+            LoweringRefusal::HostConflict { span: at },
             LoweringRefusal::Unminted { span: at, name },
+            LoweringRefusal::NoUniverseAbove {
+                span: at,
+                level: name,
+            },
         ];
         for refusal in refusals {
             assert_eq!(

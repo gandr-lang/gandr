@@ -207,9 +207,6 @@ pub enum Unbuilt
     TypeAbstraction,
     /// The statement `val p = e ;`.
     Val,
-    /// A capitalised name where a value is read that names no constructor,
-    /// declaration or type.
-    UnknownConstructor,
     /// An infix form the lowering does not read: an operator outside the
     /// prelude's vocabulary, or a word `g ∷ w` whose `g` is neither a loop
     /// nor `back` of one; a `g` that names nothing is unresolved.
@@ -225,11 +222,6 @@ pub enum Unbuilt
     /// A stated type component whose held declaration the collection does not
     /// carry.
     StatedType,
-    /// A universe level at or past the largest the lowering counts: the
-    /// largest has no universe above it.
-    UniverseLevel,
-    /// A capability form over a host table in conflict.
-    CapabilityHost,
     /// A presentation block whose body the description does not read.
     Presentation,
     /// A recorded move that is no call and no closing name.
@@ -273,7 +265,7 @@ pub enum Unbuilt
 impl Unbuilt
 {
     /// Every feature, in declaration order.
-    pub const ALL: [Self; 82_usize] = [
+    pub const ALL: [Self; 79_usize] = [
         Self::Projection,
         Self::Index,
         Self::Pack,
@@ -331,14 +323,11 @@ impl Unbuilt
         Self::TypeGrade,
         Self::TypeAbstraction,
         Self::Val,
-        Self::UnknownConstructor,
         Self::InfixForm,
         Self::PrefixOperator,
         Self::EmptyCase,
         Self::UnreadPattern,
         Self::StatedType,
-        Self::UniverseLevel,
-        Self::CapabilityHost,
         Self::Presentation,
         Self::RecordedMove,
         Self::CombinedSupply,
@@ -437,14 +426,11 @@ impl Unbuilt
             Self::TypeGrade => "grade.value_type",
             Self::TypeAbstraction => "type_abstraction",
             Self::Val => "val_statement",
-            Self::UnknownConstructor => "constructor",
             Self::InfixForm => "binary_expression",
             Self::PrefixOperator => "unary_expression",
             Self::EmptyCase => "case_expression",
             Self::UnreadPattern => "pattern",
             Self::StatedType => "stated_type",
-            Self::UniverseLevel => "universe_type",
-            Self::CapabilityHost => "capability_type",
             Self::Presentation => "presentation",
             Self::RecordedMove => "recorded_move",
             Self::DialogueMove => "dialogue_move",
@@ -543,9 +529,6 @@ impl Unbuilt
             Self::TypeGrade => TrackingIssue::TYPE_GRADE,
             Self::TypeAbstraction => TrackingIssue::TYPE_ABSTRACTION,
             Self::Val => TrackingIssue::VAL,
-            Self::UnknownConstructor | Self::UniverseLevel | Self::CapabilityHost => {
-                TrackingIssue::AUTHOR_ERROR_AS_UNBUILT
-            },
             Self::StatedType | Self::MethodCall => TrackingIssue::UNCARRIED_DECLARATION,
             Self::Presentation => TrackingIssue::PRESENTATION,
             Self::RecordedMove | Self::DialogueMove => TrackingIssue::MOVES,

@@ -433,11 +433,12 @@ fn a_constructor_is_no_value_inside_its_own_family()
     assert!(
         matches!(
             outcome_of(&module, "T".into()),
-            DeclarationOutcome::Refused(LoweringRefusal::OutOfFragment {
+            DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName {
                 span,
-                boundary: FragmentBoundary::Unadmitted(crate::Unbuilt::UnknownConstructor),
-                ..
-            }) if usize::from(span.start()) == start && usize::from(span.end()) == start.saturating_add(1)
+                name,
+            }) if usize::from(span.start()) == start
+                && usize::from(span.end()) == start.saturating_add(1)
+                && name == "A".into()
         ),
         "a constructor names a value only after its family is declared: {:?}",
         outcome_of(&module, "T".into())

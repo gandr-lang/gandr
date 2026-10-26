@@ -261,12 +261,12 @@ pub(super) enum Stated
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the host table; only its names are read, never its types.
-/// - fails: the unadmitted refusal at `site` if the host table conflicts with
-///   itself, which its own tests rule out.
+/// - fails: [`LoweringRefusal::HostConflict`] at `site` if the host table
+///   conflicts with itself, which its own tests rule out.
 /// - panics: none.
 ///
 /// # Errors
-/// [`LoweringRefusal::OutOfFragment`] for a host table in conflict.
+/// [`LoweringRefusal::HostConflict`] for a host table in conflict.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — every capability form resolves its names through here.
@@ -275,7 +275,7 @@ pub(super) enum Stated
 fn host<'source>(site: Site) -> Result<HostSignatures, LoweringRefusal<'source>>
 {
     HostSignatures::new(&mut CoreArena::new())
-        .map_err(|_conflict| site.out(FragmentBoundary::Unadmitted(Unbuilt::CapabilityHost)))
+        .map_err(|_conflict| LoweringRefusal::HostConflict { span: site.at.span })
 }
 
 /// What the reply of an operation is to the scope handling it.
