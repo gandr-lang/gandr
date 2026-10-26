@@ -876,3 +876,183 @@ fn child_refusals_follow_declared_precedence()
         walk.producer(missing_producer)
     );
 }
+
+/// Build `⟨() |+ covariable⟩`.
+///
+/// # Specification
+/// trivial.
+fn delivered(
+    arena: &mut CommandArena,
+    covariable: CovariableIndex,
+) -> CommandId
+{
+    let value = unit(arena);
+    let consumer = arena
+        .mint_consumer(ConsumerNode::Covariable(covariable))
+        .expect("a leaf mints");
+    arena
+        .mint_cut(Polarity::Positive, value, consumer)
+        .expect("children resolve")
+}
+
+/// Build `μ̃x. ⟨x0 |+ ★⟩`.
+///
+/// # Specification
+/// trivial.
+fn binder(arena: &mut CommandArena) -> ConsumerId
+{
+    let bound = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        })
+        .expect("a leaf mints");
+    let consumer = top(arena);
+    let body = arena
+        .mint_cut(Polarity::Positive, bound, consumer)
+        .expect("children resolve");
+    arena
+        .mint_consumer(ConsumerNode::MuTilde { body })
+        .expect("children resolve")
+}
+
+/// Each closure former — a thunk, a recursive thunk, a copattern object, a `μ`
+/// a negative cut hands its binder by name, and a fold's cell branch — naming
+/// the covariable just outside its own binders is refused by name, the
+/// covariable counted where the closure stands. Each naming only its own
+/// covariable is admitted, and so are a `μ` a positive cut runs and a fold's
+/// empty branch, which run on the frame region, with the outer covariable free.
+#[test]
+fn a_closure_naming_an_outer_covariable_is_refused_2769()
+{
+    let mut arena = CommandArena::new();
+    let own = CovariableIndex::from(0_u32);
+    let outer = CovariableIndex::from(1_u32);
+    let element = arena.annotations_mut().value_type_unit();
+    let list = arena
+        .mint_producer(ProducerNode::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        })
+        .expect("a leaf mints");
+    let mut formers = Vec::new();
+    for named in [own, outer] {
+        let body = delivered(&mut arena, named);
+        let thunk = arena
+            .mint_producer(ProducerNode::Thunk { body })
+            .expect("children resolve");
+        let body = delivered(&mut arena, named);
+        let fixpoint = arena
+            .mint_producer(ProducerNode::Fixpoint {
+                body,
+                evidence: gandr_kernel_term::FixpointEvidence::StructuralDescent,
+            })
+            .expect("children resolve");
+        let body = delivered(&mut arena, named);
+        let object = arena
+            .mint_producer(ProducerNode::Cocase {
+                arms: Box::from([CopatternArm {
+                    destructor: DestructorTag::Force,
+                    body,
+                }]),
+            })
+            .expect("children resolve");
+        let body = delivered(&mut arena, named);
+        let capture = arena
+            .mint_producer(ProducerNode::Mu { body })
+            .expect("children resolve");
+        let on_nil = delivered(&mut arena, own);
+        let on_cons = delivered(&mut arena, named);
+        let continuation = top(&mut arena);
+        let fold = arena
+            .mint_consumer(ConsumerNode::ListFold {
+                element,
+                result: element,
+                on_nil,
+                on_cons,
+                continuation,
+            })
+            .expect("children resolve");
+        let observer = top(&mut arena);
+        let by_name = binder(&mut arena);
+        formers.push((named, [
+            (
+                arena.mint_cut(Polarity::Positive, thunk, observer),
+                NodeAddress::Producer(thunk),
+            ),
+            (
+                arena.mint_cut(Polarity::Positive, fixpoint, observer),
+                NodeAddress::Producer(fixpoint),
+            ),
+            (
+                arena.mint_cut(Polarity::Negative, object, observer),
+                NodeAddress::Producer(object),
+            ),
+            (
+                arena.mint_cut(Polarity::Negative, capture, by_name),
+                NodeAddress::Producer(capture),
+            ),
+            (
+                arena.mint_cut(Polarity::Positive, list, fold),
+                NodeAddress::Consumer(fold),
+            ),
+        ]));
+    }
+    for (named, cases) in formers {
+        for (root, closure) in cases {
+            let root = root.expect("children resolve");
+            let checked = check_command(&arena, root);
+            if named == own {
+                assert!(
+                    checked.is_ok(),
+                    "{closure} naming only its own covariable is admitted: {checked:?}"
+                );
+            }
+            else {
+                assert_eq!(
+                    Err(CheckRefusal::OuterCovariable {
+                        closure,
+                        covariable: own,
+                    }),
+                    checked,
+                    "{closure} naming its creator's α0 is refused"
+                );
+            }
+        }
+    }
+
+    let body = delivered(&mut arena, outer);
+    let capture = arena
+        .mint_producer(ProducerNode::Mu { body })
+        .expect("children resolve");
+    let by_value = binder(&mut arena);
+    let run = arena
+        .mint_cut(Polarity::Positive, capture, by_value)
+        .expect("children resolve");
+    let on_nil = delivered(&mut arena, outer);
+    let on_cons = delivered(&mut arena, own);
+    let continuation = top(&mut arena);
+    let fold = arena
+        .mint_consumer(ConsumerNode::ListFold {
+            element,
+            result: element,
+            on_nil,
+            on_cons,
+            continuation,
+        })
+        .expect("children resolve");
+    let empty = arena
+        .mint_cut(Polarity::Positive, list, fold)
+        .expect("children resolve");
+    for (root, runs) in [
+        (run, "a μ a positive cut runs"),
+        (empty, "a fold's empty branch"),
+    ] {
+        let free = check_command(&arena, root).expect("well formed");
+        assert_eq!(
+            Some(&own),
+            free.covariables().first(),
+            "{runs} names the outer covariable as the root's free α0"
+        );
+    }
+}

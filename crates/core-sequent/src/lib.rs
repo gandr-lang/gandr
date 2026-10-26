@@ -13,8 +13,9 @@
 //!   created command's [`FocusOrigin`] in a [`Provenance`] table;
 //!   [`unfocus_command`] and [`unfocus_value`] read the IL back, their left
 //!   inverse.
-//! - [`check_command`] is the typed-IL check: reference integrity, arity, focus
-//!   and polarity, answering a command's [`FreeSet`].
+//! - [`check_command`] is the typed-IL check: reference integrity, arity,
+//!   focus, polarity and second-class closures, answering a command's
+//!   [`FreeSet`].
 //! - [`render_command`], [`render_producer`] and [`render_consumer`] write the
 //!   IL's notation.
 //! - [`Store`] holds what a run moves out of its regions: immutable
@@ -89,7 +90,9 @@
 //! - Jean Caspar and Guillaume Munch-Maccagnoni. "S4 Modal Sequent Calculus as
 //!   Intermediate Logic and Intermediate Language (Short Paper)." PEPM 2026.
 //!   `arXiv:2601.08071` — the operational machine that separates a heap from a
-//!   stack, the two-region store read as residency.
+//!   stack, the two-region store read as residency; Lemma 3.1 (a heap value
+//!   refers to no stack variable) and Theorem 4.1 (stackability), the
+//!   second-class restriction `check` states on closures.
 
 // Module documentation that predates the shape lint: 18 headings outside the
 // vocabulary, 3 decision records and 9 budgets exceeded. Each allow leaves with
