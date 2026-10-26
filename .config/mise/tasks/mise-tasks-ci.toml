@@ -1490,10 +1490,13 @@ echo "unit check OK: #$issue carries every section a unit needs"
 
 # A seat claims its own next item, in the order `tracker.md` § tracker-claims
 # states, without asking (#2533). `claim:next <area>` reads the open issues
-# once, and the sub-issue order of each open epic holding a candidate; the
-# pick is `.config/claims/next.jq`, its cases held by `check:claims`. It adds
-# `status:claimed` and prints the claim as `#n <title>`; `--dry-run` prints
-# it without claiming. No candidate prints `no claim: <area>` and exits 1.
+# once, with their bodies, and the sub-issue order of each open epic holding a
+# candidate; the pick is `.config/claims/next.jq`, its cases held by
+# `check:claims`. Only an issue `unit:check` passes is picked (#2744): each
+# candidate ranked ahead of the pick that lacks a unit's sections is printed
+# on stderr as `needs sections: #n`. It adds `status:claimed` and prints the
+# claim as `#n <title>`; `--dry-run` prints it without claiming. No candidate
+# prints `no claim: <area>` and exits 1.
 ["claim:next"]
 description = "Claim the next item in an area's claim order"
 usage = '''
@@ -1507,19 +1510,28 @@ set -euo pipefail
 area=${usage_area:?}
 area=area:${area#area:}
 claims=$(git rev-parse --show-toplevel)/.config/claims
-repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-issues=$(gh api --paginate "repos/$repo/issues?state=open&per_page=100" --jq '[.[] | select(.pull_request == null)
+# REST throughout: the GraphQL limit, shared by every seat's watches, runs out
+# within the hour, and a seat must still claim its next item.
+repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+# The board reaches jq through files, never as arguments: with its bodies it
+# is past the argument limit (#2671).
+board=$(mktemp -d)
+trap 'rm -rf "$board"' EXIT
+gh api --paginate "repos/$repo/issues?state=open&per_page=100" --jq '[.[] | select(.pull_request == null)
   | {number, title, labels: [.labels[].name],
-     parent: ([.parent_issue_url // "" | capture("/repos/'"$repo"'/issues/(?<n>[0-9]+)$").n | tonumber][0])}]' | jq -s 'add // []')
+     body,
+     parent: ([.parent_issue_url // "" | capture("/repos/'"$repo"'/issues/(?<n>[0-9]+)$").n | tonumber][0])}]' | jq -s 'add // []' > "$board/issues.json"
 epics=$(jq -r --arg area "$area" '[.[] | select(.labels | index("kind:epic")) | .number] as $epics
-  | [.[] | select((.labels | index($area)) and .parent != null) | .parent as $p | select($epics | index($p))] | map(.parent) | unique[]' <<< "$issues")
+  | [.[] | select((.labels | index($area)) and .parent != null) | .parent as $p | select($epics | index($p))] | map(.parent) | unique[]' "$board/issues.json")
 order='{}'
 for epic in $epics; do
   children=$(gh api --paginate "repos/$repo/issues/$epic/sub_issues?per_page=100" --jq '[.[].number]' | jq -s 'add // []')
   order=$(jq --arg epic "$epic" --argjson children "$children" '. + {($epic): $children}' <<< "$order")
 done
-pick=$(jq -n --arg area "$area" --argjson issues "$issues" --argjson order "$order" '{area: $area, issues: $issues, order: $order}' \
+lines=$(jq -n --arg area "$area" --slurpfile issues "$board/issues.json" --argjson order "$order" '{area: $area, issues: $issues[0], order: $order}' \
   | jq -r -L "$claims" -f "$claims/next.jq")
+awk '/^needs sections: /' <<< "$lines" >&2
+pick=$(awk '!/^needs sections: /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $area" >&2
   exit 1
@@ -1528,7 +1540,7 @@ IFS=$'\t' read -r number bucket title <<< "$pick"
 if [[ ${usage_dry_run:-false} == true ]]; then
   echo "claim:next: dry run, nothing claimed ($bucket)" >&2
 else
-  gh issue edit "$number" --repo "$repo" --add-label status:claimed > /dev/null
+  gh api -X POST "repos/$repo/issues/$number/labels" -f 'labels[]=status:claimed' > /dev/null
   echo "claim:next: claimed ($bucket)" >&2
 fi
 printf '#%s %s\n' "$number" "$title"
