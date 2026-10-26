@@ -8,12 +8,12 @@
 // function, held abstractly, needs a value type quantifying a region, #2139.
 
 // `pass`, which hands back the thunk it is lent.
-import "./passed.gandr" ;
+import "./passed.gandr";
 
 /// Forces the thunk it is lent, then hands it back in the same region.
 @[ checks ]
 def touch @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) {
-  run _ <- force k ;
+  run _ <- force k;
   pure k
 }
 
@@ -23,13 +23,13 @@ def touch @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) 
 def passNatural() -> Integer {
   hold s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;
+    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
     handle inner : Proc {
       run _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
-        thunk { fn (x) { run y : (() => Integer) at outer <- pass(x) ; pure y } },
-        thunk { fn (x) { run z : (() => Integer) at inner <- pure x ; pass(z) } }
-      ) <- pure here(thunk { fn (x) { run y : (() => Integer) at outer <- pass(x) ; pure y } }) ;
+        thunk { fn (x) { run y : (() => Integer) at outer <- pass(x); pure y } },
+        thunk { fn (x) { run z : (() => Integer) at inner <- pure x; pass(z) } }
+      ) <- pure here(thunk { fn (x) { run y : (() => Integer) at outer <- pass(x); pure y } });
       force k
     } with {
       pure(y) => pure y,
@@ -47,13 +47,13 @@ def passNatural() -> Integer {
 def touchNatural() -> Integer {
   hold s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;
+    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
     handle inner : Proc {
       run _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
-        thunk { fn (x) { run y : (() => Integer) at outer <- touch(x) ; pure y } },
-        thunk { fn (x) { run z : (() => Integer) at inner <- pure x ; touch(z) } }
-      ) <- pure here(thunk { fn (x) { run y : (() => Integer) at outer <- touch(x) ; pure y } }) ;
+        thunk { fn (x) { run y : (() => Integer) at outer <- touch(x); pure y } },
+        thunk { fn (x) { run z : (() => Integer) at inner <- pure x; touch(z) } }
+      ) <- pure here(thunk { fn (x) { run y : (() => Integer) at outer <- touch(x); pure y } });
       force k
     } with {
       pure(y) => pure y,

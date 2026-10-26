@@ -1,13 +1,13 @@
-// A type member at a source's top level: `type T = τ ;` names `τ` for the
+// A type member at a source's top level: `type T = τ;` names `τ` for the
 // declarations written after it, as a module's member names it for the
 // module's.
 
 /// #1834: a rubric's band, in millionths.
-type Band = #{low : Integer, high : Integer} ;
+type Band = #{low : Integer, high : Integer};
 
 /// The band every rubric of the set grades against.
 @[ checks ]
-def setBand : Band = #{low = 200000, high = 800000} ;
+def setBand : Band = #{low = 200000, high = 800000};
 
 /// The width of a band, its fields read through the synonym.
 @[ checks ]
@@ -22,8 +22,8 @@ def width(band : Band) -> Integer {
 def setWidth() -> Integer { become width(setBand) }
 
 /// A pair of one type, a synonym with a parameter.
-type Twice(a : Type) = a * a ;
+type Twice(a : Type) = a * a;
 
 /// The set's bounds as a pair.
 @[ checks ]
-def bounds : Twice(Integer) = (200000, 800000) ;
+def bounds : Twice(Integer) = (200000, 800000);

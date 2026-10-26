@@ -44,7 +44,7 @@ def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
 
 /// The rig to itself by the natural relabelling at `plus`.
 @[ checks ]
-def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename}) ;
+def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename});
 
 /// Transport along it relabels the corolla's element.
 @[ checks ]
@@ -52,15 +52,15 @@ def swaps : Path(
   Unit * (Unit + Unit + Unit + Unit),
   transport(\X. X, dual, (unit, +{.1 = unit})),
   (unit, +{.3 = unit})
-) = here((unit, +{.3 = unit})) ;
+) = here((unit, +{.3 = unit}));
 
 /// A relabelling that does not commute with the corolla's symmetry.
 @[ refuses("NotNatural") ]
-def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross}) ;
+def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross});
 
 /// Tables that name a corolla on one side and not on the other.
 @[ refuses("CorollaTables") ]
-def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename}) ;
+def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename});
 
 /// The booleans into the corolla's four elements.
 @[ checks ]
@@ -84,4 +84,4 @@ def narrow(e : Unit + Unit + Unit + Unit) -> Bool {
 
 /// Two corollas of different element counts.
 @[ refuses("CorollaCardinality") ]
-def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow}) ;
+def uneven = ua[1, 4](Semi, Rig, #{.mul = widen}, #{.plus = narrow});

@@ -3,17 +3,17 @@
 // joins reflexivity to itself.
 
 // Reflexivity at seven.
-import "./back.gandr" ;
+import "./back.gandr";
 
 /// Two paths between integers, the second leaving where the first arrives,
 /// composed.
 @[ checks ]
 def join(
-  a: Integer,
-  b: Integer,
-  c: Integer,
-  q: Path(Integer, a, b),
-  r: Path(Integer, b, c)
+  a : Integer,
+  b : Integer,
+  c : Integer,
+  q : Path(Integer, a, b),
+  r : Path(Integer, b, c)
 ) -> Path(Integer, a, c) {
   q then r
 }

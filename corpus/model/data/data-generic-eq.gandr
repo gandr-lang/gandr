@@ -32,32 +32,32 @@ data Mark : Type {
 
 /// Points compared field by field.
 @[ checks ]
-def eqPoint = Eq.generic(Point) ;
+def eqPoint = Eq.generic(Point);
 
 /// Every point is equal to itself under `eqPoint`.
 @[ checks ]
-def reflPoint = Eq.generic.refl(Point) ;
+def reflPoint = Eq.generic.refl(Point);
 
 /// Naturals compared structurally, at the type the derivation states.
 @[ checks ]
-def eqPeano : (Peano, Peano) => Bool = Eq.generic(Peano) ;
+def eqPeano : (Peano, Peano) => Bool = Eq.generic(Peano);
 
 /// Marks compared field by field, the count and the point by their own
 /// equality.
 @[ checks ]
-def eqMark = Eq.generic(Mark) ;
+def eqMark = Eq.generic(Mark);
 
 /// Points under `==`, every member derived.
 module EqPoint : Model(Eq) with sort Carrier = Point {
   /// Field by field.
   @[ checks ]
-  def eq = Eq.generic(Point) ;
+  def eq = Eq.generic(Point);
   /// Each coordinate by the host's reflexivity.
   @[ checks ]
-  def refl = Eq.generic.refl(Point) ;
+  def refl = Eq.generic.refl(Point);
   /// Each coordinate by the host's symmetry.
   @[ checks ]
-  def sym = Eq.generic.sym(Point) ;
+  def sym = Eq.generic.sym(Point);
 }
 
 /// One point is itself.

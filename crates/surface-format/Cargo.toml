@@ -26,7 +26,8 @@ path = "tests/lib.rs"
 # composite's explicit spelling writes the motive the lowering derived,
 # spelled through the shared printer under the names the diagnostics give
 # a lowered module's constants and constructors. The checker names the reduct
-# it applies at a crossing by its constant.
+# it applies at a crossing by its constant. The grammar's walk direction reads
+# what a token's mold may follow, which tells a shape face's `{` apart.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
@@ -38,6 +39,7 @@ gandr-surface-lowering.workspace = true
 gandr-surface-parser.workspace = true
 gandr-surface-pretty.workspace = true
 gandr-surface-syntax.workspace = true
+gandr-theory-graphs.workspace = true
 quenchant-shape.workspace = true
 
 # Golden layouts at two widths; the corpus sweep draws its sample through the

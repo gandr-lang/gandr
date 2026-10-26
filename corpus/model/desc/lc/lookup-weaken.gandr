@@ -4,10 +4,10 @@
 // fuse by `renameRename`, and at a shift the sum is read by `shiftAdds`.
 
 // The naturals; the syntax; the shift's lookup and the fusion of renamings.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./shift-lookup.gandr" ;
-import "./rename-rename.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./shift-lookup.gandr";
+import "./rename-rename.gandr";
 
 /// A term under `k + 1` binders is the term under `k` weakened.
 @[ checks ]

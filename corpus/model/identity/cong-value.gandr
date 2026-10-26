@@ -10,14 +10,14 @@ data Box : Type {
 
 /// The constructor as a function.
 @[ checks ]
-def wrap(x: Integer) -> Box {
+def wrap(x : Integer) -> Box {
   Wrap(x)
 }
 
 /// A path between integers carried along the wrapper, to the boxes around
 /// its endpoints.
 @[ checks ]
-def cong_wrap(a: Integer, b: Integer, p: Path(Integer, a, b)) -> Path(Box, Wrap(a), Wrap(b)) {
+def cong_wrap(a : Integer, b : Integer, p : Path(Integer, a, b)) -> Path(Box, Wrap(a), Wrap(b)) {
   cong(wrap, p)
 }
 

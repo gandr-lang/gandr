@@ -3,7 +3,7 @@
 // read.
 
 // `idAt`, the identity at a type passed explicitly.
-import "../../model/holes/wildcard.gandr" ;
+import "../../model/holes/wildcard.gandr";
 
 /// `idAt` at `Integer` with its value left open: nothing forces which
 /// integer.

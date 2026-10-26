@@ -6,7 +6,7 @@
 // doi:10.1007/BFb0053567).
 
 // The ring's protocol and its entries.
-import "./ring-base.gandr" ;
+import "./ring-base.gandr";
 
 /// A buffer moved into the mock kernel's submission and finished there before
 /// the completion is posted: the send consumes the submitter's end, and the

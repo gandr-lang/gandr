@@ -6,7 +6,7 @@
 /// The sensor library's reading of one channel (#327).
 @[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "sensor" {
-  def read(channel: i32) -> i64;
+  def read(channel : i32) -> i64;
 }
 
 /// The run target reads channel zero; the lowering reads no projection yet

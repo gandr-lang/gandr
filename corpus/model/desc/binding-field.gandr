@@ -20,9 +20,9 @@ theory Deaf {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper out : (v : Val, p : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  oper listen : (c : Name, k : pi+ (x : Val) . Proc) --> Proc;
-  rule deaf : nu(bind c . listen(c, bind x . out(x, nil()))) ==> nil();
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  oper listen : (c : Name, k : pi+ (x : Val). Proc) --> Proc;
+  rule deaf : nu(bind c. listen(c, bind x. out(x, nil()))) ==> nil();
 }
 
 /// A field whose variable the body does not take: `q` is a metavariable
@@ -33,8 +33,8 @@ theory Deaf {
 theory Vacuous {
   sort Val : Type+;
   sort Proc : Type;
-  oper new : (body : pi+ (x : Val) . Proc) --> Proc;
-  rule gc : new(bind x . q) <=> q;
+  oper new : (body : pi+ (x : Val). Proc) --> Proc;
+  rule gc : new(bind x. q) <=> q;
 }
 
 /// Structural recursion over a rule term: one per `Bind` node, the binding

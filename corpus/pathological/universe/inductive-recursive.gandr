@@ -34,8 +34,8 @@ rec {
 
   /// `Right`, named by a definition of the block, refused with it.
   @[ refuses("NegativeOccurrence") ]
-  def right : Type ;
-  def right = Right ;
+  def right : Type;
+  def right = Right;
 }
 
 /// A universe whose field decodes a definition of the block rather than
@@ -61,8 +61,8 @@ rec {
 
   /// The code the field decodes, a definition of the block, refused with it.
   @[ refuses("StageNotBelow") ]
-  def base : Odd ;
-  def base = TwoC ;
+  def base : Odd;
+  def base = TwoC;
 }
 
 /// A universe whose decoder decodes its own code again.

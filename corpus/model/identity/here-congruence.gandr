@@ -4,19 +4,19 @@
 // and a parameter is no reflexivity.
 
 // The integers, presented by their two cancellations.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// A declared reflexivity.
 @[ checks ]
-def refl_two : Path(Integer, 2, 2) = here(2) ;
+def refl_two : Path(Integer, 2, 2) = here(2);
 
 /// Two reflexivities convert when their points do.
 @[ checks ]
-def two_is_here : Path(Path(Integer, 2, 2), refl_two, here(2)) = here(here(2)) ;
+def two_is_here : Path(Path(Integer, 2, 2), refl_two, here(2)) = here(here(2));
 
 /// `here(refl_two)` at that path.
 @[ checks ]
-def here_two : Path(Path(Integer, 2, 2), refl_two, here(2)) = here(refl_two) ;
+def here_two : Path(Path(Integer, 2, 2), refl_two, here(2)) = here(refl_two);
 
 /// Points one unfolding apart, one level up.
 @[ checks ]
@@ -24,7 +24,7 @@ def here_two_up : Path(
   Path(Path(Integer, 2, 2), refl_two, here(2)),
   here(refl_two),
   here(here(2))
-) = here(here(refl_two)) ;
+) = here(here(refl_two));
 
 /// The reflexivity at the cancelled side of a peak: `S(P(S(x)))` and `S(x)`
 /// are one integer by the rule `S(P(x)) <=> x`.
@@ -48,7 +48,7 @@ def peak_is_here(x : Int) -> Path(Path(Int, S(P(S(x))), S(x)), refl_peak(x), ref
 
 /// A parameter does not unfold to `here(2)`.
 @[ refuses("EndpointMismatch") ]
-def apart(q: Path(Integer, 2, 2)) -> Path(Path(Integer, 2, 2), q, here(2)) {
+def apart(q : Path(Integer, 2, 2)) -> Path(Path(Integer, 2, 2), q, here(2)) {
   here(q)
 }
 

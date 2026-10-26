@@ -7,12 +7,12 @@
 // Hylo", IWACO 2023).
 
 // The lists; the byte lists; the owned bytes; the writes.
-import "../data/data-base.gandr" ;
-import "./string-base.gandr" ;
-import "./nul-terminated.gandr" ;
-import "./small-string.gandr" ;
-import "./copy-on-write.gandr" ;
-import "./unique-write.gandr" ;
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+import "./nul-terminated.gandr";
+import "./small-string.gandr";
+import "./copy-on-write.gandr";
+import "./unique-write.gandr";
 
 /// A string's methods, one per receiver mode.
 module Str {
@@ -29,7 +29,7 @@ module Str {
   /// writes it back.
   @[ checks ]
   def push(self : Repr, b : Integer) -> Unit {
-    access self as v { run w <- pushInPlace(v, b) ; run t <- written(w) ; resume(v, t) }
+    access self as v { run w <- pushInPlace(v, b); run t <- written(w); resume(v, t) }
   }
   /// The bytes of a string taken: nothing reads the string after.
   @[ checks ]

@@ -34,9 +34,9 @@ module MkCounter(S : #{
 }
 
 /// The functor's first application.
-module A = MkCounter(Seed) ;
+module A = MkCounter(Seed);
 /// Its second, whose type is not the first's.
-module B = MkCounter(Seed) ;
+module B = MkCounter(Seed);
 
 /// One step of the first application, at its own abstract type.
 @[ runs("1") ]
@@ -44,4 +44,4 @@ def a_once() -> A.T { A.step(A.seed) }
 
 /// Two steps of the second application, read back as an integer.
 @[ runs("2") ]
-def b_twice() -> Integer { run one <- B.step(B.seed) ; B.read(B.step(one)) }
+def b_twice() -> Integer { run one <- B.step(B.seed); B.read(B.step(one)) }

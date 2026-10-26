@@ -7,7 +7,7 @@
 // (#670).
 
 // The quasi-inverse and the equivalence.
-import "./equivalence.gandr" ;
+import "./equivalence.gandr";
 
 /// The map back of a quasi-inverse.
 @[ checks ]

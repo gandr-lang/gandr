@@ -13,7 +13,7 @@ def width(band : #{low : Integer, high : Integer}) -> Integer {
 
 /// The band from two to seven is five wide.
 @[ runs("5") ]
-def band_width : () => Integer = width(#{low = 2, high = 7}) ;
+def band_width : () => Integer = width(#{low = 2, high = 7});
 
 /// The binders take the fields in the type's order whatever they are named:
 /// the first binder is `low`, though it is spelled `top`, and the second
@@ -27,4 +27,4 @@ def read_as_digits(band : #{low : Integer, high : Integer}) -> Integer {
 
 /// The band from two to seven reads as twenty-seven.
 @[ runs("27") ]
-def band_digits : () => Integer = read_as_digits(#{low = 2, high = 7}) ;
+def band_digits : () => Integer = read_as_digits(#{low = 2, high = 7});

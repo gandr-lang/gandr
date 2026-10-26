@@ -8,10 +8,10 @@
 // twin.
 
 // The naturals the lengths count in.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 // The vectors and the vector two long.
-import "./vectors.gandr" ;
+import "./vectors.gandr";
 
 /// The first element of a vector at least one long: `VNil` stands at zero,
 /// apart from `Succ(n)`, so its arm is left out.

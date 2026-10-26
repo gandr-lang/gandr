@@ -13,7 +13,7 @@
 // precondition is computed through the fold `tree-state-wp.gandr` writes.
 
 // `StateLaws`.
-import "../effects/state.gandr" ;
+import "../effects/state.gandr";
 
 /// The increment observed: read the counter, store one more, and answer the
 /// unit. The scope answers the increment's predicate transformer.

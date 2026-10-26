@@ -8,21 +8,21 @@
 // `../../pathological/control/effect-rows.gandr`.
 
 // `peek` reads through `Fs`; `once` states `Div`.
-import "./capability-attenuate.gandr" ;
-import "./divergence.gandr" ;
+import "./capability-attenuate.gandr";
+import "./divergence.gandr";
 
 /// Reading a file, then a loop: the row joins `peek`'s `Fs` and `once`'s
 /// `Div`.
 @[ checks ]
-def performsBoth(c : Cap {read}) -> [Fs, Div] Integer {
-  run _ <- peek(c) ;
+def performsBoth(c : Cap { read }) -> [Fs, Div] Integer {
+  run _ <- peek(c);
   once(1)
 }
 
 /// The same interfaces listed the other way round are the same row:
 /// `performsBoth`'s call stands at it unchanged.
 @[ checks ]
-def listedSwapped(c : Cap {read}) -> [Div, Fs] Integer { performsBoth(c) }
+def listedSwapped(c : Cap { read }) -> [Div, Fs] Integer { performsBoth(c) }
 
 /// A suspended computation at one order is forced at the other.
 @[ checks ]

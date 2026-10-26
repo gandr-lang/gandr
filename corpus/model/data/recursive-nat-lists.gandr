@@ -9,10 +9,10 @@
 // doi:10.1051/ita:2004015).
 
 // The naturals, the numerals two and three, and the lists.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 // The polymorphic length, read at the naturals.
-import "./recursive-lists.gandr" ;
+import "./recursive-lists.gandr";
 
 /// The length of a list of naturals, returned, the run written at its read.
 @[ checks ]
@@ -91,7 +91,7 @@ def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 
 /// Two, then zero.
 @[ runs("Cons(Succ(Succ(Zero)), Cons(Zero, Nil))") ]
-def small : List(Nat) = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat)) ;
+def small : List(Nat) = (Cons(two, (Cons(Zero, (Nil : List(Nat))) : List(Nat))) : List(Nat));
 
 /// The successor, returned.
 @[ runs("fn (a) { Succ(a) }") ]
@@ -107,7 +107,7 @@ def counted() -> Nat { become length_nat(small) }
 
 /// The length of `small`, the `return`s elided.
 @[ runs("Succ(Succ(Zero))") ]
-def counted_elided : () => Nat = length_nat_elided(small) ;
+def counted_elided : () => Nat = length_nat_elided(small);
 
 /// `small` with three appended at its head.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Succ(Zero)), Cons(Zero, Nil)))") ]
@@ -120,7 +120,7 @@ def joined() -> List(Nat) {
 def joined_elided : () => List(Nat) = append_nat_elided(
   small,
   (Cons(three, (Nil : List(Nat))) : List(Nat))
-) ;
+);
 
 /// Each element of `small` bumped.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
@@ -128,15 +128,15 @@ def bumped() -> List(Nat) { map_nat(bump, small) }
 
 /// The same map, the `return`s elided.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped_elided : () => List(Nat) = map_nat_elided(bump_elided, small) ;
+def bumped_elided : () => List(Nat) = map_nat_elided(bump_elided, small);
 
 /// The same map, the calls nested.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped_nested : () => List(Nat) = map_nat_nested(bump, small) ;
+def bumped_nested : () => List(Nat) = map_nat_nested(bump, small);
 
 /// The same map, the calls run in the fields.
 @[ runs("Cons(Succ(Succ(Succ(Zero))), Cons(Succ(Zero), Nil))") ]
-def bumped_run : () => List(Nat) = map_nat_run(bump, small) ;
+def bumped_run : () => List(Nat) = map_nat_run(bump, small);
 
 /// The length of `small` at its element type, returned.
 @[ checks ]
@@ -144,4 +144,4 @@ def lengthened() -> Nat { length(Nat, small) }
 
 /// The same length, the `return`s elided.
 @[ checks ]
-def lengthened_elided : () => Nat = length_elided(Nat, small) ;
+def lengthened_elided : () => Nat = length_elided(Nat, small);

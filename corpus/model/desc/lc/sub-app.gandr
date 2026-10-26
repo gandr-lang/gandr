@@ -3,7 +3,7 @@
 // holds by computation, `subst`'s application arm.
 
 // The syntax and its substitution.
-import "./syntax.gandr" ;
+import "./syntax.gandr";
 
 /// A substitution applied to an application applies to both sides.
 @[ checks ]

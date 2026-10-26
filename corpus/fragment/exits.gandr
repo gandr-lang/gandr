@@ -22,13 +22,13 @@ def rec down_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def twice(n : Nat) -> -F Nat {
-  run once <- down(n) ;
+  run once <- down(n);
   become down(once)
 }
 
 @[ checks ]
 def twice_elided(n : Nat) -> -F Nat {
-  run once <- down(n) ;
+  run once <- down(n);
   down(once)
 }
 
@@ -69,8 +69,8 @@ def identity(n : Nat) -> -F Nat { return n }
 def identity_elided(n : Nat) -> -F Nat { n }
 
 @[ checks ]
-def ret : Nat ;
-def ret = Zero ;
+def ret : Nat;
+def ret = Zero;
 
 @[ checks ]
 def named(n : Nat) -> -F Nat {
@@ -100,13 +100,13 @@ def rec stated_elided(n : Nat) -> -F Nat {
 
 @[ checks ]
 def sequenced(n : Nat) -> -F Nat {
-  run m <- down(n) ;
-  return m ;
+  run m <- down(n);
+  return m;
 }
 
 @[ checks ]
 def sequenced_elided(n : Nat) -> -F Nat {
-  run m <- down(n) ;
+  run m <- down(n);
   m
 }
 
@@ -124,8 +124,8 @@ def sequenced_run(n : Nat) -> -F Nat {
 /// body answering a natural cannot end in one (#1205).
 @[ refuses("TypeMismatch") ]
 def discarded(n : Nat) -> -F Nat {
-  run m <- down(n) ;
-  down(m) ;
+  run m <- down(n);
+  down(m);
 }
 
 @[ checks ]
@@ -140,73 +140,73 @@ def done_elided(n : Nat) -> -F Unit {
 
 @[ checks ]
 def discards_unit(n : Nat) -> -F Nat {
-  done(n) ;
+  done(n);
   return n
 }
 
 @[ checks ]
 def discards_unit_elided(n : Nat) -> -F Nat {
-  done(n) ;
+  done(n);
   n
 }
 
 @[ refuses("ShapeMismatch") ]
 def discards_nat(n : Nat) -> -F Nat {
-  down(n) ;
+  down(n);
   return n
 }
 
 @[ refuses("ShapeMismatch") ]
 def discards_nat_elided(n : Nat) -> -F Nat {
-  down(n) ;
+  down(n);
   n
 }
 
 @[ checks ]
 def discards_any(n : Nat) -> -F Nat {
-  run _ <- down(n) ;
+  run _ <- down(n);
   return n
 }
 
 @[ checks ]
 def discards_any_elided(n : Nat) -> -F Nat {
-  run _ <- down(n) ;
+  run _ <- down(n);
   n
 }
 
 @[ refuses("Unreachable") ]
 def early(n : Nat) -> -F Nat {
-  run m <- return n ;
+  run m <- return n;
   return m
 }
 
 @[ refuses("Unreachable") ]
 def early_elided(n : Nat) -> -F Nat {
-  run m <- return n ;
+  run m <- return n;
   m
 }
 
 @[ refuses("Unreachable") ]
 def local(n : Nat) -> -F Nat {
-  run m <- become down(n) ;
+  run m <- become down(n);
   return m
 }
 
 @[ refuses("Unreachable") ]
 def local_elided(n : Nat) -> -F Nat {
-  run m <- become down(n) ;
+  run m <- become down(n);
   m
 }
 
 @[ refuses("OutOfFragment.NotInTail") ]
-def returned = return Zero ;
+def returned = return Zero;
 
 @[ checks ]
 def predecessor(n : Nat) -> -F Nat {
   run m <- case n {
     Zero => return n,
     Succ(p) => pure p,
-  } ;
+  };
   return m
 }
 
@@ -215,7 +215,7 @@ def predecessor_elided(n : Nat) -> -F Nat {
   run m <- case n {
     Zero => return n,
     Succ(p) => pure p,
-  } ;
+  };
   m
 }
 
@@ -227,10 +227,10 @@ def pick(n : Nat) -> -F Nat {
       run q <- case p {
         Zero => return n,
         Succ(r) => pure r,
-      } ;
+      };
       pure q
     },
-  } ;
+  };
   return Succ(m)
 }
 
@@ -242,10 +242,10 @@ def pick_elided(n : Nat) -> -F Nat {
       run q <- case p {
         Zero => return n,
         Succ(r) => pure r,
-      } ;
+      };
       pure q
     },
-  } ;
+  };
   Succ(m)
 }
 
@@ -272,7 +272,7 @@ def handed(n : Nat) -> -F Nat {
   run m <- case n {
     Zero => become down(n),
     Succ(p) => pure p,
-  } ;
+  };
   return Succ(m)
 }
 
@@ -281,7 +281,7 @@ def handed_elided(n : Nat) -> -F Nat {
   run m <- case n {
     Zero => become down(n),
     Succ(p) => pure p,
-  } ;
+  };
   Succ(m)
 }
 
@@ -293,7 +293,7 @@ def rec skim(n : Nat) -> -F Nat {
       run _ <- case p {
         Zero => return p,
         Succ(r) => pure r,
-      } ;
+      };
       become skim[<](p)
     },
   }
@@ -307,7 +307,7 @@ def rec skim_elided(n : Nat) -> -F Nat {
       run _ <- case p {
         Zero => return p,
         Succ(r) => pure r,
-      } ;
+      };
       skim_elided[<](p)
     },
   }
@@ -324,7 +324,7 @@ def joined(n : Nat) -> -F Nat {
   run m <- case n -> -F Nat {
     Zero => return n,
     Succ(p) => pure p,
-  } ;
+  };
   return m
 }
 
@@ -333,7 +333,7 @@ def joined_elided(n : Nat) -> -F Nat {
   run m <- case n -> -F Nat {
     Zero => return n,
     Succ(p) => pure p,
-  } ;
+  };
   m
 }
 

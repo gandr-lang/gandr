@@ -17,16 +17,16 @@ data Fahrenheit : Type {
 }
 
 /// The Fahrenheit type under another name.
-type Temp = Fahrenheit ;
+type Temp = Fahrenheit;
 
 /// A Celsius value ascribed Fahrenheit: the constructor keeps its own family,
 /// never read as the Fahrenheit constructor of its place (#2075).
 @[ refuses("TypeMismatch") ]
-def ascribed = (Cel(20) : Fahrenheit) ;
+def ascribed = (Cel(20) : Fahrenheit);
 
 /// A Celsius value ascribed Fahrenheit through the alias (#2075).
 @[ refuses("TypeMismatch") ]
-def aliased = (Cel(20) : Temp) ;
+def aliased = (Cel(20) : Temp);
 
 /// A Celsius value ascribed Fahrenheit as the run target, judged as a
 /// declaration is before anything runs it.

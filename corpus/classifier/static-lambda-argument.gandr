@@ -1,10 +1,10 @@
 @[ form(explicit) ]
-def apply : (Type -> Type) -> Type -> Type ;
-def apply = \F. \X. F(X) ;
+def apply : (Type -> Type) -> Type -> Type;
+def apply = \F. \X. F(X);
 
 @[ checks ]
-def at_a_static_parameter : apply(\Y. #{Y, Y}, Integer) ;
-def at_a_static_parameter = #{1, 2} ;
+def at_a_static_parameter : apply(\Y. #{Y, Y}, Integer);
+def at_a_static_parameter = #{1, 2};
 
 @[ runs("fn (a) { unit }") ]
 def use(f : Type -> Type) -> -F Unit { return unit }

@@ -3,13 +3,13 @@
 
 /// A cell with an integer count.
 @[ checks ]
-def cell = #{ count = 3, label = "start" };
+def cell = #{count = 3, label = "start"};
 
 /// `cell` with a string count, the retyped record stated.
 @[ checks ]
-def named : #{count : String, label : String} = #{ cell | count = "three" } ;
+def named : #{count : String, label : String} = #{cell | count = "three"};
 
 /// The run target gives `count` a string: the record's `count` is the
 /// string now.
 @[ runs("#{.count = \"three\", .label = \"start\"}") ]
-#{ cell | count = "three" }
+#{cell | count = "three"}

@@ -4,8 +4,8 @@
 
 /// The process capability, owed by the host that grants it.
 @[ owes(1) ]
-def proc : Cap {exit} ;
+def proc : Cap { exit };
 
 /// The entry: it exits with 7 before it can return 0.
 @[ checks ]
-def main() -> [Proc] Integer { proc.exit(7) ; 0 }
+def main() -> [Proc] Integer { proc.exit(7); 0 }

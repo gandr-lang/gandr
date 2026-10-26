@@ -3,7 +3,7 @@
 // rest owes anything, so the scope's operation checks.
 
 // The task's protocol.
-import "./task-base.gandr" ;
+import "./task-base.gandr";
 
 /// A scope exiting after the parent read its task's end to its close.
 @[ checks ]

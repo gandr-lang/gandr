@@ -7,14 +7,14 @@
 // stratum does not certify is refused by name.
 
 // The magma, the swap, the identity on the booleans and the unit's identity.
-import "./magma-base.gandr" ;
+import "./magma-base.gandr";
 
 /// The magma to itself by the swap, at degree two.
 @[ checks ]
 def raised = ua[
   2,
   4
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// Transport along it swaps the binary corolla's boolean and carries the
 /// degree-two unit stage.
@@ -23,57 +23,57 @@ def lifts : Path(
   Unit * (+{Unit} * (Bool * Unit)),
   transport(\X. X, raised, (unit, (+{.0 = unit}, (+{.0 = unit}, unit)))),
   (unit, (+{.0 = unit}, (+{.1 = unit}, unit)))
-) = here((unit, (+{.0 = unit}, (+{.1 = unit}, unit)))) ;
+) = here((unit, (+{.0 = unit}, (+{.1 = unit}, unit))));
 
 /// A degree no shape of the catalogue reaches is not certified.
 @[ refuses("UncertifiedDegree") ]
 def above = ua[
   5,
   4
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// A catalogue of no vertices fails the corolla condition.
 @[ refuses("UncertifiedCondition") ]
 def empty = ua[
   1,
   0
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// A catalogue past the one the checker enumerates is not certified.
 @[ refuses("UncertifiedAllowance") ]
 def wide = ua[
   1,
   6
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// The binary generator's corolla is larger than a bound of three.
 @[ refuses("PastTheBound") ]
 def short = ua[
   1,
   3
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// The swap and the identity are no inverse pair.
 @[ refuses("NotInverse") ]
 def lopsided = ua[
   1,
   4
-](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = boolId, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = boolId, .one = keep});
 
 /// A table missing a corolla the signature inhabits.
 @[ refuses("CorollaTables") ]
-def partial = ua[1, 4](Magma, Magma, #{.mul = exchange}, #{.mul = exchange, .one = keep}) ;
+def partial = ua[1, 4](Magma, Magma, #{.mul = exchange}, #{.mul = exchange, .one = keep});
 
 /// A table naming a generator the signature does not have.
 @[ refuses("UnknownGenerator") ]
 def misspelt = ua[
   1,
   4
-](Magma, Magma, #{.mul = exchange, .zero = keep}, #{.mul = exchange, .one = keep}) ;
+](Magma, Magma, #{.mul = exchange, .zero = keep}, #{.mul = exchange, .one = keep});
 
 /// A signature that is not declared.
 @[ refuses("UnresolvedName") ]
 def unnamed = ua[
   1,
   4
-](Monoid, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep}) ;
+](Monoid, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});

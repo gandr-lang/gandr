@@ -4,7 +4,7 @@
 
 // The operator's and the seat's worlds, and the seat's sealed side of the
 // exchange.
-import "../../model/worlds/seat-and-operator.gandr" ;
+import "../../model/worlds/seat-and-operator.gandr";
 
 /// A second migration to the seat on one capability, refused at the second:
 /// the first spent the one the entry holds.

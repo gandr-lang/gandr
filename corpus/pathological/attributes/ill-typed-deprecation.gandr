@@ -4,15 +4,15 @@
 
 // A bare text, not a record.
 @[ refuses("IllTypedPayload") ]
-@[deprecated("0.2")]
+@[ deprecated("0.2") ]
 def bare_text = 1;
 
 // A record naming a field neither `since` nor `note`.
 @[ refuses("IllTypedPayload") ]
-@[deprecated(#{ reason = "replaced" })]
+@[ deprecated(#{reason = "replaced"}) ]
 def foreign_field = 2;
 
 // A record whose `since` is a number, not a text.
 @[ refuses("IllTypedPayload") ]
-@[deprecated(#{ since = 2 })]
+@[ deprecated(#{since = 2}) ]
 def untexted_field = 3;

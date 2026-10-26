@@ -10,7 +10,7 @@
 @[ refuses("UndescribedMember.NestedOperation") ]
 theory CatShape {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
 
   oper id : (a : Ob) --> Hom(a, a);
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
@@ -103,7 +103,7 @@ module SetoidCat : Model(CatShape) {
     (p => q),
     comp(p, p, q, id(p), f),
     f
-  ) = unitR ;
+  ) = unitR;
 
   /// The left unit law by either law, chosen by a boolean.
   @[ checks ]
@@ -123,7 +123,7 @@ module SetoidCat : Model(CatShape) {
 /// the operation at its type argument and calls the function it returns
 /// (#452).
 @[ runs("3") ]
-def identity_observed() -> Integer { run f <- SetoidCat.id(Integer) ; become f(3) }
+def identity_observed() -> Integer { run f <- SetoidCat.id(Integer); become f(3) }
 
 /// Composition observed through the interface: `n + 1` then `n + 2`, applied
 /// to `1` (#452).
@@ -134,4 +134,4 @@ def composite_observed() -> Integer { run h <- SetoidCat.comp(
   Integer,
   fn (n) { become n + 1 },
   fn (n) { become n + 2 }
-) ; become h(1) }
+); become h(1) }

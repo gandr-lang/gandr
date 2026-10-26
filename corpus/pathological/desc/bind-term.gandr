@@ -2,7 +2,7 @@
 // abstracts.
 
 // The abstraction's laws.
-import "../../model/desc/bind-term.gandr" ;
+import "../../model/desc/bind-term.gandr";
 
 /// `par` abstracts nothing at its ports, so the atom `bind a . nil()`
 /// abstracts would escape: the description check refuses the abstraction as
@@ -13,5 +13,5 @@ theory Escape {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
-  rule leak : par(bind a . nil(), nil()) ==> nil();
+  rule leak : par(bind a. nil(), nil()) ==> nil();
 }

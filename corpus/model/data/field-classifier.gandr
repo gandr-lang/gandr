@@ -4,7 +4,7 @@
 // with. A nested list then needs no annotation (#1171).
 
 // The lists.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// A representation holding its bytes as a list of integers.
 @[ checks ]

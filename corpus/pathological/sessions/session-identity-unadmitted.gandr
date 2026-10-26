@@ -1,11 +1,11 @@
 module Evolution {
   type SeatEnd = ?String. mu turn. +{
-    report : !String. &{ next : turn, retire : end },
+    report : !String. &{next : turn, retire : end},
     handoff : !String. end
   };
-  type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
+  type Kept = ?String. mu turn. +{report : !String. &{next : turn}, handoff : !String. end};
   @[ checks ]
-  def keep : Flow(Type, SeatEnd, Kept) = sim(SeatEnd, Kept) ;
+  def keep : Flow(Type, SeatEnd, Kept) = sim(SeatEnd, Kept);
 }
 
 @[ checks ]
@@ -15,7 +15,7 @@ def served : Run(Evolution.SeatEnd) = recorded(
   sent("progress"),
   offered(retire),
   closed
-) ;
+);
 
 @[ refuses("RunNotAdmitted") ]
 def retired() -> Run(Evolution.Kept) { ride(\X. Run(X), Evolution.keep, served) }

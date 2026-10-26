@@ -3,7 +3,7 @@
 // refused, and no cancellation reaches a cancellation already running.
 
 // The task's protocol.
-import "../../model/cancellation/cancel-base.gandr" ;
+import "../../model/cancellation/cancel-base.gandr";
 
 /// A scope whose exit clause abandons the rest from inside an unwind (#1334).
 @[ refuses("UnwindEffect") ]

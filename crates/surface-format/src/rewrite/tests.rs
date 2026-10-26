@@ -126,7 +126,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     let (text, verdict) = check(&sugared);
     assert_eq!(
         (text.as_str(), verdict),
-        ("def pair : Integer * String ;\n", Ok(Agreement::Same))
+        ("def pair : Integer * String;\n", Ok(Agreement::Same))
     );
     let (text, verdict) = check(&swapped);
     let (key, span) = tree
@@ -136,7 +136,7 @@ fn a_rewrite_that_changes_what_a_source_means_is_withdrawn()
     assert_eq!(
         (text.as_str(), verdict),
         (
-            "def pair : String * Integer ;\n",
+            "def pair : String * Integer;\n",
             Ok(Agreement::Declarations(Vec::from([Differing {
                 keys: Vec::from([key]),
                 withdrawal: Withdrawal {

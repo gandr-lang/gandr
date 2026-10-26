@@ -6,8 +6,8 @@
 // lifting a constructor (#879).
 
 // The naturals; the terms and the lookup.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
 
 /// Lifting as a definition, building the constructor.
 @[ checks ]

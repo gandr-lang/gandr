@@ -1,18 +1,18 @@
 @[ refuses("LevelMismatch"), form(explicit) ]
-def too_big : Type ;
-def too_big = Type ;
+def too_big : Type;
+def too_big = Type;
 
 @[ refuses("SortMismatch") ]
-def wrong_sort : Type[-] ;
-def wrong_sort = Integer ;
+def wrong_sort : Type[-];
+def wrong_sort = Integer;
 
 @[ refuses("GradedBridge") ]
-def graded : Type ;
-def graded = +U[1] (-F Integer) ;
+def graded : Type;
+def graded = +U[1] (-F Integer);
 
 /// The greatest level has no universe above it, so the lowering refuses it at its numeral.
 @[ refuses("NoUniverseAbove") ]
-def greatest : Type[+, 18446744073709551615] ;
+def greatest : Type[+, 18446744073709551615];
 
 @[ runs("fn (a) { fn (b) { b } }") ]
 def id(a : Type, x : a) -> -F a { return x }
@@ -20,5 +20,5 @@ def id(a : Type, x : a) -> -F a { return x }
 def chosen() -> -F Type { return Integer }
 
 @[ refuses("TypeMismatch") ]
-def escaped : +U (Integer -> -F Integer) ;
-def escaped = thunk { run t <- force chosen ; become id(t) } ;
+def escaped : +U (Integer -> -F Integer);
+def escaped = thunk { run t <- force chosen; become id(t) };

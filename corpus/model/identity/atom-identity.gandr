@@ -16,7 +16,7 @@ def reflexivity(a : Unit) -> related(a, a) { unit }
 /// is the centre `a` with its reflexivity (Theorem 5.8.2, (iv)).
 @[ checks ]
 def contraction(a : Unit, b : Unit, r : related(a, b)) -> Path(
-  #{ y : Unit, s : related(a, y) },
+  #{y : Unit, s : related(a, y)},
   (b, r),
   (a, reflexivity(a))
 ) { (unit, unit) }
@@ -39,7 +39,7 @@ module Point :> #{ type T, origin : T, other : T } {
 
 /// The relation's evidence between two sealed points is a path between them.
 @[ checks ]
-def originOther : Path(Point.T, Point.origin, Point.other) = unit ;
+def originOther : Path(Point.T, Point.origin, Point.other) = unit;
 
 /// Based path induction along that evidence, in a family that reads neither
 /// the point nor the path: the evidence is no reflexivity, and the transport
@@ -55,7 +55,7 @@ def carriedAlong : Path(
     unit
   ),
   unit
-) = here(unit) ;
+) = here(unit);
 
 /// Based path induction at the sealed type (the HoTT book's § 1.12.1): a
 /// path from `origin` reversed by transport in the family of paths back to
@@ -88,7 +88,7 @@ def backAlong : Path(
     here(Point.origin)
   ),
   unit
-) = here(unit) ;
+) = here(unit);
 
 /// Based path induction along the evidence in the family of the identities
 /// of the singleton's own paths: each fibre is an identity of the relation's,
@@ -108,7 +108,7 @@ def overAlong : Path(
     here(here(Point.origin))
   ),
   unit
-) = here(unit) ;
+) = here(unit);
 
 /// Two points of the unit type, related by the paths between them: each
 /// fibre of this relation is an identity of the unit type, not the unit type
@@ -124,7 +124,7 @@ def pathReflexivity(a : Unit) -> pathRelated(a, a) { here(a) }
 /// unit type, and one over it, is the unit (#1960).
 @[ checks ]
 def pathContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
-  #{ y : Unit, s : pathRelated(a, y) },
+  #{y : Unit, s : pathRelated(a, y)},
   (b, r),
   (a, pathReflexivity(a))
 ) { (unit, unit) }
@@ -148,7 +148,7 @@ module PathPoint :> #{ type T, origin : T, other : T } {
 /// The relation's evidence between the two points: a path of the unit type,
 /// which is the unit.
 @[ checks ]
-def pathOriginOther : Path(PathPoint.T, PathPoint.origin, PathPoint.other) = unit ;
+def pathOriginOther : Path(PathPoint.T, PathPoint.origin, PathPoint.other) = unit;
 
 /// Based path induction along that evidence in the family of paths back to
 /// `origin`: each fibre is the relation's, an identity of the unit type, so
@@ -168,4 +168,4 @@ def pathBack : Path(
     here(PathPoint.origin)
   ),
   unit
-) = here(unit) ;
+) = here(unit);

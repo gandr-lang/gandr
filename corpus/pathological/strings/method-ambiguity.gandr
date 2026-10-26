@@ -3,9 +3,9 @@
 // declares it, naming each.
 
 // The lists; the byte lists; the string's methods.
-import "../../model/data/data-base.gandr" ;
-import "../../model/strings/string-base.gandr" ;
-import "../../model/strings/methods.gandr" ;
+import "../../model/data/data-base.gandr";
+import "../../model/strings/string-base.gandr";
+import "../../model/strings/methods.gandr";
 
 /// A byte list's methods: its own length.
 module Bytes {

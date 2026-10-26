@@ -14,4 +14,4 @@
 51..52 StringLit "\""
 52..56 StringLit "text"
 56..57 StringLit "\""
-58..59 Other ";"
+57..58 Other ";"

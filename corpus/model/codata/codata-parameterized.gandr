@@ -13,7 +13,7 @@ codata Scaled : Type {
 /// Doubles its argument; a bare copattern after a parameter list is out of
 /// place in a `def rec`.
 @[ refuses("MalformedForm") ]
-def rec scaled(n: Integer) -> Scaled {
+def rec scaled(n : Integer) -> Scaled {
   .doubled => n + n
 }
 

@@ -2,7 +2,7 @@
 // state is refused.
 
 // `StateLaws`.
-import "../../model/effects/state.gandr" ;
+import "../../model/effects/state.gandr";
 
 /// A store observed as keeping the state it replaces: a read after the store
 /// sees the old state through these clauses and the stored value by put-get,

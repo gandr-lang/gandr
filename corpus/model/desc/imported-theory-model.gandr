@@ -2,7 +2,7 @@
 // imported block as it reads a local one (#726).
 
 // The naturals' signature, `theory Nat`.
-import "./second-order-signatures.gandr" ;
+import "./second-order-signatures.gandr";
 
 /// A counting model of the imported naturals: the carrier is the integers,
 /// zero is `0` and the successor adds one.
@@ -16,7 +16,7 @@ module Counting : Model(Nat) {
   /// Two successors of zero: the derived operations run.
   @[ runs("2") ]
   def two() -> Integer {
-    run z <- zero() ;
+    run z <- zero();
     succ(succ(z))
   }
 }

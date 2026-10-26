@@ -8,7 +8,7 @@ def seed = 40;
 
 /// The facts, with one nested module; the signature hides `hidden_reply`,
 /// `base` and `inner.hidden`.
-module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
+module Facts : #{ inner : #{answer : Integer}, total : Integer } {
   /// A shell command's reply; the lowering admits no shell block yet (#1057).
   @[ refuses("OutOfFragment.shell_block") ]
   def hidden_reply = #!{ printf 'hidden module member ran\n'; };
@@ -18,7 +18,7 @@ module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
   @[ refuses("NotSynthesisable") ]
   def base = seed + hidden_reply.exit_code + 1;
   /// A nested module whose `hidden` the signature leaves out.
-  module inner : #{ answer: Integer } {
+  module inner : #{ answer : Integer } {
     /// The enclosing module's base, whose type is unknown while `base` is
     /// refused.
     @[ refuses("UnknownConstant") ]

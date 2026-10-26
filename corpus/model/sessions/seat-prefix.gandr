@@ -7,11 +7,11 @@
 // ones (`./seat-evolution.gandr`).
 
 // The seat's protocol and its messages.
-import "./seat-base.gandr" ;
+import "./seat-base.gandr";
 
 /// The seat before its first move: the empty record is a prefix.
 @[ checks ]
-def unstarted : Prefix(Seat.SeatEnd) = recorded() ;
+def unstarted : Prefix(Seat.SeatEnd) = recorded();
 
 /// A seat that took its task and reported, its next move the offer to go on
 /// or retire: open, so a prefix (#1861).
@@ -20,7 +20,7 @@ def reporting : Prefix(Seat.SeatEnd) = recorded(
   received(Seat.task),
   selected(report),
   sent(Seat.progress)
-) ;
+);
 
 /// On the machine the prefix reads back as the moves it records.
 @[ runs("recorded(received(\"task\"), selected(report), sent(\"progress\"))") ]
@@ -34,7 +34,7 @@ def retired : Prefix(Seat.SeatEnd) = recorded(
   sent(Seat.progress),
   offered(retire),
   closed
-) ;
+);
 
 /// A seat that reports forever has no complete run, and every record of it
 /// is a prefix: two reports so far.
@@ -42,4 +42,4 @@ def retired : Prefix(Seat.SeatEnd) = recorded(
 def reportedTwice : Prefix(mu more. !(Seat.Report). more) = recorded(
   sent(Seat.progress),
   sent(Seat.progress)
-) ;
+);

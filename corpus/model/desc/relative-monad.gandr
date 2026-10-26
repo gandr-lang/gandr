@@ -10,7 +10,7 @@
 // itself and both units, and every pair joins, so the three are one theory.
 
 // `Maybe`, the option monad's values.
-import "../data/data-maybe.gandr" ;
+import "../data/data-maybe.gandr";
 
 /// The left unit: returning a value to an extension runs its continuation at
 /// that value, a second-order rule over values `V` and computations `C`.
@@ -19,7 +19,7 @@ theory MonadLeftUnit {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitL : ext(ret(a), k) <=> k(a);
 }
 
@@ -31,8 +31,8 @@ theory MonadRightUnit {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
-  rule unitR : ext(m, bind x . ret(x)) <=> m;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
+  rule unitR : ext(m, bind x. ret(x)) <=> m;
 }
 
 /// The three laws together. Associativity's inner `ext(m, k)` is an instance
@@ -44,10 +44,10 @@ theory RelativeMonad {
   sort V : Type+;
   sort C : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
   rule unitL : ext(ret(a), k) <=> k(a);
-  rule unitR : ext(m, bind x . ret(x)) <=> m;
-  rule assoc : ext(ext(m, k), l) <=> ext(m, bind x . ext(k(x), l));
+  rule unitR : ext(m, bind x. ret(x)) <=> m;
+  rule assoc : ext(ext(m, k), l) <=> ext(m, bind x. ext(k(x), l));
 }
 
 /// The option monad's unit: the value, present.

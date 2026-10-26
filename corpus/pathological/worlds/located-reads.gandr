@@ -4,7 +4,7 @@
 
 // The operator's and the seat's worlds, and the seat's sealed side of the
 // exchange.
-import "../../model/worlds/seat-and-operator.gandr" ;
+import "../../model/worlds/seat-and-operator.gandr";
 
 /// A handle to the seat's report opened at the operator's world and used
 /// there, refused at the use: what the handle holds is the seat's.

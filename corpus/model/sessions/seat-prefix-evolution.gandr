@@ -5,11 +5,11 @@
 // Session Types in the Pi Calculus_, doi:10.1007/s00236-005-0177-z).
 
 // The seat's protocol, its messages and the widening.
-import "./seat-evolution.gandr" ;
+import "./seat-evolution.gandr";
 
 // The open play `reporting`: the seat took its task and reported, its next
 // move the offer to go on or retire.
-import "./seat-prefix.gandr" ;
+import "./seat-prefix.gandr";
 
 /// An open play ridden forward along the simulation (#1318).
 @[ checks ]

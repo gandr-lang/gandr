@@ -7,10 +7,10 @@
 theory StateObserved {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
   oper peek : (c : C) --> S;
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
 }
 
 /// Put-put keeping the first value, beside put-get: put-put's continuation
@@ -20,9 +20,9 @@ theory StateObserved {
 theory StatePutKeepsFirst {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
   rule putFirst : put(s, put(u, k)) <=> put(s, k);
 }
 
@@ -33,10 +33,10 @@ theory StatePutKeepsFirst {
 theory StateAllLaws {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
-  rule putGet : put(s, get(bind t . k(t))) <=> put(s, k(s));
+  rule putGet : put(s, get(bind t. k(t))) <=> put(s, k(s));
   rule putPut : put(s, put(u, k)) <=> put(u, k);
-  rule getPut : get(bind s . put(s, k)) <=> k;
-  rule getGet : get(bind s . get(bind t . k(s, t))) <=> get(bind s . k(s, s));
+  rule getPut : get(bind s. put(s, k)) <=> k;
+  rule getGet : get(bind s. get(bind t. k(s, t))) <=> get(bind s. k(s, s));
 }

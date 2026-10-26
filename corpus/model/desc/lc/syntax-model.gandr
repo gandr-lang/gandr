@@ -5,14 +5,14 @@
 // proves of the syntax.
 
 // The naturals; the syntax; the six laws, in the theory's order.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./sub-q-single.gandr" ;
-import "./sub-q-lift.gandr" ;
-import "./sub-weaken-lift.gandr" ;
-import "./sub-weaken-single.gandr" ;
-import "./sub-lam.gandr" ;
-import "./sub-app.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./sub-q-single.gandr";
+import "./sub-q-lift.gandr";
+import "./sub-weaken-lift.gandr";
+import "./sub-weaken-single.gandr";
+import "./sub-lam.gandr";
+import "./sub-app.gandr";
 
 /// The λ-calculus's syntax as a model of its single-substitution calculus.
 module LCSyntax : Model(LC) {

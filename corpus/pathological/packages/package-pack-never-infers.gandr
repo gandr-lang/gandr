@@ -4,7 +4,7 @@
 
 /// A pack with no stated type (#1108).
 @[ refuses("OutOfFragment.pack_expression") ]
-def unannotated = pack [ Integer ] thunk { return #{ seed = 7 } };
+def unannotated = pack [Integer] thunk { return #{seed = 7} };
 
 /// The run target returns it; it is refused above, so it names a
 /// declaration whose type is not known.

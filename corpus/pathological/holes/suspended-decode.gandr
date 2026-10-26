@@ -8,31 +8,31 @@
 
 /// A code the module owes.
 @[ owes(1) ]
-def code : Type ;
+def code : Type;
 
 /// A second code the module owes.
 @[ owes(1) ]
-def other : Type ;
+def other : Type;
 
 /// A value the module owes at the second code's decode.
 @[ owes(1) ]
-def held : other ;
+def held : other;
 
 /// A code filled with the string type.
 @[ checks ]
-def stringy : Type = String ;
+def stringy : Type = String;
 
 /// Three at the decode of the code filled with `String`: the comparison is
 /// rigid, and `Integer` is not `String`.
 @[ refuses("TypeMismatch") ]
-def threeAtString : stringy = 3 ;
+def threeAtString : stringy = 3;
 
 /// A value at one owed code's decode where another's is wanted: two holes and
 /// no rigid side.
 @[ refuses("TypeMismatch") ]
-def acrossHoles : code = held ;
+def acrossHoles : code = held;
 
 /// A pair whose first component waits on `code` and whose second is a string
 /// where an integer stands: the refusal wins over the wait.
 @[ refuses("TypeMismatch") ]
-def halfWaiting : code * Integer = (3, "three") ;
+def halfWaiting : code * Integer = (3, "three");

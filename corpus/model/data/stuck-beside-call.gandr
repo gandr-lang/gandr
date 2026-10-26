@@ -7,7 +7,7 @@
 // ran.
 
 // The naturals the recursion takes apart.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// One successor over a natural.
 @[ checks ]
@@ -28,7 +28,7 @@ def rec walk(t : Nat, c : Nat) -> Nat {
 /// Two walked from zero: a successor per step over the accumulator `succ`
 /// raised once per step.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def walkedTwo : () => Nat = walk(two, Zero) ;
+def walkedTwo : () => Nat = walk(two, Zero);
 
 /// One step at a variable.
 @[ checks ]

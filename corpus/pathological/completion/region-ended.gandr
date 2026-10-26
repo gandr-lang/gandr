@@ -7,7 +7,7 @@
 // Bowman, _Type Universes as Kripke Worlds_, ICFP 2025, doi:10.1145/3747532).
 
 // The ring's protocol and its entries.
-import "../../model/completion/ring-base.gandr" ;
+import "../../model/completion/ring-base.gandr";
 
 /// A view of the held buffer kept in the hold's region and submitted to a
 /// kernel the region does not bound: the hold could end with the completion
@@ -15,7 +15,7 @@ import "../../model/completion/ring-base.gandr" ;
 @[ refuses("KeptEscaped") ]
 def regionEnded() -> Unit {
   hold buf = Ring.read;
-  run buffer : (() => Ring.Sqe) at buf <- access shared buf as w { pure thunk { pure w } } ;
+  run buffer : (() => Ring.Sqe) at buf <- access shared buf as w { pure thunk { pure w } };
   fork (kernel : ?((() => Ring.Sqe) at buf). !(Ring.Cqe). end) {
     recv(kernel) as sqe;
     send(kernel, Ring.done);

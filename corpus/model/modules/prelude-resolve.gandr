@@ -14,15 +14,15 @@ data Point : Type {
 module EqPoint : Model(Eq) with sort Carrier = Point {
   /// Both coordinates, in order.
   @[ checks ]
-  def eq = Eq.generic(Point) ;
+  def eq = Eq.generic(Point);
 
   /// Every point is equal to itself.
   @[ checks ]
-  def refl = Eq.generic.refl(Point) ;
+  def refl = Eq.generic.refl(Point);
 
   /// Equality reads the same from either side.
   @[ checks ]
-  def sym = Eq.generic.sym(Point) ;
+  def sym = Eq.generic.sym(Point);
 }
 
 /// Two integers alike.

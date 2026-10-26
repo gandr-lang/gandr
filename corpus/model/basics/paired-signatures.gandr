@@ -15,7 +15,7 @@ def seed : Integer = prim.const(40, prim.id(999));
 /// no thunk grade but `ω` yet (#1112).
 @[ refuses("GradedBridge") ]
 def plus_two : +U[1] (Integer -> -F Integer);
-def plus_two(x: Integer) -> -F Integer {
+def plus_two(x : Integer) -> -F Integer {
   return (x + 2)
 }
 

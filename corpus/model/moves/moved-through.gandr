@@ -3,7 +3,7 @@
 // name closes it.
 
 // The file's protocols.
-import "./file-base.gandr" ;
+import "./file-base.gandr";
 
 /// A handle sent to a writer, which sends it back: the parent closes what it
 /// received, never the name it sent.

@@ -2,7 +2,7 @@
 // model of a theory of state.
 
 // The theories `State` and `StatePutGet`.
-import "../../model/effects/state.gandr" ;
+import "../../model/effects/state.gandr";
 
 /// `get` read first-order, its continuation at the carrier: the model's `get`
 /// takes the function from the state, so the module's is refused at its type.

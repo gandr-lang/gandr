@@ -4,7 +4,7 @@
 // and a group need not be abelian.
 
 // The group's unit, associativity and inverse laws.
-import "../../model/identity/group-laws.gandr" ;
+import "../../model/identity/group-laws.gandr";
 
 /// Commutativity, refused: its sides are their own normal forms.
 @[ refuses("UnderivedRule") ]

@@ -8,7 +8,7 @@
 // nothing. What refuses is in `../../pathological/data/following.gandr`.
 
 // The naturals and the numerals two and three.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Truncated subtraction, by recursion on the first argument: never larger
 /// than it, so a call's result stands where its first argument does.
@@ -55,16 +55,16 @@ def rec digits(n : Nat) -> Nat {
 
 /// Three less one: two.
 @[ runs("Succ(Succ(Zero))") ]
-def difference : () => Nat = minus(three, Succ(Zero)) ;
+def difference : () => Nat = minus(three, Succ(Zero));
 
 /// Four divided by two: two.
 @[ runs("Succ(Succ(Zero))") ]
-def quotient : () => Nat = divided(Succ(three), Succ(Zero)) ;
+def quotient : () => Nat = divided(Succ(three), Succ(Zero));
 
 /// Half of three, rounded up: two.
 @[ runs("Succ(Succ(Zero))") ]
-def halvedThree : () => Nat = halvedUp(three) ;
+def halvedThree : () => Nat = halvedUp(three);
 
 /// Four is `100` in binary: three digits.
 @[ runs("Succ(Succ(Succ(Zero)))") ]
-def digitsOfFour : () => Nat = digits(Succ(three)) ;
+def digitsOfFour : () => Nat = digits(Succ(three));

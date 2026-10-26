@@ -5,7 +5,7 @@
 // the native handler runs to, and the kernel replays every declaration here.
 
 // `Either`, `StateOp` and `Prog`.
-import "./tree.gandr" ;
+import "./tree.gandr";
 
 /// `constant`'s subject as a tree: read, store what was read, read again,
 /// and answer the two reads and one.
@@ -15,7 +15,7 @@ def constantTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Get), fn (a) {
       (Done(a + b + 1) : Prog(Either(StateOp, Void), Integer))
     }) : Prog(Either(StateOp, Void), Integer))
   }) : Prog(Either(StateOp, Void), Integer))
-}) ;
+});
 
 /// `constant`'s clauses as a fold: every read is answered four, and a store
 /// is forgotten.
@@ -42,7 +42,7 @@ def passingTree : Prog(Either(StateOp, Void), Integer) = Op(Left(Put(4)), fn (_u
       (Done(a * 10 + b) : Prog(Either(StateOp, Void), Integer))
     }) : Prog(Either(StateOp, Void), Integer))
   }) : Prog(Either(StateOp, Void), Integer))
-}) ;
+});
 
 /// The state-passing model as a fold: a read is answered the current state,
 /// and a store replaces it.
@@ -76,7 +76,7 @@ def constantProgram : StateModel(Integer) = Read(unit, fn (a) {
   (Write(a, fn (_u) {
     (Read(unit, fn (b) { (Answer(a + b + 1) : StateModel(Integer)) }) : StateModel(Integer))
   }) : StateModel(Integer))
-}) ;
+});
 
 /// `constant`'s clauses as the model's fold: a read resumes at four, and a
 /// store resumes at the unit.

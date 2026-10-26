@@ -5,8 +5,8 @@
 
 // `pass`, which hands back the thunk it is lent, and `touch`, which forces it
 // first; each polymorphic in its region.
-import "../../model/regions/passed.gandr" ;
-import "../../model/regions/natural.gandr" ;
+import "../../model/regions/passed.gandr";
+import "../../model/regions/natural.gandr";
 
 /// The square against the extension: a view kept at the inner region does not
 /// stand where the outer region's is asked.
@@ -14,13 +14,13 @@ import "../../model/regions/natural.gandr" ;
 def backwards() -> Integer {
   hold s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;
+    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
     handle inner : Proc {
       run _ : Path(
         (() => Integer) at inner => (() => Integer) at outer,
-        thunk { fn (x) { run z : (() => Integer) at outer <- pure x ; pass(z) } },
-        thunk { fn (x) { run y : (() => Integer) at inner <- pass(x) ; pure y } }
-      ) <- pure here(thunk { fn (x) { run z : (() => Integer) at outer <- pure x ; pass(z) } }) ;
+        thunk { fn (x) { run z : (() => Integer) at outer <- pure x; pass(z) } },
+        thunk { fn (x) { run y : (() => Integer) at inner <- pass(x); pure y } }
+      ) <- pure here(thunk { fn (x) { run z : (() => Integer) at outer <- pure x; pass(z) } });
       force k
     } with {
       pure(y) => pure y,
@@ -38,13 +38,13 @@ def backwards() -> Integer {
 def unequal() -> Integer {
   hold s = 5;
   handle outer : Proc {
-    run k : (() => Integer) at outer <- access shared s as w { pure pure w } ;
+    run k : (() => Integer) at outer <- access shared s as w { pure pure w };
     handle inner : Proc {
       run _ : Path(
         (() => Integer) at outer => (() => Integer) at inner,
-        thunk { fn (x) { run y : (() => Integer) at outer <- pass(x) ; pure y } },
-        thunk { fn (x) { run z : (() => Integer) at inner <- pure x ; touch(z) } }
-      ) <- pure here(thunk { fn (x) { run y : (() => Integer) at outer <- pass(x) ; pure y } }) ;
+        thunk { fn (x) { run y : (() => Integer) at outer <- pass(x); pure y } },
+        thunk { fn (x) { run z : (() => Integer) at inner <- pure x; touch(z) } }
+      ) <- pure here(thunk { fn (x) { run y : (() => Integer) at outer <- pass(x); pure y } });
       force k
     } with {
       pure(y) => pure y,

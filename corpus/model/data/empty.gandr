@@ -7,7 +7,7 @@
 // (Coquand, _Pattern matching with dependent types_, 1992).
 
 // The presented integers.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// The type with no element.
 @[ checks ]

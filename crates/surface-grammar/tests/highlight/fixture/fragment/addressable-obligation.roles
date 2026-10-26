@@ -8,4 +8,4 @@
 17..22 FunctionDef "later"
 23..24 Other ":"
 25..32 TypeBuiltin "Integer"
-33..34 Other ";"
+32..33 Other ";"

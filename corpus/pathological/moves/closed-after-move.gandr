@@ -3,7 +3,7 @@
 // 14882:2020); here the move left nothing behind to close.
 
 // The file's protocols.
-import "../../model/moves/file-base.gandr" ;
+import "../../model/moves/file-base.gandr";
 
 /// The handle closed by its mover after it was moved into a closer: the send
 /// spent the mover's end, so the close acts on a spent slot.

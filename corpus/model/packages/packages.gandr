@@ -5,8 +5,8 @@
 
 /// Opens a counter and reads its seed through its own reader.
 @[ refuses("OutOfFragment.unpack_statement") ]
-def consume(p: package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T })) -> -F Integer {
-  unpack m : package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T }) = p;
+def consume(p : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T})) -> -F Integer {
+  unpack m : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T}) = p;
   run r <- force m;
   run f <- r.read;
   run s <- r.seed;
@@ -15,16 +15,16 @@ def consume(p: package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed:
 
 /// A counter over integers, packed.
 @[ refuses("OutOfFragment.package_type") ]
-def int_counter : package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T });
-def int_counter = pack [ Integer ] thunk {
-  return #{ read = thunk { fn (n: Integer) { return n } }, seed = 7 }
+def int_counter : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T});
+def int_counter = pack [Integer] thunk {
+  return #{read = thunk { fn (n : Integer) { return n } }, seed = 7}
 };
 
 /// A counter over strings, packed at the same package type.
 @[ refuses("OutOfFragment.package_type") ]
-def text_counter : package [ T ] +U[ω] (-F #{ read: +U[ω] (T -> -F Integer), seed: T });
-def text_counter = pack [ String ] thunk {
-  return #{ read = thunk { fn (s: String) { return 42 } }, seed = "seven" }
+def text_counter : package [T] +U[ω] (-F #{read : +U[ω] (T -> -F Integer), seed : T});
+def text_counter = pack [String] thunk {
+  return #{read = thunk { fn (s : String) { return 42 } }, seed = "seven"}
 };
 
 /// Both counters read and summed; `consume`'s type is unknown while it is

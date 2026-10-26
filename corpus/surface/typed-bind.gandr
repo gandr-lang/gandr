@@ -11,7 +11,7 @@ data Nat : Type {
 /// A return checks only against a type, and the annotation states it.
 @[ checks ]
 def next(n : Nat) -> Nat {
-  run m : Nat <- pure Succ(n) ;
+  run m : Nat <- pure Succ(n);
   Succ(m)
 }
 
@@ -22,13 +22,13 @@ def three() -> Nat { next(Succ(Zero)) }
 /// A suspended function is named at its written type and called.
 @[ checks ]
 def apply(n : Nat) -> Nat {
-  run f : Nat => Nat <- pure fn (x) { Succ(x) } ;
+  run f : Nat => Nat <- pure fn (x) { Succ(x) };
   f(n)
 }
 
 /// A computation that returns a `Nat` is no `Unit`.
 @[ refuses("TypeMismatch") ]
 def mistyped(n : Nat) -> Nat {
-  run m : Unit <- pure Succ(n) ;
+  run m : Unit <- pure Succ(n);
   n
 }

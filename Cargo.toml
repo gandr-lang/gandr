@@ -790,6 +790,7 @@ default-features = false
 # - none: alloc-only graph machinery.
 # consumers:
 # - surface-grammar
+# - surface-format
 # - surface-parser
 # - theory-decomposition-spaces
 # - theory-dynamic-graphs

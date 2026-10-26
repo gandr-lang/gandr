@@ -1,5 +1,5 @@
 // The higher-cells subject's shared declarations, written once and imported
-// by every source that reads them (`import "./magma-base.gandr" ;`): the
+// by every source that reads them (`import "./magma-base.gandr";`): the
 // magma signature whose two corollas `ua` reads, and the translators its
 // models' tables are given by — the swap of the booleans, the identity on
 // them, and the identity on the unit's one injection. A `ua[n, k]` path is

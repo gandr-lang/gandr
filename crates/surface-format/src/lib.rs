@@ -282,6 +282,8 @@ mod reduct;
 
 mod rewrite;
 
+mod space;
+
 mod tail;
 
 mod thunk;
@@ -1573,9 +1575,9 @@ enum Joins
     /// On its own line: a form, or a comment the source wrote on its own.
     OwnLine,
     /// After one space: a comment the source wrote on the line before it
-    /// ended, or a separator the source spaced off.
+    /// ended.
     SameLine,
-    /// Touching: a separator the source wrote against the form it ends.
+    /// Touching: a separator, against the form it ends.
     Touching,
 }
 
@@ -1614,9 +1616,8 @@ fn units<'leaves, 'source>(leaves: &'leaves [Leaf<'source>]) -> Vec<Unit<'leaves
             Material::LineComment | Material::BlockComment
         );
         let joins = match gap {
-            Gap::Adjacent if separator => Joins::Touching,
-            Gap::Adjacent | Gap::Space if comment || separator => Joins::SameLine,
-            Gap::Break | Gap::Blank if separator => Joins::SameLine,
+            Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank if separator => Joins::Touching,
+            Gap::Adjacent | Gap::Space if comment => Joins::SameLine,
             Gap::Adjacent | Gap::Space | Gap::Break | Gap::Blank => Joins::OwnLine,
         };
         let last = unit.last().map_or(first.span, |last| last.span);

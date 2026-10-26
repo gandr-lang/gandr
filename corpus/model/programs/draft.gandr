@@ -3,8 +3,8 @@
 // holes are still open; `gandr run` reports the hole at its line and column
 // and exits 1.
 
-import "./entry.gandr" ;
+import "./entry.gandr";
 
 /// It counts no arguments, then reaches the hole left for the rest.
 @[ runs("reached a hole") ]
-def draft() -> Integer { run n <- count([]) ; ?rest }
+def draft() -> Integer { run n <- count([]); ?rest }

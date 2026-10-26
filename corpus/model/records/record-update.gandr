@@ -2,8 +2,8 @@
 
 /// A point of two fields.
 @[ checks ]
-def point = #{ x = 1, y = 2 };
+def point = #{x = 1, y = 2};
 
 /// The run target updates `x`: a new record, `y` kept.
 @[ runs("#{.x = 9, .y = 2}") ]
-#{ point | x = 9 }
+#{point | x = 9}

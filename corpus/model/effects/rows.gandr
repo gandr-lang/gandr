@@ -7,7 +7,7 @@
 // is a set of effects.
 
 // The theory `State`.
-import "./state.gandr" ;
+import "./state.gandr";
 
 /// Writes that go nowhere: a theory of no operation, which a row holds where
 /// what is written is discarded.

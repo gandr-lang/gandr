@@ -67,4 +67,4 @@ def kept(presented : Theory, n : counted_at(presented)) -> counted_at(presented)
 
 /// Text is no `Integer`, so it does not inhabit `counted_at(Monoid)`.
 @[ refuses("TypeMismatch") ]
-def text : counted_at(Monoid) = "two" ;
+def text : counted_at(Monoid) = "two";

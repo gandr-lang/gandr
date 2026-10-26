@@ -11,9 +11,9 @@
 // `basedΩS¹ x ≡ ℤ` at every point needs equivalences as structure.
 
 // The circle, the integers, winding, spinning and the round trip `sect`.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The integers' sum and its laws.
-import "./int-sum.gandr" ;
+import "./int-sum.gandr";
 
 /// Spinning a successor is one loop more (cubical's `intLoop-sucℤ`), by
 /// computation.
@@ -85,9 +85,9 @@ def comm(
 
 /// Three loops spun and wound count three (cubical's `test-winding-pos`).
 @[ runs("S(S(S(Z)))") ]
-def windThree : () => Int = wind(spin(S(S(S(Z))))) ;
+def windThree : () => Int = wind(spin(S(S(S(Z)))));
 
 /// Two inverse loops spun and wound count minus two (cubical's
 /// `test-winding-neg`).
 @[ runs("P(P(Z))") ]
-def windMinusTwo : () => Int = wind(spin(P(P(Z)))) ;
+def windMinusTwo : () => Int = wind(spin(P(P(Z))));

@@ -3,4 +3,4 @@
 
 /// An empty block.
 @[ refuses("OutOfFragment.Arity") ]
-{ }
+{}

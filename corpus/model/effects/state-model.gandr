@@ -10,9 +10,9 @@
 // its `get` conjugated by the equivalence.
 
 // The theories `State` and `StatePutPut`.
-import "./state.gandr" ;
+import "./state.gandr";
 // The counts, three states, and their negation, a path between types.
-import "../identity/model-counter.gandr" ;
+import "../identity/model-counter.gandr";
 
 /// State passing: what runs reads the current state and answers an integer.
 module Passing : Model(State) with sort S = Integer {
@@ -85,7 +85,7 @@ def shown(c : Unit + (Unit + Unit)) -> Integer {
 def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
   .get = fn (k) { pure fn (s) { run after <- k(s); after(s) } },
   .put = fn (s) { fn (k) { pure fn (_old) { k(s) } } }
-} ;
+};
 
 /// The same model carried along negation of the counts: `get`'s continuation
 /// is a function of the state, so the state it is handed is negated back and
@@ -95,7 +95,7 @@ def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
   \x. Model(State) with sort S = x with sort C = (x => Integer),
   countsNegated,
   passing
-) ;
+);
 
 /// Storing the second count and then reading the state twice, from the first
 /// count.

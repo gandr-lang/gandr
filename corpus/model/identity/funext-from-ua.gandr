@@ -10,13 +10,13 @@
 
 /// The diagonal of the path space: a point, to itself, along reflexivity.
 @[ checks ]
-def diag(b : Type, v : b) -> #{ x : b, y : b, p : Path(b, x, y) } {
+def diag(b : Type, v : b) -> #{x : b, y : b, p : Path(b, x, y)} {
   (v, (v, here(v)))
 }
 
 /// The first end of a path.
 @[ checks ]
-def source(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> b {
+def source(b : Type, w : #{x : b, y : b, p : Path(b, x, y)}) -> b {
   case w {
     #{.x = u, .y = v, .p = q} => u
   }
@@ -24,7 +24,7 @@ def source(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> b {
 
 /// The second end of a path.
 @[ checks ]
-def target(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> b {
+def target(b : Type, w : #{x : b, y : b, p : Path(b, x, y)}) -> b {
   case w {
     #{.x = u, .y = v, .p = q} => v
   }
@@ -32,15 +32,15 @@ def target(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> b {
 
 /// The diagonal at a path's first end is the path, by `J` on it.
 @[ checks ]
-def diagSource(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> Path(
-  #{ x : b, y : b, p : Path(b, x, y) },
+def diagSource(b : Type, w : #{x : b, y : b, p : Path(b, x, y)}) -> Path(
+  #{x : b, y : b, p : Path(b, x, y)},
   diag(b, source(b, w)),
   w
 ) {
   case w {
     #{.x = u, .y = v, .p = q} => transport(
       (y : b, z : Path(b, u, y)) => Path(
-        #{ x : b, y : b, p : Path(b, x, y) },
+        #{x : b, y : b, p : Path(b, x, y)},
         diag(b, u),
         (u, (y, z))
       ),
@@ -54,7 +54,7 @@ def diagSource(b : Type, w : #{ x : b, y : b, p : Path(b, x, y) }) -> Path(
 
 /// The diagonal is bi-invertible, the first end both its inverses.
 @[ checks ]
-def diagEquiv(b : Type) -> b ≃ #{ x : b, y : b, p : Path(b, x, y) } {
+def diagEquiv(b : Type) -> b ≃ #{x : b, y : b, p : Path(b, x, y)} {
   (
     fn (v) { diag(b, v) },
     (
@@ -168,14 +168,14 @@ def carryInjective(
 /// both are the identity by conversion.
 @[ checks ]
 def endsAgree(b : Type) -> Path(
-  #{ x : b, y : b, p : Path(b, x, y) } => b,
+  #{x : b, y : b, p : Path(b, x, y)} => b,
   thunk { fn (w) { source(b, w) } },
   thunk { fn (w) { target(b, w) } }
 ) {
   become carryInjective(
     b,
     b,
-    type(#{ x : b, y : b, p : Path(b, x, y) }),
+    type(#{x : b, y : b, p : Path(b, x, y)}),
     ua((
       thunk { fn (v) { diag(b, v) } },
       (
@@ -195,14 +195,14 @@ def endsAgree(b : Type) -> Path(
 def whisker(
   a : Type,
   b : Type,
-  k : a => #{ x : b, y : b, p : Path(b, x, y) },
-  s : #{ x : b, y : b, p : Path(b, x, y) } => b,
-  t : #{ x : b, y : b, p : Path(b, x, y) } => b,
-  e : Path(#{ x : b, y : b, p : Path(b, x, y) } => b, s, t)
+  k : a => #{x : b, y : b, p : Path(b, x, y)},
+  s : #{x : b, y : b, p : Path(b, x, y)} => b,
+  t : #{x : b, y : b, p : Path(b, x, y)} => b,
+  e : Path(#{x : b, y : b, p : Path(b, x, y)} => b, s, t)
 ) -> Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { t(k(x)) } }) {
   become transport(
-    (w : #{ x : b, y : b, p : Path(b, x, y) } => b, Path(
-      #{ x : b, y : b, p : Path(b, x, y) } => b,
+    (w : #{x : b, y : b, p : Path(b, x, y)} => b, Path(
+      #{x : b, y : b, p : Path(b, x, y)} => b,
       s,
       w
     )) => Path(a => b, thunk { fn (x) { s(k(x)) } }, thunk { fn (x) { w(k(x)) } }),
@@ -216,7 +216,7 @@ def whisker(
 /// Function extensionality at the path space: a map into it gives a path
 /// between its two ends, whatever the functions are.
 @[ checks ]
-def funextOfSpace(a : Type, b : Type, k : a => #{ x : b, y : b, p : Path(b, x, y) }) -> Path(
+def funextOfSpace(a : Type, b : Type, k : a => #{x : b, y : b, p : Path(b, x, y)}) -> Path(
   a => b,
   thunk { fn (x) { source(b, k(x)) } },
   thunk { fn (x) { target(b, k(x)) } }

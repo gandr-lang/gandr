@@ -6,24 +6,24 @@
 /// and the choice to continue or retire, or a handoff that ends it.
 module Seat {
   type SeatEnd = ?String. mu turn. +{
-    report : !String. &{ next : turn, retire : end },
+    report : !String. &{next : turn, retire : end},
     handoff : !String. end
   };
 }
 
 /// The seat that took its task and reported has not finished: no run.
 @[ refuses("RunNotAdmitted") ]
-def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report), sent("progress")) ;
+def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report), sent("progress"));
 
 /// A seat that answers its task with the operator's offer moves the wrong
 /// way: refused by name, open as it is.
 @[ refuses("RunNotAdmitted") ]
-def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next)) ;
+def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next));
 
 /// A prefix of the protocol, its task received.
 @[ checks ]
-def opened : Prefix(Seat.SeatEnd) = recorded(received("task")) ;
+def opened : Prefix(Seat.SeatEnd) = recorded(received("task"));
 
 /// The prefix declared a run: no prefix converts to a run.
 @[ refuses("TypeMismatch") ]
-def promoted : Run(Seat.SeatEnd) = opened ;
+def promoted : Run(Seat.SeatEnd) = opened;

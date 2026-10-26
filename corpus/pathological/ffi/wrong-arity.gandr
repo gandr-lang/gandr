@@ -5,7 +5,7 @@
 /// The maths library's power function (#327).
 @[ refuses("OutOfFragment.extern_block") ]
 extern "c" from "m" {
-  def pow(base: f64, exp: f64) -> f64;
+  def pow(base : f64, exp : f64) -> f64;
 }
 
 /// The run target calls it with its base alone; the lowering reads no

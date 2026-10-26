@@ -139,8 +139,8 @@ def runAt(body : +U (-F [o : Console] Unit)) -> [o : Console] Unit {
 /// row naming a binder, which binds nothing more.
 @[ checks ]
 def bothWritten @[r : Region, r1 : Region] (
-  first : Cap {print} at r,
-  second : Cap {print} at r1
+  first : Cap { print } at r,
+  second : Cap { print } at r1
 ) -> [r : Console, r1 : Console] Unit {
   say[out = first]();
   say[out = second]()

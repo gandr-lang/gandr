@@ -3,7 +3,7 @@
 // term on the other side.
 
 // The free naturals.
-import "../../model/data/data-base.gandr" ;
+import "../../model/data/data-base.gandr";
 
 /// `Succ(n)` is `Succ(Zero)` once `n` is `Zero`.
 @[ refuses("NotApart") ]

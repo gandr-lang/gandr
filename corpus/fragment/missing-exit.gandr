@@ -28,7 +28,7 @@ def one_arm(n : Nat) -> -F Nat {
 
 @[ checks ]
 def sequenced(n : Nat) -> -F Nat {
-  run m <- down(n) ;
+  run m <- down(n);
   pure m
 }
 
@@ -40,7 +40,7 @@ def nested(n : Nat) -> -F Nat {
       run q <- case p {
         Zero => return p,
         Succ(r) => pure r,
-      } ;
+      };
       pure q
     },
   }
@@ -54,6 +54,6 @@ def lambda(n : Nat) -> -F Nat { pure n }
 
 @[ checks ]
 def bound(n : Nat) -> -F Nat {
-  run m <- case n -> -F Nat { Zero => pure n, Succ(p) => pure p } ;
+  run m <- case n -> -F Nat { Zero => pure n, Succ(p) => pure p };
   return m
 }

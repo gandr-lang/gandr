@@ -8,7 +8,7 @@ def four_eq_four = here(4);
 
 /// A path between four and itself, given back.
 @[ checks ]
-def cast(p: Path(Integer, 4, 4)) -> Path(Integer, 4, 4) {
+def cast(p : Path(Integer, 4, 4)) -> Path(Integer, 4, 4) {
   p
 }
 

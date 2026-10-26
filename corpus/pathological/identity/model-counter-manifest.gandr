@@ -12,12 +12,12 @@
 // operations off its binder.
 
 // The counter, and `observe`, which reads any counter.
-import "../../model/identity/model-counter.gandr" ;
+import "../../model/identity/model-counter.gandr";
 
 // The counter whose readings have a sort of their own, `observeShared`,
 // which reads a counter sharing another's counts, the pairing, and
 // `leftBeside`, which reads a pairing beside a value of its second carrier.
-import "../../model/identity/model-counter-manifest.gandr" ;
+import "../../model/identity/model-counter-manifest.gandr";
 
 /// A ticker: a carrier, a zero and a step, and no reading.
 @[ checks ]
@@ -66,15 +66,15 @@ def countOfNothing(a : Model(Counter), c : a.Nope) -> -F Integer { return 0 }
 /// the second's binder: the second's counts are not the first's (#2246).
 @[ refuses("TypeMismatch") ]
 def stepApart(a : Model(Counter), b : Model(Counter), c : a.C) -> Integer {
-  run i <- b.incr ;
-  run r <- b.read ;
+  run i <- b.incr;
+  run r <- b.read;
   r(i(c))
 }
 
 /// An operation the counter does not have, read off its binder (#2246).
 @[ refuses("UnknownMember") ]
 def stepOfNothing(a : Model(Counter)) -> -F Integer {
-  run i <- a.nothing ;
+  run i <- a.nothing;
   0
 }
 
@@ -82,7 +82,7 @@ def stepOfNothing(a : Model(Counter)) -> -F Integer {
 /// type names it, and the record holds no field at it (#2246).
 @[ refuses("OutOfFragment.WrongSort") ]
 def stepOfCarrier(a : Model(Counter) with sort C = Integer) -> -F Integer {
-  run c <- a.C ;
+  run c <- a.C;
   0
 }
 

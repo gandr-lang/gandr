@@ -17,8 +17,8 @@ theory Scope {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule scope : par(nu(bind a . p), q) <=> nu(bind a . par(p, q)) where a # q;
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule scope : par(nu(bind a. p), q) <=> nu(bind a. par(p, q)) where a # q;
 }
 
 /// Two laws whose left sides differ only in the atom they abstract: one left
@@ -30,9 +30,9 @@ theory Alpha {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper stop : () --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
-  rule gc : nu(bind a . nil()) ==> nil();
-  rule halt : nu(bind b . nil()) ==> stop();
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
+  rule gc : nu(bind a. nil()) ==> nil();
+  rule halt : nu(bind b. nil()) ==> stop();
 }
 
 /// Structural recursion over a rule chain: one per `Derived` link, the

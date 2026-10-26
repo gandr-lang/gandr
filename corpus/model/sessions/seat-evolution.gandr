@@ -6,7 +6,7 @@
 // the old.
 
 // The seat's protocol and its messages.
-import "./seat-base.gandr" ;
+import "./seat-base.gandr";
 
 /// The seat's protocol, the protocol with a pause added, and the protocol
 /// unrolled once, related by simulation and bisimulation.
@@ -16,14 +16,14 @@ module Evolution {
   type Handoff = Seat.Handoff;
   type SeatEnd = Seat.SeatEnd;
   type SeatEnd′ = ?Dispatch. mu turn. +{
-    report : !Report. &{ next : turn, retire : end },
+    report : !Report. &{next : turn, retire : end},
     handoff : !Handoff. end,
     pause : !Report. turn
   };
   type SeatEnd2 = ?Dispatch. +{
     report : !Report. &{
       next : mu again. +{
-        report : !Report. &{ next : again, retire : end },
+        report : !Report. &{next : again, retire : end},
         handoff : !Handoff. end
       },
       retire : end
@@ -32,13 +32,13 @@ module Evolution {
   };
   /// The old protocol flows to the one with the pause, by simulation.
   @[ checks ]
-  def sub : Flow(Type, SeatEnd, SeatEnd′) = sim(SeatEnd, SeatEnd′) ;
+  def sub : Flow(Type, SeatEnd, SeatEnd′) = sim(SeatEnd, SeatEnd′);
   /// The protocol and its one-step unrolling are one type, by bisimulation.
   @[ checks ]
-  def eq : Path(Type, SeatEnd, SeatEnd2) = bisim(SeatEnd, SeatEnd2) ;
+  def eq : Path(Type, SeatEnd, SeatEnd2) = bisim(SeatEnd, SeatEnd2);
   /// The stationary flow at the old protocol.
   @[ checks ]
-  def kept : Flow(Type, SeatEnd, SeatEnd) = stay(SeatEnd) ;
+  def kept : Flow(Type, SeatEnd, SeatEnd) = stay(SeatEnd);
   /// The stationary flow, then the simulation.
   @[ checks ]
   def widened() -> Flow(Type, SeatEnd, SeatEnd′) {
@@ -54,7 +54,7 @@ def served : Run(Seat.SeatEnd) = recorded(
   sent(Seat.progress),
   offered(retire),
   closed
-) ;
+);
 
 /// A recorded run ridden forward along the simulation.
 @[ checks ]
@@ -75,7 +75,7 @@ def paused : Run(Evolution.SeatEnd′) = recorded(
   selected(handoff),
   sent(Seat.notes),
   closed
-) ;
+);
 
 /// The same record is no run of the old protocol, which has no pause.
 @[ refuses("RunNotAdmitted") ]
@@ -86,4 +86,4 @@ def backward : Run(Seat.SeatEnd) = recorded(
   selected(handoff),
   sent(Seat.notes),
   closed
-) ;
+);

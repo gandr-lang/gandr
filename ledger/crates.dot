@@ -200,6 +200,7 @@ digraph crates {
   "surface-format" -> "surface-parser";
   "surface-format" -> "surface-pretty";
   "surface-format" -> "surface-syntax";
+  "surface-format" -> "theory-graphs";
   "surface-grammar" -> "surface-render-remote";
   "surface-grammar" -> "surface-syntax";
   "surface-grammar" -> "theory-graphs";

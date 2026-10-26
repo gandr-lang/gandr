@@ -20,7 +20,7 @@ theory Twice {
 /// A signature is stated over one shape: the second member is malformed.
 @[ refuses("MalformedForm") ]
 theory TwoShapes {
-  shape Square : 4 { };
-  shape Line : 2 { };
+  shape Square : 4 {};
+  shape Line : 2 {};
   sort Cell : Type;
 }

@@ -2,7 +2,7 @@
 // specification monad's laws are refused.
 
 // `RelativeMonad`.
-import "../../model/desc/relative-monad.gandr" ;
+import "../../model/desc/relative-monad.gandr";
 
 /// The monad's laws beside the order: right unit rewrites an extension whose
 /// continuation returns, an operation nested in producer position, which the
@@ -13,11 +13,11 @@ theory LawfulSpecificationMonad {
   sort C : Type;
   sort Below(w : C, v : C) : Type;
   oper ret : (a : V) --> C;
-  oper ext : (m : C, k : pi+ (x : V) . C) --> C;
+  oper ext : (m : C, k : pi+ (x : V). C) --> C;
   oper refl : (w : C) --> Below(w, w);
   rule unitL : ext(ret(a), k) <=> k(a);
-  rule unitR : ext(m, bind x . ret(x)) <=> m;
-  rule assoc : ext(ext(m, k), l) <=> ext(m, bind x . ext(k(x), l));
+  rule unitR : ext(m, bind x. ret(x)) <=> m;
+  rule assoc : ext(ext(m, k), l) <=> ext(m, bind x. ext(k(x), l));
 }
 
 /// The monad's laws included beside the order: the included right unit is

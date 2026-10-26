@@ -955,6 +955,7 @@ dependencies = [
  "gandr-surface-parser",
  "gandr-surface-pretty",
  "gandr-surface-syntax",
+ "gandr-theory-graphs",
  "gandr-workflow-sweep",
  "quenchant-anodized",
  "quenchant-shape",

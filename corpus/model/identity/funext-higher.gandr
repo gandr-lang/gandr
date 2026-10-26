@@ -42,7 +42,7 @@ def reflexive : Path(
   (Unit + Unit => Unit + Unit) => Unit + Unit,
   at_truth,
   at_truth
-) = funext(at_truth, at_truth) ;
+) = funext(at_truth, at_truth);
 
 /// Binding the result and returning it agree at every function.
 @[ checks ]
@@ -50,7 +50,7 @@ def unfolded : Path(
   (Unit + Unit => Unit + Unit) => Unit + Unit,
   at_truth,
   through
-) = funext(at_truth, through) ;
+) = funext(at_truth, through);
 
 /// The two spellings of applying twice agree at every function.
 @[ checks ]
@@ -58,7 +58,7 @@ def nested : Path(
   (Unit + Unit => Unit + Unit) => Unit + Unit,
   applied_twice,
   twice_bound
-) = funext(applied_twice, twice_bound) ;
+) = funext(applied_twice, twice_bound);
 
 /// Reading a function at truth and at falsity differ at some function.
 @[ refuses("PointwiseDistinct") ]
@@ -66,4 +66,4 @@ def elsewhere : Path(
   (Unit + Unit => Unit + Unit) => Unit + Unit,
   at_truth,
   at_falsity
-) = funext(at_truth, at_falsity) ;
+) = funext(at_truth, at_falsity);

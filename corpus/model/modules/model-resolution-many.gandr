@@ -3,7 +3,7 @@
 // leaves its model implicit out, so the checker tries each of the sixteen
 // candidates at each of the sixteen slots, against one solver store holding
 // all of their holes: the hotpath series' `many candidates` workload.
-import "./model-resolution-tally.gandr" ;
+import "./model-resolution-tally.gandr";
 
 /// The carrier of the tally numbered 0.
 @[ checks ]

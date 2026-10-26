@@ -3,8 +3,8 @@
 
 /// A record of eight fields.
 @[ checks ]
-def wide = #{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8 };
+def wide = #{a = 1, b = 2, c = 3, d = 4, e = 5, f = 6, g = 7, h = 8};
 
 /// One field updated, the seven others kept.
 @[ runs("#{.a = 1, .b = 2, .c = 3, .d = 4, .e = 99, .f = 6, .g = 7, .h = 8}") ]
-#{ wide | e = 99 }
+#{wide | e = 99}

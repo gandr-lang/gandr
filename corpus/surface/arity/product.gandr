@@ -1,24 +1,24 @@
 @[ checks, form(explicit) ]
-def none : #{} ;
-def none = #{} ;
+def none : #{};
+def none = #{};
 
 @[ checks ]
-def one : #{Integer} ;
-def one = #{1} ;
+def one : #{Integer};
+def one = #{1};
 
 @[ checks ]
-def three : #{Integer, String, Unit} ;
-def three = #{1, "a", unit} ;
+def three : #{Integer, String, Unit};
+def three = #{1, "a", unit};
 
 @[ checks ]
-def reordered : #{Integer, String} ;
-def reordered = #{.1 = "b", .0 = 2} ;
+def reordered : #{Integer, String};
+def reordered = #{.1 = "b", .0 = 2};
 
 @[ refuses("ShapeMismatch") ]
-def bumped = #{reordered | n = 4} ;
+def bumped = #{reordered | n = 4};
 
 @[ refuses("TypeMismatch") ]
-def sigma : #{k : Integer, v : k} ;
+def sigma : #{k : Integer, v : k};
 
 @[ checks ]
 def nothing(t : #{}) -> -F Integer {

@@ -6,7 +6,7 @@
 // refuses is in the pathological twin.
 
 // The naturals the lengths count in.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Vectors of elements of `a`, indexed by their length.
 @[ checks ]

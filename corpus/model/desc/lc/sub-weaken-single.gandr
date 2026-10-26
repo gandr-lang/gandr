@@ -6,11 +6,11 @@
 
 // The naturals; the syntax; the congruences, the composites' square and the
 // identity substitution.
-import "../model-in-source.gandr" ;
-import "./syntax.gandr" ;
-import "./congruence.gandr" ;
-import "./subst-subst.gandr" ;
-import "./subst-id.gandr" ;
+import "../model-in-source.gandr";
+import "./syntax.gandr";
+import "./congruence.gandr";
+import "./subst-subst.gandr";
+import "./subst-id.gandr";
 
 /// The composites of law 4 and of the shift by zero twice agree at every
 /// index.

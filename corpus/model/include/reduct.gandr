@@ -9,15 +9,15 @@
 
 // The semigroup, the monoid, both extensions at once, and the endomorphism
 // monoid.
-import "./monoid.gandr" ;
+import "./monoid.gandr";
 
 /// The endomorphism monoid, packed at its own theory.
 @[ checks ]
-def endoMonoid : Model(Monoid) = pack Endo at Model(Monoid) ;
+def endoMonoid : Model(Monoid) = pack Endo at Model(Monoid);
 
 /// The endomorphism monoid, packed at the semigroup it includes.
 @[ checks ]
-def endoSemigroup : Model(Semigroup) = pack Endo at Model(Semigroup) ;
+def endoSemigroup : Model(Semigroup) = pack Endo at Model(Semigroup);
 
 /// The reduct, named: the monoid's record restricted to the semigroup's is the
 /// semigroup's record of the same module, by computation.
@@ -26,7 +26,7 @@ def restricted : Path(
   Model(Semigroup),
   endoSemigroup,
   Monoid.Semigroup(endoMonoid)
-) = here(endoSemigroup) ;
+) = here(endoSemigroup);
 
 /// Whether a semigroup's multiplication is there to read: every semigroup's
 /// is, so this answers zero.
@@ -55,7 +55,7 @@ def throughTheDiamond(m : Model(UnitAndZero)) -> Integer {
 def endoManifest : Model(Monoid) with sort M = (Integer => Integer) = (
   Endo.mul,
   (Endo.one, (Endo.assoc, (Endo.unitL, Endo.unitR)))
-) ;
+);
 
 /// The manifest monoid where a semigroup is asked: the checker applies the
 /// map that puts the carrier back and keeps the semigroup's members.

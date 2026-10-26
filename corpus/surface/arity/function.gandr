@@ -11,4 +11,4 @@ def two(x : Integer, y : String) -> Integer { x }
 def dependent(a : Type, x : a) -> a { x }
 
 @[ refuses("DuplicateDefinition") ]
-def twice : (x : Integer, x : String) => Integer ;
+def twice : (x : Integer, x : String) => Integer;

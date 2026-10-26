@@ -8,9 +8,9 @@
 // (`../../model/identity/funext-from-ua.gandr`).
 
 // Univalence over the user universe: `idtoequiv`.
-import "../../model/identity/univalence.gandr" ;
+import "../../model/identity/univalence.gandr";
 // The magma's degree telescope and its path at the stratum code.
-import "../../model/higher-cells/ua-type.gandr" ;
+import "../../model/higher-cells/ua-type.gandr";
 
 /// `ua` of the identity record at reflexivity, read as reflexivity: the case
 /// `J` leaves of `uaEta`, refused (#520).

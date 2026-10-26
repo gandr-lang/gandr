@@ -4,19 +4,19 @@
 
 /// An integer added to itself.
 @[ checks, form(explicit) ]
-def double(x: Integer) -> -F Integer {
+def double(x : Integer) -> -F Integer {
   become x + x
 }
 
 /// Doubling, suspended.
 @[ checks ]
-def delay(x: Integer) -> -F (+U (-F Integer)) {
+def delay(x : Integer) -> -F (+U (-F Integer)) {
   return thunk { become double(x) }
 }
 
 /// Reflexivity at a suspended doubling, written out.
 @[ checks ]
-def delayed(a: Integer) -> -F Path(
+def delayed(a : Integer) -> -F Path(
   +U (-F Integer),
   thunk { become double(a) },
   thunk { become double(a) }
@@ -26,7 +26,7 @@ def delayed(a: Integer) -> -F Path(
 
 /// A path between integers carried along the suspended doubling.
 @[ checks ]
-def cong_delay(a: Integer, b: Integer, p: Path(Integer, a, b)) -> -F Path(
+def cong_delay(a : Integer, b : Integer, p : Path(Integer, a, b)) -> -F Path(
   +U (-F Integer),
   delay(a),
   delay(b)

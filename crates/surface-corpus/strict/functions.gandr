@@ -5,7 +5,7 @@ def identity(x : Integer) -> Integer { x }
 def first(x : Integer, y : Integer) -> Integer { x }
 
 @[ runs("42") ]
-def answer : Integer = 42 ;
+def answer : Integer = 42;
 
 @[ runs("42") ]
 def applied() -> Integer { become (force identity)(answer) }

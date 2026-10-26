@@ -48,7 +48,7 @@ def fahrenheitRoundTrip(f : Fahrenheit) -> Path(Fahrenheit, toFahrenheit(toCelsi
 def relabel : Celsius ≃ Fahrenheit = (
   toFahrenheit,
   ((toCelsius, celsiusRoundTrip), (toCelsius, fahrenheitRoundTrip))
-) ;
+);
 
 /// A Celsius value carried along the path the relabelling makes is the
 /// Fahrenheit value of its integer, by a run: the book's Lemma 2.10.5.

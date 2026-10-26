@@ -3,7 +3,7 @@
 // sits beside it; here the sibling is absent.
 
 // The sibling this source would read, which the directory does not hold.
-import "./circle-absent.gandr" ;
+import "./circle-absent.gandr";
 
 /// A declaration of the importer, refused with its import: what it reads
 /// could be the absent sibling's.

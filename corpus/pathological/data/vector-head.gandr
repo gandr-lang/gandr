@@ -3,10 +3,10 @@
 // are not apart.
 
 // The naturals the lengths count in.
-import "../../model/data/data-base.gandr" ;
+import "../../model/data/data-base.gandr";
 
 // The vectors.
-import "../../model/data/vectors.gandr" ;
+import "../../model/data/vectors.gandr";
 
 /// The first element of a vector of any length, with no `VNil` arm: `VNil`
 /// stands at zero and the vector at `n`, which may be zero, so the arm cannot

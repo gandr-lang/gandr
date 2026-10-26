@@ -9,7 +9,7 @@
 /// The list each access below holds; a list's type is declared, never
 /// inferred.
 @[ runs("cons(1, cons(2, nil))") ]
-def pair : List(Integer) = cons(1, cons(2, nil)) ;
+def pair : List(Integer) = cons(1, cons(2, nil));
 
 /// The element at an index, read through a shared view.
 @[ runs("2") ]

@@ -7,7 +7,7 @@
 // presented type's open endpoints are refused, in `absurd-not-apart`.
 
 // The free naturals.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Zero is no successor, whatever `n` is: the endpoints differ at their heads.
 @[ checks ]

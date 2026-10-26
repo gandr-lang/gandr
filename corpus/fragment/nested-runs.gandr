@@ -13,12 +13,12 @@ def rec down(n : Nat) -> -F Nat {
 }
 
 @[ runs("Zero") ]
-def held : +U (-F Nat) ;
-def held = down(Succ(Zero)) ;
+def held : +U (-F Nat);
+def held = down(Succ(Zero));
 
 @[ refuses("UnenclosedRun") ]
-def ran : Nat ;
-def ran = down(Zero) ;
+def ran : Nat;
+def ran = down(Zero);
 
 @[ checks ]
 def scrutinised(n : Nat) -> -F Nat {
@@ -30,7 +30,7 @@ def scrutinised(n : Nat) -> -F Nat {
 
 @[ checks ]
 def scrutinised_run(n : Nat) -> -F Nat {
-  run m <- down(n) ;
+  run m <- down(n);
   case m {
     Zero => n,
     Succ(p) => p
@@ -54,7 +54,7 @@ def armed(n : Nat) -> -F Nat {
 def armed_three() -> -F Nat { armed(Succ(Succ(Succ(Zero)))) }
 
 @[ runs("Succ(Zero)") ]
-def kept_three() -> -F Nat { run k <- kept(Succ(Succ(Zero))) ; force k }
+def kept_three() -> -F Nat { run k <- kept(Succ(Succ(Zero))); force k }
 
 /// The constant function at `n`, returned by a call.
 @[ checks ]

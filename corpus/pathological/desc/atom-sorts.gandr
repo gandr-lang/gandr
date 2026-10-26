@@ -17,5 +17,5 @@ theory Minting {
 theory AtomBinder {
   sort Name : Atom;
   sort Tm : Type;
-  oper abs : (t : pi+ (x : Name) . Tm) --> Tm;
+  oper abs : (t : pi+ (x : Name). Tm) --> Tm;
 }

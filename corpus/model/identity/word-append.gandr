@@ -5,7 +5,7 @@
 // composite and its unit laws are the HoTT book's Lemmas 2.1.2 and 2.1.4.
 
 // The circle.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// The composite of two loops at the point.
 @[ checks ]

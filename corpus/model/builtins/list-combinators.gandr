@@ -4,23 +4,23 @@
 
 /// Each element doubled.
 @[ refuses("OutOfFragment.projection_expression") ]
-def doubled = list.each(thunk { fn(x) { return x * 2 } }, [1, 2, 3]);
+def doubled = list.each(thunk { fn (x) { return x * 2 } }, [1, 2, 3]);
 
 /// The doubled elements over two.
 @[ refuses("OutOfFragment.projection_expression") ]
-def big = list.where(thunk { fn(x) { return x > 2 } }, doubled);
+def big = list.where(thunk { fn (x) { return x > 2 } }, doubled);
 
 /// The large elements summed.
 @[ refuses("OutOfFragment.projection_expression") ]
-def total = list.reduce(thunk { fn(acc, x) { return acc + x } }, 0, big);
+def total = list.reduce(thunk { fn (acc, x) { return acc + x } }, 0, big);
 
 /// Whether some large element is over five.
 @[ refuses("OutOfFragment.projection_expression") ]
-def any_big = list.any(thunk { fn(x) { return x > 5 } }, big);
+def any_big = list.any(thunk { fn (x) { return x > 5 } }, big);
 
 /// Whether every doubled element is over one.
 @[ refuses("OutOfFragment.projection_expression") ]
-def all_even = list.all(thunk { fn(x) { return x > 1 } }, doubled);
+def all_even = list.all(thunk { fn (x) { return x > 1 } }, doubled);
 
 /// Two lists, one after the other.
 @[ refuses("OutOfFragment.projection_expression") ]

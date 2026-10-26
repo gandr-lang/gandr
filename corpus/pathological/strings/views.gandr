@@ -5,8 +5,8 @@
 // region, and the string it views is not written while the region keeps it.
 
 // The lists; the byte lists.
-import "../../model/data/data-base.gandr" ;
-import "../../model/strings/string-base.gandr" ;
+import "../../model/data/data-base.gandr";
+import "../../model/strings/string-base.gandr";
 
 /// A view captured by a thunk: the thunk may be forced after the access that
 /// lent the view has ended, so the view would outlive its access.
@@ -40,9 +40,9 @@ def keptPastRegion() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { run bs <- bytes(w) ; count(bs) }
-    } ;
-    run j : () => Integer <- pure thunk { force k } ;
+      pure thunk { run bs <- bytes(w); count(bs) }
+    };
+    run j : () => Integer <- pure thunk { force k };
     force j
   } with {
     pure(x) => pure x,
@@ -57,8 +57,8 @@ def writtenWhileKept() -> Integer {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   handle c : Proc {
     run k : (() => Integer) at c <- access shared s as w {
-      pure thunk { run bs <- bytes(w) ; count(bs) }
-    } ;
+      pure thunk { run bs <- bytes(w); count(bs) }
+    };
     access s as v { resume(v, v) };
     force k
   } with {

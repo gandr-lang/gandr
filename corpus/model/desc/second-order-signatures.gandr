@@ -20,7 +20,7 @@ theory Nat {
 @[ checks ]
 theory Lambda {
   sort Tm : Type+;
-  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
 }
 
@@ -36,7 +36,7 @@ theory IdentityReturn {
   oper f : (a : VTy) --> CTy;
   oper arrow : (a : VTy, b : CTy) --> CTy;
   oper ret : (a : VTy, t : VTm(a)) --> CTm(f(a));
-  oper lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)) . CTm(b)) --> CTm(arrow(a, b));
+  oper lam : (a : VTy, b : CTy, t : pi+ (x : VTm(a)). CTm(b)) --> CTm(arrow(a, b));
 }
 
 /// Structural recursion over a sort chain: one per `Representable` link, none

@@ -5,7 +5,7 @@
 // builds it.
 
 // The wheel's theory.
-import "../../model/circuit/circuit-feed-wheel.gandr" ;
+import "../../model/circuit/circuit-feed-wheel.gandr";
 
 /// The running sum's step, the `emit` its model gives: the output fed back
 /// plus the stream's value.
@@ -23,4 +23,4 @@ def unrolled() -> Integer {
 /// `spin` over `1, 2, 3` answers what `unrolled` does. `Model(Wheel)` cannot
 /// state `spin`, a circuit rule (#1323).
 @[ refuses("UnstatedComponent.Circuit") ]
-def summing : Model(Wheel) ;
+def summing : Model(Wheel);

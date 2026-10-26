@@ -12,7 +12,7 @@ data ProcTree(a : Type) : Type {
 }
 
 /// `resumed`'s body as a tree: exit with five, then answer one.
-def exitThenOne : ProcTree(Integer) = Exit(5, fn (_u) { (Return(1) : ProcTree(Integer)) }) ;
+def exitThenOne : ProcTree(Integer) = Exit(5, fn (_u) { (Return(1) : ProcTree(Integer)) });
 
 /// `resumed`'s handler as a fold: the result passes a hundred on, and `exit`
 /// resumes the body with the unit.

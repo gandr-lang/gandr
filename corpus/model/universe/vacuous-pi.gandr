@@ -5,7 +5,7 @@
 // (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 // The naturals.
-import "../data/data-base.gandr" ;
+import "../data/data-base.gandr";
 
 /// The constant family: the naturals at every natural.
 @[ checks, form(explicit) ]
@@ -19,13 +19,13 @@ def idAlways(x : Nat) -> -F always(x) { return x }
 /// The same function at the plain arrow: `always(x)` reads to `Nat`, which
 /// ignores `x`, so the dependent arrow is the arrow to `Nat` (#577).
 @[ checks ]
-def viaArrow : +U (Nat -> -F Nat) ;
-def viaArrow = idAlways ;
+def viaArrow : +U (Nat -> -F Nat);
+def viaArrow = idAlways;
 
 /// And back: the plain arrow stands where the dependent arrow is expected.
 @[ checks ]
-def viaFamily : +U ((x : Nat) -> -F always(x)) ;
-def viaFamily = viaArrow ;
+def viaFamily : +U ((x : Nat) -> -F always(x));
+def viaFamily = viaArrow;
 
 /// The function read at the plain arrow applies there.
 @[ runs("Succ(Zero)") ]

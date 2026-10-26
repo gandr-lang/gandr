@@ -10620,13 +10620,13 @@ mod tests
         let difference = item(
             "following.gandr",
             "difference",
-            lines(57, 57, 55),
+            lines(57, 57, 54),
             span(57, 4, 14),
         );
         let three = item(
             "data-base.gandr",
             "three",
-            lines(34, 34, 29),
+            lines(34, 34, 28),
             span(34, 4, 9),
         );
         let call = |key: &str, item: &Value, ranges: &[Range]| serde_json::json!({key: item, "fromRanges": ranges});
@@ -10708,7 +10708,7 @@ mod tests
                     &item(
                         "following.gandr",
                         "quotient",
-                        lines(61, 61, 61),
+                        lines(61, 61, 60),
                         span(61, 4, 12)
                     ),
                     &[span(61, 40, 45)]
@@ -10718,7 +10718,7 @@ mod tests
                     &item(
                         "following.gandr",
                         "halvedThree",
-                        lines(65, 65, 47),
+                        lines(65, 65, 46),
                         span(65, 4, 15)
                     ),
                     &[span(65, 39, 44)]
@@ -10728,7 +10728,7 @@ mod tests
                     &item(
                         "following.gandr",
                         "digitsOfFour",
-                        lines(69, 69, 52),
+                        lines(69, 69, 51),
                         span(69, 4, 16)
                     ),
                     &[span(69, 43, 48)]
@@ -10744,7 +10744,7 @@ mod tests
             ),
             serde_json::json!([call(
                 "to",
-                &item("data-base.gandr", "two", lines(30, 30, 34), span(30, 4, 7)),
+                &item("data-base.gandr", "two", lines(30, 30, 33), span(30, 4, 7)),
                 &[span(34, 23, 26)]
             )]),
             "`three`, read from disk, calls `two`"
@@ -12447,7 +12447,7 @@ mod tests
         std::fs::create_dir_all(directory.join("deeper")).expect("the scratch tree is created");
         let directory =
             std::fs::canonicalize(&directory).expect("the scratch directory canonicalises");
-        let top = "import \"./deeper/mid.gandr\" ;\ndef three : Integer ;\ndef three = two ;\n";
+        let top = "import \"./deeper/mid.gandr\";\ndef three : Integer;\ndef three = two;\n";
         for (file, text) in [
             ("base.gandr", "def one : Integer ;\ndef one = 1 ;\n"),
             (
@@ -13622,7 +13622,7 @@ mod tests
             Json(
                 r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
                     {"uri":"file:///tmp/loose.gandr","languageId":"gandr","version":1,
-                     "text":"def  f =  42 ;\n"}}}"#,
+                     "text":"def  f =  42;\n"}}}"#,
             ),
         );
         let ask = |server: &mut Connected, method: &str, uri: &str, range: &str| {
@@ -13681,7 +13681,7 @@ mod tests
                 &mut server,
                 "textDocument/onTypeFormatting",
                 "file:///tmp/loose.gandr",
-                r#""position":{"line":0,"character":14},"ch":";","#
+                r#""position":{"line":0,"character":13},"ch":";","#
             ),
             wire(Json(
                 r#"[{"jsonrpc":"2.0","id":7,"result":[{
@@ -13709,7 +13709,7 @@ mod tests
                 &mut server,
                 "textDocument/onTypeFormatting",
                 "file:///tmp/loose.gandr",
-                r#""position":{"line":0,"character":14},"ch":"x","#
+                r#""position":{"line":0,"character":13},"ch":"x","#
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":[]}]"#)),
             "another character: no edit"
@@ -13724,12 +13724,19 @@ mod tests
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":null}]"#)),
             "a document the server does not hold answers null"
         );
-        let mut tidy = server_over_the_known_document();
+        let _tidy = send(
+            &mut server,
+            Json(
+                r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":
+                    {"uri":"file:///tmp/tidy.gandr","languageId":"gandr","version":1,
+                     "text":"def f = 42;\n"}}}"#,
+            ),
+        );
         assert_eq!(
             ask(
-                &mut tidy,
+                &mut server,
                 "textDocument/formatting",
-                "file:///tmp/example.gandr",
+                "file:///tmp/tidy.gandr",
                 ""
             ),
             wire(Json(r#"[{"jsonrpc":"2.0","id":7,"result":[]}]"#)),

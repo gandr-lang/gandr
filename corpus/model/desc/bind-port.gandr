@@ -14,7 +14,7 @@ theory Restriction {
   sort Proc : Type;
   oper nil : () --> Proc;
   oper par : (p : Proc, q : Proc) --> Proc;
-  oper nu : (p : bind (a : Name) . Proc) --> Proc;
+  oper nu : (p : bind (a : Name). Proc) --> Proc;
 }
 
 /// Both binders over one port, the abstraction outside: a fresh channel
@@ -24,7 +24,7 @@ theory Receive {
   sort Name : Atom;
   sort Val : Type+;
   sort Proc : Type;
-  oper new : (body : bind (c : Name) . pi+ (x : Val) . Proc) --> Proc;
+  oper new : (body : bind (c : Name). pi+ (x : Val). Proc) --> Proc;
 }
 
 /// Structural recursion over a port chain: one per `Abstracted` link, none

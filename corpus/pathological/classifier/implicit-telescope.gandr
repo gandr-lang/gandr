@@ -10,7 +10,7 @@
 // `same`, the identity at a type supplied by name, `twice`, whose combination
 // is implicit, `chosen`, whose implicit's type names its explicit parameter,
 // and `konst`, whose implicit is the result type of the function it takes.
-import "../../classifier/implicit-telescope.gandr" ;
+import "../../classifier/implicit-telescope.gandr";
 
 /// `twice` with its implicits omitted: the argument determines `m`, and
 /// nothing determines the combination.
@@ -35,23 +35,23 @@ def disagreeing() -> Unit { same(3) }
 
 /// The implicit written among the parentheses, as for `sameExplicit`.
 @[ refuses("ImplicitInParentheses") ]
-def inParentheses : () => Integer ;
-def inParentheses = thunk { same(Integer, 3) } ;
+def inParentheses : () => Integer;
+def inParentheses = thunk { same(Integer, 3) };
 
 /// A resident naming no implicit of `same`.
 @[ refuses("UnresolvedName") ]
-def strayResident : () => Integer ;
-def strayResident = thunk { same[b = Integer](3) } ;
+def strayResident : () => Integer;
+def strayResident = thunk { same[b = Integer](3) };
 
 /// `same` named as a value, its implicit unsupplied.
 @[ refuses("ImplicitUnsupplied") ]
-def sameNamed : +U (Integer -> -F Integer) ;
-def sameNamed = same ;
+def sameNamed : +U (Integer -> -F Integer);
+def sameNamed = same;
 
 /// `chosen` passed as a value with `x` supplied: `x`'s type names `t`, so the
 /// supply is `λ t. chosen(t)[x = 7]`, and `7` is no value of every `t`.
 @[ refuses("TypeMismatch") ]
-def chosenStanding : Type => Integer = chosen[x = 7] ;
+def chosenStanding : Type => Integer = chosen[x = 7];
 
 /// Two implicits each typed by the other: no order binds either first.
 @[ refuses("TelescopeCycle") ]

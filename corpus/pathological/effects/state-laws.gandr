@@ -3,7 +3,7 @@
 // value, and neither handler here lets it.
 
 // The theories `StatePutGet` and `StatePutLaws`.
-import "../../model/effects/state.gandr" ;
+import "../../model/effects/state.gandr";
 
 /// Every read answers four whatever was stored, so put-get's left side
 /// continues at four and its right side at the stored value.

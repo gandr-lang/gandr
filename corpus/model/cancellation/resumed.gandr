@@ -2,7 +2,7 @@
 // scope once, so the task's end it holds is read and closed exactly once.
 
 // The task's protocol.
-import "./cancel-base.gandr" ;
+import "./cancel-base.gandr";
 
 /// A scope resumed at its exit while its task's end is open (#1334).
 @[ checks ]

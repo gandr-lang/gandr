@@ -8,7 +8,7 @@
 @[ refuses("UndescribedMember.NestedOperation") ]
 theory CatShape {
   sort Ob : Type;
-  sort Hom(dom: Ob, cod: Ob) : Type;
+  sort Hom(dom : Ob, cod : Ob) : Type;
 
   oper id : (a : Ob) --> Hom(a, a);
   oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);

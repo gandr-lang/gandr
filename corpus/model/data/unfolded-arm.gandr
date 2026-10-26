@@ -7,7 +7,7 @@
 // doi:10.1051/ita:2004015).
 
 // The naturals the recursion takes apart.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Two successors over a natural.
 @[ checks ]
@@ -26,7 +26,7 @@ def rec double(n : Nat) -> Nat {
 
 /// Two doubled.
 @[ runs("Succ(Succ(Succ(Succ(Zero))))") ]
-def doubledTwo : () => Nat = double(two) ;
+def doubledTwo : () => Nat = double(two);
 
 /// One step of `double` is `plusTwo` of the call, as the arm writes it
 /// (#761).

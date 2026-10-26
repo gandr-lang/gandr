@@ -8,7 +8,7 @@
 // postcondition.
 
 // `Either`, `StateOp` and `Prog`.
-import "../effects/tree.gandr" ;
+import "../effects/tree.gandr";
 
 /// The increment as a tree: read the counter, store one more, and answer the
 /// unit.
@@ -16,7 +16,7 @@ def incrTree : Prog(Either(StateOp, Void), Unit) = Op(Left(Get), fn (n) {
   (Op(Left(Put(n + 1)), fn (_u) {
     (Done(unit) : Prog(Either(StateOp, Void), Unit))
   }) : Prog(Either(StateOp, Void), Unit))
-}) ;
+});
 
 /// The observation as a fold: a program, a postcondition on its answer and
 /// the final state, and an initial state, to the precondition. A read
@@ -51,4 +51,4 @@ def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
 def incrSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)
-} = (incrTree, fn (s) { fn (h) { h } }) ;
+} = (incrTree, fn (s) { fn (h) { h } });

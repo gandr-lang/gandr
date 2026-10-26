@@ -5,7 +5,7 @@
 // `loop-winding.gandr` folds the loop's words into each.
 
 // The presented integers.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// The circle's shape: the same presentation as a signature models interpret.
 /// `Model` reads a `theory` block, so the shape is spelled apart from `Words`.
@@ -50,7 +50,7 @@ def shape_laws() -> Integer { law_count(CircleShape) }
 module Winding : Model(CircleShape) {
   type Pt = Int;
 
-  def base = Z ;
+  def base = Z;
 
   def turn(n : Int) -> Int { S(n) }
 
@@ -78,21 +78,21 @@ module Winding : Model(CircleShape) {
 module NativeWinding : Model(CircleShape) {
   type Pt = Integer;
 
-  def base = 0 ;
+  def base = 0;
 
   def turn(n : Integer) -> Integer { n + 1 }
 
   def unturn(n : Integer) -> Integer { n - 1 }
 
   @[ owes(1) ]
-  def turnUnturn : (n : Integer) => Path(Integer, turn(unturn(n)), n) ;
+  def turnUnturn : (n : Integer) => Path(Integer, turn(unturn(n)), n);
 
   @[ owes(1) ]
-  def unturnTurn : (n : Integer) => Path(Integer, unturn(turn(n)), n) ;
+  def unturnTurn : (n : Integer) => Path(Integer, unturn(turn(n)), n);
 
   @[ runs("2") ]
   def wound() -> Integer {
-    run n <- turn(base) ;
+    run n <- turn(base);
     turn(n)
   }
 }

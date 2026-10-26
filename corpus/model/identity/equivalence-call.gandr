@@ -5,7 +5,7 @@
 // own (#656).
 
 // The quasi-inverse, the equivalence and `isoToEquiv`.
-import "./equivalence.gandr" ;
+import "./equivalence.gandr";
 
 /// The quasi-inverse handed back unchanged.
 @[ checks ]

@@ -7,7 +7,7 @@
 
 /// A declaration owed its body: a run that calls it is blamed.
 @[ owes(1) ]
-def later : Integer => Unit ;
+def later : Integer => Unit;
 
 /// The rest of the scope abandoned while an access's view is open: the
 /// access's unwind runs, and its call of `later` blames the run (#1334).

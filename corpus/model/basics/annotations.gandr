@@ -23,7 +23,7 @@ def ran() -> Integer {
 
 /// The annotated value a tail takes the `return` of.
 @[ checks ]
-def tailed(n: Integer) -> Integer {
+def tailed(n : Integer) -> Integer {
   (n + 1 : Integer)
 }
 

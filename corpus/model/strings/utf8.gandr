@@ -4,8 +4,8 @@
 // A string is built from code points, so its bytes are UTF-8 by construction.
 
 // The lists; the byte lists.
-import "../data/data-base.gandr" ;
-import "./string-base.gandr" ;
+import "../data/data-base.gandr";
+import "./string-base.gandr";
 
 /// A code point's UTF-8 bytes: one byte below 128, two below 2048, three below
 /// 65536 and four up to the last code point.

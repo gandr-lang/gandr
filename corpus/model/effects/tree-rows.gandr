@@ -6,7 +6,7 @@
 // error.
 
 // `Either`, `StateOp` and `Prog`.
-import "./tree.gandr" ;
+import "./tree.gandr";
 
 /// Exceptions' operation: raise a code.
 data ExnOp : Type {
@@ -64,26 +64,26 @@ def guarded : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Lef
       (Done(b * 10) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
     }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
   }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
-}) ;
+});
 
 /// Over the same row: read, then raise what was read.
 def raising : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fn (a) {
   (Op(Left(Raise(a)), fn (_r) {
     (Done(0) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
   }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
-}) ;
+});
 
 /// Over state alone: read, and answer what was read.
 def quiet : Prog(Either(StateOp, Void), Integer) = Op(
   Left(Get),
   fn (a) { (Done(a) : Prog(Either(StateOp, Void), Integer)) }
-) ;
+);
 
 /// Over exceptions alone: raise four.
 def failing : Prog(Either(ExnOp, Void), Integer) = Op(
   Left(Raise(4)),
   fn (_r) { (Done(0) : Prog(Either(ExnOp, Void), Integer)) }
-) ;
+);
 
 /// `runExn` at the front of the two-effect row. An applied type cannot yet
 /// stand as a type argument (#2512), so the runs below use the handlers at

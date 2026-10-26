@@ -7,12 +7,12 @@
 /// simulation.
 module Evolution {
   type SeatEnd = ?String. mu turn. +{
-    report : !String. &{ next : turn, retire : end },
+    report : !String. &{next : turn, retire : end},
     handoff : !String. end
   };
-  type Kept = ?String. mu turn. +{ report : !String. &{ next : turn }, handoff : !String. end };
+  type Kept = ?String. mu turn. +{report : !String. &{next : turn}, handoff : !String. end};
   @[ checks ]
-  def keep : Flow(Type, SeatEnd, Kept) = sim(SeatEnd, Kept) ;
+  def keep : Flow(Type, SeatEnd, Kept) = sim(SeatEnd, Kept);
 }
 
 /// A seat that reported, its offer not yet taken.
@@ -21,7 +21,7 @@ def reported : Prefix(Evolution.SeatEnd) = recorded(
   received("task"),
   selected(report),
   sent("progress")
-) ;
+);
 
 /// The seat after it took `retire`.
 @[ checks ]
@@ -30,7 +30,7 @@ def retired : Prefix(Evolution.SeatEnd) = recorded(
   selected(report),
   sent("progress"),
   offered(retire)
-) ;
+);
 
 /// Short of the offer, the play is a prefix of the narrowed protocol too.
 @[ checks ]

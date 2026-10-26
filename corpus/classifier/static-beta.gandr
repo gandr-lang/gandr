@@ -7,11 +7,11 @@
 
 /// Apply a type operator to a type.
 @[ checks ]
-def apply : (Type -> Type) -> Type -> Type = \F. \X. F(X) ;
+def apply : (Type -> Type) -> Type -> Type = \F. \X. F(X);
 
 /// The type of pairs of one type.
 @[ checks ]
-def twice : Type -> Type = \Y. Y * Y ;
+def twice : Type -> Type = \Y. Y * Y;
 
 /// The sum of a pair whose type is an operator applied twice over. Both
 /// binders are used: an unused one has no type entry under a static

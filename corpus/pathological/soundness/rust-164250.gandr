@@ -24,10 +24,10 @@
 @[ refuses("ViewEscaped") ]
 def bypassed() -> Integer {
   handle outer : Proc {
-    run q : (() => Integer) at outer <- pure thunk { pure 0 } ;
+    run q : (() => Integer) at outer <- pure thunk { pure 0 };
     run x : Integer <- handle inner : Proc {
       hold l = 42;
-      run q2 : (() => Integer) at outer <- access shared l as w { pure thunk { pure w } } ;
+      run q2 : (() => Integer) at outer <- access shared l as w { pure thunk { pure w } };
       force q2
     } with {
       pure(y) => pure y,

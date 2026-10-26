@@ -4,7 +4,7 @@
 // accepted only when it reaps the completion and closes the ring.
 
 // The ring's protocol and its entries.
-import "./ring-base.gandr" ;
+import "./ring-base.gandr";
 
 /// A read submitted to the mock kernel and its one completion reaped.
 @[ checks ]

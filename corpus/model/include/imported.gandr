@@ -5,7 +5,7 @@
 // the element, and runs.
 
 // The semigroup and the monoid.
-import "./monoid.gandr" ;
+import "./monoid.gandr";
 
 /// A monoid with a chosen element.
 @[ checks ]
@@ -79,7 +79,7 @@ module Successor : Model(PointedMonoid) {
 /// The chosen element, then doubling, at three.
 @[ runs("8") ]
 def pointed() -> Integer {
-  run p <- Successor.point() ;
-  run h <- Successor.mul(p, fn (n) { n * 2 }) ;
+  run p <- Successor.point();
+  run h <- Successor.mul(p, fn (n) { n * 2 });
   h(3)
 }

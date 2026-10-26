@@ -21,4 +21,4 @@ def suffix = path.extension(demo_path);
 /// The run target gathers the three in a record, each refused above, so it
 /// names a declaration whose type is not known.
 @[ refuses("UnknownConstant") ]
-#{ capture = caps, leaf = leaf, path_ext = suffix }
+#{capture = caps, leaf = leaf, path_ext = suffix}

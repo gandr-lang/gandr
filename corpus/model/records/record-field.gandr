@@ -5,7 +5,7 @@
 
 /// A record holding a record, no type written for either.
 @[ checks ]
-def nest = #{ tag = "t", inner = #{ x = 1, y = 2 } };
+def nest = #{tag = "t", inner = #{x = 1, y = 2}};
 
 /// The field `inner` of `nest`, a record.
 @[ runs("#{.x = 1, .y = 2}") ]

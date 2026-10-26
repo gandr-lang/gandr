@@ -5,13 +5,13 @@
 // presented type (`sectWords`, `retrWords`), so `Words ≃ Int`.
 
 // The presented integers.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The loop's words, one inverse loop more and one loop more.
-import "./loop-words.gandr" ;
+import "./loop-words.gandr";
 // The circle's shape and its model over the presented integers.
-import "./loop-shape.gandr" ;
+import "./loop-shape.gandr";
 // The winding number.
-import "./loop-winding.gandr" ;
+import "./loop-winding.gandr";
 
 /// Spinning, the fold out of the presented integers into the words: a
 /// successor is a loop and a predecessor an inverse. It recurses structurally
@@ -31,26 +31,26 @@ def spun() -> Words { become spinWords(S(S(Z))) }
 
 /// Conversion runs spinning at a closed word: two successors are two loops.
 @[ checks ]
-def spun_twice : Path(Words, spinWords(S(S(Z))), Loop(Loop(Nil))) = here(Loop(Loop(Nil))) ;
+def spun_twice : Path(Words, spinWords(S(S(Z))), Loop(Loop(Nil))) = here(Loop(Loop(Nil)));
 
 /// A cancelled count spins to the empty word.
 @[ checks ]
-def spun_back : Path(Words, spinWords(S(P(Z))), Nil) = here(Nil) ;
+def spun_back : Path(Words, spinWords(S(P(Z))), Nil) = here(Nil);
 
 /// A predecessor spins to the inverse loop.
 @[ checks ]
-def spun_under : Path(Words, spinWords(P(Z)), Unloop(Nil)) = here(Unloop(Nil)) ;
+def spun_under : Path(Words, spinWords(P(Z)), Unloop(Nil)) = here(Unloop(Nil));
 
 /// The round trip at a closed word: winding a loop and spinning the count
 /// gives the loop back. The inner call stands as the outer one's argument,
 /// and conversion runs both.
 @[ checks ]
-def spun_wound : Path(Words, spinWords(windWords(Loop(Nil))), Loop(Nil)) = here(Loop(Nil)) ;
+def spun_wound : Path(Words, spinWords(windWords(Loop(Nil))), Loop(Nil)) = here(Loop(Nil));
 
 /// The other round trip at a closed count: spinning two successors and
 /// winding the word counts two.
 @[ checks ]
-def wound_spun : Path(Int, windWords(spinWords(S(S(Z)))), S(S(Z))) = here(S(S(Z))) ;
+def wound_spun : Path(Int, windWords(spinWords(S(S(Z)))), S(S(Z))) = here(S(S(Z)));
 
 /// A round trip returns the normal form, not the word it started from: a
 /// cancelled loop comes back as the loop.
@@ -59,15 +59,15 @@ def spun_wound_cancelled : Path(
   Words,
   spinWords(windWords(Loop(Unloop(Loop(Nil))))),
   Loop(Nil)
-) = here(Loop(Nil)) ;
+) = here(Loop(Nil));
 
 /// A respelled count comes back as its normal form, one predecessor.
 @[ checks ]
-def wound_spun_respelled : Path(Int, windWords(spinWords(S(P(P(Z))))), P(Z)) = here(P(Z)) ;
+def wound_spun_respelled : Path(Int, windWords(spinWords(S(P(P(Z))))), P(Z)) = here(P(Z));
 
 /// The round trip does not lose the loop: it is not the empty word.
 @[ refuses("EndpointMismatch") ]
-def spun_wound_lost : Path(Words, spinWords(windWords(Loop(Nil))), Nil) = here(Nil) ;
+def spun_wound_lost : Path(Words, spinWords(windWords(Loop(Nil))), Nil) = here(Nil);
 
 /// One inverse loop more: the function the inverse letter applies, as
 /// `around` applies the loop.
@@ -120,4 +120,4 @@ def wordsWinding : #{
   back : Int => Words,
   sect : (c : Words) => Path(Words, back(to(c)), c),
   retr : (n : Int) => Path(Int, to(back(n)), n)
-} = (windWords, (spinWords, (sectWords, retrWords))) ;
+} = (windWords, (spinWords, (sectWords, retrWords)));

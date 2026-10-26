@@ -5,7 +5,7 @@
 // only of the laws that repeat a read or a store.
 
 // The theories `StatePutLaws`, `StateGetGet` and `StatePutPut`.
-import "./state.gandr" ;
+import "./state.gandr";
 
 /// The state passed along: the answer is a function of the state, a read
 /// applies what runs after it at the state, and a store applies it at the

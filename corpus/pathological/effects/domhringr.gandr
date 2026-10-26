@@ -10,8 +10,8 @@ theory StoreDigestPut {
   sort Value : Type+;
   sort Digest : Type+;
   sort C : Type;
-  oper put : (v : Value, k : pi+ (d : Digest) . C) --> C;
-  rule again : put(v, bind d . put(d, k)) <=> put(v, k);
+  oper put : (v : Value, k : pi+ (d : Digest). C) --> C;
+  rule again : put(v, bind d. put(d, k)) <=> put(v, k);
 }
 
 /// A failure's result names a type nothing declares: `Fail` answers `Void`,

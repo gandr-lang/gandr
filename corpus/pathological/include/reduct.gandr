@@ -3,8 +3,8 @@
 
 // The semigroup, the monoid, the left zero and both extensions at once; the
 // manifest endomorphism monoid.
-import "../../model/include/monoid.gandr" ;
-import "../../model/include/reduct.gandr" ;
+import "../../model/include/monoid.gandr";
+import "../../model/include/reduct.gandr";
 
 /// Whether a left zero's zero is there to read: every left zero's is, so
 /// this answers zero.

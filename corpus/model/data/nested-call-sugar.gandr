@@ -5,7 +5,7 @@
 // doi:10.1007/978-3-319-89366-2_16).
 
 // The presented integers.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// Doubling: each successor and each predecessor written twice.
 @[ checks ]
@@ -29,8 +29,8 @@ def rec neg(n : Int) -> Int {
 
 /// Two doubled.
 @[ runs("S(S(S(S(Z))))") ]
-def doubled : () => Int = dbl(S(S(Z))) ;
+def doubled : () => Int = dbl(S(S(Z)));
 
 /// Two negated.
 @[ runs("P(P(Z))") ]
-def negated : () => Int = neg(S(S(Z))) ;
+def negated : () => Int = neg(S(S(Z)));

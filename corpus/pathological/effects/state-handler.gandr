@@ -3,9 +3,9 @@
 // models in scope do not answer it as one.
 
 // The theory `State`.
-import "../../model/effects/state.gandr" ;
+import "../../model/effects/state.gandr";
 // `Passing`, the state-passing model of `State`.
-import "../../model/effects/state-model.gandr" ;
+import "../../model/effects/state-model.gandr";
 
 /// The stored sort left unfixed: `get` would reply a value of no type the
 /// scope knows, so `S` is the member the scope cannot read.

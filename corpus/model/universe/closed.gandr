@@ -8,7 +8,7 @@
 // code (Martin-Löf, _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 // The naturals.
-import "../data/data-base.gandr" ;
+import "../data/data-base.gandr";
 
 /// The codes: the naturals, and the functions from one coded type to another.
 @[ checks, form(explicit) ]
@@ -52,8 +52,8 @@ def onType(t : Type) -> -F Type { return (+U ((x : t) -> -F t)) }
 
 /// One, at the decode of the natural code, which runs to `Nat`.
 @[ checks ]
-def one : el(NatC) ;
-def one = Succ(Zero) ;
+def one : el(NatC);
+def one = Succ(Zero);
 
 /// The identity at every code: over the binder `c` the decode `el(c)` is a
 /// neutral type, and its two occurrences are one type.
@@ -67,8 +67,8 @@ def kept() -> -F Nat { idAt(NatC, one) }
 /// The successor, at the decode of the arrow from naturals to naturals,
 /// which runs to `Nat => Nat`.
 @[ checks ]
-def succ : el(Arrow(NatC, NatC)) ;
-def succ = thunk { fn (n) { Succ(n) } } ;
+def succ : el(Arrow(NatC, NatC));
+def succ = thunk { fn (n) { Succ(n) } };
 
 /// Application at every pair of codes: the decode of `Arrow(a, b)` reads
 /// through the decoder's arm to `el(a) => el(b)`, so `f` applies to `v` and
@@ -87,8 +87,8 @@ def applied() -> -F Nat { applyAt(NatC, NatC, succ, one) }
 /// A function at the decode of an arrow whose domain is itself an arrow:
 /// it applies its argument to one.
 @[ checks ]
-def atOne : el(Arrow(Arrow(NatC, NatC), NatC)) ;
-def atOne = thunk { fn (g) { g(one) } } ;
+def atOne : el(Arrow(Arrow(NatC, NatC), NatC));
+def atOne = thunk { fn (g) { g(one) } };
 
 /// Application one code up: `atOne` at the successor.
 @[ runs("Succ(Succ(Zero))") ]
@@ -103,13 +103,13 @@ data Coded : Type {
 
 /// One, packed at the natural code.
 @[ checks ]
-def packedOne : Coded ;
-def packedOne = Pack(NatC, one) ;
+def packedOne : Coded;
+def packedOne = Pack(NatC, one);
 
 /// The successor, packed at the arrow code its type decodes from.
 @[ checks ]
-def packedSucc : Coded ;
-def packedSucc = Pack(Arrow(NatC, NatC), succ) ;
+def packedSucc : Coded;
+def packedSucc = Pack(Arrow(NatC, NatC), succ);
 
 /// The code a packed value carries.
 @[ checks ]

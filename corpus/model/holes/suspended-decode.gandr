@@ -9,29 +9,29 @@
 
 /// A code the module owes: a type to be named later.
 @[ owes(1) ]
-def code : Type ;
+def code : Type;
 
 /// Three, at the decode of the owed code: the comparison of `Integer` with
 /// the decode waits on `code`, so the declaration owes it.
 @[ owes(1) ]
-def three : code = 3 ;
+def three : code = 3;
 
 /// A reader of a waiting declaration waits with it, on the same hole.
 @[ owes(1) ]
-def again : code = three ;
+def again : code = three;
 
 /// A declaration that reads no hole checks beside them.
 @[ checks ]
-def four : Integer = 4 ;
+def four : Integer = 4;
 
 /// The code filled: a type named now.
 @[ checks ]
-def filled : Type = Integer ;
+def filled : Type = Integer;
 
 /// Three, resumed: at the decode of the filled code the comparison settles.
 @[ checks ]
-def threeFilled : filled = 3 ;
+def threeFilled : filled = 3;
 
 /// The reader, resumed with it.
 @[ checks ]
-def againFilled : filled = threeFilled ;
+def againFilled : filled = threeFilled;

@@ -1,5 +1,5 @@
 // The completion subject's shared declarations, written once and imported by
-// every source that reads them (`import "./ring-base.gandr" ;`): a mock
+// every source that reads them (`import "./ring-base.gandr";`): a mock
 // kernel's submission protocol after io_uring, whose manual states that there
 // is "exactly one matching CQE for every SQE" (io_uring(7)). A submission
 // queue entry is received and one completion queue entry is posted; on the

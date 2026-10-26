@@ -6,11 +6,11 @@
 // answers its components as `-> -F (A * B)` does (#2255).
 
 /// Optional values, `None` and `Some(x)`.
-import "./data-maybe.gandr" ;
+import "./data-maybe.gandr";
 
 /// A present value and an absent one, annotated as their product.
 @[ checks ]
-def paired = ((Some(1), None) : Maybe(Integer) * Maybe(Integer)) ;
+def paired = ((Some(1), None) : Maybe(Integer) * Maybe(Integer));
 
 /// The same pair at the type the function returns.
 @[ checks ]
@@ -30,4 +30,4 @@ def pair_list() -> List(Maybe(Integer) * Maybe(Integer)) {
 def nested_pair = ((
   Some(1),
   (None, Some(2))
-) : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer))) ;
+) : Maybe(Integer) * (Maybe(Integer) * Maybe(Integer)));

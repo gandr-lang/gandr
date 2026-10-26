@@ -4,7 +4,7 @@
 
 /// A letter at a stated `Char`.
 @[ checks ]
-def letter : Char = 'a' ;
+def letter : Char = 'a';
 
 /// An escape stands for the scalar it names, decoded as in a string.
 @[ runs("'\\n'") ]
@@ -28,8 +28,8 @@ def echoed() -> Char { become echo('z') }
 
 /// A character is not a string.
 @[ refuses("TypeMismatch") ]
-def spelled : String = 'a' ;
+def spelled : String = 'a';
 
 /// Nor is a string a character.
 @[ refuses("TypeMismatch") ]
-def lettered : Char = "a" ;
+def lettered : Char = "a";

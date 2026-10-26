@@ -23,7 +23,7 @@ def ordered() -> Bool { banded(200000, 800000) }
 
 /// `true` at a stated `Bool`.
 @[ checks ]
-def truth : Bool = true ;
+def truth : Bool = true;
 
 /// Both literals in a pair, each checked against its component.
 @[ runs("(+{.0 = unit}, +{.1 = unit})") ]

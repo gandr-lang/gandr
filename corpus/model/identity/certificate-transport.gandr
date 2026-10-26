@@ -10,7 +10,7 @@
 // carried to the other's unchanged.
 
 // The presented integers and `up`.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// The certificate that rewrites the peak at its root: `S(P(y)) ==> y` with
 /// `y = S(x)`, a reflexivity once the rules convert the peak.
@@ -61,6 +61,6 @@ def carried(x : Int, f : Path(Int, S(P(S(x))), S(x)) => Int) -> Path(
 /// transports `S(Z)` along the certificate and keeps it.
 @[ runs("S(Z)") ]
 def carriedRun() -> Int {
-  run g <- transport(\X. X => Int, certificates(Z), fn (c) { transport(\y. Int, c, S(Z)) }) ;
+  run g <- transport(\X. X => Int, certificates(Z), fn (c) { transport(\y. Int, c, S(Z)) });
   g(here(S(Z)))
 }

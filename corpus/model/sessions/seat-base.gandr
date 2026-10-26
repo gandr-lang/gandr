@@ -1,5 +1,5 @@
 // The sessions subject's shared declarations, written once and imported by
-// every source that reads them (`import "./seat-base.gandr" ;`): a seat's
+// every source that reads them (`import "./seat-base.gandr";`): a seat's
 // protocol as a recursive session type (Honda, Vasconcelos and Kubo,
 // _Language Primitives and Type Discipline for Structured
 // Communication-Based Programming_, doi:10.1007/BFb0053567) — a dispatch
@@ -15,7 +15,7 @@ module Seat :> #{
   mobile type Report,
   type Handoff,
   type SeatEnd = ?Dispatch. mu turn. +{
-    report : !Report. &{ next : turn, retire : end },
+    report : !Report. &{next : turn, retire : end},
     handoff : !Handoff. end
   },
   task : Dispatch,

@@ -4,7 +4,7 @@
 // the value their computation returns (#1141).
 
 /// The naturals, their addition and the numeral two.
-import "./data-base.gandr" ;
+import "./data-base.gandr";
 
 /// The comparison cased on where it is written: three is not five or more.
 @[ runs("1") ]

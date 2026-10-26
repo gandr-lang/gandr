@@ -289,4 +289,4 @@
 2381..2382 StringLit "\""
 2382..2385 StringLit "two"
 2385..2386 StringLit "\""
-2387..2388 Other ";"
+2386..2387 Other ";"

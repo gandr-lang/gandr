@@ -1,7 +1,7 @@
 8:1-8:11 @[ checks ] ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @8:1-9:1
-9:1-9:3 def ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:20
+9:1-9:3 def ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:19
 9:5-9:13 moved_end ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:5-9:14
-9:15-9:15 : ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:20
+9:15-9:15 : ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:19
 9:17-9:21 Path( ⇒ Type @9:17-13:2
 10:3-10:7 Path( ⇒ Path(Integer, 2, 2) : Type @10:3-10:22
 10:8-10:14 Integer ⇒ Integer : Type @10:8-10:15
@@ -34,13 +34,13 @@
 12:8-12:8 2 ⇒ Integer @12:8-12:9
 12:9-12:9 ) ⇒ Path(Integer, 2, 2) @12:3-12:10
 13:1-13:1 ) ⇒ Type @9:17-13:2
-13:3-13:3 = ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:20
+13:3-13:3 = ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:19
 13:5-13:9 here( ⇒ Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2)) @13:5-13:18
 13:10-13:14 here( ⇒ Path(Integer, 2, 2) @13:10-13:17
 13:15-13:15 2 ⇒ Integer @13:15-13:16
 13:16-13:16 ) ⇒ Path(Integer, 2, 2) @13:10-13:17
 13:17-13:17 ) ⇒ Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2)) @13:5-13:18
-13:19-13:19 ; ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:20
+13:18-13:18 ; ⇒ moved_end : Path(Path(Integer, 2, 2), transport(\a. Path(Integer, a, a), here(2), here(2)),⏎  here(2))⏎⏎A reflexive transport at a path-type motive returns a path. @9:1-13:19
 17:1-17:61 @[ runs("(thunk { fn (a)… ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @17:1-18:1
 18:1-18:3 def ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:1-18:44
 18:5-18:18 moved_end_run( ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:5-18:18
@@ -73,9 +73,9 @@
 19:54-19:54 ) ⇒ -F Path(Integer, 2, 2) @19:3-19:55
 20:1-20:1 } ⇒ moved_end_run : () => Path(Integer, 2, 2)⏎⏎A reflexive transport at a path-type motive returns its path, by a run: the⏎path runs as its two maps, both the identity. @18:1-20:2
 23:1-23:28 @[ refuses("TypeMismatch… ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @23:1-24:1
-24:1-24:3 def ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-28:20
+24:1-24:3 def ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-28:19
 24:5-24:12 unit_end ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:5-24:13
-24:14-24:14 : ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-28:20
+24:14-24:14 : ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-28:19
 24:16-24:20 Path( ⇒ Type @24:16-28:2
 25:3-25:7 Path( ⇒ Path(Integer, 2, 2) : Type @25:3-25:22
 25:8-25:14 Integer ⇒ Integer : Type @25:8-25:15
@@ -96,7 +96,7 @@
 26:32-26:35 unit ⇒ Unit @26:32-26:36
 26:36-26:36 ) ⇒ -F Unit @26:3-26:37
 26:37-28:1 ,⏎  here(2)⏎) ⇒ Type @24:16-28:2
-28:3-28:19 = here(here(2)) ; ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-28:20
+28:3-28:18 = here(here(2)); ⇒ unit_end : Path(Path(Integer, 2, 2), transport(\a. Unit, here(2), unit), here(2))⏎⏎refused: the type this term synthesises does not convert to the type it is checked against⏎⏎A transported unit is no path between integers. @24:1-28:19
 32:1-32:11 @[ checks ] ⇒ along_returned : (a : Type, x : a) => Path(a, transport(\b. b, transport(\b. Path(Type, b, a),⏎  here(a), here(a)), x), x)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `here(a)` first (#649). @32:1-33:1
 33:1-33:3 def ⇒ along_returned : (a : Type, x : a) => Path(a, transport(\b. b, transport(\b. Path(Type, b, a),⏎  here(a), here(a)), x), x)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `here(a)` first (#649). @33:1-36:89
 33:5-33:19 along_returned( ⇒ along_returned : (a : Type, x : a) => Path(a, transport(\b. b, transport(\b. Path(Type, b, a),⏎  here(a), here(a)), x), x)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `here(a)` first (#649). @33:5-33:19
@@ -143,9 +143,9 @@
 37:9-37:9 ) ⇒ Path(a, transport(\b. b, transport(\b. Path(Type, b, a), here(a), here(a)), x),⏎  x) @37:3-37:10
 38:1-38:1 } ⇒ along_returned : (a : Type, x : a) => Path(a, transport(\b. b, transport(\b. Path(Type, b, a),⏎  here(a), here(a)), x), x)⏎⏎Transport along the path a reflexive transport returns, in the universe,⏎is the identity: the inner transport runs to `here(a)` first (#649). @33:1-38:2
 42:1-42:11 @[ checks ] ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @42:1-43:1
-43:1-43:3 def ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:82
+43:1-43:3 def ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:81
 43:5-43:14 along_here ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:5-43:15
-43:16-43:16 : ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:82
+43:16-43:16 : ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:81
 43:18-43:22 Path( ⇒ Path(Integer, transport(\X. X, here(Integer), 2), 2) : Type @43:18-43:70
 43:23-43:29 Integer ⇒ Integer : Type @43:23-43:30
 43:30-43:30 , ⇒ Path(Integer, transport(\X. X, here(Integer), 2), 2) : Type @43:18-43:70
@@ -162,11 +162,11 @@
 43:66-43:66 , ⇒ Path(Integer, transport(\X. X, here(Integer), 2), 2) : Type @43:18-43:70
 43:68-43:68 2 ⇒ Integer @43:68-43:69
 43:69-43:69 ) ⇒ Path(Integer, transport(\X. X, here(Integer), 2), 2) : Type @43:18-43:70
-43:71-43:71 = ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:82
+43:71-43:71 = ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:81
 43:73-43:77 here( ⇒ Path(Integer, transport(\a. a, here(Integer), 2), 2) @43:73-43:80
 43:78-43:78 2 ⇒ Integer @43:78-43:79
 43:79-43:79 ) ⇒ Path(Integer, transport(\a. a, here(Integer), 2), 2) @43:73-43:80
-43:81-43:81 ; ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:82
+43:80-43:80 ; ⇒ along_here : Path(Integer, transport(\a. a, here(Integer), 2), 2)⏎⏎Transport along reflexivity in the universe keeps the value, by⏎conversion. @43:1-43:81
 46:1-46:14 @[ runs("2") ] ⇒ along_here_run : () => Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @46:1-47:1
 47:1-47:3 def ⇒ along_here_run : () => Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @47:1-47:33
 47:5-47:19 along_here_run( ⇒ along_here_run : () => Integer⏎⏎Transport along reflexivity in the universe keeps the value, by a run. @47:5-47:19

@@ -3112,7 +3112,7 @@ mod tests
     /// What `circle-base.gandr` writes of itself, as its `//!` lines read.
     const CIRCLE_BASE: &str = "The identity subject's shared declarations, written once and \
                                imported by\nevery source that reads them (`import \
-                               \"./circle-base.gandr\" ;`): the empty\ntype, the circle, the \
+                               \"./circle-base.gandr\";`): the empty\ntype, the circle, the \
                                presented integers and the free naturals, the\nwinding number \
                                and spinning with their round trips (the book's § 8.1), and\nthe \
                                maps out of the circle the circle sources state their laws over, \

@@ -6,9 +6,9 @@
 // cutting it short.
 
 // The lists; the byte lists; the UTF-8 encoder.
-import "../data/data-base.gandr" ;
-import "./string-base.gandr" ;
-import "./utf8.gandr" ;
+import "../data/data-base.gandr";
+import "./string-base.gandr";
+import "./utf8.gandr";
 
 /// What C reads of a byte list: the list itself, borrowed, when its one zero
 /// is its last byte; nothing when a zero comes earlier.
@@ -65,7 +65,7 @@ def hi() -> List(Integer) { terminated((Cons(104, Cons(105, Nil)) : List(Integer
 
 /// C reads `hi` as the bytes it is held in: it borrows them whole.
 @[ runs("Cons(104, Cons(105, Cons(0, Nil)))") ]
-def hiForC() -> List(Integer) { run bs <- force hi ; run v <- cView(bs) ; case v {
+def hiForC() -> List(Integer) { run bs <- force hi; run v <- cView(bs); case v {
   Borrowed(t) => t,
   Interior => Nil
 } }

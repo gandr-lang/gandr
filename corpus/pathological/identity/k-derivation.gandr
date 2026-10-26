@@ -1,5 +1,5 @@
 @[ refuses("WithoutK") ]
-def uip(n: Integer, p: Path(Integer, n, n), q: Path(Integer, n, n)) -> -F(Path(
+def uip(n : Integer, p : Path(Integer, n, n), q : Path(Integer, n, n)) -> -F (Path(
   Path(Integer, n, n),
   p,
   q

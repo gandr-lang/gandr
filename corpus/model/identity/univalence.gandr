@@ -12,9 +12,9 @@
 // inverses to be determined by its map.
 
 // The circle, the presented integers, the winding number and spinning.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The equivalence of the loops at the point with the integers, `winding`.
-import "./circle.gandr" ;
+import "./circle.gandr";
 
 /// Transport forward along a path between types, the map `idtoequiv` packages.
 @[ checks ]
@@ -134,7 +134,7 @@ def uaLiteral(
 /// The loops at the point are the integers, as types: `winding`'s laws admit
 /// the path between a path type and a presented type.
 @[ checks ]
-def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(winding) ;
+def loopsAreIntegers : Path(Type, Path(Circle, Base, Base), Int) = ua(winding);
 
 /// The same path ascribed a type whose right end is left as a wildcard:
 /// `ua(winding)` forces that end to the integers, so the elaborator reads the
@@ -144,7 +144,7 @@ def loopsAreTheirWinding : Path(Type, Path(Circle, Base, Base), Int) = (ua(windi
   Type,
   Path(Circle, Base, Base),
   _
-)) ;
+));
 
 /// Transport along `ua` applies the record's map, by conversion: cubical's
 /// `uaβ`, at two variables, the record written out and checked against the
@@ -191,14 +191,14 @@ def uaEta : (a : Type, b : Type, p : Path(Type, a, b)) => Path(
   Path(Type, a, b),
   ua(idtoequiv(a, b, p)),
   p
-) ;
+);
 
 /// `idtoequiv` after `ua` is the record, owed: the two maps convert by `uaβ`,
 /// but the record's inverses and laws are its own, equal to the packaged ones
 /// once being bi-invertible is a proposition, which this corpus does not yet
 /// prove.
 @[ owes(1) ]
-def idtoequivUa : (a : Type, b : Type, e : a ≃ b) => Path(a ≃ b, idtoequiv(a, b, ua(e)), e) ;
+def idtoequivUa : (a : Type, b : Type, e : a ≃ b) => Path(a ≃ b, idtoequiv(a, b, ua(e)), e);
 
 /// The paths between two types and the bi-invertible maps between them are a
 /// quasi-inverse by `idtoequiv` and `ua`, on the two owed round trips.

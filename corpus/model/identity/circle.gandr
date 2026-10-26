@@ -20,9 +20,9 @@
 
 // The circle, the presented integers, the winding number and spinning with
 // their round trips.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The quasi-inverse made bi-invertible, which the equivalence is.
-import "./equivalence.gandr" ;
+import "./equivalence.gandr";
 
 /// The loop's word: one letter before the empty word.
 @[ runs("loop ∷ here(Base)") ]
@@ -34,7 +34,7 @@ def unwound : Path(
   Path(Circle, Base, Base),
   back(loop),
   back(loop) ∷ here(Base)
-) = here(back(loop) ∷ here(Base)) ;
+) = here(back(loop) ∷ here(Base));
 
 /// The loop then its inverse is the empty word: the minted cancellation, read
 /// by conversion.
@@ -43,11 +43,11 @@ def cancelled : Path(
   Path(Circle, Base, Base),
   loop then back(loop),
   here(Base)
-) = here(here(Base)) ;
+) = here(here(Base));
 
 /// No rule identifies the loop with the empty word.
 @[ refuses("EndpointMismatch") ]
-def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base)) ;
+def around_once : Path(Path(Circle, Base, Base), loop, here(Base)) = here(here(Base));
 
 /// A case that tells the loop from its inverse, refused: `loop ∷ back(loop) ∷
 /// here(Base)` is the empty word, which it would read as 1.
@@ -67,7 +67,7 @@ def round : Path(
   Path(Circle, Base, Base),
   spin(wind(loop then loop)),
   loop ∷ loop ∷ here(Base)
-) = here(loop ∷ loop ∷ here(Base)) ;
+) = here(loop ∷ loop ∷ here(Base));
 
 /// The composite the round trip gives: the loop twice, by conversion.
 @[ checks ]
@@ -75,23 +75,23 @@ def twice : Path(
   Path(Circle, Base, Base),
   loop then loop,
   loop ∷ loop ∷ here(Base)
-) = here(loop ∷ loop ∷ here(Base)) ;
+) = here(loop ∷ loop ∷ here(Base));
 
 /// Spinning two successors and winding the word counts two.
 @[ runs("S(S(Z))") ]
-def counted : () => Int = wind(spin(S(S(Z)))) ;
+def counted : () => Int = wind(spin(S(S(Z))));
 
 /// The loops at the point and the presented integers are a quasi-inverse, by
 /// `wind` and `spin` with the two round trips at a variable, nothing owed.
 @[ checks ]
-def windingIso : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (sect, retr))) ;
+def windingIso : Path(Circle, Base, Base) ≅ Int = (wind, (spin, (sect, retr)));
 
 /// The loops at the point and the presented integers are equivalent: the
 /// book's `Path(Circle, Base, Base) ≃ Int`, the quasi-inverse made
 /// bi-invertible, `spin` serving as both inverses. A value is a record, never
 /// a call, so the equivalence is written as the record `isoToEquiv` builds.
 @[ checks ]
-def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr))) ;
+def winding : Path(Circle, Base, Base) ≃ Int = (wind, ((spin, sect), (spin, retr)));
 
 /// The equivalence is `isoToEquiv` at the quasi-inverse, by conversion.
 @[ checks ]
@@ -99,4 +99,4 @@ def windingByIso : Path(
   Path(Circle, Base, Base) ≃ Int,
   winding,
   isoToEquiv(Path(Circle, Base, Base), Int, windingIso)
-) = here(winding) ;
+) = here(winding);

@@ -12,7 +12,7 @@
 // apart from the closed universe's, whose arrow code is not dependent.
 
 // The naturals.
-import "../data/data-base.gandr" ;
+import "../data/data-base.gandr";
 
 /// The universe and its decoder, one block: a code's field names the
 /// decoder, and the decoder recurses on the codes.
@@ -44,8 +44,8 @@ def toNat(x : Nat) -> -F UPi { return NatC }
 /// The identity at the decode of the function code from naturals to
 /// naturals, which runs to the dependent arrow between them.
 @[ checks ]
-def idDecoded : elPi(PiC(NatC, toNat)) ;
-def idDecoded = thunk { fn (x) { return x } } ;
+def idDecoded : elPi(PiC(NatC, toNat));
+def idDecoded = thunk { fn (x) { return x } };
 
 /// The identity applied at its decoded type.
 @[ runs("Succ(Zero)") ]
@@ -55,5 +55,5 @@ def appliedDecoded() -> -F Nat { idDecoded(Succ(Zero)) }
 /// decode is a dependent arrow whose codomain, `elPi(toNat(x))`, runs to
 /// `Nat` and so ignores its binder, which makes it the plain arrow (#577).
 @[ checks ]
-def idNat : +U (Nat -> -F Nat) ;
-def idNat = idDecoded ;
+def idNat : +U (Nat -> -F Nat);
+def idNat = idDecoded;

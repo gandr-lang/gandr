@@ -10,7 +10,7 @@
 @[ refuses("RulesUnoriented") ]
 theory Beta {
   sort Tm : Type+;
-  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
   rule beta : app(lam(t), u) <=> t(u);
 }
@@ -21,7 +21,7 @@ theory Beta {
 @[ refuses("IllFormedDescription") ]
 theory BetaShadow {
   sort Tm : Type+;
-  oper lam : (t : pi+ (x : Tm) . Tm) --> Tm;
+  oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
   oper app : (t : Tm, u : Tm) --> Tm;
   rule betaShadow : app(lam(t), u) <=> app(t, u);
 }
@@ -31,7 +31,7 @@ theory BetaShadow {
 @[ refuses("IllFormedDescription") ]
 theory LetTwice {
   sort Tm : Type+;
-  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u, u);
 }
 
@@ -42,7 +42,7 @@ theory LetTwice {
 theory Undeclared {
   sort S : Type+;
   sort C : Type;
-  oper get : (k : pi+ (s : S) . C) --> C;
+  oper get : (k : pi+ (s : S). C) --> C;
   oper put : (s : S, k : C) --> C;
   rule putPut : put(s, put(f(s), k)) <=> put(f(s), k);
 }
@@ -53,7 +53,7 @@ theory Undeclared {
 theory LetToZero {
   sort Tm : Type+;
   oper zero : () --> Tm;
-  oper let : (u : Tm, t : pi+ (x : Tm) . Tm) --> Tm;
+  oper let : (u : Tm, t : pi+ (x : Tm). Tm) --> Tm;
   rule zeta : let(u, t) <=> t(u);
   rule toZero : let(zero(), t) <=> zero();
 }

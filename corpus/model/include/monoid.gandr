@@ -101,6 +101,6 @@ module Endo : Model(Monoid) {
 /// The included multiplication, run at the model: add one, then double.
 @[ runs("8") ]
 def composed() -> Integer {
-  run h <- Endo.mul(fn (n) { n + 1 }, fn (n) { n * 2 }) ;
+  run h <- Endo.mul(fn (n) { n + 1 }, fn (n) { n * 2 });
   h(3)
 }

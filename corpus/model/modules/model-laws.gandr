@@ -4,7 +4,7 @@
 // under two hypotheses, none of which a rule could state: symmetry has no
 // orientation and reflexivity's left side reads its variable twice. A model at
 // a type of its own proves each law by a definition at the law's path; a
-// model at a host primitive admits each, `law refl admitted ;`, and the
+// model at a host primitive admits each, `law refl admitted;`, and the
 // report's audit lists the admission in place of an obligation. A theory
 // including a lawful one restricts its models to the included theory's, the
 // laws carried by name. The refusals are beside

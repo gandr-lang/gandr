@@ -688,7 +688,7 @@ fn fmt_rewrites_what_check_reports()
         Path::new("loose.gandr"),
         Text::from("def  answer =  42 ;\n"),
     );
-    let tidy = scratch.file(Path::new("tidy.gandr"), Text::from("def copy = 1 ;\n"));
+    let tidy = scratch.file(Path::new("tidy.gandr"), Text::from("def copy = 1;\n"));
     let absent = scratch.0.join("absent.gandr");
     let fmt = Path::new("fmt");
     let check = Path::new("--check");
@@ -721,11 +721,11 @@ fn fmt_rewrites_what_check_reports()
     assert_eq!(stdout(&rewritten), format!("{}\n", loose.display()));
     assert_eq!(
         std::fs::read_to_string(&loose).expect("the source is readable"),
-        "def answer = 42 ;\n"
+        "def answer = 42;\n"
     );
     assert_eq!(
         std::fs::read_to_string(&tidy).expect("the source is readable"),
-        "def copy = 1 ;\n"
+        "def copy = 1;\n"
     );
 
     let again = ran(gandr(&[fmt, check, &scratch.0]));
@@ -761,7 +761,7 @@ fn fmt_sugars_a_match_over_a_stated_sum_791()
     );
     assert_eq!(
         std::fs::read_to_string(&source).expect("the source is readable"),
-        "def pair : Integer * String ;\n\ndef pick(t : Integer + Integer) -> Integer {\n  case t \
+        "def pair : Integer * String;\n\ndef pick(t : Integer + Integer) -> Integer {\n  case t \
          {\n    +{.1 = x} => x,\n    _ => 0\n  }\n}\n",
         "both declarations are sugared"
     );

@@ -361,7 +361,7 @@
 104:52-104:52 2 ⇒ Integer @104:52-104:53
 104:54-104:54 } ⇒ Integer -> -F Integer @104:39-104:55
 104:55-104:55 ) ⇒ Endo.mul(fn (n) { n + 1 }, fn (n) { n * 2 }) : -F (Integer => Integer) @104:12-104:56
-104:57-104:57 ; ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-106:2
+104:56-104:56 ; ⇒ composed : () => Integer⏎⏎The included multiplication, run at the model: add one, then double. @103:1-106:2
 105:3-105:3 h ⇒ h : Integer => Integer @105:3-105:4
 105:4-105:4 ( ⇒ -F Integer @105:3-105:7
 105:5-105:5 3 ⇒ Integer @105:5-105:6

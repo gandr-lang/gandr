@@ -8,7 +8,7 @@
 // 2.1.2) and `ap` (Lemma 2.2.1).
 
 // The circle and the free naturals.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 
 /// One successor more, the naturals' step for the paths a recursion builds.
 @[ checks ]
@@ -68,7 +68,7 @@ def unthrice(p : Path(Circle, Base, Base)) -> Path(
 
 /// A path the signature alone states.
 @[ owes(1) ]
-def stay : (a : Nat) => Path(Nat, a, a) ;
+def stay : (a : Nat) => Path(Nat, a, a);
 
 /// A call of a signature, read at the result it states.
 @[ checks ]

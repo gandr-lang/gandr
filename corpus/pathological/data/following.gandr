@@ -4,7 +4,7 @@
 // `../../model/data/following.gandr`.
 
 // The naturals and `plus`, which recurses on its second argument.
-import "../../model/data/data-base.gandr" ;
+import "../../model/data/data-base.gandr";
 
 /// Half a number through `plus`: `plus(Zero, p)` recurses on `p` but returns
 /// a sum, which can stand above `p`, so its result stands at no stage, which

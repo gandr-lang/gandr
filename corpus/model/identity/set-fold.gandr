@@ -12,12 +12,12 @@
 // two of its points are one.
 
 // The circle and the presented integers with their steps.
-import "./circle-base.gandr" ;
+import "./circle-base.gandr";
 // The integers' sum, zero its left unit, and a successor or a predecessor
 // brought out of its left.
-import "./int-sum.gandr" ;
+import "./int-sum.gandr";
 // The loop's words and one loop more.
-import "./loop-words.gandr" ;
+import "./loop-words.gandr";
 
 /// `plusS` read backwards.
 @[ checks ]
