@@ -1043,6 +1043,57 @@ done < <(jq -c '.[]' .config/pr-stack/cases.json)
 echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded"
 '''
 
+# The commit rules over a branch's own commits (`.config/commits/lint.bash`,
+# #2640), which `pr:open` and the pre-push tier run before a pull request
+# exists. Each case in `.config/commits/cases.json` commits its commits on a
+# fresh scratch repository as the agent identity, each with or without the
+# trailers and with or without a change, and states whether the range is
+# refused under its flag: a trailer-less copy of a merged commit is refused
+# (the regression: #2613 carried one), and an empty commit under `--empty`.
+["check:commits"]
+description = "The commit rules over a range refuse a trailer-less commit and, asked, an empty one"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+export COMMITLINT_CONFIG="$root/commitlint.config.mjs"
+COMMITLINT_BIN=$(mise which commitlint)
+export COMMITLINT_BIN
+export GIT_AUTHOR_NAME=agent-shade GIT_AUTHOR_EMAIL=agent-shade@users.noreply.github.com
+export GIT_COMMITTER_NAME=agent-shade GIT_COMMITTER_EMAIL=agent-shade@users.noreply.github.com
+trailers=$'Assisted-by: LLM\nCo-authored-by: silvanshade <silvanshade@users.noreply.github.com>'
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+failed=0
+while IFS= read -r case; do
+  name=$(jq -r .name <<< "$case")
+  repo="$scratch/$(jq -r '.name | @base64' <<< "$case" | tr -dc 'A-Za-z0-9' | cut -c1-24)"
+  git init --quiet --initial-branch=main "$repo"
+  git -C "$repo" config commit.gpgsign false
+  git -C "$repo" commit --quiet --allow-empty -m 'chore(repo): the base' -m "$trailers"
+  base=$(git -C "$repo" rev-parse HEAD)
+  while IFS= read -r commit; do
+    args=(--quiet --allow-empty -m "$(jq -r .message <<< "$commit")")
+    if [[ $(jq -r .trailers <<< "$commit") == true ]]; then args+=(-m "$trailers"); fi
+    if [[ $(jq -r .change <<< "$commit") == true ]]; then
+      date +%s%N >> "$repo/file"
+      git -C "$repo" add file
+    fi
+    git -C "$repo" commit --no-verify "${args[@]}"
+  done < <(jq -c '.commits[]' <<< "$case")
+  want=$(jq -r .exit <<< "$case")
+  got=0
+  out=$(cd "$repo" && "$root/.config/commits/lint.bash" "$base" HEAD $(jq -r .flag <<< "$case") 2>&1) || got=$?
+  if [[ $got != "$want" ]]; then
+    printf 'commits case FAILED: %s\n  exit %s, wanted %s\n%s\n' "$name" "$got" "$want" "$out" >&2
+    failed=1
+  fi
+done < <(jq -c '.[]' "$root/.config/commits/cases.json")
+(( failed == 0 )) || exit 1
+echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges read as recorded"
+'''
+
 # The claim lifecycle (`.config/claims/decide.jq`, #1270) picks the claims
 # that come off. Each case in `.config/claims/cases.json` holds an input and
 # the removals it must give: a merge's `Advances` and closing targets, the

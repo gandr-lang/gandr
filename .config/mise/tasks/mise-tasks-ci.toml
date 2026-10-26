@@ -1682,6 +1682,12 @@ else
   fi
   measured=origin/$base
 fi
+# The branch's own commits, from the top's head (or the trunk's fork) to
+# HEAD, keep the commit rules and each changes something (#2640): a
+# trailer-less or empty commit, such as a copy of a merged commit a rebase
+# flattened, fails the format gate in the queue and holds the stack above it.
+COMMITLINT_BIN=$(mise which commitlint) "$(git rev-parse --show-toplevel)/.config/commits/lint.bash" "$measured" HEAD --empty \
+  || { echo "drop or amend each commit above, so every own commit keeps the commit rules, then run \`pr:open\` again" >&2; exit 2; }
 status=0
 mise run evidence:obligations --body "$body" --require-acknowledged "$measured" || status=$?
 if (( status == 2 )); then
