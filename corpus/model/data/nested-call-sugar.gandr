@@ -8,7 +8,6 @@
 import "./data-base.gandr";
 
 /// Doubling: each successor and each predecessor written twice.
-@[ checks ]
 def rec dbl(n : Int) -> Int {
   case n {
     Z => Z,
@@ -18,7 +17,6 @@ def rec dbl(n : Int) -> Int {
 }
 
 /// Negation: successors and predecessors swapped.
-@[ checks ]
 def rec neg(n : Int) -> Int {
   case n {
     Z => Z,

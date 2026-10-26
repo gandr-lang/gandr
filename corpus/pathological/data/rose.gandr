@@ -8,7 +8,6 @@
 // node's stage. Shared with `../../model/data/rose.gandr`.
 
 /// The two answers a test gives.
-@[ checks ]
 data Two : Type {
   L : Two;
   R : Two;
@@ -16,7 +15,6 @@ data Two : Type {
 
 /// Tests of a value: the parameter stands to the left of an arrow, so it is
 /// not strictly positive.
-@[ checks ]
 data Test(a : Type) : Type {
   MkTest : (probe : a => Two) --> Test(a);
 }
@@ -29,14 +27,12 @@ data Rose : Type {
 }
 
 /// Natural numbers, the measure the fold counts in.
-@[ checks ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
 }
 
 /// Addition by recursion on the second argument.
-@[ checks ]
 def rec plus(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
@@ -46,20 +42,17 @@ def rec plus(n : Nat, m : Nat) -> Nat {
 
 /// Lists, whose element stands only where a list holds it: strictly
 /// positive, so a family nests through it.
-@[ checks ]
 data List(a : Type) : Type {
   Nil : List(a);
   Cons : (head : a, tail : List(a)) --> List(a);
 }
 
 /// The direct form: a node over a list of nodes (#517).
-@[ checks ]
 data Bush : Type {
   Sprout : (kids : List(Bush)) --> Bush;
 }
 
 /// A function mapped over a list.
-@[ checks ]
 def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
@@ -68,7 +61,6 @@ def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
 }
 
 /// A list of numbers, summed.
-@[ checks ]
 def rec sum(xs : List(Nat)) -> Nat {
   case xs {
     Nil => Zero,

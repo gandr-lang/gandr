@@ -14,14 +14,12 @@ import "./small-string.gandr";
 
 /// A written string and the number of buffers the write filled anew: none
 /// in place, one when the bytes moved to a buffer of their own.
-@[ checks ]
 data Written : Type {
   Written : (string : Repr, copies : Integer) --> Written;
 }
 
 /// The string a copy holds: the same inline bytes, or the same buffer with
 /// one more holder.
-@[ checks ]
 def copy(s : Repr) -> Repr {
   case s {
     Inline(bs) => Inline(bs),
@@ -30,7 +28,6 @@ def copy(s : Repr) -> Repr {
 }
 
 /// The bytes with `b` written before the terminating zero.
-@[ checks ]
 def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) {
   case bs {
     Nil => Nil,
@@ -46,7 +43,6 @@ def rec beforeZero(bs : List(Integer), b : Integer) -> List(Integer) {
 /// `b` appended to a string: inline bytes written where they are, moved to the
 /// heap when they outgrow it; a buffer held once written in place; a shared
 /// buffer copied first.
-@[ checks ]
 def push(s : Repr, b : Integer) -> Written {
   case s {
     Inline(bs) => {
@@ -69,7 +65,6 @@ def push(s : Repr, b : Integer) -> Written {
 }
 
 /// The buffers a write filled anew.
-@[ checks ]
 def copies(w : Written) -> Integer {
   case w {
     Written(s, n) => n
@@ -77,7 +72,6 @@ def copies(w : Written) -> Integer {
 }
 
 /// The written string.
-@[ checks ]
 def written(w : Written) -> Repr {
   case w {
     Written(s, n) => s
@@ -86,7 +80,6 @@ def written(w : Written) -> Repr {
 
 /// A long string, twenty-four bytes and the zero, held once. It is built by
 /// a loop, so it states `Div` (#1481), and so does each run that forces it.
-@[ checks ]
 def long() -> [Div] Repr { own(repeatOnto(97, 24, (Nil : List(Integer)))) }
 
 /// `!` appended to a long string held once: written in place, nothing copied.

@@ -26,12 +26,9 @@ module Seat :> #{
   type Report = String;
   type Handoff = String;
   /// The dispatch a seat receives.
-  @[ checks ]
   def task = "task";
   /// A report it sends.
-  @[ checks ]
   def progress = "progress";
   /// The notes it hands off.
-  @[ checks ]
   def notes = "notes";
 }

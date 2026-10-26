@@ -2,7 +2,6 @@
 // of the new type, not of the old one.
 
 /// A cell with an integer count.
-@[ checks ]
 def cell = #{count = 3, label = "start"};
 
 /// `cell` with a string count, stated at the old type: its count is no

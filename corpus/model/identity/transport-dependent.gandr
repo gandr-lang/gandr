@@ -9,7 +9,6 @@
 import "./circle-base.gandr";
 
 /// Transport along reflexivity at zero returns the element given.
-@[ checks ]
 def reduced : Path(
   Nat,
   transport(
@@ -24,12 +23,10 @@ def reduced : Path(
 
 /// The unit type's evidence between its point and itself, a closed path
 /// that is no reflexivity.
-@[ checks ]
 def unitPath : Path(Unit, unit, unit) = unit;
 
 /// Transport along that evidence, in a family that reads neither the point
 /// nor the path, returns the element given (#1854).
-@[ checks ]
 def carriedUnit : Path(
   Nat,
   transport(
@@ -44,7 +41,6 @@ def carriedUnit : Path(
 
 /// Transport along that evidence in the family of paths back to the point
 /// returns the unit, the one inhabitant of the unit fibre (#1886).
-@[ checks ]
 def backUnit : Path(
   Path(Unit, unit, unit),
   transport(
@@ -59,7 +55,6 @@ def backUnit : Path(
 
 /// A path reversed by transport in the family of paths back to its start,
 /// reflexivity at the start carried to the end.
-@[ checks ]
 def reversed(a : Nat, b : Nat, q : Path(Nat, a, b)) -> Path(Nat, b, a) {
   transport(
     (y : Nat, Path(Nat, a, y)) => Path(Nat, y, a),

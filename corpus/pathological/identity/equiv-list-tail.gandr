@@ -8,7 +8,6 @@
 import "../../model/identity/transport-list.gandr";
 
 /// Every list of booleans to the empty list.
-@[ checks ]
 def emptied(xs : List(Bool)) -> List(Bool) {
   nil
 }

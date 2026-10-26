@@ -7,22 +7,18 @@
 // a bind runs is ascribed the product its pattern is annotated with (#1543).
 
 /// Three, declared an integer by its annotation alone.
-@[ checks ]
 def three = (3 : Integer);
 
 /// A pair the annotation states the product of.
-@[ checks ]
 def paired = ((3, "three") : Integer * String);
 
 /// A value run as an annotated `pure`, then annotated where the body ends.
-@[ checks ]
 def ran() -> Integer {
   run n <- pure (3 : Integer);
   (n : Integer)
 }
 
 /// The annotated value a tail takes the `return` of.
-@[ checks ]
 def tailed(n : Integer) -> Integer {
   (n + 1 : Integer)
 }
@@ -33,11 +29,9 @@ def tailed(n : Integer) -> Integer {
 def pair = ((3 : Integer), 1);
 
 /// An annotation beside the signature it agrees with.
-@[ checks ]
 def signed : Integer = (3 : Integer);
 
 /// A scrutinee annotated with the sum it is matched at.
-@[ checks ]
 def chosen(b : Bool) -> Integer {
   case (b : Bool) {
     true => 1,
@@ -71,7 +65,6 @@ def falsity() -> Integer {
 }
 
 /// An integer doubled, the function the annotated argument is passed to.
-@[ checks ]
 def doubled(n : Integer) -> Integer { n + n }
 
 /// An argument annotated with the parameter's type.

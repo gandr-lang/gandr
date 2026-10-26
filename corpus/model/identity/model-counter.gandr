@@ -6,7 +6,6 @@
 // both alike by construction.
 
 /// A counter: a carrier, a zero, a step and a reading.
-@[ checks ]
 theory Counter {
   sort C : Type;
   oper zero : C;
@@ -67,15 +66,12 @@ module Down : Model(Counter) {
 }
 
 /// Counting up, as a model.
-@[ checks ]
 def upModel : Model(Counter) = pack Up at Model(Counter);
 
 /// Counting down, as a model.
-@[ checks ]
 def downModel : Model(Counter) = pack Down at Model(Counter);
 
 /// The count negated: zero stays, one and two swap.
-@[ checks ]
 def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
   case c {
     +{.0 = u} => +{.0 = u},
@@ -85,14 +81,12 @@ def negateCount(c : Unit + (Unit + Unit)) -> Unit + (Unit + Unit) {
 }
 
 /// The counts to themselves by negation, its own inverse.
-@[ checks ]
 def countsNegated : Path(Type, Unit + (Unit + Unit), Unit + (Unit + Unit)) = equiv(
   negateCount,
   negateCount
 );
 
 /// Counting up carried along negation is counting down.
-@[ checks ]
 def stepNegated : Path(
   Unit + (Unit + Unit) => Unit + (Unit + Unit),
   transport(\t. t => t, countsNegated, Up.incr),
@@ -100,7 +94,6 @@ def stepNegated : Path(
 ) = funext(transport(\t. t => t, countsNegated, Up.incr), Down.incr);
 
 /// The reading carried along negation reads negated.
-@[ checks ]
 def readNegated : Path(
   Unit + (Unit + Unit) => Integer,
   transport(\t. t => Integer, countsNegated, Up.read),
@@ -108,14 +101,12 @@ def readNegated : Path(
 ) = funext(transport(\t. t => Integer, countsNegated, Up.read), Down.read);
 
 /// The two packed modules are one model along negation.
-@[ checks ]
 def oneCounter : Path(Model(Counter), upModel, downModel) = (
   countsNegated,
   (here(+{.0 = unit}), (stepNegated, readNegated))
 );
 
 /// A consumer of any counter: the reading after one step from zero.
-@[ checks ]
 def observe(m : Model(Counter)) -> Integer {
   case m {
     #{.zero = z, .incr = i, .read = r} => r(i(z))
@@ -132,7 +123,6 @@ def observedDown() -> Integer { observe(downModel) }
 
 /// The consumer reads both alike by construction, along the path between the
 /// models.
-@[ checks ]
 def observedAlike() -> Path(Integer, observe(upModel), observe(downModel)) {
   cong(observe, oneCounter)
 }

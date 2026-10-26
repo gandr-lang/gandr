@@ -2,7 +2,6 @@
 // read back by name.
 
 /// A record of two fields.
-@[ checks ]
 def base = #{name = "gandr", stars = 1};
 
 /// The record with a third field inserted, reached by projection from the

@@ -10,7 +10,6 @@
 import "./equivalence.gandr";
 
 /// The map back of a quasi-inverse.
-@[ checks ]
 def backOf(a : Type, b : Type, i : a ≅ b) -> b => a {
   case i {
     #{t, k, s, r} => k
@@ -18,7 +17,6 @@ def backOf(a : Type, b : Type, i : a ≅ b) -> b => a {
 }
 
 /// The left inverse of an equivalence, split along its nesting.
-@[ checks ]
 def leftOf(a : Type, b : Type, e : a ≃ b) -> b => a {
   case e {
     #{t, #{g, s}, #{h, r}} => g
@@ -27,7 +25,6 @@ def leftOf(a : Type, b : Type, e : a ≃ b) -> b => a {
 
 /// The map back of a quasi-inverse, by its label: the forward map is named
 /// `to`, its label (#670).
-@[ checks ]
 def backByLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
   case i {
     #{.back = k} => k
@@ -36,7 +33,6 @@ def backByLabel(a : Type, b : Type, i : a ≅ b) -> b => a {
 
 /// The map back, bound to the forward map's label: the forward map is named
 /// `to′` (#670).
-@[ checks ]
 def backAsTo(a : Type, b : Type, i : a ≅ b) -> b => a {
   case i {
     #{.back = to} => to

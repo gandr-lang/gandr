@@ -9,7 +9,6 @@ import "./syntax.gandr";
 import "./congruence.gandr";
 
 /// A shift by `k` sends `n` to `n + k`.
-@[ checks ]
 def shiftAdds(n : N, k : N) -> Path(N, rlook(n, RShift(k)), plus(n, k)) {
   case n {
     Z => here(plus(Z, k)),
@@ -18,7 +17,6 @@ def shiftAdds(n : N, k : N) -> Path(N, rlook(n, RShift(k)), plus(n, k)) {
 }
 
 /// The same under a variable.
-@[ checks ]
 def ixShiftAdds(x : N, k : N) -> Path(Term, Ix(rlook(x, RShift(k))), Ix(plus(x, k))) {
   ixCong(rlook(x, RShift(k)), plus(x, k), shiftAdds(x, k))
 }
@@ -26,7 +24,6 @@ def ixShiftAdds(x : N, k : N) -> Path(Term, Ix(rlook(x, RShift(k))), Ix(plus(x, 
 /// `ixShiftAdds(plus(Z, k), S(Z))` with its endpoints written out as
 /// `ixCong`'s arguments, two calls deep: each argument answers its path type
 /// as written (#762).
-@[ checks ]
 def ixShiftAddsAtSum(k : N) -> Path(
   Term,
   Ix(rlook(plus(Z, k), RShift(S(Z)))),
@@ -36,7 +33,6 @@ def ixShiftAddsAtSum(k : N) -> Path(
 }
 
 /// A shift by `i + 1` then by one is a shift by `i + 2`, at each index.
-@[ checks ]
 def shiftsCompose(
   i : N,
   n : N

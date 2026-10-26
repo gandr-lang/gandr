@@ -1,7 +1,6 @@
 // A record updated at one field: a new record, the other fields kept.
 
 /// A point of two fields.
-@[ checks ]
 def point = #{x = 1, y = 2};
 
 /// The run target updates `x`: a new record, `y` kept.

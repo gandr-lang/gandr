@@ -12,7 +12,6 @@
 
 /// A line printed through the instance `out`, the capability its label
 /// binds.
-@[ checks ]
 def say() -> [out : Console] Unit { out.print("said") }
 
 /// One instance of `Console` handled around the call: the call passes it.
@@ -64,11 +63,9 @@ def namedInner() -> Integer {
 
 /// A caller's own instance answers the call it makes: `say` passes `o`
 /// on.
-@[ checks ]
 def relayed() -> [o : Console] Unit { say() }
 
 /// An explicit parameter beside the instance, which comes after it.
-@[ checks ]
 def sayLine(s : String) -> [out : Console] Unit { out.print(s) }
 
 /// The explicit argument written, the instance passed from the scope.
@@ -85,7 +82,6 @@ def sayLineRuns() -> Integer {
 
 /// Two instances of `Console` in one row, `first` printed through before
 /// `second`.
-@[ checks ]
 def both() -> [first : Console, second : Console] Unit {
   say[out = first]();
   say[out = second]()
@@ -129,7 +125,6 @@ def innerFirst() -> Integer {
 
 /// A suspended computation at the function's own instance, run by it: the
 /// parameter's row names the label the result row binds.
-@[ checks ]
 def runAt(body : +U (-F [o : Console] Unit)) -> [o : Console] Unit {
   force body
 }
@@ -137,7 +132,6 @@ def runAt(body : +U (-F [o : Console] Unit)) -> [o : Console] Unit {
 /// `both` as the printer writes it: each instance's region binder in the
 /// telescope, its capability an explicit parameter, and each label of the
 /// row naming a binder, which binds nothing more.
-@[ checks ]
 def bothWritten @[r : Region, r1 : Region] (
   first : Cap { print } at r,
   second : Cap { print } at r1

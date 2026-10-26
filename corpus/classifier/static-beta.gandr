@@ -6,17 +6,14 @@
 // `implicit-telescope.gandr`'s.
 
 /// Apply a type operator to a type.
-@[ checks ]
 def apply : (Type -> Type) -> Type -> Type = \F. \X. F(X);
 
 /// The type of pairs of one type.
-@[ checks ]
 def twice : Type -> Type = \Y. Y * Y;
 
 /// The sum of a pair whose type is an operator applied twice over. Both
 /// binders are used: an unused one has no type entry under a static
 /// application (#1080).
-@[ checks ]
 def sum(p : apply(twice, Integer)) -> Integer {
   case p {
     #{a, b} => become a + b
@@ -28,7 +25,6 @@ def sum(p : apply(twice, Integer)) -> Integer {
 def sumRun() -> Integer { become sum((1, 2)) }
 
 /// A pair returned at an operator's type.
-@[ checks ]
 def doubled(n : Integer) -> twice(Integer) {
   (n, n)
 }

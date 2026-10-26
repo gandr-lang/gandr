@@ -10,7 +10,6 @@ import "./data-base.gandr";
 
 /// Binary trees with the branching written as a function: a node picks its
 /// subtree at each branch.
-@[ checks ]
 data Tree : Type {
   Leaf : Tree;
   Node : (f : Two => Tree) --> Tree;
@@ -18,7 +17,6 @@ data Tree : Type {
 
 /// The number of leaves: each subtree is reached through `f` and counted one
 /// stage below the node.
-@[ checks ]
 def rec size(t : Tree) -> Nat {
   case t {
     Leaf => Succ(Zero),
@@ -31,15 +29,12 @@ def rec size(t : Tree) -> Nat {
 }
 
 /// Every branch a leaf.
-@[ checks ]
 def leaves(x : Two) -> Tree { Leaf }
 
 /// A node over two leaves.
-@[ checks ]
 def cherry : Tree = Node(leaves);
 
 /// A node whose left branch is a cherry and whose right is a leaf.
-@[ checks ]
 def lopsided : Tree = Node(fn (x) { case x -> -F Tree { L => cherry, R => Leaf } });
 
 /// The cherry's two leaves, counted through its function.

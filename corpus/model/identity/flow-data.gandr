@@ -6,26 +6,22 @@
 // a flow, and riding it moves a value of the old type to the new.
 
 /// The old type: one constructor of one integer field.
-@[ checks ]
 data Old : Type {
   Mk : (n : Integer) --> Old;
 }
 
 /// The new type: the same field under another constructor.
-@[ checks ]
 data Other : Type {
   Make : (n : Integer) --> Other;
 }
 
 /// The old shapes.
-@[ checks ]
 data Shape : Type {
   Circle : (r : Integer) --> Shape;
   Rect : (w : Integer, h : Integer) --> Shape;
 }
 
 /// The new shapes: the circle renamed, the rectangle's sides swapped.
-@[ checks ]
 data Figure : Type {
   Round : (r : Integer) --> Figure;
   Box : (h : Integer, w : Integer) --> Figure;

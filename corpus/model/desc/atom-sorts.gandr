@@ -6,14 +6,12 @@
 // it back by `case`.
 
 /// One atom sort and nothing else.
-@[ checks ]
 theory AtomOnly {
   sort Name : Atom;
 }
 
 /// Names and the terms that mention them: a variable names an atom, and a
 /// renaming takes two atoms and a term.
-@[ checks ]
 theory Renaming {
   sort Name : Atom;
   sort Tm : Type;
@@ -23,7 +21,6 @@ theory Renaming {
 
 /// Structural recursion over a sort chain: one per `Atom` link, none for an
 /// ordinary `Sort`.
-@[ checks ]
 def rec atoms(chain : Theory) -> Integer {
   case chain {
     Atom(name, indices, rest) => { run r <- atoms[<](rest); r + 1 },

@@ -9,26 +9,22 @@
 import "./data-maybe.gandr";
 
 /// A present value and an absent one, at the type the function returns.
-@[ checks ]
 def around(n : Integer) -> List(Maybe(Integer)) {
   [Some(n), None]
 }
 
 /// The same list ending a thunk whose signature writes the value function
 /// space it returns.
-@[ checks ]
 def suspended() -> List(Maybe(Integer)) { [None, Some(2)] }
 
 /// Lists in a list: each inner list takes the element type the outer one
 /// answers, and gives its own to its constructors.
-@[ checks ]
 def grouped() -> List(List(Maybe(Integer))) {
   [[Some(3)], [], [None]]
 }
 
 /// The element type names a parameter: `Maybe(a)`, read where the function's
 /// parameters bind.
-@[ checks ]
 def wrapped(a : Type, x : a) -> List(Maybe(a)) {
   [Some(x), None]
 }

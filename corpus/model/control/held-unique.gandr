@@ -21,7 +21,6 @@ def counted() -> Integer {
 
 /// A tuple made in place and an abort before any read: nothing was moved out,
 /// so the held tuple stands as it was.
-@[ checks ]
 def untouched() -> Unit {
   hold[1] p = (1, 2);
   access p as v { abort(v) } unwind { pure unit }

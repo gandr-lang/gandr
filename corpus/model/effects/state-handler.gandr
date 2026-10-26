@@ -33,7 +33,6 @@ def constant() -> Integer {
 /// carrier, a function of the initial state. Storing four and then reading
 /// twice, both reads see four, as `putThenGet` calls the model's operations
 /// by hand.
-@[ checks ]
 def answeredByPassing() -> Integer => Integer {
   handle st : State with sort S = Integer {
     st.put(4);
@@ -52,7 +51,6 @@ def answeredFromZero() -> Integer {
 
 /// No model named: `Passing` is the one model of `State` at an integer state
 /// in scope, so it answers the scope as naming it does.
-@[ checks ]
 def answeredInScope() -> Integer => Integer {
   handle st : State with sort S = Integer {
     st.put(4);

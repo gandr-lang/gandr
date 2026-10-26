@@ -55,7 +55,6 @@ theory LC {
 
 /// λ-terms with de Bruijn indices: a variable, an abstraction whose body
 /// binds index zero, and an application.
-@[ checks ]
 data Term : Type {
   Ix : (n : N) --> Term;
   Lam : (t : Term) --> Term;
@@ -64,7 +63,6 @@ data Term : Type {
 
 /// Renamings: every index shifted by `k`, or a renaming lifted under one
 /// binder.
-@[ checks ]
 data Ren : Type {
   RShift : (k : N) --> Ren;
   RLift : (r : Ren) --> Ren;
@@ -72,7 +70,6 @@ data Ren : Type {
 
 /// Substitutions: every index shifted by `k`, a term consed on for index
 /// zero, or a substitution lifted under one binder.
-@[ checks ]
 data Env : Type {
   Shift : (k : N) --> Env;
   Cons : (a : Term, s : Env) --> Env;
@@ -80,7 +77,6 @@ data Env : Type {
 }
 
 /// Addition, by recursion on the second summand.
-@[ checks ]
 def rec plus(n : N, k : N) -> N {
   case k {
     Z => n,
@@ -89,7 +85,6 @@ def rec plus(n : N, k : N) -> N {
 }
 
 /// `n + j + k`, by recursion on `k`: a shift's index under `k` more binders.
-@[ checks ]
 def rec plusTwo(n : N, j : N, k : N) -> N {
   case k {
     Z => plus(n, j),
@@ -99,7 +94,6 @@ def rec plusTwo(n : N, j : N, k : N) -> N {
 
 /// The index a renaming sends `n` to: a lift keeps zero and renames under
 /// it.
-@[ checks ]
 def rec rlook(n : N, r : Ren) -> N {
   case r {
     RShift(k) => plus(n, k),
@@ -111,7 +105,6 @@ def rec rlook(n : N, r : Ren) -> N {
 }
 
 /// A renaming applied to a term, lifted under each abstraction.
-@[ checks ]
 def rec rename(t : Term, r : Ren) -> Term {
   case t {
     Ix(n) => Ix(rlook(n, r)),
@@ -121,13 +114,11 @@ def rec rename(t : Term, r : Ren) -> Term {
 }
 
 /// Weakening: every index shifted by one.
-@[ checks ]
 def wk(t : Term) -> Term {
   rename(t, RShift(S(Z)))
 }
 
 /// A term under `k` more binders: itself under none.
-@[ checks ]
 def shiftBy(a : Term, k : N) -> Term {
   case k {
     Z => a,
@@ -137,7 +128,6 @@ def shiftBy(a : Term, k : N) -> Term {
 
 /// The term a substitution sends index `n` to, under `k` binders the lookup
 /// has crossed: each lift it passes adds one.
-@[ checks ]
 def rec look(n : N, s : Env, k : N) -> Term {
   case s {
     Shift(j) => Ix(plusTwo(n, j, k)),
@@ -153,7 +143,6 @@ def rec look(n : N, s : Env, k : N) -> Term {
 }
 
 /// A substitution applied to a term, lifted under each abstraction.
-@[ checks ]
 def rec subst(t : Term, s : Env) -> Term {
   case t {
     Ix(n) => look(n, s, Z),

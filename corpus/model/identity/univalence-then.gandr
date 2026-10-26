@@ -13,7 +13,6 @@ import "./univalence.gandr";
 
 /// Transport along a composite whose second path is a `ua` applies the first
 /// path's transport, then the record's map.
-@[ checks ]
 def thenBeta(
   a : Type,
   b : Type,
@@ -27,7 +26,6 @@ def thenBeta(
 
 /// Transport along a path from the loops at the point to the integers, then
 /// back along it.
-@[ checks ]
 def loopsRound(
   p : Path(Type, Path(Circle, Base, Base), Int),
   x : Path(Circle, Base, Base)

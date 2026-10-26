@@ -18,7 +18,6 @@ import "./unique-write.gandr";
 module Str {
   /// The number of bytes the string holds, its zero included, read from a
   /// string lent for reading.
-  @[ checks ]
   def len(self : shared Repr) -> Integer {
     case self {
       Inline(bs) => count(bs),
@@ -27,12 +26,10 @@ module Str {
   }
   /// A byte written before the zero of a string lent to the write, which
   /// writes it back.
-  @[ checks ]
   def push(self : Repr, b : Integer) -> Unit {
     access self as v { run w <- pushInPlace(v, b); run t <- written(w); resume(v, t) }
   }
   /// The bytes of a string taken: nothing reads the string after.
-  @[ checks ]
   def bytes(self : consumed Repr) -> List(Integer) {
     case self {
       Inline(bs) => bs,
@@ -63,7 +60,6 @@ def taken() -> List(Integer) {
 /// A string taken in one arm of a match and kept in the other: each arm
 /// starts from the hold as the match found it, and the hold ends after the
 /// match (#1488).
-@[ checks ]
 def takenInOneArm(t : Repr) -> List(Integer) {
   hold s = Inline((Cons(104, Cons(105, Cons(0, Nil))) : List(Integer)));
   case t {

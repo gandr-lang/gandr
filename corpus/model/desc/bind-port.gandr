@@ -8,7 +8,6 @@
 
 /// The π-calculus's processes: `nu` restricts a channel name over a process,
 /// abstracting it.
-@[ checks ]
 theory Restriction {
   sort Name : Atom;
   sort Proc : Type;
@@ -19,7 +18,6 @@ theory Restriction {
 
 /// Both binders over one port, the abstraction outside: a fresh channel
 /// abstracted over a body that binds the value received on it.
-@[ checks ]
 theory Receive {
   sort Name : Atom;
   sort Val : Type+;
@@ -29,7 +27,6 @@ theory Receive {
 
 /// Structural recursion over a port chain: one per `Abstracted` link, none
 /// for a `Port` or a `Bound` one.
-@[ checks ]
 def rec abstracted(chain : Theory) -> Integer {
   case chain {
     Abstracted(name, sort, indices, atoms, binders, rest) => {
@@ -44,7 +41,6 @@ def rec abstracted(chain : Theory) -> Integer {
 
 /// Structural recursion over an operation chain: the abstracting input ports
 /// of every operation.
-@[ checks ]
 def rec abstracting(chain : Theory) -> Integer {
   case chain {
     Oper(name, inputs, outputs, rest) => {

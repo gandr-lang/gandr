@@ -5,10 +5,8 @@
 /// A module whose signature lists its members last first.
 module Ordered : #{ third : Integer, first : Integer, second : Integer } {
   /// The first value.
-  @[ checks ]
   def first = 1;
   /// A member the signature leaves out.
-  @[ checks ]
   def hidden = 99;
   /// One more than the first. An operator in a value runs before the
   /// computation around it, and a definition's value has none.
@@ -21,5 +19,4 @@ module Ordered : #{ third : Integer, first : Integer, second : Integer } {
 
 /// The run target gathers the three in a record: it checks, each member typed
 /// by the signature, though the second and third are refused above.
-@[ checks ]
 #{a = Ordered.first, b = Ordered.second, c = Ordered.third}

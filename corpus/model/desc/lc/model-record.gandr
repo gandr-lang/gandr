@@ -14,7 +14,6 @@ import "./syntax-model.gandr";
 
 /// The syntax model packed into the record of `LC`'s models: its carriers,
 /// then its operations and laws in the order `Model(LC)` mints them.
-@[ checks ]
 def lcSyntax : #{
   con : Type,
   sub : (con, con) => Type,
@@ -101,7 +100,6 @@ def lcSyntax : #{
 /// The record is `Model(LC)`: the packed syntax model stands at the type the
 /// derivation states, the families over contexts read applied and a term in an
 /// extended context read after its extension runs.
-@[ checks ]
 def lcModel : Model(LC) = lcSyntax;
 
 /// `(λx. x)(λx. x)` contracts, by the model's single substitution of the

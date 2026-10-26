@@ -2,7 +2,6 @@
 // reads the record's field, not the builtin.
 
 /// A record named `list`, with a field `each`.
-@[ checks ]
 def list = #{each = 7};
 
 /// The run target reads the record's field `each`, not the builtin's member.

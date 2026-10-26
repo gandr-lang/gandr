@@ -2,7 +2,6 @@
 // where it is written: the model's witness of it owes nothing more (#1081).
 
 /// A signature with one sort and one operation over it.
-@[ checks ]
 theory Toggle {
   sort T : Type;
   oper flip : (t : T) --> T;

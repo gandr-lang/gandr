@@ -19,7 +19,6 @@ def spinPure(x : Bool) -> Bool {
 }
 
 /// The loop at the row it needs.
-@[ checks ]
 def spin(x : Bool) -> [Div] Bool {
   run y <- loop {
     run below <- 1 < 0;

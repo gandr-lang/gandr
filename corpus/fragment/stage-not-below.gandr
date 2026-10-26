@@ -4,7 +4,6 @@
 // parameter's own stage, or at no stage, is refused by name.
 
 /// Natural numbers, free: every constructor term is its own value.
-@[ checks ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
@@ -25,7 +24,6 @@ def rec same(n : Nat) -> Nat {
 def rec counted(n : Integer) -> Integer { counted[<](n) }
 
 /// The call at the field the case opened, one stage below the parameter's.
-@[ checks ]
 def rec down(n : Nat) -> Nat {
   case n {
     Zero => n,

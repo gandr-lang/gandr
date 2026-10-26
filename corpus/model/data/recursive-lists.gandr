@@ -11,7 +11,6 @@
 import "./data-base.gandr";
 
 /// The length of a list, returned, the run written at its read.
-@[ checks ]
 def rec length(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
@@ -20,7 +19,6 @@ def rec length(a : Type, xs : List(a)) -> Nat {
 }
 
 /// The length of a list, the `return`s elided, the run written at its read.
-@[ checks ]
 def rec length_elided(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
@@ -29,7 +27,6 @@ def rec length_elided(a : Type, xs : List(a)) -> Nat {
 }
 
 /// The length of a list, the recursive call nested in the successor.
-@[ checks ]
 def rec length_nested(a : Type, xs : List(a)) -> Nat {
   case xs {
     Nil => Zero,
@@ -38,7 +35,6 @@ def rec length_nested(a : Type, xs : List(a)) -> Nat {
 }
 
 /// Appending two lists, returned, the run written at its read.
-@[ checks ]
 def rec append(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
     Nil => ys,
@@ -47,7 +43,6 @@ def rec append(a : Type, ys : List(a), xs : List(a)) -> List(a) {
 }
 
 /// Appending two lists, the `return`s elided, the run written at its read.
-@[ checks ]
 def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
     Nil => ys,
@@ -56,7 +51,6 @@ def rec append_elided(a : Type, ys : List(a), xs : List(a)) -> List(a) {
 }
 
 /// Appending two lists, the recursive call nested in the constructor.
-@[ checks ]
 def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> List(a) {
   case xs {
     Nil => ys,
@@ -65,7 +59,6 @@ def rec append_nested(a : Type, ys : List(a), xs : List(a)) -> List(a) {
 }
 
 /// Mapping a function over a list, returned, the runs written at their reads.
-@[ checks ]
 def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
@@ -75,7 +68,6 @@ def rec map(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
 
 /// Mapping a function over a list, the `return`s elided, the runs written at
 /// their reads.
-@[ checks ]
 def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),
@@ -84,7 +76,6 @@ def rec map_elided(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
 }
 
 /// Mapping over a list, both calls nested in the constructor.
-@[ checks ]
 def rec map_nested(a : Type, b : Type, f : a => b, xs : List(a)) -> List(b) {
   case xs {
     Nil => (Nil : List(b)),

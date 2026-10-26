@@ -5,7 +5,6 @@
 // own attribute states the family alone (#1462).
 
 /// Naturals with a subtraction whose rule copies its argument.
-@[ checks ]
 data NatSub : Type {
   Zero : NatSub;
   Succ : (n : NatSub) --> NatSub;

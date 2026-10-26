@@ -11,7 +11,6 @@ import "./circle-base.gandr";
 import "./univalence.gandr";
 
 /// Transport back along `ua` applies the record's left inverse.
-@[ checks ]
 def backBeta(
   a : Type,
   b : Type,
@@ -26,7 +25,6 @@ def backBeta(
 }
 
 /// Transport back along a path from the loops at the point to the integers.
-@[ checks ]
 def loopsBack(
   p : Path(Type, Path(Circle, Base, Base), Int),
   y : Int

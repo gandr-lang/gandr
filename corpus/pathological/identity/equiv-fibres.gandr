@@ -4,32 +4,27 @@
 // trip claimed for one is refused at that field of the record.
 
 /// Two points.
-@[ checks ]
 data Two : Type {
   Yes : Two;
   No : Two;
 }
 
 /// One point.
-@[ checks ]
 data One : Type {
   Only : One;
 }
 
 /// Both points to the one.
-@[ checks ]
 def collapse(x : Two) -> One {
   Only
 }
 
 /// The one point back to the first.
-@[ checks ]
 def pick(u : One) -> Two {
   Yes
 }
 
 /// Every point of `One` is `Only`, by induction on it.
-@[ checks ]
 def single(u : One) -> Path(One, collapse(pick(u)), u) {
   case u {
     Only => here(Only)

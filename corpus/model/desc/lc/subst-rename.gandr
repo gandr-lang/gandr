@@ -16,7 +16,6 @@ import "./lookup-weaken.gandr";
 
 /// A lookup under one binder, weakened, renamed by a lift: the step that
 /// carries `lookWeakens` under the lifted renaming.
-@[ checks ]
 def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
   Term,
   rename(wk(look(m, u, Z)), RLift(q)),
@@ -31,7 +30,6 @@ def renameLookWeakens(u : Env, q : Ren, m : N) -> Path(
 
 /// Renaming by `q` then shifting is shifting then renaming by `q` lifted,
 /// at every index.
-@[ checks ]
 def shiftPastLift(
   q : Ren,
   n : N
@@ -43,7 +41,6 @@ def shiftPastLift(
 }
 
 /// The hypothesis at `m`, weakened.
-@[ checks ]
 def weakenedSquare(
   r : Ren,
   s : Env,
@@ -57,7 +54,6 @@ def weakenedSquare(
 
 /// A pointwise agreement of renaming then substituting with substituting
 /// then renaming holds of the lifts.
-@[ checks ]
 def substRenameSquareLift(
   r : Ren,
   s : Env,
@@ -85,7 +81,6 @@ def substRenameSquareLift(
 
 /// Renaming by `r` then substituting `s` is substituting `u` then renaming
 /// by `q`, given the two agree at every index.
-@[ checks ]
 def rec substRenameSquare(
   t : Term,
   r : Ren,
@@ -129,7 +124,6 @@ def rec substRenameSquare(
 
 /// Weakening then a lifted substitution agrees with the substitution then
 /// weakening, at every index.
-@[ checks ]
 def weakenLiftLooks(
   s : Env,
   n : N
@@ -142,7 +136,6 @@ def weakenLiftLooks(
 
 /// A weakened term under a lifted substitution is the substituted term
 /// weakened.
-@[ checks ]
 def substWeaken(x : Term, s : Env) -> Path(Term, subst(wk(x), Lift(s)), wk(subst(x, s))) {
   substRenameSquare(
     x,

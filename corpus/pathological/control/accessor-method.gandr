@@ -26,7 +26,6 @@ module Misplaced {
   def mistyped @[ m : Mode ] (self : m List(Integer)) -> -F View[m](String) { self[0] }
   /// The length, read from a list lent for reading: a method answering no
   /// place.
-  @[ checks ]
   def size(self : shared List(Integer)) -> -F Integer { pure 2 }
 }
 

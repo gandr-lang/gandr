@@ -6,47 +6,40 @@
 // refuses is in `../../pathological/codata/streams.gandr`.
 
 /// A stream of values of `a`: its head, and the stream after it.
-@[ checks ]
 codata Stream(a : Type) : Type[-] {
   head : a;
   tail : Stream(a);
 }
 
 /// The integers from `n` upward, one observation at a time.
-@[ checks ]
 def rec upward(n : Integer) -> Stream(Integer) {
   &{.head => n, .tail => upward[>](n + 1)}
 }
 
 /// `n` forever, its clauses written tail first: a copattern block answers
 /// the observations in the order the declaration states them.
-@[ checks ]
 def rec always(n : Integer) -> Stream(Integer) {
   &{.tail => always[>](n), .head => n}
 }
 
 /// One forever: a corecursive constant, which binds its own name over its
 /// copattern block though it takes no parameter (#1499).
-@[ checks ]
 def rec ones() -> Stream(Integer) {
   &{.head => 1, .tail => ones[>]()}
 }
 
 /// The head of a stream: observing a thunk of it.
-@[ checks ]
 def first(s : +U Stream(Integer)) -> Integer {
   s.head
 }
 
 /// The head of a stream's tail.
-@[ checks ]
 def second(s : +U Stream(Integer)) -> Integer {
   first(s.tail)
 }
 
 /// Two streams combined pointwise by `f`: every parameter varies from call
 /// to call, and the call stays productive.
-@[ checks ]
 def rec zipWith(
   f : (Integer, Integer) => Integer,
   s : +U Stream(Integer),
@@ -61,7 +54,6 @@ def rec zipWith(
 }
 
 /// Addition, as the function `zipWith` combines with.
-@[ checks ]
 def add(x : Integer, y : Integer) -> Integer {
   x + y
 }
@@ -86,7 +78,6 @@ def unfolded() -> Integer { second(ones()) }
 
 /// An observation by its position, counted from zero in declaration order:
 /// `s.1` is `s.tail`, so this is `second`.
-@[ checks ]
 def onward(s : +U Stream(Integer)) -> Integer {
   first(s.1)
 }
@@ -111,7 +102,6 @@ def headAbove() -> Bool { upward(3).head >= 1 }
 
 /// The head of a stream's tail, read as one chain: the tail is a stream, so
 /// it is observed in turn.
-@[ checks ]
 def secondInline(s : +U Stream(Integer)) -> Integer {
   s.tail.head
 }

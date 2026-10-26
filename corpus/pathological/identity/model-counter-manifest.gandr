@@ -20,7 +20,6 @@ import "../../model/identity/model-counter.gandr";
 import "../../model/identity/model-counter-manifest.gandr";
 
 /// A ticker: a carrier, a zero and a step, and no reading.
-@[ checks ]
 theory Ticker {
   sort C : Type;
   oper zero : C;

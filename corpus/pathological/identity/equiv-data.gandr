@@ -8,7 +8,6 @@ import "../../model/identity/flow-data.gandr";
 import "./flow-data.gandr";
 
 /// Every figure drawn as a circle: a rectangle's height is lost.
-@[ checks ]
 def rounded(figure : Figure) -> Shape {
   case figure {
     Round(r) => Circle(r),

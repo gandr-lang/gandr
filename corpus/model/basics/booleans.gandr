@@ -4,7 +4,6 @@
 
 /// #1831: whether a band's bounds stand low below high, the high one at most
 /// one, in millionths; `false` stands as the answer of an arm.
-@[ checks ]
 def banded(low : Integer, high : Integer) -> Bool {
   run below <- low < high;
   case below {
@@ -22,7 +21,6 @@ def inverted() -> Bool { banded(750000, 250000) }
 def ordered() -> Bool { banded(200000, 800000) }
 
 /// `true` at a stated `Bool`.
-@[ checks ]
 def truth : Bool = true;
 
 /// Both literals in a pair, each checked against its component.

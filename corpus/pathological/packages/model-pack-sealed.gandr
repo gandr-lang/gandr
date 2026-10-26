@@ -4,7 +4,6 @@
 // in front of it.
 
 /// A counter: a carrier, a zero and a step.
-@[ checks ]
 theory Counter {
   sort C : Type;
   oper zero : C;
@@ -15,10 +14,8 @@ theory Counter {
 module Hidden :> Model(Counter) {
   type C = Integer;
   /// Zero.
-  @[ checks ]
   def zero = 0;
   /// One count more.
-  @[ checks ]
   def incr(n : Integer) -> Integer { n + 1 }
 }
 

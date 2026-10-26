@@ -7,17 +7,14 @@ import "../../model/control/row-variable.gandr";
 
 /// A suspended computation taken and never run: its row variable occurs in
 /// its argument alone.
-@[ checks ]
 def ignored @[e : Row] (x : +U (-F [e] Unit)) -> Unit { pure unit }
 
 /// One of two suspended computations, run at the row both share.
-@[ checks ]
 def either @[e : Row] (x : +U (-F [e] Unit), y : +U (-F [e] Unit)) -> [e] Unit {
   force x
 }
 
 /// A computation at `Div`, the rest of its row left open.
-@[ checks ]
 def stall @[r : Row] (s : String) -> [Div | r] Unit { pure unit }
 
 /// `log` suspended and ignored: nothing reads its row, so nothing determines

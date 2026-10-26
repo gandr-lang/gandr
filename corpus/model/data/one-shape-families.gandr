@@ -7,44 +7,37 @@
 // same value read as `Fahrenheit` with no path written.
 
 /// A temperature in Celsius.
-@[ checks ]
 data Celsius : Type {
   Cel : (x : Integer) --> Celsius;
 }
 
 /// A temperature in Fahrenheit, of the same shape.
-@[ checks ]
 data Fahrenheit : Type {
   Fah : (x : Integer) --> Fahrenheit;
 }
 
 /// The relabelling forward: a Celsius value to the Fahrenheit value of its
 /// integer.
-@[ checks ]
 def toFahrenheit(c : Celsius) -> Fahrenheit {
   case c { Cel(x) => Fah(x) }
 }
 
 /// The relabelling back.
-@[ checks ]
 def toCelsius(f : Fahrenheit) -> Celsius {
   case f { Fah(x) => Cel(x) }
 }
 
 /// Back after forward is the identity, constructor by constructor.
-@[ checks ]
 def celsiusRoundTrip(c : Celsius) -> Path(Celsius, toCelsius(toFahrenheit(c)), c) {
   case c { Cel(x) => here(Cel(x)) }
 }
 
 /// Forward after back is the identity.
-@[ checks ]
 def fahrenheitRoundTrip(f : Fahrenheit) -> Path(Fahrenheit, toFahrenheit(toCelsius(f)), f) {
   case f { Fah(x) => here(Fah(x)) }
 }
 
 /// The relabelling is an equivalence, its inverse on either side.
-@[ checks ]
 def relabel : Celsius ≃ Fahrenheit = (
   toFahrenheit,
   ((toCelsius, celsiusRoundTrip), (toCelsius, fahrenheitRoundTrip))
@@ -61,7 +54,6 @@ def relabelled() -> Fahrenheit { transport(\X. X, ua(relabel), Cel(20)) }
 def carriedInTuple() -> Fahrenheit * Integer { (transport(\X. X, ua(relabel), Cel(20)), 1) }
 
 /// A thermometer reading one Fahrenheit temperature.
-@[ checks ]
 data Thermometer : Type {
   Reads : (f : Fahrenheit) --> Thermometer;
 }

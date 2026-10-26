@@ -28,9 +28,7 @@ module Ring :> #{
   type Sqe = String;
   type Cqe = Integer;
   /// The entry a read submits.
-  @[ checks ]
   def read = "read";
   /// The result its completion posts.
-  @[ checks ]
   def done = 0;
 }

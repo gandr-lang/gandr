@@ -53,7 +53,6 @@ def carriedAt @[i : Size] (a : Nat, q : Path(Nat[i], a, a)) -> -F Nat {
 }
 
 /// A function applied to a number, its signature naming no type parameter.
-@[ checks ]
 def applyNat(f : Nat => Nat, x : Nat) -> Nat {
   f(x)
 }
@@ -70,7 +69,6 @@ def rec plainly_helped(n : Nat) -> Nat {
 }
 
 /// The predecessor of a number, zero's its own.
-@[ checks ]
 def pred(n : Nat) -> Nat {
   case n {
     Zero => Zero,

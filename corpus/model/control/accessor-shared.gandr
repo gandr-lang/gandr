@@ -21,7 +21,6 @@ def shared_nested() -> Integer {
 }
 
 /// Twice a value, a call whose type synthesises where a statement binds it.
-@[ checks ]
 def twice(n : Integer) -> Integer {
   pure n + n
 }

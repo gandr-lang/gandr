@@ -10,14 +10,12 @@
 import "./data-base.gandr";
 
 /// One successor over a natural.
-@[ checks ]
 def succ(n : Nat) -> Nat {
   Succ(n)
 }
 
 /// A walk down its first argument, passing its accumulator through `succ`
 /// at every step.
-@[ checks ]
 def rec walk(t : Nat, c : Nat) -> Nat {
   case t {
     Zero => c,
@@ -31,14 +29,12 @@ def rec walk(t : Nat, c : Nat) -> Nat {
 def walkedTwo : () => Nat = walk(two, Zero);
 
 /// One step at a variable.
-@[ checks ]
 def walkOnce(b : Nat, c : Nat) -> Path(Nat, walk(Succ(b), c), Succ(walk(b, succ(c)))) {
   here(Succ(walk(b, succ(c))))
 }
 
 /// One step at another walk's stuck call: the step's recursive call
 /// receives that call beside `succ(c2)` (#879).
-@[ checks ]
 def walkTwice(b : Nat, c1 : Nat, c2 : Nat) -> Path(
   Nat,
   walk(Succ(walk(b, c1)), c2),

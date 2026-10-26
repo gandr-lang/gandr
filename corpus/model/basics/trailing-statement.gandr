@@ -2,14 +2,12 @@
 // returns the unit, as `{ e; }` is `()` in Rust (#1205).
 
 /// A body of one statement: `pure unit` runs and the unit is returned.
-@[ checks ]
 def plain() -> Unit {
   pure unit;
 }
 
 /// A statement after a bind: the bind runs, then the statement, then the
 /// unit is returned.
-@[ checks ]
 def after(n : Integer) -> Unit {
   run m : Integer <- pure (n + 1);
   pure unit;
@@ -17,7 +15,6 @@ def after(n : Integer) -> Unit {
 
 /// A match written as the last statement, each arm falling through to the
 /// unit the block returns.
-@[ checks ]
 def armed(b : Bool) -> Unit {
   case b {
     true => pure unit,
@@ -27,7 +24,6 @@ def armed(b : Bool) -> Unit {
 
 /// A match written as the last statement whose arms all leave stays the end
 /// of the body.
-@[ checks ]
 def left(b : Bool) -> Integer {
   case b {
     true => return 1,
@@ -37,7 +33,6 @@ def left(b : Bool) -> Integer {
 
 /// A match written as the last statement, one arm leaving and the other
 /// falling through to the unit.
-@[ checks ]
 def some(b : Bool) -> Unit {
   case b {
     true => return unit,

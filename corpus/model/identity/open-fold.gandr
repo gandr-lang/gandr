@@ -18,13 +18,11 @@ import "./loop-space.gandr";
 
 /// The step case at a variable: the `Loop` arm's bind over `windWords(x)`
 /// reads as `S` over the held call.
-@[ checks ]
 def wind_unfolded(x : Words) -> Path(Int, windWords(Loop(x)), S(windWords(x))) {
   here(S(windWords(x)))
 }
 
 /// Two loops read through two binds, the inner call's first.
-@[ checks ]
 def twice_unfolded(x : Words) -> Path(Int, windWords(Loop(Loop(x))), S(S(windWords(x)))) {
   here(S(S(windWords(x))))
 }
@@ -32,7 +30,6 @@ def twice_unfolded(x : Words) -> Path(Int, windWords(Loop(Loop(x))), S(S(windWor
 /// The round trip's step case: `spinWords` waits on the read
 /// `S(windWords(x))`, runs its `S` arm, and that arm's bind over
 /// `spinWords(windWords(x))` reads as `Loop`.
-@[ checks ]
 def round_unfolded(x : Words) -> Path(
   Words,
   spinWords(windWords(Loop(x))),
@@ -42,7 +39,6 @@ def round_unfolded(x : Words) -> Path(
 }
 
 /// The round trip's base case, closed: every call runs to its value.
-@[ checks ]
 def base_case() -> Path(Words, spinWords(windWords(Nil)), Nil) {
   here(Nil)
 }
@@ -51,7 +47,6 @@ def base_case() -> Path(Words, spinWords(windWords(Nil)), Nil) {
 /// cases on the parity of the predecessor before it returns. A case on the
 /// presented `Int` is refused before conversion as one its rules do not
 /// admit, so the twin that cases on its call counts here.
-@[ checks ]
 def rec parity(n : Nat) -> Nat {
   case n {
     Zero => Zero,

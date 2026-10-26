@@ -10,7 +10,6 @@
 // `../pathological/classifier/implicit-telescope.gandr`.
 
 /// The identity at a type supplied by name.
-@[ checks ]
 def same @[a : Type] (y : a) -> a { y }
 
 /// `same` at the integers, supplied by name.
@@ -22,7 +21,6 @@ def sameRun() -> Integer { same[a = Integer](3) }
 def sameInferred() -> Integer { same(3) }
 
 /// The first of two values of two types, both implicit.
-@[ checks ]
 def first @[a : Type, b : Type] (x : a, y : b) -> a { x }
 
 /// `first` supplied with its implicits in the written order.
@@ -40,7 +38,6 @@ def firstInferred() -> Integer { become first(5, unit) }
 
 /// An implicit whose type names an explicit parameter written after it: the
 /// merge binds `t` first, so `x : t` reads it.
-@[ checks ]
 def chosen @[x : t] (t : Type) -> t { x }
 
 /// `chosen` at the integers, its implicit supplied by name.
@@ -49,7 +46,6 @@ def chosenRun() -> Integer { chosen[x = 7](Integer) }
 
 /// A stage and an implicit in one telescope: the stage quantifies the
 /// signature and binds no value, the implicit binds the first parameter.
-@[ checks ]
 def kept @[i : Size, a : Type] (n : Integer, y : a) -> a { y }
 
 /// `kept` with its implicit supplied by name.
@@ -63,12 +59,10 @@ def keptInferred() -> Integer { become kept(0, 4) }
 
 /// `same` called at a type the definition binds: the solution for `a` is the
 /// parameter `t`, which the call stands under.
-@[ checks ]
 def sameAt(t : Type, y : t) -> t { become same(y) }
 
 /// A function taking a function of a type and a value of it, the result type
 /// of that function implicit.
-@[ checks ]
 def konst @[b : Type] (f : (t : Type, t) => b) -> Integer { 1 }
 
 /// `konst` with its implicit omitted: the lambda returns an integer under its
@@ -77,7 +71,6 @@ def konst @[b : Type] (f : (t : Type, t) => b) -> Integer { 1 }
 def konstInferred() -> Integer { become konst(fn (t) { fn (y) { 0 } }) }
 
 /// A function applied to the integer it is passed.
-@[ checks ]
 def apply(f : Integer => Integer, x : Integer) -> Integer { f(x) }
 
 /// `same` passed as a value, its implicit supplied where it is taken: the
@@ -87,13 +80,11 @@ def passedRun() -> Integer { apply(same[a = Integer], 3) }
 
 /// A function applied to a value of the type it is passed, the function
 /// implicit: its type names `t`, so the merge binds `t` before it.
-@[ checks ]
 def applyAt @[g : t => t] (t : Type, v : t) -> t { become g(v) }
 
 /// `applyAt` passed as a value with `g` supplied: the supply opens a lambda
 /// for `t`, which `g`'s type names, and is a function of a type and a value
 /// of it (#1498).
-@[ checks ]
 def identityAt : (t : Type, t) => t = applyAt[g = fn (y) { y }];
 
 /// `identityAt` at the integers.
@@ -108,7 +99,6 @@ module Adding {
 }
 
 /// A value combined with itself, the combination and its carrier implicit.
-@[ checks ]
 def twice @[m : Type, combine : (m, m) => m] (x : m) -> m { combine(x, x) }
 
 /// `twice` with its combination supplied by a module path: a resident's value

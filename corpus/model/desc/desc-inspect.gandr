@@ -3,7 +3,6 @@
 // doi:10.1145/1863543.1863547).
 
 /// A traffic signal: stop, go or wait.
-@[ checks ]
 data Traffic : Type {
   Stop : Traffic;
   Go : Traffic;

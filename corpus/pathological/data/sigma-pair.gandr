@@ -1,4 +1,3 @@
-@[ checks ]
 data Ix(n : Integer) : Type {
   MkIx : Ix(n);
 }
@@ -9,10 +8,8 @@ def skewed : #{n : Integer, w : Ix(n)} = (2, (MkIx : Ix(3)));
 
 /// A pair with no type to check against synthesises the product of its
 /// components, never a dependent pair.
-@[ checks ]
 def loose = (2, (MkIx : Ix(2)));
 
-@[ checks ]
 def tag_of(p : #{n : Integer, w : Ix(n)}) -> Integer {
   p.n
 }

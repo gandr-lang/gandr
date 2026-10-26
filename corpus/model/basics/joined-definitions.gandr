@@ -5,21 +5,17 @@
 // the two (#2228).
 
 /// Three, its type and value in one item.
-@[ checks ]
 def joinedThree : Integer = 3;
 
 /// Four, apart: the comment between its halves keeps them so.
-@[ checks ]
 def apartFour : Integer;
 // The value follows the comment.
 def apartFour = 4;
 
 /// Five, apart: the item between its halves keeps them so.
-@[ checks ]
 def apartFive : Integer;
 
 /// Six, joined, between five's halves.
-@[ checks ]
 def joinedSix : Integer = 6;
 /// Five's value, after the item between.
 def apartFive = 5;

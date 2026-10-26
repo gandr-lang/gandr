@@ -8,7 +8,6 @@ import "../../model/include/reduct.gandr";
 
 /// Whether a left zero's zero is there to read: every left zero's is, so
 /// this answers zero.
-@[ checks ]
 def absorbs(z : Model(LeftZero)) -> Integer {
   case z {
     #{.zero = o} => 0

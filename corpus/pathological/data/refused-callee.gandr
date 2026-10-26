@@ -3,7 +3,6 @@
 // dropped as an engine fault (#2126).
 
 /// A list of any type.
-@[ checks ]
 data List(a : Type) : Type {
   Nil : List(a);
   Cons : (head : a, tail : List(a)) --> List(a);

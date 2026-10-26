@@ -13,7 +13,6 @@ import "./circle-rotation.gandr";
 
 /// A map's image of the loop, at the map's image of the point: `cong` of the
 /// parameter `f` along the loop.
-@[ checks ]
 def loopImage(f : Circle => Int) -> Path(Int, f(Base), f(Base)) {
   cong(f, loop)
 }
@@ -22,7 +21,6 @@ def loopImage(f : Circle => Int) -> Path(Int, f(Base), f(Base)) {
 /// `loopImage`: the second component's type reads the first, the call
 /// `f(Base)` (#426). `circle-rotation.gandr`'s `toLoop` writes the loop as
 /// `cong(f, loop)` itself.
-@[ checks ]
 def toLoopThroughImage(f : Circle => Int) -> #{
   point : Int,
   around : Path(Int, point, point)
@@ -42,7 +40,6 @@ def toOtherLoop(f : Circle => Int, g : Circle => Int) -> #{
 /// A record's projections as the arguments of that map: the second
 /// parameter's type reads the first argument, the projection `r.point`
 /// (#426).
-@[ checks ]
 def fromRecord(r : #{point : Int, around : Path(Int, point, point)}, c : Circle) -> Int {
   fromLoopAt(r.point, r.around, c)
 }

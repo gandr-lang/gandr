@@ -2,7 +2,6 @@
 // read before the fields the update writes, and an integer is no record.
 
 /// An integer.
-@[ checks ]
 def n = 5;
 
 /// The integer updated as if a record: a shape mismatch at `n`, wanting a

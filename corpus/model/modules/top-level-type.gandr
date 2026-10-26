@@ -6,11 +6,9 @@
 type Band = #{low : Integer, high : Integer};
 
 /// The band every rubric of the set grades against.
-@[ checks ]
 def setBand : Band = #{low = 200000, high = 800000};
 
 /// The width of a band, its fields read through the synonym.
-@[ checks ]
 def width(band : Band) -> Integer {
   case band {
     #{.low = low, .high = high} => high - low
@@ -25,5 +23,4 @@ def setWidth() -> Integer { become width(setBand) }
 type Twice(a : Type) = a * a;
 
 /// The set's bounds as a pair.
-@[ checks ]
 def bounds : Twice(Integer) = (200000, 800000);

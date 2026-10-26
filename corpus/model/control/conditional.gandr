@@ -26,7 +26,6 @@ def statedAnswer() -> Integer {
 }
 
 /// An `else if` tests its own condition in the false branch of the first.
-@[ checks ]
 def sign(n : Integer) -> Integer {
   if n < 0 { 0 } else if n < 1 { 1 } else { 2 }
 }

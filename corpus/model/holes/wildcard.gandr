@@ -8,7 +8,6 @@
 // `../../pathological/holes/wildcard.gandr`.
 
 /// The identity at a type passed explicitly.
-@[ checks ]
 def idAt(a : Type, y : a) -> a { y }
 
 /// `idAt` with its type left to the argument: `3` forces `_` to `Integer`.
@@ -17,7 +16,6 @@ def forced() -> Integer { idAt(_, 3) }
 
 /// The first of two values, each of its own type, both types passed
 /// explicitly.
-@[ checks ]
 def firstAt(a : Type, b : Type, x : a, y : b) -> a { x }
 
 /// Both types left to the arguments, each forced by its own.
@@ -25,7 +23,6 @@ def firstAt(a : Type, b : Type, x : a, y : b) -> a { x }
 def bothForced() -> Integer { become firstAt(_, _, 5, unit) }
 
 /// The identity at a type supplied by name.
-@[ checks ]
 def same @[a : Type] (y : a) -> a { y }
 
 /// The implicit supplied by name as a wildcard: the slot asks the solver for
@@ -42,13 +39,11 @@ def endForced() -> Path(Integer, 3, 3) { (here(3) : Path(Integer, 3, _)) }
 /// A definition its annotation signs, the path's right end left open: no
 /// other type meets the annotation's, so `here(3)`'s point alone forces the
 /// end (#1979).
-@[ checks ]
 def endSigned = (here(3) : Path(Integer, 3, _));
 
 /// A path the caller passes, ascribed a type whose right end is left open:
 /// the value bridge meets that end against the path's own and forces it
 /// (#1979).
-@[ checks ]
 def endMet(q : Path(Integer, 3, 3)) -> Path(Integer, 3, 3) {
   (q : Path(Integer, 3, _))
 }

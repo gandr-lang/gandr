@@ -4,7 +4,6 @@
 // declares is refused.
 
 /// Returns its argument; [echo] does the same.
-@[ checks ]
 def identity(x : Integer) -> Integer {
   x
 }

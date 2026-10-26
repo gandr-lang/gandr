@@ -4,7 +4,6 @@
 // of an eager product and refused.
 
 /// The width of a band, its bounds bound by position.
-@[ checks ]
 def width(band : #{low : Integer, high : Integer}) -> Integer {
   case band {
     #{low, high} => high - low
@@ -18,7 +17,6 @@ def band_width : () => Integer = width(#{low = 2, high = 7});
 /// The binders take the fields in the type's order whatever they are named:
 /// the first binder is `low`, though it is spelled `top`, and the second
 /// `high`.
-@[ checks ]
 def read_as_digits(band : #{low : Integer, high : Integer}) -> Integer {
   case band {
     #{top, bottom} => top * 10 + bottom

@@ -8,14 +8,12 @@
 import "./equivalence.gandr";
 
 /// The quasi-inverse handed back unchanged.
-@[ checks ]
 def kept(a : Type, b : Type, i : a ≅ b) -> a ≅ b {
   i
 }
 
 /// A quasi-inverse a call returns is bi-invertible, split as `isoToEquiv`
 /// splits its parameter (#656).
-@[ checks ]
 def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
   run j <- kept(a, b, i);
   case j {
@@ -25,7 +23,6 @@ def keptToEquiv(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
 
 /// An equivalence a call returns, split along its nesting and put back
 /// together (#656).
-@[ checks ]
 def madeAgain(a : Type, b : Type, i : a ≅ b) -> a ≃ b {
   run e <- isoToEquiv(a, b, i);
   case e {

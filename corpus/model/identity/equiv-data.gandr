@@ -9,7 +9,6 @@
 import "./flow-data.gandr";
 
 /// The map back: each figure to its shape, the sides swapped back.
-@[ checks ]
 def toShape(figure : Figure) -> Shape {
   case figure {
     Round(r) => Circle(r),
@@ -19,7 +18,6 @@ def toShape(figure : Figure) -> Shape {
 
 /// The shapes and the figures are one type, by the two round trips at each
 /// constructor.
-@[ checks ]
 def redrawing : Path(Type, Shape, Figure) = equiv(Shapes.toFigure, toShape);
 
 /// A rectangle transported along the path is its figure, the sides swapped.

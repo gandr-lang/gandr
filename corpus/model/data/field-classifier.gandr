@@ -7,46 +7,39 @@
 import "./data-base.gandr";
 
 /// A representation holding its bytes as a list of integers.
-@[ checks ]
 data Repr : Type {
   Inline : (s : List(Integer)) --> Repr;
 }
 
 /// A box over a list of its parameter.
-@[ checks ]
 data Box(a : Type) : Type {
   Wrap : (xs : List(a)) --> Box(a);
 }
 
 /// A list paired with the type of its elements, written as the field before
 /// it.
-@[ checks ]
 data Packed : Type[+, 1] {
   Pack : (a : Type, xs : List(a)) --> Packed;
 }
 
 /// Two bytes inline: the outer list is a `List(Integer)` by its field, the
 /// inner by its own.
-@[ checks ]
 def short() -> Repr {
   Inline(Cons(104, Cons(105, Nil)))
 }
 
 /// A list in a field typed by the family's parameter, the box classified by
 /// the type the body answers.
-@[ checks ]
 def boxed() -> Box(Integer) {
   Wrap(Cons(1, Nil))
 }
 
 /// The same box under an annotation.
-@[ checks ]
 def annotated() -> Box(Integer) {
   (Wrap(Cons(1, Nil)) : Box(Integer))
 }
 
 /// A list in a field typed by the field before it.
-@[ checks ]
 def packed() -> Packed {
   Pack(Integer, Cons(1, Nil))
 }

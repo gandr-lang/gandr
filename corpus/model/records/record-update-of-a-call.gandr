@@ -2,7 +2,6 @@
 // the fields the update keeps are read off the record it returns.
 
 /// A point placed at `n` across, two up.
-@[ checks ]
 def placed(n : Integer) -> #{x : Integer, y : Integer} { #{x = n, y = 2} }
 
 /// The run target updates the point a call returns at `x`: `y` is the one

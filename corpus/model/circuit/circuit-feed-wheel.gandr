@@ -10,7 +10,6 @@
 /// A running fold: each step reads the stream's value together with the
 /// previous output through the observation `emit`, and feeds its output back
 /// as `state`. The block binds `Wheel : Theory`.
-@[ checks ]
 theory Wheel {
   sort Nat : Type;
   obs emit : (s : Nat, x : Nat) --> (y : Nat);

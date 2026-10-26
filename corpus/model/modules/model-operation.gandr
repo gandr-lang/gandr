@@ -24,10 +24,8 @@ module Counted : Model(Counting) {
   @[ runs("0") ]
   def zero = 0;
   /// One more.
-  @[ checks ]
   def next(n : Integer) -> Integer { n + 1 }
   /// The count itself.
-  @[ checks ]
   def read(n : Integer) -> Integer { n }
 }
 
@@ -54,6 +52,5 @@ module Summed : Model(Summing) {
   @[ runs("0") ]
   def zero = 0;
   /// The sum.
-  @[ checks ]
   def add(x : Integer, y : Integer) -> Integer { x + y }
 }

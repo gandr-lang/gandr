@@ -11,15 +11,12 @@ import "../../model/identity/atom-identity.gandr";
 module Lawless :> #{ type T, origin : T, other : T } {
   /// The sealed points, whose interface names no transport law.
   @[ identity((related, reflexivity)) ]
-  @[ checks ]
   type T = Unit;
 
   /// One point.
-  @[ checks ]
   def origin = unit;
 
   /// Another point.
-  @[ checks ]
   def other = unit;
 }
 
@@ -45,14 +42,11 @@ def unpairedContraction(a : Unit, b : Unit, r : pathRelated(a, b)) -> Path(
 module UnpairedPoint :> #{ type T, origin : T, other : T } {
   /// The sealed points, whose transport law is refused.
   @[ identity((pathRelated, pathReflexivity, unpairedContraction)) ]
-  @[ checks ]
   type T = Unit;
 
   /// One point.
-  @[ checks ]
   def origin = unit;
 
   /// Another point.
-  @[ checks ]
   def other = unit;
 }

@@ -3,7 +3,6 @@
 // constructors and no operation, the smallest description the route reads.
 
 /// One bit: off or on.
-@[ checks ]
 data Bit : Type {
   Off : Bit;
   On : Bit;

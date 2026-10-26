@@ -1,7 +1,6 @@
 /// A list whose cons cell holds its head once: the field's grade `1` is
 /// read, and the constructor takes its fields as an ungraded one does
 /// (#1295).
-@[ checks ]
 data Vec(a : Type) : Type {
   Nil : Vec(a);
   Cons : (1 x : a, xs : Vec(a)) --> Vec(a);

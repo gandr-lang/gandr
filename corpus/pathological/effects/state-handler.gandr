@@ -86,12 +86,10 @@ module Forgetting : Model(State) with sort S = Integer {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// Reading hands zero to what runs after.
-  @[ checks ]
   def get(k : Integer => Integer => Integer) -> Integer => Integer {
     k(0)
   }
   /// Storing runs what comes after, the stored value forgotten.
-  @[ checks ]
   def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
     pure k
   }

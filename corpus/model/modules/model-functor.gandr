@@ -9,7 +9,6 @@
 // theory and a parameterised module the static half of a functor.
 
 /// A magma: a carrier and a binary operation on it.
-@[ checks ]
 theory Mag {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
@@ -50,7 +49,6 @@ module PlusSquared = Squaring(Plus);
 def six() -> Integer { PlusSquared.square(3) }
 
 /// A semigroup: a magma whose multiplication is associative.
-@[ checks ]
 theory Semi {
   sort M : Type;
   oper mul : (x : M, y : M) --> M;
@@ -61,7 +59,6 @@ theory Semi {
 /// at its own multiplication, so the body can turn it round (#1764).
 module Reassociating(S : Model(Semi)) {
   /// Associativity, read right to left.
-  @[ checks ]
   def reassoc(x : S.M, y : S.M, z : S.M) -> Path(
     S.M,
     S.mul(x, S.mul(y, z)),
@@ -78,7 +75,6 @@ module OnePoint : Model(Semi) {
   def mul(a : Unit, b : Unit) -> Unit { unit }
 
   /// Associativity, by computation: both sides are the unit.
-  @[ checks ]
   def assoc(x : Unit, y : Unit, z : Unit) -> Path(
     Unit,
     mul(mul(x, y), z),
@@ -92,7 +88,6 @@ module OnePoint : Model(Semi) {
 module OnePointReassociated = Reassociating(OnePoint);
 
 /// The turned law at three units, whose products are all the unit.
-@[ checks ]
 def reassociated() -> Path(Unit, unit, unit) {
   OnePointReassociated.reassoc(unit, unit, unit)
 }

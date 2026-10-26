@@ -3,7 +3,6 @@
 // neither converts to the other.
 
 /// A letter at a stated `Char`.
-@[ checks ]
 def letter : Char = 'a';
 
 /// An escape stands for the scalar it names, decoded as in a string.
@@ -19,7 +18,6 @@ def quote() -> Char { '\'' }
 def accented() -> Char { 'é' }
 
 /// The identity at `Char`.
-@[ checks ]
 def echo(c : Char) -> Char { c }
 
 /// A character passes through a function at `Char` unchanged.

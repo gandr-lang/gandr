@@ -20,7 +20,6 @@ theory Semi {
 
 /// A relabelling of the corolla's four elements, natural along its
 /// automorphisms.
-@[ checks ]
 def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
   case e {
     +{.0 = u} => +{.2 = u},
@@ -32,7 +31,6 @@ def rename(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
 
 /// A relabelling of the corolla's four elements that is not natural along
 /// its automorphisms.
-@[ checks ]
 def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
   case e {
     +{.0 = u} => +{.2 = u},
@@ -43,11 +41,9 @@ def cross(e : Unit + Unit + Unit + Unit) -> Unit + Unit + Unit + Unit {
 }
 
 /// The rig to itself by the natural relabelling at `plus`.
-@[ checks ]
 def dual = ua[1, 4](Rig, Rig, #{.plus = rename}, #{.plus = rename});
 
 /// Transport along it relabels the corolla's element.
-@[ checks ]
 def swaps : Path(
   Unit * (Unit + Unit + Unit + Unit),
   transport(\X. X, dual, (unit, +{.1 = unit})),
@@ -63,7 +59,6 @@ def crossed = ua[1, 4](Rig, Rig, #{.plus = cross}, #{.plus = cross});
 def twice = ua[1, 4](Rig, Rig, #{.plus = rename, .times = rename}, #{.plus = rename});
 
 /// The booleans into the corolla's four elements.
-@[ checks ]
 def widen(b : Bool) -> Unit + Unit + Unit + Unit {
   case b {
     true => +{.0 = unit},
@@ -72,7 +67,6 @@ def widen(b : Bool) -> Unit + Unit + Unit + Unit {
 }
 
 /// The corolla's four elements onto the booleans.
-@[ checks ]
 def narrow(e : Unit + Unit + Unit + Unit) -> Bool {
   case e {
     +{.0 = u} => +{.0 = u},

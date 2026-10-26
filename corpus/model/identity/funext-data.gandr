@@ -9,7 +9,6 @@
 import "./flow-data.gandr";
 
 /// A shape's width: a circle's radius, a rectangle's first side.
-@[ checks ]
 def width(shape : Shape) -> Integer {
   case shape {
     Circle(r) => r,
@@ -18,7 +17,6 @@ def width(shape : Shape) -> Integer {
 }
 
 /// A figure's width: a round's radius, a box's second side.
-@[ checks ]
 def figureWidth(figure : Figure) -> Integer {
   case figure {
     Round(r) => r,
@@ -27,19 +25,16 @@ def figureWidth(figure : Figure) -> Integer {
 }
 
 /// A shape's width read off its figure, where the sides are swapped.
-@[ checks ]
 def throughFigure(shape : Shape) -> Integer {
   figureWidth(Shapes.toFigure(shape))
 }
 
 /// The two readings are one function: they agree at a circle and at a
 /// rectangle, whatever their sides.
-@[ checks ]
 def widths : Path(Shape => Integer, width, throughFigure) = funext(width, throughFigure);
 
 /// A shape drawn as its figure, the sides swapped in the other order of
 /// binding.
-@[ checks ]
 def drawn(shape : Shape) -> Figure {
   case shape {
     Circle(r) => Round(r),
@@ -49,18 +44,15 @@ def drawn(shape : Shape) -> Figure {
 
 /// The two drawings are one function: at each shape they return the same
 /// figure, constructor and fields.
-@[ checks ]
 def drawings : Path(Shape => Figure, Shapes.toFigure, drawn) = funext(Shapes.toFigure, drawn);
 
 /// A light's two states, neither holding a field.
-@[ checks ]
 data Light : Type {
   Stop : Light;
   Go : Light;
 }
 
 /// A light switched.
-@[ checks ]
 def switch(light : Light) -> Light {
   case light {
     Stop => Go,
@@ -69,20 +61,17 @@ def switch(light : Light) -> Light {
 }
 
 /// A light switched twice.
-@[ checks ]
 def switchTwice(light : Light) -> Light {
   switch(switch(light))
 }
 
 /// A light left as it is.
-@[ checks ]
 def unswitched(light : Light) -> Light {
   light
 }
 
 /// Switching twice is leaving the light as it is: the two agree at both
 /// states.
-@[ checks ]
 def switchedTwice : Path(Light => Light, switchTwice, unswitched) = funext(
   switchTwice,
   unswitched

@@ -12,39 +12,32 @@
 // beside `../../pathological/data/generic-eq-refused.gandr`.
 
 /// A point in the plane.
-@[ checks ]
 data Point : Type {
   Point : (x : Integer, y : Integer) --> Point;
 }
 
 /// Unary naturals.
-@[ checks ]
 data Peano : Type {
   Nought : Peano;
   Next : (n : Peano) --> Peano;
 }
 
 /// A labelled position: a count, a point, a flag and a name.
-@[ checks ]
 data Mark : Type {
   Mark : (count : Peano, place : Point, shown : Bool, label : String) --> Mark;
 }
 
 /// Points compared field by field.
-@[ checks ]
 def eqPoint = Eq.generic(Point);
 
 /// Every point is equal to itself under `eqPoint`.
-@[ checks ]
 def reflPoint = Eq.generic.refl(Point);
 
 /// Naturals compared structurally, at the type the derivation states.
-@[ checks ]
 def eqPeano : (Peano, Peano) => Bool = Eq.generic(Peano);
 
 /// Marks compared field by field, the count and the point by their own
 /// equality.
-@[ checks ]
 def eqMark = Eq.generic(Mark);
 
 /// Points under `==`, every member derived.

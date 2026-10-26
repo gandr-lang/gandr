@@ -11,7 +11,6 @@ import "./string-base.gandr";
 import "./nul-terminated.gandr";
 
 /// Where a string's bytes live, read off its representation.
-@[ checks ]
 data Place : Type {
   Inside : Place;
   OnHeap : Place;
@@ -19,7 +18,6 @@ data Place : Type {
 
 /// A string holding `bs`: inline when they fit the inline capacity, else in a
 /// buffer of its own on the heap, held once.
-@[ checks ]
 def store(bs : List(Integer)) -> Repr {
   run n <- count(bs);
   run fits <- n <= inlineCapacity;
@@ -30,13 +28,11 @@ def store(bs : List(Integer)) -> Repr {
 }
 
 /// The string of the code points `cs`: their bytes and the zero, stored.
-@[ checks ]
 def own(cs : List(Integer)) -> Repr {
   store(terminated(cs))
 }
 
 /// Where a string's bytes live.
-@[ checks ]
 def place(s : Repr) -> Place {
   case s {
     Inline(bs) => Inside,
@@ -47,7 +43,6 @@ def place(s : Repr) -> Place {
 /// `n` copies of the code point `c` before `onto`, built by a loop that
 /// carries the list and the count left. The loop may run forever, so the row
 /// states `Div` (#1481).
-@[ checks ]
 def repeatOnto(c : Integer, n : Integer, onto : List(Integer)) -> [Div] List(Integer) {
   hold acc = onto;
   hold left = n;

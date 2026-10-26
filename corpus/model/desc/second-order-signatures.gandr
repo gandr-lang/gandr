@@ -8,7 +8,6 @@
 
 /// The naturals, a first-order signature: one ordinary sort, a constant and
 /// a successor.
-@[ checks ]
 theory Nat {
   sort Nat : Type;
   oper zero : () --> Nat;
@@ -17,7 +16,6 @@ theory Nat {
 
 /// Pure λ-calculus syntax: one representable sort of terms, an abstraction
 /// whose body binds a term, and an application.
-@[ checks ]
 theory Lambda {
   sort Tm : Type+;
   oper lam : (t : pi+ (x : Tm). Tm) --> Tm;
@@ -27,7 +25,6 @@ theory Lambda {
 /// The identity-return signature: value types and computation types, values
 /// representable and indexed by their type, and an abstraction whose body
 /// binds a value of its domain.
-@[ checks ]
 theory IdentityReturn {
   sort VTy : Type;
   sort CTy : Type;
@@ -41,7 +38,6 @@ theory IdentityReturn {
 
 /// Structural recursion over a sort chain: one per `Representable` link, none
 /// for an ordinary `Sort`.
-@[ checks ]
 def rec representable(chain : Theory) -> Integer {
   case chain {
     Representable(name, indices, rest) => { run r <- representable[<](rest); r + 1 },
@@ -52,7 +48,6 @@ def rec representable(chain : Theory) -> Integer {
 
 /// Structural recursion over a port chain: one per `Bound` port, none for a
 /// plain `Port`.
-@[ checks ]
 def rec bound(chain : Theory) -> Integer {
   case chain {
     Bound(name, sort, indices, binders, rest) => { run r <- bound[<](rest); r + 1 },

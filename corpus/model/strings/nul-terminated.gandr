@@ -12,7 +12,6 @@ import "./utf8.gandr";
 
 /// What C reads of a byte list: the list itself, borrowed, when its one zero
 /// is its last byte; nothing when a zero comes earlier.
-@[ checks ]
 data CView : Type {
   Borrowed : (bytes : List(Integer)) --> CView;
   Interior : CView;
@@ -20,14 +19,12 @@ data CView : Type {
 
 /// An owned string's bytes: the code points encoded, then the terminating
 /// zero.
-@[ checks ]
 def terminated(cs : List(Integer)) -> List(Integer) {
   concat(encodeAll(cs), (Cons(0, Nil) : List(Integer)))
 }
 
 /// The C reading of a byte list: borrowed whole when the only zero is the
 /// last byte, refused at an interior zero.
-@[ checks ]
 def rec cView(bs : List(Integer)) -> CView {
   case bs {
     Nil => Interior,

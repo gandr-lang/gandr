@@ -3,13 +3,11 @@
 // _Intuitionistic Type Theory_, Bibliopolis, 1984).
 
 /// A colour as its three channels.
-@[ checks ]
 data Color3 : Type {
   RGB : (r : Integer, g : Integer, b : Integer) --> Color3;
 }
 
 /// The green channel of a colour, bound by its position in the constructor.
-@[ checks ]
 def green_channel() -> Integer {
   case (RGB(10, 20, 30) : Color3) {
     RGB(r, g, b) => g
@@ -18,21 +16,18 @@ def green_channel() -> Integer {
 
 /// The blue channel of a colour, read by the field's name: the match above,
 /// its one arm returning the field.
-@[ checks ]
 def blue_channel(color : Color3) -> Integer {
   color.b
 }
 
 /// Whether a colour's red channel exceeds its green, each read by name where
 /// no answer is stated, so typed by the field's declaration.
-@[ checks ]
 def reddish(color : Color3) -> Bool {
   color.r > color.g
 }
 
 /// Whether a colour's red and green channels are one, both read by name: the
 /// first channel's type binds the model of `Eq` the comparison resolves.
-@[ checks ]
 def grey(color : Color3) -> Bool {
   color.r == color.g
 }

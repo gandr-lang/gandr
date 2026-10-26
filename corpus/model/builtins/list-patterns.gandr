@@ -5,14 +5,12 @@
 // structurally, as a list's tail stands one stage below it.
 
 /// A rubric's grade.
-@[ checks ]
 data Grade : Type {
   Met : Grade;
   Unmet : Grade;
 }
 
 /// The grades composed: unmet as soon as one is, met when none is.
-@[ checks ]
 def rec compose(grades : List(Grade)) -> Grade {
   case grades {
     [] => Met,
@@ -36,7 +34,6 @@ def passing() -> Grade {
 }
 
 /// A list's length up to three, read off its shape.
-@[ checks ]
 def shortLength(xs : List(Integer)) -> Integer {
   case xs {
     [] => 0,
@@ -59,7 +56,6 @@ def many() -> Integer {
 }
 
 /// The second element, past the first, whatever the rest holds.
-@[ checks ]
 def secondOf(xs : List(Integer)) -> Integer {
   case xs {
     [_, b, ..rest] => b,
@@ -75,7 +71,6 @@ def eight() -> Integer {
 
 /// A list's head added to its length up to three: the as-pattern binds the
 /// whole list the cell pattern matched.
-@[ checks ]
 def headed(xs : List(Integer)) -> Integer {
   case xs {
     [a, .._] as all => {

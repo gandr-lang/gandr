@@ -13,7 +13,6 @@ import "./data-base.gandr";
 
 /// Addition with the recursive call run and its result returned, the run
 /// written at its read.
-@[ checks ]
 def rec plus_returned(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
@@ -22,7 +21,6 @@ def rec plus_returned(n : Nat, m : Nat) -> Nat {
 }
 
 /// Addition with the `return`s elided, the run written at its read.
-@[ checks ]
 def rec plus_elided(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,
@@ -31,7 +29,6 @@ def rec plus_elided(n : Nat, m : Nat) -> Nat {
 }
 
 /// Addition with the recursive call written `run` inside the successor.
-@[ checks ]
 def rec plus_run(n : Nat, m : Nat) -> Nat {
   case m {
     Zero => n,

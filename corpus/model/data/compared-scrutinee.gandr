@@ -16,7 +16,6 @@ def compared() -> Integer {
 }
 
 /// A comparison over a parameter, cased on where it is written.
-@[ checks ]
 def sized(n : Integer) -> Integer {
   case n < 128 {
     true => 1,

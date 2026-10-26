@@ -9,7 +9,6 @@
 // doi:10.1017/S0956796814000264) for sealing as opaque ascription.
 
 /// A counter: a carrier, a start and a step. No laws: an ML signature.
-@[ checks ]
 theory Counter {
   sort C : Type;
   oper start : () --> C;
@@ -41,11 +40,9 @@ module Sealed :> Model(Counter) {
 def openTwice() -> Integer { run s <- Open.start(); Open.step(Open.step(s)) }
 
 /// Two steps on the sealed counter, at its abstract carrier.
-@[ checks ]
 def sealedTwice() -> Sealed.C { run s <- Sealed.start(); Sealed.step(Sealed.step(s)) }
 
 /// A toggle: a step that undoes itself. A law, so the models give its proof.
-@[ checks ]
 theory Toggle {
   sort T : Type;
   oper flip : (t : T) --> T;
@@ -53,7 +50,6 @@ theory Toggle {
 }
 
 /// Two states.
-@[ checks ]
 data Bit : Type {
   Low : Bit;
   High : Bit;

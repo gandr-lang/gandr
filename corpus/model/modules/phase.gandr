@@ -34,7 +34,6 @@ module Square(S : #{ type T, z : T }) :> #{ type U, w : U } {
 module Squared = Square(Point);
 
 /// The applied functor's value, at its own abstract type.
-@[ checks ]
 def squared : Squared.U = Squared.w;
 
 /// A module whose type members read a literal and a constructor, which are

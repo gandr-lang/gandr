@@ -4,25 +4,21 @@
 // it in its own row, and an entry runs at `+U (-F [Div] T)`. A `for` over a
 // list descends on the list and needs no entry; each `become` is an exit.
 
-@[ checks ]
 data Nat : Type {
   Zero : Nat;
   Succ : (n : Nat) --> Nat;
 }
 
-@[ checks ]
 def tick(n : Nat) -> Unit {
   unit
 }
 
 /// A loop that only runs `tick` again: it never leaves.
-@[ checks ]
 def spin(n : Nat) -> [Div] Nat {
   loop { tick(n); }
 }
 
 /// A `break` with a value leaves the loop with it, and what follows reads it.
-@[ checks ]
 def first(n : Nat) -> [Div] Nat {
   run m <- loop { break(Succ(n)) };
   Succ(m)
@@ -33,7 +29,6 @@ def first(n : Nat) -> [Div] Nat {
 def first_zero() -> [Div] Nat { become first(Zero) }
 
 /// Each arm of a case leaves the loop with its own value.
-@[ checks ]
 def pick(n : Nat) -> [Div] Nat {
   run m <- loop {
     case n {
@@ -49,7 +44,6 @@ def pick(n : Nat) -> [Div] Nat {
 def pick_two() -> [Div] Nat { become pick(Succ(Succ(Zero))) }
 
 /// A `return` inside the loop leaves the function; `continue` runs the loop again.
-@[ checks ]
 def leave(n : Nat) -> [Div] Nat {
   loop {
     case n {
@@ -64,7 +58,6 @@ def leave(n : Nat) -> [Div] Nat {
 def leave_one() -> [Div] Nat { become leave(Succ(Zero)) }
 
 /// A loop whose body hands the rest of the run to another function.
-@[ checks ]
 def hand(n : Nat) -> [Div] Nat {
   loop { become leave(Succ(n)) }
 }
@@ -74,7 +67,6 @@ def hand(n : Nat) -> [Div] Nat {
 def hand_one() -> [Div] Nat { become hand(Succ(Zero)) }
 
 /// A `while` that returns from its first pass when its condition holds.
-@[ checks ]
 def until_done(n : Integer) -> [Div] Integer {
   while n > 0 { return n };
   0
@@ -89,7 +81,6 @@ def until_three() -> [Div] Integer { become until_done(3) }
 def until_none() -> [Div] Integer { become until_done(0) }
 
 /// A bare `break` leaves the loop with unit, and what follows reads the binder.
-@[ checks ]
 def sift(n : Nat) -> [Div] Nat {
   loop {
     case n {
@@ -105,7 +96,6 @@ def sift(n : Nat) -> [Div] Nat {
 def sift_zero() -> [Div] Nat { become sift(Zero) }
 
 /// A loop inside a handler's body leaves with its value to the body.
-@[ checks ]
 def handled(n : Nat) -> [Div] Nat {
   handle c : Proc {
     run m <- loop { break(Succ(n)) };
@@ -141,7 +131,6 @@ def held(n : Nat) -> -F Nat {
 /// A `for` steps through a native list: `continue` runs the loop again on the
 /// list's tail, `return` leaves the function from inside it, and what follows
 /// the loop reads the binders around it (#283).
-@[ checks ]
 def find_succ(xs : List(Nat), otherwise : Nat) -> Nat {
   for x in xs {
     case x {
@@ -162,7 +151,6 @@ def find_one() -> Nat { become find_succ(cons(Zero, cons(Succ(Succ(Zero)), nil))
 def find_none() -> Nat { become find_succ(cons(Zero, nil), Succ(Zero)) }
 
 /// A `for` ending a body runs it on every cell and returns unit (#283).
-@[ checks ]
 def for_each(xs : List(Nat)) -> Unit {
   for x in xs { tick(x); }
 }

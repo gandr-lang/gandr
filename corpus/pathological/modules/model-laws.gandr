@@ -42,7 +42,6 @@ module FloatEqAdmitted : Model(Eq) with sort Carrier = f64 {
   def eq(a : f64, b : f64) -> Bool { float64.eq(a, b) }
   @[ refuses("UnprovenLaw.Admitted") ]
   law refl admitted;
-  @[ checks ]
   law sym admitted;
 }
 

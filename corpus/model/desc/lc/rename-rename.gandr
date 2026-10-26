@@ -13,7 +13,6 @@ import "./syntax.gandr";
 import "./congruence.gandr";
 
 /// A pointwise agreement of `a1` then `a2` with `a3` holds of their lifts.
-@[ checks ]
 def renameRenameLift(
   a1 : Ren,
   a2 : Ren,
@@ -29,7 +28,6 @@ def renameRenameLift(
 
 /// Renaming by `a1` then `a2` is renaming by `a3`, given they agree at every
 /// index.
-@[ checks ]
 def rec renameRename(
   t : Term,
   a1 : Ren,
@@ -70,7 +68,6 @@ def rec renameRename(
 }
 
 /// A pointwise agreement of two composites holds of their lifts.
-@[ checks ]
 def renameSquareLift(
   a1 : Ren,
   a2 : Ren,
@@ -87,7 +84,6 @@ def renameSquareLift(
 
 /// Renaming by `a1` then `a2` is renaming by `a3` then `a4`, given the two
 /// composites agree at every index.
-@[ checks ]
 def rec renameSquare(
   t : Term,
   a1 : Ren,

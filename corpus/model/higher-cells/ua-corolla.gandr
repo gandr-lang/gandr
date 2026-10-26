@@ -10,21 +10,18 @@
 import "./magma-base.gandr";
 
 /// The swap three times, which is the swap.
-@[ checks ]
 def flip(b : Bool) -> Bool {
   run c <- exchange(b);
   exchange(exchange(c))
 }
 
 /// The magma to itself by the swap at the binary corolla.
-@[ checks ]
 def opposite = ua[
   1,
   4
 ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
 /// Transport along it swaps the binary corolla's boolean.
-@[ checks ]
 def moves : Path(
   Unit * (+{Unit} * Bool),
   transport(\X. X, opposite, (unit, (+{.0 = unit}, +{.0 = unit}))),
@@ -40,11 +37,9 @@ def stays : Path(
 ) = here((unit, (+{.0 = unit}, +{.0 = unit})));
 
 /// The magma to itself by the swap written three times.
-@[ checks ]
 def reopposite = ua[1, 4](Magma, Magma, #{.mul = flip, .one = keep}, #{.mul = flip, .one = keep});
 
 /// The swap and the swap three times agree at every boolean.
-@[ checks ]
 def agree : Path(Bool => Bool, exchange, flip) = funext(exchange, flip);
 
 /// The swap and the identity do not.

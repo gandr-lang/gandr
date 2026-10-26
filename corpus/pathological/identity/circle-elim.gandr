@@ -36,7 +36,6 @@ def rotTwin(a : Circle, b : Circle) -> #{centre : Circle, around : Path(Circle, 
 /// The degree-two map: the loop goes round twice. A loop arm of a
 /// non-dependent case chooses any loop at the image of the point, so the map
 /// is admitted.
-@[ checks ]
 def doubled(x : Circle) -> Circle {
   case x {
     Base => Base,
@@ -71,7 +70,6 @@ def misjoined_then : Path(Marked, Mark, Elsewhere) = turn then here(Elsewhere);
 
 /// Every point to itself, by cases: no loop arm, and the motive reads no
 /// point, so the turn is owed nothing.
-@[ checks ]
 def kept(x : Marked) -> Marked {
   case x {
     Mark => Mark,

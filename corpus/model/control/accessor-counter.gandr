@@ -7,7 +7,6 @@
 // operators).
 
 /// The successor, a call whose type synthesises where a statement binds it.
-@[ checks ]
 def succ(n : Integer) -> Integer {
   pure n + 1
 }
@@ -35,7 +34,6 @@ def doubled() -> Integer {
 
 /// A held value beside a parameter: the write-back reads both, and an access
 /// that aborts without an `unwind` clause unwinds by doing nothing.
-@[ checks ]
 def add_to(n : Integer) -> Integer {
   hold c = 1;
   access c as v { resume(v, v + n) };

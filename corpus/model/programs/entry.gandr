@@ -5,7 +5,6 @@
 // entry.gandr a b c` exits 3.
 
 /// The number of strings in a list.
-@[ checks ]
 def rec count(xs : List(String)) -> Integer {
   case xs {
     [] => 0,
@@ -14,5 +13,4 @@ def rec count(xs : List(String)) -> Integer {
 }
 
 /// The entry: its exit code is the number of its arguments.
-@[ checks ]
 def main(args : List(String)) -> Integer { become count(args) }

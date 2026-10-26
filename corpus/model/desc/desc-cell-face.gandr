@@ -4,7 +4,6 @@
 // zero.
 
 /// Zero and an identity operation, its value at zero given by a rule.
-@[ checks ]
 data NatTheory : Type {
   Zero : NatTheory;
   oper id(x : NatTheory) -> NatTheory;

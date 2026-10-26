@@ -1,46 +1,37 @@
-@[ checks ]
 def lazy() -> &{get : -F Integer, put : -F String} {
   &{.put => "s", .get => 1}
 }
 
-@[ checks ]
 def binary : +U (-F Integer & -F String) = &{.0 => 1, .1 => "s"};
 
-@[ checks ]
 def observe(m : +U &{get : -F Integer, put : -F String}) -> Integer {
   m.get
 }
 
-@[ checks ]
 def offered(n : Integer) -> &{get : -F Integer, put : -F String} {
   &{.put => "s", .get => n}
 }
 
 /// The empty lazy record is the empty lazy product, answered by the empty
 /// block.
-@[ checks ]
 def terminal : +U &{} = &{};
 
 /// A lazy record of one entry is the lazy product of one, not its entry: its
 /// block answers the one entry.
-@[ checks ]
 def single() -> &{get : -F Integer} {
   &{.get => 1}
 }
 
 /// A lazy record of three is one lazy product of three, its block answering
 /// each entry.
-@[ checks ]
 def triple() -> &{a : -F Integer, b : -F String, c : -F Integer} {
   &{.a => 1, .b => "s", .c => 3}
 }
 
 /// The chain `C & D & E` is the lazy product the lazy record of three is.
-@[ checks ]
 def chained : +U (-F Integer & -F String & -F Integer) = triple;
 
 /// Each entry of a lazy product of three is one projection of it.
-@[ checks ]
 def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> Integer {
   m.c
 }
@@ -50,7 +41,6 @@ def third(m : +U &{a : -F Integer, b : -F String, c : -F Integer}) -> Integer {
 def tripled() -> Integer { third(triple) }
 
 /// The one entry of a lazy product of one is its one projection.
-@[ checks ]
 def only(m : +U &{get : -F Integer}) -> Integer {
   m.get
 }
@@ -61,7 +51,6 @@ def singled() -> Integer { only(single) }
 
 /// A `co` bundle is the lazy record written over bare labels, its fields in
 /// any order (#1053).
-@[ checks ]
 def bundled() -> &{get : -F Integer, put : -F String} {
   co { put = "s", get = 7 }
 }
@@ -72,13 +61,11 @@ def bundle_got() -> Integer { observe(bundled) }
 
 /// An entry observed by its position, counted from zero, is the entry its
 /// label names: `m.1` is `m.put`.
-@[ checks ]
 def placed(m : +U &{get : -F Integer, put : -F String}) -> String {
   m.1
 }
 
 /// A lazy product chain names no entry, so each is observed by its position.
-@[ checks ]
 def last(m : +U (-F Integer & -F String & -F Integer)) -> Integer {
   m.2
 }
@@ -89,7 +76,6 @@ def lasted() -> Integer { last(chained) }
 
 /// A positional lazy record names no entry either, so each is observed by its
 /// position (#1104).
-@[ checks ]
 def spread(m : +U (-F Integer & -F String)) -> String {
   m.1
 }

@@ -6,7 +6,6 @@
 // `Up`.
 
 /// A dial: a carrier, a zero, a turn and a reading.
-@[ checks ]
 theory Dial {
   sort C : Type;
   oper zero : C;
@@ -18,13 +17,10 @@ theory Dial {
 module Up : Model(Dial) {
   type C = Integer;
   /// Zero.
-  @[ checks ]
   def zero = 0;
   /// One count more.
-  @[ checks ]
   def incr(c : Integer) -> Integer { c + 1 }
   /// The count as it is.
-  @[ checks ]
   def read(c : Integer) -> Integer { c }
 }
 
@@ -32,24 +28,19 @@ module Up : Model(Dial) {
 module Flips : Model(Dial) {
   type C = Bool;
   /// Down.
-  @[ checks ]
   def zero = (false : Bool);
   /// The other flag.
-  @[ checks ]
   def incr(c : Bool) -> Bool { if c { false } else { true } }
   /// One for up, zero for down.
-  @[ checks ]
   def read(c : Bool) -> Integer { if c { 1 } else { 0 } }
 }
 
 /// The reading after one turn from zero, over any dial of integers.
-@[ checks ]
 def upOnce @[s : Model(Dial) with sort C = Integer] () -> Integer {
   s.read(s.incr(s.zero))
 }
 
 /// The reading after one turn from zero, over any dial of flags.
-@[ checks ]
 def flipOnce @[s : Model(Dial) with sort C = Bool] () -> Integer {
   s.read(s.incr(s.zero))
 }

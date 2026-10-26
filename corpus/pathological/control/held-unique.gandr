@@ -1,5 +1,4 @@
 /// The successor, a call whose type synthesises where a statement binds it.
-@[ checks ]
 def succ(n : Integer) -> Integer {
   pure n + 1
 }

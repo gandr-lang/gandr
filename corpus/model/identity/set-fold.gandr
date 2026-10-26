@@ -20,19 +20,16 @@ import "./int-sum.gandr";
 import "./loop-words.gandr";
 
 /// `plusS` read backwards.
-@[ checks ]
 def flipS(x : Int, a : Int) -> Path(Int, S(plus(x, a)), plus(S(x), a)) {
   back(plusS(x, a))
 }
 
 /// `plusP` read backwards.
-@[ checks ]
 def flipP(x : Int, a : Int) -> Path(Int, P(plus(x, a)), plus(P(x), a)) {
   back(plusP(x, a))
 }
 
 /// The successor of a commuting pair of sums commutes.
-@[ checks ]
 def upOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   Int,
   S(plus(a, x)),
@@ -42,7 +39,6 @@ def upOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 }
 
 /// The predecessor of a commuting pair of sums commutes.
-@[ checks ]
 def downOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   Int,
   P(plus(a, x)),
@@ -52,7 +48,6 @@ def downOf(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 }
 
 /// One successor step of commutativity: the call's image, then the lemma.
-@[ checks ]
 def upAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   Int,
   S(plus(a, x)),
@@ -62,7 +57,6 @@ def upAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 }
 
 /// One predecessor step of commutativity: the call's image, then the lemma.
-@[ checks ]
 def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
   Int,
   P(plus(a, x)),
@@ -75,7 +69,6 @@ def downAlong(a : Int, x : Int, e : Path(Int, plus(a, x), plus(x, a))) -> Path(
 /// `int-sum.gandr`'s `plusComm` written out. At `S(P(x))` the arms compute a
 /// chain through `flipP` and `flipS` against the call at `x`; both are paths
 /// in the integers between the same two sums, so they are one path (#427).
-@[ checks ]
 def rec plusCommAlong(a : Int, b : Int) -> Path(Int, plus(a, b), plus(b, a)) {
   case b {
     Z => back(plusZ(a)),
@@ -100,7 +93,6 @@ def rec turned(b : Int) -> Path(Circle, Base, Base) {
 /// `Loop(Unloop(x))` the loop arm carries the inverse arm's reflexivity where
 /// the rule's right side reads the path at `x`; the words form a set, so the
 /// two agree by their endpoints and the case respects its rules.
-@[ checks ]
 def rec rewound(w : Words) -> Path(Words, w, w) {
   case w {
     Nil => here(Nil),

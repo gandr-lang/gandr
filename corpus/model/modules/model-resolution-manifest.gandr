@@ -4,7 +4,6 @@
 // leaves the one candidate stating it.
 
 /// Equality over a carrier.
-@[ checks ]
 theory Same {
   sort Carrier : Type;
   oper eq : (a : Carrier, b : Carrier) --> Bool;
@@ -13,19 +12,16 @@ theory Same {
 /// Integers, the sort stated by the model type.
 module SameInteger : Model(Same) with sort Carrier = Integer {
   /// Integer equality.
-  @[ checks ]
   def eq(a : Integer, b : Integer) -> Bool { a == b }
 }
 
 /// Flags, the sort stated by the model type.
 module SameBool : Model(Same) with sort Carrier = Bool {
   /// Flag equality.
-  @[ checks ]
   def eq(a : Bool, b : Bool) -> Bool { if a { b } else { if b { false } else { true } } }
 }
 
 /// Equality through the model the operands force.
-@[ checks ]
 def same @[e : Model(Same)] (a : e.Carrier, b : e.Carrier) -> Bool { e.eq(a, b) }
 
 /// The integers force `SameInteger`: three is three.

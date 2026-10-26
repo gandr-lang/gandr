@@ -1,7 +1,5 @@
-@[ checks ]
 data Empty : Type {}
 
-@[ checks ]
 def absurd(v : Empty) -> Integer {
   case v {}
 }

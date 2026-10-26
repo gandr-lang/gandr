@@ -10,7 +10,6 @@ import "./shift-lookup.gandr";
 import "./rename-rename.gandr";
 
 /// A term under `k + 1` binders is the term under `k` weakened.
-@[ checks ]
 def shiftByWeakens(a : Term, k : N) -> Path(Term, shiftBy(a, S(k)), wk(shiftBy(a, k))) {
   case k {
     Z => here(wk(a)),
@@ -26,7 +25,6 @@ def shiftByWeakens(a : Term, k : N) -> Path(Term, shiftBy(a, S(k)), wk(shiftBy(a
 
 /// A lookup under one binder more is the lookup weakened, by recursion on
 /// the index.
-@[ checks ]
 def rec lookWeakens(n : N, s : Env, k : N) -> Path(Term, look(n, s, S(k)), wk(look(n, s, k))) {
   case s {
     Shift(j) => case n {

@@ -47,7 +47,6 @@ def isOne(_x : Unit, s : Integer) -> Type { return Path(Integer, s, 1) }
 /// The increment paired with evidence that its transformer is below its
 /// specification at `isOne`: the second entry's type reads the program, and
 /// both sides unfold to `Path(Integer, s + 1, 1)`.
-@[ checks ]
 def incrSpecified : #{
   m : Prog(Either(StateOp, Void), Unit),
   meets : (s : Integer, incrSpec(isOne, s)) => wp(m, isOne, s)

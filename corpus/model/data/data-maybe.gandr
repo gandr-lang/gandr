@@ -4,14 +4,12 @@
 // 1984).
 
 /// An optional `a`: none, or some value.
-@[ checks ]
 data Maybe(a : Type) : Type {
   None : Maybe(a);
   Some : (x : a) --> Maybe(a);
 }
 
 /// The value inside a present option, or zero for an absent one.
-@[ checks ]
 def unwrap_or_zero() -> Integer {
   case (Some(3) : Maybe(Integer)) {
     None => 0,
@@ -21,7 +19,6 @@ def unwrap_or_zero() -> Integer {
 
 /// A match over a family of parameters whose answer names its scrutinee:
 /// each arm answers the type as written, `m` read as itself (#616).
-@[ checks ]
 def kept(m : Maybe(Integer)) -> Path(Maybe(Integer), m, m) {
   case m {
     None => here(m),
@@ -30,27 +27,23 @@ def kept(m : Maybe(Integer)) -> Path(Maybe(Integer), m, m) {
 }
 
 /// One integer, its constructor named for its type.
-@[ checks ]
 data Tally : Type {
   Tally : (count : Integer) --> Tally;
 }
 
 /// Two types side by side, its constructor named for its type.
-@[ checks ]
 data Duo(a : Type, b : Type) : Type {
   Duo : (first : a, second : b) --> Duo(a, b);
 }
 
 /// A tally kept as present: `Tally` at `Maybe`'s type parameter names the
 /// type, not the constructor that shares its name (#1855).
-@[ checks ]
 def keptTally(t : Tally) -> Maybe(Tally) {
   (Some(t) : Maybe(Tally))
 }
 
 /// A duo of tallies kept as present: `Duo(Tally, Tally)` at the same place
 /// is the type applied, and each `Tally` in it the type again (#1855).
-@[ checks ]
 def keptDuo(d : Duo(Tally, Tally)) -> Maybe(Duo(Tally, Tally)) {
   (Some(d) : Maybe(Duo(Tally, Tally)))
 }

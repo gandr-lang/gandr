@@ -21,7 +21,6 @@ def reporting : Run(Seat.SeatEnd) = recorded(received("task"), selected(report),
 def crossed : Prefix(Seat.SeatEnd) = recorded(received("task"), offered(next));
 
 /// A prefix of the protocol, its task received.
-@[ checks ]
 def opened : Prefix(Seat.SeatEnd) = recorded(received("task"));
 
 /// The prefix declared a run: no prefix converts to a run.

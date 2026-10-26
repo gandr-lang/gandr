@@ -4,14 +4,12 @@
 // Bibliopolis, 1984).
 
 /// The sum of `a` and `b`: a value of either side, tagged by its constructor.
-@[ checks ]
 data Either(a : Type, b : Type) : Type {
   Left : (x : a) --> Either(a, b);
   Right : (y : b) --> Either(a, b);
 }
 
 /// The left side of a left injection, or zero for a right one.
-@[ checks ]
 def from_left() -> Integer {
   case (Left(5) : Either(Integer, String)) {
     Left(x) => x,

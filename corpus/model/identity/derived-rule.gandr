@@ -12,18 +12,15 @@
 import "./group-laws.gandr";
 
 /// The inverse of a product, in every group.
-@[ checks ]
 derive invMul : inv(mul(x, y)) <=> mul(inv(y), inv(x)) in Group
 
 /// A bit.
-@[ checks ]
 data Bit : Type {
   Zero : Bit;
   One : Bit;
 }
 
 /// Exclusive or.
-@[ checks ]
 def xor(a : Bit, b : Bit) -> Bit {
   case a {
     Zero => b,
@@ -80,12 +77,10 @@ module Parity : Model(Group) {
 }
 
 /// The parity group, as a model.
-@[ checks ]
 def parityGroup : Model(Group) = pack Parity at Model(Group);
 
 /// The derived rule read at the parity group, at one and zero: both sides are
 /// one.
-@[ checks ]
 def invMulParity() -> Path(Bit, One, One) {
   run law <- Group.invMul(parityGroup);
   law(One, Zero)

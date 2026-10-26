@@ -5,7 +5,6 @@
 // `prelude resolve` workload, so every site here is a resolution it measures.
 
 /// A point in the plane.
-@[ checks ]
 data Point : Type {
   Point : (x : Integer, y : Integer) --> Point;
 }

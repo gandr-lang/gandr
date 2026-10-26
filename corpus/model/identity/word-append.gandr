@@ -8,7 +8,6 @@
 import "./circle-base.gandr";
 
 /// The composite of two loops at the point.
-@[ checks ]
 def comp(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
@@ -17,7 +16,6 @@ def comp(
 }
 
 /// Reflexivity is the composite's left unit (#422).
-@[ checks ]
 def leftUnit(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   here(Base) then p,
@@ -27,7 +25,6 @@ def leftUnit(p : Path(Circle, Base, Base)) -> Path(
 }
 
 /// So it is through the composite's definition.
-@[ checks ]
 def leftUnitComp(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   comp(here(Base), p),
@@ -38,7 +35,6 @@ def leftUnitComp(p : Path(Circle, Base, Base)) -> Path(
 
 /// A letter before the empty word stays before a path composed after it
 /// (#422).
-@[ checks ]
 def letterFirst(p : Path(Circle, Base, Base)) -> Path(
   Path(Circle, Base, Base),
   comp(loop ∷ here(Base), p),
@@ -58,7 +54,6 @@ def letterKept(p : Path(Circle, Base, Base)) -> Path(
 }
 
 /// The composite again, under another name.
-@[ checks ]
 def other(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
@@ -67,7 +62,6 @@ def other(
 }
 
 /// The composite with its two paths swapped.
-@[ checks ]
 def compSwapped(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
@@ -77,7 +71,6 @@ def compSwapped(
 
 /// Both names unfold to one transport stuck on `q`, whose motives close over
 /// two definitions' environments and read the binder alone (#440).
-@[ checks ]
 def sameComposite(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
@@ -86,7 +79,6 @@ def sameComposite(
 }
 
 /// So the two composites agree after a letter (#440).
-@[ checks ]
 def sameAfterLetter(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)
@@ -95,7 +87,6 @@ def sameAfterLetter(
 }
 
 /// And a letter before `p` comes first through either name.
-@[ checks ]
 def letterThroughNames(
   p : Path(Circle, Base, Base),
   q : Path(Circle, Base, Base)

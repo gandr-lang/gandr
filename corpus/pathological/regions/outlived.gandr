@@ -3,7 +3,6 @@
 // region, so a binding kept in none cannot hold it.
 
 /// Hands back the thunk it is lent, kept in the same region.
-@[ checks ]
 def pass @[r : Region] (k : (() => Integer) at r) -> -F ((() => Integer) at r) { pure k }
 
 /// Binds what `pass` hands back at a type kept in no region.

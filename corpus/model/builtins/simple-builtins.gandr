@@ -21,7 +21,6 @@ def remainder = int.mod(-7, 2);
 
 /// Integer division with its type stated, which checks; the namespace `int`
 /// qualifies the path, and the path answers for it (#1170).
-@[ checks ]
 def quotientOf(c : Integer) -> Integer {
   run lead <- int.div(c, 64);
   lead

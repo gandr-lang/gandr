@@ -3,7 +3,6 @@
 // reads a `String`; no other value is formatted into one.
 
 /// A parameter interpolated between two runs of text.
-@[ checks ]
 def greet(name : String) -> String {
   "hello ${ name }!"
 }
@@ -21,7 +20,6 @@ def alone() -> String {
 }
 
 /// A `$` that opens no interpolation is text.
-@[ checks ]
 def price(count : String) -> String {
   "total: $5.00 for ${ count } items"
 }

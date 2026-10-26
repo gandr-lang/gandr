@@ -13,14 +13,12 @@ import "./funext.gandr";
 import "./transport-list.gandr";
 
 /// A toggle that starts false and reads its state as it is.
-@[ checks ]
 def plainToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
   Bool,
   (+{.0 = unit}, (not, same))
 );
 
 /// A toggle that starts true and reads its state negated.
-@[ checks ]
 def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
   Bool,
   (+{.1 = unit}, (not, not))
@@ -28,14 +26,12 @@ def flippedToggle : #{t : Type, start : t, step : t => t, read : t => Bool} = (
 
 /// The step carried along negation is the step: negating back, stepping and
 /// negating again steps.
-@[ checks ]
 def stepped : Path(Bool => Bool, transport(\t. t => t, negation, not), not) = funext(
   transport(\t. t => t, negation, not),
   not
 );
 
 /// The reading carried along negation reads negated.
-@[ checks ]
 def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) = funext(
   transport(\t. t => Bool, negation, same),
   not
@@ -43,7 +39,6 @@ def reread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), not) =
 
 /// The two toggles are one: the carriers by negation, the start carried to
 /// `true`, and each operation carried to the other's.
-@[ checks ]
 def oneToggle : Path(
   #{t : Type, start : t, step : t => t, read : t => Bool},
   plainToggle,
@@ -58,23 +53,19 @@ def unread : Path(Bool => Bool, transport(\t. t => Bool, negation, same), same) 
 );
 
 /// The boolean a tagged boolean carries.
-@[ checks ]
 def untag(p : Bool * Unit) -> Bool {
   case p { (x, u) => x }
 }
 
 /// A boolean tagged with unit.
-@[ checks ]
 def tag(b : Bool) -> Bool * Unit {
   (b, unit)
 }
 
 /// The tagged booleans to the booleans: the tag dropped, and added back.
-@[ checks ]
 def tagging : Path(Type, Bool * Unit, Bool) = equiv(untag, tag);
 
 /// The reading of a tagged boolean, its first component.
-@[ checks ]
 def readTagged(p : Bool * Unit) -> Bool {
   case p { (x, u) => x }
 }
@@ -83,7 +74,6 @@ def readTagged(p : Bool * Unit) -> Bool {
 /// argument moves back by `tag`, and the reading takes both components of the
 /// pair that returns; the kernel ran `tag` once per component where the
 /// checker ran it once, and refused the pointwise evidence.
-@[ checks ]
 def untagged : Path(Bool => Bool, transport(\t. t => Bool, tagging, readTagged), same) = funext(
   transport(\t. t => Bool, tagging, readTagged),
   same

@@ -9,5 +9,4 @@ import "./run-transport.gandr";
 
 /// #1739: the two protocols are one type along the univalence, which pays
 /// the one pair of payloads that differ.
-@[ checks ]
 def oneProtocol : Path(Type, Ask.Coded, Ask.Decoded) = bisim(Ask.Coded, Ask.Decoded, codes);

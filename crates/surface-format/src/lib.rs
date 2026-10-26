@@ -805,10 +805,25 @@ pub fn format_beside(
     let tree = parsed.tree();
     let source = tree.source();
     let flat = leaf::flatten(grammar, tree, parsed.obligations());
-    let chosen = Chosen::of(
-        declared(&flat.leaves).unwrap_or(options.form),
-        options.rewrites,
-    );
+    let form = declared(&flat.leaves).unwrap_or(options.form);
+    // In the sugared form, a bare `@[ checks ]` block is stripped from the
+    // source text before the formatter reads the tree, so the meaning check
+    // compares a block-less input to a block-less output and a formatted
+    // sugared corpus never carries one. A block with any other entry is kept,
+    // as is a `checks` the source spells in its explicit form.
+    let stripped = (form == Form::Sugared)
+        .then(|| strip_bare_checks(SourceText::from(<&str>::from(source))))
+        .filter(|text| text.as_str() != source.as_ref());
+    let stripped_parse = stripped
+        .as_ref()
+        .map(|text| parse(grammar, SourceText::from(text.as_str())))
+        .transpose()
+        .map_err(FormatError::Reparse)?;
+    let parsed = stripped_parse.as_ref().unwrap_or(parsed);
+    let tree = parsed.tree();
+    let source = tree.source();
+    let flat = leaf::flatten(grammar, tree, parsed.obligations());
+    let chosen = Chosen::of(form, options.rewrites);
     let alone = LoweringUnit::single();
     let (before, unit) = match beside {
         Beside::Alone => ("", &alone),
@@ -1886,4 +1901,53 @@ fn declared(leaves: &[Leaf<'_>]) -> Option<Form>
         }
     }
     None
+}
+
+/// The source with every bare `@[ checks ]` block at the top level removed:
+/// a claim attribute that serves nothing in the sugared form, where a source
+/// with no claim means `checks`. An indented `@[ checks ]` is a member
+/// attribute, a distinct concern (#1462), and stays. A block with any other
+/// entry — `checks` beside a `form` or a `doc`, or any other claim — is kept,
+/// as is a `checks` the source spells in its explicit form. The block's line,
+/// and the line break after it, are removed, so the documentation above it
+/// leads the declaration directly.
+///
+/// # Specification
+/// - requires: `source` is a source's text.
+/// - ensures: the text with every column-zero line that is only a bare `@[
+///   checks ]` block, its trailing line break, and any whitespace inside the
+///   block, removed; an indented `@[ checks ]` and every other line unchanged.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the strip is a source-text normalization the formatter
+///   applies before it reads the tree, and the corpus sweep checks it against
+///   every source's digest; a predicate over the answer would re-read the
+///   source's lines.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a sugared source with a bare `@[ checks ]` claim formats
+///   without it, the formatter checking the result against the source's digest
+///   and material, and a source whose `@[ checks ]` is a member attribute keeps
+///   it.
+/// - witness: `tests::format::sweeps::every_source_keeps_its_meaning_and_formats_once`
+fn strip_bare_checks(source: SourceText<'_>) -> alloc::string::String
+{
+    let text = <&str>::from(source);
+    let mut out = alloc::string::String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let content = line
+            .strip_suffix('\n')
+            .unwrap_or(line)
+            .trim_end_matches('\r');
+        let claim = content.chars().next().is_some_and(|c| !c.is_whitespace())
+            && content
+                .trim()
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .eq("@[checks]".chars());
+        if !claim {
+            out.push_str(line);
+        }
+    }
+    out
 }

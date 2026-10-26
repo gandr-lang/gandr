@@ -4,7 +4,6 @@
 // `pathological/holes/` refuses each shape on its own.
 
 /// Three colours.
-@[ checks ]
 data Shade : Type {
   Crimson : Shade;
   Olive : Shade;
@@ -22,7 +21,6 @@ def rank(c : Shade) -> Integer {
 }
 
 /// An integer, or none.
-@[ checks ]
 data Option : Type {
   NoValue : Option;
   Value : (x : Integer) --> Option;
@@ -39,5 +37,4 @@ def weigh(m : Option) -> Integer {
 
 /// The run target weighs nothing: it checks against `weigh`'s signature,
 /// whose body the hole above leaves refused, so it is not run.
-@[ checks ]
 weigh(NoValue)

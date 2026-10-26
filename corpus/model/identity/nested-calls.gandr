@@ -11,7 +11,6 @@
 import "./circle-base.gandr";
 
 /// Doubling the free naturals by structural recursion.
-@[ checks ]
 def rec doubleNat(n : Nat) -> Nat {
   case n {
     Zero => Zero,
@@ -21,7 +20,6 @@ def rec doubleNat(n : Nat) -> Nat {
 
 /// Doubling twice: the outer call's case waits on the inner call, which
 /// conversion unfolds in turn.
-@[ checks ]
 def quadrupled : Path(
   Nat,
   doubleNat(doubleNat(Succ(Zero))),
@@ -38,12 +36,10 @@ def miscounted : Path(
 
 /// `up(down(Z))` is `S` over the held call `down(Z)`; read, that call is
 /// `P(Z)`, and `S(P(Z))` rewrites to `Z`.
-@[ checks ]
 def turned_back : Path(Int, up(down(Z)), Z) = here(Z);
 
 /// The same law at every integer: the inner call's argument is a variable,
 /// and the rule cancels around it.
-@[ checks ]
 def turn_unturn(n : Int) -> Path(Int, up(down(n)), n) {
   here(n)
 }
@@ -53,20 +49,17 @@ def turn_unturn(n : Int) -> Path(Int, up(down(n)), n) {
 def overturned : Path(Int, up(down(Z)), S(Z)) = here(S(Z));
 
 /// The function a call returns, bound and applied.
-@[ checks ]
 def bound(k : Integer => Integer => Integer, s : Integer) -> Integer {
   run f <- k(s);
   f(s)
 }
 
 /// A function applied.
-@[ checks ]
 def apply(f : Integer => Integer, x : Integer) -> Integer { f(x) }
 
 /// Applying the call's function as `apply` is binding the call and applying
 /// what it binds (#2326): the endpoint unfolds to the call's result applied,
 /// which conversion reads as a bind over the call.
-@[ checks ]
 def bound_is_applied(
   k : Integer => Integer => Integer,
   s : Integer
@@ -84,14 +77,12 @@ def applied_elsewhere(
 }
 
 /// The call bound before a function that applies what it binds.
-@[ checks ]
 def bound_outside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
   run v <- k(s);
   return fn (_old) { v(s) }
 }
 
 /// The call bound inside the function.
-@[ checks ]
 def bound_inside(k : Integer => Integer => Integer, s : Integer) -> (Integer => Integer) {
   return fn (_old) { run f <- k(s); f(s) }
 }
@@ -99,7 +90,6 @@ def bound_inside(k : Integer => Integer => Integer, s : Integer) -> (Integer => 
 /// Binding the call outside the function or inside it gives one function
 /// (#2326): under its binder the bound call's result applied meets the bind
 /// written there.
-@[ checks ]
 def outside_is_inside(
   k : Integer => Integer => Integer,
   s : Integer

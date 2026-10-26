@@ -13,7 +13,6 @@ import "./univalence.gandr";
 /// A function on the loops at the point, carried along `ua(winding)`, is the
 /// function on the integers that spins its argument back to a loop, applies
 /// `f` and winds the result, by conversion.
-@[ checks ]
 def funBeta(f : Path(Circle, Base, Base) => Path(Circle, Base, Base)) -> Path(
   Int => Int,
   transport(\X. X => X, loopsAreIntegers, f),

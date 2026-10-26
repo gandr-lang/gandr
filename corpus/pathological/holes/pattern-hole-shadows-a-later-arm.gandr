@@ -2,7 +2,6 @@
 // arm or the hole is undecided, and the checker refuses the match (#391).
 
 /// Three colours, one arm each.
-@[ checks ]
 data Color : Type {
   Red : Color;
   Green : Color;
@@ -21,5 +20,4 @@ def classify(c : Color) -> Integer {
 
 /// The run target classifies `Blue`: it checks against `classify`'s
 /// signature, whose body is refused above, so it is not run.
-@[ checks ]
 classify(Blue)

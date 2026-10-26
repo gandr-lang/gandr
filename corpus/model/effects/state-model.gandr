@@ -19,13 +19,11 @@ module Passing : Model(State) with sort S = Integer {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// Reading hands the current state to what runs after, at that same state.
-  @[ checks ]
   def get(k : Integer => Integer => Integer) -> Integer => Integer {
     thunk { fn (s) { run after <- k(s); after(s) } }
   }
   /// Storing runs what comes after at the stored value, whatever the state
   /// was.
-  @[ checks ]
   def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
     thunk { fn (_old) { k(s) } }
   }
@@ -47,17 +45,14 @@ module Overwriting : Model(StatePutPut) with sort S = Integer {
   /// A computation awaiting the current state.
   type C = Integer => Integer;
   /// As `Passing.get`.
-  @[ checks ]
   def get(k : Integer => Integer => Integer) -> Integer => Integer {
     thunk { fn (s) { run after <- k(s); after(s) } }
   }
   /// As `Passing.put`.
-  @[ checks ]
   def put(s : Integer, k : Integer => Integer) -> Integer => Integer {
     thunk { fn (_old) { k(s) } }
   }
   /// Storing twice keeps the second value.
-  @[ checks ]
   def putPut(s : Integer, u : Integer, k : Integer => Integer) -> Path(
     Integer => Integer,
     put(s, put(u, k)),
@@ -68,7 +63,6 @@ module Overwriting : Model(StatePutPut) with sort S = Integer {
 }
 
 /// The counts read as integers, the first count zero.
-@[ checks ]
 def shown(c : Unit + (Unit + Unit)) -> Integer {
   case c {
     +{.0 = u} => 0,
@@ -81,7 +75,6 @@ def shown(c : Unit + (Unit + Unit)) -> Integer {
 
 /// State passing over the counts with both sorts manifest, so a model is the
 /// record of its two operations.
-@[ checks ]
 def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = #{
   .get = fn (k) { pure fn (s) { run after <- k(s); after(s) } },
   .put = fn (s) { fn (k) { pure fn (_old) { k(s) } } }
@@ -90,7 +83,6 @@ def passing : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 /// The same model carried along negation of the counts: `get`'s continuation
 /// is a function of the state, so the state it is handed is negated back and
 /// the computation it answers negated forth.
-@[ checks ]
 def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer) = transport(
   \x. Model(State) with sort S = x with sort C = (x => Integer),
   countsNegated,
@@ -99,7 +91,6 @@ def negated : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Uni
 
 /// Storing the second count and then reading the state twice, from the first
 /// count.
-@[ checks ]
 def putGet(m : Model(State) with sort S = Unit + (Unit + Unit) with sort C = (Unit + (Unit + Unit) => Integer)) -> Integer {
   case m {
     #{.get = g, .put = p} => {
@@ -118,5 +109,4 @@ def direct() -> Integer { putGet(passing) }
 
 /// Through the carried model, where put-get holds as in any model. It runs to
 /// `11` once the machine transports along `put`'s curried function (#2421).
-@[ checks ]
 def carried() -> Integer { putGet(negated) }

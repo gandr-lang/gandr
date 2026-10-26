@@ -13,6 +13,5 @@ module Task :> #{
   notes : String
 } {
   /// The path a task reads.
-  @[ checks ]
   def notes = "notes";
 }

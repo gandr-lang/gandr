@@ -11,7 +11,6 @@
 // `../../pathological/modules/model-laws.gandr`.
 
 /// A decision and the laws that make it an equivalence.
-@[ checks ]
 theory Lawful {
   sort Carrier : Type;
   oper alike : (a : Carrier, b : Carrier) --> Bool;
@@ -27,13 +26,11 @@ theory Lawful {
 }
 
 /// One value.
-@[ checks ]
 data Single : Type {
   Only : Single;
 }
 
 /// Every two values of `Single` are alike, so each law is a reflexivity.
-@[ checks ]
 module LawfulSingle : Model(Lawful) with sort Carrier = Single {
   def alike(a : Single, b : Single) -> Bool { true }
   def refl(a : Single) -> Path(Bool, alike(a, a), true) { here(true) }
@@ -52,14 +49,10 @@ module LawfulSingle : Model(Lawful) with sort Carrier = Single {
 /// The host's integer equality: its laws are the host's, admitted, each
 /// settling `checks` with the audit row naming it, `LawfulInteger.refl
 /// admitted` the first.
-@[ checks ]
 module LawfulInteger : Model(Lawful) with sort Carrier = Integer {
   def alike(a : Integer, b : Integer) -> Bool { a == b }
-  @[ checks ]
   law refl admitted;
-  @[ checks ]
   law sym admitted;
-  @[ checks ]
   law trans admitted;
 }
 
@@ -69,14 +62,12 @@ def threeIsThree() -> Bool { LawfulInteger.alike(3, 3) }
 
 /// A decision with an order beside it: its models restrict to `Lawful`'s,
 /// the laws carried through the include.
-@[ checks ]
 theory LawfulOrder {
   include Lawful;
   oper below : (a : Carrier, b : Carrier) --> Bool;
 }
 
 /// The integers' order over their lawful decision.
-@[ checks ]
 module LawfulOrderInteger : Model(LawfulOrder) with sort Carrier = Integer {
   include LawfulInteger;
   def below(a : Integer, b : Integer) -> Bool { a < b }

@@ -13,7 +13,6 @@ theory Scaled {
 module Opaque :> Model(Scaled) {
   type Ratio = Integer;
   /// The scale.
-  @[ checks ]
   def scale = 2;
 }
 

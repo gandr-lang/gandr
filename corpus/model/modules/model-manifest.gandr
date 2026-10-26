@@ -17,26 +17,20 @@ theory Metering {
 /// type states it.
 module Metrics : Model(Metering) with sort Ratio = Integer {
   /// The base.
-  @[ checks ]
   def base = 7;
   /// Its double.
-  @[ checks ]
   def double = 14;
   /// The scale, at the manifest sort.
-  @[ checks ]
   def scale = 1;
 }
 
 /// The metrics sealed at the manifest model type: the sort stays `Integer`.
 module Sealed :> Model(Metering) with sort Ratio = Integer {
   /// The base.
-  @[ checks ]
   def base = 7;
   /// Its double.
-  @[ checks ]
   def double = 14;
   /// The scale.
-  @[ checks ]
   def scale = 2;
 }
 

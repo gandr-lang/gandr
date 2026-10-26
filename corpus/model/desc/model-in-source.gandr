@@ -13,7 +13,6 @@ import "./second-order-signatures.gandr";
 
 /// The naturals as data: the syntax model's carrier, its constructors the
 /// operations.
-@[ checks ]
 data N : Type {
   Z : N;
   S : (n : N) --> N;
@@ -29,14 +28,12 @@ module SyntaxNat : Model(Nat) {
 
 /// The module packed into the record type of `Nat`'s models: its carrier and
 /// its two operations, in the order `Model(Nat)` mints them.
-@[ checks ]
 def syntaxModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
   N,
   (SyntaxNat.zero, SyntaxNat.succ)
 );
 
 /// A second model, on the integers: zero is `0` and the successor adds one.
-@[ checks ]
 def countingModel : #{nat : Type, zero : () => nat, succ : nat => nat} = (
   Integer,
   (thunk { 0 }, thunk { fn (n) { n + 1 } })

@@ -16,27 +16,23 @@ module AtStratum {
   type Tel = Unit * (+{Unit} * Bool);
 
   /// The magma to itself by the swap, at degree one: a path in `Type`.
-  @[ checks ]
   def opposite : Path(Type, Tel, Tel) = ua[
     1,
     4
   ](Magma, Magma, #{.mul = exchange, .one = keep}, #{.mul = exchange, .one = keep});
 
   /// The statement over the user universe, at the stratum code.
-  @[ checks ]
   def atTel() -> Path(Type, Tel, Tel) ≃ (Tel ≃ Tel) {
     univalence(Tel, Tel)
   }
 
   /// The stratum path packaged as an equivalence.
-  @[ checks ]
   def swapped() -> Tel ≃ Tel {
     idtoequiv(Tel, Tel, opposite)
   }
 
   /// Transport along `ua` of the packaged stratum path is transport along the
   /// path itself.
-  @[ checks ]
   def repackaged : Path(
     Tel => Tel,
     thunk { fn (x) { fwdAlong(Tel, Tel, ua(idtoequiv(Tel, Tel, opposite)), x) } },

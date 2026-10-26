@@ -6,7 +6,6 @@
 // `../../model/codata/streams.gandr`.
 
 /// A stream of integers, the family every definition here builds.
-@[ checks ]
 codata Stream : Type[-] {
   head : Integer;
   tail : Stream;
@@ -37,7 +36,6 @@ codata Twisted(a : Type) : Type[-] {
 }
 
 /// Three readings of a position.
-@[ checks ]
 codata Spot : Type[-] {
   x : Integer;
   y : Integer;
@@ -57,14 +55,12 @@ def stray(n : Integer) -> Spot {
 }
 
 /// The head of a stream.
-@[ checks ]
 def peek(s : +U Stream) -> Integer {
   become s.head
 }
 
 /// A stream pointwise sum, the call the refusals below nest a productive
 /// call under.
-@[ checks ]
 def rec sums(s : +U Stream, t : +U Stream) -> Stream {
   &{
     .head => {

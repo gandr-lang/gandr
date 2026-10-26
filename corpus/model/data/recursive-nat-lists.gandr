@@ -15,7 +15,6 @@ import "./data-base.gandr";
 import "./recursive-lists.gandr";
 
 /// The length of a list of naturals, returned, the run written at its read.
-@[ checks ]
 def rec length_nat(xs : List(Nat)) -> Nat {
   case xs {
     Nil => Zero,
@@ -25,7 +24,6 @@ def rec length_nat(xs : List(Nat)) -> Nat {
 
 /// The length of a list of naturals, the `return`s elided, the run written
 /// at its read.
-@[ checks ]
 def rec length_nat_elided(xs : List(Nat)) -> Nat {
   case xs {
     Nil => Zero,
@@ -34,7 +32,6 @@ def rec length_nat_elided(xs : List(Nat)) -> Nat {
 }
 
 /// Appending lists of naturals, returned, the run written at its read.
-@[ checks ]
 def rec append_nat(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => ys,
@@ -44,7 +41,6 @@ def rec append_nat(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
 
 /// Appending lists of naturals, the `return`s elided, the run written at its
 /// read.
-@[ checks ]
 def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => ys,
@@ -53,7 +49,6 @@ def rec append_nat_elided(ys : List(Nat), xs : List(Nat)) -> List(Nat) {
 }
 
 /// Mapping over a list of naturals, returned, the runs written at their reads.
-@[ checks ]
 def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
@@ -63,7 +58,6 @@ def rec map_nat(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 
 /// Mapping over a list of naturals, the `return`s elided, the runs written at
 /// their reads.
-@[ checks ]
 def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
@@ -72,7 +66,6 @@ def rec map_nat_elided(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 }
 
 /// Mapping over a list of naturals, both calls nested.
-@[ checks ]
 def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
@@ -81,7 +74,6 @@ def rec map_nat_nested(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
 }
 
 /// Mapping over a list of naturals, both calls written `run` in the fields.
-@[ checks ]
 def rec map_nat_run(f : Nat => Nat, xs : List(Nat)) -> List(Nat) {
   case xs {
     Nil => (Nil : List(Nat)),
@@ -139,9 +131,7 @@ def bumped_nested : () => List(Nat) = map_nat_nested(bump, small);
 def bumped_run : () => List(Nat) = map_nat_run(bump, small);
 
 /// The length of `small` at its element type, returned.
-@[ checks ]
 def lengthened() -> Nat { length(Nat, small) }
 
 /// The same length, the `return`s elided.
-@[ checks ]
 def lengthened_elided : () => Nat = length_elided(Nat, small);

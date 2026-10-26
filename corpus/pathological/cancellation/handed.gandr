@@ -7,7 +7,6 @@ import "../../model/cancellation/cancel-base.gandr";
 
 /// Resumes the stack it is handed: a stack a parameter holds owes nothing
 /// (#1387).
-@[ checks ]
 def resume_stack(j : Stack(-F Unit, -F Unit)) -> Unit {
   j(unit)
 }

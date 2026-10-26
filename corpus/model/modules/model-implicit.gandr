@@ -7,7 +7,6 @@
 // which binds no parameter.
 
 /// A tally: a carrier, a zero, a step and a reading.
-@[ checks ]
 theory Tally {
   sort C : Type;
   oper zero : C;
@@ -16,7 +15,6 @@ theory Tally {
 }
 
 /// A tally that also resets.
-@[ checks ]
 theory ResetTally {
   include Tally;
   oper reset : (c : C) --> C;
@@ -26,13 +24,10 @@ theory ResetTally {
 module Up : Model(Tally) {
   type C = Integer;
   /// Zero.
-  @[ checks ]
   def zero = 0;
   /// One count more.
-  @[ checks ]
   def incr(c : Integer) -> Integer { c + 1 }
   /// The count as it is.
-  @[ checks ]
   def read(c : Integer) -> Integer { c }
 }
 
@@ -40,29 +35,22 @@ module Up : Model(Tally) {
 module Tens : Model(ResetTally) {
   type C = Integer;
   /// Zero.
-  @[ checks ]
   def zero = 0;
   /// Ten counts more.
-  @[ checks ]
   def incr(c : Integer) -> Integer { c + 10 }
   /// The count as it is.
-  @[ checks ]
   def read(c : Integer) -> Integer { c }
   /// Back to zero.
-  @[ checks ]
   def reset(c : Integer) -> Integer { 0 }
 }
 
 /// The reading after one step, over any tally the slot names.
-@[ checks ]
 def stepped @[s : Model(Tally)] (c : s.C) -> Integer { s.read(s.incr(c)) }
 
 /// One step more than `stepped` takes, passing its own model on.
-@[ checks ]
 def further @[t : Model(Tally)] (c : t.C) -> Integer { stepped[s = t](t.incr(c)) }
 
 /// The reading after one step from zero, over any tally of integers.
-@[ checks ]
 def fromZero @[s : Model(Tally) with sort C = Integer] () -> Integer {
   s.read(s.incr(s.zero))
 }

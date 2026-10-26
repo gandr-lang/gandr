@@ -2,7 +2,6 @@
 // cost is the square of the list's length.
 
 /// Four integers, annotated as a list of them (#1544).
-@[ checks ]
 def steps = ([1, 2, 3, 4] : List(Integer));
 
 /// The run target pushes each element in a fold, through the `list`
