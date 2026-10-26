@@ -1,9 +1,11 @@
 //! `hotpath-guard`: a commit's failed hotpath checks, filed on each
 //! regressed function's issue.
 //!
-//! `hotpath-guard --repository OWNER/NAME --sha SHA [--pull N] [--file-issue]`
-//! reads the commit's `hotpath / <benchmark>` checks and the pull request
-//! the check run event named (`--pull`), else the one it heads, prints the
+//! `hotpath-guard --repository OWNER/NAME --sha SHA [--pull N] [--policies
+//! DIR] [--file-issue]` reads the commit's `hotpath / <benchmark>` checks and
+//! the pull request the check run event named (`--pull`), else the one it
+//! heads, reads each failed timing check's global shift from the full reports
+//! its head and base kept under their policy in `--policies`, prints the
 //! report, and with `--file-issue` records each regressed function's row on
 //! its issue, edits or posts the pull request's one report comment there,
 //! marks the pull request's rows of passing benchmarks fixed, and closes or
@@ -13,10 +15,12 @@
 //!
 //! - `0`: the report was printed and filed, whatever it found; also `--help`
 //!   and `--version`.
-//! - `2`: a refusal — a malformed argument, a failed `gh` invocation, or
-//!   standard output closed; also a malformed invocation.
+//! - `2`: a refusal — a malformed argument, a failed `gh` invocation, an
+//!   unreadable policy or report, or standard output closed; also a malformed
+//!   invocation.
 
 use std::io::Write as _;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anodized::spec;
@@ -47,6 +51,9 @@ struct Cli
     /// when absent.
     #[arg(long)]
     pull: Option<PullNumber>,
+    /// The directory holding each benchmark's `<benchmark>-policy.toml`.
+    #[arg(long, default_value = "hotpath")]
+    policies: PathBuf,
     /// Record the run on each regressed function's issue.
     #[arg(long)]
     file_issue: bool,
@@ -90,16 +97,17 @@ fn main() -> ExitCode
     }
 }
 
-/// Reads the checks and the pull request, prints the report and files it.
+/// Reads the checks, the pull request and each timing failure's global shift,
+/// prints the report and files it.
 ///
 /// # Specification
 /// - requires: `gh` on the path, authenticated for the repository.
 /// - ensures: standard output receives the report, then, with `--file-issue`,
 ///   one line per issue filing touched, or one line saying none was.
 /// - provides: the whole command.
-/// - fails: every refusal of [`github::checks`], [`github::pull`] and
-///   [`github::file`]; [`GuardError::Output`] when standard output cannot be
-///   written.
+/// - fails: every refusal of [`github::checks`], [`github::pull`],
+///   [`github::readings`] and [`github::file`]; [`GuardError::Output`] when
+///   standard output cannot be written.
 /// - panics: none.
 /// - executable: none — the outcome is the bytes on standard output and the
 ///   repository's issues.
@@ -119,7 +127,8 @@ fn run(cli: Cli) -> Result<(), GuardError>
         &cli.sha,
         cli.pull.map_or(Maybe::Absent(Unstated), Maybe::Present),
     )?;
-    let report = Report::new(cli.repository, cli.sha, pull, checks);
+    let readings = github::readings(&cli.repository, &cli.sha, &checks, &cli.policies)?;
+    let report = Report::new(cli.repository, cli.sha, pull, checks, readings);
     let output = |error: std::io::Error| GuardError::Output {
         message: error.to_string(),
     };

@@ -4,8 +4,9 @@
 //! requests' reports, one per pull request.
 //!
 //! - [`check`] reads a concluded check: a failed one's summary into its
-//!   wall-time line, the sites over its policy's threshold and whether it is a
-//!   runner shift, a passed one into its benchmark.
+//!   wall-time line, its base and the sites over its policy's threshold, each
+//!   section judged against its run's global shift; a passed one into its
+//!   benchmark.
 //! - [`report`] names the pull request, lists each function's regression per
 //!   benchmark, and renders the report a comment carries.
 //! - [`index`] reads and rewrites a function's index: its rows, their status
@@ -13,10 +14,11 @@
 //! - [`github`] lists the commit's checks, its pull request and the
 //!   `kind:performance` issues, and keeps each function's issue in step through
 //!   `gh`.
-//! - [`judge`] makes the judgement hotpath Cloud cannot: several runs a side, a
-//!   row under the policy's share floor judged on disjoint ranges. The
-//!   `hotpath-judge` binary writes it as a check's summary in hotpath Cloud's
-//!   shape, so the guard files it alike.
+//! - [`judge`] makes the judgements hotpath Cloud cannot: several runs a side,
+//!   a row under the policy's share floor judged on disjoint ranges, and the
+//!   global shift each timing failure's functions are judged beside
+//!   ([`judge::shift`]). The `hotpath-judge` binary writes the first as a
+//!   check's summary in hotpath Cloud's shape, so the guard files it alike.
 //!
 //! # Decisions
 //!
@@ -43,11 +45,11 @@
 //! **The pull request the event names**, else the one the commit heads
 //! ([`github::pull`]).
 //!
-//! **Runner shift.** A timing failure whose wall time and every regressed
-//! function moved up together, calls and allocations unchanged, is the
-//! runner: its row proposes the policy's false-positive step to the owner
-//! and adds no comment ([`check::Failure::shift`]). The summary lists only
-//! the functions over threshold, so the wall time stands for the rest.
+//! **Runner shift, read over every function.** A timing site regresses only
+//! when its move beside the run's global shift, read from both full reports
+//! ([`judge::shift`]), crosses the threshold; a failure with none, wall and
+//! shift past it, is the runner's and adds no comment. The summary alone, the
+//! alternative, lists only the sites over threshold.
 //!
 //! **An accepted growth is the pull request's.** A red check owes a verdict
 //! before the queue; a landing whose body carries a settled `accepted` one

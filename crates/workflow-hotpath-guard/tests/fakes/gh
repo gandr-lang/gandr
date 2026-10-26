@@ -10,7 +10,12 @@ case "$1 $2" in
     esac ;;
   'api --method') cat > "$FAKE_GH_BODY.patch-${4##*/}" ;;
   'api repos/'*/pulls/*) printf '%s' "${FAKE_PULL:?the named pull request}" ;;
+  'api repos/'*/actions/artifacts*)
+    name=${2#*name=}
+    name=${name%%&*}
+    if [ -n "${FAKE_REPORTS:-}" ] && [ -d "$FAKE_REPORTS/$name" ]; then echo 7; fi ;;
   'api repos/'*) printf '%s' "${FAKE_PULLS:-[]}" ;;
+  'run download') mkdir -p "$9" && cp "$FAKE_REPORTS/$7"/* "$9"/ ;;
   'issue list') printf '%s' "${FAKE_GH_ISSUES:-[]}" ;;
   'issue create') cat > "$FAKE_GH_BODY.create-$n"; echo "https://example.invalid/issues/$n" ;;
   'issue comment') cat > "$FAKE_GH_BODY.comment-$3"; echo "https://example.invalid/issues/$3#issuecomment-$n" ;;

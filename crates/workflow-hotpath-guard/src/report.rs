@@ -18,13 +18,16 @@ use crate::check::CommitSha;
 use crate::check::Concluded;
 use crate::check::CrateDir;
 use crate::check::Failure;
+use crate::check::Filing;
 use crate::check::Repository;
 use crate::check::RunUrl;
-use crate::check::Shift;
 use crate::check::SiteName;
 use crate::check::SummaryLine;
-use crate::check::Unshifted;
 use crate::check::Unstated;
+use crate::judge::shift::GlobalShift;
+use crate::judge::shift::Reading;
+use crate::judge::shift::Unread;
+use crate::judge::shift::Unshifted;
 
 /// A pull request's number.
 #[repr(transparent)]
@@ -359,8 +362,9 @@ pub struct Regression
     pub metric: SummaryLine,
     /// The before/after numbers: `` avg `1444 → 2558` **+77%** ``.
     pub delta: SummaryLine,
-    /// The runner shift the check reads as, if it is one.
-    pub shift: Maybe<Shift, Unshifted>,
+    /// The global shift the regression's check reads as the runner's, if it
+    /// is one.
+    pub shift: Maybe<GlobalShift, Unshifted>,
     /// The growth the pull request's body accepts on this benchmark, if it
     /// accepts any.
     pub accepted: Maybe<Acceptance, Unaccepted>,
@@ -378,16 +382,20 @@ pub struct Report
     pull: Maybe<Pull, Unpulled>,
     /// The failed checks, in the order GitHub lists them.
     failures: Vec<Failure>,
+    /// Each failed check's global shift, by benchmark.
+    readings: BTreeMap<Benchmark, Maybe<Reading, Unread>>,
     /// The passed checks' benchmarks, each with its page.
     passed: BTreeMap<Benchmark, RunUrl>,
 }
 
 impl Report
 {
-    /// The report of `sha`'s concluded checks.
+    /// The report of `sha`'s concluded checks, each failed one's sections
+    /// judged by its benchmark's reading in `readings`.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `readings` holds the global shift read for each failed
+    ///   check's benchmark ([`crate::github::readings`]).
     /// - ensures: the failed checks in their order, and each passed check's
     ///   benchmark with its page, the first listed kept for a benchmark listed
     ///   twice.
@@ -409,6 +417,7 @@ impl Report
         sha: CommitSha,
         pull: Maybe<Pull, Unpulled>,
         checks: Vec<Concluded>,
+        readings: BTreeMap<Benchmark, Maybe<Reading, Unread>>,
     ) -> Self
     {
         let mut failures = Vec::new();
@@ -426,6 +435,7 @@ impl Report
             sha,
             pull,
             failures,
+            readings,
             passed,
         }
     }
@@ -510,9 +520,12 @@ impl Report
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one regression per distinct function and failed benchmark,
-    ///   from the first site naming it, in reading order; its metric is the
-    ///   section heading after `Functions · `, its delta the site's line after
-    ///   its link, its shift [`Failure::shift`] over the commit's failures, and
+    ///   from the first site naming it that files, in reading order: each
+    ///   section is judged by its check's reading
+    ///   ([`crate::check::Section::judged`]), a site within the threshold
+    ///   beside the global shift files none ([`Filing::Within`]), and a site of
+    ///   a runner shift carries the shift; its metric is the section heading
+    ///   after `Functions · `, its delta the site's line after its link, and
     ///   its acceptance the one the pull request's body states for its
     ///   benchmark (see [`PullBody::accepted`]).
     /// - provides: the rows this run writes.
@@ -522,9 +535,13 @@ impl Report
     ///
     /// # Adequacy
     /// - hypothesis: L3 — two failed checks naming `decide` once each and a
-    ///   second site in one; a merged benchmark, a lost site or a link left in
-    ///   the delta changes the rows.
+    ///   second site in one, a replayed runner shift beside an allocation
+    ///   failure, and one function past the threshold beside a quiet runner; a
+    ///   merged benchmark, a lost site, a link left in the delta, a shifted
+    ///   site filed open or a site within the shift filed changes the rows.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+    /// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
+    /// - witness: `tests::cli::one_function_past_a_quiet_runner_files_alone`
     #[must_use]
     #[inline]
     pub fn regressions(&self) -> Vec<Regression>
@@ -532,10 +549,20 @@ impl Report
         let mut seen = BTreeSet::new();
         let mut regressions = Vec::new();
         for failure in &self.failures {
-            let shift = failure.shift(&self.failures);
             let accepted = self.accepted(&failure.benchmark);
+            let reading = match self.readings.get(&failure.benchmark) {
+                Some(&Maybe::Present(ref reading)) => Maybe::Present(reading),
+                Some(&Maybe::Absent(why)) => Maybe::Absent(why),
+                None => Maybe::Absent(Unread::Allocation),
+            };
             for section in &failure.sections {
+                let judgement = section.judged(reading);
                 for site in &section.sites {
+                    let shift = match judgement.filing(site) {
+                        Filing::Regressed => Maybe::Absent(Unshifted),
+                        Filing::Shifted(shift) => Maybe::Present(shift),
+                        Filing::Within => continue,
+                    };
                     if !seen.insert((&site.name, &failure.benchmark)) {
                         continue;
                     }

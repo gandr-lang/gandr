@@ -30,6 +30,8 @@ use crate::check::CommitSha;
 use crate::check::Repository;
 use crate::error::GuardError;
 
+pub mod shift;
+
 /// The smallest share of the run a row is judged at: 0.1 %.
 pub const SHARE_FLOOR: Share = Share(10);
 
@@ -387,7 +389,7 @@ impl Reading
 }
 
 /// One run of a benchmark: its rows per family and its wall time.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Run
 {
     /// The wall time, in picoseconds.
@@ -1186,8 +1188,8 @@ impl fmt::Display for Delta
     /// - requires: nothing.
     /// - ensures: a growth of 987 hundredths is `**+9.8%**`, of 1 000
     ///   `**+10%**`; a fall of 150 `**-1.5%**`; none `**+0%**`.
-    /// - provides: the delta the guard reads
-    ///   ([`crate::check::SummaryLine::percent`]).
+    /// - provides: a site line's delta, which the guard writes into its row
+    ///   ([`crate::check::SummaryLine::delta`]).
     /// - fails: propagates the formatter's write failure.
     /// - panics: none.
     /// - executable: none — the formatter exposes no readable output buffer.

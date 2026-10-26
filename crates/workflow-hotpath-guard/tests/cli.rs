@@ -5,8 +5,10 @@
 //! The fake answers the check-run query with `FAKE_CHECKS`, one JSON object a
 //! line, the pull-request query with `FAKE_PULLS` (or `FAKE_PULL` for one
 //! named by `--pull`), an issue's comment listing with `FAKE_COMMENTS`, one
-//! JSON object a line, and the issue listing with `FAKE_GH_ISSUES`. It logs
-//! every invocation to `FAKE_GH_LOG` and writes each body it is fed to
+//! JSON object a line, and the issue listing with `FAKE_GH_ISSUES`. An
+//! artifact `<name>` exists, kept by run 7, when `FAKE_REPORTS/<name>` is a
+//! directory, and downloading it copies that directory's files. It logs every
+//! invocation to `FAKE_GH_LOG` and writes each body it is fed to
 //! `FAKE_GH_BODY.<verb>-<issue>`, or `FAKE_GH_BODY.patch-<comment>` for an
 //! edited comment; a created issue and a posted comment are numbered by the
 //! log's length. It fails every invocation under `FAKE_GH=fail`.
@@ -57,16 +59,49 @@ const DECIDE: &str = "**Functions · allocations**
 ⚠️ [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/core-checker/src/module.rs#L1009): avg `1444 → 2558` **+77%** · fails the check
 ";
 
-/// #1516's failed `gandr-timing` check: the wall time +28 %, `decide` +31 %,
-/// its calls unchanged.
-const SHIFTED: &str = "Wall time `313.23 ms → 401.90 ms` **+28%**
+/// The base of [`SPREAD`]'s check.
+const BASE: &str = "71dc6038d0f6e7c8a1f2b3c4d5e6f7a8b9c0d1e2";
+
+/// A failed `gandr-timing` check against [`BASE`] naming `decide` at +40 %
+/// and `normalize` at +8 %.
+const SPREAD: &str = "[`76dd52f`](https://github.com/gandr-lang/gandr/commit/76dd52f) (`theory-model-record`) vs [`71dc603`](https://github.com/gandr-lang/gandr/commit/71dc6038d0f6e7c8a1f2b3c4d5e6f7a8b9c0d1e2)
+Wall time `100.00 ms → 102.00 ms` **+2.0%**
 
 **Functions · timing**
-⚠️ [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/e6f58bf/crates/core-checker/src/module.rs#L1009): avg `179.28 µs → 235.30 µs` **+31%** · fails the check
+⚠️ [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/core-checker/src/module.rs#L1009): avg `100 µs → 140 µs` **+40%** · fails the check
+⚠️ [`gandr_theory_coherent_resolutions::rewrite::normalize`](https://github.com/gandr-lang/gandr/blob/76dd52f/crates/theory-coherent-resolutions/src/rewrite.rs#L171): avg `100 µs → 108 µs` **+8.0%** · fails the check
+";
 
-| Timing | Calls | Avg |
-|:--|--:|--:|
-| [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/e6f58bf/crates/core-checker/src/module.rs#L1009) | 319 → 319 | 179.28 µs → 235.30 µs +31% |
+/// The head whose `gandr-timing` check #1545 left open, filed under no pull
+/// request.
+const REPLAYED_HEAD: &str = "73f2e468d48dfd25332b479e7ee451195301e227";
+
+/// [`REPLAYED_HEAD`]'s failed `gandr-timing` check, its related metrics
+/// dropped: the wall time +28 % and three functions +23 to +32 % against
+/// `ac58445`.
+const REPLAYED_TIMING: &str = "<!-- hotpath:benchmark=gandr-timing -->
+### `gandr-timing` · ⚠️ 3 regressions
+
+[`def8465`](https://github.com/gandr-lang/gandr/commit/def8465ee289cd7d95d3e79cdee0d64ff0c20ae7) (`theory-1886-native-j`) vs [`ac58445`](https://github.com/gandr-lang/gandr/commit/ac58445989aee8c21905b9d91d7f9d18b0ab5427) (newest on `main`; the branch point [`871d623`](https://github.com/gandr-lang/gandr/commit/871d62326a92b16d78d12de7c1a8f10cb9bca7c4) has no report)
+Wall time `412.30 ms → 528.87 ms` **+28%**
+
+**Functions · timing**
+⚠️ [`gandr_core_checker::module::decide`](https://github.com/gandr-lang/gandr/blob/def8465ee289cd7d95d3e79cdee0d64ff0c20ae7/crates/core-checker/src/module.rs#L1045): avg `190.88 µs → 251.64 µs` **+32%** · fails the check
+⚠️ [`gandr_theory_coherent_resolutions::rewrite::normalize`](https://github.com/gandr-lang/gandr/blob/def8465ee289cd7d95d3e79cdee0d64ff0c20ae7/crates/theory-coherent-resolutions/src/rewrite.rs#L171): avg `7.76 µs → 9.79 µs` **+26%** · fails the check
+⚠️ [`gandr_theory_coherent_resolutions::overlap::interior_overlaps_between`](https://github.com/gandr-lang/gandr/blob/def8465ee289cd7d95d3e79cdee0d64ff0c20ae7/crates/theory-coherent-resolutions/src/overlap.rs#L1054): avg `6.74 µs → 8.30 µs` **+23%** · fails the check
+";
+
+/// [`REPLAYED_HEAD`]'s failed `gandr` check, its related metrics dropped:
+/// `rule completion`'s allocations +4.1 %.
+const REPLAYED_GANDR: &str = "<!-- hotpath:benchmark=gandr -->
+### `gandr` · ⚠️ 1 regression, 🚀 1 improvement
+
+[`def8465`](https://github.com/gandr-lang/gandr/commit/def8465ee289cd7d95d3e79cdee0d64ff0c20ae7) (`theory-1886-native-j`) vs [`ac58445`](https://github.com/gandr-lang/gandr/commit/ac58445989aee8c21905b9d91d7f9d18b0ab5427) (newest on `main`; the branch point [`871d623`](https://github.com/gandr-lang/gandr/commit/871d62326a92b16d78d12de7c1a8f10cb9bca7c4) has no report)
+Wall time `411.23 ms → 531.93 ms` **+29%**
+
+**Functions · allocations**
+⚠️ [`rule completion`](https://github.com/gandr-lang/gandr/blob/def8465ee289cd7d95d3e79cdee0d64ff0c20ae7/crates/surface-driver/benches/hotpath.rs#L288): avg `36509 → 37991` **+4.1%**, total **+4.1%** · fails the check
+🚀 [`gandr_surface_lowering::coincide::decide`](https://github.com/gandr-lang/gandr/blob/def8465ee289cd7d95d3e79cdee0d64ff0c20ae7/crates/surface-lowering/src/coincide.rs#L827): avg `29848 → 24089` **-19%**
 ";
 
 /// The report its two failed checks print and comment.
@@ -116,7 +151,7 @@ Owed once for the function, by the first fix that lands under this issue: whethe
 
 ## Close
 
-The guard closes this issue when every row is `fixed`, `accepted` or `runner shift`, and reopens it on the next `open` row. A `runner shift` row proposes a policy change to the owner; the guard never applies one.
+The guard closes this issue when every row is `fixed`, `accepted` or `runner shift`, and reopens it on the next `open` row. A `runner shift` row states the run's global shift: the median move of every function both timing reports measure, and how many they are.
 ";
 
 /// The commit cell of [`HEAD`].
@@ -245,6 +280,10 @@ macro_rules! run {
         let mut command = Command::new(env!("CARGO_BIN_EXE_hotpath-guard"));
         command
             .args(["--repository", "gandr-lang/gandr", "--sha", $sha])
+            .args([
+                "--policies",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/../../hotpath"),
+            ])
             .args($args)
             .env("PATH", std::env::join_paths(paths).unwrap())
             .env("FAKE_GH_LOG", root.join("log"))
@@ -855,38 +894,153 @@ fn an_accepted_landing_settles_its_issue_without_a_comment()
     std::fs::remove_dir_all(&scratch).unwrap();
 }
 
+/// #2546: `73f2e46`'s `gandr-timing` check, replayed over the two full
+/// reports hotpath Cloud's diff of its run lists (16 functions, `ac58445`
+/// against `73f2e46`), reads as a runner shift. Read from the summary alone,
+/// its three functions spread +23 to +32 % and a call count moved, and the
+/// same commit's allocation failure on `rule completion` blocked the reading,
+/// so the guard left `decide`'s row `open`. Beside the global shift of
+/// +27.2 %, `decide` moved +3.7 %; the allocation failure files on its own.
 #[test]
-fn a_uniform_shift_is_a_runner_shift_row_without_a_comment()
+fn a_runner_shift_is_read_over_every_function()
 {
-    let scratch = scratch!("shift");
+    let scratch = scratch!("replayed");
     let checks = [
-        check!("hotpath / gandr", "completed", Some("success"), 11_u64, ""),
+        check!(
+            "hotpath / store",
+            "completed",
+            Some("success"),
+            120_189_597_702_u64,
+            ""
+        ),
         check!(
             "hotpath / gandr-timing",
             "completed",
             Some("failure"),
-            12_u64,
-            SHIFTED
+            120_189_503_764_u64,
+            REPLAYED_TIMING
+        ),
+        check!(
+            "hotpath / gandr",
+            "completed",
+            Some("failure"),
+            120_189_487_942_u64,
+            REPLAYED_GANDR
         ),
     ]
     .join("\n");
-    let pulls = pulls!(1496_u64);
-    let output = run!(scratch, HEAD, ["--file-issue"], [
+    let output = run!(scratch, REPLAYED_HEAD, ["--file-issue"], [
         ("FAKE_CHECKS", checks.as_str()),
-        ("FAKE_PULLS", pulls.as_str())
+        (
+            "FAKE_REPORTS",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/reports")
+        )
     ]);
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert!(output.status.success());
     assert_eq!(writes!(scratch), [
         "issue create --title perf: gandr_core_checker::module::decide --body-file - --label \
          kind:performance --label area:core",
-        "issue close 4",
+        "issue close 8",
+        "issue create --title perf: \
+         gandr_theory_coherent_resolutions::overlap::interior_overlaps_between --body-file - \
+         --label kind:performance --label area:theory",
+        "issue close 10",
+        "issue create --title perf: gandr_theory_coherent_resolutions::rewrite::normalize \
+         --body-file - --label kind:performance --label area:theory",
+        "issue close 12",
+        "issue create --title perf: rule completion --body-file - --label kind:performance \
+         --label area:surface",
+        "issue comment 14 --body-file -",
+        "issue edit 14 --body-file - --add-label kind:performance --add-label area:surface",
     ]);
-    assert_eq!(body!(scratch, "create", 4_u64), index![format!(
-        "| #1496 | {COMMIT} | `gandr-timing` | timing | avg `179.28 µs → 235.30 µs` **+31%** \
-             | runner shift — the wall time and every regressed function moved +28 to +31 % \
-             together, calls unchanged, allocations clean; proposed to the owner: raise the \
-             policy's `min_percent_change` by 2.5 | \
-             [run](https://github.com/gandr-lang/gandr/runs/12) |"
+    let commit = format!("[`73f2e46`](https://github.com/gandr-lang/gandr/commit/{REPLAYED_HEAD})");
+    assert_eq!(body!(scratch, "create", 8_u64), index![format!(
+        "| `73f2e46` | {commit} | `gandr-timing` | timing | avg `190.88 µs → 251.64 µs` **+32%** \
+         | runner shift — the 16 functions both reports time moved +27.2 % at the median, and \
+         none moved past the policy's threshold beside it | \
+         [run](https://github.com/gandr-lang/gandr/runs/120189503764) |"
+    )]);
+    assert!(
+        body!(scratch, "edit", 14_u64).contains(&format!(
+            "| `73f2e46` | {commit} | `gandr` | allocations | avg `36509 → 37991` **+4.1%**, \
+             total **+4.1%** | open | [run](https://github.com/gandr-lang/gandr/runs/120189487942), \
+             [comment](https://example.invalid/issues/14#issuecomment-15) |"
+        )),
+        "the allocation failure files on its own function"
+    );
+    std::fs::remove_dir_all(&scratch).unwrap();
+}
+
+#[test]
+fn one_function_past_a_quiet_runner_files_alone()
+{
+    let scratch = scratch!("quiet");
+    // Writes `sha`'s full timing report: `decide`, `normalize` and twelve other
+    // functions at the given averages in µs, each called 50 times, and a wall
+    // time of `wall` milliseconds.
+    let side = |sha: &str, decide: u64, normalize: u64, others: u64, wall: u64| {
+        let mut rows = vec![
+            ("gandr_core_checker::module::decide".to_owned(), decide),
+            (
+                "gandr_theory_coherent_resolutions::rewrite::normalize".to_owned(),
+                normalize,
+            ),
+        ];
+        rows.extend((0_u8 .. 12).map(|index| (format!("function {index}"), others)));
+        let data = rows
+            .iter()
+            .map(|&(ref name, avg)| {
+                serde_json::json!({
+                    "name": name,
+                    "calls": 50_u64,
+                    "avg": format!("{avg} µs"),
+                    "total": format!("{} µs", avg.checked_mul(50).unwrap()),
+                    "percent_total": "1.00%",
+                })
+            })
+            .collect::<Vec<_>>();
+        let report = serde_json::json!({
+            "functions_timing": {
+                "total_elapsed_ns": wall.checked_mul(1_000_000).unwrap(),
+                "data": data,
+            },
+        });
+        let dir = scratch.join(format!("reports/hotpath-{sha}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("gandr-timing.json"), report.to_string()).unwrap();
+    };
+    side(BASE, 100, 100, 100, 100);
+    side(HEAD, 140, 108, 102, 102);
+    let checks = check!(
+        "hotpath / gandr-timing",
+        "completed",
+        Some("failure"),
+        21_u64,
+        SPREAD
+    );
+    let pulls = pulls!(1358_u64);
+    let reports = scratch.join("reports");
+    let output = run!(scratch, HEAD, ["--file-issue"], [
+        ("FAKE_CHECKS", checks.as_str()),
+        ("FAKE_PULLS", pulls.as_str()),
+        ("FAKE_REPORTS", reports.to_str().unwrap())
+    ]);
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(
+        writes!(scratch),
+        [
+            "issue create --title perf: gandr_core_checker::module::decide --body-file - --label \
+             kind:performance --label area:core",
+            "issue comment 8 --body-file -",
+            "issue edit 8 --body-file - --add-label kind:performance --add-label area:core",
+        ],
+        "`normalize` at +8 % is +5.9 % beside the +2 % shift, under 7.5 %"
+    );
+    assert_eq!(body!(scratch, "edit", 8_u64), index![format!(
+        "| #1358 | {COMMIT} | `gandr-timing` | timing | avg `100 µs → 140 µs` **+40%** | open | \
+         [run](https://github.com/gandr-lang/gandr/runs/21), \
+         [comment](https://example.invalid/issues/8#issuecomment-9) |"
     )]);
     std::fs::remove_dir_all(&scratch).unwrap();
 }

@@ -61,7 +61,10 @@ jobs:
     # ci.yml's runner: arm64 wherever the architecture does not matter.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
+    # actions: read lists and downloads each side's kept report
+    # (`hotpath-<commit>`), which the global shift is read from.
     permissions:
+      actions: read
       contents: read
       checks: read
       issues: write

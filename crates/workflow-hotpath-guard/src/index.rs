@@ -315,7 +315,7 @@ impl Comment
     ///   regression; a comment posted for the shift or the acceptance, or none
     ///   for the regression, changes the comments.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
-    /// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
+    /// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[must_use]
     #[inline]
@@ -405,8 +405,9 @@ impl Index
                  issue: whether a quenchant dylint could have refused the pattern that \
                  regressed, as the rule it would check.\n\n## Close\n\nThe guard closes this \
                  issue when every row is `fixed`, `accepted` or `runner shift`, and reopens it \
-                 on the next `open` row. A `runner shift` row proposes a policy change to the \
-                 owner; the guard never applies one.\n",
+                 on the next `open` row. A `runner shift` row states the run's global shift: \
+                 the median move of every function both timing reports measure, and how many \
+                 they are.\n",
             ),
         }
     }
@@ -516,10 +517,10 @@ impl Index
     /// - requires: nothing.
     /// - ensures: the subject's row in the series, appended when it had none,
     ///   states the commit, the series, the metric, the delta, `accepted` with
-    ///   the body's verdict when the pull request accepts the growth, else the
-    ///   `runner shift` with its proposal, else `open`, and the run; its
-    ///   comment is `comment` when this run posted or edited one, otherwise the
-    ///   row's earlier comment as written.
+    ///   the body's verdict when the pull request accepts the growth, else
+    ///   `runner shift` with the global shift and the functions it is read
+    ///   over, else `open`, and the run; its comment is `comment` when this run
+    ///   posted or edited one, otherwise the row's earlier comment as written.
     /// - provides: the index after a failed run.
     /// - fails: never.
     /// - panics: none.
@@ -528,10 +529,11 @@ impl Index
     /// # Adequacy
     /// - hypothesis: L3 — a first regression, a rerun, a shift and an accepted
     ///   regression; a second row for the rerun, a lost comment link, an `open`
-    ///   shift or an `open` acceptance changes the index.
+    ///   shift, a shift without its median or count, or an `open` acceptance
+    ///   changes the index.
     /// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
     /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
-    /// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
+    /// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
     /// - witness: `tests::cli::an_accepted_landing_settles_its_issue_without_a_comment`
     #[inline]
     pub fn record(
@@ -544,10 +546,9 @@ impl Index
         let status = match (&regression.accepted, regression.shift) {
             (&Maybe::Present(ref acceptance), _) => format!("accepted — {acceptance}"),
             (&Maybe::Absent(_), Maybe::Present(shift)) => format!(
-                "runner shift — the wall time and every regressed function moved {} to {} % \
-                 together, calls unchanged, allocations clean; proposed to the owner: raise the \
-                 policy's `min_percent_change` by 2.5",
-                shift.low, shift.high
+                "runner shift — the {} functions both reports time moved {} % at the median, and \
+                 none moved past the policy's threshold beside it",
+                shift.functions, shift.ratio
             ),
             (&Maybe::Absent(_), Maybe::Absent(_)) => "open".to_owned(),
         };

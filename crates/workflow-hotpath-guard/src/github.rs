@@ -6,17 +6,22 @@ extern crate alloc;
 
 use alloc::collections::BTreeMap;
 use core::fmt;
+use std::io;
 use std::io::Write as _;
+use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
 
 use quenchant_shape::shape::Maybe;
 use serde::Deserialize;
 
+use crate::check::Benchmark;
 use crate::check::CommitSha;
 use crate::check::Concluded;
 use crate::check::CrateDir;
+use crate::check::Failure;
 use crate::check::Listed;
+use crate::check::Measure;
 use crate::check::Repository;
 use crate::check::SiteName;
 use crate::check::Unstated;
@@ -30,6 +35,7 @@ use crate::index::KIND;
 use crate::index::Run;
 use crate::index::Standing;
 use crate::index::Unposted;
+use crate::judge;
 use crate::report::CommentBody;
 use crate::report::ListedPull;
 use crate::report::Marker;
@@ -309,6 +315,239 @@ pub fn pull(
     Ok(pull_of(sha, listed))
 }
 
+/// Each failed check's global shift, read from the full timing reports the
+/// series kept for its head and its base.
+///
+/// # Specification
+/// - requires: `gh` on the path, authenticated for the repository with
+///   permission to read Actions artifacts; `sha` is the checks' head in full,
+///   as the artifacts are named; `policies` is the directory holding each
+///   benchmark's `<benchmark>-policy.toml`.
+/// - ensures: one entry per failed check: [`Unread`]'s `Allocation` for a check
+///   with no timing section, without a `gh` invocation; else `Unnamed` when its
+///   summary names no base, `Unjudged` when `policies` holds no policy for its
+///   benchmark, `Unkept` when the newest unexpired artifact `hotpath-<commit>`
+///   of either side is missing or holds no `<benchmark>.json`, and otherwise
+///   the reading of the two reports ([`Reading::read`]). Each artifact is
+///   downloaded once, into a scratch directory removed before returning.
+/// - provides: the readings a report judges its timing failures by.
+/// - fails: [`GuardError::Gh`] when a `gh` invocation fails;
+///   [`GuardError::Input`] when a policy or a report cannot be read, or the
+///   scratch directory cannot be removed.
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a replayed runner shift whose two reports are kept, a
+///   quiet runner with one function past the threshold, and a timing check
+///   whose summary names no base; a report read from the wrong side, an
+///   artifact named by the short commit, or a download for a check without a
+///   base changes the rows or the invocations.
+/// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
+/// - witness: `tests::cli::one_function_past_a_quiet_runner_files_alone`
+/// - witness: `tests::cli::a_failed_check_opens_one_issue_per_function`
+///
+/// [`Unread`]: judge::shift::Unread
+/// [`Reading::read`]: judge::shift::Reading::read
+#[inline]
+pub fn readings(
+    repository: &Repository,
+    sha: &CommitSha,
+    checks: &[Concluded],
+    policies: &Path,
+) -> Result<BTreeMap<Benchmark, Maybe<judge::shift::Reading, judge::shift::Unread>>, GuardError>
+{
+    let scratch = std::env::temp_dir().join(format!("hotpath-guard-{}", std::process::id()));
+    let mut readings = BTreeMap::new();
+    for check in checks {
+        let Concluded::Failed(ref failure) = *check
+        else {
+            continue;
+        };
+        let reading = read(repository, sha, failure, policies, &scratch)?;
+        readings.insert(failure.benchmark.clone(), reading);
+    }
+    match std::fs::remove_dir_all(&scratch) {
+        Ok(()) => Ok(readings),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(readings),
+        Err(error) => Err(GuardError::Input {
+            path: scratch.display().to_string(),
+            message: error.to_string(),
+        }),
+    }
+}
+
+/// One failed check's global shift, as [`readings`] states.
+///
+/// # Specification
+/// - requires: as [`readings`].
+/// - ensures: as [`readings`] states for one check.
+/// - provides: one entry of [`readings`].
+/// - fails: as [`readings`].
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readings`].
+/// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
+fn read(
+    repository: &Repository,
+    sha: &CommitSha,
+    failure: &Failure,
+    policies: &Path,
+    scratch: &Path,
+) -> Result<Maybe<judge::shift::Reading, judge::shift::Unread>, GuardError>
+{
+    if !failure
+        .sections
+        .iter()
+        .any(|section| section.measure() == Measure::Timing)
+    {
+        return Ok(Maybe::Absent(judge::shift::Unread::Allocation));
+    }
+    let Maybe::Present(ref base) = failure.base
+    else {
+        return Ok(Maybe::Absent(judge::shift::Unread::Unnamed));
+    };
+    let path = policies.join(format!("{}-policy.toml", failure.benchmark));
+    let Maybe::Present(text) = text_at(&path)?
+    else {
+        return Ok(Maybe::Absent(judge::shift::Unread::Unjudged));
+    };
+    let policy = judge::Policy::read(judge::Input {
+        path: &path.display().to_string(),
+        text: &text,
+    })?;
+    let Maybe::Present(head) = kept(repository, sha, &failure.benchmark, scratch)?
+    else {
+        return Ok(Maybe::Absent(judge::shift::Unread::Unkept));
+    };
+    let Maybe::Present(base) = kept(repository, base, &failure.benchmark, scratch)?
+    else {
+        return Ok(Maybe::Absent(judge::shift::Unread::Unkept));
+    };
+    Ok(judge::shift::Reading::read(base, head, &policy))
+}
+
+/// Why a side's report is not read: no run kept it.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Unkept;
+
+/// Why a file is not read: none is there.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Missing;
+
+/// The full report of `benchmark` the run at `sha` kept, as the artifact
+/// `hotpath-<sha>`.
+///
+/// # Specification
+/// - requires: as [`readings`].
+/// - ensures: the newest unexpired artifact named `hotpath-<sha>` is downloaded
+///   into `scratch` once, and its `<benchmark>.json` read; absent when no such
+///   artifact exists or it holds no report of the benchmark.
+/// - provides: one side of a reading.
+/// - fails: [`GuardError::Gh`] when the listing or the download fails;
+///   [`GuardError::Input`] when the report cannot be read.
+/// - panics: none.
+/// - executable: none — the outcome is the external process's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readings`].
+/// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
+fn kept(
+    repository: &Repository,
+    sha: &CommitSha,
+    benchmark: &Benchmark,
+    scratch: &Path,
+) -> Result<Maybe<judge::Run, Unkept>, GuardError>
+{
+    let name = format!("hotpath-{sha}");
+    let dir = scratch.join(&name);
+    if !dir.exists() {
+        let mut query = Command::new("gh");
+        query.args([
+            "api",
+            &format!("repos/{repository}/actions/artifacts?name={name}&per_page=100"),
+            "--jq",
+            "[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | \
+             .workflow_run.id // empty",
+        ]);
+        let listed = run(&mut query, Feed::Nothing)?;
+        let id = listed.trim();
+        if id.is_empty() {
+            return Ok(Maybe::Absent(Unkept));
+        }
+        let mut download = Command::new("gh");
+        download
+            .args([
+                "run",
+                "download",
+                id,
+                "-R",
+                &repository.to_string(),
+                "-n",
+                &name,
+                "-D",
+            ])
+            .arg(&dir);
+        run(&mut download, Feed::Nothing)?;
+    }
+    let path = dir.join(format!("{benchmark}.json"));
+    let Maybe::Present(text) = text_at(&path)?
+    else {
+        return Ok(Maybe::Absent(Unkept));
+    };
+    judge::Run::read(judge::Input {
+        path: &path.display().to_string(),
+        text: &text,
+    })
+    .map(Maybe::Present)
+}
+
+/// The text of the file at `path`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the file's text; absent when no file is there.
+/// - provides: a policy or a kept report.
+/// - fails: [`GuardError::Input`] naming the path when the file exists but
+///   cannot be read.
+/// - panics: none.
+/// - executable: none — the outcome is the file system's.
+///
+/// # Errors
+/// As `fails` lists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readings`].
+/// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
+fn text_at(path: &Path) -> Result<Maybe<String, Missing>, GuardError>
+{
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(Maybe::Present(text)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Maybe::Absent(Missing)),
+        Err(error) => Err(GuardError::Input {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        }),
+    }
+}
+
 /// One function's issue as filing finds it and leaves it.
 #[derive(Debug)]
 struct Touched
@@ -365,7 +604,7 @@ struct Touched
 /// - witness: `tests::cli::a_later_run_edits_its_comment_and_row`
 /// - witness: `tests::cli::a_second_pull_request_adds_a_row_and_a_comment`
 /// - witness: `tests::cli::a_passing_run_edits_its_comment_and_marks_its_row_fixed`
-/// - witness: `tests::cli::a_uniform_shift_is_a_runner_shift_row_without_a_comment`
+/// - witness: `tests::cli::a_runner_shift_is_read_over_every_function`
 /// - witness: `tests::cli::a_new_regression_reopens_a_settled_issue`
 /// - witness: `tests::cli::a_clear_commit_files_nothing`
 /// - witness: `tests::cli::a_benchmark_both_failed_and_passed_fixes_only_the_rows_it_did_not_regress`
