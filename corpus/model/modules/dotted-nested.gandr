@@ -28,4 +28,4 @@ module Net.Meter {
 
 /// Both readings.
 @[ runs("#{.shown = 3, .sibling = 3}") ]
-#{shown = Net.Meter.shown, sibling = Net.Meter.sibling}
+def readings = #{shown = Net.Meter.shown, sibling = Net.Meter.sibling};

@@ -25,8 +25,8 @@ use crate::evaluate::tests::program;
 
 /// The entry is the `main` the source run declares at its top level, with
 /// the arguments its type reads; a source with no `main`, and a module's
-/// member named `main`, have none (#1881). A run target opening with `main`
-/// is no declaration of it (#2758).
+/// member named `main`, have none (#1881). An expression at the top level
+/// opening with `main` is a stray, and no declaration of it (#2758).
 #[test]
 fn the_entry_is_the_main_of_the_source_run_1881()
 {

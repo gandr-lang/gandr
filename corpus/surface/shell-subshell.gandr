@@ -4,15 +4,15 @@
 // definition's body, which the lowering admits no shell block for yet (#1057).
 
 /// A subshell of two commands, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ [ cd build; ls ]; }
 
 /// A subshell of one command, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ [ echo hi ]; }
 
 /// A subshell piped into a command, a stray.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+@[ refuses("OutOfFragment.TopLevel") ]
 #!{ [ cd src; grep foo ] | sort; }
 
 /// A subshell nested in another, in a definition (#1057).

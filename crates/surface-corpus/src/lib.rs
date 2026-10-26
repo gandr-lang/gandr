@@ -59,7 +59,6 @@
 //! use gandr_surface_grammar::built_in;
 //! use gandr_surface_lowering::DeclarationOutcome;
 //! use gandr_surface_lowering::LoweringBudget;
-//! use gandr_surface_lowering::Role;
 //! use gandr_surface_lowering::lower_module;
 //! use gandr_surface_lowering::namespace::Recognition;
 //! use gandr_surface_parser::parse;
@@ -96,12 +95,7 @@
 //!                 Maybe::Absent(body::Absent::Hole),
 //!             ),
 //!             DeclarationOutcome::Bodied { body } => (
-//!                 Maybe::Absent(if lowered.role() == Role::RunTarget {
-//!                     signature::Absent::RunTarget
-//!                 }
-//!                 else {
-//!                     signature::Absent::Unsigned
-//!                 }),
+//!                 Maybe::Absent(signature::Absent::Unsigned),
 //!                 Maybe::Present(body),
 //!             ),
 //!             DeclarationOutcome::Data(index) => {

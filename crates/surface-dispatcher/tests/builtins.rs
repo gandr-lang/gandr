@@ -37,7 +37,7 @@ fn run(source: SourceText<'_>) -> Evaluation<'_>
     else {
         panic!("module was refused");
     };
-    let Maybe::Present(target) = program.target()
+    let Maybe::Present(target) = program.last_declared()
     else {
         panic!("final declaration");
     };

@@ -28,4 +28,4 @@ module Sized : Model(Deep.Mid.Low.Shape) {
 
 /// Each member, read by its path.
 @[ runs("#{.lift = 10, .size = 3, .step = 1}") ]
-#{step = Deep.Mid.Low.Tools.step, lift = Top.inner.Tools.lift, size = Sized.size}
+def members = #{step = Deep.Mid.Low.Tools.step, lift = Top.inner.Tools.lift, size = Sized.size};

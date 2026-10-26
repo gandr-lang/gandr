@@ -24,6 +24,6 @@ module Tag : Model(Kit.Labelled) {
 /// The breadth, through the opened module's path.
 def breadth = Kit.Tools.breadth;
 
-/// The run target gathers the label and the breadth.
+/// The label and the breadth, gathered.
 @[ runs("#{.breadth = 4, .label = \"tag\"}") ]
-#{label = Tag.label, breadth = breadth}
+def labelled_breadth = #{label = Tag.label, breadth = breadth};

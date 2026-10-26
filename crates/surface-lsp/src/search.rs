@@ -151,7 +151,7 @@ impl Query
 /// # Adequacy
 /// - hypothesis: L3 — a family's constructors and a theory's members with their
 ///   holder, a declaration written as a signature and a definition once, and a
-///   run target writing a member's name not among the names.
+///   stray writing a member's name not among the names.
 /// - witness: `server::tests::workspace_symbols_find_the_names_the_open_closures_declare`
 #[must_use]
 pub fn declared(text: SourceText<'_>) -> Vec<Declared>

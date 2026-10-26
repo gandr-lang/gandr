@@ -1840,7 +1840,7 @@ INSERT INTO purpose VALUES('surface-corpus','refusal::Qualifier','enum','What a 
 INSERT INTO purpose VALUES('surface-corpus','refusal::Refusal','enum','A refusal, whichever producer raised it.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::RefusalName','enum','One name of the closed refusal vocabulary: every refusal the lowering, the checker and this crate raise, named by its variant.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','refusal::RefusalSpelling','struct','The spelling of a refusal name, as a `refuses` payload writes it: the refusal''s variant, then, for a refusal named by the feature it refuses, a dot and the qualifier.',NULL,'fits','sound',NULL);
-INSERT INTO purpose VALUES('surface-corpus','refusal::Tag','struct','The text of one reading a qualifier names: a boundary, the run target, a sort, a checker former, a member''s or a model component''s fault.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-corpus','refusal::Tag','struct','The text of one reading a qualifier names: a boundary, the stray, a sort, a checker former, a member''s or a model component''s fault.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::ClassCounts','struct','How many refused declarations each failure class holds.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::Seal','enum','Whether a settled run also has an empty ledger.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-corpus','report::SettleCounts','struct','How many of some declarations settled and how many did not.',NULL,'fits','sound',NULL);

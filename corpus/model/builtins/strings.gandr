@@ -9,9 +9,9 @@
 /// A string, named.
 def slogan = "types are machines";
 
-/// A statement before a named item, a stray: only a source's final expression
-/// is its run target.
-@[ refuses("OutOfFragment.WrongSort.declaration") ]
+/// A statement at the top level, where only declarations stand: it runs
+/// inside a declaration, `main` or another (#2572).
+@[ refuses("OutOfFragment.TopLevel") ]
 string.contains(slogan, "machine");
 
 /// Equality: `==` between strings resolves the prelude's `EqString`, and a

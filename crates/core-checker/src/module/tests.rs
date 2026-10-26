@@ -92,10 +92,6 @@ fn declaration(
 /// No declared type.
 const UNSIGNED: Maybe<ValueTypeId, signature::Absent> = Maybe::Absent(signature::Absent::Unsigned);
 
-/// No declared type: a source's run target.
-const RUN_TARGET: Maybe<ValueTypeId, signature::Absent> =
-    Maybe::Absent(signature::Absent::RunTarget);
-
 /// No body.
 const HOLE: Maybe<ValueId, body::Absent> = Maybe::Absent(body::Absent::Hole);
 
@@ -305,67 +301,6 @@ fn a_body_that_synthesised_nothing_supplies_no_type()
             constant: ConstantIndex::from(0_usize),
         }),
         "a reference to it finds no type"
-    );
-}
-
-#[test]
-fn a_run_target_has_the_thunk_type_an_unsigned_thunk_lacks_1105()
-{
-    // The thunk an unsigned declaration refuses is, as a source's run target,
-    // typed by the computation it suspends, and enters the table at that
-    // type for a later reference to read.
-    let mut arena = CoreArena::new();
-    let integer = arena.value_type_base(BaseType::Integer);
-    let returns_integer = arena.comp_type_returner(integer);
-    let suspended = arena.value_type_thunk(returns_integer);
-    let zero = arena.value_literal(integer_literal());
-    let returned = arena.computation_return(zero);
-    let thunk = arena.value_thunk(returned);
-    let target = arena.value_constant(ConstantIndex::from(1_usize));
-    let forced = arena.computation_force(zero);
-    let ill_typed = arena.value_thunk(forced);
-    let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-    assert_eq!(
-        check_declaration(
-            &mut context,
-            &declaration(At(0), UNSIGNED, Maybe::Present(thunk))
-        ),
-        Verdict::Refused(CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Thunk(thunk),
-        }),
-        "unsigned, the thunk does not synthesise"
-    );
-    let Verdict::Synthesised { synthesised, body } = check_declaration(
-        &mut context,
-        &declaration(At(1), RUN_TARGET, Maybe::Present(thunk)),
-    )
-    else {
-        panic!("as a run target, the thunk synthesises");
-    };
-    assert_eq!(
-        (body, context.signature(ConstantIndex::from(1_usize))),
-        (thunk, Maybe::Present(synthesised.produced())),
-        "the run target enters the table at the type it synthesised"
-    );
-    assert!(
-        matches!(
-            check_declaration(
-                &mut context,
-                &declaration(At(2), Maybe::Present(suspended), Maybe::Present(target))
-            ),
-            Verdict::Checked { .. }
-        ),
-        "a reference to the run target reads the thunk of a computation returning an integer"
-    );
-    assert!(
-        matches!(
-            check_declaration(
-                &mut context,
-                &declaration(At(3), RUN_TARGET, Maybe::Present(ill_typed))
-            ),
-            Verdict::Refused(CheckRefusal::ShapeMismatch { .. })
-        ),
-        "a run target whose computation does not synthesise refuses as the computation does"
     );
 }
 

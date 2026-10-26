@@ -9,8 +9,8 @@
 //! the strict root, sequenced runs stand in their place. An edit changes one
 //! form, inserts, deletes or moves one, merges one with the next by dropping
 //! its terminator, splits one with a terminator inside it, or inserts a
-//! top-level return: a stray the lowering refuses where it stands, or, last,
-//! the source's run target.
+//! top-level return: a stray the lowering refuses at the top level, wherever
+//! it stands.
 
 use anodized::spec;
 use gandr_surface_dispatcher::SourceRoot;
@@ -58,7 +58,7 @@ pub enum FormEdit
     /// Put a terminator inside the form, splitting it in two.
     Split(Position),
     /// Insert a top-level return before the form: a stray the lowering refuses
-    /// where it stands, or, inserted last, the source's run target.
+    /// at the top level, wherever it stands.
     Expression(Position),
 }
 

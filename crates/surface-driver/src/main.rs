@@ -54,7 +54,7 @@
 //! | `gandr repl --batch` | the plain transcript, even on a terminal | as `repl` |
 //! | `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
 //! | `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
-//! | `gandr --spelling <unicode\|ascii> <verb>` | as the verb, every construct with a glyph (`≃`, `≅`, `⇝`, `∷`) written in that spelling: types in reports, a run's value, hovers and published diagnostics, the loop's transcript; without the flag, the spelling the user's configuration file names (the `config` module), else Unicode | as the verb |
+//! | `gandr --spelling <unicode\|ascii> <verb>` | as the verb, every construct with a glyph (`≃`, `≅`, `⇝`, `∷`) written in that spelling: types in reports, hovers and published diagnostics, the loop's transcript; without the flag, the spelling the user's configuration file names (the `config` module), else Unicode | as the verb |
 //!
 //! A path is a source file of any name, or a directory searched for `.gandr`
 //! sources. The directories a source sits in decide its root — `strict`,
@@ -83,16 +83,15 @@
 //! `gandr run` takes exactly one path, `-` among them: there is no
 //! standard-input face for it to name. The source is composed under the root
 //! its path classifies as and runs only when no declaration of it was refused;
-//! its target is the `main` it declares, else the final expression it writes,
-//! else the last name it declares (`gandr-surface-dispatcher`'s `evaluate`
-//! module). A completed run writes its value as the one line of
-//! standard output, spelled as a `runs` expectation states it (in Unicode; in
-//! ASCII when that spelling is asked), so a caller
-//! reads the value without parsing anything else. A run blamed on a goal, stuck
-//! or unfinished is `` gandr: <path>: `<target>` <what it came to> `` on
-//! standard error; a source carrying a refusal is `gandr: <path>: refused;
-//! nothing ran` after its reports, and one declaring no name `gandr: <path>:
-//! declares no name to run`.
+//! it runs the `main` it declares at its top level
+//! (`gandr-surface-dispatcher`'s `script` module), each line it prints written
+//! to standard output as it runs, and exits with the status `main` returns or
+//! passes to `Proc.exit`. A run blamed on a goal, stuck or unfinished is
+//! `` gandr: <path>: `main` <what it came to> `` on standard error; a source
+//! carrying a refusal is `gandr: <path>: refused; nothing ran` after its
+//! reports, and one declaring no `main` runs nothing — not its last
+//! declaration — and is one line on standard error naming `def main` and
+//! pointing at `gandr check` and `gandr test`.
 //!
 //! `gandr stage` takes one or more programs, each spelled `pow:LO..HI` or
 //! `double:LO..HI` with both exponents inclusive: `pow` specializes the staged
@@ -207,12 +206,12 @@
 //! timing, terminal backends, source programs or failing filesystem coverage.
 //!
 //! The exit-code witnesses are
-//! `tests::cli::a_script_that_returns_a_value_leaves_successfully` (exit `0`,
-//! `42` alone on standard output),
+//! `tests::cli::a_script_that_runs_its_main_leaves_successfully` (exit `0`,
+//! the line its `main` prints alone on standard output),
 //! `tests::cli::a_script_that_blames_leaves_with_a_failure_status` (exit `1`)
 //! and `tests::cli::an_ill_typed_script_is_refused_by_the_checker` (exit `2`);
-//! `tests::cli::the_value_of_a_run_is_printed_once` asserts the value is the
-//! whole of standard output.
+//! `tests::cli::a_script_with_no_program_is_refused` asserts a source declaring
+//! no `main` runs nothing.
 //!
 //! # Optional tracing
 //!
@@ -535,18 +534,17 @@ enum Command
         smoke: bool,
     },
     /// Run a source as a program: check it as `check` does, then run the
-    /// `main` it declares at its top level, or, when it declares none, run its
-    /// final expression, or its last declaration when it writes none, and print
-    /// the value.
+    /// `main` it declares at its top level. A source declaring no `main` runs
+    /// nothing.
     ///
     /// A `main` returns the exit code, `def main() -> -F Integer`, or the
     /// unit, `def main() -> -F [Console] Unit`, for 0, and reads the
     /// arguments after the path when it takes them, `def main(args :
     /// List(String)) -> -F Integer`; `Proc.exit(n)` ends the run with `n`, and
     /// `Console.print(s)` writes `s` as a line of standard output.
-    /// Exits with that code, its low byte; otherwise 0 when the run returns a
-    /// value, 1 when it is blamed on a goal or stops short of one, and 2 when
-    /// the source never reaches the machine.
+    /// Exits with that code, its low byte; otherwise 1 when the run is blamed
+    /// on a goal or stops short of one, and 2 when the source never reaches
+    /// the machine or declares no `main`.
     Run
     {
         /// The source file to run.
@@ -957,7 +955,7 @@ enum Screen
 /// - witness: `tests::cli::lsp_serves_a_session_over_the_standard_streams`
 /// - witness: `tests::cli::a_piped_repl_session_prints_its_transcript`
 /// - witness: `tests::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
-/// - witness: `tests::cli::a_script_that_returns_a_value_leaves_successfully`
+/// - witness: `tests::cli::a_script_that_runs_its_main_leaves_successfully`
 /// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
 /// - witness: `tests::cli::fmt_rewrites_what_check_reports`
@@ -1794,9 +1792,10 @@ fn ungranted(refused: &AuthorityError) -> ExitCode
 ///   — prefixed with its path. Each path the walk cannot carry through the
 ///   pipeline is a line on standard error. The run's report and its verdict
 ///   close standard output, and the exit code is the verdict's. A script
-///   follows [`script`]: its value goes to standard output, its diagnostics to
-///   standard error and its run status chooses the exit. A staging follows
-///   [`stage`], a formatting [`fmt`], and a ledger task [`ledger`].
+///   follows [`script`]: what it prints goes to standard output, its
+///   diagnostics to standard error and its run status chooses the exit. A
+///   staging follows [`stage`], a formatting [`fmt`], and a ledger task
+///   [`ledger`].
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -2220,8 +2219,9 @@ fn run(
     })
 }
 
-/// Run `runnable`, its value written in `spelling`, printing it on standard
-/// output and everything else on standard error, and choose the exit code.
+/// Run `runnable`, its types written in `spelling`, printing what it prints on
+/// standard output and everything else on standard error, and choose the exit
+/// code.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -2230,19 +2230,19 @@ fn run(
 ///   prints for the source, its types in `spelling`, goes to standard error as
 ///   a plain snippet followed by an empty line, and every ledger line beside
 ///   them; then a source declaring an entry runs it and writes nothing but the
-///   lines it prints, and one declaring none runs its run target — its final
-///   expression, else its last declaration — which, when it returned a value,
-///   writes the value as the line after those it printed. Each line a run
-///   prints through `Console.print` is written to standard output as it runs. A
-///   run blamed, stuck or unfinished, and a target that reaches a declaration
-///   the machine carries no image of, is one line on standard error: `gandr:`,
-///   the path, the target's name in backticks and the evaluation's spelling. A
-///   source carrying a refusal is `gandr: <path>: refused; nothing ran` and one
-///   declaring no name `gandr: <path>: declares no name to run`, each on
-///   standard error. The exit code is an entry's exit status when it returned
-///   or exited with one; otherwise `0` for a value, `1` for a run that stopped
-///   short of one, and `2` for a script that never reached the machine.
-/// - provides: `gandr run`, with its value on the one stream a caller reads.
+///   lines it prints, each written to standard output as it runs. A run blamed,
+///   stuck or unfinished, and an entry that reaches a declaration the machine
+///   carries no image of, is one line on standard error: `gandr:`, the path,
+///   the entry's name in backticks and the evaluation's spelling. A source
+///   carrying a refusal is `gandr: <path>: refused; nothing ran`, and one
+///   declaring no `main` at its top level runs nothing — not its last
+///   declaration — and is one line on standard error naming `def main` and
+///   pointing at `gandr check` and `gandr test`. The exit code is an entry's
+///   exit status when it returned or exited with one; otherwise `1` for a run
+///   that stopped short of one, and `2` for a script that never reached the
+///   machine.
+/// - provides: `gandr run`, with what it prints on the one stream a caller
+///   reads.
 /// - fails: the first write error on either stream.
 /// - panics: none.
 /// - executable: none — the exit code is the process's status, which the
@@ -2252,20 +2252,20 @@ fn run(
 /// The [`std::io::Error`] of the first write that failed.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — value, blame, type refusal, unrelated declaration
-///   refusal, absent source and empty program are observed through exact
-///   status, value multiplicity and separate diagnostic streams. Wrong status,
-///   repeated values or evaluation after refusal changes these observations.
-///   Arbitrary machine programs and interruption timing are outside them. An
-///   entry returning a code, one exiting through `Proc.exit`, one counting its
-///   arguments and one reaching a goal observe the entry's statuses.
-/// - witness: `tests::cli::a_script_that_returns_a_value_leaves_successfully`
+/// - hypothesis: L3 — an entry, blame, type refusal, unrelated declaration
+///   refusal, absent source and a source declaring no `main` are observed
+///   through exact status, printed lines and separate diagnostic streams. Wrong
+///   status, repeated lines or evaluation after refusal changes these
+///   observations. Arbitrary machine programs and interruption timing are
+///   outside them. An entry returning a code, one exiting through `Proc.exit`,
+///   one counting its arguments and one reaching a goal observe the entry's
+///   statuses.
+/// - witness: `tests::cli::a_script_that_runs_its_main_leaves_successfully`
 /// - witness: `tests::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `tests::cli::an_ill_typed_script_is_refused_by_the_checker`
 /// - witness: `tests::cli::an_outcome_only_refusal_is_visible_in_a_script_run`
 /// - witness: `tests::cli::an_absent_script_is_refused_by_path`
 /// - witness: `tests::cli::a_script_with_no_program_is_refused`
-/// - witness: `tests::cli::the_value_of_a_run_is_printed_once`
 /// - witness: `tests::cli::a_failed_diagnostic_stream_stops_later_output`
 /// - witness: `tests::cli::a_program_leaves_with_its_entry_s_status_1881`
 /// - witness: `tests::cli::a_program_prints_hello_world_2279`
@@ -2276,7 +2276,6 @@ fn script(
     stderr: &mut dyn std::io::Write,
 ) -> std::io::Result<ExitCode>
 {
-    runnable.spell_in(spelling);
     let ran = runnable.run(&mut Lines { out: &mut *stdout });
     let status = ran.status();
     let mut exited = None;
@@ -2303,23 +2302,11 @@ fn script(
                 Step::Fault { path, .. } => (path.display(), ""),
             };
             match ran {
-                Ran::Evaluated {
-                    evaluation: Evaluation::Value(value),
-                    ..
-                } => writeln!(stdout, "{value}")?,
-                Ran::Evaluated {
-                    evaluation: Evaluation::Sealed(sealed),
-                    ..
-                } => writeln!(stdout, "{sealed}")?,
                 Ran::Entered {
                     entered: Entered::Exited(code),
                     ..
                 } => exited = Some(u8::from(code)),
-                Ran::Evaluated {
-                    target,
-                    evaluation: Evaluation::Holed { at, .. },
-                }
-                | Ran::Entered {
+                Ran::Entered {
                     target,
                     entered: Entered::Ended(Evaluation::Holed { at, .. }),
                 } => {
@@ -2347,15 +2334,19 @@ fn script(
                         None => writeln!(stderr, "gandr: {path}: `{target}` reached a hole")?,
                     }
                 },
-                Ran::Evaluated { target, evaluation }
-                | Ran::Entered {
+                Ran::Entered {
                     target,
                     entered: Entered::Ended(evaluation),
                 } => {
                     writeln!(stderr, "gandr: {path}: `{target}` {evaluation}")?;
                 },
                 Ran::Refused => writeln!(stderr, "gandr: {path}: refused; nothing ran")?,
-                Ran::NoProgram => writeln!(stderr, "gandr: {path}: declares no name to run")?,
+                Ran::NoProgram => writeln!(
+                    stderr,
+                    "gandr: {path}: declares no `main` to run; a program runs its `def main() -> \
+                     Unit {{ … }}`, and a source of declarations alone is checked by `gandr \
+                     check` or tested by `gandr test`"
+                )?,
             }
         },
     }

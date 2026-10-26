@@ -228,7 +228,7 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
                                 && *held_body == Maybe::Absent(if lowered.role() == Role::Admitted { body::Absent::Hosted } else { body::Absent::Hole })
                         }
                         DeclarationOutcome::Bodied { body: value } => {
-                            *signature == Maybe::Absent(if lowered.role() == Role::RunTarget { signature::Absent::RunTarget } else { signature::Absent::Unsigned })
+                            *signature == Maybe::Absent(signature::Absent::Unsigned)
                                 && *held_body == Maybe::Present(value)
                         }
                         DeclarationOutcome::Data(_) | DeclarationOutcome::Codata(_) | DeclarationOutcome::Abstract(_) | DeclarationOutcome::World | DeclarationOutcome::Refused(_) => false,
@@ -257,12 +257,7 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
                     }),
                 ),
                 DeclarationOutcome::Bodied { body: value } => (
-                    Maybe::Absent(if lowered.role() == Role::RunTarget {
-                        signature::Absent::RunTarget
-                    }
-                    else {
-                        signature::Absent::Unsigned
-                    }),
+                    Maybe::Absent(signature::Absent::Unsigned),
                     Maybe::Present(value),
                 ),
                 DeclarationOutcome::Data(index) => {

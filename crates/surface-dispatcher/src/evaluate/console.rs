@@ -1,6 +1,6 @@
 //! The console a run writes to: where the lines `Console.print` performs go.
 //!
-//! The host at a run target hands each line to a [`Console`]: the driver's
+//! The host at a program's entry hands each line to a [`Console`]: the driver's
 //! writes it to standard output, and [`Captured`] keeps it, so a test or a
 //! corpus expectation reads what the program printed. Both are models of the
 //! one `Console` interface, and a program runs unchanged under either.

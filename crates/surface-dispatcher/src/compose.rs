@@ -3826,10 +3826,9 @@ impl gandr_surface_format::Elaborate for Elaborating
 ///   order, at the same position and with the lowering's origin as its token: a
 ///   completed declaration carries its declared type and its body, an
 ///   uncompleted one its declared type and a hole — a law the module admits the
-///   hole the host asserts — a bodiless definition its body and no signature, a
-///   run target's reason when it is the source's run target and an unsigned one
-///   otherwise, each of the three the laws its `respects` attribute names and
-///   the entry its `entry` attribute names; a data declaration carries its
+///   hole the host asserts — a bodiless definition its body and the reason that
+///   it is unsigned, each of the three the laws its `respects` attribute names
+///   and the entry its `entry` attribute names; a data declaration carries its
 ///   native signature and a codata declaration its decoded one, each shared
 ///   with the lowered module, a sealed abstract type its kind, representation,
 ///   extent, site, mobility and the interface its type member's `identity`
@@ -3865,7 +3864,7 @@ impl gandr_surface_format::Elaborate for Elaborating
                 DeclarationOutcome::Uncompleted { declared_type } =>
                     actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Present(declared_type),body:Maybe::Absent(if lowered.role() == Role::Admitted { body::Absent::Hosted } else { body::Absent::Hole })},
                 DeclarationOutcome::Bodied { body } =>
-                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(if lowered.role() == Role::RunTarget { signature::Absent::RunTarget } else { signature::Absent::Unsigned }),body:Maybe::Present(body)},
+                    actual.content() == &gandr_core_checker::DeclarationContent::Value {signature:Maybe::Absent(signature::Absent::Unsigned),body:Maybe::Present(body)},
                 DeclarationOutcome::Data(index) =>
                     matches!(*actual.content(), gandr_core_checker::DeclarationContent::Data(ref held) if module.data(index) == Maybe::Present(held)),
                 DeclarationOutcome::Codata(index) =>
@@ -3897,12 +3896,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
                 }),
             ),
             DeclarationOutcome::Bodied { body } => (
-                Maybe::Absent(if lowered.role() == Role::RunTarget {
-                    signature::Absent::RunTarget
-                }
-                else {
-                    signature::Absent::Unsigned
-                }),
+                Maybe::Absent(signature::Absent::Unsigned),
                 Maybe::Present(body),
             ),
             DeclarationOutcome::Data(index) => {
@@ -4953,7 +4947,7 @@ def wrong = "text" ;"#,
             ),
             (
                 "pure 1 ^ 2",
-                false,
+                true,
                 &[(gandr_surface_parser::Oblig::UnmoldedTok, 7_usize, 8_usize)][..],
             ),
             (

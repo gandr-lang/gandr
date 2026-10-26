@@ -1,7 +1,7 @@
 // A field is read by its label off the record a value is, whether a type is
 // written for the record or not: a definition's record, a field's record and
 // the record a run binds. A projection is a computation, so it stands where
-// one is read: a body, a bind, a run target, a path's endpoint.
+// one is read: a body, a bind, a path's endpoint.
 
 /// A record holding a record, no type written for either.
 def nest = #{tag = "t", inner = #{x = 1, y = 2}};

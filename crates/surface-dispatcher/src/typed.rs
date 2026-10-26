@@ -3138,14 +3138,14 @@ impl TypeTable
     /// # Specification
     /// - requires: nothing.
     /// - ensures: one entry per declaration the source names (no derived,
-    ///   witnessing, held, abstract, run-target or parameter declaration, no
-    ///   family's operation or words), whose body the lowering read whole —
-    ///   none a hole, a data or codata family or a sealed type — and the
-    ///   checker did not refuse, whose type is a value type and none of a
-    ///   universe, a path universe, a static Π, an unknown type or a thunk of
-    ///   an arrow or a Π; the declaration's name tile is in the table's own
-    ///   source. A declaration the checker owes for a hole it waits on is kept:
-    ///   the table reads no verdict, and the run declines it.
+    ///   witnessing, held, abstract or parameter declaration, no family's
+    ///   operation or words), whose body the lowering read whole — none a hole,
+    ///   a data or codata family or a sealed type — and the checker did not
+    ///   refuse, whose type is a value type and none of a universe, a path
+    ///   universe, a static Π, an unknown type or a thunk of an arrow or a Π;
+    ///   the declaration's name tile is in the table's own source. A
+    ///   declaration the checker owes for a hole it waits on is kept: the table
+    ///   reads no verdict, and the run declines it.
     /// - provides: where a run lens stands, and the constant its command runs.
     /// - fails: never.
     /// - panics: none.
@@ -4847,7 +4847,7 @@ impl TypeTable
         else {
             return Maybe::Absent(reprinted::Absent::Unlowered);
         };
-        let Maybe::Present(last) = program.target()
+        let Maybe::Present(last) = program.last_declared()
         else {
             return Maybe::Absent(reprinted::Absent::Unrun);
         };
@@ -6724,7 +6724,7 @@ mod tests
                     laid.base,
                 )
                 .expect("the member's unit parses");
-                let Maybe::Present(last) = program.target()
+                let Maybe::Present(last) = program.last_declared()
                 else {
                     panic!("the component declares");
                 };

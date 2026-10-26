@@ -1298,9 +1298,9 @@ fn a_selection_runs_only_the_rewrites_it_names()
     );
 }
 
-/// A stray and a run target are named by the text they open with, which the
-/// layout respaces; they bind no name, so a rewrite beside them is checked by
-/// their role and position and kept.
+/// A stray is named by the text it opens with, which the layout respaces; it
+/// binds no name, so a rewrite beside it is checked by its role and position
+/// and kept.
 #[test]
 fn a_respaced_root_expression_keeps_the_rewrite_beside_it()
 {

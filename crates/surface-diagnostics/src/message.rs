@@ -290,6 +290,12 @@ fn lowered(
                 FragmentBoundary::WrongSort => {
                     write!(f, "{indefinite} cannot stand where {sort} is expected")
                 },
+                FragmentBoundary::TopLevel => write!(
+                    f,
+                    "{indefinite} cannot stand at a source's top level, where only declarations \
+                     stand; a program runs the `main` it declares, so write it in `def main() -> \
+                     Unit {{ … }}`, or name it with a definition"
+                ),
                 FragmentBoundary::Arity(operands) => {
                     write!(f, "the {spoken} cannot take {operands} operands")
                 },

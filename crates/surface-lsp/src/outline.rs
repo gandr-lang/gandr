@@ -28,15 +28,15 @@
 //!   writes before its keyword, names the `deprecated` attribute. An attribute
 //!   block is a form with no such tile, so it is no symbol.
 //! - **Root forms that declare nothing.** A form written at the root that names
-//!   nothing and writes no declaration — a source's run target, or a stray the
-//!   lowering refuses — is an `Event` symbol, named by what it writes up to its
-//!   first own `{` (then `{ … }`), or all of it without a final `;`, its layout
-//!   collapsed. Its range is its form's, widened over the attribute blocks
-//!   before it and the lone `;` after it, which the lowering files with it; its
-//!   selection range is the form's own. A run of attribute blocks that no form
-//!   follows is one such symbol. An import, which a hover answers as the
-//!   import, is none. The engine keys the run target's slot and each stray's by
-//!   the form, so a hover reads their type or refusal as a declaration's.
+//!   nothing and writes no declaration — a stray the lowering refuses — is an
+//!   `Event` symbol, named by what it writes up to its first own `{` (then `{ …
+//!   }`), or all of it without a final `;`, its layout collapsed. Its range is
+//!   its form's, widened over the attribute blocks before it and the lone `;`
+//!   after it, which the lowering files with it; its selection range is the
+//!   form's own. A run of attribute blocks that no form follows is one such
+//!   symbol. An import, which a hover answers as the import, is none. The
+//!   engine keys each stray's slot by the form, so a hover reads its refusal as
+//!   a declaration's.
 //! - **Members.** A `theory` block, a `data` declaration and a `codata`
 //!   declaration write their members among their own tiles, not as forms, so
 //!   each `;`-ended run between the form's braces is read as a member nested
@@ -113,8 +113,7 @@ pub enum Declarer
     /// declaration at the node declares it, written among that form's own
     /// tiles over the span.
     Member(NodeIndex, ByteSpan),
-    /// The root form at the node declares nothing: a source's run target, or
-    /// a stray.
+    /// The root form at the node declares nothing: a stray.
     Root(NodeIndex),
 }
 
@@ -161,10 +160,10 @@ pub enum Declarer
 ///   at the exact symbol tree. Taking a declaration's range from its name or
 ///   its form alone, dropping a nested member, reversing source order or
 ///   reading an attribute name as the declared one changes it; a hover finds
-///   each declaration's documentation under its own form. A run target with its
-///   attribute block and its `;`, a stray and a trailing attribute block are
-///   asserted at their exact symbols, and an import and a `rec` group writing
-///   declarations at none.
+///   each declaration's documentation under its own form. A stray with its
+///   attribute block and its `;`, another stray and a trailing attribute block
+///   are asserted at their exact symbols, and an import and a `rec` group
+///   writing declarations at none.
 /// - witness: `outline::tests::declarations_nest_as_symbols`
 /// - witness: `outline::tests::a_deprecated_declaration_is_tagged`
 /// - witness: `outline::tests::a_theory_holds_its_members`
@@ -1365,9 +1364,9 @@ mod tests
     }
 
     /// A root form that declares nothing is an `Event` symbol named by what it
-    /// writes: the run target over its attribute block and its `;`, a stray,
-    /// and a run of attribute blocks no form follows; an import and a `rec`
-    /// group writing a declaration are none (#2073).
+    /// writes: a final expression over its attribute block and its `;`, a
+    /// stray, and a run of attribute blocks no form follows; an import and
+    /// a `rec` group writing a declaration are none (#2073).
     #[test]
     fn a_root_form_that_declares_nothing_is_a_symbol_2073()
     {
@@ -1384,7 +1383,7 @@ mod tests
                 .map(|symbol| symbol.deprecated)
                 .collect::<Vec<_>>(),
             [false, true],
-            "the block before the run target marks it"
+            "the block before the final expression marks it"
         );
         let strays =
             "import \"./a.gandr\" ;\n1 ;\nrec {\n  def b = 2 ;\n}\nb ;\n@[ checks ]\n@[ checks ]\n";
