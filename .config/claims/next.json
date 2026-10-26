@@ -8,109 +8,127 @@
           "number": 100,
           "title": "the epic",
           "labels": ["kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 90,
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 30,
           "title": "issue 30",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 25,
           "title": "issue 25",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 31,
           "title": "issue 31",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 90
+          "parent": 90,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 32,
           "title": "issue 32",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 77
+          "parent": 77,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 33,
           "title": "issue 33",
           "labels": ["kind:feature", "area:core"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 40,
           "title": "issue 40",
           "labels": ["kind:gap", "area:workflow", "effort:medium"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 45,
           "title": "issue 45",
           "labels": ["kind:gap", "area:workflow", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 41,
           "title": "issue 41",
           "labels": ["kind:gap", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 42,
           "title": "issue 42",
           "labels": ["kind:gap", "area:core", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 43,
           "title": "issue 43",
           "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 50,
           "title": "issue 50",
           "labels": ["kind:performance", "area:core"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 51,
           "title": "issue 51",
           "labels": ["kind:performance", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 60,
           "title": "issue 60",
           "labels": ["kind:defect", "area:surface"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 61,
           "title": "issue 61",
           "labels": ["kind:defect", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 62,
           "title": "issue 62",
           "labels": ["kind:defect", "area:workflow", "status:claimed"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 63,
           "title": "issue 63",
           "labels": ["kind:defect", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {
@@ -128,109 +146,127 @@
           "number": 100,
           "title": "the epic",
           "labels": ["kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 90,
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 30,
           "title": "issue 30",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 25,
           "title": "issue 25",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 31,
           "title": "issue 31",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 90
+          "parent": 90,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 32,
           "title": "issue 32",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 77
+          "parent": 77,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 33,
           "title": "issue 33",
           "labels": ["kind:feature", "area:core"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 40,
           "title": "issue 40",
           "labels": ["kind:gap", "area:workflow", "effort:medium"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 45,
           "title": "issue 45",
           "labels": ["kind:gap", "area:workflow", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 41,
           "title": "issue 41",
           "labels": ["kind:gap", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 42,
           "title": "issue 42",
           "labels": ["kind:gap", "area:core", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 43,
           "title": "issue 43",
           "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 50,
           "title": "issue 50",
           "labels": ["kind:performance", "area:core"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 51,
           "title": "issue 51",
           "labels": ["kind:performance", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 60,
           "title": "issue 60",
           "labels": ["kind:defect", "area:surface"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 62,
           "title": "issue 62",
           "labels": ["kind:defect", "area:workflow", "status:claimed"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 63,
           "title": "issue 63",
           "labels": ["kind:defect", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 58,
           "title": "a defect with no area",
           "labels": ["kind:defect"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {
@@ -248,97 +284,113 @@
           "number": 100,
           "title": "the epic",
           "labels": ["kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 90,
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 30,
           "title": "issue 30",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 25,
           "title": "issue 25",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 31,
           "title": "issue 31",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 90
+          "parent": 90,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 32,
           "title": "issue 32",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 77
+          "parent": 77,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 33,
           "title": "issue 33",
           "labels": ["kind:feature", "area:core"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 40,
           "title": "issue 40",
           "labels": ["kind:gap", "area:workflow", "effort:medium"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 45,
           "title": "issue 45",
           "labels": ["kind:gap", "area:workflow", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 41,
           "title": "issue 41",
           "labels": ["kind:gap", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 42,
           "title": "issue 42",
           "labels": ["kind:gap", "area:core", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 43,
           "title": "issue 43",
           "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 50,
           "title": "issue 50",
           "labels": ["kind:performance", "area:core"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 51,
           "title": "issue 51",
           "labels": ["kind:performance", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 62,
           "title": "issue 62",
           "labels": ["kind:defect", "area:workflow", "status:claimed"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 63,
           "title": "issue 63",
           "labels": ["kind:defect", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {
@@ -356,79 +408,92 @@
           "number": 100,
           "title": "the epic",
           "labels": ["kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 90,
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 30,
           "title": "issue 30",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 25,
           "title": "issue 25",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 31,
           "title": "issue 31",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 90
+          "parent": 90,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 32,
           "title": "issue 32",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 77
+          "parent": 77,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 33,
           "title": "issue 33",
           "labels": ["kind:feature", "area:core"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 40,
           "title": "issue 40",
           "labels": ["kind:gap", "area:workflow", "effort:medium"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 45,
           "title": "issue 45",
           "labels": ["kind:gap", "area:workflow", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 41,
           "title": "issue 41",
           "labels": ["kind:gap", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 42,
           "title": "issue 42",
           "labels": ["kind:gap", "area:core", "effort:easy"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 43,
           "title": "issue 43",
           "labels": ["kind:gap", "area:workflow", "effort:easy", "status:claimed"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 51,
           "title": "issue 51",
           "labels": ["kind:performance", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {
@@ -446,43 +511,50 @@
           "number": 100,
           "title": "the epic",
           "labels": ["kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 90,
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 30,
           "title": "issue 30",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 25,
           "title": "issue 25",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 31,
           "title": "issue 31",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 90
+          "parent": 90,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 32,
           "title": "issue 32",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 77
+          "parent": 77,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 33,
           "title": "issue 33",
           "labels": ["kind:feature", "area:core"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {
@@ -500,31 +572,36 @@
           "number": 100,
           "title": "the epic",
           "labels": ["kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 90,
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 31,
           "title": "issue 31",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 90
+          "parent": 90,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 32,
           "title": "issue 32",
           "labels": ["kind:feature", "area:workflow"],
-          "parent": 77
+          "parent": 77,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 33,
           "title": "issue 33",
           "labels": ["kind:feature", "area:core"],
-          "parent": 100
+          "parent": 100,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {
@@ -542,25 +619,29 @@
           "number": 100,
           "title": "the epic",
           "labels": ["kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 90,
           "title": "a deferred epic",
           "labels": ["kind:epic", "area:workflow", "status:deferred"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 70,
           "title": "issue 70",
           "labels": ["kind:defect", "kind:epic", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 71,
           "title": "issue 71",
           "labels": ["kind:gap", "area:workflow", "status:discarded"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {
@@ -578,13 +659,15 @@
           "number": 5,
           "title": "a collector, the oldest defect in the area",
           "labels": ["kind:defect", "area:workflow", "collector"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 9,
           "title": "the next defect",
           "labels": ["kind:defect", "area:workflow"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {}
@@ -600,23 +683,105 @@
           "number": 5,
           "title": "issue 5",
           "labels": ["kind:defect", "area:workflow", "collector"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 6,
           "title": "issue 6",
           "labels": ["kind:performance", "collector"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         },
         {
           "number": 7,
           "title": "issue 7",
           "labels": ["kind:gap", "area:workflow", "collector"],
-          "parent": null
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
         }
       ],
       "order": {}
     },
     "output": ""
+  },
+  {
+    "name": "#2744: a defect lacking its sections is skipped and named once, the next sectioned candidate picked",
+    "input": {
+      "area": "area:workflow",
+      "order": {},
+      "issues": [
+        {
+          "number": 5,
+          "title": "a sectionless defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Seen on main."
+        },
+        {
+          "number": 6,
+          "title": "a defect without readings",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
+        },
+        {
+          "number": 7,
+          "title": "a unit defect",
+          "labels": ["kind:defect", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
+        }
+      ]
+    },
+    "output": "needs sections: #5\nneeds sections: #6\n7\tdefect\ta unit defect"
+  },
+  {
+    "name": "#2744: a performance issue in the area comes before an older one in another area",
+    "input": {
+      "area": "area:workflow",
+      "order": {},
+      "issues": [
+        {
+          "number": 10,
+          "title": "core performance",
+          "labels": ["kind:performance", "area:core"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
+        },
+        {
+          "number": 12,
+          "title": "workflow performance",
+          "labels": ["kind:performance", "area:workflow"],
+          "parent": null,
+          "body": "Text.\n\n## Sources\n\n- `next.jq` — **primary**: the pick\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no |\n| Locality | `oracle` | no |\n| Locality | `descent` | no |\n| Place | `located` | no |\n| Place | `resident` | no |\n| Dimension | `rewriting` | no |\n\n## Concerns\n\nNone.\n\n## Ledger\n\nNone.\n\n## Not in this slice\n\nNothing.\n"
+        }
+      ]
+    },
+    "output": "12\tperformance\tworkflow performance"
+  },
+  {
+    "name": "#2744: a board with no sectioned candidate names each and claims none",
+    "input": {
+      "area": "area:workflow",
+      "order": {},
+      "issues": [
+        {
+          "number": 20,
+          "title": "a performance issue",
+          "labels": ["kind:performance", "area:surface"],
+          "parent": null,
+          "body": null
+        },
+        {
+          "number": 21,
+          "title": "a gap",
+          "labels": ["kind:gap", "area:workflow"],
+          "parent": null,
+          "body": "Needs an exemplar."
+        }
+      ]
+    },
+    "output": "needs sections: #20\nneeds sections: #21"
   }
 ]
