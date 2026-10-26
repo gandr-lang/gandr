@@ -2428,5 +2428,41 @@
       ]
     },
     "output": "{\"remote\":[],\"local\":[{\"name\":\"workflow\",\"worktree\":\"/w/workflow\"}],\"wip\":[]}"
+  },
+  {
+    "name": "#2746: a landing that ran records the head",
+    "program": "landed.jq",
+    "input": {
+      "status": 0,
+      "head": "b2",
+      "landed_head": "a1",
+      "now": 600,
+      "retry_at": 0
+    },
+    "output": "\"b2|0\""
+  },
+  {
+    "name": "#2746: a landing whose read failed keeps the head unlanded and tries again two minutes on",
+    "program": "landed.jq",
+    "input": {
+      "status": 2,
+      "head": "b2",
+      "landed_head": "",
+      "now": 600,
+      "retry_at": 0
+    },
+    "output": "\"|720\""
+  },
+  {
+    "name": "#2746: a stack that waits keeps the last landed head and tries again two minutes on",
+    "program": "landed.jq",
+    "input": {
+      "status": 3,
+      "head": "b2",
+      "landed_head": "a1",
+      "now": 600,
+      "retry_at": 480
+    },
+    "output": "\"a1|720\""
   }
 ]

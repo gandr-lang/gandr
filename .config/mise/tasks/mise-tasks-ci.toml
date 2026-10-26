@@ -2294,8 +2294,9 @@ exit 2
 # request's head reads green on the trunk's required contexts, out of the
 # queue, it queues the stack's ready prefix (`land_prefix`), as `pr:land`
 # does, once per head; a stack waiting on a pull request queued on its own,
-# or on a unit of its own queued below (#2046), is tried again every 2
-# minutes. A seat's `pr:open` and `pr:watch` land its pull request without a
+# or on a unit of its own queued below (#2046), and a landing that failed, a
+# rate-limited read among them (#2746), are tried again every 2 minutes. A
+# seat's `pr:open` and `pr:watch` land its pull request without a
 # `pr:land`. A pull request whose watch ended is read by the `landing`
 # workflow every 10 minutes (#2701): it lands it, or tells its seat.
 #
@@ -2327,7 +2328,7 @@ name=${repo#*/}
 deadline=$((SECONDS + timeout))
 seen_queued=false
 # The head the landing trigger last ran on, and the earliest time it runs
-# again on a stack that waits.
+# again on a stack that waits or a landing that failed.
 landed_head=
 retry_at=0
 # A reading out of the queue after one in it counts only when the next poll
@@ -2482,7 +2483,11 @@ while (( SECONDS < deadline )); do
     && [[ $(required_state "$number" "$required") == green ]]; then
     status=0
     land_prefix "$number" >&2 || status=$?
-    if (( status == 3 )); then retry_at=$((SECONDS + 120)); else landed_head=$head; fi
+    # Only a landing that ran records the head (`landed.jq`, #2746).
+    IFS='|' read -r landed_head retry_at < <(jq -rn --argjson status "$status" --arg head "$head" \
+      --arg landed_head "$landed_head" --argjson now "$SECONDS" --argjson retry_at "$retry_at" \
+      '{status: $status, head: $head, landed_head: $landed_head, now: $now, retry_at: $retry_at}' \
+      | jq -r -f "$pr_stack_dir/landed.jq")
   fi
   sleep 60
 done
