@@ -1,0 +1,142 @@
+// Rows as data: two effects in one row, each handler a fold that answers the
+// operation at the front of the row and forwards the rest, so handling
+// peels the row one effect at a time down to `Void`, where a program is its
+// result. The kernel replays every declaration here, so a program's row is
+// a claim it re-derives: an operation outside the row is a kernel type
+// error.
+
+// `Either`, `StateOp` and `Prog`.
+import "./tree.gandr" ;
+
+/// Exceptions' operation: raise a code.
+data ExnOp : Type {
+  Raise : (code : Integer) --> ExnOp;
+}
+
+/// What an exception handler answers: raised with a code, or returned.
+data Outcome(a : Type) : Type {
+  Raised : (code : Integer) --> Outcome(a);
+  Returned : (x : a) --> Outcome(a);
+}
+
+/// State answered at the front of the row from the state `s`, the rest of
+/// the row forwarded.
+def rec runState(e : Type, a : Type, p : Prog(Either(StateOp, e), a), s : Integer) -> Prog(e, a) {
+  case p {
+    Done(x) => (Done(x) : Prog(e, a)),
+    Op(o, k) => case o {
+      Left(Get) => runState[<](e, a, k(s), s),
+      Left(Put(t)) => runState[<](e, a, k(0), t),
+      Right(other) => (Op(other, fn (r) {
+        runState[<](e, a, k(r), s)
+      }) : Prog(e, a))
+    }
+  }
+}
+
+/// Exceptions answered at the front of the row, the rest of the row
+/// forwarded: a raise ends the program with its code.
+def rec runExn(e : Type, a : Type, p : Prog(Either(ExnOp, e), a)) -> Prog(e, Outcome(a)) {
+  case p {
+    Done(x) => (Done(Returned(x)) : Prog(e, Outcome(a))),
+    Op(o, k) => case o {
+      Left(Raise(c)) => (Done(Raised(c)) : Prog(e, Outcome(a))),
+      Right(other) => (Op(other, fn (r) {
+        runExn[<](e, a, k(r))
+      }) : Prog(e, Outcome(a)))
+    }
+  }
+}
+
+/// A program with nothing left in its row is its result.
+def pureOf(a : Type, p : Prog(Void, a)) -> a {
+  case p {
+    Done(x) => x,
+    Op(o, _k) => case o {}
+  }
+}
+
+/// Over exceptions, then state: read, store one more, read again, and answer
+/// ten times the second read.
+def guarded : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fn (a) {
+  (Op(Right(Left(Put(a + 1))), fn (_u) {
+    (Op(Right(Left(Get)), fn (b) {
+      (Done(b * 10) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
+    }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
+  }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
+}) ;
+
+/// Over the same row: read, then raise what was read.
+def raising : Prog(Either(ExnOp, Either(StateOp, Void)), Integer) = Op(Right(Left(Get)), fn (a) {
+  (Op(Left(Raise(a)), fn (_r) {
+    (Done(0) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
+  }) : Prog(Either(ExnOp, Either(StateOp, Void)), Integer))
+}) ;
+
+/// Over state alone: read, and answer what was read.
+def quiet : Prog(Either(StateOp, Void), Integer) = Op(
+  Left(Get),
+  fn (a) { (Done(a) : Prog(Either(StateOp, Void), Integer)) }
+) ;
+
+/// Over exceptions alone: raise four.
+def failing : Prog(Either(ExnOp, Void), Integer) = Op(
+  Left(Raise(4)),
+  fn (_r) { (Done(0) : Prog(Either(ExnOp, Void), Integer)) }
+) ;
+
+/// `runExn` at the front of the two-effect row. An applied type cannot yet
+/// stand as a type argument (#2512), so the runs below use the handlers at
+/// their instances, written out.
+def rec runExnAt(p : Prog(Either(ExnOp, Either(StateOp, Void)), Integer)) -> Prog(
+  Either(StateOp, Void),
+  Outcome(Integer)
+) {
+  case p {
+    Done(x) => (Done(Returned(x)) : Prog(Either(StateOp, Void), Outcome(Integer))),
+    Op(o, k) => case o {
+      Left(Raise(c)) => (Done(Raised(c)) : Prog(Either(StateOp, Void), Outcome(Integer))),
+      Right(other) => (Op(other, fn (r) {
+        runExnAt[<](k(r))
+      }) : Prog(Either(StateOp, Void), Outcome(Integer)))
+    }
+  }
+}
+
+/// `runState` at the row exceptions leave.
+def rec runStateAt(p : Prog(Either(StateOp, Void), Outcome(Integer)), s : Integer) -> Prog(
+  Void,
+  Outcome(Integer)
+) {
+  case p {
+    Done(x) => (Done(x) : Prog(Void, Outcome(Integer))),
+    Op(o, k) => case o {
+      Left(Get) => runStateAt[<](k(s), s),
+      Left(Put(t)) => runStateAt[<](k(0), t),
+      Right(none) => case none {}
+    }
+  }
+}
+
+/// `pureOf` at the answer.
+def pureAt(p : Prog(Void, Outcome(Integer))) -> Outcome(Integer) {
+  case p {
+    Done(x) => x,
+    Op(o, _k) => case o {}
+  }
+}
+
+/// Exceptions peeled, then state from four, then nothing left: the second
+/// read sees the stored five.
+@[ runs("Returned(50)") ]
+def handled() -> Outcome(Integer) {
+  run p <- runExnAt(guarded);
+  pureAt(runStateAt(p, 4))
+}
+
+/// The raise ends the program with the state it read.
+@[ runs("Raised(4)") ]
+def handledRaise() -> Outcome(Integer) {
+  run p <- runExnAt(raising);
+  pureAt(runStateAt(p, 4))
+}

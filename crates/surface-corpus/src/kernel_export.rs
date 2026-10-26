@@ -115,6 +115,13 @@
 //! redex apart is refused there too, naming the critical pair that does not
 //! join.
 //!
+//! `kernel_export::kernel_effect_tree_readmission::a_program_over_its_row_readmits_and_one_performing_outside_it_is_refused_by_name`
+//! readmits `corpus/model/effects/tree-rows.gandr`, where effects are data:
+//! a program is a tree over its row, a sum of operation types, and each
+//! handler a fold. A twin whose `quiet`, a program over state alone,
+//! performs `failing`'s `Raise(4)` is refused at `quiet` as a value-type
+//! mismatch: the kernel re-derives the row a program claims.
+//!
 //! The suite derives its expectations from admission and storage semantics
 //! rather than checked-in sizes, identities, class thresholds or corpus
 //! cardinalities. Exact kernel format goldens belong to `gandr-kernel-term`;
@@ -2763,5 +2770,98 @@ mod kernel_presentation_readmission
         );
         Environment::replay(arena, &declarations)
             .unwrap_or_else(|refusal| panic!("`Group` readmits: {refusal:?}"));
+    }
+}
+
+/// Effects as data readmit whole, and a program's row is a claim the kernel
+/// re-derives: a twin performing an operation outside its row is refused by
+/// name.
+mod kernel_effect_tree_readmission
+{
+    use alloc::vec;
+    use std::path::PathBuf;
+
+    use gandr_kernel_core::Environment;
+    use gandr_kernel_core::KernelError;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
+    use gandr_kernel_term::StructuredName;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::decode;
+    use gandr_surface_grammar::built_in;
+
+    use super::Root;
+    use super::Swept;
+    use super::export;
+
+    #[test]
+    fn a_program_over_its_row_readmits_and_one_performing_outside_it_is_refused_by_name()
+    {
+        let pbg = built_in().expect("the built-in grammar builds");
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../corpus/model/effects/tree-rows.gandr"
+        ));
+        let Swept::Exported(exported) = export(&pbg, path, Root::Fixture)
+        else {
+            panic!("tree-rows lowers");
+        };
+        let decoded = decode(exported.artifact.as_image()).expect("tree-rows' export decodes");
+        let declarations = decoded.declarations().to_vec();
+        let mut arena = decoded.arena().clone();
+        Environment::replay(arena.clone(), &declarations).unwrap_or_else(|refusal| {
+            panic!("tree-rows readmits, its programs and handlers pure: {refusal:?}")
+        });
+        let definition = |name: &str| {
+            let segment = NameSegment::from_text(name.into()).expect("a name segment");
+            let named = StructuredName::from(vec![segment]);
+            let position = declarations
+                .iter()
+                .position(|marked| *marked.declaration().name() == named)
+                .unwrap_or_else(|| panic!("`{name}` crossed"));
+            let DeclarationContent::Def { declared, body } =
+                *declarations[position].declaration().content()
+            else {
+                panic!("`{name}` is a definition");
+            };
+            (position, declared, body)
+        };
+        let (_, _, failing) = definition("failing");
+        let (quiet, declared, body) = definition("quiet");
+        let Some(&Value::Constructor {
+            fields: ref raised, ..
+        }) = arena.value(failing)
+        else {
+            panic!("`failing` is `Op(Left(Raise(4)), k)`");
+        };
+        let raise = raised[0];
+        let Some(Value::Constructor {
+            datatype,
+            tag,
+            fields,
+        }) = arena.value(body).cloned()
+        else {
+            panic!("`quiet` is `Op(Left(Get), k)`");
+        };
+        // The twin keeps `quiet`'s type, `Prog(Either(StateOp, Void),
+        // Integer)`, and its continuation, and performs `Left(Raise(4))`:
+        // the front of its row is `StateOp`, and `Raise(4)` is an `ExnOp`.
+        let forged = arena.value_constructor(datatype, tag, vec![raise, fields[1]]);
+        let marked = &declarations[quiet];
+        let twin_declaration = DeclarationBuilder::new(&mut arena)
+            .def(marked.declaration().levels().clone(), declared, forged)
+            .named(marked.declaration().name().clone());
+        let mut twin = declarations.clone();
+        twin[quiet] = MarkedDeclaration::new(marked.mark(), twin_declaration);
+        let refusal = Environment::replay(arena, &twin)
+            .expect_err("an operation outside the row has no injection into it");
+        assert_eq!(usize::from(refusal.position()), quiet);
+        assert!(
+            matches!(*refusal.error(), KernelError::ValueTypeMismatch(_)),
+            "the kernel names the operation's type against the row's: {:?}",
+            refusal.error()
+        );
     }
 }

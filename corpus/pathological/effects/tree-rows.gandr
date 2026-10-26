@@ -1,0 +1,26 @@
+// The twin of `model/effects/tree-rows.gandr`: a program performing an
+// operation its row does not hold, and the generic handlers applied where
+// the surface cannot yet write their type arguments.
+
+// `Either`, `StateOp` and `Prog`.
+import "../../model/effects/tree.gandr" ;
+// `ExnOp`, `Outcome`, `runExn`, `runState`, `pureOf` and `guarded`.
+import "../../model/effects/tree-rows.gandr" ;
+
+/// A program over state alone that raises: `Raise(4)` is an `ExnOp`, and the
+/// row's front is `StateOp`, so the operation has no injection into the row.
+@[ refuses("TypeMismatch") ]
+def leaking : Prog(Either(StateOp, Void), Integer) = Op(
+  Left(Raise(4)),
+  fn (_r) { (Done(0) : Prog(Either(StateOp, Void), Integer)) }
+) ;
+
+/// `guarded` handled by the generic handlers: an applied type cannot yet
+/// stand as a type argument, so `Either(StateOp, Void)` is read as a
+/// constructor given no operands (#2512).
+@[ refuses("OutOfFragment.Arity") ]
+def handledGenerically() -> Outcome(Integer) {
+  run p <- runExn(Either(StateOp, Void), Integer, guarded);
+  run q <- runState(Void, Outcome(Integer), p, 4);
+  pureOf(Outcome(Integer), q)
+}
