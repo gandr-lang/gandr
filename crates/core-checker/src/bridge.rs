@@ -2632,7 +2632,7 @@ where
         }
     };
     let staged_as = staged.declaration.declaration().clone();
-    let admitted = match environment.add_decl(staged.declaration) {
+    let admitted = match admit(environment, staged.declaration) {
         Ok(admitted) => admitted,
         Err(error) => return (Outcome::Rejected(error), staged.replayed),
     };
@@ -2644,6 +2644,22 @@ where
         (staged_as, admitted),
     );
     (outcome, staged.replayed)
+}
+
+/// Offer one staged declaration to the kernel through
+/// [`Environment::add_decl`], measured on its own so a profile reads the
+/// kernel's admission apart from the erasure that staged it.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+fn admit(
+    environment: &mut Environment,
+    staged: gandr_kernel_core::StagedDeclaration,
+) -> Result<CheckedId, KernelError>
+{
+    environment.add_decl(staged)
 }
 
 /// One offer erased and staged, not yet admitted.
@@ -2715,6 +2731,7 @@ enum Unstaged
     Unstaged::Refused(ref outcome, _) => matches!(*outcome, Outcome::Refused(_)),
     Unstaged::Unseeded(primitive) => !positions.native.contains_key(&primitive),
 }))]
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
 fn stage<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -3297,7 +3314,7 @@ where
             .collect::<Vec<_>>(),
     );
     let declaration = staged.declaration.declaration().clone().named(name);
-    let Ok(admitted) = environment.add_decl(staged.declaration)
+    let Ok(admitted) = admit(environment, staged.declaration)
     else {
         return Maybe::Absent(assumption::Absent::Refused);
     };
@@ -3402,7 +3419,7 @@ impl Positions
                 .collect::<Vec<_>>(),
         );
         let declaration = staged.declaration().clone().named(name);
-        let admitted = environment.add_decl(staged)?;
+        let admitted = admit(environment, staged)?;
         self.native.insert(primitive, admitted.position());
         self.exports.push(declaration);
         Ok(())
