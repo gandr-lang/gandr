@@ -1,0 +1,52 @@
+[
+  {
+    "name": "main's push: hotpath Cloud took the report",
+    "program": "upload.jq",
+    "input": {
+      "mode": "enabled",
+      "act": false,
+      "sent": true
+    },
+    "output": "sent"
+  },
+  {
+    "name": "main's push: the upload failed (an OIDC timeout), so the report is kept and the job passes (#2641)",
+    "program": "upload.jq",
+    "input": {
+      "mode": "enabled",
+      "act": false,
+      "sent": false
+    },
+    "output": "unsent"
+  },
+  {
+    "name": "a pull request: the upload failed, which fails its lane as before",
+    "program": "upload.jq",
+    "input": {
+      "mode": "fail-on-error",
+      "act": false,
+      "sent": false
+    },
+    "output": "refused"
+  },
+  {
+    "name": "a pull request: hotpath Cloud took the report",
+    "program": "upload.jq",
+    "input": {
+      "mode": "fail-on-error",
+      "act": false,
+      "sent": true
+    },
+    "output": "sent"
+  },
+  {
+    "name": "act holds no OIDC token and uploads nothing",
+    "program": "upload.jq",
+    "input": {
+      "mode": "fail-on-error",
+      "act": true,
+      "sent": false
+    },
+    "output": "skipped"
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "name": "the first report not uploaded opens the issue with its row",
+    "program": "unsent.jq",
+    "input": {
+      "issue": null,
+      "run": {
+        "commit": "905a22c52084a861dd032122053edbd0bda46281",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40331486842",
+        "benchmarks": ["gandr", "gandr-timing"]
+      }
+    },
+    "output": "{\"number\":null,\"title\":\"ci: hotpath reports not uploaded on main\",\"body\":\"Main's push runs the hotpath series and uploads each report to hotpath Cloud. A failed upload is a report failure, never a red `main`: the job passes with a warning, keeps the measurements in the run's `hotpath-<commit>` artifact, and `mise run ci:hotpath-unsent` adds the run's row here. Remove a row once its cause is fixed; the issue closes with the last.\\n\\n| Commit | Run | Benchmarks |\\n| --- | --- | --- |\\n| 905a22c52 | [40331486842](https://github.com/gandr-lang/gandr/actions/runs/40331486842) | `gandr`, `gandr-timing` |\\n\"}"
+  },
+  {
+    "name": "a later run's report not uploaded adds its row to the open issue",
+    "program": "unsent.jq",
+    "input": {
+      "issue": {
+        "number": 2700,
+        "body": "Main's push runs the hotpath series and uploads each report to hotpath Cloud. A failed upload is a report failure, never a red `main`: the job passes with a warning, keeps the measurements in the run's `hotpath-<commit>` artifact, and `mise run ci:hotpath-unsent` adds the run's row here. Remove a row once its cause is fixed; the issue closes with the last.\r\n\r\n| Commit | Run | Benchmarks |\r\n| --- | --- | --- |\r\n| 905a22c52 | [40331486842](https://github.com/gandr-lang/gandr/actions/runs/40331486842) | `gandr`, `gandr-timing` |\r\n\r\n"
+      },
+      "run": {
+        "commit": "905a22c52084a861dd032122053edbd0bda46281",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40331486999",
+        "benchmarks": ["store"]
+      }
+    },
+    "output": "{\"number\":2700,\"title\":\"ci: hotpath reports not uploaded on main\",\"body\":\"Main's push runs the hotpath series and uploads each report to hotpath Cloud. A failed upload is a report failure, never a red `main`: the job passes with a warning, keeps the measurements in the run's `hotpath-<commit>` artifact, and `mise run ci:hotpath-unsent` adds the run's row here. Remove a row once its cause is fixed; the issue closes with the last.\\n\\n| Commit | Run | Benchmarks |\\n| --- | --- | --- |\\n| 905a22c52 | [40331486842](https://github.com/gandr-lang/gandr/actions/runs/40331486842) | `gandr`, `gandr-timing` |\\n| 905a22c52 | [40331486999](https://github.com/gandr-lang/gandr/actions/runs/40331486999) | `store` |\\n\"}"
+  },
+  {
+    "name": "a rerun that files the same row again leaves the body as it is",
+    "program": "unsent.jq",
+    "input": {
+      "issue": {
+        "number": 2700,
+        "body": "Main's push runs the hotpath series and uploads each report to hotpath Cloud. A failed upload is a report failure, never a red `main`: the job passes with a warning, keeps the measurements in the run's `hotpath-<commit>` artifact, and `mise run ci:hotpath-unsent` adds the run's row here. Remove a row once its cause is fixed; the issue closes with the last.\n\n| Commit | Run | Benchmarks |\n| --- | --- | --- |\n| 905a22c52 | [40331486842](https://github.com/gandr-lang/gandr/actions/runs/40331486842) | `gandr`, `gandr-timing` |\n"
+      },
+      "run": {
+        "commit": "905a22c52084a861dd032122053edbd0bda46281",
+        "url": "https://github.com/gandr-lang/gandr/actions/runs/40331486842",
+        "benchmarks": ["gandr", "gandr-timing"]
+      }
+    },
+    "output": "{\"number\":2700,\"title\":\"ci: hotpath reports not uploaded on main\",\"body\":\"Main's push runs the hotpath series and uploads each report to hotpath Cloud. A failed upload is a report failure, never a red `main`: the job passes with a warning, keeps the measurements in the run's `hotpath-<commit>` artifact, and `mise run ci:hotpath-unsent` adds the run's row here. Remove a row once its cause is fixed; the issue closes with the last.\\n\\n| Commit | Run | Benchmarks |\\n| --- | --- | --- |\\n| 905a22c52 | [40331486842](https://github.com/gandr-lang/gandr/actions/runs/40331486842) | `gandr`, `gandr-timing` |\\n\"}"
+  }
+]

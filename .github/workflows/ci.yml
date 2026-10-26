@@ -1632,6 +1632,7 @@ jobs:
     if: ${{ !cancelled() && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork && needs.prepare.outputs.rust == 'true' && needs.prepare.outputs.stacked != 'true')) }}
     outputs:
       judged: ${{ steps.judge.outputs.checks }}
+      unsent: ${{ steps.unsent.outputs.benchmarks }}
     runs-on: *linux
     permissions:
       actions: read
@@ -1645,7 +1646,10 @@ jobs:
       # Main's push restores main's newest state rather than looking it up.
       CI_ON_MAIN: "true"
       CI_CHECKOUT_REF: ${{ github.event.pull_request.head.sha }}
-      HOTPATH_UPLOAD: fail-on-error
+      # A pull request's lane fails on a report hotpath Cloud did not take;
+      # main's push keeps it, warns and files it (#2641): a report never
+      # turns `main` red.
+      HOTPATH_UPLOAD: ${{ github.event_name == 'pull_request' && 'fail-on-error' || 'enabled' }}
       HOTPATH_ALLOC_METRIC: count
       CI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1670,6 +1674,11 @@ jobs:
         run: mise run ci:hotpath gandr gandr-lang hotpath
       - name: run the store series
         run: mise run ci:hotpath store gandr-storage-schema store
+      # Each report `ci:hotpath` could not upload is named under
+      # target/hotpath/unsent/; `hotpath-unsent` files them.
+      - name: name the reports not uploaded
+        id: unsent
+        run: printf 'benchmarks=%s\n' "$(ls target/hotpath/unsent | paste -sd' ')" >> "$GITHUB_OUTPUT"
       - name: judge the runs against the base's
         id: judge
         if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
@@ -1780,6 +1789,32 @@ jobs:
       - *install-policy-tools
       - name: add the landed verdicts
         run: mise run ci:hotpath-landed
+
+  # A report the hotpath job could not upload on main's push is a row of one
+  # `kind:ci` issue (`mise run ci:hotpath-unsent`, #2641), opened or updated
+  # here; the run's `hotpath-<commit>` artifact keeps the measurements and
+  # `main` stays green. Nothing needs this job.
+  hotpath-unsent:
+    name: file the hotpath reports not uploaded
+    needs: [prepare, ci-image, hotpath]
+    if: ${{ !cancelled() && needs.hotpath.outputs.unsent != '' && github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.fork == false }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      HOTPATH_UNSENT: ${{ needs.hotpath.outputs.unsent }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: file the reports not uploaded
+        run: mise run ci:hotpath-unsent
 
   # A landing that leaves a mutant of its own lines alive files it (`mise run
   # ci:mutants-landed`): main's push reads the mutants comment of every pull

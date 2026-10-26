@@ -586,8 +586,15 @@ gh cache list --repo "${GITHUB_REPOSITORY:?}" --ref refs/heads/main --key "${usa
 # names only the innermost module, and `*` stands for any modules around it.
 # A series' own `measure_block!` labels belong to its package. CI_BASE_SHA names the
 # base. Each upload's report is also written to target/hotpath/reports/, which
-# the job keeps as the artifact `hotpath-<commit>` for `ci:hotpath-base`. The
-# upload is skipped under act, which holds no OIDC token.
+# the job keeps as the artifact `hotpath-<commit>` for `ci:hotpath-base`.
+#
+# A report is a report, never a red `main` (#2641). Each upload's outcome is
+# `.config/hotpath/upload.jq`'s: under act, which holds no OIDC token, it is
+# skipped; under `HOTPATH_UPLOAD=fail-on-error` (a pull request's lane) a
+# report hotpath Cloud did not take fails the job, as hotpath itself does;
+# otherwise (main's push) it is a warning, the report is kept all the same,
+# and its benchmark is named under target/hotpath/unsent/ for
+# `ci:hotpath-unsent`, which files it.
 #
 # Every run's report, the uploads' among them, is kept as
 # target/hotpath/runs/<series>-<n>.json, and runs without an upload follow
@@ -611,8 +618,9 @@ package=${usage_package:?}
 bench=${usage_bench:?}
 root=$(git rev-parse --show-toplevel)
 scratch="$root/target/hotpath"
-mkdir -p "$scratch/reports" "$scratch/runs"
-rm -f "$scratch/runs/$series"-*.json "$scratch/$series-timing-policy.toml"
+mkdir -p "$scratch/reports" "$scratch/runs" "$scratch/unsent"
+rm -f "$scratch/runs/$series"-*.json "$scratch/$series-timing-policy.toml" \
+  "$scratch/unsent/$series" "$scratch/unsent/$series-timing"
 kept=0
 keep() {
   kept=$((kept + 1))
@@ -623,7 +631,18 @@ upload() {
   HOTPATH_BENCHMARK=$1 HOTPATH_POLICY_PATH=$2 HOTPATH_UPLOAD_RESPONSE_PATH="$scratch/$1.json" \
     HOTPATH_OUTPUT_FORMAT=json HOTPATH_OUTPUT_PATH="$scratch/reports/$1.json" \
     "$root/.config/mise/scope" cargo test --locked --profile test --package "$package" --bench "$bench" --features hotpath
-  if [[ ${ACT:-} != true ]]; then test -s "$scratch/$1.json"; fi
+  outcome=$(jq -n --arg mode "${HOTPATH_UPLOAD:-}" --arg act "${ACT:-}" --arg sent "$([[ -s $scratch/$1.json ]] && echo true)" \
+    '{mode: $mode, act: ($act == "true"), sent: ($sent == "true")}' | jq -r -f "$root/.config/hotpath/upload.jq")
+  case $outcome in
+    refused)
+      echo "::error::hotpath: the $1 report was not uploaded"
+      exit 1
+      ;;
+    unsent)
+      echo "::warning::hotpath: the $1 report was not uploaded; it is kept in the run's hotpath artifact and filed by ci:hotpath-unsent"
+      : > "$scratch/unsent/$1"
+      ;;
+  esac
   keep "$scratch/reports/$1.json"
 }
 more() {
@@ -983,6 +1002,39 @@ fi
 echo "ledger #$ledger"
 cat "$scratch/rows"
 {% endraw %}'''
+
+# Main's hotpath reports not uploaded (#2641): each benchmark `ci:hotpath`
+# could not upload on main's push (HOTPATH_UNSENT, space-separated) is a row
+# of one open `kind:ci` issue, `ci: hotpath reports not uploaded on main`,
+# opened by the first and updated by each later one; `.config/hotpath/
+# unsent.jq` writes its body. The row links the run, whose `hotpath-<commit>`
+# artifact keeps the measurements. GH_REPO names the repository;
+# GITHUB_SERVER_URL, GITHUB_RUN_ID and GITHUB_SHA the run.
+["ci:hotpath-unsent"]
+description = "File main's hotpath reports not uploaded on one kind:ci issue"
+tools.jq = "1.8.1"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+repo=${GH_REPO:?}
+title='ci: hotpath reports not uploaded on main'
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+gh issue list --repo "$repo" --state open --label kind:ci --search "\"$title\" in:title" --json number,title,body \
+  | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/issue.json"
+jq -n --slurpfile issue "$scratch/issue.json" --arg commit "${GITHUB_SHA:?}" \
+  --arg url "${GITHUB_SERVER_URL:?}/$repo/actions/runs/${GITHUB_RUN_ID:?}" --arg benchmarks "${HOTPATH_UNSENT:?}" \
+  '{issue: $issue[0], run: {commit: $commit, url: $url, benchmarks: ($benchmarks | split(" ") | map(select(length > 0)))}}' \
+  | jq -c -f .config/hotpath/unsent.jq > "$scratch/filed.json"
+jq -r .body "$scratch/filed.json" > "$scratch/body.md"
+number=$(jq -r '.number // empty' "$scratch/filed.json")
+if [[ -z $number ]]; then
+  gh issue create --repo "$repo" --title "$title" --label kind:ci --label area:workflow --body-file "$scratch/body.md"
+else
+  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  echo "updated #$number"
+fi
+'''
 
 # A landing's surviving mutants, read on main's push from each merged pull
 # request's mutants comment, the one the `report the mutants of the change`
