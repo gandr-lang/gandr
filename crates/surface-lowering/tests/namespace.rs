@@ -1548,6 +1548,90 @@ fn the_prelude_answers_a_name_nothing_written_binds_2302()
     );
 }
 
+/// #2687: the prelude's `theory Gandr.Package`, declared in the module its
+/// dotted name opens, is read by its path from a source writing no import: a
+/// model of it stands, and one missing a member is refused at the member.
+#[test]
+fn the_prelude_s_package_theory_is_read_by_its_path_2687()
+{
+    let pbg = grammar();
+    let source = "module Package : Model(Gandr.Package) {\n  def name : String = \"probe\";\n  def \
+                  version : String = \"0.1.0\";\n}\nmodule Partial : Model(Gandr.Package) {\n  \
+                  def name : String = \"partial\";\n}\n";
+    let (text, unit) =
+        gandr_surface_lowering::prelude::lay(SourceText::from(source), &Unit::single())
+            .expect("a unit of one source lays after the prelude");
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let partial = text.rfind("Package)").expect("`Partial` names the theory");
+    assert_eq!(
+        refused(&module),
+        Vec::from([format!("{:?}", LoweringRefusal::UnknownMember {
+            span: ByteSpan::new(ByteOffset::from(partial), ByteOffset::from(partial + 7))
+                .expect("a span"),
+            module: SurfaceName::from("Partial"),
+            member: SurfaceName::from("version"),
+        })]),
+        "`Package` models the prelude's theory, and `Partial` lacks its `version`"
+    );
+}
+
+/// #2687: a theory a source declares through a dotted name and keeps private
+/// is refused to a source importing it, by its path, while the exported one
+/// beside it in the same module is read.
+#[test]
+fn a_private_theory_in_a_dotted_module_is_refused_to_its_importer_2687()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "pub theory Kit.Shown {\n  oper label : String;\n}\ntheory Kit.Hidden {\n  oper \
+                 label : String;\n}\n",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import \"./kit.gandr\" ;\nmodule Seen : Model(Kit.Shown) {\n  def label : \
+                 String = \"seen\";\n}\nmodule Unseen : Model(Kit.Hidden) {\n  def label : \
+                 String = \"unseen\";\n}\n",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+    let unseen = module
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == SurfaceName::from("Unseen"))
+        .map(gandr_surface_lowering::LoweredDeclaration::outcome);
+    let hidden = text
+        .rfind("Hidden")
+        .expect("the importer names `Kit.Hidden`");
+    let declared = text.find("Hidden").expect("the base declares `Kit.Hidden`");
+    assert_eq!(
+        unseen,
+        Some(DeclarationOutcome::Refused(
+            LoweringRefusal::UnexportedName {
+                span: ByteSpan::new(ByteOffset::from(hidden), ByteOffset::from(hidden + 6))
+                    .expect("a span"),
+                name: SurfaceName::from("Hidden"),
+                declared: ByteSpan::new(ByteOffset::from(declared), ByteOffset::from(declared + 6))
+                    .expect("a span"),
+                reason: Unexported::Private,
+            }
+        )),
+        "the private theory is refused at its name in the path"
+    );
+    assert_eq!(
+        refused(&module).len(),
+        1_usize,
+        "and the exported one beside it is read"
+    );
+}
+
 /// #2302: the prelude's `theory Eq` enters the presentation's constructors in
 /// the prelude, as any block does, but offers none of them: a source laid
 /// after it reads `Shape` as the type it declares, where the presentation's

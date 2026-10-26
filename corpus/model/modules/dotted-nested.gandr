@@ -1,0 +1,31 @@
+// #2687: dotted names and nested module blocks combine: a block nested in a
+// module a dotted name declares, a written block reading into the dotted
+// module, a second module under the prefix reading back into the block, and a
+// sibling under one prefix read by its name inside that prefix.
+
+/// A dotted module holding a nested block.
+module Net.Wire {
+  /// A block inside the dotted module.
+  module Core {
+    /// A gauge.
+    def gauge = 3;
+  }
+}
+
+/// A written block reading into the dotted module.
+module Panel {
+  /// The gauge, through the dotted module's path.
+  def gauge = Net.Wire.Core.gauge;
+}
+
+/// A second module under the prefix.
+module Net.Meter {
+  /// The panel's gauge, read back out of the block.
+  def shown = Panel.gauge;
+  /// The sibling's gauge, by its name inside `Net`.
+  def sibling = Wire.Core.gauge;
+}
+
+/// Both readings.
+@[ runs("#{.shown = 3, .sibling = 3}") ]
+#{shown = Net.Meter.shown, sibling = Net.Meter.sibling}

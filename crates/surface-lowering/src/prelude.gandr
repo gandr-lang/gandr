@@ -97,3 +97,13 @@ pub def gt @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.gt(a, b)
 
 /// At least, through the operands' model of `Ord`: what `a >= b` calls.
 pub def ge @[o : Model(Ord)] (a : o.Carrier, b : o.Carrier) -> Bool { o.ge(a, b) }
+
+/// A package: the project a `lib.gandr` roots, described by the model its
+/// `module Package : Model(Gandr.Package)` is, from which the checker writes
+/// the project's `gandr.toml`.
+pub theory Gandr.Package {
+  /// The package's name, which the manifest records it by.
+  oper name : String;
+  /// The package's version, as the manifest records it.
+  oper version : String;
+}

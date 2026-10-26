@@ -509,6 +509,18 @@ quenchant_shape::reason_enum! {
 }
 
 quenchant_shape::reason_enum! {
+    /// Why a declaration form reads no dotted name.
+    pub mod dotted {
+        /// The form is written without one.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No name follows the form's keyword.
+            Unnamed,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
     /// Why an abstract type component states no kind.
     pub mod component_kind {
         /// The component is written without one.
@@ -1464,6 +1476,11 @@ pub struct Collected<'source>
     /// constructors and members written inside it included. A declaration
     /// none precedes is private to its source.
     pub public: BTreeMap<ByteOffset, ByteSpan>,
+    /// Each module a dotted name's segment opens, `Gandr` of `theory
+    /// Gandr.Package`, where its source declares no module of that name, with
+    /// whether any declaration made in it through such a name is exported: no
+    /// form of its own writes the module, so no mark precedes one.
+    pub implied: BTreeMap<StructureIndex, Visibility>,
     /// Every module form's documentation, each piece documenting its module
     /// form, in source order: a module is no slot, so its documentation is
     /// kept beside the slots' rather than in one (#1135).
@@ -1933,7 +1950,8 @@ impl<'source> Collected<'source>
     }
 
     /// Whether the source declaring the module `module` exports it: a `pub`
-    /// mark precedes its form.
+    /// mark precedes its form, or, for a module a dotted name opens, a
+    /// declaration made in it through one.
     ///
     /// # Specification
     /// trivial.
@@ -1943,6 +1961,9 @@ impl<'source> Collected<'source>
         module: StructureIndex,
     ) -> Visibility
     {
+        if let Some(&implied) = self.implied.get(&module) {
+            return implied;
+        }
         self.structures
             .get(module.0)
             .map_or(Visibility::Private, |entry| {
@@ -2900,6 +2921,7 @@ pub fn begin_collection<'source>(
         data_members: BTreeMap::new(),
         decorated: Vec::new(),
         public: BTreeMap::new(),
+        implied: BTreeMap::new(),
         module_docs: Vec::new(),
         families: Vec::new(),
         top_types: Vec::new(),
@@ -3428,6 +3450,19 @@ pub fn collect_source<'source>(
             strays.push(Stray::of(block, refusal, Vec::new()));
         }
         decorations.clear();
+    }
+    // A module a dotted name opened is written by no form of its own, so it
+    // closes once its source has declared all it will in it, the one nested
+    // in another first.
+    let implied: Vec<StructureIndex> = collector
+        .collected
+        .implied
+        .keys()
+        .copied()
+        .filter(|module| module.0 >= declared_before.1)
+        .collect();
+    for module in implied.into_iter().rev() {
+        collector.close(module, &[])?;
     }
     // The last root child, when it is an expression the parser did not repair,
     // is the run target: every other expression at the root, before a named
@@ -4945,17 +4980,19 @@ impl<'source> Collector<'_, 'source>
     ///   own before it.
     /// - ensures: a block none of whose members the description route or the
     ///   cell gate refused mints `Theory` when the module holds none, then
-    ///   takes a declared slot under its name whose definition half is the
-    ///   block itself; a refused block takes that slot too, refused by its
-    ///   first refusal, and each further refusal one held slot at its member's
-    ///   span with the block as its signature half, so the attributes the
-    ///   decorations file under the block are read off every one of them. The
-    ///   slot owns the block and its decorations; an unreadable decoration, or
-    ///   a `Theory` the module declared otherwise, refuses it; a name declared
-    ///   before refuses the block as a duplicate. Each `include` the block
-    ///   writes is kept among the declared uses, its name tile beside the slot
-    ///   owning the theory it includes; a block whose slot stands unrefused
-    ///   takes its reducts' slots after it ([`Self::reducts`]).
+    ///   takes a declared slot under its name, in the module its dotted name's
+    ///   prefix names ([`Self::declared_in`]), whose definition half is the
+    ///   block itself; a refused block, or one whose prefix is refused, takes
+    ///   that slot too, refused by its first refusal, and each further refusal
+    ///   one held slot at its member's span with the block as its signature
+    ///   half, so the attributes the decorations file under the block are read
+    ///   off every one of them. The slot owns the block and its decorations; an
+    ///   unreadable decoration, or a `Theory` the module declared otherwise,
+    ///   refuses it; a name declared before refuses the block as a duplicate.
+    ///   Each `include` the block writes is kept among the declared uses, its
+    ///   name tile beside the slot owning the theory it includes; a block whose
+    ///   slot stands unrefused takes its reducts' slots after it
+    ///   ([`Self::reducts`]).
     /// - provides: `theory S { … }` as the declaration `S : Theory` whose body
     ///   is the presentation's value.
     /// - panics: none.
@@ -4997,7 +5034,12 @@ impl<'source> Collector<'_, 'source>
             Some(_) => Ok(()),
             None => self.mint_theory(named),
         };
-        let position = self.admit(self.collected.top(child.span.start()), name, child, named);
+        let top = self.collected.top(child.span.start());
+        let (container, prefixed) = match self.declared_in(top, child) {
+            Ok(container) => (container, Ok(())),
+            Err(refusal) => (top, Err(refusal)),
+        };
+        let position = self.admit(container, name, child, named);
         self.collected.own(child.node, position);
         let mut attributes = Vec::new();
         let mut attributed = Ok(());
@@ -5019,7 +5061,7 @@ impl<'source> Collector<'_, 'source>
                     operand: Operand::Presented,
                 });
                 slot.attributes.extend(attributes);
-                for refused in [attributed, minted] {
+                for refused in [attributed, minted, prefixed] {
                     if let Err(refusal) = refused {
                         slot.refuse(child.node, refusal);
                     }
@@ -5041,8 +5083,7 @@ impl<'source> Collector<'_, 'source>
                 node: child.node,
                 span,
             };
-            let top = self.collected.top(child.span.start());
-            let held = self.held(top, name, introduced, named);
+            let held = self.held(container, name, introduced, named);
             if let Some(slot) = self.collected.slots.get_mut(held.0) {
                 slot.signature = Maybe::Present(Half {
                     declaration: child,
@@ -6581,12 +6622,39 @@ impl<'source> Collector<'_, 'source>
         let mut pieces = Pieces::new();
         read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
         let mut stack = Vec::new();
-        let opened_at = StructureIndex(self.collected.structures.len());
         let top = self.collected.top(module.span.start());
+        // A dotted name, `module Gandr.Workspace { … }`, declares the module in
+        // the modules its prefix names; a functor or an application is bound
+        // at the top level alone.
+        let dotted = match Self::dotted_name(&pieces, module) {
+            Maybe::Present((prefix, _)) => prefix.first().copied(),
+            Maybe::Absent(_) => None,
+        };
+        let within = match dotted {
+            Some(_) => self.declared_in(top, module),
+            None => Ok(top),
+        };
+        let opened_at = StructureIndex(self.collected.structures.len());
         match self.header(module, &pieces, top)? {
-            Header::Opened(opened) => self.open(top, module, opened, &mut stack),
+            Header::Opened(opened) => match (within, dotted) {
+                (Ok(_), Some(segment)) if matches!(opened.parameter, Maybe::Present(_)) => {
+                    let refusal = misplaced_in(FormName::MODULE, segment.span);
+                    let _held = self.refuse_held(top, opened.name, module, opened.named, refusal);
+                },
+                (Ok(within), _) => self.open(within, module, opened, &mut stack),
+                (Err(refusal), _) => {
+                    let _held = self.refuse_held(top, opened.name, module, opened.named, refusal);
+                },
+            },
             Header::Applied(applied) => {
-                self.apply(module, &applied);
+                match dotted {
+                    Some(segment) => {
+                        let refusal = misplaced_in(FormName::MODULE, segment.span);
+                        let _held =
+                            self.refuse_held(top, applied.name, module, applied.named, refusal);
+                    },
+                    None => self.apply(module, &applied),
+                }
                 return Ok(());
             },
             Header::Refused {
@@ -6716,6 +6784,27 @@ impl<'source> Collector<'_, 'source>
             },
             Maybe::Present(_) | Maybe::Absent(_) => return Ok(unnamed(&cursor)),
         };
+        let mut named = named;
+        // A dotted name declares the module in the modules its segments
+        // before the last name ([`Self::declared_in`]): the header reads the
+        // last.
+        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+            match cursor.peek() {
+                Maybe::Present(Piece::Tile { label, at })
+                    if label == TileName::TYPE_IDENTIFIER || label == TileName::IDENTIFIER =>
+                {
+                    let _segment = cursor.read();
+                    named = at;
+                },
+                Maybe::Present(_) | Maybe::Absent(_) => {
+                    return Ok(Header::Refused {
+                        name: self.name_of(named),
+                        named,
+                        refusal: misplaced_in(FormName::MODULE, cursor.here()),
+                    });
+                },
+            }
+        }
         let name = self.name_of(named);
         let refused = |refusal| {
             Ok(Header::Refused {
@@ -7207,6 +7296,177 @@ impl<'source> Collector<'_, 'source>
             next: 0_usize,
             includes: Vec::new(),
         });
+    }
+
+    /// The module the declaration form `form`, written in `container`, is
+    /// declared in: the one its dotted name's prefix names, as
+    /// [`Self::implied_container`] opens it, or `container` for an undotted
+    /// name.
+    ///
+    /// # Specification
+    /// - requires: `form` is a `theory` or `module` form written in
+    ///   `container`.
+    /// - ensures: as [`Self::implied_container`] over the prefix
+    ///   [`Self::dotted_name`] reads.
+    /// - fails: as [`Self::implied_container`];
+    ///   [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::DuplicateDefinition`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the witnesses of [`Self::implied_container`].
+    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    #[spec(ensures: |ret| matches!(ret, Ok(_) | Err(LoweringRefusal::DuplicateDefinition { .. } | LoweringRefusal::UnknownMold { .. })))]
+    fn declared_in(
+        &mut self,
+        container: Container,
+        form: Placed,
+    ) -> Result<Container, LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, form.node, &mut pieces)?;
+        match Self::dotted_name(&pieces, form) {
+            Maybe::Present((prefix, _)) => self.implied_container(container, form, &prefix),
+            Maybe::Absent(_) => Ok(container),
+        }
+    }
+
+    /// The module the segments `prefix` of a dotted declaration name, written
+    /// by `form` in `container`, declare it in: `Gandr` of `theory
+    /// Gandr.Package`.
+    ///
+    /// # Specification
+    /// - requires: `prefix` are the name tiles before the name's last, in
+    ///   written order.
+    /// - ensures: `container` for an empty prefix; otherwise the module the
+    ///   last segment names, each segment naming a module of its name in the
+    ///   one before that a dotted name opened, opened here, with no ascription,
+    ///   as its container's member, where none of its name stands; each is
+    ///   exported once `form` is.
+    /// - fails: [`LoweringRefusal::DuplicateDefinition`] at a segment naming a
+    ///   module a form of its own writes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::DuplicateDefinition`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a theory and a module declared through one dotted
+    ///   prefix share its module, an exported one exports it, and a prefix
+    ///   naming a written module is refused at the segment.
+    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    /// - witness: `tests::modules::a_dotted_prefix_naming_a_written_module_is_refused_2687`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |&within| prefix.is_empty() == (within == container)))]
+    fn implied_container(
+        &mut self,
+        container: Container,
+        form: Placed,
+        prefix: &[Placed],
+    ) -> Result<Container, LoweringRefusal<'source>>
+    {
+        let exported = self.collected.covering(form.span);
+        let mut within = container;
+        for &segment in prefix {
+            let name = self.name_of(segment);
+            let module = match self.collected.modules.get(&(within, name)) {
+                Some(&module) if self.collected.implied.contains_key(&module) => module,
+                Some(&module) => {
+                    let first = self
+                        .collected
+                        .structures
+                        .get(module.0)
+                        .map_or(segment.span, |entry| entry.named.span);
+                    return Err(LoweringRefusal::DuplicateDefinition {
+                        span: segment.span,
+                        name,
+                        first,
+                    });
+                },
+                None => {
+                    let module = StructureIndex(self.collected.structures.len());
+                    self.collected.structures.push(Structure {
+                        name,
+                        container: within,
+                        declared_by: form,
+                        named: segment,
+                        ascription: Maybe::Absent(ascription::Absent::Unascribed),
+                        model: Maybe::Absent(derived::Absent::Written),
+                        sealed: Sealed(false),
+                        members: Vec::new(),
+                        exports: Vec::new(),
+                        types: Vec::new(),
+                        type_members: Vec::new(),
+                        exported_as: BTreeMap::new(),
+                        stated_at: Vec::new(),
+                        coerced: Coerced(false),
+                        stratum: Stratum::Module,
+                    });
+                    self.collected.modules.insert((within, name), module);
+                    if let Container::Module(parent) = within
+                        && let Some(entry) = self.collected.structures.get_mut(parent.0)
+                    {
+                        entry.members.push(Member::Module(module));
+                    }
+                    let _fresh = self.collected.implied.insert(module, Visibility::Private);
+                    module
+                },
+            };
+            if exported == Visibility::Public {
+                let _held = self.collected.implied.insert(module, Visibility::Public);
+            }
+            within = Container::Module(module);
+        }
+        Ok(within)
+    }
+
+    /// The name tiles before the last of the dotted name the form `form`
+    /// declares, `Gandr` of `theory Gandr.Package`, and its last: the tiles
+    /// from its first name to the first tile neither a name nor a `.`.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of `form`, whose keyword leads it.
+    /// - ensures: the segments before the last, in written order, and the last;
+    ///   absent when no name follows the keyword.
+    /// - panics: none.
+    /// - executable: none — the segments are the tiles the cursor walks, which
+    ///   restating reads again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-segment theory, a two-segment module and a
+    ///   one-segment module are each declared under their own prefix.
+    /// - witness: `tests::modules::a_dotted_name_declares_in_the_modules_its_prefix_names_2687`
+    fn dotted_name(
+        pieces: &Pieces,
+        form: Placed,
+    ) -> Maybe<(Vec<Placed>, Placed), dotted::Absent>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, form.span);
+        let _keyword = cursor.read();
+        let named = |cursor: &mut Cursor<'_>| match cursor.peek() {
+            Maybe::Present(Piece::Tile { label, at })
+                if label == TileName::TYPE_IDENTIFIER || label == TileName::IDENTIFIER =>
+            {
+                let _name = cursor.read();
+                Maybe::Present(at)
+            },
+            Maybe::Present(_) | Maybe::Absent(_) => Maybe::Absent(dotted::Absent::Unnamed),
+        };
+        let Maybe::Present(mut last) = named(&mut cursor)
+        else {
+            return Maybe::Absent(dotted::Absent::Unnamed);
+        };
+        let mut prefix = Vec::new();
+        while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+            let Maybe::Present(next) = named(&mut cursor)
+            else {
+                break;
+            };
+            prefix.push(core::mem::replace(&mut last, next));
+        }
+        Maybe::Present((prefix, last))
     }
 
     /// Whether the module `container` names seals the nested module `name` it

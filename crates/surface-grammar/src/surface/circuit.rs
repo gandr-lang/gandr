@@ -123,6 +123,10 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 /// `oper` / `rule` never gain a form-first Item mold competing at a top-level
 /// slot.
 ///
+/// The name is a dotted path, `theory Gandr.Package { … }`: its segments
+/// before the last name the modules the theory is declared in, as a module's
+/// written name does.
+///
 /// # Specification
 /// - requires: nothing.
 /// - ensures: appends the named item rule at `p`, preserving the existing
@@ -150,6 +154,7 @@ fn theory_declaration(
         seq([
             t(TileLabel("theory")),
             t(TileLabel("type_identifier")),
+            repeat(seq([t(TileLabel(".")), t(TileLabel("type_identifier"))])),
             t(TileLabel("{")),
             repeat(seq([theory_member(), t(TileLabel(";"))])),
             t(TileLabel("}")),

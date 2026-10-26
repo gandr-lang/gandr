@@ -130,7 +130,20 @@ impl Context
         let rule = rule.0;
         match <&str>::from(text) {
             "(" | "[" if OPERANDS.contains(&rule) => Self::Operand,
-            "." if BINDINGS.contains(&rule) => Self::Binding,
+            // A theory's dotted name, `theory Gandr.Package`, is the keyword,
+            // type names and dots alone, where a binder's `.` follows a
+            // rule's sides.
+            "." if BINDINGS.contains(&rule)
+                && !(rule == "theory_declaration"
+                    && before.iter().all(|step| {
+                        matches!(
+                            step.crossed,
+                            StepSym::Tile("theory" | "type_identifier" | ".")
+                        )
+                    })) =>
+            {
+                Self::Binding
+            },
             "[" if APART.contains(&rule) => Self::Operand,
             "{" if TELESCOPES.contains(&rule) => Self::Telescope,
             "{" if rule == "theory_declaration" && before == FACE => Self::Telescope,

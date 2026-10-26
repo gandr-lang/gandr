@@ -1,0 +1,22 @@
+// #2687: a dotted name is read at a top-level `theory` or `module` alone.
+// Inside a module block a dotted module name is out of place and a theory is
+// no member. Each refusal is held at a member's slot, which no expectation can
+// state, so the source stands pending until a member carries one.
+
+/// A block holding a dotted module, refused at the dotted name.
+module Outer {
+  /// A dotted module inside a block.
+  module In.Deep {
+    /// A value.
+    def v = 2;
+  }
+}
+
+/// A block holding a theory, which is no member.
+module Holder {
+  /// A theory inside a block.
+  theory In.T {
+    /// Its size.
+    oper size : Integer;
+  }
+}

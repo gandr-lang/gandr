@@ -897,9 +897,11 @@ mod tests
                 ("Eq", Kind::ENUM),
                 ("Nat", Kind::ENUM),
                 ("Ord", Kind::ENUM),
+                ("Package", Kind::ENUM),
                 ("PartialEq", Kind::ENUM),
             ]),
-            "a type: the families alone, the prelude's `Eq`, `Ord` and `PartialEq` among them"
+            "a type: the families alone, the prelude's `Eq`, `Ord`, `PartialEq` and \
+             `Gandr.Package` among them, a module's by its own name as a module's value is"
         );
         assert!(has(&ty, "Type") && !has(&ty, "return"), "{ty:?}");
 
