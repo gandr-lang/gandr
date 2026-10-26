@@ -36,12 +36,12 @@ use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
+use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoEntryCount;
 use gandr_kernel_check_memo::MemoError;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::NullMemo;
-use gandr_kernel_check_memo::OrderedMemo;
 
 /// A failure of the harness, as distinct from a disagreement between the two
 /// instantiations.
@@ -1454,7 +1454,7 @@ mod tests
             let unshared = unshared_spelling(depth)?;
             for arena in [shared, unshared] {
                 let fresh = run(&arena, &mut NullMemo)?;
-                let mut memo: OrderedMemo<Support, Outcome> = OrderedMemo::new();
+                let mut memo: HashedMemo<Support, Outcome> = HashedMemo::new();
                 let memoized = run(&arena, &mut memo)?;
                 assert_eq!(
                     fresh.value, memoized.value,
@@ -1495,7 +1495,7 @@ mod tests
              cannot silently stop being shared without this disagreeing with the tally"
             );
 
-            let mut memo: OrderedMemo<Support, Outcome> = OrderedMemo::new();
+            let mut memo: HashedMemo<Support, Outcome> = HashedMemo::new();
             let memoized = run(&arena, &mut memo)?;
             assert_eq!(
                 distinct,
@@ -1555,7 +1555,7 @@ mod tests
                 "and it accounts nothing, so the memoless side is genuinely memoless"
             );
 
-            let mut memo: OrderedMemo<Support, Outcome> = OrderedMemo::new();
+            let mut memo: HashedMemo<Support, Outcome> = HashedMemo::new();
             let memoized = run(&arena, &mut memo)?;
             assert_eq!(
                 served,
@@ -1621,7 +1621,7 @@ mod tests
         for depth in DEPTHS {
             let arena = unshared_spelling(depth)?;
             let distinct = distinct_content_count(depth)?;
-            let mut memo: OrderedMemo<Support, Outcome> = OrderedMemo::new();
+            let mut memo: HashedMemo<Support, Outcome> = HashedMemo::new();
             let memoized = run(&arena, &mut memo)?;
             assert_eq!(
                 distinct,
@@ -1930,7 +1930,7 @@ mod tests
     fn a_served_root_skips_expansion_on_both_planes() -> Result<(), WorkloadError>
     {
         let arena = shared_composite(Depth(2))?;
-        let mut memo: OrderedMemo<Support, Outcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<Support, Outcome> = HashedMemo::new();
         let first = run(&arena, &mut memo)?;
         let second = run(&arena, &mut memo)?;
         assert_eq!(first.value, second.value);
@@ -1950,7 +1950,7 @@ mod tests
     {
         let mut arena = Arena::new();
         let node = arena.leaf(LeafTag(7));
-        let mut memo: OrderedMemo<Support, Outcome> = OrderedMemo::new();
+        let mut memo: HashedMemo<Support, Outcome> = HashedMemo::new();
         remember(&arena, Plane::Value, node, Outcome(7), &mut memo)?;
         assert_eq!(
             &Outcome(7),

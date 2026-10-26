@@ -19,12 +19,15 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The certified trusted base depends on other kernel crates, the path orders
-# it decides rules by, and core/alloc. Pinned absence types add no runtime
-# allocation or std dependency. Dev-dependencies are exempt: test code is not
-# shipped trust. The pinned anodized facade supplies core-only specification
-# helpers; logic/BigInt stays disabled in this no_std library.
+# it decides rules by, and core/alloc. The staging arena's descriptor lookup
+# files on the check-memo crate's hash index, the kernel's one. Pinned absence
+# types add no runtime allocation or std dependency. Dev-dependencies are
+# exempt: test code is not shipped trust. The pinned anodized facade supplies
+# core-only specification helpers; logic/BigInt stays disabled in this no_std
+# library.
 [dependencies]
 anodized.workspace = true
+gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-theory-path-orders.workspace = true

@@ -115,9 +115,9 @@ use anodized::spec;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
+use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
-use gandr_kernel_check_memo::OrderedMemo;
 use gandr_kernel_conversion_trace::ConversionSide;
 use gandr_kernel_term::ConstantIndex;
 
@@ -138,7 +138,7 @@ use crate::rules::Settled;
 /// The memo the conversion machine re-shares its goals through on the engine
 /// path; [`NullMemo`](gandr_kernel_check_memo::NullMemo) is the memoless side
 /// of the differential.
-pub type ResharingMemo = OrderedMemo<GoalSupport, ProcessId>;
+pub type ResharingMemo = HashedMemo<GoalSupport, ProcessId>;
 
 /// The accounting plane of a goal support: the machine keeps one.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -250,6 +250,42 @@ pub enum AnyNode
     CompType(CompTypeId),
 }
 
+impl AnyNode
+{
+    /// The node's offset within its own family: where a column indexed by
+    /// family position holds it.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling id has an offset as a live one does.
+    /// - ensures: the id's ordinal as an offset, lossless on every supported
+    ///   platform of at least 32 bits. Two nodes of one family share an offset
+    ///   exactly when they are one node.
+    /// - provides: the dense index a per-family column reads a node at, without
+    ///   arena provenance.
+    /// - fails: never; it saturates at the offset ceiling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nodes at distinct offsets in each family, and one
+    ///   offset in two families, separate a wrong ordinal and a family-blind
+    ///   column.
+    /// - witness: `arena::tests::a_node_offset_is_its_family_ordinal`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.0 == usize::try_from(match self {
+        Self::Value(ValueId(ordinal)) | Self::Computation(ComputationId(ordinal))
+        | Self::ValueType(ValueTypeId(ordinal)) | Self::CompType(CompTypeId(ordinal)) => ordinal,
+    }).unwrap_or(usize::MAX))]
+    pub fn offset(self) -> ArenaLength
+    {
+        let (Self::Value(ValueId(ordinal))
+        | Self::Computation(ComputationId(ordinal))
+        | Self::ValueType(ValueTypeId(ordinal))
+        | Self::CompType(CompTypeId(ordinal))) = self;
+        ArenaLength(usize::try_from(ordinal).unwrap_or(usize::MAX))
+    }
+}
+
 /// The number of nodes allocated in one arena family, or an offset into it.
 ///
 /// # Specification
@@ -4426,6 +4462,32 @@ mod tests
             "a truncated index is minted again"
         );
         assert_eq!(plain, copy);
+    }
+
+    #[test]
+    fn a_node_offset_is_its_family_ordinal()
+    {
+        let mut arena = TermArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_variable(super::DeBruijnIndex::from(0_u32));
+        let returner = arena.computation_return(second);
+        let integer = arena.value_type_base(super::BaseType::Integer);
+        let unit = arena.value_type_unit();
+        let arrow = arena.comp_type_returner(unit);
+        let offsets = [
+            AnyNode::Value(first),
+            AnyNode::Value(second),
+            AnyNode::Computation(returner),
+            AnyNode::ValueType(integer),
+            AnyNode::ValueType(unit),
+            AnyNode::CompType(arrow),
+        ]
+        .map(|node| usize::from(node.offset()));
+        assert_eq!(
+            offsets,
+            [0, 1, 0, 0, 1, 0],
+            "each family counts from zero on its own"
+        );
     }
 
     #[test]

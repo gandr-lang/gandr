@@ -139,8 +139,8 @@ fn support_identity_and_digest_survive_forcing_without_conflating_inputs()
 fn supports_of_different_content_are_remembered_in_different_buckets()
 {
     use gandr_kernel_check_memo::CheckMemo as _;
+    use gandr_kernel_check_memo::HashedMemo;
     use gandr_kernel_check_memo::MemoBucketCount;
-    use gandr_kernel_check_memo::OrderedMemo;
 
     let mut core = CoreArena::new();
     let value = core.value_unit();
@@ -149,7 +149,7 @@ fn supports_of_different_content_are_remembered_in_different_buckets()
     let unit = domain.value_unit(crate::TermFace::Reduced);
     let closure = domain.comp_closure_node(body, Environment::new());
     let level = BinderLevel::FLOOR;
-    let mut memo = OrderedMemo::<GoalSupport, ()>::new();
+    let mut memo = HashedMemo::<GoalSupport, ()>::new();
     for sides in [
         SupportSides::Heads(crate::Glued::Value(unit), crate::Glued::Value(unit)),
         SupportSides::Opened(closure, closure),

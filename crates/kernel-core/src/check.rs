@@ -265,8 +265,8 @@ use alloc::vec::Vec;
 
 use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
+use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
-use gandr_kernel_check_memo::OrderedMemo;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
@@ -329,7 +329,7 @@ use crate::witness::comp_type_witness;
 use crate::witness::value_type_witness;
 
 /// The memo an unsupplied check builds for itself: the default path.
-pub type DefaultMemo = OrderedMemo<NodeSupport, NodeOutcome>;
+pub type DefaultMemo = HashedMemo<NodeSupport, NodeOutcome>;
 
 /// Borrow a value node, or the fail-closed arena fault.
 ///

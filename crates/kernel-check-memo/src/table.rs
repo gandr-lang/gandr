@@ -1,29 +1,20 @@
-//! The stage arena's descriptor lookup: an open-addressed, linearly probed
-//! table from a descriptor's hash to its position in the arena's dense
-//! vector, kept at most half full.
+//! The kernel's one hash index: an open-addressed, linearly probed table from
+//! a key's hash to its position in a dense vector the consumer owns, kept at
+//! most half full.
 //!
-//! The table stores positions and 32-bit hashes, never descriptors: the dense
-//! vector owns them. A hash match is confirmed by comparing the descriptor
-//! itself, so a collision costs a comparison and never an identity, and a
-//! clone of the table is one slice copy. The hash is an unkeyed fold of the
-//! descriptor's derived `Hash`, a function of the descriptor alone.
+//! The table stores positions and 32-bit hashes, never keys: the consumer's
+//! vector owns them, and the consumer's own comparison decides. A hash match
+//! is confirmed by that comparison, so a collision costs a comparison and
+//! never an identity, and a clone of the table is one slice copy. The hash is
+//! an unkeyed fold of the key's derived `Hash`, a function of the key alone,
+//! so a run files and probes alike on every host.
 //!
-//! # Decision
+//! The check memo, the content table's interning, the binder-reach caches,
+//! the rewrite walk's local answers and the staging arena's descriptor lookup
+//! all file on this one index.
 //!
-//! **Choice.** A hand-written table on `core` and `alloc` keeps the trusted
-//! base free of non-kernel dependencies, and finds a descriptor in expected
-//! constant time where an ordered map compares descriptors along a
-//! logarithmic path and allocates per entry when cloned.
-//!
-//! **Alternatives.** An ordered map (`BTreeMap`) needs no hash premise and
-//! bounds every lookup logarithmically; `hashbrown`'s table would replace this
-//! one at the cost of a dependency in the trusted base.
-//!
-//! **Reversal.** The hash is fixed and public, so a producer that chooses
-//! colliding descriptors can lengthen probe sequences toward linear time,
-//! though it cannot merge two descriptors. A deployment that admits
-//! adversarial certificates under a latency bound takes a hash keyed per
-//! arena, or the ordered map back.
+//! A producer that chooses colliding keys can lengthen probe sequences toward
+//! linear time, though it cannot merge two keys.
 
 use alloc::vec::Vec;
 use core::hash::Hash;
@@ -31,50 +22,134 @@ use core::hash::Hasher;
 
 use anodized::spec;
 
-/// The position a vacant slot carries; no descriptor sits there.
-const VACANT: u32 = u32::MAX;
-
 /// The capacity a first insertion allocates.
 const MINIMUM: usize = 16;
 
 /// Odd multiplier of the word fold: the 64-bit golden-ratio constant.
 const FOLD: u64 = 0x9e37_79b9_7f4a_7c15;
 
-/// A descriptor's 32-bit lookup hash.
+/// A key's 32-bit table hash.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TableHash(u32);
+
+impl From<u32> for TableHash
+{
+    /// The hash `hash`, chosen rather than computed: a fixture forcing keys
+    /// under one hash.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(hash: u32) -> Self
+    {
+        Self(hash)
+    }
+}
+
+impl TableHash
+{
+    /// The table hash of `key`: both halves of its folded hash, a function of
+    /// the key's derived hash alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn of<Key>(key: &Key) -> Self
+    where
+        Key: Hash + ?Sized,
+    {
+        let mut fold = Fold::default();
+        key.hash(&mut fold);
+        let bytes = fold.finish().to_le_bytes();
+        let low = bytes.first_chunk::<4>().copied().unwrap_or_default();
+        let high = bytes.last_chunk::<4>().copied().unwrap_or_default();
+        Self(u32::from_le_bytes(low) ^ u32::from_le_bytes(high))
+    }
+}
+
+/// A slot coordinate of one table: where a probe found room.
+///
+/// # Specification
+/// trivial.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct DescriptorHash(u32);
+pub struct TableSlot(usize);
 
-/// A slot coordinate of one table.
+/// A dense position among the entries a table files, below `u32::MAX`, the
+/// value a vacant slot carries instead.
+///
+/// # Specification
+/// trivial.
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct SlotIndex(usize);
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TablePosition(u32);
 
-/// A dense position among the entries a table indexes.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Position(pub usize);
+/// The position a vacant slot carries; no entry sits there.
+const VACANT: TablePosition = TablePosition(u32::MAX);
 
-/// One slot: a dense position and the hash of the descriptor stored there.
+impl TryFrom<usize> for TablePosition
+{
+    type Error = TableFull;
+
+    /// The position `position`, or [`TableFull`] at or past `u32::MAX`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn try_from(position: usize) -> Result<Self, TableFull>
+    {
+        u32::try_from(position)
+            .ok()
+            .filter(|&position| position != VACANT.0)
+            .map_or(Err(TableFull), |position| Ok(Self(position)))
+    }
+}
+
+impl From<TablePosition> for usize
+{
+    /// The vector index `position` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: TablePosition) -> Self
+    {
+        Self::try_from(position.0).unwrap_or(Self::MAX)
+    }
+}
+
+/// A position no slot can record: at least `u32::MAX`.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TableFull;
+
+/// One slot: a dense position and the hash of the key filed there.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Slot
 {
-    /// The descriptor's hash; meaningless while vacant.
-    hash: DescriptorHash,
-    /// The descriptor's position, or [`VACANT`].
-    position: u32,
+    /// The key's hash; meaningless while vacant.
+    hash: TableHash,
+    /// The key's position, or [`VACANT`].
+    position: TablePosition,
 }
 
 impl Slot
 {
     /// The slot holding nothing.
     const EMPTY: Self = Self {
-        hash: DescriptorHash(0),
+        hash: TableHash(0),
         position: VACANT,
     };
 }
 
-/// An unkeyed word-folding hasher over a descriptor's derived [`Hash`].
+/// An unkeyed word-folding hasher over a key's derived [`Hash`].
 #[repr(transparent)]
 #[derive(Debug, Default)]
 struct Fold(u64);
@@ -190,41 +265,22 @@ impl Hasher for Fold
     }
 }
 
-/// The lookup hash of a descriptor: both halves of its folded hash, a
-/// function of the descriptor's derived hash alone.
+/// Where a probe for one key ended.
 ///
 /// # Specification
 /// trivial.
-#[inline]
-pub(super) fn hash_of<T>(value: &T) -> DescriptorHash
-where
-    T: Hash,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Probe
 {
-    let mut fold = Fold::default();
-    value.hash(&mut fold);
-    let bytes = fold.finish().to_le_bytes();
-    let low = bytes.first_chunk::<4>().copied().unwrap_or_default();
-    let high = bytes.last_chunk::<4>().copied().unwrap_or_default();
-    DescriptorHash(u32::from_le_bytes(low) ^ u32::from_le_bytes(high))
+    /// An entry the consumer's comparison accepts is filed at this position.
+    Found(TablePosition),
+    /// No accepted entry is filed; this vacant slot is the one an insertion
+    /// would fill.
+    Vacant(TableSlot),
 }
 
-/// Where a probe for one descriptor ended.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Probe
-{
-    /// An equal descriptor is stored at this dense position.
-    Found(usize),
-    /// No equal descriptor is recorded; this vacant slot is the one an
-    /// insertion would fill.
-    Vacant(SlotIndex),
-}
-
-/// The position a slot cannot record: at least `u32::MAX`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct Full;
-
-/// Open-addressed, linearly probed lookup from a descriptor to its dense
-/// position.
+/// Open-addressed, linearly probed index from a key's hash to the dense
+/// positions filed under it.
 ///
 /// # Specification
 /// - ensures: the capacity is zero or a power of two, and at most half the
@@ -237,11 +293,11 @@ pub(super) struct Full;
 /// - hypothesis: L3 — growth across several doublings, colliding hashes and the
 ///   position bound distinguish a lost entry, a hash taken for identity and a
 ///   truncated position.
-/// - witness: `stage::lookup::tests::growth_keeps_every_position`
-/// - witness: `stage::lookup::tests::colliding_hashes_compare_descriptors`
-/// - witness: `stage::lookup::tests::the_last_position_is_refused`
-#[derive(Clone, Debug, Default)]
-pub(super) struct Lookup
+/// - witness: `table::tests::growth_keeps_every_position`
+/// - witness: `table::tests::colliding_hashes_compare_keys`
+/// - witness: `table::tests::the_last_position_is_refused`
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct HashIndex
 {
     /// The slots, vacant where the position is [`VACANT`].
     slots: Vec<Slot>,
@@ -249,8 +305,22 @@ pub(super) struct Lookup
     len: usize,
 }
 
-impl Lookup
+impl HashIndex
 {
+    /// An empty index; it allocates on its first insertion.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
+    {
+        Self {
+            slots: Vec::new(),
+            len: 0,
+        }
+    }
+
     /// The home slot of `hash`; slot zero of the empty table.
     ///
     /// # Specification
@@ -258,11 +328,11 @@ impl Lookup
     #[inline]
     fn home(
         &self,
-        hash: DescriptorHash,
-    ) -> SlotIndex
+        hash: TableHash,
+    ) -> TableSlot
     {
         let mask = self.slots.len().saturating_sub(1);
-        SlotIndex(usize::try_from(hash.0).unwrap_or(usize::MAX) & mask)
+        TableSlot(usize::try_from(hash.0).unwrap_or(usize::MAX) & mask)
     }
 
     /// The slot after `slot`, wrapping at the capacity.
@@ -272,99 +342,81 @@ impl Lookup
     #[inline]
     fn next(
         &self,
-        slot: SlotIndex,
-    ) -> SlotIndex
+        slot: TableSlot,
+    ) -> TableSlot
     {
-        SlotIndex(slot.0.wrapping_add(1) & self.slots.len().saturating_sub(1))
+        TableSlot(slot.0.wrapping_add(1) & self.slots.len().saturating_sub(1))
     }
 
-    /// Probe for `key`, whose hash is `hash`, among `entries`.
+    /// Probe for a key whose hash is `hash`, accepting the first position
+    /// filed under that hash that `accepts` answers for.
     ///
     /// # Specification
-    /// - requires: every recorded position indexes `entries`, recorded under
-    ///   its entry's hash.
-    /// - ensures: `Found(position)` exactly when `entries[position] == *key` is
-    ///   recorded; otherwise `Vacant(slot)` names the first vacant slot of
-    ///   `key`'s probe sequence, or slot zero of the empty table.
+    /// - requires: every filed position was filed under its key's hash, and
+    ///   `accepts` answers for at most one position filed under `hash`.
+    /// - ensures: `Found(position)` names a position filed under `hash` that
+    ///   `accepts` answers for; otherwise `Vacant(slot)` names the first vacant
+    ///   slot of `hash`'s probe sequence, or slot zero of the empty table.
+    ///   `accepts` is asked only about positions filed under `hash`.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — colliding hashes over distinct descriptors and
-    ///   lookups after growth distinguish a probe that trusts the hash and one
-    ///   that stops early.
-    /// - witness: `stage::lookup::tests::colliding_hashes_compare_descriptors`
-    /// - witness: `stage::lookup::tests::growth_keeps_every_position`
+    /// - hypothesis: L3 — colliding hashes over distinct keys and lookups after
+    ///   growth distinguish a probe that trusts the hash and one that stops
+    ///   early.
+    /// - witness: `table::tests::colliding_hashes_compare_keys`
+    /// - witness: `table::tests::growth_keeps_every_position`
     #[inline]
     #[spec(ensures: |ret| match ret {
-        Probe::Found(position) => entries.get(position) == Some(key),
+        Probe::Found(position) => accepts(position),
         Probe::Vacant(slot) => self.slots.get(slot.0).is_none_or(|stored| stored.position == VACANT),
     })]
-    pub(super) fn probe<T>(
+    pub fn probe<Accepts>(
         &self,
-        hash: DescriptorHash,
-        entries: &[T],
-        key: &T,
+        hash: TableHash,
+        accepts: Accepts,
     ) -> Probe
     where
-        T: Eq,
+        Accepts: Fn(TablePosition) -> bool,
     {
         let mut slot = self.home(hash);
         while let Some(stored) = self.slots.get(slot.0) {
             if stored.position == VACANT {
                 return Probe::Vacant(slot);
             }
-            if stored.hash == hash {
-                let position = usize::try_from(stored.position).unwrap_or(usize::MAX);
-                if entries.get(position) == Some(key) {
-                    return Probe::Found(position);
-                }
+            if stored.hash == hash && accepts(stored.position) {
+                return Probe::Found(stored.position);
             }
             slot = self.next(slot);
         }
         Probe::Vacant(slot)
     }
 
-    /// Record the next position of `entries`, `entries.len()`, for a
-    /// descriptor of hash `hash` that a preceding [`probe`](Self::probe)
-    /// found vacant at `slot`.
+    /// File `position` under `hash` at `slot`, which a preceding
+    /// [`probe`](Self::probe) for `hash` found vacant.
     ///
     /// # Specification
-    /// - requires: no slot records an equal descriptor; `slot` is the vacant
-    ///   slot that probe returned with no insertion since; the caller pushes
-    ///   the descriptor onto `entries` next.
-    /// - ensures: one more position is recorded, and once the descriptor is
-    ///   pushed a probe for it returns `Found(entries.len())` as it stood here;
-    ///   at most half the slots stay occupied.
-    /// - fails: [`Full`] when that position does not fit a slot, leaving the
-    ///   table unchanged.
+    /// - requires: no filed position's key equals the one `position` holds;
+    ///   `slot` is the vacant slot that probe returned with no insertion since.
+    /// - ensures: one more position is filed, and a probe under `hash` whose
+    ///   comparison accepts `position` finds it; at most half the slots stay
+    ///   occupied.
     /// - panics: none.
     ///
-    /// # Errors
-    /// Returns [`Full`] at the 32-bit position bound.
-    ///
     /// # Adequacy
-    /// - hypothesis: L3 — growth across several doublings and the position
-    ///   bound distinguish a lost entry, an overfull table and a truncated
-    ///   position.
-    /// - witness: `stage::lookup::tests::growth_keeps_every_position`
-    /// - witness: `stage::lookup::tests::the_last_position_is_refused`
+    /// - hypothesis: L3 — growth across several doublings distinguishes a lost
+    ///   entry and an overfull table.
+    /// - witness: `table::tests::growth_keeps_every_position`
     #[inline]
-    #[spec(captures: before = self.len, ensures: |ret| match ret {
-        Ok(()) => self.len == before.saturating_add(1)
-            && self.len.saturating_mul(2) <= self.slots.len(),
-        Err(Full) => self.len == before,
-    })]
-    pub(super) fn insert<T>(
+    #[spec(captures: before = self.len, ensures: self.len == before.saturating_add(1)
+        && self.len.saturating_mul(2) <= self.slots.len())]
+    pub fn insert(
         &mut self,
-        slot: SlotIndex,
-        hash: DescriptorHash,
-        entries: &[T],
-    ) -> Result<(), Full>
+        slot: TableSlot,
+        hash: TableHash,
+        position: TablePosition,
+    )
     {
-        let position = u32::try_from(entries.len()).map_err(|_overflow| Full)?;
-        if position == VACANT {
-            return Err(Full);
-        }
         let len = self.len.saturating_add(1);
         let entry = Slot { hash, position };
         if len.saturating_mul(2) > self.slots.len() {
@@ -375,7 +427,6 @@ impl Lookup
             *target = entry;
         }
         self.len = len;
-        Ok(())
     }
 
     /// Store `entry` in the first vacant slot of its probe sequence.
@@ -419,14 +470,14 @@ impl Lookup
         }
     }
 
-    /// Forget `position`, recorded under `hash`, closing its probe gap by
+    /// Forget `position`, filed under `hash`, closing its probe gap by
     /// shifting later entries of the same run backward.
     ///
     /// # Specification
-    /// - requires: when recorded, `position` was recorded under `hash`.
+    /// - requires: when filed, `position` was filed under `hash`.
     /// - ensures: no slot records `position`; one fewer entry is counted when
-    ///   one did; every other recorded position stays where its probe sequence
-    ///   reaches it, so a probe for its descriptor still finds it.
+    ///   one did; every other filed position stays where its probe sequence
+    ///   reaches it, so a probe for its key still finds it.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -436,7 +487,7 @@ impl Lookup
     ///   the wrong position. Linear probing keeps every record in the run from
     ///   its hash's home slot to the first vacant slot, so under the
     ///   requirement the predicate reads that run alone, before and after.
-    /// - witness: `stage::lookup::tests::removal_keeps_every_other_position`
+    /// - witness: `table::tests::removal_keeps_every_other_position`
     #[inline]
     #[cfg_attr(
         dylint_lib = "quenchant_dylints",
@@ -447,21 +498,17 @@ impl Lookup
     )]
     #[spec(captures: [before = self.len, recorded = self.slots.iter().chain(&self.slots).skip(self.home(hash).0)
             .take_while(|slot| slot.position != VACANT)
-            .any(|slot| u32::try_from(position.0).is_ok_and(|stored| slot.position == stored))],
+            .any(|slot| slot.position == position)],
         ensures: !self.slots.iter().chain(&self.slots).skip(self.home(hash).0)
                 .take_while(|slot| slot.position != VACANT)
-                .any(|slot| u32::try_from(position.0).is_ok_and(|stored| slot.position == stored))
+                .any(|slot| slot.position == position)
             && self.len == if recorded { before.saturating_sub(1) } else { before })]
-    pub(super) fn remove(
+    pub fn remove(
         &mut self,
-        hash: DescriptorHash,
-        position: Position,
+        hash: TableHash,
+        position: TablePosition,
     )
     {
-        let Ok(position) = u32::try_from(position.0)
-        else {
-            return;
-        };
         let mask = self.slots.len().saturating_sub(1);
         let mut hole = self.home(hash);
         loop {
@@ -497,90 +544,126 @@ impl Lookup
 #[cfg(test)]
 mod tests
 {
-    use super::*;
+    use alloc::vec::Vec;
 
-    /// A test descriptor.
+    use super::HashIndex;
+    use super::MINIMUM;
+    use super::Probe;
+    use super::TableFull;
+    use super::TableHash;
+    use super::TablePosition;
+    use super::VACANT;
+
+    /// A test key.
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
     struct Key(u64);
 
-    /// Find `key` among `entries`, or record it at the next position.
+    /// Find `key` among `entries`, or file it at the next position.
     ///
     /// # Specification
     /// trivial.
     fn intern(
-        lookup: &mut Lookup,
+        index: &mut HashIndex,
         entries: &mut Vec<Key>,
-        hash: DescriptorHash,
+        hash: TableHash,
         key: Key,
     ) -> Probe
     {
-        match lookup.probe(hash, entries, &key) {
+        match index.probe(hash, |position| {
+            entries.get(usize::from(position)) == Some(&key)
+        }) {
             Probe::Found(position) => Probe::Found(position),
             Probe::Vacant(slot) => {
-                let position = entries.len();
-                lookup.insert(slot, hash, entries).unwrap();
+                let position = TablePosition::try_from(entries.len()).unwrap();
+                index.insert(slot, hash, position);
                 entries.push(key);
                 Probe::Found(position)
             },
         }
     }
 
+    /// The probe for `key` under `hash`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn find(
+        index: &HashIndex,
+        entries: &[Key],
+        hash: TableHash,
+        key: Key,
+    ) -> Probe
+    {
+        index.probe(hash, |position| {
+            entries.get(usize::from(position)) == Some(&key)
+        })
+    }
+
+    /// The position of the `ordinal`th entry, however the test counts it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn at<Ordinal>(ordinal: Ordinal) -> Probe
+    where
+        TablePosition: TryFrom<Ordinal, Error = TableFull>,
+    {
+        Probe::Found(TablePosition::try_from(ordinal).unwrap())
+    }
+
     #[test]
     fn growth_keeps_every_position()
     {
-        let mut lookup = Lookup::default();
+        let mut index = HashIndex::new();
         let mut entries = Vec::new();
         for key in (0 .. 5_000).map(Key) {
-            let expected = Probe::Found(entries.len());
+            let expected = at(entries.len());
             assert_eq!(
-                intern(&mut lookup, &mut entries, hash_of(&key), key),
+                intern(&mut index, &mut entries, TableHash::of(&key), key),
                 expected
             );
         }
-        assert_eq!(lookup.len, 5_000);
+        assert_eq!(index.len, 5_000);
         assert!(
-            lookup.slots.len().is_power_of_two(),
+            index.slots.len().is_power_of_two(),
             "the capacity stays a power of two"
         );
         assert!(
-            lookup.len.checked_mul(2).unwrap() <= lookup.slots.len(),
+            index.len.checked_mul(2).unwrap() <= index.slots.len(),
             "the table stays at most half full"
         );
-        let cloned = lookup.clone();
+        let cloned = index.clone();
         for (position, key) in entries.iter().enumerate() {
             assert_eq!(
-                lookup.probe(hash_of(key), &entries, key),
-                Probe::Found(position)
+                find(&index, &entries, TableHash::of(key), *key),
+                at(position)
             );
             assert_eq!(
-                cloned.probe(hash_of(key), &entries, key),
-                Probe::Found(position)
+                find(&cloned, &entries, TableHash::of(key), *key),
+                at(position)
             );
         }
         let absent = Key(5_000);
         assert!(matches!(
-            lookup.probe(hash_of(&absent), &entries, &absent),
+            find(&index, &entries, TableHash::of(&absent), absent),
             Probe::Vacant(_)
         ));
     }
 
     #[test]
-    fn colliding_hashes_compare_descriptors()
+    fn colliding_hashes_compare_keys()
     {
-        let mut lookup = Lookup::default();
+        let mut index = HashIndex::new();
         let mut entries = Vec::new();
-        let shared = DescriptorHash(7);
+        let shared = TableHash::from(7_u32);
         let found: Vec<Probe> = (0 .. 40)
-            .map(|key| intern(&mut lookup, &mut entries, shared, Key(key)))
+            .map(|key| intern(&mut index, &mut entries, shared, Key(key)))
             .collect();
-        assert_eq!(found, (0 .. 40).map(Probe::Found).collect::<Vec<_>>());
+        assert_eq!(found, (0 .. 40).map(at).collect::<Vec<_>>());
         for (position, key) in entries.iter().enumerate() {
-            assert_eq!(lookup.probe(shared, &entries, key), Probe::Found(position));
+            assert_eq!(find(&index, &entries, shared, *key), at(position));
         }
-        let stranger = Key(40);
         assert!(matches!(
-            lookup.probe(shared, &entries, &stranger),
+            find(&index, &entries, shared, Key(40)),
             Probe::Vacant(_)
         ));
     }
@@ -588,55 +671,61 @@ mod tests
     #[test]
     fn the_last_position_is_refused()
     {
-        let mut lookup = Lookup::default();
-        let hash = DescriptorHash(3);
-        let full = alloc::vec![(); usize::try_from(VACANT).unwrap()];
-        let Probe::Vacant(slot) = lookup.probe(hash, &full, &())
+        let last = usize::try_from(VACANT.0).unwrap();
+        assert_eq!(TablePosition::try_from(last), Err(TableFull));
+        assert_eq!(TablePosition::try_from(usize::MAX), Err(TableFull));
+        let below = TablePosition::try_from(last.checked_sub(1).unwrap()).unwrap();
+        assert_eq!(usize::from(below), last.checked_sub(1).unwrap());
+        let mut index = HashIndex::new();
+        let hash = TableHash::from(3_u32);
+        let Probe::Vacant(slot) = index.probe(hash, |_position| false)
         else {
-            panic!("an empty table records nothing");
+            panic!("an empty table files nothing");
         };
-        assert_eq!(lookup.insert(slot, hash, &full), Err(Full));
-        assert_eq!(lookup.len, 0);
-        assert_eq!(lookup.insert(slot, hash, &full[1 ..]), Ok(()));
-        assert_eq!(lookup.len, 1);
+        index.insert(slot, hash, below);
+        assert_eq!(index.len, 1);
+        assert_eq!(
+            index.probe(hash, |position| position == below),
+            Probe::Found(below)
+        );
     }
 
     #[test]
     fn removal_keeps_every_other_position()
     {
-        let mut lookup = Lookup::default();
+        let mut index = HashIndex::new();
         let mut entries = Vec::new();
         // One run of colliding entries homed in the table's last slot, so the
         // run wraps past slot zero, then a few entries of their own.
-        let last = DescriptorHash(u32::try_from(MINIMUM).unwrap().checked_sub(1).unwrap());
-        let hashes: Vec<DescriptorHash> = core::iter::repeat_n(last, 6)
-            .chain((0 .. 2).map(DescriptorHash))
+        let last = TableHash::from(u32::try_from(MINIMUM).unwrap().checked_sub(1).unwrap());
+        let hashes: Vec<TableHash> = core::iter::repeat_n(last, 6)
+            .chain((0 .. 2_u32).map(TableHash::from))
             .collect();
         for (key, hash) in hashes.iter().enumerate() {
             let key = Key(u64::try_from(key).unwrap());
-            intern(&mut lookup, &mut entries, *hash, key);
+            intern(&mut index, &mut entries, *hash, key);
         }
-        assert_eq!(lookup.slots.len(), MINIMUM);
+        assert_eq!(index.slots.len(), MINIMUM);
         let mut live: Vec<usize> = (0 .. hashes.len()).collect();
         for removed in [0_usize, 3, 5, 6] {
-            lookup.remove(hashes[removed], Position(removed));
+            index.remove(hashes[removed], TablePosition::try_from(removed).unwrap());
             live.retain(|position| *position != removed);
-            assert_eq!(lookup.len, live.len());
+            assert_eq!(index.len, live.len());
             for &position in &live {
                 assert_eq!(
-                    lookup.probe(hashes[position], &entries, &entries[position]),
-                    Probe::Found(position),
+                    find(&index, &entries, hashes[position], entries[position]),
+                    at(position),
                     "position {position} survives the removal of {removed}"
                 );
             }
             assert!(matches!(
-                lookup.probe(hashes[removed], &entries, &entries[removed]),
+                find(&index, &entries, hashes[removed], entries[removed]),
                 Probe::Vacant(_)
             ));
         }
-        lookup.remove(hashes[3], Position(3));
+        index.remove(hashes[3], TablePosition::try_from(3_usize).unwrap());
         assert_eq!(
-            lookup.len,
+            index.len,
             live.len(),
             "removing a forgotten position is a no-op"
         );

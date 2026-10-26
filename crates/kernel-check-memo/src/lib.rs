@@ -17,19 +17,22 @@
 //! unmemoized path compiles to the code it would have with no memo, and the
 //! memoized path is that same function at a different type parameter.
 //!
-//! [`OrderedMemo`] stores entries in ordered maps. A content key is a
-//! [`ContentDigest`] beside [`MemoKey::agreement`]: the digest picks a bucket
-//! and the deciding comparison scans it. A key is content-derived, so it
-//! survives relocation and two equal obligations key equally wherever they
-//! arise. Different digests prove disagreement; equal digests hand off to
-//! agreement over the supports' canonical content and never decide it. A
-//! collision costs one comparison and degrades to a miss, priced as
-//! recomputation.
+//! [`HashedMemo`] stores entries densely, in recording order, and files each
+//! one's position in a [`HashIndex`] under the hash of its [`ContentDigest`].
+//! A content key is that digest beside [`MemoKey::agreement`]: the digest
+//! narrows the search and the deciding comparison runs over each candidate. A
+//! key is content-derived, so it survives relocation and two equal obligations
+//! key equally wherever they arise. Different digests prove disagreement;
+//! equal digests hand off to agreement over the supports' canonical content
+//! and never decide it. A collision costs one comparison and degrades to a
+//! miss, priced as recomputation.
 //!
-//! A digest's bucket holds its first entry inline and spills colliding entries
-//! to a vector that stays unallocated until a collision. Digests are
-//! near-injective, so the inline first entry is the common case and costs no
-//! heap allocation.
+//! The [`table`] module's index is open addressing with linear probing, kept
+//! at most half full: a slot holds a 32-bit hash and a position, and the
+//! consumer's own comparison decides each candidate. It is the kernel's one
+//! hash index — the content table's interning, a node's binder reach, the
+//! rewrite walk's local answers and the staging arena's descriptor lookup
+//! file on it too.
 //!
 //! Entry counts are maintained per plane and in total. A checker running two
 //! machines over one shared graph gives each machine its own plane, so each
@@ -58,10 +61,10 @@
 //! # Dependencies
 //!
 //! The crate is `no_std` and depends only on `core`, `alloc` and the
-//! specification facade. No hasher enters the kernel's dependency wall, so
-//! iteration order is deterministic and a measurement over the memo is
-//! re-derivable. The bucket is a two-field type: the crate takes no runtime
-//! dependency.
+//! specification facade. No hasher crate enters the kernel's dependency wall:
+//! [`TableHash::of`] is an unkeyed fold this crate owns, so a run's hashes,
+//! and every measurement over the memo, are re-derivable. Iteration order is
+//! never promised; nothing reads the memo in order.
 //!
 //! # Witnesses
 //!
@@ -72,9 +75,10 @@
 //!
 //! - Checked arithmetic specifies the exact successor, per-plane lookup and
 //!   overflow refusal, including unchanged accounting on failure.
-//! - Ordered storage specifies digest-bucket lookup, support agreement,
-//!   insertion versus replacement, and unchanged counts on refusal. Collision
-//!   and ceiling tests also observe retained answers, rather than counts alone.
+//! - Hashed storage specifies digest lookup, support agreement, insertion
+//!   versus replacement, and unchanged counts on refusal. Collision and ceiling
+//!   tests also observe retained answers, rather than counts alone; the index's
+//!   own tests observe probing across wrap-around and growth.
 //! - The differential workload specifies its arena topology, framed content
 //!   identity, folds and census arithmetic. Closed-form counts and ordinary
 //!   versus memoized runs distinguish missing work from reused work.
@@ -102,6 +106,7 @@ pub mod accounting;
 pub mod digest;
 pub mod key;
 pub mod memo;
+pub mod table;
 
 pub use crate::accounting::MemoBucketCount;
 pub use crate::accounting::MemoEntryCount;
@@ -111,8 +116,14 @@ pub use crate::digest::ContentDigest;
 pub use crate::digest::DigestWord;
 pub use crate::key::MemoKey;
 pub use crate::memo::CheckMemo;
+pub use crate::memo::HashedMemo;
 pub use crate::memo::MemoActivity;
 pub use crate::memo::MemoHit;
 pub use crate::memo::MemoRecord;
 pub use crate::memo::NullMemo;
-pub use crate::memo::OrderedMemo;
+pub use crate::table::HashIndex;
+pub use crate::table::Probe;
+pub use crate::table::TableFull;
+pub use crate::table::TableHash;
+pub use crate::table::TablePosition;
+pub use crate::table::TableSlot;

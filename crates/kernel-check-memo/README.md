@@ -16,11 +16,11 @@ The check-memo seam: a statically dispatched interface through which a checker s
 
 ## Synopsis
 
-**What.** `CheckMemo<Support, Outcome>` is the seam a checker consults before answering a question and records into after. `NullMemo` never answers; `OrderedMemo` stores entries keyed by a consumer-supplied support. The crate names no term, type or identifier of its own: support and outcome are type parameters, so the certified kernel depends on this crate without a cycle and no interning table enters the trusted base.
+**What.** `CheckMemo<Support, Outcome>` is the seam a checker consults before answering a question and records into after. `NullMemo` never answers; `HashedMemo` stores entries keyed by a consumer-supplied support. The crate names no term, type or identifier of its own: support and outcome are type parameters, so the certified kernel depends on this crate without a cycle and no interning table enters the trusted base.
 
 **Why.** A sharing-aware checker meets the same obligation many times over one shared graph, and re-checking each occurrence can cost work exponential in the sharing depth. A memo collapses that to one check per distinct support. Owning the memo outside the checker keeps the checker's own code a single function whose memoless and memoized forms differ only in a type parameter, so the two can be compared directly.
 
-**How.** `CheckMemo` carries an associated `MemoActivity` constant, so a consumer branches on liveness at compile time and the `NullMemo` instantiation compiles to the memoless code. A support implements `MemoKey`: an accounting plane, a `ContentDigest`, and a deciding `agreement` over canonical content. `OrderedMemo` is an ordered map from digest to the bucket of supports that produced it; the digest selects a bucket and `agreement` decides within it, so a digest collision costs one comparison and degrades to a miss. `recall` returns a `MemoHit` carrying the recorded support beside the outcome; `remember` reports what it did and refuses at the accounting ceiling.
+**How.** `CheckMemo` carries an associated `MemoActivity` constant, so a consumer branches on liveness at compile time and the `NullMemo` instantiation compiles to the memoless code. A support implements `MemoKey`: an accounting plane, a `ContentDigest`, and a deciding `agreement` over canonical content. `HashedMemo` keeps its entries densely and files each in a `HashIndex` — open addressing with linear probing and a tag byte per slot — under its digest's hash; the digest narrows the search and `agreement` decides, so a digest collision costs one comparison and degrades to a miss. `recall` returns a `MemoHit` carrying the recorded support beside the outcome; `remember` reports what it did and refuses at the accounting ceiling.
 
 ## References
 
@@ -30,7 +30,8 @@ The check-memo seam: a statically dispatched interface through which a checker s
 
 - `CheckMemo`: the seam. One trait, an associated `MemoActivity` constant read at compile time, and four operations: `recall`, `remember`, `entry_count`, `plane_entry_count`.
 - `NullMemo`: the memo that never answers. Zero-sized, every method a constant.
-- `OrderedMemo`: the storage half. An ordered map from `ContentDigest` to its bucket of supports, plus the per-plane census and `bucket_count`.
+- `HashedMemo`: the storage half. Dense entries filed by digest hash, plus the per-plane census and `bucket_count`.
+- `HashIndex`, `TableHash`, `TablePosition` and `WordHasher`: the open-addressing index and its fixed-seed hash, which the kernel's interning, reach caches and rewrite memo file on too.
 - `MemoKey`: what a support supplies — an accounting plane, a content digest and the deciding content comparison.
 - `ContentDigest`, `DigestWord` and `ContentAgreement`: the digest and the relation beneath it.
 - `MemoHit`: a served entry, the outcome together with the support it was recorded under.
@@ -77,7 +78,7 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-check-memo
 
 ## Where the detail lives
 
-The seam's items, the hit and digest boundaries, the dependencies and the specification witnesses are stated in [`src/lib.rs`](src/lib.rs); each operation's obligation is on its item in [`src/memo.rs`](src/memo.rs), [`src/key.rs`](src/key.rs), [`src/digest.rs`](src/digest.rs) and [`src/accounting.rs`](src/accounting.rs).
+The seam's items, the hit and digest boundaries, the dependencies and the specification witnesses are stated in [`src/lib.rs`](src/lib.rs); each operation's obligation is on its item in [`src/memo.rs`](src/memo.rs), [`src/table.rs`](src/table.rs), [`src/key.rs`](src/key.rs), [`src/digest.rs`](src/digest.rs) and [`src/accounting.rs`](src/accounting.rs).
 
 ## License
 

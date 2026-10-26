@@ -18,7 +18,7 @@
 //! # The same pass, two memos
 //!
 //! Batch checking is the pass at [`NullMemo`], which recalls nothing, so every
-//! item is judged; incremental checking is the pass at [`OrderedMemo`] built
+//! item is judged; incremental checking is the pass at [`HashedMemo`] built
 //! from the base checkpoints. The incremental law — incremental equals
 //! batch — assumes those records faithfully describe earlier checker results
 //! under their recorded allowance. The differential tests compare the two
@@ -64,8 +64,8 @@
 //! authenticate judgement provenance.
 //!
 //! **One memo, two machines.** Recall goes through `gandr-kernel-check-memo`'s
-//! `OrderedMemo`, the memo the checking kernel uses: an item's identity is its
-//! content, bucketed by the first sixteen bytes of the content's BLAKE3 digest
+//! `HashedMemo`, the memo the checking kernel uses: an item's identity is its
+//! content, filed by the first sixteen bytes of the content's BLAKE3 digest
 //! and confirmed by content equality, so a digest collision costs a comparison
 //! and never a wrong recall.
 //!
@@ -138,10 +138,10 @@ use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
+use gandr_kernel_check_memo::HashedMemo;
 use gandr_kernel_check_memo::MemoActivity;
 use gandr_kernel_check_memo::MemoKey;
 use gandr_kernel_check_memo::NullMemo;
-use gandr_kernel_check_memo::OrderedMemo;
 use gandr_theory_order_maintenance::OrderError;
 use quenchant_shape::shape::Maybe;
 
@@ -1240,7 +1240,7 @@ pub fn resume(
         order,
         ..
     } = base;
-    advance::<OrderedMemoChoice, KeepNothing, _>(
+    advance::<HashedMemoChoice, KeepNothing, _>(
         (&checkpoints.items, &handles),
         (order, &[]),
         edited,
@@ -1311,7 +1311,7 @@ pub fn resume_from(
         .map(|checkpoint| checkpoint.content().reference().clone())
         .collect();
     let (order, handles) = ItemOrder::seeded(&references).map_err(ResumeError::Order)?;
-    advance::<OrderedMemoChoice, KeepNothing, _>(
+    advance::<HashedMemoChoice, KeepNothing, _>(
         (&base.items, &handles),
         (order, &[]),
         edited,
@@ -1486,7 +1486,7 @@ where
                 checkpoints.items.get(count ..),
             ) {
                 (Some((before, behind)), Some(items)) => {
-                    advance::<OrderedMemoChoice, KeepNothing, _>(
+                    advance::<HashedMemoChoice, KeepNothing, _>(
                         (items, behind),
                         (order, before),
                         edited,
@@ -1609,7 +1609,7 @@ where
             census,
             after,
         }) => Ok(
-            match advance::<OrderedMemoChoice, KeepNothing, _>(
+            match advance::<HashedMemoChoice, KeepNothing, _>(
                 (&checkpoints.items, &handles),
                 (order, &[]),
                 edited,
@@ -1674,7 +1674,7 @@ where
     Poll: Retirement,
 {
     let (order, handles) = ItemOrder::seeded(&leading.references).map_err(ResumeError::Order)?;
-    advance::<OrderedMemoChoice, KeepNothing, _>(
+    advance::<HashedMemoChoice, KeepNothing, _>(
         (&[], &[]),
         (order, &handles),
         edited,
@@ -1926,15 +1926,15 @@ impl MemoChoice for NullMemoChoice
     }
 }
 
-/// The incremental choice: an ordered memo over the base's identities.
+/// The incremental choice: a hashed memo over the base's identities.
 ///
 /// # Specification
 /// trivial.
-enum OrderedMemoChoice {}
+enum HashedMemoChoice {}
 
-impl MemoChoice for OrderedMemoChoice
+impl MemoChoice for HashedMemoChoice
 {
-    type Memo<'id> = OrderedMemo<ItemIdentity<'id>, ItemOrdinal>;
+    type Memo<'id> = HashedMemo<ItemIdentity<'id>, ItemOrdinal>;
 
     /// Every transparent base item, under its identity.
     ///
@@ -1957,9 +1957,9 @@ impl MemoChoice for OrderedMemoChoice
                 && ret.plane_entry_count(ItemPlane::Items) == ret.entry_count()
         },
     )]
-    fn build(base: &[ItemCheckpoint]) -> OrderedMemo<ItemIdentity<'_>, ItemOrdinal>
+    fn build(base: &[ItemCheckpoint]) -> HashedMemo<ItemIdentity<'_>, ItemOrdinal>
     {
-        let mut memo = OrderedMemo::new();
+        let mut memo = HashedMemo::new();
         for (index, checkpoint) in base.iter().enumerate() {
             if let Maybe::Present(identity) = identity_of(checkpoint.content())
                 && memo.remember(identity, ItemOrdinal::from(index)).is_err()

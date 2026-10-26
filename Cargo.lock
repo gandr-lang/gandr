@@ -744,6 +744,7 @@ dependencies = [
 name = "gandr-kernel-term"
 version = "0.0.0"
 dependencies = [
+ "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
  "gandr-theory-path-orders",

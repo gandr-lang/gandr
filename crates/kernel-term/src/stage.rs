@@ -18,12 +18,12 @@
 //! substitution uses an explicit worklist and raises replacements under
 //! binders; its unchanged-constructor fast path avoids an unnecessary lookup.
 //!
-//! Each family interns through the open-addressed table in the private
-//! `lookup` module, which records why the table is hand-written. A
-//! coordinate is the descriptor's allocation position; the table only finds
-//! it. A clone copies each family's descriptor and slot vectors with no
-//! per-entry allocation. Positions are 32 bits wide, so allocating past
-//! `u32::MAX` descriptors of one family refuses with [`StageError::Overflow`].
+//! Each family interns through `gandr-kernel-check-memo`'s open-addressed
+//! hash index, the one the kernel's tables share. A coordinate is the
+//! descriptor's allocation position; the index only finds it. A clone copies
+//! each family's descriptor and slot vectors with no per-entry allocation.
+//! Positions are 32 bits wide, so allocating past `u32::MAX` descriptors of
+//! one family refuses with [`StageError::Overflow`].
 //!
 //! # Reading without extending
 //!
@@ -50,17 +50,16 @@
 //! a source started when it fails, rather than cloning the arena per source;
 //! `gandr-core-checker`'s staged program entry is that worker.
 
-mod lookup;
-
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
-use lookup::Lookup;
-use lookup::Position;
-use lookup::Probe;
-use lookup::hash_of;
+use gandr_kernel_check_memo::HashIndex;
+use gandr_kernel_check_memo::Probe;
+use gandr_kernel_check_memo::TableFull;
+use gandr_kernel_check_memo::TableHash;
+use gandr_kernel_check_memo::TablePosition;
 use quenchant_shape::shape::Maybe;
 
 /// Declare an arena-local nominal coordinate.
@@ -283,11 +282,11 @@ pub struct Arena
     /// Canonical classifier descriptors in dependency order.
     types: Vec<Type>,
     /// Descriptor lookup; equality here concerns syntax, not conversion.
-    type_ids: Lookup,
+    type_ids: HashIndex,
     /// Terms in dependency order.
     terms: Vec<Term>,
     /// Exact constructor, payload and child lookup within this arena.
-    term_ids: Lookup,
+    term_ids: HashIndex,
 }
 
 quenchant_shape::reason_enum! {
@@ -408,8 +407,10 @@ impl Arena
         term: &Term,
     ) -> Maybe<TermId, interned::Absent>
     {
-        match self.term_ids.probe(hash_of(term), &self.terms, term) {
-            Probe::Found(position) => Maybe::Present(TermId(position)),
+        match self.term_ids.probe(TableHash::of(term), |position| {
+            self.terms.get(usize::from(position)) == Some(term)
+        }) {
+            Probe::Found(position) => Maybe::Present(TermId(usize::from(position))),
             Probe::Vacant(_) => Maybe::Absent(interned::Absent::Uninterned),
         }
     }
@@ -458,16 +459,17 @@ impl Arena
             },
             Type::In(_) | Type::Universe(_) | Type::Nat(_) => {},
         }
-        let hash = hash_of(&ty);
-        match self.type_ids.probe(hash, &self.types, &ty) {
-            Probe::Found(position) => Ok(TypeId(position)),
+        let hash = TableHash::of(&ty);
+        match self.type_ids.probe(hash, |position| {
+            self.types.get(usize::from(position)) == Some(&ty)
+        }) {
+            Probe::Found(position) => Ok(TypeId(usize::from(position))),
             Probe::Vacant(slot) => {
-                let id = TypeId(self.types.len());
-                self.type_ids
-                    .insert(slot, hash, &self.types)
-                    .map_err(|_full| StageError::Overflow)?;
+                let position = TablePosition::try_from(self.types.len())
+                    .map_err(|TableFull| StageError::Overflow)?;
+                self.type_ids.insert(slot, hash, position);
                 self.types.push(ty);
-                Ok(id)
+                Ok(TypeId(usize::from(position)))
             },
         }
     }
@@ -515,16 +517,17 @@ impl Arena
             | Term::Splice(_)
             | Term::Iterate(..) => {},
         }
-        let hash = hash_of(&term);
-        match self.term_ids.probe(hash, &self.terms, &term) {
-            Probe::Found(position) => Ok(TermId(position)),
+        let hash = TableHash::of(&term);
+        match self.term_ids.probe(hash, |position| {
+            self.terms.get(usize::from(position)) == Some(&term)
+        }) {
+            Probe::Found(position) => Ok(TermId(usize::from(position))),
             Probe::Vacant(slot) => {
-                let id = TermId(self.terms.len());
-                self.term_ids
-                    .insert(slot, hash, &self.terms)
-                    .map_err(|_full| StageError::Overflow)?;
+                let position = TablePosition::try_from(self.terms.len())
+                    .map_err(|TableFull| StageError::Overflow)?;
+                self.term_ids.insert(slot, hash, position);
                 self.terms.push(term);
-                Ok(id)
+                Ok(TermId(usize::from(position)))
             },
         }
     }
@@ -615,7 +618,6 @@ impl Arena
     ///   or a [`find`](Self::find) answer, and a floor past the end changes the
     ///   clamped extent.
     /// - witness: `stage::tests::truncation_restores_the_prefix`
-    /// - witness: `stage::lookup::tests::removal_keeps_every_other_position`
     #[inline]
     #[spec(captures: before = self.extent(),
         ensures: self.terms.len() == floor.terms.0.min(before.terms.0)
@@ -627,12 +629,16 @@ impl Arena
     {
         let terms = floor.terms.0.min(self.terms.len());
         for (position, term) in self.terms.iter().enumerate().skip(terms) {
-            self.term_ids.remove(hash_of(term), Position(position));
+            if let Ok(position) = TablePosition::try_from(position) {
+                self.term_ids.remove(TableHash::of(term), position);
+            }
         }
         self.terms.truncate(terms);
         let types = floor.types.0.min(self.types.len());
         for (position, ty) in self.types.iter().enumerate().skip(types) {
-            self.type_ids.remove(hash_of(ty), Position(position));
+            if let Ok(position) = TablePosition::try_from(position) {
+                self.type_ids.remove(TableHash::of(ty), position);
+            }
         }
         self.types.truncate(types);
     }
