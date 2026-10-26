@@ -1953,8 +1953,9 @@ fi
 # on it up to the top (`chain.jq`). What lands is the largest prefix that is
 # ready (#1988, `land_prefix`, decided by `.config/pr-stack/prefix.jq`, its
 # cases held by `check:pr-stack`), in units (#2046): every member green on
-# the trunk's required contexts is queued, up to the first red or pending
-# one, which the task names, and at most the smaller of the queue's
+# the trunk's required contexts and free of conflicts is queued, up to the
+# first red, pending or conflicting one (#2783), which the task names with
+# what cuts it, and at most the smaller of the queue's
 # `max_entries_to_merge` and `max_entries_to_build` members at once; a
 # queued unit below that is topped up with the green members above it
 # (#2096), and once it is full the next unit goes in when it merged. The
@@ -2083,7 +2084,8 @@ conflicts() {
 
 # The landing is the stack's largest ready prefix (#1988, `land_prefix`), in
 # units (#2046): run from any member, it queues every member green on the
-# required contexts, up to the first red or pending one, a unit at a time,
+# required contexts and free of conflicts, up to the first red, pending or
+# conflicting one (#2783), a unit at a time,
 # until the caller's own pull request is queued. A stack that holds the
 # commits of a pull request queued on its own waits for that one to merge,
 # then reads the stack again.
