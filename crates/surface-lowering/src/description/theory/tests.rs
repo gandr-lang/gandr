@@ -650,6 +650,10 @@ fn theory_declines_and_malformed_wiring_are_refused_apart()
             SignatureFault::OperationFiller,
             MemberFault::OperationFiller,
         ),
+        (
+            SignatureFault::TopLevelOperation,
+            MemberFault::TopLevelOperation,
+        ),
         (SignatureFault::HigherCell, MemberFault::HigherCell),
         (SignatureFault::Reversible, MemberFault::Reversible),
     ] {
@@ -847,6 +851,66 @@ fn a_refused_top_level_operation_states_its_refusal()
         module.attributes().entries(key).len(),
         1_usize,
         "the decoration states the operation's refusal"
+    );
+}
+
+/// A top-level operation with no filler is refused at itself by its own name,
+/// and the block before it decorates it rather than standing where a
+/// declaration is expected (#3073).
+#[test]
+fn a_decorated_top_level_operation_is_refused_at_itself_3073()
+{
+    let source = "@[ checks ]\noper split : (b : Bit) --> (_ : Bit, _ : Bit)\n\ndef one = 1 ;\n";
+    let grammar = grammar();
+    let tree = parse(&grammar, SourceText::from(source))
+        .unwrap()
+        .into_tree();
+    let mut arena = gandr_core_term::CoreArena::new();
+    let module = crate::lower_module(
+        &grammar,
+        &tree,
+        &mut arena,
+        crate::LoweringBudget::DEFAULT,
+        crate::namespace::Recognition::default(),
+    )
+    .unwrap();
+    let [ref split, ref one] = *module.declarations()
+    else {
+        panic!(
+            "the operation and the definition are the two declarations: {:?}",
+            module.declarations()
+        )
+    };
+    assert_eq!(split.name().as_ref(), "split");
+    assert_eq!(one.name().as_ref(), "one");
+    let crate::DeclarationOutcome::Refused(crate::LoweringRefusal::UndescribedMember {
+        span,
+        fault: MemberFault::TopLevelOperation,
+    }) = split.outcome()
+    else {
+        panic!(
+            "the operation is refused by its own name: {:?}",
+            split.outcome()
+        )
+    };
+    assert_eq!(
+        source.get(usize::from(span.start()) .. usize::from(span.end())),
+        Some("oper split : (b : Bit) --> (_ : Bit, _ : Bit)"),
+        "the refusal stands at the operation"
+    );
+    let Maybe::Present(key) = split.signature()
+    else {
+        panic!("the operation is the declaration's half")
+    };
+    assert_eq!(
+        module.attributes().entries(key).len(),
+        1_usize,
+        "the block decorates the operation"
+    );
+    assert!(
+        !matches!(one.outcome(), crate::DeclarationOutcome::Refused(_)),
+        "the definition after it is not refused: {:?}",
+        one.outcome()
     );
 }
 

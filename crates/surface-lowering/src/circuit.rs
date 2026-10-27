@@ -39,6 +39,8 @@ pub enum SignatureFault
     ExpressionEndpoint,
     /// An operation filler is outside the description route.
     OperationFiller,
+    /// An operation declared outside a theory block: no signature holds it.
+    TopLevelOperation,
     /// A fillerless higher cell has no circuit body to elaborate.
     HigherCell,
     /// A redex line binds more than the one output port its rewrite has.

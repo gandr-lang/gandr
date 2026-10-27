@@ -215,6 +215,8 @@ pub enum MemberFault
     NativeDecode,
     /// An operation written with a circuit body.
     OperationFiller,
+    /// An operation declared outside a theory block.
+    TopLevelOperation,
     /// A rule between rules: a higher cell with no circuit body.
     HigherCell,
     /// The glyph `<->`, reserved for reversible maps.
@@ -269,6 +271,9 @@ impl fmt::Display for MemberFault
             Self::OperationFiller => {
                 "is an operation with a circuit body, which the description route does not read \
                  yet"
+            },
+            Self::TopLevelOperation => {
+                "is an operation declared outside a theory, which no signature reads yet"
             },
             Self::HigherCell => "is a rule between rules, a higher cell with no circuit body",
             Self::Reversible => "writes `<->`, which is reserved for reversible maps",
@@ -369,14 +374,14 @@ impl DescriptionDiagnostic
     /// # Specification
     /// - ensures: the module refusal covers exactly the diagnostic's source
     ///   site; a field past the description code, an undecodable description,
-    ///   an operation filler, a fillerless higher cell and the reserved glyph
-    ///   are an undescribed member carrying their own fault, a feed no
-    ///   observation guards its own refusal, a description the description
-    ///   check refuses an ill-formed description carrying the check's kind and
-    ///   its first two subjects as `written` spells them, a theory an `under`
-    ///   row names that no block presents an unresolved type head and one it
-    ///   names twice a duplicate definition, each named as `written` spells it,
-    ///   and every other fault a malformed form.
+    ///   an operation filler, a top-level operation, a fillerless higher cell
+    ///   and the reserved glyph are an undescribed member carrying their own
+    ///   fault, a feed no observation guards its own refusal, a description the
+    ///   description check refuses an ill-formed description carrying the
+    ///   check's kind and its first two subjects as `written` spells them, a
+    ///   theory an `under` row names that no block presents an unresolved type
+    ///   head and one it names twice a duplicate definition, each named as
+    ///   `written` spells it, and every other fault a malformed form.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -411,6 +416,9 @@ impl DescriptionDiagnostic
             DescriptionFault::NativeDecode(_) => undescribed(MemberFault::NativeDecode),
             DescriptionFault::Signature(crate::circuit::SignatureFault::OperationFiller) => {
                 undescribed(MemberFault::OperationFiller)
+            },
+            DescriptionFault::Signature(crate::circuit::SignatureFault::TopLevelOperation) => {
+                undescribed(MemberFault::TopLevelOperation)
             },
             DescriptionFault::Signature(crate::circuit::SignatureFault::HigherCell) => {
                 undescribed(MemberFault::HigherCell)
