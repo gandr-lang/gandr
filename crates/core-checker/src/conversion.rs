@@ -180,11 +180,9 @@ use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
-use gandr_core_term::effect::EffectRow;
 use gandr_core_term::effect::capability::RegionOrder;
 use gandr_core_term::effect::capability::grant;
 use gandr_core_term::equal_certificate_syntax;
-use gandr_core_term::equal_type_syntax;
 use gandr_core_term::hole::Knowledge;
 use gandr_core_term::row::RowInclusion;
 use gandr_core_term::shift_comp_type;
@@ -1485,7 +1483,7 @@ fn convert(
                         // metavariable a call nominated: a row fixing a sort
                         // to an omitted implicit reads it at its solution.
                         if subtyping {
-                            let asked = atoms_apart(context.arena(), wanted, found);
+                            let asked = wanted.atoms_apart(found, context.arena()).collect();
                             if atoms_agree(context, asked)? == RowInclusion::Excluded {
                                 return Ok(Agreement::Amplified);
                             }
@@ -1496,8 +1494,8 @@ fn convert(
                         }
                         else {
                             let arena = context.arena();
-                            let asked = atoms_apart(arena, wanted, found);
-                            let given = atoms_apart(arena, found, wanted);
+                            let asked = wanted.atoms_apart(found, arena).collect();
+                            let given = found.atoms_apart(wanted, arena).collect();
                             atoms_agree(context, asked)? == RowInclusion::Included
                                 && atoms_agree(context, given)? == RowInclusion::Included
                                 && (found_grade, found_region) == (wanted_grade, wanted_region)
@@ -2156,60 +2154,15 @@ fn convert(
     Ok(Agreement::Convertible)
 }
 
-/// The pairs of types on which the grant atoms of `row` differ as syntax from
-/// the atoms `authority` grants by the same names, the held type first: each
-/// atom's payload, then its reply, in the row's order.
-///
-/// # Specification
-/// - ensures: the lookup's reason when `authority` grants no atom of one of
-///   `row`'s names; otherwise the pairs, none exactly when
-///   [`EffectRow::grants_within`] includes `row` in `authority`.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a row fixing a sort to an omitted implicit against a
-///   scope at the type the implicit is solved to, and at another type; an
-///   operation the authority withholds is refused before any pair is read.
-/// - witness: `conversion::tests::a_capability_at_an_implicit_sort_is_read_at_its_solution_2944`
-/// - witness: `capability::tests::attenuation_narrows_and_never_widens`
-#[spec(ensures: |ret| match ret {
-    | Maybe::Present(ref apart) => apart.is_empty() == (row.grants_within(authority, arena) == RowInclusion::Included),
-    | Maybe::Absent(_) => row.grants_within(authority, arena) == RowInclusion::Excluded,
-})]
-fn atoms_apart(
-    arena: &CoreArena,
-    row: &EffectRow,
-    authority: &EffectRow,
-) -> Maybe<Vec<(ValueTypeId, ValueTypeId)>, grant::Absent>
-{
-    let mut apart = Vec::new();
-    for (label, restricted) in row.instances() {
-        for operation in restricted.operations() {
-            let held = match authority.granted(label, &operation.name) {
-                Maybe::Present(held) => held,
-                Maybe::Absent(absent) => return Maybe::Absent(absent),
-            };
-            for (had, asked) in [
-                (held.payload, operation.payload),
-                (held.reply, operation.reply),
-            ] {
-                if equal_type_syntax(arena, had, asked) != CertificateEquality::Equal {
-                    apart.push((had, asked));
-                }
-            }
-        }
-    }
-    Maybe::Present(apart)
-}
-
-/// Whether the atoms [`atoms_apart`] read agree: each pair it found apart as
-/// syntax posed to the solver at its weak heads.
+/// Whether the atoms [`gandr_core_term::effect::EffectRow::atoms_apart`] found
+/// apart agree: each pair it found apart as syntax posed to the solver at its
+/// weak heads.
 ///
 /// # Specification
 /// - ensures: [`RowInclusion::Excluded`] for an atom the authority does not
-///   grant; otherwise [`RowInclusion::Included`] exactly when the solver solves
-///   or postpones every pair, so a pair neither side of which decodes a
-///   metavariable a call nominated is excluded.
+///   grant, before any pair is posed; otherwise [`RowInclusion::Included`]
+///   exactly when the solver solves or postpones every pair, so a pair neither
+///   side of which decodes a metavariable a call nominated is excluded.
 /// - fails: the weak head's refusal, and [`CheckRefusal::MachineInvariant`] for
 ///   a depth past any binder count.
 /// - panics: none.
@@ -2222,18 +2175,23 @@ fn atoms_apart(
 /// # Adequacy
 /// - hypothesis: L3 — a row fixing a sort to an omitted implicit against a
 ///   scope at the integers, before and after the scope solves it, and against a
-///   scope at the unit type once it is solved.
+///   scope at the unit type once it is solved; an operation the authority
+///   withholds is refused before any pair is read.
 /// - witness: `conversion::tests::a_capability_at_an_implicit_sort_is_read_at_its_solution_2944`
+/// - witness: `capability::tests::attenuation_narrows_and_never_widens`
 fn atoms_agree(
     context: &mut CheckingContext<'_>,
-    atoms: Maybe<Vec<(ValueTypeId, ValueTypeId)>, grant::Absent>,
+    atoms: Vec<Maybe<(ValueTypeId, ValueTypeId), grant::Absent>>,
 ) -> Result<RowInclusion, CheckRefusal>
 {
-    let Maybe::Present(apart) = atoms
-    else {
+    if atoms.iter().any(|atom| matches!(*atom, Maybe::Absent(_))) {
         return Ok(RowInclusion::Excluded);
-    };
-    for (had, asked) in apart {
+    }
+    for atom in atoms {
+        let Maybe::Present((had, asked)) = atom
+        else {
+            continue;
+        };
         let had = context.whnf_value_type(had)?;
         let asked = context.whnf_value_type(asked)?;
         match context.unify(TypeNode::Value(had), TypeNode::Value(asked))? {

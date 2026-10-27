@@ -146,6 +146,63 @@ fn attenuation_is_inclusion_on_grant_atoms()
     assert_eq!(both.grants_within(&joined, &arena), RowInclusion::Included);
 }
 
+/// The atoms apart are each type that differs from the held one, held type
+/// first, payload before reply, and the lookup's reason for an atom the
+/// authority does not grant.
+#[test]
+fn the_atoms_apart_are_each_type_that_differs_held_first()
+{
+    let mut arena = CoreArena::new();
+    let host = HostSignatures::new(&mut arena).expect("host interfaces");
+    let read = OperationName::from("read");
+    let write = OperationName::from("write");
+    let reads = EffectRow::authority(&[host.fs.restrict([&read]).expect("one operation")])
+        .expect("one interface");
+    let both = EffectRow::authority(&[host.fs.restrict([&read, &write]).expect("two")])
+        .expect("one interface");
+    let Maybe::Present(held) = host.fs.operation(&read)
+    else {
+        panic!("the host's file system reads");
+    };
+    let (held_payload, held_reply) = (held.payload, held.reply);
+    let integer = arena.value_type_base(gandr_kernel_term::BaseType::Integer);
+    let character = arena.value_type_base(gandr_kernel_term::BaseType::Character);
+    let reading = |payload, reply| {
+        let restricted = EffectSig::new(EffectName::from("Fs"), [EffectOp {
+            name: read.clone(),
+            payload,
+            reply,
+        }])
+        .expect("one operation");
+        EffectRow::authority(&[restricted]).expect("one interface")
+    };
+    let apart = |row: &EffectRow| {
+        row.atoms_apart(&both, &arena)
+            .collect::<alloc::vec::Vec<_>>()
+    };
+
+    assert!(apart(&reads).is_empty(), "an atom granted as written");
+    assert_eq!(
+        apart(&reading(held_payload, integer)),
+        [Maybe::Present((held_reply, integer))],
+        "the reply that differs, held type first"
+    );
+    assert_eq!(
+        apart(&reading(integer, character)),
+        [
+            Maybe::Present((held_payload, integer)),
+            Maybe::Present((held_reply, character))
+        ],
+        "the payload, then the reply"
+    );
+    let exits = EffectRow::authority(core::slice::from_ref(&host.proc)).expect("one interface");
+    assert_eq!(
+        apart(&exits).first(),
+        Some(&Maybe::Absent(grant::Absent::Interface)),
+        "an interface the authority does not restrict"
+    );
+}
+
 #[test]
 fn a_kept_type_keeps_its_region_across_substitution()
 {

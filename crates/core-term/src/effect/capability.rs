@@ -292,8 +292,9 @@ impl EffectRow
     /// types.
     ///
     /// # Specification
-    /// - ensures: inclusion on (interface, operation) atoms; the empty
-    ///   authority is included in every authority.
+    /// - ensures: inclusion on (interface, operation) atoms, exactly when
+    ///   [`Self::atoms_apart`] yields nothing; the empty authority is included
+    ///   in every authority.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -317,22 +318,53 @@ impl EffectRow
         arena: &crate::CoreArena,
     ) -> RowInclusion
     {
-        for (label, restricted) in self.instances() {
-            for operation in restricted.operations() {
-                let Maybe::Present(held) = authority.granted(label, &operation.name)
-                else {
-                    return RowInclusion::Excluded;
-                };
-                if crate::syntax::equal_type_syntax(arena, held.payload, operation.payload)
-                    != crate::CertificateEquality::Equal
-                    || crate::syntax::equal_type_syntax(arena, held.reply, operation.reply)
-                        != crate::CertificateEquality::Equal
-                {
-                    return RowInclusion::Excluded;
-                }
-            }
+        match self.atoms_apart(authority, arena).next() {
+            None => RowInclusion::Included,
+            Some(_) => RowInclusion::Excluded,
         }
-        RowInclusion::Included
+    }
+
+    /// The grant atoms of `self` that `authority` does not hold as written, in
+    /// the row's order: the lookup's reason for an atom `authority` grants no
+    /// operation of, and otherwise each of the atom's payload and reply types
+    /// that differs as syntax from the held one, paired held type first.
+    ///
+    /// # Specification
+    /// - ensures: nothing exactly when every atom of `self` is granted in
+    ///   `authority` at structurally equal payload and reply types.
+    /// - panics: none.
+    /// - executable: none — the walk is lazy; [`Self::grants_within`]'s ensures
+    ///   states when it yields nothing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an atom granted as written, one whose reply differs,
+    ///   one whose payload and reply both differ, and one of an interface the
+    ///   authority does not restrict, each walked to its exact yield.
+    /// - witness: `effect::capability::tests::the_atoms_apart_are_each_type_that_differs_held_first`
+    #[inline]
+    pub fn atoms_apart(
+        &self,
+        authority: &Self,
+        arena: &crate::CoreArena,
+    ) -> impl Iterator<Item = Maybe<(crate::ValueTypeId, crate::ValueTypeId), grant::Absent>>
+    {
+        self.instances().flat_map(move |(label, restricted)| {
+            restricted.operations().flat_map(move |operation| {
+                let apart = match authority.granted(label, &operation.name) {
+                    Maybe::Present(held) => [
+                        (held.payload, operation.payload),
+                        (held.reply, operation.reply),
+                    ]
+                    .map(|(had, asked)| {
+                        (crate::syntax::equal_type_syntax(arena, had, asked)
+                            != crate::CertificateEquality::Equal)
+                            .then_some(Maybe::Present((had, asked)))
+                    }),
+                    Maybe::Absent(absent) => [Some(Maybe::Absent(absent)), None],
+                };
+                apart.into_iter().flatten()
+            })
+        })
     }
 
     /// The operation `operation` of the instance labelled `interface`, when
