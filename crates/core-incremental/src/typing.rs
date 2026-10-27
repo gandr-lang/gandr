@@ -11,6 +11,12 @@
 //! which is what "incremental equals batch" compares. The origin token is not
 //! projected: it is the producer's coordinate for the item, echoed from the
 //! edited declaration, never reused from a checkpoint.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: a stored
+//!   `FootprintsOverlap` keeps both halves' footprints and what they share, the
+//!   three try-first 1 names.
 
 use anodized::spec;
 use gandr_core_checker::ArgumentPosition;
@@ -916,6 +922,19 @@ pub enum Refusal
     CapabilityConsumable(Site),
     /// A held capability claims authority the host did not grant.
     CapabilityUngranted(Site),
+    /// Two halves of a fork may both use one host interface, one of them to
+    /// change what it reaches.
+    FootprintsOverlap
+    {
+        /// The fork.
+        at: Site,
+        /// The child's footprint, as a held capability's type.
+        child: TypeContent,
+        /// The parent's footprint, likewise.
+        parent: TypeContent,
+        /// What both may use where one may change it, likewise.
+        shared: TypeContent,
+    },
     /// A `bisim` relating two protocols that are not bisimilar.
     SessionNotEquivalent(Site),
     /// A `sim` relating a protocol that does not simulate its target.
@@ -1571,6 +1590,7 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
  else if let CheckRefusal::CapabilityEscaped { at, found } = matched_left_value && let Refusal::CapabilityEscaped { at: projected, found: ref stored } = *matched_right_value { projected == self.term_site(at) && *stored == self.type_node(found) }
  else if let (CheckRefusal::CapabilityConsumable(at), &Refusal::CapabilityConsumable(projected)) | (CheckRefusal::OpenSessionPayload { at }, &Refusal::OpenSessionPayload(projected)) | (CheckRefusal::UnassertedLaw { at }, &Refusal::UnassertedLaw(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::ValueType(at)) }
  else if let CheckRefusal::CapabilityUngranted { declared, .. } = matched_left_value && let Refusal::CapabilityUngranted(projected) = *matched_right_value { projected == self.site(ArenaNode::ValueType(declared)) }
+ else if let CheckRefusal::FootprintsOverlap { at, child, parent, shared } = matched_left_value && let Refusal::FootprintsOverlap { at: projected, child: ref stored_child, parent: ref stored_parent, shared: ref stored_shared } = *matched_right_value { projected == self.site(ArenaNode::Computation(at)) && *stored_child == self.value_type(child) && *stored_parent == self.value_type(parent) && *stored_shared == self.value_type(shared) }
  else if let (CheckRefusal::SessionNotEquivalent { at }, &Refusal::SessionNotEquivalent(projected)) | (CheckRefusal::SessionNotSubtype { at }, &Refusal::SessionNotSubtype(projected)) | (CheckRefusal::SessionCodeExpected { at }, &Refusal::SessionCodeExpected(projected)) | (CheckRefusal::ForwardUnsupported { at }, &Refusal::ForwardUnsupported(projected)) | (CheckRefusal::Boundary { at }, &Refusal::Boundary(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Value(at)) }
  else if let (CheckRefusal::NonCovariantMotive { at }, &Refusal::NonCovariantMotive(projected)) | (CheckRefusal::RideUnsupported { at }, &Refusal::RideUnsupported(projected)) = (matched_left_value, matched_right_value) { projected == self.site(ArenaNode::Computation(at)) }
  else if let CheckRefusal::RunNotAdmitted { at, fault } = matched_left_value && let Refusal::RunNotAdmitted { at: projected, fault: stored } = *matched_right_value { projected == self.site(ArenaNode::Value(at)) && stored == fault }
@@ -1948,6 +1968,17 @@ if let CheckRefusal::NotADataType(constant) = matched_left_value && let Refusal:
             },
             CheckRefusal::CapabilityUngranted { declared, .. } => {
                 Refusal::CapabilityUngranted(self.site(ArenaNode::ValueType(declared)))
+            },
+            CheckRefusal::FootprintsOverlap {
+                at,
+                child,
+                parent,
+                shared,
+            } => Refusal::FootprintsOverlap {
+                at: self.site(ArenaNode::Computation(at)),
+                child: self.value_type(child),
+                parent: self.value_type(parent),
+                shared: self.value_type(shared),
             },
             CheckRefusal::SessionNotEquivalent { at } => {
                 Refusal::SessionNotEquivalent(self.site(ArenaNode::Value(at)))

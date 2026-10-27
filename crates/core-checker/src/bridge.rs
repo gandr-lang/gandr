@@ -655,6 +655,7 @@ fn fault(refusal: CheckRefusal) -> Refusal
         | CheckRefusal::CapabilityEscaped { .. }
         | CheckRefusal::CapabilityConsumable(_)
         | CheckRefusal::CapabilityUngranted { .. }
+        | CheckRefusal::FootprintsOverlap { .. }
         | CheckRefusal::SessionNotEquivalent { .. }
         | CheckRefusal::SessionNotSubtype { .. }
         | CheckRefusal::SessionCodeExpected { .. }

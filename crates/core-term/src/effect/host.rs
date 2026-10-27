@@ -28,6 +28,12 @@
 //! interface: [`HostSignatures::offering`] finds it, and
 //! [`HostSignatures::authority`] builds the capability authority granting a
 //! set of bare operation names, each under the interface that offers it.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: [`access`], the
+//!   operations that change nothing on the host, which two forked halves may
+//!   share.
 
 use alloc::vec::Vec;
 
@@ -124,6 +130,61 @@ pub fn divergence() -> EffectSig
         name: DIV.into(),
         operations: alloc::collections::BTreeMap::new(),
     }))
+}
+
+/// The host operations that only read, each by its interface and its name.
+/// Each observes the host and changes nothing another task could observe, so
+/// two tasks may perform them on one interface at once. Every other host
+/// operation changes the file system, the process, the ring or the console.
+const READING: [(&str, &str); 7] = [
+    (FS, "read"),
+    (FS, "glob"),
+    (FS, "stat"),
+    (FS, "cwd"),
+    (FS, "ls_files"),
+    (ENV, "get"),
+    (ENV, "path"),
+];
+
+/// How a host operation meets the host.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum HostAccess
+{
+    /// The operation observes the host and changes nothing another task
+    /// could observe.
+    Reads,
+    /// The operation may change what another task observes.
+    Changes,
+}
+
+/// How `operation` of the interface named `interface` meets the host.
+///
+/// An operation of an interface the host does not declare changes the state
+/// its handler holds, whatever its name.
+///
+/// # Specification
+/// - ensures: [`HostAccess::Reads`] only for an operation of [`FS`] or [`ENV`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — `Fs`'s `read` reads and its `write` changes, on one
+///   interface; `Exec`'s `exec` changes; an operation named `read` of an
+///   interface the host does not declare changes.
+/// - witness: `effect::host::tests::an_operation_reads_the_host_only_when_it_changes_nothing`
+#[spec(ensures: |ret| ret == HostAccess::Changes || interface.as_ref() == FS || interface.as_ref() == ENV)]
+#[inline]
+#[must_use]
+pub fn access(
+    interface: &EffectName,
+    operation: &OperationName,
+) -> HostAccess
+{
+    if READING.contains(&(interface.as_ref(), operation.as_ref())) {
+        HostAccess::Reads
+    }
+    else {
+        HostAccess::Changes
+    }
 }
 
 impl HostSignatures

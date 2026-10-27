@@ -44,6 +44,12 @@
 //! primary label keeps only the failing comparison. Reversal: a type whose
 //! spelling needs more than one line, left unspelled, moves to a note under the
 //! snippet.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the label of
+//!   `FootprintsOverlap`, authority both halves of a fork hold and one may
+//!   change.
 
 use core::fmt;
 
@@ -470,6 +476,9 @@ const fn checked(refusal: CheckRefusal) -> Culprit
         CheckRefusal::OpenSessionPayload { .. } => "a session payload open over a binder",
         CheckRefusal::UnassertedLaw { .. } => "a law the host does not assert",
         CheckRefusal::CapabilityUngranted { .. } => "authority the host did not grant",
+        CheckRefusal::FootprintsOverlap { .. } => {
+            "authority both halves of a fork hold, one to change"
+        },
         CheckRefusal::SessionNotEquivalent { .. } => "protocols that are not bisimilar",
         CheckRefusal::SessionNotSubtype { .. } => "a protocol that does not simulate the target",
         CheckRefusal::SessionCodeExpected { .. } => "not a session code",

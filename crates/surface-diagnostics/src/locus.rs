@@ -795,7 +795,7 @@ const fn opener(endpoint: gandr_core_checker::session::Endpoint) -> Label
             }) && ret.context == UNNAMED,
         CheckRefusal::StagesDisagree { .. } | CheckRefusal::AtomTransport { .. } | CheckRefusal::ImplicitUnsolved { .. } | CheckRefusal::ModelUnanswered { .. } | CheckRefusal::ModelAmbiguous { .. } | CheckRefusal::TacticRefused { .. } | CheckRefusal::DialogueUnmatched { .. } | CheckRefusal::DialogueInverted { .. } |
         CheckRefusal::HandlerUnlawful { .. } |
-        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
+        CheckRefusal::DataKindNotUniverse(_) | CheckRefusal::RuleNotPresentable { .. } | CheckRefusal::RuleNotRespected { .. } | CheckRefusal::NotApart { .. } | CheckRefusal::LoopNotRespected { .. } | CheckRefusal::LoopUndecided { .. } | CheckRefusal::AbstractKindNotUniverse(_) | CheckRefusal::DataArgumentArity(_) | CheckRefusal::UnknownConstructor { .. } | CheckRefusal::ConstructorArity(_) | CheckRefusal::NonExhaustiveDataCase(_) | CheckRefusal::UndecidedCoverage(_) | CheckRefusal::AbsentRecordField(_) | CheckRefusal::AbsentTupleComponent(_) | CheckRefusal::UnknownOperation { .. } | CheckRefusal::HandlerCoverage { .. } | CheckRefusal::ShiftWithoutReset { .. } | CheckRefusal::PathCode(_) | CheckRefusal::PointwiseDistinct { .. } | CheckRefusal::RoundTripDistinct { .. } | CheckRefusal::UaUncertified { .. } | CheckRefusal::UaInequivalent { .. } | CheckRefusal::EffectSignatureConflict { .. } | CheckRefusal::NotSynthesisable { .. } | CheckRefusal::UnknownConstant { .. } | CheckRefusal::OutOfFragment { .. } | CheckRefusal::UnboundIndex { .. } | CheckRefusal::DanglingNode { .. } | CheckRefusal::Undecided { .. } | CheckRefusal::FamilyArity { .. } | CheckRefusal::StaticLambdaArgument { .. } | CheckRefusal::StaticClassifierExpected { .. } | CheckRefusal::StageNotBelow { .. } | CheckRefusal::Linearity { .. } | CheckRefusal::UnenclosedRun { .. } | CheckRefusal::CapabilityOutsideAuthority { .. } | CheckRefusal::FootprintsOverlap { .. } | CheckRefusal::CapabilityConsumable(_) | CheckRefusal::OpenSessionPayload { .. } | CheckRefusal::UnassertedLaw { .. } | CheckRefusal::SessionNotEquivalent { .. } | CheckRefusal::SessionNotSubtype { .. } | CheckRefusal::SessionCodeExpected { .. } | CheckRefusal::NonCovariantMotive { .. } | CheckRefusal::RideUnsupported { .. } | CheckRefusal::RunNotAdmitted { .. } | CheckRefusal::ForwardUnsupported { .. } | CheckRefusal::Boundary { .. } | CheckRefusal::Access { .. } | CheckRefusal::Codata { .. } | CheckRefusal::Located { .. } => ret.context == UNNAMED,
     }
 })]
 fn checked(
@@ -967,6 +967,7 @@ fn checked(
                 | CheckingForm::Scope(at),
         }
         | CheckRefusal::CapabilityOutsideAuthority { at, .. }
+        | CheckRefusal::FootprintsOverlap { at, .. }
         | CheckRefusal::NonExhaustiveDataCase(at)
         | CheckRefusal::UndecidedCoverage(at)
         | CheckRefusal::RuleNotRespected { at, .. }
@@ -1645,6 +1646,10 @@ impl fmt::Display for Checked
             ),
             | CheckRefusal::CapabilityOutsideAuthority { .. } => f.write_str(
                 "the capability this operation is exercised through does not grant it",
+            ),
+            | CheckRefusal::FootprintsOverlap { .. } => f.write_str(
+                "the two halves of a fork run as peers, so they may share a capability only to \
+                 read through it",
             ),
             | CheckRefusal::CapabilityEscaped { .. } => f.write_str(
                 "a capability a scope introduces would outlive the scope here",
@@ -3007,6 +3012,12 @@ mod tests
                 at: computation,
                 capability: value_type,
             },
+            CheckRefusal::FootprintsOverlap {
+                at: computation,
+                child: value_type,
+                parent: value_type,
+                shared: value_type,
+            },
             CheckRefusal::NonExhaustiveDataCase(computation),
             CheckRefusal::UndecidedCoverage(computation),
             CheckRefusal::RuleNotRespected {
@@ -3417,6 +3428,7 @@ mod tests
                         | CheckRefusal::HandlerUnlawful { .. }
                         | CheckRefusal::ShiftWithoutReset { .. }
                         | CheckRefusal::CapabilityOutsideAuthority { .. }
+                        | CheckRefusal::FootprintsOverlap { .. }
                         | CheckRefusal::NonExhaustiveDataCase(_)
                         | CheckRefusal::UndecidedCoverage(_)
                         | CheckRefusal::RuleNotRespected { .. }

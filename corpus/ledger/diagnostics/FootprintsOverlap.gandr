@@ -1,0 +1,10 @@
+/// `FootprintsOverlap`: the two halves of a fork both reach one host interface, and one of them may change it.
+@[ refuses("FootprintsOverlap") ]
+def racing(c : Cap {read, write}) -> -F [Fs] Unit {
+  fork (task : end) {
+    c.write("notes", "task");
+    close(task)
+  } as found;
+  c.write("notes", "parent");
+  close(found)
+}

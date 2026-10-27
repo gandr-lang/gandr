@@ -120,3 +120,30 @@ fn host_interfaces_pin_names_payloads_and_replies()
         "the divergence interface needs no arena"
     );
 }
+
+#[test]
+fn an_operation_reads_the_host_only_when_it_changes_nothing()
+{
+    let [fs, exec, store] = [FS, EXEC, "Store"].map(EffectName::from);
+    let [read, write, run] = ["read", "write", "exec"].map(OperationName::from);
+    assert_eq!(
+        super::access(&fs, &read),
+        super::HostAccess::Reads,
+        "a file read changes nothing"
+    );
+    assert_eq!(
+        super::access(&fs, &write),
+        super::HostAccess::Changes,
+        "a file write changes the file system it reads"
+    );
+    assert_eq!(
+        super::access(&exec, &run),
+        super::HostAccess::Changes,
+        "a command may change anything"
+    );
+    assert_eq!(
+        super::access(&store, &read),
+        super::HostAccess::Changes,
+        "an interface the host does not declare holds its handler's state"
+    );
+}

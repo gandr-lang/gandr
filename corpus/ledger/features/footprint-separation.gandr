@@ -1,0 +1,42 @@
+/// `footprint-separation`: Separate footprints at a fork.
+/// Implemented: each half of a fork read for the host interfaces the names it mentions reach, a held capability at its authority, a returner's row at each interface it names and an operation performed by name; a fork whose halves share an interface one of them may change refused `FootprintsOverlap`, two readers and two halves on different interfaces accepted.
+/// Not implemented: a face naming each half's footprint, which #2879 owes; a helper's row read per operation rather than as its whole interface, which #2878 owes.
+// Two tasks over capabilities the host holds for the run (#2789). A fork's
+// halves run as peers, so nothing orders their operations on what they both
+// reach: each half's footprint, the operations the names it mentions let it
+// perform on the host, must share no interface with the other's, or share it
+// only to read (Xu, Bračevac, Pham, Zhao and Odersky, _System Capybara_,
+// arXiv:2607.09383, § 4.5: a shared location is read-only in both). A
+// footprint is read off the types the half mentions, a capability's authority
+// and a returner's row, so a closure's footprint is a summary its type
+// already records. Two halves writing through one capability are refused:
+// `../diagnostics/FootprintsOverlap.gandr` pins the refusal (#2789).
+
+// The task's protocol.
+import "../../model/tasks/task-base.gandr";
+
+/// Both halves hold the capability attenuated to reading, so they share the
+/// file system only to read it.
+def reading(c : Cap { read }) -> [Fs] Unit {
+  fork (task : Task.Join) {
+    run text <- c.read(Task.notes);
+    send(task, text);
+    close(task)
+  } as found;
+  run mine <- c.read(Task.notes);
+  recv(found) as text;
+  close(found)
+}
+
+/// A writer beside an exiter: the halves reach different interfaces, so
+/// nothing is shared.
+def apart(files : Cap { write }, process : Cap { exit }) -> [Fs, Proc] Unit {
+  fork (task : Task.Join) {
+    files.write(Task.notes, "task");
+    send(task, Task.notes);
+    close(task)
+  } as found;
+  process.exit(0);
+  recv(found) as text;
+  close(found)
+}

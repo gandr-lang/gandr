@@ -100,13 +100,6 @@ fn seal() -> Result<(), DefinitionError> {
 }
 ```
 
-Run the tests, then again with specifications enforced:
-
-```sh
-cargo nextest run -p gandr-core-term
-RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-core-term
-```
-
 ## Where the detail lives
 
 Mechanism, rules, decisions with their alternatives and reversals, and witnesses live in the rustdoc beside the code:
@@ -132,6 +125,7 @@ Mechanism, rules, decisions with their alternatives and reversals, and witnesses
 ## References
 
 - `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — an effect is a theory whose rules are its equations, and a program over it normalises by them before it runs.
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the host operations that only read, which two forked halves may share.
 - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — get-get, put-get and put-put are the laws that are rules.
 
 ## License

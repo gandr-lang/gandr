@@ -7198,6 +7198,18 @@ where
             writer.tag(Tag(63));
             write_site(writer, declared)?;
         },
+        Refusal::FootprintsOverlap {
+            at,
+            ref child,
+            ref parent,
+            ref shared,
+        } => {
+            writer.tag(Tag(94));
+            write_site(writer, at)?;
+            write_type(writer, child)?;
+            write_type(writer, parent)?;
+            write_type(writer, shared)?;
+        },
         Refusal::SessionNotEquivalent(at) => {
             writer.tag(Tag(64));
             write_site(writer, at)?;
@@ -7451,6 +7463,7 @@ where
                     | Refusal::CapabilityEscaped { .. } => 61,
                     | Refusal::CapabilityConsumable(_) => 62,
                     | Refusal::CapabilityUngranted(_) => 63,
+                    | Refusal::FootprintsOverlap { .. } => 94,
                     | Refusal::SessionNotEquivalent(_) => 64,
                     | Refusal::SessionNotSubtype(_) => 65,
                     | Refusal::SessionCodeExpected(_) => 66,
@@ -7793,6 +7806,12 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         62 => Refusal::CapabilityConsumable(read_site(reader)?),
         63 => Refusal::CapabilityUngranted(read_site(reader)?),
+        94 => Refusal::FootprintsOverlap {
+            at: read_site(reader)?,
+            child: read_type(reader)?,
+            parent: read_type(reader)?,
+            shared: read_type(reader)?,
+        },
         64 => Refusal::SessionNotEquivalent(read_site(reader)?),
         65 => Refusal::SessionNotSubtype(read_site(reader)?),
         66 => Refusal::SessionCodeExpected(read_site(reader)?),
@@ -8539,6 +8558,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
             | Refusal::CapabilityEscaped { .. }
             | Refusal::CapabilityConsumable(_)
             | Refusal::CapabilityUngranted(_)
+            | Refusal::FootprintsOverlap { .. }
             | Refusal::SessionNotEquivalent(_)
             | Refusal::SessionNotSubtype(_)
             | Refusal::SessionCodeExpected(_)

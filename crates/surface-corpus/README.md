@@ -9,6 +9,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 - [Examples](#examples)
 - [Writing to the corpus](#writing-to-the-corpus)
 - [Where the detail lives](#where-the-detail-lives)
+- [References](#references)
 - [License](#license)
 <!-- tocstop -->
 
@@ -18,7 +19,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 
 **Why.** A corpus that only says pass or fail cannot tell a run that owes nothing from one that signed for a hole, and a corpus whose sources describe their own expected failures can describe a regression as expected. The expectation language here makes both visible: the strict root admits only `checks` and its `runs` and `normalizes` refinements, every declaration states a verdict whether it writes one or not, and every report carries the ledger size.
 
-**How.** Attributes are read off the lowering's side table under each declared name's form keys; the five schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in, and one stating a run beside a refusal — `@[ runs("5"), refuses("UnboundedLoop") ]`, settled only when both hold — is run through it refused; a data block stating a normal form has its call read under its rules by `LoweredModule::normal_form`. One equality decides each declaration; the tally counts it once. A data rule in the fixture corpus is written `<=>`, the equation; the order chooses its direction. `==>` remains where a fixture pins the direction the order must admit.
+**How.** Attributes are read off the lowering's side table under each declared name's form keys; the five schemas are matched by their registered names, and their payloads are read as literals out of the arena. The declarations are walked in admission order in lockstep with the checker's verdicts, a lowering-refused declaration consuming none. A declaration stating a run outcome that the checker accepted is run through the `Runner` the caller hands in, and one stating a run beside a refusal — `@[ runs("5"), refuses("UnboundedLoop") ]`, settled only when both hold — is run through it refused; a data block stating a normal form has its call read under its rules by `LoweredModule::normal_form`. One equality decides each declaration; the tally counts it once.
 
 ## Provided features
 
@@ -85,6 +86,10 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 | Membership, the corpus directories, one walk, the pending set | [`root`](src/root.rs) |
 | The kernel export suite | [`kernel_export`](src/kernel_export.rs) |
 | A comment on every fixture item, the ledger ratchet | [`src/lib.rs`](src/lib.rs), [`comments`](tests/comments.rs) |
+
+## References
+
+- `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal `FootprintsOverlap`, classed a malformed source.
 
 ## License
 
