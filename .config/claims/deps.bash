@@ -1,7 +1,10 @@
 # The GitHub dependency and sub-issue calls the tracker tasks share (#2902),
 # sourced by `unit:check`, `issue:file`, `epic:order`, `epic:deps`,
-# `claim:next` and `report:deps`. REST throughout, as `claim:next` reads the
-# board: the GraphQL limit, shared by every seat's watches, runs out.
+# `claim:next` and `report:deps`. REST for the per-issue reads, as
+# `claim:next` reads the board: the GraphQL limit, shared by every seat's
+# watches, runs out. The one exception is `deps_open_graph`, a single pass
+# over every open issue at two points a page, where REST takes a call per
+# issue (#3192).
 #
 # Each takes the repository as `owner/name` first. A setter checks before it
 # writes, so each is idempotent and a rerun repairs what a first run missed.
@@ -26,6 +29,38 @@ deps_sub_issues() {
   gh api --paginate "repos/$1/issues/$2/sub_issues?per_page=100" --jq '[.[] | {number, state}]' | jq -s 'add // []'
 }
 
+# Every open issue's dependencies and sub-issues in one paginated GraphQL
+# pass (#3192), as `{"<n>": {blocked_by: [{number, state}], sub_issues:
+# [{number, state}]}}`, each state in lower case as the REST reads give it.
+# A list longer than the page the pass asks for is read again through REST,
+# so none comes back short.
+deps_open_graph() {
+  local repo=$1 graph number
+  graph=$(gh api graphql --paginate -F owner="${repo%/*}" -F name="${repo#*/}" -f query='
+    query($owner: String!, $name: String!, $endCursor: String) {
+      repository(owner: $owner, name: $name) {
+        issues(states: OPEN, first: 100, after: $endCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            number
+            blockedBy(first: 100) { totalCount nodes { number state } }
+            subIssues(first: 100) { totalCount nodes { number state } }
+          }
+        }
+      }
+    }' --jq '.data.repository.issues.nodes[]' \
+    | jq -s 'map({key: "\(.number)", value: {
+        blocked_by: [.blockedBy.nodes[] | {number, state: (.state | ascii_downcase)}], blocked_total: .blockedBy.totalCount,
+        sub_issues: [.subIssues.nodes[] | {number, state: (.state | ascii_downcase)}], sub_total: .subIssues.totalCount}}) | from_entries')
+  for number in $(jq -r 'to_entries[] | select((.value.blocked_by | length) < .value.blocked_total) | .key' <<< "$graph"); do
+    graph=$(jq --arg n "$number" --argjson read "$(deps_blocked_by "$repo" "$number")" '.[$n].blocked_by = $read' <<< "$graph")
+  done
+  for number in $(jq -r 'to_entries[] | select((.value.sub_issues | length) < .value.sub_total) | .key' <<< "$graph"); do
+    graph=$(jq --arg n "$number" --argjson read "$(deps_sub_issues "$repo" "$number")" '.[$n].sub_issues = $read' <<< "$graph")
+  done
+  jq -c 'map_values({blocked_by, sub_issues})' <<< "$graph"
+}
+
 # Set $2 blocked by $3 unless it is; prints `set #2 blocked by #3` when it
 # writes.
 deps_block() {
@@ -33,8 +68,14 @@ deps_block() {
   if deps_blocked_by "$repo" "$issue" | jq -e --argjson n "$blocker" 'any(.[]; .number == $n)' > /dev/null; then
     return 0
   fi
-  gh api -X POST "repos/$repo/issues/$issue/dependencies/blocked_by" -F issue_id="$(deps_id "$repo" "$blocker")" > /dev/null
-  printf 'set #%s blocked by #%s\n' "$issue" "$blocker"
+  deps_set_block "$repo" "$issue" "$blocker"
+}
+
+# Set $2 blocked by $3, which a read has found it is not; prints `set #2
+# blocked by #3`.
+deps_set_block() {
+  gh api -X POST "repos/$1/issues/$2/dependencies/blocked_by" -F issue_id="$(deps_id "$1" "$3")" > /dev/null
+  printf 'set #%s blocked by #%s\n' "$2" "$3"
 }
 
 # Make $3 a sub-issue of the epic $2 unless it is, and the epic blocked by it

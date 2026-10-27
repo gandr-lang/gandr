@@ -2108,8 +2108,10 @@ printf 'ordered #%s: %s\n' "$epic" "$(printf '#%s ' "${issues[@]}")"
 {% endraw %}'''
 
 # An epic is blocked by every open sub-issue (#2902): `epic:deps <epic>...`
-# sets each dependency it lacks, `--all` for every open `kind:epic`. It is
-# idempotent; `report:deps` reruns it nightly.
+# sets each dependency it lacks, `--all` for every open `kind:epic`, its
+# sub-issues and dependencies read in one pass over the open issues
+# (`deps_open_graph`, #3192). It is idempotent; `report:deps` reruns it
+# nightly.
 ["epic:deps"]
 description = "Set each epic blocked by its open sub-issues"
 usage = '''
@@ -2126,12 +2128,20 @@ repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
 eval "epics=(${usage_epic:-})"
 if [[ ${usage_all:-false} == true ]]; then
   mapfile -t epics < <(gh api --paginate "repos/$repo/issues?state=open&labels=kind:epic&per_page=100" --jq '.[] | select(.pull_request == null) | .number')
+  graph=$(deps_open_graph "$repo")
 fi
 (( ${#epics[@]} > 0 )) || { echo "epic:deps takes epics, or --all" >&2; exit 2; }
 for epic in "${epics[@]}"; do
-  while read -r child; do
-    deps_block "$repo" "$epic" "$child"
-  done < <(deps_sub_issues "$repo" "$epic" | jq -r --argjson self "$epic" '.[] | select(.state == "open" and .number != $self) | .number')
+  if [[ -n ${graph:-} ]]; then
+    while read -r child; do
+      deps_set_block "$repo" "$epic" "$child"
+    done < <(jq -r --arg epic "$epic" '(.[$epic] // {blocked_by: [], sub_issues: []}) as $read | [$read.blocked_by[].number] as $set
+      | $read.sub_issues[] | select(.state == "open" and .number != ($epic | tonumber) and (.number | IN($set[]) | not)) | .number' <<< "$graph")
+  else
+    while read -r child; do
+      deps_block "$repo" "$epic" "$child"
+    done < <(deps_sub_issues "$repo" "$epic" | jq -r --argjson self "$epic" '.[] | select(.state == "open" and .number != $self) | .number')
+  fi
 done
 echo "epic:deps: ${#epics[@]} epic(s) blocked by their open sub-issues"
 {% endraw %}'''
@@ -2172,14 +2182,9 @@ if [[ -n $write ]]; then
 fi
 gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
   --jq '[.[] | select(.pull_request == null) | {number, title, labels: [.labels[].name], body: (.body // "")}]' | jq -s 'add // []' > "$scratch/open.json"
-: > "$scratch/issues.jsonl"
-while IFS= read -r issue; do
-  number=$(jq -r .number <<< "$issue")
-  subs='[]'
-  if jq -e '.labels | index("kind:epic")' <<< "$issue" > /dev/null; then subs=$(deps_sub_issues "$repo" "$number"); fi
-  blocked=$(deps_blocked_by "$repo" "$number" | jq -c '[.[].number]')
-  jq -c --argjson blocked "$blocked" --argjson subs "$subs" '. + {blocked_by: $blocked, sub_issues: $subs}' <<< "$issue" >> "$scratch/issues.jsonl"
-done < <(jq -c '.[] | select((.labels | index("kind:epic")) or (.body | test("(?i)\\b(after|blocked on|waits on|needs) #[0-9]|\\bonce #[0-9]+ lands")) or (.body | split("\n") | any(test("^## After\\s*$"))))' "$scratch/open.json")
+deps_open_graph "$repo" > "$scratch/graph.json"
+jq -n -c --slurpfile open "$scratch/open.json" --slurpfile graph "$scratch/graph.json" '{open: $open[0], graph: $graph[0]}' \
+  | jq -c -f "$claims/reads.jq" > "$scratch/issues.jsonl"
 gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,title,state,body \
   | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
 labels_defaults > "$scratch/defaults.json"

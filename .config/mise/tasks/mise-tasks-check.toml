@@ -1483,7 +1483,10 @@ echo "commits check OK: $(jq length "$root/.config/commits/cases.json") ranges r
 # in `.config/claims/chain.json` a rung's body and the body `epic:order
 # --chain` writes back (`chain.jq`); each in `.config/claims/report.json`
 # the open issues, their dependencies and the last report, and the report
-# `report:deps` writes (`report.jq`); each in `.config/claims/filing.json` a
+# `report:deps` writes (`report.jq`); each in `.config/claims/reads.json` the
+# open issues and the one pass's map, and the issues `report:deps` reads with
+# what GitHub records for each (`reads.jq`, #3192); each in
+# `.config/claims/filing.json` a
 # merged pull request, the refactor issues, and what `refactor:file` files
 # for them (`filing.jq`, #2885); each in `.config/claims/obligations.json`
 # the merged pull requests of a period with their units, and the report
@@ -1523,6 +1526,7 @@ cases filing filing.jq filing.json --mode c
 cases obligations obligations.jq obligations.json
 cases terms terms.jq terms.json
 cases absorbing absorbing.jq absorbing.json
+cases reads reads.jq reads.json --mode c
 (( failed == 0 )) || exit 1
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
