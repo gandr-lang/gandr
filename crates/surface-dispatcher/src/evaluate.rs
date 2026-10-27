@@ -11,7 +11,7 @@
 //! constant. `gandr run` runs the program's entry, the `main` its source
 //! declares at the top level, and refuses a source that declares none. The
 //! session and the corpus run any accepted declaration by its admission
-//! position.
+//! position, and a position the program skips holds no declaration.
 //!
 //! # Running a declaration
 //!
@@ -60,7 +60,8 @@
 //! did not focus is carried opaque, as an owed one is: a run that reaches it
 //! is unrunnable, naming it, and a run that never does — the laws an
 //! equivalence carries beside the maps a transport applies — runs to its
-//! value.
+//! value. Classification keeps the identity of the declaration it names, and a
+//! value read back keeps its fields' order and every repeated reference.
 //!
 //! # The run stage follows the check
 //!
@@ -127,6 +128,12 @@
 //! row for it. **Reversal.** A motive the machine refuses gains a run with
 //! its focusing row; no parser syntax or coercion from `Flow_U` is implied
 //! here.
+//!
+//! # References
+//!
+//! - `vault:01a178aa-6b8e-7d60-a533-ec9379c0462a` — background: the futures
+//!   design (§ futures-try-first) — the tree sum whose two cuts run on two
+//!   threads and whose writer runs from the store, run by this module's tests.
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
@@ -3943,7 +3950,8 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
 
     /// A tree sum in two halves, each building and summing a complete tree of
     /// depth ten: `both` cuts one half against the other, and `left` and
-    /// `right` are the halves alone.
+    /// `right` are the halves alone. `writer` builds a tree and answers the
+    /// suspended sum over it, a cut's writer closed over what it captured.
     ///
     /// # Specification
     /// trivial.
@@ -3959,8 +3967,57 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
              def half(d : Depth) -> Integer {{ run t <- full(d); sum(t) }}\n\
              def left : +U (-F Integer) ;\ndef left = thunk {{ half({depth}) }} ;\n\
              def right : +U (-F Integer) ;\ndef right = thunk {{ half({depth}) }} ;\n\
-             def both : +U (-F Integer) ;\ndef both = thunk {{ run a <- half({depth}); run b <- half({depth}); a + b }} ;\n"
+             def both : +U (-F Integer) ;\ndef both = thunk {{ run a <- half({depth}); run b <- half({depth}); a + b }} ;\n\
+             def writer : +U (-F (+U (-F Integer))) ;\ndef writer = thunk {{ run t <- full({depth}); thunk {{ sum(t) }} }} ;\n"
         )
+    }
+
+    /// The root that forces `program`'s declaration `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn forced(
+        program: &mut Program<'_>,
+        name: &SurfaceName<'_>,
+    ) -> CommandId
+    {
+        let position = program
+            .declarations
+            .iter()
+            .find(|&(_, declared)| declared.name == *name)
+            .map(|(&constant, _)| constant)
+            .expect("the program declares the name");
+        program
+            .entries(position, Reach::Value)
+            .expect("the declaration focuses")
+            .1
+    }
+
+    /// A tree sum's answer.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Sum(u64);
+
+    /// The sum `outcome` halts with in `store`, if it halts with an integer.
+    ///
+    /// # Specification
+    /// trivial.
+    fn summed(
+        store: &Store,
+        outcome: &Result<super::Outcome, Declined>,
+    ) -> Option<Sum>
+    {
+        let &Ok(super::Outcome::Halted(value)) = outcome
+        else {
+            return None;
+        };
+        let gandr_core_sequent::HeapValue::Literal(gandr_kernel_term::Literal::Integer(
+            ref integer,
+        )) = *store.value(value)?
+        else {
+            return None;
+        };
+        integer.magnitude().as_ref().parse::<u64>().ok().map(Sum)
     }
 
     #[test]
@@ -3968,19 +4025,11 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
     {
         let source = tree_sum();
         let mut program = program(source.as_str());
-        let mut forced = |name| {
-            let position = program
-                .declarations
-                .iter()
-                .find(|&(_, declared)| declared.name == SurfaceName::from(name))
-                .map(|(&constant, _)| constant)
-                .expect("the program declares the name");
-            program
-                .entries(position, Reach::Value)
-                .expect("the declaration focuses")
-                .1
-        };
-        let (both, left, right) = (forced("both"), forced("left"), forced("right"));
+        let (both, left, right) = (
+            forced(&mut program, &SurfaceName::from("both")),
+            forced(&mut program, &SurfaceName::from("left")),
+            forced(&mut program, &SurfaceName::from("right")),
+        );
         for tier in [Tier::Executor, Tier::Native] {
             if matches!(tier, Tier::Native) && !PATCHER {
                 continue;
@@ -3994,24 +4043,13 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
                     root,
                     Fuel::from(super::RUN_BUDGET),
                     &mut store,
-                )
-                .expect("the run starts");
-                let super::Outcome::Halted(value) = outcome
-                else {
-                    return None;
-                };
-                let gandr_core_sequent::HeapValue::Literal(gandr_kernel_term::Literal::Integer(
-                    ref integer,
-                )) = *store.value(value)?
-                else {
-                    return None;
-                };
-                integer.magnitude().as_ref().parse::<u64>().ok()
+                );
+                summed(&store, &outcome)
             };
             let sequential = run(both);
             assert_eq!(
                 sequential,
-                Some(2048_u64),
+                Some(Sum(2048_u64)),
                 "the sequential schedule sums both halves on {tier:?}"
             );
             let (written, read) = std::thread::scope(|scope| {
@@ -4022,9 +4060,97 @@ def law(p : Path(Integer, 1, 1)) -> -F Path(Integer, 1, 1) {
             assert_eq!(
                 written
                     .zip(read)
-                    .and_then(|(written, read)| written.checked_add(read)),
+                    .and_then(|(written, read)| written.0.checked_add(read.0))
+                    .map(Sum),
                 sequential,
                 "the writer on its own thread and the reader on this one answer as the sequential schedule on {tier:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_writer_runs_from_the_store_as_it_runs_in_place()
+    {
+        let source = tree_sum();
+        let mut program = program(source.as_str());
+        let (writer, left) = (
+            forced(&mut program, &SurfaceName::from("writer")),
+            forced(&mut program, &SurfaceName::from("left")),
+        );
+        let program = &program;
+        for tier in [Tier::Executor, Tier::Native] {
+            if matches!(tier, Tier::Native) && !PATCHER {
+                continue;
+            }
+            let fuel = Fuel::from(super::RUN_BUDGET);
+            let mut here = Store::new();
+            let outcome = gandr_runtime_emitter::evaluate_on(
+                tier,
+                &program.arena,
+                &program.definitions,
+                left,
+                fuel,
+                &mut here,
+            );
+            let in_place = summed(&here, &outcome);
+            assert_eq!(
+                in_place,
+                Some(Sum(1024_u64)),
+                "the sum in place on {tier:?}"
+            );
+            // The suspended sum `writer` answers over the tree it built, its
+            // body and environment in `store`.
+            let suspended = |store: &mut Store| {
+                let outcome = gandr_runtime_emitter::evaluate_on(
+                    tier,
+                    &program.arena,
+                    &program.definitions,
+                    writer,
+                    fuel,
+                    store,
+                );
+                let Ok(super::Outcome::Halted(thunk)) = outcome
+                else {
+                    panic!("the writer answers on {tier:?}: {outcome:?}");
+                };
+                let Some(&gandr_core_sequent::HeapValue::Thunk { body, environment }) =
+                    store.value(thunk)
+                else {
+                    panic!("the writer answers a thunk on {tier:?}");
+                };
+                (body, environment)
+            };
+            let closed = |(body, environment): (CommandId, gandr_core_sequent::Environment),
+                          store: &mut Store| {
+                gandr_runtime_emitter::evaluate_closed_on(
+                    tier,
+                    (&program.arena, &program.definitions),
+                    (body, environment),
+                    (fuel, store),
+                )
+            };
+            let mut store = Store::new();
+            let thunk = suspended(&mut store);
+            let outcome = closed(thunk, &mut store);
+            assert_eq!(
+                summed(&store, &outcome),
+                in_place,
+                "the writer from the store on {tier:?}"
+            );
+            // The writer's own store, filled on this thread and moved to
+            // another.
+            let mut apart = Store::new();
+            let thunk = suspended(&mut apart);
+            let outcome = std::thread::scope(|scope| {
+                scope
+                    .spawn(|| closed(thunk, &mut apart))
+                    .join()
+                    .expect("the writer's thread joins")
+            });
+            assert_eq!(
+                summed(&apart, &outcome),
+                in_place,
+                "the writer from the store on another thread on {tier:?}"
             );
         }
     }

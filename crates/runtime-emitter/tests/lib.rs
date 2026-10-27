@@ -12,6 +12,8 @@ extern crate alloc;
 #[cfg(test)]
 mod agreement;
 #[cfg(test)]
+mod closed;
+#[cfg(test)]
 #[path = "../../runtime-stencils/tests/count.rs"]
 mod count;
 #[cfg(test)]

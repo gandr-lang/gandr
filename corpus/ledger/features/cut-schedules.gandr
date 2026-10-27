@@ -1,13 +1,14 @@
 /// `cut-schedules` sums a complete tree with every recursive call under a cut.
 ///
-/// Implemented: two cuts of the tree sum run by hand on two threads, each with its own heap, and answer as the sequential schedule does.
-/// Not implemented: the concurrent schedule as a rule of the emitter, a writer spawned at each independent cut, which #2790 owes.
+/// Implemented: two cuts of the tree sum run by hand on two threads, each with its own heap, and answer as the sequential schedule does; a writer's suspended sum, moved out of its run with the tree it captured, runs from the store on another thread and answers as forcing it in place does.
+/// Not implemented: a pool running each writer on a thread of its own with its read's reply (#2953), and the rule that spawns a writer at each independent cut (#2954).
 ///
 /// The sequential schedule runs each cut's writer and then its reader, so `sum` answers as under call by value.
 /// On two threads at depth 18 a half, the two cuts finish 2.41 times faster on the executor and 2.23 times natively.
 /// The measuring machine has a 16-core Ryzen 9 9950X3D at load 39 on 32 hardware threads.
 ///
 /// - see: crates/surface-dispatcher/src/evaluate.rs
+/// - see: crates/runtime-emitter/tests/closed.rs
 
 /// The depth of a complete tree.
 data Depth : Type {
