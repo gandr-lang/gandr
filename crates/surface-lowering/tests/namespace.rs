@@ -2901,6 +2901,83 @@ fn a_module_path_import_binds_its_module_qualified_2687()
     );
 }
 
+/// #2687: an import's list binds the names it lists by their own names,
+/// beside the module the path binds qualified, and binds no other name by its
+/// own; a quoted import with a list binds only those. A listed name its module
+/// does not declare, or keeps private, refuses the importing source at the
+/// name.
+#[test]
+fn an_import_list_binds_only_the_names_it_lists_2687()
+{
+    let pbg = grammar();
+    let imported = SourceText::from(
+        "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;\npub def \
+         two : Point ;\ndef two = One ;\ndef hidden : Point ;\ndef hidden = One ;",
+    );
+    let refusals = |importer: &'static str| -> Vec<(String, String)> {
+        let (text, unit) = laid(&[
+            (imported, &[]),
+            (SourceText::from(importer), &[ImportTarget::Source(
+                SourceIndex::from(0_usize),
+            )]),
+        ]);
+        let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+            .expect("the unit lowers");
+        module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| {
+                if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                    Some((
+                        String::from(declaration.name().as_ref()),
+                        format!("{refusal:?}"),
+                    ))
+                }
+                else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    let listed = refusals(
+        "import text.greet (one, Point, One,) ;\ndef again : Point ;\ndef again = one ;\ndef \
+         made : Point ;\ndef made = One ;\ndef through : text.greet.Point ;\ndef through = \
+         text.greet.two ;\ndef unlisted : Point ;\ndef unlisted = two ;",
+    );
+    assert!(
+        matches!(listed.as_slice(), [(name, refusal)] if name == "unlisted" && refusal.starts_with("UnresolvedName")),
+        "the listed names read bare and the path reads qualified; an unlisted name does not \
+         read bare: {listed:?}"
+    );
+    let quoted = refusals(
+        "import \"./greet.gandr\" (one, Point) ;\ndef again : Point ;\ndef again = one ;\ndef \
+         unlisted : Point ;\ndef unlisted = two ;",
+    );
+    assert!(
+        matches!(quoted.as_slice(), [(name, refusal)] if name == "unlisted" && refusal.starts_with("UnresolvedName")),
+        "an unaliased quoted import with a list binds what it lists and nothing else: \
+         {quoted:?}"
+    );
+    let missing = refusals("import text.greet (nothing) ;\ndef a : Integer ;\ndef a = 1 ;");
+    assert!(
+        matches!(missing.as_slice(), [(name, refusal)] if name == "a"
+            && refusal.starts_with("UnknownMember")
+            && refusal.contains("\"text.greet\"")
+            && refusal.contains("\"nothing\"")),
+        "a listed name the module does not declare refuses the importer at the list: \
+         {missing:?}"
+    );
+    let private = refusals("import text.greet (hidden) ;\ndef a : Integer ;\ndef a = 1 ;");
+    assert!(
+        matches!(private.as_slice(), [(name, refusal)] if name == "a"
+            && refusal.starts_with("UnexportedName")
+            && refusal.contains("\"hidden\"")
+            && refusal.contains("Private")),
+        "a listed name the module keeps private refuses the importer at the list: {private:?}"
+    );
+}
+
 #[test]
 fn a_pending_member_read_through_an_alias_is_refused_at_the_member()
 {

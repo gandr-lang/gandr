@@ -536,7 +536,7 @@ impl<'source> Collected<'source>
             });
         let module = match local {
             Some(module) => Some(module),
-            None => match self.through_imports(self.unit.source_at(at), |target| {
+            None => match self.through_imports(self.unit.source_at(at), name, |target| {
                 self.modules
                     .get(&(Container::TopLevel(target), name))
                     .copied()

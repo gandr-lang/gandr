@@ -608,9 +608,9 @@ use crate::form::declined_feature;
 use crate::form::misspelt_keyword;
 use crate::form::read_pieces;
 use crate::form::shape_of;
-use crate::import::ImportBinding;
 use crate::import::ImportResolution;
 use crate::import::ModuleImports;
+use crate::import::Opening;
 use crate::layout::bracket_form;
 use crate::layout::misplaced;
 use crate::module::CodataIndex;
@@ -5159,9 +5159,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// Refuse what a source's imports forbid: every declaration of a source
-    /// with an import that resolved to no source, or that is an edge of a
-    /// cycle, and every top-level declaration or constructor of a source that
-    /// an unqualified import binds again.
+    /// with an import that resolved to no source, that is an edge of a cycle,
+    /// or whose list names what its module does not export, and every
+    /// top-level declaration or constructor of a source that an unqualified
+    /// import binds again.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
@@ -5169,14 +5170,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   resolved to [`ImportTarget::Unresolved`] or [`ImportTarget::Cycle`]
     ///   holds [`LoweringRefusal::ImportUnresolved`] or
     ///   [`LoweringRefusal::ImportCycle`] at its declaration form, naming the
-    ///   import; each top-level declared name, and each family whose
-    ///   constructor, a source unqualified-imports from another that exports it
-    ///   holds [`LoweringRefusal::ImportShadows`] at its name, naming the
-    ///   import and the imported declaration — except a constructor the import
-    ///   entered as the very same constructor, as every source whose block
-    ///   takes the one `Theory` enters its constructors. A declaration its
-    ///   source keeps private binds nothing in an importer. The import itself,
-    ///   and every source without such an import, is untouched.
+    ///   import; each slot of a source whose import lists a name its module
+    ///   does not declare holds [`LoweringRefusal::UnknownMember`], and one its
+    ///   module keeps private [`LoweringRefusal::UnexportedName`], at the
+    ///   listed name; each top-level declared name, and each family whose
+    ///   constructor, a source imports from another that exports it under that
+    ///   name, every export or a listed one, holds
+    ///   [`LoweringRefusal::ImportShadows`] at its name, naming the import and
+    ///   the imported declaration — except a constructor the import entered as
+    ///   the very same constructor, as every source whose block takes the one
+    ///   `Theory` enters its constructors. A declaration its source keeps
+    ///   private binds nothing in an importer. The import itself, and every
+    ///   source without such an import, is untouched.
     /// - provides: the per-declaration refusal the corpus pins an import's
     ///   failure by.
     /// - fails: never; a refusal is carried by its declaration.
@@ -5190,6 +5195,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `tests::namespace::a_declaration_an_import_binds_again_is_refused`
     /// - witness: `tests::namespace::a_private_declaration_is_refused_to_its_importer_2687`
     /// - witness: `tests::namespace::a_theory_lowers_alike_whatever_the_unit_lays_before_it_1078`
+    /// - witness: `tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
     #[spec(
         captures: before = self.collected.slots.len(),
         ensures: self.collected.slots.len() == before,
@@ -5231,7 +5237,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     continue;
                 },
             };
-            if import.binding() != ImportBinding::Unqualified {
+            if *import.opening() == Opening::Nothing {
                 continue;
             }
             let bound_in_import = |name: SurfaceName<'source>| {
@@ -5250,7 +5256,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
                             })
                             .map(|constructor| constructor.named.span)
                     })
+                    .filter(|_| import.opens(name).0)
             };
+            if let Opening::Listed { module, ref listed } = *import.opening() {
+                for &(name, at) in listed {
+                    let found = collected.listed_in(imported, name);
+                    if let Some((Visibility::Public, _)) = found {
+                        continue;
+                    }
+                    for (index, slot) in collected.slots.iter().enumerate() {
+                        if collected.unit.source_at(slot.named.span.start()) != source {
+                            continue;
+                        }
+                        refusals.push((SlotIndex::from(index), match found {
+                            Some((Visibility::Public | Visibility::Private, declared)) => {
+                                LoweringRefusal::UnexportedName {
+                                    span: at,
+                                    name,
+                                    declared,
+                                    reason: Unexported::Private,
+                                }
+                            },
+                            None => LoweringRefusal::UnknownMember {
+                                span: at,
+                                module,
+                                member: name,
+                            },
+                        }));
+                    }
+                }
+            }
             for (index, slot) in collected.slots.iter().enumerate() {
                 if slot.container != Container::TopLevel(source) || slot.role != Role::Declared {
                     continue;

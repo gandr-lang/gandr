@@ -32,6 +32,13 @@
 //! source's own is. An address with a scheme is bound and not resolved, as
 //! before.
 //!
+//! `import text.greet ;` binds the module the path names qualified, so
+//! `text.greet.Name` answers its export's `Name`. A list after the address
+//! and its alias, `import text.greet (greeting, Mood) ;`, binds the names it
+//! lists by their own names as well, and an unaliased quoted import with a
+//! list binds only those. A listed type does not bring its constructors: each
+//! name the importer reads unqualified is listed.
+//!
 //! # Refusals by name
 //!
 //! - `ImportUnresolved` and `ImportCycle`: every declaration of a source whose
@@ -43,6 +50,9 @@
 //!   import already binds is refused at the declaration, naming the import; two
 //!   unqualified imports binding one name refuse a use of it, naming both, and
 //!   leave every other name of both usable.
+//! - `UnknownMember` and `UnexportedName`: a listed name its module does not
+//!   declare, or keeps private, refuses every declaration of the importing
+//!   source at the name, as an import naming nothing does.
 //! - `DuplicateImportAlias`: of two imports binding one alias, the second is
 //!   refused, naming the first, rather than silently hiding it. The refusal is
 //!   the import's own: the rest of the source lowers against the first import's
@@ -259,12 +269,15 @@ pub struct ImportDeclaration<'source>
     source: SourceIndex,
     /// What its address came to.
     resolution: ImportResolution,
+    /// Which names it binds by their own names.
+    opening: Opening<'source>,
 }
 
 impl<'source> ImportDeclaration<'source>
 {
     /// The import of `uri` binding `binding`, written over `span` in
-    /// `source`, its address come to `resolution`.
+    /// `source`, its address come to `resolution`, with no list: an
+    /// unqualified binding opens every export, any other none.
     ///
     /// # Specification
     /// trivial.
@@ -278,12 +291,17 @@ impl<'source> ImportDeclaration<'source>
         resolution: ImportResolution,
     ) -> Self
     {
+        let opening = match binding {
+            ImportBinding::Unqualified => Opening::Every,
+            ImportBinding::Aliased(_) | ImportBinding::Qualified(_) => Opening::Nothing,
+        };
         Self {
             uri,
             binding,
             span,
             source,
             resolution,
+            opening,
         }
     }
 
@@ -341,6 +359,95 @@ impl<'source> ImportDeclaration<'source>
     {
         self.resolution
     }
+
+    /// The import, binding the names `listed` lists by their own names as well
+    /// as by its binding, the module spelled `module` where it is written.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn listing(
+        self,
+        module: SurfaceName<'source>,
+        listed: Vec<(SurfaceName<'source>, ByteSpan)>,
+    ) -> Self
+    {
+        Self {
+            opening: Opening::Listed { module, listed },
+            ..self
+        }
+    }
+
+    /// Which names of the module the import binds by their own names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn opening(&self) -> &Opening<'source>
+    {
+        &self.opening
+    }
+
+    /// Whether the import binds `name` by its own name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Opens`] true for every name when [`Opening::Every`], for
+    ///   none when [`Opening::Nothing`], and for a name the list holds when
+    ///   [`Opening::Listed`].
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the answer is the list's membership, which a clause
+    ///   would restate whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a listed name answers and an unlisted one does not.
+    /// - witness: `tests::namespace::an_import_list_binds_only_the_names_it_lists_2687`
+    #[inline]
+    #[must_use]
+    pub(crate) fn opens(
+        &self,
+        name: SurfaceName<'_>,
+    ) -> Opens
+    {
+        Opens(match self.opening {
+            Opening::Every => true,
+            Opening::Nothing => false,
+            Opening::Listed { ref listed, .. } => listed
+                .iter()
+                .any(|&(held, _)| held.as_ref() == name.as_ref()),
+        })
+    }
+}
+
+/// Whether an import binds a name by its own name.
+///
+/// # Specification
+/// trivial.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Opens(pub bool);
+
+/// Which names of its module an import binds by their own names, beside the
+/// module itself under an alias or a path.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum Opening<'source>
+{
+    /// Every export: `import "…" ;`.
+    Every,
+    /// None: `import "…" as m ;` and `import text.greet ;`.
+    Nothing,
+    /// Those the list names, each with the bytes it is written at, the module
+    /// spelled as its import writes it: `import text.greet (greeting) ;`.
+    Listed
+    {
+        /// The module's address or path, as written.
+        module: SurfaceName<'source>,
+        /// The names listed and where.
+        listed: Vec<(SurfaceName<'source>, ByteSpan)>,
+    },
 }
 
 quenchant_shape::reason_enum! {

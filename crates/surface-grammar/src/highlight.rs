@@ -857,8 +857,9 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 ///   parameter inside a parenthesised list. Inside `@[…]` a binder before `:`
 ///   is a parameter and any other name an attribute; inside `[…]` a grade word
 ///   is a number, a migration's world a label, and a decoration
-///   [`HlRole::Other`]; every other identifier inside a parenthesised list is a
-///   parameter. An identifier none of these reach is a variable.
+///   [`HlRole::Other`]; a name an import's list names is a variable, and every
+///   other identifier inside a parenthesised list is a parameter. An identifier
+///   none of these reach is a variable.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -888,6 +889,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
             "[" if facts.kind.0 == "migrate_expression" => HlRole::Label,
             "@[" | "[" => HlRole::Other,
             "(" if left.crosses(TileLabel("select")).0 => HlRole::Label,
+            "(" if facts.kind.0 == "import_declaration" => HlRole::Variable,
             "(" => HlRole::VariableParam,
             _ => HlRole::Variable,
         }
@@ -946,6 +948,7 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
                 _ => HlRole::Other,
             },
             "(" if bool::from(left.crosses(TileLabel("select"))) => HlRole::Label,
+            "(" if kind == "import_declaration" => HlRole::Variable,
             "(" => HlRole::VariableParam,
             _ => HlRole::Variable,
         },
@@ -1189,6 +1192,8 @@ mod tests
             ("attribute_block", "@[", Some("("), HlRole::Other),
             ("data_declaration", "[", None, HlRole::Other),
             ("import_declaration", "as", None, HlRole::VariableDef),
+            ("import_declaration", "(", None, HlRole::Variable),
+            ("import_declaration", ",", None, HlRole::Variable),
             ("for_expression", "for", None, HlRole::VariableDef),
             ("module_declaration", "module", None, HlRole::VariableDef),
             ("theory_declaration", "node", None, HlRole::VariableDef),

@@ -440,6 +440,10 @@ fn declarations(
     // file `text/greet.gandr` under the package's root module, and binds it
     // qualified, `text.greet.name`. The quote or the first identifier after
     // `import` chooses the address, so the choice stays one token deep.
+    //
+    // A parenthesised list after the address and its alias, `import text.greet
+    // (greeting, Mood) ;`, binds the names it lists by their own names as
+    // well.
     out.push(r(
         RuleName("import_declaration"),
         Provenance("import_declaration"),
@@ -455,6 +459,14 @@ fn declarations(
                 ]),
             ]),
             opt(seq([t(TileLabel("as")), t(TileLabel("identifier"))])),
+            opt(seq([
+                t(TileLabel("(")),
+                comma1(alt([
+                    t(TileLabel("identifier")),
+                    t(TileLabel("type_identifier")),
+                ])),
+                t(TileLabel(")")),
+            ])),
             t(TileLabel(";")),
         ]),
     ));
