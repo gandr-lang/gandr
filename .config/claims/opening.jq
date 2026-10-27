@@ -76,6 +76,11 @@
 # `demand: <site>` line naming the corpus source or program that needs it.
 # The goldens `corpus:goldens` records there follow the corpus and ask for
 # none (#2756).
+#
+# A closing keyword closes only from the head's keyword lines (#2980): one
+# anywhere else (`closed #628` in prose, a `Closes #n` line with prose after
+# it or below a heading) is refused, since GitHub closes the issue it names
+# when the pull request merges (`targets.jq`'s `strays`).
 
 include "targets";
 include "sections";
@@ -286,4 +291,11 @@ def surface:
   | select(length > 0)
   | "the change touches the parser (\($paths[:3] | map("`\(.)`") | join(", "))\(if ($paths | length) > 3 then ", …" else "" end)) and the body lacks \(join(", and ")) (#2527); add it, then run `pr:open` again";
 
-claim, sources, citations, readings, concerns, defects, surface
+# The refusal of a closing keyword outside the head's keyword lines (#2980):
+# GitHub would close the issue it names on merge, and `pr:open` and the claim
+# lifecycle read it as a closing target even quoted as code.
+def keywords:
+  .body | strays[]
+  | "the body's line `\(.line)` carries `\(.keyword)`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again";
+
+claim, sources, citations, readings, concerns, defects, surface, keywords

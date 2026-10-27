@@ -1761,7 +1761,10 @@ echo "body check OK: nothing on the private-names list in ${usage_title:+the tit
 # reads it), and once filed has the dependencies its `## After` names set by
 # `unit:check --fix`, so no filed unit lacks them. `--epic <n>` links the
 # issue under the epic and sets the epic `blocked by` it
-# (`.config/claims/deps.bash`).
+# (`.config/claims/deps.bash`). A closing keyword in the body outside its
+# head's keyword lines (`targets.jq`'s `strays`, #2980) is noted on stderr:
+# it does nothing in an issue, but the same words in a pull request's body
+# close the issue they name on merge.
 ["issue:file"]
 description = "File an issue with its full label set once its title and body name nothing private, linked and its dependencies set"
 usage = '''
@@ -1783,6 +1786,8 @@ source "$root/.config/issues/labels.bash"
 epic=${usage_epic:-}
 [[ -z $epic || $epic =~ ^[0-9]+$ ]] || { echo "issue:file: --epic takes an issue number, not \`$epic\`" >&2; exit 2; }
 mise run --quiet body:check --title "${usage_title:?}" "$body" >&2
+jq -R -s -r -L "$claims" 'include "targets"; strays[]
+  | "issue:file: note: the line `\(.line)` carries `\(.keyword)`, a closing keyword; it does nothing here, but closes the issue it names if the words reach a pull request body"' "$body" >&2
 unit=false
 if jq -R -s -e 'split("\n") | any(test("^## Sources\\s*$"))' "$body" > /dev/null; then
   unit=true
@@ -2135,7 +2140,9 @@ fi
 # `new concern`. A change to the parser, its grammar or its syntax tree
 # states its surface form (#2527): a `### Surface form` subsection with a
 # `cost:` line and a `demand: <site>` line; the goldens `corpus:goldens`
-# records there ask for none (#2756). The rule is
+# records there ask for none (#2756). A closing keyword closes only from the
+# head's `Closes #n` lines (#2980): one anywhere else is refused, since
+# GitHub closes the issue it names on merge. The rule is
 # `.config/claims/opening.jq`, reading the sections through `sections.jq`, its
 # cases held by `check:claims`; a `note:` line it prints does not refuse.
 #
