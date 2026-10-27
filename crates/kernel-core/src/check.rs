@@ -631,17 +631,20 @@ fn entry_unfoldings(judgement: Judgement<'_>) -> Unfoldings
 /// - provides: the check's one reading of a decode it must see the head of, for
 ///   a rule that reads the head of the type a value checks at or is scrutinized
 ///   at: the identity at `El(⟨R a b⟩)` is the identity at the type `R a b`
-///   returns, and a binder a case refined to a call returning a data type is
-///   cased on at that data type.
+///   returns, and a binder a case refined to a call returning a data type or a
+///   sum is cased on at that data type or sum, the empty sum among them.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a data case on a binder whose type decodes a call
 ///   returning a data type's quote is a case over that data type, and one
-///   returning `⌜Unit⌝` is refused with the data shape; a reflexivity at the
-///   diagonal of a relation returning an identity's code checks at the identity
-///   the code quotes.
+///   returning `⌜Unit⌝` is refused with the data shape; an empty case on one
+///   decoding to `⌜Void⌝` checks, one on `⌜Unit⌝` is refused with the sum
+///   shape, and a synthesized case on one decoding to `⌜Unit + Unit⌝` is
+///   admitted; a reflexivity at the diagonal of a relation returning an
+///   identity's code checks at the identity the code quotes.
 /// - witness: `check::tests::a_data_case_reads_a_decode_of_a_call_to_its_data_type_2872`
+/// - witness: `check::tests::a_sum_case_reads_a_decode_of_a_call_to_its_sum_2830`
 /// - witness: `element_identity::bridge_tests::j_along_an_atom_s_evidence_into_an_identity_of_the_unit_type_returns_the_unit_1960`
 #[spec(
     captures: before = arena.watermark(),
@@ -5729,7 +5732,10 @@ where
                     }
                 },
                 Frame::SynthCaseScrutinee(branches) => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes, as a data case reads its scrutinee's.
                     let scrutinee_type = produced.value_type()?;
+                    let scrutinee_type = read_returned_decode(arena, judgement, scrutinee_type);
                     let mut remaining = case_branches(arena, scrutinee_type, &branches)?;
                     let Some((branch, summand)) = remaining.pop()
                     else {
@@ -5828,7 +5834,11 @@ where
                 // expected type read from under that binder. A case of no
                 // branches over the empty sum checks at once.
                 Frame::CheckCaseScrutinee { branches, expected } => {
+                    // A decode of a returned code is read to the type the code
+                    // quotes: a binder a case refined to a call returning a sum
+                    // is cased on at that sum, the empty one among them.
                     let scrutinee_type = produced.value_type()?;
+                    let scrutinee_type = read_returned_decode(arena, judgement, scrutinee_type);
                     let remaining = case_branches(arena, scrutinee_type, &branches)?;
                     let scoped = weakened(arena, session, expected);
                     frames.push(Frame::CheckCaseBranch {
@@ -8333,13 +8343,14 @@ mod tests
 
     /// Admit `Two`, of two constants, then `Σ (t : U (Unit → F Type)).
     /// U (El(⟨force t ()⟩) → F Unit)` at the pair `(thunk λ_. return
-    /// ⌜quoted⌝, thunk λv. case v { return (), return () })`, with `quoted`
-    /// minted by `quote` from `Two`.
+    /// ⌜quoted⌝, thunk λv. body)`, with `quoted` minted by `quote` from `Two`
+    /// and `body` by `case` from `v`, `F Unit` and `return ()`.
     ///
     /// # Specification
     /// trivial.
     fn admit_decoded_case(
-        quote: impl FnOnce(&mut TermArena, ValueTypeId) -> ValueTypeId
+        quote: impl FnOnce(&mut TermArena, ValueTypeId) -> ValueTypeId,
+        case: impl FnOnce(&mut TermArena, ValueId, CompTypeId, ComputationId) -> ComputationId,
     ) -> Result<(), KernelError>
     {
         let mut environment = Environment::new();
@@ -8385,16 +8396,27 @@ mod tests
             let unit_value = mint.value_unit();
             let returns_unit = mint.computation_return(unit_value);
             let scrutinee = mint.value_variable(DeBruijnIndex::from(0_u32));
-            let case = mint.computation_data_case(scrutinee, returns_unit_type, vec![
-                returns_unit,
-                returns_unit,
-            ]);
+            let case = case(mint, scrutinee, returns_unit_type, returns_unit);
             let case_arm = mint.computation_lambda(case);
             let case_thunk = mint.value_thunk(case_arm);
             let pair = mint.value_tuple(&[code_thunk, case_thunk]);
             staging.def(LevelSignature::monomorphic(), declared, pair)
         };
         environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// `case v { return (), return () }` over `Two`, at the motive `motive`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn two_way_data_case(
+        mint: &mut TermArena,
+        scrutinee: ValueId,
+        motive: CompTypeId,
+        arm: ComputationId,
+    ) -> ComputationId
+    {
+        mint.computation_data_case(scrutinee, motive, vec![arm, arm])
     }
 
     /// A data case on a binder whose type decodes a call returning a data
@@ -8407,10 +8429,10 @@ mod tests
     {
         assert_eq!(
             Ok(()),
-            admit_decoded_case(|_mint, data| data),
+            admit_decoded_case(|_mint, data| data, two_way_data_case),
             "the binder decodes to the data type its code returns"
         );
-        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit());
+        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit(), two_way_data_case);
         assert!(
             matches!(
                 refused,
@@ -8420,6 +8442,49 @@ mod tests
                 })
             ),
             "a binder decoding to the unit type is no data case's: {refused:?}"
+        );
+    }
+
+    /// A sum case on a binder whose type decodes a call returning a sum's
+    /// quote is a case over that sum, in either mode (#2830). Checked, an
+    /// empty case on a decode of `⌜Void⌝` is accepted and one on a decode of
+    /// `⌜Unit⌝` refused with the sum shape. Synthesized, as a bound
+    /// computation, a two-way case on a decode of `⌜Unit + Unit⌝` is accepted.
+    #[test]
+    fn a_sum_case_reads_a_decode_of_a_call_to_its_sum_2830()
+    {
+        let empty_case =
+            |mint: &mut TermArena, scrutinee, _motive, _arm| mint.computation_case(scrutinee, &[]);
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|mint, _data| mint.value_type_empty(), empty_case),
+            "an empty case checks on a binder decoding to the empty sum"
+        );
+        let refused = admit_decoded_case(|mint, _data| mint.value_type_unit(), empty_case);
+        assert!(
+            matches!(
+                refused,
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::Sum,
+                    ..
+                })
+            ),
+            "a binder decoding to the unit type is no sum case's: {refused:?}"
+        );
+        let two_way = |mint: &mut TermArena| {
+            let unit = mint.value_type_unit();
+            mint.value_type_sum(&[unit, unit])
+        };
+        let bound_case = |mint: &mut TermArena, scrutinee, _motive, arm| {
+            let case = mint.computation_case(scrutinee, &[arm, arm]);
+            let bound = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(bound);
+            mint.computation_bind(case, body)
+        };
+        assert_eq!(
+            Ok(()),
+            admit_decoded_case(|mint, _data| two_way(mint), bound_case),
+            "a synthesized case reads its scrutinee's decode as the check does"
         );
     }
 
