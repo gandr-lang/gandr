@@ -230,11 +230,14 @@ pub enum Declined
     /// cannot hold: code the host built rather than a value the run moved out.
     Reply(HeapValueId),
     /// A value the environment binds that the run cannot hold — a closure, a
-    /// stack, a capability, or a head or code the function does not table —
-    /// or one its store does not hold.
+    /// stack, a capability, or code the function does not table — or one its
+    /// store does not hold.
     Capture(HeapValueId),
     /// The environment binds other than the command's captures.
     Environment,
+    /// This migration's body ran at its world to no value, or a value it took
+    /// or answered did not cross.
+    Migration(CommandId),
 }
 
 impl From<Form> for Declined
@@ -322,6 +325,12 @@ impl core::fmt::Display for Declined
             Self::Environment => {
                 f.write_str("the environment binds other than the command's captures")
             },
+            Self::Migration(at) => write!(
+                f,
+                "the migration at {} ran to no value at its world, or a value it took or \
+                 answered did not cross",
+                gandr_core_sequent::NodeAddress::Command(at)
+            ),
         }
     }
 }
@@ -423,7 +432,7 @@ enum Code<'program>
 /// # Specification
 /// trivial.
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum Ran
+pub enum Ran
 {
     /// The run halted or stopped stuck.
     Ended(Outcome),
@@ -479,7 +488,7 @@ pub fn evaluate(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    by_policy(&lowered, arena, fuel, store, None)?.hostless()
+    by_policy(&lowered, (arena, definitions), fuel, store, None)?.hostless()
 }
 
 /// Run `root` on `tier` with `fuel` code-word jumps and move its outcome into
@@ -495,7 +504,8 @@ pub fn evaluate(
 ///
 /// # Errors
 /// [`Declined`] naming why the run gave no outcome: a form the lowering
-/// refuses, a spent budget, a region past its bound.
+/// refuses, a spent budget, a region past its bound, or a migration whose body
+/// answers nothing at its world or whose crossing fails.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — the named programs run on both tiers and their outcomes
@@ -512,7 +522,7 @@ pub fn evaluate_on(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower(arena, definitions, root)?;
-    on_tier(tier, &lowered, arena, fuel, store, &[], None)?.hostless()
+    on_tier(tier, &lowered, (arena, definitions), fuel, store, &[], None)?.hostless()
 }
 
 /// As [`evaluate_on`], the command's unfused lowering run: every instruction
@@ -541,7 +551,7 @@ pub fn evaluate_unfused_on(
 ) -> Result<Outcome, Declined>
 {
     let lowered = lower_unfused(arena, definitions, root)?;
-    on_tier(tier, &lowered, arena, fuel, store, &[], None)?.hostless()
+    on_tier(tier, &lowered, (arena, definitions), fuel, store, &[], None)?.hostless()
 }
 
 /// Run `body`, a command binding one covariable, on `tier` over the values
@@ -586,7 +596,16 @@ pub fn evaluate_closed_on(
     if captured.len() != lowered.captures.len() {
         return Err(Declined::Environment);
     }
-    on_tier(tier, &lowered, arena, fuel, store, &captured, None)?.hostless()
+    on_tier(
+        tier,
+        &lowered,
+        (arena, definitions),
+        fuel,
+        store,
+        &captured,
+        None,
+    )?
+    .hostless()
 }
 
 /// As [`evaluate`], an operation no handler of the run claims offered to
@@ -621,7 +640,13 @@ where
         host,
         aborted: None,
     };
-    let ran = by_policy(&lowered, arena, fuel, store, Some(&mut adapter))?;
+    let ran = by_policy(
+        &lowered,
+        (arena, definitions),
+        fuel,
+        store,
+        Some(&mut adapter),
+    )?;
     hosted(ran, adapter)
 }
 
@@ -660,7 +685,15 @@ where
         host,
         aborted: None,
     };
-    let ran = on_tier(tier, &lowered, arena, fuel, store, &[], Some(&mut adapter))?;
+    let ran = on_tier(
+        tier,
+        &lowered,
+        (arena, definitions),
+        fuel,
+        store,
+        &[],
+        Some(&mut adapter),
+    )?;
     hosted(ran, adapter)
 }
 
@@ -698,7 +731,7 @@ where
 /// As [`evaluate`].
 fn by_policy(
     lowered: &Lowered,
-    arena: &CommandArena,
+    source: (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
     mut offer: Option<&mut (dyn Offer + '_)>,
@@ -706,19 +739,22 @@ fn by_policy(
 {
     match *POLICY {
         Policy::Always => {
-            match run_native(lowered, arena, fuel, store, &[], offer.as_deref_mut()) {
-                Err(Declined::NoPatcher) => run_executor(lowered, arena, fuel, store, &[], offer),
+            match run_native(lowered, source, fuel, store, &[], offer.as_deref_mut()) {
+                Err(Declined::NoPatcher) => run_executor(lowered, source, fuel, store, &[], offer),
                 #[cfg(gandr_patcher)]
-                Err(Declined::Emission(_)) => run_executor(lowered, arena, fuel, store, &[], offer),
+                Err(Declined::Emission(_)) => {
+                    run_executor(lowered, source, fuel, store, &[], offer)
+                },
                 ran => ran,
             }
         },
-        Policy::Never => run_executor(lowered, arena, fuel, store, &[], offer),
-        Policy::Cached => run_cached(lowered, arena, fuel, store, &[], offer),
+        Policy::Never => run_executor(lowered, source, fuel, store, &[], offer),
+        Policy::Cached => run_cached(lowered, source, fuel, store, &[], offer),
     }
 }
 
-/// Run `lowered` on `tier`.
+/// Run `lowered`, lowered from `source`'s arena over its definitions, on
+/// `tier`.
 ///
 /// # Specification
 /// trivial.
@@ -726,10 +762,10 @@ fn by_policy(
 /// # Errors
 /// As [`evaluate_on_with_host`], and [`Declined::Capture`] naming a value of
 /// `captured` the run cannot hold.
-fn on_tier(
+pub fn on_tier(
     tier: Tier,
     lowered: &Lowered,
-    arena: &CommandArena,
+    source: (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
@@ -737,8 +773,8 @@ fn on_tier(
 ) -> Result<Ran, Declined>
 {
     match tier {
-        Tier::Native => run_native(lowered, arena, fuel, store, captured, offer),
-        Tier::Executor => run_executor(lowered, arena, fuel, store, captured, offer),
+        Tier::Native => run_native(lowered, source, fuel, store, captured, offer),
+        Tier::Executor => run_executor(lowered, source, fuel, store, captured, offer),
     }
 }
 
@@ -751,7 +787,7 @@ fn on_tier(
 /// As [`on_tier`].
 fn run_executor(
     lowered: &Lowered,
-    arena: &CommandArena,
+    (arena, definitions): (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
@@ -768,6 +804,7 @@ fn run_executor(
             codes,
             sites: &sites,
             arena,
+            definitions,
             store,
             offer,
         },
@@ -786,7 +823,7 @@ fn run_executor(
 #[cfg(gandr_patcher)]
 fn run_native(
     lowered: &Lowered,
-    arena: &CommandArena,
+    source: (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
@@ -813,7 +850,7 @@ fn run_native(
             emitted
         }
     };
-    run_emitted(&emitted, lowered, arena, fuel, (store, captured, offer))
+    run_emitted(&emitted, lowered, source, fuel, (store, captured, offer))
 }
 
 /// The native tier needs a patcher this host lacks.
@@ -826,14 +863,14 @@ fn run_native(
 #[cfg(not(gandr_patcher))]
 fn run_native(
     lowered: &Lowered,
-    arena: &CommandArena,
+    source: (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
     offer: Option<&mut (dyn Offer + '_)>,
 ) -> Result<Ran, Declined>
 {
-    let _ = (lowered, arena, fuel, store, captured, offer);
+    let _ = (lowered, source, fuel, store, captured, offer);
     Err(Declined::NoPatcher)
 }
 
@@ -846,7 +883,7 @@ fn run_native(
 /// As [`on_tier`].
 fn run_cached(
     lowered: &Lowered,
-    arena: &CommandArena,
+    source: (&CommandArena, &Definitions),
     fuel: Fuel,
     store: &mut Store,
     captured: &[HeapValueId],
@@ -862,10 +899,10 @@ fn run_cached(
             .get(&lowered.function)
             .map(Arc::clone);
         if let Some(emitted) = held {
-            return run_emitted(&emitted, lowered, arena, fuel, (store, captured, offer));
+            return run_emitted(&emitted, lowered, source, fuel, (store, captured, offer));
         }
     }
-    run_executor(lowered, arena, fuel, store, captured, offer)
+    run_executor(lowered, source, fuel, store, captured, offer)
 }
 
 /// Run code the cache served.
@@ -879,7 +916,7 @@ fn run_cached(
 fn run_emitted(
     emitted: &Emitted,
     lowered: &Lowered,
-    arena: &CommandArena,
+    (arena, definitions): (&CommandArena, &Definitions),
     fuel: Fuel,
     (store, captured, offer): (&mut Store, &[HeapValueId], Option<&mut (dyn Offer + '_)>),
 ) -> Result<Ran, Declined>
@@ -896,6 +933,7 @@ fn run_emitted(
             codes,
             sites: &sites,
             arena,
+            definitions,
             store,
             offer,
         },
@@ -1053,6 +1091,7 @@ fn run(
                 Some(Refused::Operands) => return Err(Declined::Stuck),
                 Some(Refused::Reply(value)) => return Err(Declined::Reply(value)),
                 Some(Refused::Transfer(refusal)) => return Err(Declined::Transfer(refusal)),
+                Some(Refused::Migration(at)) => return Err(Declined::Migration(at)),
                 None => {
                     let head = match Observed::try_from(runtime.observed()) {
                         Ok(Observed::Apply) => DestructorTag::Apply,
@@ -1082,7 +1121,9 @@ mod tests
     use alloc::string::ToString as _;
     use alloc::vec::Vec;
 
+    use gandr_core_sequent::CommandId;
     use gandr_core_sequent::HeapValueId;
+    use gandr_core_sequent::NodeAddress;
     use gandr_kernel_term::ConstantIndex;
     use gandr_runtime_stencils::Status;
     use gandr_runtime_stencils::Word;
@@ -1150,6 +1191,7 @@ mod tests
             .target(label)
             .expect_err("a label never bound has no target");
         let reply = HeapValueId::from(7_u32);
+        let migration = CommandId::from(5_u32);
         let reasons = [
             Declined::from(Form::ConsumerFields),
             Declined::NoPatcher,
@@ -1164,6 +1206,7 @@ mod tests
             Declined::Reply(reply),
             Declined::Capture(reply),
             Declined::Environment,
+            Declined::Migration(migration),
         ];
         assert_eq!(
             Declined::Unbound,
@@ -1193,6 +1236,12 @@ mod tests
         assert!(
             reasons[11].to_string().contains(reply.to_string().as_str()),
             "names the capture"
+        );
+        assert!(
+            reasons[13]
+                .to_string()
+                .contains(NodeAddress::Command(migration).to_string().as_str()),
+            "names the migration"
         );
         for status in [Status::Halted, Status::Unmatched, Status::Stuck] {
             assert_eq!(

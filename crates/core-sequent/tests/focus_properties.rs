@@ -51,6 +51,7 @@ use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::shift_comp_type_under;
 use gandr_core_term::shift_computation_under;
 use gandr_core_term::shift_value_type_under;
+use gandr_core_term::world::WorldForm;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
@@ -76,6 +77,7 @@ fn hand_built_control_cases_cover_every_former()
     use gandr_core_term::effect::EffectOp;
     use gandr_core_term::effect::EffectSig;
     use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::world::World;
     let mut core = CoreArena::new();
     let unit = core.value_unit();
     let zero = core.value_variable(Zone::Intuitionistic, 0_u32.into());
@@ -148,6 +150,17 @@ fn hand_built_control_cases_cover_every_former()
         body: both,
         grade: gandr_core_term::memory::HoldGrade::Many,
     });
+    // hold () ; leta y = it ; migrate [host] { return y }
+    let held_here = core.computation_world(WorldForm::Hold { value: unit });
+    let migrated = core.computation_world(WorldForm::Migrate {
+        world: World::Host,
+        body: identity,
+    });
+    let opened = core.computation_world(WorldForm::Leta {
+        value: zero,
+        body: migrated,
+    });
+    let worlds = core.computation_bind(held_here, opened);
     for program in [
         stack_return,
         performed,
@@ -158,6 +171,7 @@ fn hand_built_control_cases_cover_every_former()
         under,
         projected,
         held,
+        worlds,
     ] {
         let expected = core.value_thunk(program);
         let mut arena = CommandArena::new();
@@ -414,6 +428,26 @@ fn walked(
                             }
                         },
                         MemoryForm::Hold { .. } => {},
+                    }
+                    stack.push(Visit::Consumer(continuation, depth));
+                },
+                CommandNode::World {
+                    ref form,
+                    continuation,
+                } => {
+                    match *form {
+                        WorldForm::Hold { value } => stack.push(Visit::Producer(value, depth)),
+                        WorldForm::Leta { value, body } => {
+                            stack.push(Visit::Producer(value, depth));
+                            stack.push(Visit::Command(
+                                body,
+                                depth.under(ProducerArity::ONE, ConsumerArity::ONE),
+                            ));
+                        },
+                        WorldForm::Migrate { body, .. } => stack.push(Visit::Command(
+                            body,
+                            depth.under(ProducerArity::ZERO, ConsumerArity::ONE),
+                        )),
                     }
                     stack.push(Visit::Consumer(continuation, depth));
                 },

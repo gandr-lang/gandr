@@ -195,7 +195,7 @@ enum Built
     Capability,
     /// Code the host built, which no function's code table holds.
     Code,
-    /// The empty list, whose head no run of these programs builds.
+    /// The empty list.
     Nil,
     /// The pair `(x, x)` over one fresh `x = (1, 2)`: a value two fields hold.
     SharedPair,
@@ -853,8 +853,7 @@ fn a_host_built_reply_of_a_tabled_kind_is_the_answer()
 /// run by its row in the function's table: `x <- ask(()); return (x, nil)`
 /// answered with a built `nil` is `(nil, nil)`, and
 /// `x <- ask(Integer); return (x, Integer)` answered with a fresh copy of its
-/// payload is `(Integer, Integer)`, where a run that builds no list declines
-/// the same `nil`.
+/// payload is `(Integer, Integer)`.
 #[test]
 fn a_host_reply_the_function_tables_is_the_answer()
 {
@@ -947,8 +946,7 @@ fn a_host_reply_sharing_a_field_counts_each_holder_3170()
 }
 
 /// A reply the run cannot hold declines the run naming the reply: a
-/// capability or code the host built, and a list whose head the function's
-/// table lacks.
+/// capability or code the host built.
 #[test]
 fn a_host_built_reply_the_run_cannot_hold_declines()
 {
@@ -966,7 +964,7 @@ fn a_host_built_reply_the_run_cannot_hold_declines()
     let root = focus_computation(&core, program, &mut arena, &mut Provenance::new())
         .expect("the program focuses");
     let definitions = Definitions::new();
-    for built in [Built::Capability, Built::Code, Built::Nil] {
+    for built in [Built::Capability, Built::Code] {
         for entry in tiers().iter().copied().map(Some).chain([None]) {
             let mut store = Store::new();
             let mut host = ScriptedHost {

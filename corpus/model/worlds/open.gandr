@@ -25,19 +25,19 @@ data Point : Type {
 }
 
 /// A record of integers comes back from the seat.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("#{.done = 3, .left = 4}") ]
 def counts() -> #{done : Integer, left : Integer} {
   migrate [seat] { pure #{done = 3, left = 4} }
 }
 
 /// A datatype of integers comes back, field by field open.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("At(1, 2)") ]
 def measured() -> Point {
   migrate [seat] { pure At(1, 2) }
 }
 
 /// A handle to a record of integers comes back as its content.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("#{.done = 3, .left = 4}") ]
 def heldCounts() -> -F (#{done : Integer, left : Integer} at seat) {
   migrate [seat] { (hold #{done = 3, left = 4}) }
 }

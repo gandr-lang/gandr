@@ -849,6 +849,19 @@ pub enum CommandNode
         /// The continuation outside the form.
         continuation: ConsumerId,
     },
+    /// A world form `𝓦` with its continuation. A hold returns its value to
+    /// the continuation, which in one process is the handle; a leta runs its
+    /// body with the handle bound as the innermost intuitionistic producer; a
+    /// migration runs its body at its world, closed over its support, and
+    /// returns the body's answer to the continuation.
+    World
+    {
+        /// The form. A leta's body binds one producer and one return
+        /// covariable; a migration's body binds one return covariable.
+        form: gandr_core_term::world::WorldForm<ProducerId, CommandId>,
+        /// The continuation outside the form.
+        continuation: ConsumerId,
+    },
 }
 
 /// The three node families of the arena.
@@ -2175,6 +2188,27 @@ where
             }
             each(NodeAddress::Consumer(continuation), at)?;
         },
+        CommandNode::World {
+            ref form,
+            continuation,
+        } => {
+            match *form {
+                gandr_core_term::world::WorldForm::Hold { value } => {
+                    each(NodeAddress::Producer(value), at)?;
+                },
+                gandr_core_term::world::WorldForm::Leta { value, body } => {
+                    each(NodeAddress::Producer(value), at)?;
+                    each(
+                        NodeAddress::Command(body),
+                        Opens::binding(ProducerArity::ONE, ConsumerArity::ONE),
+                    )?;
+                },
+                gandr_core_term::world::WorldForm::Migrate { body, .. } => {
+                    each(NodeAddress::Command(body), returns)?;
+                },
+            }
+            each(NodeAddress::Consumer(continuation), at)?;
+        },
     }
     Ok(())
 }
@@ -2273,7 +2307,8 @@ pub fn command_named(node: &CommandNode) -> core::option::IntoIter<(Zone, DeBrui
         | CommandNode::Abandon { .. }
         | CommandNode::Reset { .. }
         | CommandNode::Shift { .. }
-        | CommandNode::Cut { .. } => None,
+        | CommandNode::Cut { .. }
+        | CommandNode::World { .. } => None,
     }
     .into_iter()
 }
@@ -2320,7 +2355,8 @@ pub const fn command_signature(node: &CommandNode) -> Option<&gandr_core_term::e
         | CommandNode::Reset { .. }
         | CommandNode::Shift { .. }
         | CommandNode::Cut { .. }
-        | CommandNode::Memory { .. } => None,
+        | CommandNode::Memory { .. }
+        | CommandNode::World { .. } => None,
     }
 }
 

@@ -21,7 +21,7 @@ pub world seat;
 /// seat's, it runs the seat's work there and takes the report back. The
 /// migration spends the capability, and the report crosses because its type
 /// is marked mobile.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("\"progress\"") ]
 pub def collect() -> Seat.Report {
   migrate [seat] { pure Seat.progress }
 }
@@ -29,7 +29,7 @@ pub def collect() -> Seat.Report {
 /// The same turn returning a handle instead of the report: `hold` makes it at
 /// the seat, and a handle crosses back exactly when what it holds is open,
 /// which the mark on `Report` says it is.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("\"progress\"") ]
 def dispatch() -> -F (Seat.Report at seat) {
   migrate [seat] { (hold Seat.progress) }
 }
@@ -45,7 +45,7 @@ def opened(report : Seat.Report at seat) -> Seat.Report {
 /// The operator holding the seat's handle and reading it: `leta` opens the
 /// handle at the operator's world, but what it binds is the seat's, so the
 /// report is read through a second migration, spending a second capability.
-@[ entry((operator, seat, seat)) ]
+@[ entry((operator, seat, seat)), runs("\"progress\"") ]
 def review() -> Seat.Report {
   run held : Seat.Report at seat <- migrate [seat] { (hold Seat.progress) };
   leta report = held;

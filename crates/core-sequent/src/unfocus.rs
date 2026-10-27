@@ -704,6 +704,8 @@ impl Unfocusing<'_>
                 CommandNode::Cut { .. } => true,
                 CommandNode::Memory { ref form, .. } => self.values.len() >= form.values().count()
                     && self.computations.len() >= form.computations().count(),
+                CommandNode::World { ref form, .. } => self.values.len() >= form.values().count()
+                    && self.computations.len() >= form.scoped().count(),
             }),
             | &Task::With(count) => self.computations.len() >= usize::from(count),
             | &Task::Bind => self.computations.len() >= 2,
@@ -1246,6 +1248,15 @@ impl Unfocusing<'_>
                 )?;
                 self.core.computation_memory(form)
             },
+            CommandNode::World { ref form, .. } => {
+                let form = form.try_map(
+                    gandr_core_term::session::ChildOrder::Reverse,
+                    self,
+                    |decoder, _| decoder.pop_value(),
+                    |decoder, _| decoder.pop_computation(),
+                )?;
+                self.core.computation_world(form)
+            },
             CommandNode::Cut { .. } => {
                 return Err(UnfocusRefusal::CommandOutsideTheImage(source));
             },
@@ -1356,6 +1367,27 @@ impl Unfocusing<'_>
                 for body in form.computations().rev() {
                     self.tasks
                         .push(Task::Command(body, depth.under_covariable()));
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value, depth));
+                }
+            },
+            CommandNode::World {
+                ref form,
+                continuation,
+            } => {
+                self.tasks.push(Task::Spine(continuation, depth));
+                self.tasks.push(Task::Control(source, depth));
+                match *form {
+                    gandr_core_term::world::WorldForm::Hold { .. } => {},
+                    gandr_core_term::world::WorldForm::Leta { body, .. } => {
+                        self.tasks
+                            .push(Task::Command(body, depth.under_function_arm()));
+                    },
+                    gandr_core_term::world::WorldForm::Migrate { body, .. } => {
+                        self.tasks
+                            .push(Task::Command(body, depth.under_covariable()));
+                    },
                 }
                 for value in form.values() {
                     self.tasks.push(Task::Value(value, depth));
