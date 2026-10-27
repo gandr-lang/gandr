@@ -1280,7 +1280,9 @@ fn a_package_s_manifest_is_written_and_drift_refused_2687()
     );
     let first = std::fs::read_to_string(&manifest).expect("the manifest is written");
     assert!(
-        first.ends_with("\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\n"),
+        first.ends_with(
+            "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\nmodules = [\n  \"text.greet\",\n]\n"
+        ),
         "{first}"
     );
     let again = checked();

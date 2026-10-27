@@ -2837,6 +2837,70 @@ fn an_aliased_import_qualifies_its_source_s_names()
     );
 }
 
+/// #2687: `import text.greet ;` binds its module qualified, under the path
+/// it names: a member reads as `text.greet.one`, as a term and as a type;
+/// a member the module does not declare is refused naming the path; neither
+/// a prefix of the path nor the member's bare name reads it.
+#[test]
+fn a_module_path_import_binds_its_module_qualified_2687()
+{
+    let pbg = grammar();
+    let (text, unit) = laid(&[
+        (
+            SourceText::from(
+                "pub data Point : Type { One : Point; }\npub def one : Point ;\ndef one = One ;",
+            ),
+            &[],
+        ),
+        (
+            SourceText::from(
+                "import text . greet ;\ndef again : text.greet.Point ;\ndef again = \
+                 text.greet.one ;\ndef lost : Integer ;\ndef lost = text.greet.two ;\ndef \
+                 prefix : text.greet.Point ;\ndef prefix = text.one ;\ndef bare : \
+                 text.greet.Point ;\ndef bare = one ;",
+            ),
+            &[ImportTarget::Source(SourceIndex::from(0_usize))],
+        ),
+    ]);
+    let module = lowered_unit(&pbg, &parsed(&pbg, SourceText::from(text.as_str())), &unit)
+        .expect("the unit lowers");
+
+    let refusals: Vec<(String, String)> = module
+        .declarations()
+        .iter()
+        .filter_map(|declaration| {
+            if let DeclarationOutcome::Refused(refusal) = declaration.outcome() {
+                Some((
+                    String::from(declaration.name().as_ref()),
+                    format!("{refusal:?}"),
+                ))
+            }
+            else {
+                None
+            }
+        })
+        .collect();
+    let named: Vec<&str> = refusals
+        .iter()
+        .map(|&(ref name, _)| name.as_str())
+        .collect();
+    assert_eq!(
+        named,
+        ["lost", "prefix", "bare"],
+        "`again` reads through the path, the rest refuse: {refusals:?}"
+    );
+    assert!(
+        refusals
+            .iter()
+            .any(|&(ref name, ref refusal)| name == "lost"
+                && refusal.starts_with("UnknownMember")
+                && refusal.contains("\"text.greet\"")
+                && refusal.contains("\"two\"")),
+        "a member the module does not declare is refused naming the path as written: \
+         {refusals:?}"
+    );
+}
+
 #[test]
 fn a_pending_member_read_through_an_alias_is_refused_at_the_member()
 {

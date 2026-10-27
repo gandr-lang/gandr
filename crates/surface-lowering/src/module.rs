@@ -3653,15 +3653,19 @@ fn first_token<'source>(
     SurfaceName::from("")
 }
 
-/// Whether an import's address names a scheme or a path.
+/// Whether an import's address names a scheme, a path or a module.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Address
 {
     /// `scheme:…`: a letter, then letters, digits, `+`, `-` or `.`, then a
     /// colon (RFC 3986 § 3.1).
     Scheme,
-    /// Anything else: a path relative to the importing source.
+    /// Anything else written between quotes: a path relative to the importing
+    /// source.
     Path,
+    /// A module path written bare, `text.greet`: the file `text/greet.gandr`
+    /// relative to the directory of the package's root module.
+    Module,
 }
 
 impl Address
@@ -3710,13 +3714,15 @@ impl Address
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WrittenImport
 {
-    /// The address, its escapes decoded.
+    /// The address, its escapes decoded; for a module path, the file it names
+    /// relative to the root module's directory, `text/greet.gandr`.
     pub uri: ImportUri,
     /// The alias, when one is written.
     pub alias: Maybe<Placed, unaliased::Absent>,
     /// The bytes the import covers.
     pub span: ByteSpan,
-    /// The bytes between the address's quotes, as written, escapes included.
+    /// The bytes between the address's quotes, as written, escapes included;
+    /// for a module path, the path's from its first name to its last.
     pub addressed: ByteSpan,
     /// What the address names.
     pub address: Address,
@@ -3730,6 +3736,9 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The import binds its sibling's exports unqualified.
             Unqualified,
+            /// The import binds its module qualified, under the module path
+            /// it names.
+            Pathed,
         }
     }
 }
@@ -3739,7 +3748,10 @@ quenchant_shape::reason_enum! {
 /// # Specification
 /// - requires: `pieces` is the reading of the import `import`.
 /// - ensures: the import the tiles `import " … " (as name)? ;` spell, in that
-///   order with nothing after them, its address read between the quotes.
+///   order with nothing after them, its address read between the quotes; or the
+///   tiles `import name (. name)* (as name)? ;`, its address the module path's
+///   file, as [`module_file`] names it, and bound under the path when no alias
+///   is written.
 /// - provides: the reading the collection and [`written_imports`] share.
 /// - fails: [`LoweringRefusal::MalformedForm`] for a repair, naming the form
 ///   inside the import that holds it or else `form`, as
@@ -3786,34 +3798,59 @@ fn read_import<'source>(
     if let Maybe::Absent(_) = cursor.tile(TileName::IMPORT) {
         return Err(out_of_place(&cursor));
     }
-    let Maybe::Present(opened) = cursor.tile(TileName::QUOTE)
-    else {
-        return Err(out_of_place(&cursor));
+    let (uri, addressed, address) = match cursor.tile(TileName::QUOTE) {
+        Maybe::Present(opened) => {
+            let mut written = String::new();
+            loop {
+                let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
+                    Maybe::Present(fragment) => fragment,
+                    Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
+                        Maybe::Present(escape) => escape,
+                        Maybe::Absent(_) => break,
+                    },
+                };
+                if let Some(text) = tree.fragment(piece.node) {
+                    written.push_str(text.as_ref());
+                }
+            }
+            let Maybe::Present(closed) = cursor.tile(TileName::QUOTE)
+            else {
+                return Err(out_of_place(&cursor));
+            };
+            let addressed = ByteSpan::new(opened.span.end(), closed.span.start())
+                .map_err(|_inverted| out_of_place(&cursor))?;
+            let uri = ImportUri::from(decode_escapes(SourceFragment::from(written.as_str())));
+            let address = Address::of(&uri);
+            (uri, addressed, address)
+        },
+        Maybe::Absent(_) => {
+            let Maybe::Present(first) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(out_of_place(&cursor));
+            };
+            let mut last = first;
+            while let Maybe::Present(_) = cursor.tile(TileName::DOT) {
+                let Maybe::Present(next) = cursor.tile(TileName::IDENTIFIER)
+                else {
+                    return Err(out_of_place(&cursor));
+                };
+                last = next;
+            }
+            let addressed = ByteSpan::new(first.span.start(), last.span.end())
+                .map_err(|_inverted| out_of_place(&cursor))?;
+            let Some(path) = tree.spanned(addressed)
+            else {
+                return Err(out_of_place(&cursor));
+            };
+            (module_file(path), addressed, Address::Module)
+        },
     };
-    let mut written = String::new();
-    loop {
-        let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
-            Maybe::Present(fragment) => fragment,
-            Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
-                Maybe::Present(escape) => escape,
-                Maybe::Absent(_) => break,
-            },
-        };
-        if let Some(text) = tree.fragment(piece.node) {
-            written.push_str(text.as_ref());
-        }
-    }
-    let Maybe::Present(closed) = cursor.tile(TileName::QUOTE)
-    else {
-        return Err(out_of_place(&cursor));
-    };
-    let addressed = ByteSpan::new(opened.span.end(), closed.span.start())
-        .map_err(|_inverted| out_of_place(&cursor))?;
     let alias = match cursor.tile(TileName::AS) {
         Maybe::Present(_) => match cursor.tile(TileName::IDENTIFIER) {
             Maybe::Present(alias) => Maybe::Present(alias),
             Maybe::Absent(_) => return Err(out_of_place(&cursor)),
         },
+        Maybe::Absent(_) if address == Address::Module => Maybe::Absent(unaliased::Absent::Pathed),
         Maybe::Absent(_) => Maybe::Absent(unaliased::Absent::Unqualified),
     };
     if let Maybe::Absent(_) = cursor.tile(TileName::SEMICOLON) {
@@ -3822,8 +3859,6 @@ fn read_import<'source>(
     if let Maybe::Present(_) = cursor.peek() {
         return Err(out_of_place(&cursor));
     }
-    let uri = ImportUri::from(decode_escapes(SourceFragment::from(written.as_str())));
-    let address = Address::of(&uri);
 
     Ok(WrittenImport {
         uri,
@@ -3832,6 +3867,35 @@ fn read_import<'source>(
         addressed,
         address,
     })
+}
+
+/// The file the module path `path` names, relative to the directory of the
+/// package's root module: its names joined by `/`, then `.gandr`, so
+/// `text.greet` is `text/greet.gandr`.
+///
+/// # Specification
+/// - requires: `path` is names joined by dots, with layout beside a dot.
+/// - ensures: each name of `path`, its layout trimmed, in order, joined by `/`
+///   and followed by `.gandr`.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a one-name and a two-name path, the second written with
+///   layout beside its dot, each name their file.
+/// - witness: `module::tests::a_module_path_names_its_file_2687`
+#[spec(ensures: |ret| ret.as_ref().strip_suffix(".gandr").is_some() && ret.as_ref().matches('/').count() == path.as_ref().matches('.').count())]
+fn module_file(path: SourceFragment<'_>) -> ImportUri
+{
+    let mut file = String::new();
+    for (index, name) in path.as_ref().split('.').enumerate() {
+        if index > 0 {
+            file.push('/');
+        }
+        file.push_str(name.trim());
+    }
+    file.push_str(".gandr");
+    ImportUri::from(file)
 }
 
 /// Every import `tree`'s root writes, in source order, read as the collection
@@ -3949,14 +4013,16 @@ pub fn unqualified_imports(
             else {
                 continue;
             };
-            if written.address != Address::Path {
+            if written.address == Address::Scheme {
                 continue;
             }
             let source = unit.source_at(child.span.start());
             let ordinal = ordinals.entry(source).or_default();
             let target = unit.target(source, *ordinal);
             *ordinal = ordinal.next();
-            if let (Maybe::Absent(_), ImportTarget::Source(target)) = (written.alias, target) {
+            if let (Maybe::Absent(unaliased::Absent::Unqualified), ImportTarget::Source(target)) =
+                (written.alias, target)
+            {
                 let _fresh = seen.entry(source).or_default().insert(target);
             }
         }
@@ -5264,7 +5330,7 @@ impl<'source> Collector<'_, 'source>
         let source = self.collected.unit.source_at(import.span.start());
         let resolution = match written.address {
             Address::Scheme => ImportResolution::Foreign,
-            Address::Path => {
+            Address::Path | Address::Module => {
                 let ordinal = self.ordinals.entry(source).or_default();
                 let target = self.collected.unit.target(source, *ordinal);
                 *ordinal = ordinal.next();
@@ -5273,7 +5339,12 @@ impl<'source> Collector<'_, 'source>
         };
         let binding = match written.alias {
             Maybe::Present(alias) => ImportBinding::Aliased(self.name_of(alias)),
-            Maybe::Absent(_) => ImportBinding::Unqualified,
+            Maybe::Absent(unaliased::Absent::Pathed) => ImportBinding::Qualified(
+                self.tree
+                    .spanned(written.addressed)
+                    .map_or_else(|| SurfaceName::from(""), SurfaceName::from),
+            ),
+            Maybe::Absent(unaliased::Absent::Unqualified) => ImportBinding::Unqualified,
         };
 
         self.collected.imports.bind(ImportDeclaration::new(
@@ -12220,6 +12291,24 @@ mod tests
             of("git+ssh:repo"),
             Address::Scheme,
             "a scheme continues with letters, digits, `+`, `-` and `.`"
+        );
+    }
+
+    /// #2687: a module path names its file by its names joined by `/`, the
+    /// layout beside a dot dropped, then `.gandr`.
+    #[test]
+    fn a_module_path_names_its_file_2687()
+    {
+        let file = |path: &str| {
+            alloc::string::String::from(
+                super::module_file(gandr_surface_syntax::SourceFragment::from(path)).as_ref(),
+            )
+        };
+        assert_eq!(file("greet"), "greet.gandr", "one name is its file");
+        assert_eq!(
+            file("text . greet"),
+            "text/greet.gandr",
+            "two names are a directory and its file"
         );
     }
 

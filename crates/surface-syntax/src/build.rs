@@ -1301,6 +1301,24 @@ mod tests
         );
     }
 
+    /// #2687: a span reads the bytes it covers across the nodes it crosses,
+    /// and a span past the text reads nothing.
+    #[test]
+    fn a_span_names_the_fragment_it_covers_2687()
+    {
+        let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
+        let span = |start: usize, end: usize| {
+            ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end)).unwrap()
+        };
+
+        assert_eq!(
+            tree.spanned(span(8, 20)),
+            Some(SourceFragment::from("\\x. return x")),
+            "the bytes of several nodes, as written"
+        );
+        assert_eq!(tree.spanned(span(8, 100)), None, "a span past the text");
+    }
+
     #[test]
     fn the_last_position_holds_a_node()
     {

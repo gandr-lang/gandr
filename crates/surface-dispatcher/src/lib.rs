@@ -186,6 +186,8 @@ pub use crate::cells::Census;
 pub use crate::cells::CensusFault;
 pub use crate::cells::CensusStep;
 pub use crate::component::Freshness;
+pub use crate::component::ImportBase;
+pub use crate::component::ImportPath;
 pub use crate::component::Laid;
 pub use crate::component::ParsedBytes;
 pub use crate::component::Shadows;

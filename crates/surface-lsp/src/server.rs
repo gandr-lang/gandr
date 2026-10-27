@@ -79,6 +79,7 @@ use gandr_surface_dispatcher::Delivered;
 use gandr_surface_dispatcher::Demand;
 use gandr_surface_dispatcher::Freshness;
 use gandr_surface_dispatcher::Generations;
+use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Polled;
 use gandr_surface_dispatcher::Pool;
@@ -440,7 +441,7 @@ struct Document
     /// that judgement's parse read them: its next revision is laid out over
     /// them, and that revision's judgement confirms them or lays it out
     /// again.
-    written: Maybe<Vec<String>, written::Absent>,
+    written: Maybe<Vec<ImportPath>, written::Absent>,
     /// The diagnostics last published at its version.
     published: Vec<Diagnostic>,
     /// The checked proposals kept for its version, in the order kept.
@@ -3958,7 +3959,7 @@ impl Server
         workspace: &mut Workspace,
         uri: &DocumentUri,
         version: DocumentVersion,
-        written: &[String],
+        written: &[ImportPath],
     ) -> Option<Judging>
     {
         let document = workspace

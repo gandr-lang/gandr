@@ -321,7 +321,8 @@ impl core::error::Error for Unpackaged
 {
 }
 
-/// What a package's model states for its manifest.
+/// What a package's model states for its manifest, and the modules its
+/// sources make.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Manifest
 {
@@ -329,12 +330,14 @@ pub struct Manifest
     name: String,
     /// `Package.version`.
     version: String,
+    /// Each module of the package but its root, by its path.
+    modules: BTreeSet<String>,
 }
 
 impl Manifest
 {
     /// The manifest `program`'s `Package` model states: its `name` and its
-    /// `version`, each run to its string.
+    /// `version`, each run to its string; and the modules of `package`.
     ///
     /// # Specification
     /// - requires: `program` is the program of the package's library.
@@ -342,7 +345,8 @@ impl Manifest
     ///   `Package.version`, run once, and its string decoded from the value's
     ///   spelling; the first field the program declares no such path for is
     ///   [`Unmanifested::Undeclared`], and the first whose run is no string
-    ///   [`Unmanifested::Unstrung`] with what it came to.
+    ///   [`Unmanifested::Unstrung`] with what it came to. The modules are
+    ///   [`modules`] of `package`'s sources.
     /// - provides: the manifest `gandr check` writes.
     /// - fails: a field undeclared, or run to no string.
     /// - panics: none.
@@ -359,7 +363,10 @@ impl Manifest
     ///   refused at that field.
     /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
     #[inline]
-    pub fn of(program: &mut Program<'_>) -> Result<Self, Unmanifested>
+    pub fn of(
+        program: &mut Program<'_>,
+        package: &Package,
+    ) -> Result<Self, Unmanifested>
     {
         let mut field = |field: Field| {
             let path = field.path();
@@ -394,7 +401,11 @@ impl Manifest
         };
         let name = field(Field::Name)?;
         let version = field(Field::Version)?;
-        Ok(Self { name, version })
+        Ok(Self {
+            name,
+            version,
+            modules: modules(package.sources()),
+        })
     }
 
     /// The manifest as the checker writes it: the header, then the body.
@@ -404,7 +415,8 @@ impl Manifest
     /// - ensures: the [`WRITTEN`] line, the digest line carrying the BLAKE3
     ///   digest of the body in lowercase hexadecimal, then the body: a
     ///   `[package]` table with `name` and `version` as TOML basic strings,
-    ///   each `"`, `\` and control character escaped. The same manifest renders
+    ///   each `"`, `\` and control character escaped, and `modules` an array of
+    ///   the modules' paths, one per line, in order. The same manifest renders
     ///   the same bytes.
     /// - provides: the file [`reconcile`] writes.
     /// - fails: never.
@@ -421,15 +433,98 @@ impl Manifest
     pub fn render(&self) -> String
     {
         let body = format!(
-            "\n[package]\nname = {}\nversion = {}\n",
+            "\n[package]\nname = {}\nversion = {}\nmodules = [\n{}]\n",
             Basic(&self.name),
-            Basic(&self.version)
+            Basic(&self.version),
+            Listed(&self.modules)
         );
         format!(
             "{WRITTEN}\n{DIGEST}{}\n{body}",
             blake3::hash(body.as_bytes()).to_hex()
         )
     }
+}
+
+/// Every module the sources under `sources` make but the root, each named by
+/// its path from `sources`: `text/greet.gandr` is `text.greet`.
+///
+/// # Specification
+/// - requires: `sources` is a package's sources directory.
+/// - ensures: one name per `.gandr` file under `sources`, its directories and
+///   its file stem joined by `.`, the root module `lib.gandr` beside `sources`
+///   left out; a directory holding a `lib.gandr` of its own is another
+///   package's, and nothing under it is named. A directory that does not list
+///   names nothing.
+/// - provides: the membership the manifest records: a module is a file, and
+///   nothing declares it.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the clause reads the file system again.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a package with a nested module and a nested package lists
+///   the module alone.
+/// - witness: `tests::package::a_manifest_lists_the_modules_its_sources_make_2687`
+fn modules(sources: &Path) -> BTreeSet<String>
+{
+    let mut named = BTreeSet::new();
+    let mut pending = Vec::from([sources.to_path_buf()]);
+    while let Some(directory) = pending.pop() {
+        listed(sources, &directory, &mut pending, &mut named);
+    }
+    named
+}
+
+/// File the entries of `directory`, under the package's `sources`: each
+/// directory that holds no library onto `pending`, and each source but the
+/// root's into `named`, by its module path.
+///
+/// # Specification
+/// trivial.
+fn listed(
+    sources: &Path,
+    directory: &Path,
+    pending: &mut Vec<PathBuf>,
+    named: &mut BTreeSet<String>,
+)
+{
+    let Ok(entries) = std::fs::read_dir(directory)
+    else {
+        return;
+    };
+    for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
+        if path.is_dir() {
+            if !path.join(LIBRARY).is_file() {
+                pending.push(path);
+            }
+        }
+        else if path
+            .extension()
+            .is_some_and(|extension| extension == "gandr")
+            && path != sources.join(LIBRARY)
+            && let Some(module) = module_path(sources, &path)
+        {
+            let _fresh = named.insert(module);
+        }
+    }
+}
+
+/// The module path of the source at `path` under `sources`: its directories
+/// and its file stem, joined by `.`.
+///
+/// # Specification
+/// trivial.
+fn module_path(
+    sources: &Path,
+    path: &Path,
+) -> Option<String>
+{
+    let relative = path.strip_prefix(sources).ok()?.with_extension("");
+    let names: Option<Vec<&str>> = relative
+        .components()
+        .map(|component| component.as_os_str().to_str())
+        .collect();
+    Some(names?.join("."))
 }
 
 /// A field of the `Package` model the manifest records.
@@ -718,5 +813,26 @@ impl core::fmt::Display for Basic<'_>
             }
         }
         f.write_char('"')
+    }
+}
+
+/// Module paths written as the lines of a TOML array, each a basic string
+/// indented two spaces and followed by a comma.
+#[repr(transparent)]
+struct Listed<'modules>(&'modules BTreeSet<String>);
+
+impl core::fmt::Display for Listed<'_>
+{
+    /// # Specification
+    /// trivial.
+    fn fmt(
+        &self,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result
+    {
+        for module in self.0 {
+            writeln!(f, "  {},", Basic(module))?;
+        }
+        Ok(())
     }
 }

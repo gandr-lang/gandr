@@ -165,6 +165,8 @@ use std::path::PathBuf;
 use anodized::spec;
 use gandr_surface_dispatcher::Declared;
 use gandr_surface_dispatcher::DeclaredHalf;
+use gandr_surface_dispatcher::ImportBase;
+use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::NameKind;
 use gandr_surface_dispatcher::Referent;
@@ -178,6 +180,7 @@ use gandr_surface_dispatcher::lay_out_shadowed;
 use gandr_surface_dispatcher::named_path;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::RoleTable;
+use gandr_surface_lowering::Address;
 use gandr_surface_lowering::DocumentationText;
 use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
@@ -977,8 +980,16 @@ fn imported(
     let resolution = import.ordinal.map_or_else(
         || Gap::Foreign.closing(),
         |ordinal| {
-            let directory = hovering.document.parent().unwrap_or(&hovering.document);
-            let file = named_path(&directory.join(import.written.uri.as_ref()));
+            let base = if import.written.address == Address::Module {
+                ImportBase::Root
+            }
+            else {
+                ImportBase::Importer
+            };
+            let file = named_path(
+                &ImportPath::new(String::from(import.written.uri.as_ref()), base)
+                    .resolved(hovering.document.parent().unwrap_or(&hovering.document)),
+            );
             match hovering.targets.get(ordinal) {
                 Some(&ImportTarget::Source(source)) => {
                     let read = format!(

@@ -95,12 +95,10 @@ use crate::namespace::Binding;
 use crate::namespace::Collision;
 use crate::namespace::EventKind;
 use crate::namespace::EventRejection;
-use crate::namespace::Modifier;
 use crate::namespace::NamePath;
 use crate::namespace::NamespaceEventHandler;
 use crate::namespace::RejectionReason;
 use crate::namespace::Scope;
-use crate::namespace::ScopeError;
 use crate::namespace::Segment;
 use crate::namespace::Trie;
 use crate::resolve::SurfaceName;
@@ -190,7 +188,7 @@ impl fmt::Display for ImportUri
 }
 
 /// What an import binds in its source: the sibling's exports by their own
-/// names, or the sibling itself under an alias.
+/// names, or the sibling itself under an alias or under its module path.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ImportBinding<'source>
 {
@@ -198,6 +196,24 @@ pub enum ImportBinding<'source>
     Unqualified,
     /// `import "…" as name ;`: each export answers as `name.Export`.
     Aliased(SurfaceName<'source>),
+    /// `import text.greet ;`: each export answers as `text.greet.Export`, the
+    /// path as written.
+    Qualified(SurfaceName<'source>),
+}
+
+/// The segments of `name`, a name or a module path as written: each name
+/// between its dots, its layout trimmed.
+///
+/// # Specification
+/// trivial.
+fn segments(name: SurfaceName<'_>) -> NamePath
+{
+    NamePath::from(
+        name.as_ref()
+            .split('.')
+            .map(|part| Segment::from(part.trim()))
+            .collect::<Vec<_>>(),
+    )
 }
 
 /// What an import's address came to.
@@ -435,23 +451,29 @@ impl<'source> ModuleImports<'source>
         )
     }
 
-    /// The import `source` binds `alias` to.
+    /// The import `source` binds `alias` to: an alias, or a module path as
+    /// written, `text.greet`.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the declaration whose alias `alias` is among `source`'s
-    ///   imports; [`aliased::Absent::Unbound`] when none is.
-    /// - provides: the qualifier a path `alias.Name` is resolved through.
+    /// - ensures: the declaration whose alias, or whose module path, is
+    ///   `alias`'s names among `source`'s imports, layout beside a dot aside;
+    ///   [`aliased::Absent::Unbound`] when none is, a prefix of a bound path
+    ///   included.
+    /// - provides: the qualifier a path `alias.Name` or `text.greet.Name` is
+    ///   resolved through.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — one alias bound in two sources answers each source's
-    ///   own import, and an alias another source binds answers nothing.
+    ///   own import, and an alias another source binds answers nothing; a
+    ///   module path answers its import and its prefix nothing.
     /// - witness: `import::tests::each_source_binds_its_own_aliases`
+    /// - witness: `tests::namespace::a_module_path_import_binds_its_module_qualified_2687`
     #[inline]
     #[spec(ensures: |ret| match ret {
-        Maybe::Present(found) => found.source == source && found.binding == ImportBinding::Aliased(alias),
+        Maybe::Present(found) => found.source == source && matches!(found.binding, ImportBinding::Aliased(_) | ImportBinding::Qualified(_)),
         Maybe::Absent(_) => true,
     })]
     pub fn aliased(
@@ -464,7 +486,7 @@ impl<'source> ModuleImports<'source>
         else {
             return Maybe::Absent(aliased::Absent::Unbound);
         };
-        let path = NamePath::from(Vec::from([Segment::from(alias.as_ref())]));
+        let path = segments(alias);
         match scope.resolve(&path) {
             Maybe::Present(bound) => self
                 .declarations
@@ -489,17 +511,17 @@ impl<'source> ModuleImports<'source>
             .filter(move |declaration| declaration.source == source)
     }
 
-    /// Keep `declaration`, binding its alias, when it has one, in its
-    /// source's scope.
+    /// Keep `declaration`, binding its alias or its module path, when it has
+    /// one, in its source's scope.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the declaration is the last kept, at position `n`
-    ///   for the `n` kept before it; an aliased one's source scope binds its
-    ///   alias to that position, tagged with its bytes, and no export is ever
-    ///   touched. The binding is the import's root binding run through
-    ///   [`Modifier::alias_as`] and imported under a policy that refuses every
-    ///   shadow. An unqualified import binds no alias.
+    ///   for the `n` kept before it; an aliased or a qualified one's source
+    ///   scope binds its alias, or its module path's names in turn, to that
+    ///   position, tagged with its bytes, and no export is ever touched. The
+    ///   binding is imported under a policy that refuses every shadow. An
+    ///   unqualified import binds nothing.
     /// - provides: the import collection.
     /// - fails: [`LoweringRefusal::DuplicateImportAlias`] at the declaration's
     ///   bytes, naming the first import's, when an earlier import of its source
@@ -543,10 +565,9 @@ impl<'source> ModuleImports<'source>
                     },
                     | Err(LoweringRefusal::DuplicateImportAlias { span, alias, first }) => {
                         self.declarations.len() == before.0
-                            && (span, ImportBinding::Aliased(alias)) == (before.2, before.1)
-                            && self.declarations.iter().any(|held| {
-                                held.binding == ImportBinding::Aliased(alias) && held.span == first
-                            })
+                            && span == before.2
+                            && matches!(before.1, ImportBinding::Aliased(name) | ImportBinding::Qualified(name) if name == alias)
+                            && self.declarations.iter().any(|held| held.span == first)
                     },
                     | Err(_) => false,
                 }
@@ -558,27 +579,23 @@ impl<'source> ModuleImports<'source>
         declaration: ImportDeclaration<'source>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let ImportBinding::Aliased(written) = declaration.binding
+        let (ImportBinding::Aliased(written) | ImportBinding::Qualified(written)) =
+            declaration.binding
         else {
             self.declarations.push(declaration);
             return Ok(());
         };
         let index = ImportIndex(self.declarations.len());
-        let alias = Segment::from(written.as_ref());
+        let path = segments(written);
         let mut root = Trie::empty();
-        let _fresh = root.insert(&NamePath::root(), Binding::new(index, declaration.span));
+        let _fresh = root.insert(&path, Binding::new(index, declaration.span));
         let mut policy = OneSource;
         let mut scope = self
             .scopes
             .get(&declaration.source)
             .cloned()
             .unwrap_or_default();
-        let bound = match Modifier::alias_as(alias.clone()).apply(root, &mut policy) {
-            Ok(qualified) => scope.import_subtree(&NamePath::root(), qualified, &mut policy),
-            Err(rejection) => Err(ScopeError::from(rejection)),
-        };
-        if let Err(_shadowed) = bound {
-            let path = NamePath::from(Vec::from([alias]));
+        if let Err(_shadowed) = scope.import_subtree(&NamePath::root(), root, &mut policy) {
             let first = match self.scope(declaration.source) {
                 Maybe::Present(held) => match held.resolve(&path) {
                     Maybe::Present(binding) => binding.tag,

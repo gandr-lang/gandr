@@ -937,6 +937,33 @@ impl<'source> SyntaxTree<'source>
 
         self.source.fragment(node.span).ok()
     }
+
+    /// The source fragment `span` covers, read against the text this tree was
+    /// built over.
+    ///
+    /// # Specification
+    /// - requires: nothing — a span past the text is admissible input.
+    /// - ensures: exactly the bytes `span` covers; nothing for a span the text
+    ///   does not hold or that does not fall on character boundaries.
+    /// - provides: the spelling of a form several nodes write, as an import's
+    ///   module path `text.greet` is three.
+    /// - fails: yields nothing for a span the text does not hold.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a span over several nodes reads their bytes as
+    ///   written, and one past the text reads nothing.
+    /// - witness: `build::tests::a_span_names_the_fragment_it_covers_2687`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret == self.source.fragment(span).ok())]
+    pub fn spanned(
+        &self,
+        span: ByteSpan,
+    ) -> Option<SourceFragment<'source>>
+    {
+        self.source.fragment(span).ok()
+    }
 }
 
 /// Where a form stands in its tree's form list.

@@ -167,6 +167,7 @@ use gandr_surface_diagnostics::Verbosity;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Laid;
 use gandr_surface_dispatcher::Polled;
 use gandr_surface_dispatcher::Retirement;
@@ -630,7 +631,7 @@ pub struct Rechecked
     /// The path addresses the document's root imports write, in source order,
     /// as the judgement's parse of its text read them: what its next revision
     /// is laid out over.
-    pub written: Maybe<Vec<String>, reread::Absent>,
+    pub written: Maybe<Vec<ImportPath>, reread::Absent>,
     /// What the recheck cost.
     pub timing: Timing,
 }
@@ -657,7 +658,7 @@ impl Rechecked
         Maybe::Present(read) => matches!(self.laid, Maybe::Present(ref laid) if laid.written.as_slice() != read),
         Maybe::Absent(_) => true,
     })]
-    pub fn misread(&self) -> Maybe<&[String], misread::Absent>
+    pub fn misread(&self) -> Maybe<&[ImportPath], misread::Absent>
     {
         match (&self.laid, &self.written) {
             (&Maybe::Present(ref laid), &Maybe::Present(ref written))
@@ -955,7 +956,7 @@ pub fn lay(
     uri: &DocumentUri,
     text: SourceText<'_>,
     shadows: &dyn Shadows,
-    written: Maybe<&[String], written::Absent>,
+    written: Maybe<&[ImportPath], written::Absent>,
 ) -> Maybe<Laid, laid::Absent>
 {
     laid_out(uri, (classify(&uri.path()), text), shadows, written)
@@ -1406,7 +1407,7 @@ fn laid_out(
     uri: &DocumentUri,
     (root, text): (SourceRoot, SourceText<'_>),
     shadows: &dyn Shadows,
-    written: Maybe<&[String], written::Absent>,
+    written: Maybe<&[ImportPath], written::Absent>,
 ) -> Maybe<Laid, laid::Absent>
 {
     grammar().map_or(Maybe::Absent(laid::Absent::Alone), |grammar| {

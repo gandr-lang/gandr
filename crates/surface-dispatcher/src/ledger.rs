@@ -2152,7 +2152,8 @@ mod tests
         assert_eq!(form("world_declaration"), "world ‹identifier› ;");
         assert_eq!(
             form("import_declaration"),
-            "import \" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \" ⦅ as ‹identifier› ⦆? ;"
+            "import ⦅ \" ⦅ ‹escape_sequence› ‖ ‹string_fragment› ⦆* \" ‖ ‹identifier› ⦅ . \
+             ‹identifier› ⦆* ⦆ ⦅ as ‹identifier› ⦆? ;"
         );
         assert_eq!(form("binary_expression.or"), "EXPRESSION || EXPRESSION");
         assert_eq!(form("boolean.expression"), "true ‖ false");

@@ -540,10 +540,10 @@ impl Reading
         let before = readout.written.get(.. position).unwrap_or_default();
         Some(ImportAt {
             written,
-            ordinal: (written.address == Address::Path).then(|| {
+            ordinal: (written.address != Address::Scheme).then(|| {
                 before
                     .iter()
-                    .filter(|import| import.address == Address::Path)
+                    .filter(|import| import.address != Address::Scheme)
                     .count()
             }),
         })
