@@ -168,6 +168,7 @@ mod native;
 mod run;
 mod seam;
 mod transfer;
+mod world;
 
 pub use gandr_runtime_stencils::Fuel;
 pub use gandr_runtime_stencils::Status;

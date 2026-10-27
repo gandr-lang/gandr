@@ -1100,7 +1100,7 @@ crates/kernel-conversion-trace/README.md Glossary cc0350c3e408f96b
 crates/kernel-core/README.md Glossary af19150085c869b1
 crates/kernel-strata/README.md Passive 8c2b0a95ba7378ac
 crates/runtime-emitter/README.md Passive cd729b6735dc73f2
-crates/runtime-emitter/README.md Glossary d6708ff0e481bb93
+crates/runtime-emitter/README.md Glossary 7337e747ea1f1af1
 crates/runtime-stencils/README.md Passive cd729b6735dc73f2
 crates/runtime-stencils/README.md Tense dc52fe438a7b83d2
 crates/storage-artifact/README.md Passive a8aa6973b86d8037

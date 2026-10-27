@@ -156,7 +156,7 @@ fn histograms_count_repeated_origins_without_inventing_categories()
 }
 
 /// Every origin focusing records is named in the dump's head: the root of
-/// each control, memory and pure former, and a declaration's value.
+/// each control, memory, world and pure former, and a declaration's value.
 #[test]
 fn dumps_name_every_origin()
 {
@@ -166,6 +166,8 @@ fn dumps_name_every_origin()
     use gandr_core_term::effect::EffectSig;
     use gandr_core_term::memory::HoldGrade;
     use gandr_core_term::memory::MemoryForm;
+    use gandr_core_term::world::World;
+    use gandr_core_term::world::WorldForm;
 
     let mut core = CoreArena::new();
     let unit = core.value_unit();
@@ -213,11 +215,15 @@ fn dumps_name_every_origin()
         body: returned,
         grade: HoldGrade::Many,
     });
+    let migrated = core.computation_world(WorldForm::Migrate {
+        world: World::Host,
+        body: returned,
+    });
     let mut arena = CommandArena::new();
     let mut provenance = Provenance::new();
     let mut heads: alloc::vec::Vec<alloc::string::String> = [
         performed, handled, exercised, scoped, resumed, abandoned, reset, shifted, with, returned,
-        forced, fixed, lambda, split, projected, folded, bound, held,
+        forced, fixed, lambda, split, projected, folded, bound, held, migrated,
     ]
     .into_iter()
     .map(|computation| {
@@ -252,6 +258,7 @@ fn dumps_name_every_origin()
         "root [list-fold]",
         "root [bind]",
         "root [memory]",
+        "root [world]",
         "root [top-value]",
     ]);
 }

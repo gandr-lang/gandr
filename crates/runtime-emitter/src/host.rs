@@ -54,11 +54,13 @@
 
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
+use alloc::collections::btree_map::Entry;
 
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::CommandId;
 use gandr_core_sequent::CommandNode;
 use gandr_core_sequent::ConstructorTag;
+use gandr_core_sequent::Definitions;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::Store;
@@ -105,6 +107,8 @@ use crate::lower::Reified;
 use crate::lower::Slot;
 use crate::lower::Window;
 use crate::lower::integer_word;
+use crate::lower::lower_suspended;
+use crate::run::Tier;
 use crate::seam::HostRequest;
 use crate::seam::HostValues;
 use crate::seam::Offer;
@@ -116,6 +120,7 @@ use crate::transfer::Tables;
 use crate::transfer::TransferRefusal;
 use crate::transfer::owned;
 use crate::transfer::transfer;
+use crate::world::migrate;
 
 /// A view's state: no eliminator has run.
 const OPEN: usize = 0;
@@ -203,6 +208,19 @@ impl Codes<'_>
             Self::Executor(program, _) => program.stub(stub),
         }
     }
+
+    /// The tier the code is for.
+    ///
+    /// # Specification
+    /// trivial.
+    pub const fn tier(self) -> Tier
+    {
+        match self {
+            #[cfg(gandr_patcher)]
+            Self::Native { .. } => Tier::Native,
+            Self::Executor(..) => Tier::Executor,
+        }
+    }
 }
 
 /// One run's host state: the function's callees, handlers and frame
@@ -234,6 +252,10 @@ pub struct Calls<'run, 'host>
     sites: &'run Sites<'run>,
     /// The commands the function was lowered from.
     arena: &'run CommandArena,
+    /// The constants' definitions, which a migration's body is lowered over.
+    definitions: &'run Definitions,
+    /// Each migration's body this run has lowered, by its command.
+    migrations: BTreeMap<CommandId, Lowered>,
     /// The caller's store.
     store: &'run mut Store,
     /// The objects already moved into the store.
@@ -308,10 +330,14 @@ pub enum Refused
     Reply(HeapValueId),
     /// A payload could not be moved into the store.
     Transfer(TransferRefusal),
+    /// This migration's body ran at its world to no value, or a value it took
+    /// or answered did not cross.
+    Migration(CommandId),
 }
 
-/// The parts a run's host state holds: the function lowered from `arena`,
-/// its code, its closure sites, the caller's store and the host.
+/// The parts a run's host state holds: the function lowered from `arena`
+/// over `definitions`, its code, its closure sites, the caller's store and
+/// the host.
 ///
 /// # Specification
 /// trivial.
@@ -325,6 +351,8 @@ pub struct Parts<'run, 'host>
     pub sites: &'run Sites<'run>,
     /// The commands it was lowered from.
     pub arena: &'run CommandArena,
+    /// The constants' definitions it was lowered over.
+    pub definitions: &'run Definitions,
     /// The caller's store.
     pub store: &'run mut Store,
     /// The host unclaimed operations are offered to, if any.
@@ -346,6 +374,7 @@ impl<'run, 'host> Calls<'run, 'host>
             codes,
             sites,
             arena,
+            definitions,
             store,
             offer,
         } = parts;
@@ -363,6 +392,8 @@ impl<'run, 'host> Calls<'run, 'host>
             codes,
             sites,
             arena,
+            definitions,
+            migrations: BTreeMap::new(),
             store,
             moved: Moved::new(),
             offer,
@@ -426,7 +457,7 @@ impl<'run, 'host> Calls<'run, 'host>
     {
         Laying {
             store: self.store,
-            heads: &self.heads,
+            heads: &mut self.heads,
             code_table: self.code_table,
             literals: &mut self.literals,
             moved: &self.moved,
@@ -507,8 +538,9 @@ impl<'run, 'host> Calls<'run, 'host>
     ///
     /// # Errors
     /// [`Refusal::Operands`] for an operand the callee does not take, an
-    /// evaluation the prelude refuses or a control operation the run cannot
-    /// answer; [`Refusal::Heap`] or [`Refusal::Frames`] past a region's limit.
+    /// evaluation the prelude refuses, a control operation the run cannot
+    /// answer or a migration that answers nothing; [`Refusal::Heap`] or
+    /// [`Refusal::Frames`] past a region's limit.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — the named programs halt alike on both tiers with the
@@ -585,6 +617,7 @@ impl<'run, 'host> Calls<'run, 'host>
             Callee::Ended { unwind, .. } => self.ended(runtime, unwind, first, second),
             Callee::Reify(ref shape) => self.reify(runtime, shape),
             Callee::Decompose => self.decompose(runtime, first),
+            Callee::Migrate { body, .. } => self.migrated(runtime, body, first),
             Callee::Undefined(_) | Callee::Cyclic(_) => Err(Refusal::Operands),
         };
         if matches!(answered, Err(Refusal::Operands)) && self.refused.is_none() {
@@ -595,6 +628,7 @@ impl<'run, 'host> Calls<'run, 'host>
                 Callee::Ended { at, .. } => Some(Refused::Unended(at)),
                 Callee::Undefined(constant) => Some(Refused::UndefinedConstant(constant)),
                 Callee::Cyclic(constant) => Some(Refused::CyclicConstant(constant)),
+                Callee::Migrate { at, .. } => Some(Refused::Migration(at)),
                 Callee::Primitive(_)
                 | Callee::Abandon(_)
                 | Callee::Hold
@@ -772,20 +806,14 @@ impl<'run, 'host> Calls<'run, 'host>
         )
         .decompose()
         .map_err(|_cyclic| Refusal::Operands)?;
-        let web = ConstructorTag::Web(pieces);
-        let row = if let Some(row) = self.heads.iter().position(|head| *head == web) {
-            row
-        }
-        else {
-            self.heads.push(web);
-            self.heads.len().saturating_sub(1)
-        };
+        let family =
+            joined(&mut self.heads, &ConstructorTag::Web(pieces)).ok_or(Refusal::Operands)?;
         let width = |_overflow| Refusal::Operands;
         let made = allocate(runtime, &[Header::new(
             Kind::Head,
             Tag::try_from(0_usize).map_err(width)?,
             Arity::try_from(0_usize).map_err(width)?,
-            Family::try_from(row).map_err(width)?,
+            family,
         )
         .word()])?;
         let sites = self.sites;
@@ -1014,7 +1042,7 @@ impl<'run, 'host> Calls<'run, 'host>
             Offered::Resume(reply) => {
                 let mut laying = Laying {
                     store: self.store,
-                    heads: &self.heads,
+                    heads: &mut self.heads,
                     code_table: self.code_table,
                     literals: &mut self.literals,
                     moved: &self.moved,
@@ -1033,6 +1061,60 @@ impl<'run, 'host> Calls<'run, 'host>
                 Err(Refusal::Operands)
             },
             Offered::Decline => Err(Refusal::Operands),
+        }
+    }
+
+    /// Run the migration's body `body` at its world, lowered at the run's
+    /// first migration to it, closed over the captures the tuple `captures`
+    /// holds, on this run's tier and the fuel it has left, and lay its answer
+    /// out on the run's heap.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// [`Refusal::Operands`] when the tuple cannot be moved into the store —
+    /// recorded — the body does not lower, the migration answers nothing, or
+    /// its answer cannot be laid out; [`Refusal::Heap`] past the heap's limit.
+    fn migrated(
+        &mut self,
+        runtime: &mut Runtime,
+        body: CommandId,
+        captures: Word,
+    ) -> Result<Word, Refusal>
+    {
+        // SAFETY: the tuple is a value of this run, whose heap and constants
+        // are live while its host call runs.
+        let moved = match unsafe { self.moved(captures) } {
+            Ok(moved) => moved,
+            Err(refusal) => {
+                self.refused = Some(Refused::Transfer(refusal));
+                return Err(Refusal::Operands);
+            },
+        };
+        let Some(&HeapValue::Constructed { ref fields, .. }) = self.store.value(moved)
+        else {
+            return Err(Refusal::Operands);
+        };
+        let fields = fields.to_vec();
+        let lowered = match self.migrations.entry(body) {
+            Entry::Occupied(lowered) => lowered.into_mut(),
+            Entry::Vacant(vacant) => vacant.insert(
+                lower_suspended(self.arena, self.definitions, body)
+                    .map_err(|_form| Refusal::Operands)?,
+            ),
+        };
+        let answer = migrate(
+            self.codes.tier(),
+            (self.arena, self.definitions, lowered),
+            runtime.fuel(),
+            (self.store, &fields),
+        )
+        .ok_or(Refusal::Operands)?;
+        match self.laid_out(runtime, core::slice::from_ref(&answer)) {
+            Ok(words) => words.first().copied().ok_or(Refusal::Operands),
+            Err(Unlaid::Value(_)) => Err(Refusal::Operands),
+            Err(Unlaid::Run(refusal)) => Err(refusal),
         }
     }
 
@@ -1492,8 +1574,9 @@ struct Laying<'laying>
 {
     /// The caller's store.
     store: &'laying Store,
-    /// The function's heads, by family.
-    heads: &'laying [ConstructorTag],
+    /// The run's heads, by family, which a head the value holds and the
+    /// table lacks joins.
+    heads: &'laying mut Vec<ConstructorTag>,
     /// The function's codes, by family.
     code_table: &'laying [gandr_core_term::ValueId],
     /// The run's literals, by family, which a literal the reply holds joins.
@@ -1516,26 +1599,29 @@ impl Laying<'_>
     ///   counted one owner per holder, as the run lays out its own: an integer
     ///   a word holds as an integer object, another literal as an object naming
     ///   its new row in the run's literal table, a tuple, an injection or a
-    ///   datatype's constructor over its fields, a head the function's table
-    ///   holds as a head object, an opaque constant as an opaque object.
+    ///   datatype's constructor over its fields, any other head as a head
+    ///   object naming its row in the run's head table, which it joins when the
+    ///   function's lacks it, an opaque constant as an opaque object.
     /// - executable: none — the objects are memory no predicate reads.
     ///
     /// # Errors
-    /// [`Unlaid::Value`] naming a value the store does not hold, a head the
-    /// function's table lacks, or code, a capability, a closure or a stack
-    /// the run did not move out; [`Unlaid::Run`] past the heap's limit.
+    /// [`Unlaid::Value`] naming a value the store does not hold, or code, a
+    /// capability, a closure or a stack the run did not move out;
+    /// [`Unlaid::Run`] past the heap's limit.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — replies of an integer, the unit, the payload itself,
     ///   a value the store does not hold and a pair holding one value twice,
     ///   and two captures bound to one value, each continuing or stopping the
     ///   run as it states; a second holder left uncounted frees the value while
-    ///   it is read.
+    ///   it is read. A record a migration answers, which the caller's function
+    ///   never builds, is laid out under the head it joins to the table.
     /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
     /// - witness: `tests::seam::a_host_reply_sharing_a_field_counts_each_holder_3170`
     /// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
+    /// - witness: `tests::world::a_record_built_only_at_the_world_comes_back`
     fn laid(
         &mut self,
         runtime: &mut Runtime,
@@ -1664,12 +1750,8 @@ impl Laying<'_>
                     | ConstructorTag::Recorded(_)
                     | ConstructorTag::Dialogue(_)
                     | ConstructorTag::Web(_) => {
-                        let row = self
-                            .heads
-                            .iter()
-                            .position(|head| head == tag)
-                            .ok_or(Unlaid::Value(id))?;
-                        (Kind::Head, 0, Family::try_from(row).map_err(width)?)
+                        let family = joined(self.heads, tag).ok_or(Unlaid::Value(id))?;
+                        (Kind::Head, 0, family)
                     },
                 };
                 let mut words = Vec::with_capacity(fields.len().saturating_add(1));
@@ -1706,6 +1788,26 @@ impl Laying<'_>
         };
         allocate(runtime, &words).map_err(Unlaid::Run)
     }
+}
+
+/// The family of the head `tag` in the run's table `heads`, which it joins as
+/// a new row when the table lacks it; nothing past the family field's width.
+///
+/// # Specification
+/// trivial.
+fn joined(
+    heads: &mut Vec<ConstructorTag>,
+    tag: &ConstructorTag,
+) -> Option<Family>
+{
+    let row = heads
+        .iter()
+        .position(|head| head == tag)
+        .unwrap_or_else(|| {
+            heads.push(tag.clone());
+            heads.len().saturating_sub(1)
+        });
+    Family::try_from(row).ok()
 }
 
 /// Allocate a stack of `frames`, bottom first, captured from the region

@@ -160,7 +160,7 @@ flowchart LR
   end
   memory -->|hold: a cell| emitter
   emitter -->|moves out| sequent
-  world -.->|mobile, Open| sequent
+  world -->|mobile, Open| sequent
   emitter -->|a Net operation| net
   net -.->|a commit's chunks| values
   sequent -->|crossing::commit| values

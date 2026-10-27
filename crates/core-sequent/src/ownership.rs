@@ -495,7 +495,8 @@ impl Ownership
                 | CommandNode::Reset { .. }
                 | CommandNode::Shift { .. }
                 | CommandNode::Cut { .. }
-                | CommandNode::Memory { .. } => {},
+                | CommandNode::Memory { .. }
+                | CommandNode::World { .. } => {},
             },
         }
         Ok(())

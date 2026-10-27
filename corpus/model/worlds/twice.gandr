@@ -1,0 +1,35 @@
+// Two migrations to one world, a value held at the seat and read there again.
+//
+// It witnesses a capture crossing in: the second migration's body reads what
+// the first held at the seat.
+//
+// The first migration holds a value at the seat and brings its handle back.
+// `leta` opens the handle at the operator's world, and the second migration
+// reads what it binds at the seat. In one process a handle is its content, and
+// each crossing, in or back, is a commit then a deref.
+//
+// - see: Murphy, Crary and Harper, "Type-Safe Distributed Programming with
+//   ML5", TGC 2007, § 3
+// - see: Rainey et al., "LoCalMem", PACMPL 10 (ICFP 2026), § 5
+// - see: `open.gandr` — what crosses back from one migration
+
+// The operator's and the seat's worlds, each declaration's entry.
+import "./seat-and-operator.gandr";
+
+/// The seat holds an integer, and a second migration doubles it there.
+@[ entry((operator, seat, seat)), runs("42") ]
+def twice() -> Integer {
+  run held : Integer at seat <- migrate [seat] { (hold 21) };
+  leta n = held;
+  migrate [seat] { pure (n * 2) }
+}
+
+/// The seat holds a record, and a second migration reads it there again.
+@[ entry((operator, seat, seat)), runs("#{.done = 3, .left = 4}") ]
+def reread() -> #{done : Integer, left : Integer} {
+  run held : #{done : Integer, left : Integer} at seat <- migrate [seat] {
+    (hold #{done = 3, left = 4})
+  };
+  leta counts = held;
+  migrate [seat] { pure counts }
+}

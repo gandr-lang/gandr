@@ -39,6 +39,7 @@ Copy-and-patch emission of the L machine's lowered commands: native code under a
 - `evaluate_with_host`, `evaluate_on_with_host`, `HostHandler`, `HostRequest`, `HostReply`, `HostOutcome`, `HostValues`: a run whose unhandled operations are offered to the caller, who answers, declines or aborts each.
 - `evaluate_closed_on`, `lower_suspended`: a command binding one covariable run over the values a store environment binds, laid out on the run's heap first: a cut's writer run apart from its reader's heap.
 - `crossing::{commit, deref, profile, CrossingRefusal, Uncrossable}`: a store's value committed to the value plane and read back into another store, fresh there: a literal or a constructor over crossing fields crosses, sharing unfolded, and a thunk, a closure, a stack, a code, a capability, an opaque constant or a session's record is refused by name.
+- World forms run: `hold v` delivers `v`, `leta` binds the handle's content, and `migrate [w] { t }` runs `t` on a thread and over a store of its own, its captures crossed in and its answer crossed back by `crossing` through the one chunk store the process holds; a value that does not cross, or a body that answers nothing, is `Declined::Migration`.
 - `Policy` and `POLICY_VARIABLE`: `GANDR_NATIVE=always` (the default) emits on first run, `never` takes the executor, `cached` serves only what the cache holds.
 - `PATCHER`: whether this host emits native code.
 - `Fuel` and `Status`, re-exported: the code-word jumps a run may take, and why it returned.
@@ -60,7 +61,7 @@ GANDR_NATIVE=never cargo run -p gandr-lang -- test corpus/model
 
 ## Where the detail lives
 
-`src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/fuse.rs` the superinstructions, their replay and their cost; `src/run.rs` the regions, their bounds, the value representation against the LAM and the exclusivity conjecture's witnesses; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `src/crossing.rs` the value plane's tag table, the sharing a crossing unfolds and what it refuses; `build.rs` the stencil table and every refusal it makes.
+`src/lib.rs` states the tiers, the policy, the patchers, the runtime support, the retired interpreter and compile host and the call-by-name thunks, each with its alternatives and reversal; `src/lower.rs` the linear form; `src/fuse.rs` the superinstructions, their replay and their cost; `src/run.rs` the regions, their bounds, the value representation against the LAM and the exclusivity conjecture's witnesses; `src/seam.rs` the host seam; `src/native.rs` and its `table`, `memory`, `aarch64` and `x86_64` modules emission, regions and patching; `src/transfer.rs` how an outcome reaches the store; `src/crossing.rs` the value plane's tag table, the sharing a crossing unfolds and what it refuses; `src/world.rs` a migration's far run, the process's chunk store and what a migration does not yet do; `build.rs` the stencil table and every refusal it makes.
 
 ## Mutation backlog
 

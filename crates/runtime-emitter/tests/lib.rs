@@ -25,3 +25,5 @@ mod seam;
 #[cfg(test)]
 #[path = "../../runtime-stencils/tests/support.rs"]
 mod support;
+#[cfg(test)]
+mod world;

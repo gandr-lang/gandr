@@ -23,6 +23,8 @@ use gandr_core_term::Zone;
 use gandr_core_term::memory::AccessMode;
 use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
+use gandr_core_term::world::World;
+use gandr_core_term::world::WorldForm;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FixpointEvidence;
 use gandr_kernel_term::Literal;
@@ -304,6 +306,7 @@ fn render<'arena>(
     | (Some(&CommandNode::Abandon { stack, continuation }), &[Piece::Text(Token("abandon(")), Piece::Producer(s, sd), Piece::Text(Token("; ")), Piece::Consumer(c, cd), Piece::Text(Token(")"))]) => stack == s && continuation == c && sd == depth && cd == depth,
     | (Some(&CommandNode::Reset { body, continuation } | &CommandNode::Shift { body, continuation }), pieces) => pieces.iter().any(|piece| matches!(*piece, Piece::Command(found, under) if found == body && under == depth)) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | (Some(&CommandNode::Memory { ref form, continuation }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.computations()) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.values()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
+    | (Some(&CommandNode::World { ref form, continuation }), pieces) => pieces.iter().filter_map(|piece| match *piece { Piece::Command(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.scoped().map(|(body, _)| body)) && pieces.iter().filter_map(|piece| match *piece { Piece::Producer(id, under) if under == depth => Some(id), Piece::Name(_) | Piece::Text(_) | Piece::Owned(_) | Piece::Command(..) | Piece::Producer(..) | Piece::Consumer(..) => None }).eq(form.values()) && pieces.iter().any(|piece| matches!(*piece, Piece::Consumer(found, under) if found == continuation && under == depth)),
     | _ => false,
 })]
 fn command(
@@ -487,6 +490,38 @@ fn command(
                 ],
                 MemoryForm::Abort { view } => alloc::vec![text!("abort("), linear(view)],
                 MemoryForm::Consume { held } => alloc::vec![text!("consume("), linear(held)],
+            };
+            pieces.extend([
+                text!("; "),
+                Piece::Consumer(continuation, depth),
+                text!(")"),
+            ]);
+            pieces
+        },
+        CommandNode::World {
+            ref form,
+            continuation,
+        } => {
+            let mut pieces = match *form {
+                WorldForm::Hold { value } => {
+                    alloc::vec![text!("hold_w("), Piece::Producer(value, depth),]
+                },
+                WorldForm::Leta { value, body } => alloc::vec![
+                    text!("leta("),
+                    Piece::Producer(value, depth),
+                    text!("; (x; α) ⇒ "),
+                    Piece::Command(body, depth),
+                ],
+                WorldForm::Migrate { world, body } => alloc::vec![
+                    Piece::Owned(match world {
+                        World::Host => String::from("migrate[host]("),
+                        World::Declared(constant) => {
+                            alloc::format!("migrate[c{}](", usize::from(constant))
+                        },
+                    }),
+                    text!("α ⇒ "),
+                    Piece::Command(body, depth),
+                ],
             };
             pieces.extend([
                 text!("; "),

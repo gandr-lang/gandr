@@ -1246,6 +1246,18 @@ fn rebuild_command(
                 continuation: fresh.consumer()?,
             }
         },
+        CommandNode::World { ref form, .. } => {
+            let form = form.try_map(
+                ChildOrder::Forward,
+                fresh,
+                |fresh, _| fresh.producer(),
+                |fresh, _| fresh.command(),
+            )?;
+            CommandNode::World {
+                form,
+                continuation: fresh.consumer()?,
+            }
+        },
     })
 }
 

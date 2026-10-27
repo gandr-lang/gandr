@@ -166,6 +166,7 @@ use gandr_core_sequent::Introduces;
 use gandr_core_sequent::NodeAddress;
 use gandr_core_sequent::NodeCount;
 use gandr_core_sequent::Ownership;
+use gandr_core_sequent::ProducerArity;
 use gandr_core_sequent::ProducerId;
 use gandr_core_sequent::ProducerNode;
 use gandr_core_sequent::Route;
@@ -183,6 +184,7 @@ use gandr_core_term::memory::MemoryForm;
 use gandr_core_term::memory::Place;
 use gandr_core_term::primitive::Primitive;
 use gandr_core_term::support::Indices;
+use gandr_core_term::world::WorldForm;
 use gandr_kernel_term::Component;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -934,6 +936,20 @@ pub enum Callee
     Reify(Vec<Reified>),
     /// Decompose a dialogue: answers its web, a head the run's table joins.
     Decompose,
+    /// Run a migration's body at its world: a run of its own, on a thread and
+    /// over a store of its own, closed over the captures the argument's tuple
+    /// holds, innermost first, each crossed in by content; answers the body's
+    /// answer crossed back.
+    Migrate
+    {
+        /// The migration, which a run is declined at when its body does not
+        /// lower or runs to no value, or a value it takes or answers does not
+        /// cross.
+        at: CommandId,
+        /// The body, a command binding one covariable, which the host lowers
+        /// to run closed over its captures when the migration first runs.
+        body: CommandId,
+    },
     /// Stick at a constant the definitions do not hold.
     Undefined(ConstantIndex),
     /// Stick at a constant whose unfolding needs its own value.
@@ -2319,6 +2335,10 @@ impl Lowering<'_>
                 ref form,
                 continuation,
             } => self.memory(id, form, continuation, scope)?,
+            CommandNode::World {
+                ref form,
+                continuation,
+            } => self.world(id, form, continuation, scope)?,
         }
         Ok(())
     }
@@ -2482,6 +2502,88 @@ impl Lowering<'_>
                 ));
                 self.tasks
                     .push(Task::Emit(StencilId::Var, cell.operand(), Operand::Unused));
+            },
+        }
+        Ok(())
+    }
+
+    /// Lower the world form `form` of the command `id` with its continuation
+    /// in `scope`. In one process a handle is its content: a hold delivers its
+    /// value, and a leta binds the handle's value as a hold binds its cell. A
+    /// migration's body runs at its world, lowered apart by the host to run
+    /// closed; here its captures are gathered, innermost first, into the tuple
+    /// the host call takes, each capture's owner passing to the tuple as a
+    /// closure's captures pass to the closure.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Errors
+    /// As [`Self::step`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a value held, opened by a leta and answered twice
+    ///   reads back alike in place and inside a migration on both tiers; a leta
+    ///   bound to other than its handle, or a capture left out of the tuple,
+    ///   changes the answer or declines the run.
+    /// - witness: `tests::world::a_migration_crosses_its_capture_in_and_its_answer_back`
+    fn world(
+        &mut self,
+        id: CommandId,
+        form: &WorldForm<ProducerId, CommandId>,
+        continuation: ConsumerId,
+        scope: Scope,
+    ) -> Result<(), Form>
+    {
+        match *form {
+            WorldForm::Hold { value } => {
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(Task::Producer(value, scope));
+            },
+            WorldForm::Leta { value, body } => {
+                let (bound, slot) = self.bind(scope, Binding::Producer);
+                // reason: as a hold's, a leta's body falls through to the loaded
+                // continuation, the body's return when that is where the
+                // continuation delivers.
+                let falls = match self.returns_through(continuation, scope)? {
+                    Some(_) => Binding::Returning,
+                    None => Binding::FallThrough,
+                };
+                let (inner, _) = self.bind(bound, falls);
+                self.tasks.push(Task::Command(body, inner));
+                self.tasks
+                    .push(Task::Emit(StencilId::Bind, slot.operand(), Operand::Unused));
+                self.tasks.push(Task::Producer(value, scope));
+                self.tasks.push(Task::Load(continuation, scope));
+            },
+            WorldForm::Migrate { body, .. } => {
+                let captures = self.captured(Suspension::Thunk(body), scope)?;
+                let call = self.call(&Callee::Migrate { at: id, body }, Immediate::from(1_u32))?;
+                let header =
+                    self.header(&ConstructorTag::Tuple(ProducerArity::from(captures.len())))?;
+                let (low, family) = header_operands(header);
+                let gather = match captures.len() {
+                    0 => {
+                        let at = self.function.object(&[header.word()]);
+                        Task::Emit(StencilId::Const, Operand::Data(at), Operand::Unused)
+                    },
+                    1 => Task::Emit(StencilId::Ctor1, low, family),
+                    2 => Task::Emit(StencilId::Ctor2, low, family),
+                    3 => Task::Emit(StencilId::Ctor3, low, family),
+                    _ => Task::Emit(StencilId::CtorN, low, family),
+                };
+                self.tasks.push(Task::Deliver(continuation, scope));
+                self.tasks.push(call);
+                self.tasks.push(PUSH);
+                self.tasks.push(gather);
+                for &capture in captures.iter().rev() {
+                    self.tasks.push(PUSH);
+                    self.tasks.push(Task::Emit(
+                        StencilId::Var,
+                        capture.operand(),
+                        Operand::Unused,
+                    ));
+                }
             },
         }
         Ok(())
@@ -2805,6 +2907,7 @@ impl Lowering<'_>
                 consumer,
             } => (polarity, producer, consumer),
             CommandNode::Memory { .. }
+            | CommandNode::World { .. }
             | CommandNode::Perform { .. }
             | CommandNode::Handle { .. }
             | CommandNode::Resume { .. }

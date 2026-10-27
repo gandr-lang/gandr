@@ -272,6 +272,8 @@ pub enum FocusOrigin
     TopValue,
     /// A memory form: a hold, an access or one of a view's eliminators.
     Memory,
+    /// A world form: a hold, a leta or a migration.
+    World,
 }
 
 /// The provenance table: the [`FocusOrigin`] of every command focusing
@@ -425,9 +427,6 @@ pub enum FocusRefusal
     /// A session action: the command IL carries no channels, so a send, a
     /// receive, a choice, a close or a fork has no image in it.
     Session(ComputationId),
-    /// A world form: the command IL runs at one world, so a hold, an open or
-    /// a migration has no image in it.
-    World(ComputationId),
     /// A computation standing where a value is read, before the checker's
     /// elaboration replaced it: only an elaborated body has a command-IL
     /// image, as only one has a kernel image.
@@ -471,7 +470,6 @@ impl fmt::Display for FocusRefusal
                 "a computation standing as a value before elaboration has no command-IL producer",
             ),
             Self::Session(_) => f.write_str("a session action has no image in the command IL"),
-            Self::World(_) => f.write_str("a world form has no image in the command IL"),
         }
     }
 }
@@ -1801,6 +1799,18 @@ impl<'run> Focusing<'run>
                 },
                 FocusOrigin::Memory,
             ),
+            Computation::World(ref form) => (
+                crate::il::CommandNode::World {
+                    form: form.try_map(
+                        gandr_core_term::session::ChildOrder::Reverse,
+                        self,
+                        |focus, _| focus.pop_producer(),
+                        |focus, _| focus.pop_command(),
+                    )?,
+                    continuation,
+                },
+                FocusOrigin::World,
+            ),
             Computation::With(ref components) => {
                 let start = self
                     .commands
@@ -1846,8 +1856,7 @@ impl<'run> Focusing<'run>
             | Computation::ListFold { .. }
             | Computation::ListCase { .. }
             | Computation::Project(..)
-            | Computation::Session(_)
-            | Computation::World(_) => return Err(FocusRefusal::TranslationInvariant),
+            | Computation::Session(_) => return Err(FocusRefusal::TranslationInvariant),
         };
         let command = self.arena.mint_command(node)?;
         self.provenance.record(command, origin);
@@ -2216,7 +2225,6 @@ impl<'run> Focusing<'run>
             | None => ret == Err(FocusRefusal::DanglingComputation(id)),
             | Some(&Computation::Mark { .. }) => ret == Err(FocusRefusal::IncompleteComputation(id)),
             | Some(&Computation::Session(_)) => ret == Err(FocusRefusal::Session(id)),
-            | Some(&Computation::World(_)) => ret == Err(FocusRefusal::World(id)),
             | Some(_) => ret.is_err() || self.tasks.len() > work,
         },
     )]
@@ -2564,7 +2572,22 @@ impl<'run> Focusing<'run>
                 return Err(FocusRefusal::IncompleteComputation(id));
             },
             Computation::Session(_) => return Err(FocusRefusal::Session(id)),
-            Computation::World(_) => return Err(FocusRefusal::World(id)),
+            Computation::World(ref form) => {
+                self.tasks.push(Task::Control {
+                    source: id,
+                    continuation,
+                });
+                for (body, _) in form.scoped() {
+                    let return_point = self.innermost_covariable()?;
+                    self.tasks.push(Task::Computation {
+                        computation: body,
+                        continuation: return_point,
+                    });
+                }
+                for value in form.values() {
+                    self.tasks.push(Task::Value(value));
+                }
+            },
             Computation::Fixpoint { body, evidence } => {
                 let frame = self.arena.mint_consumer(ConsumerNode::Destructor {
                     tag: DestructorTag::Force,
