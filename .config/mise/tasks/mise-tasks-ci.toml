@@ -2454,12 +2454,13 @@ snapshot() {
     }" --jq '.data.repository.pullRequest | [.state, .mergeStateStatus, .isInMergeQueue, (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.headCommit.oid // "-"), ((.timelineItems.nodes[0].reason // "") | if . == "" then "-" else ascii_downcase end), any(.labels.nodes[]; .name == "landing"), .headRefOid] | @tsv'
 }
 # The first failed required check on the head of `$1`, this pull request by
-# default, if any. A cancelled check is red unless a later run of its
-# workflow started on the same head: two pull_request events for one head
-# start two runs, the concurrency group cancels the older, and its cancelled
-# checks stay listed until the newer run's jobs start.
+# default, if any. A cancelled check is red unless another run of its
+# workflow on the same head was not cancelled (`superseded.jq`, #2829): two
+# pull_request events for one head start two runs in the same second, the
+# concurrency group cancels one, whichever id it carries, and its cancelled
+# checks stay listed until the surviving run's jobs start.
 red_check() {
-  local status=0 checks red link run newer
+  local status=0 checks red link run superseded
   checks=$(gh pr checks "${1:-$number}" -R "$repo" --required --json bucket,name,link) || status=$?
   # 1: some check failed; 8: some check pending.
   if [[ "$status" != 0 && "$status" != 1 && "$status" != 8 ]]; then return "$status"; fi
@@ -2467,13 +2468,14 @@ red_check() {
     [[ -n "$red" ]] || continue
     if [[ "$link" =~ /actions/runs/([0-9]+)/ ]]; then
       run=${BASH_REMATCH[1]}
-      newer=$(gh api "repos/$repo/actions/runs/$run" --jq '"\(.head_sha)\t\(.workflow_id)\t\(.conclusion)"' |
+      superseded=$(gh api "repos/$repo/actions/runs/$run" --jq '"\(.head_sha)\t\(.workflow_id)\t\(.conclusion)"' |
         while IFS=$'\t' read -r sha workflow conclusion; do
           [[ "$conclusion" == cancelled ]] || continue
           gh api "repos/$repo/actions/workflows/$workflow/runs?head_sha=$sha&per_page=100" \
-            --jq "[.workflow_runs[] | select(.id > $run)] | length"
-        done) || newer=
-      if [[ "${newer:-0}" != 0 ]]; then continue; fi
+            --jq '[.workflow_runs[] | {id, conclusion}]' \
+            | jq -c --argjson run "$run" -f "$pr_stack_dir/superseded.jq"
+        done) || superseded=
+      if [[ "$superseded" == true ]]; then continue; fi
     fi
     printf '%s' "$red"
     return 0

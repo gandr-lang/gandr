@@ -1207,8 +1207,9 @@ FROM reference;"); keys read $resolved"
 # The stacking rule's readings (#1264): `chain.jq` reads a pull request's
 # stack from the open pull requests, `top.jq` the top a new one stacks on,
 # `state.jq` a member's readiness (#2783), `dirty.jq` whether `pr:watch`'s
-# `DIRTY` reading is a conflict (#2854), `prefix.jq` what a landing queues
-# (#1988), and `sweep.jq` which worktrees `wt:sweep` removes. Each case in
+# `DIRTY` reading is a conflict (#2854), `superseded.jq` whether a cancelled
+# check's run was superseded on its head (#2829), `prefix.jq` what a landing
+# queues (#1988), and `sweep.jq` which worktrees `wt:sweep` removes. Each case in
 # `.config/pr-stack/cases.json` names its program, its arguments and input,
 # and the output it must give; `prefix.jq`'s and `state.jq`'s output is its
 # raw line, the others' compact JSON.
