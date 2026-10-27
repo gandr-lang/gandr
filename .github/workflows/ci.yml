@@ -26,7 +26,7 @@
 # - A merge group starts from the newest build it can find: the latest
 #   successful queue run's when that is newer than main's state, else main's.
 # - No timing budget fails a run, since a failed budget would halt landing.
-#   The nightly `lane-budget` reports drift.
+#   The nightly `reports` job's lane budget reports drift.
 # - Heavy jobs run in the CI image, which every job extracts whole before its
 #   first step; its payload stays what most jobs run (ci.Dockerfile).
 name: CI
