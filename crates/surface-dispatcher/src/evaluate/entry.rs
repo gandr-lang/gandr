@@ -4,7 +4,8 @@
 //!
 //! The run takes a host. An operation no handler of the run claims is offered
 //! to it: `Proc.exit` stops the run with its payload as the exit status,
-//! `Console.print` writes its line to the run's [`Console`], and every other
+//! `Console.print` writes its line to the run's [`Console`], a `Net`
+//! operation goes to the run's network when it has one, and every other
 //! operation is declined, so the run is stuck at it and reported as any stuck
 //! run is.
 
@@ -35,6 +36,7 @@ use gandr_runtime_emitter::HostReply;
 use gandr_runtime_emitter::HostRequest;
 use gandr_runtime_emitter::HostValues;
 use gandr_runtime_emitter::evaluate_with_host;
+use gandr_runtime_net::Net;
 use gandr_surface_lowering::Arguments;
 use gandr_surface_lowering::Container;
 use gandr_surface_lowering::ENTRY;
@@ -51,6 +53,7 @@ use super::RUN_BUDGET;
 use super::Start;
 use super::Unfinished;
 use super::console;
+use super::net;
 
 /// The operation of [`PROC`] that ends the process.
 const EXIT: &str = "exit";
@@ -147,12 +150,14 @@ pub enum Entered<'source>
 }
 
 /// The host of an entry run: `Proc.exit` ends it, `Console.print` writes to
-/// its console, and nothing else is served.
-#[repr(transparent)]
-struct EntryHost<'console>
+/// its console, a `Net` operation goes to its network when it has one, and
+/// nothing else is served.
+struct EntryHost<'host>
 {
     /// Where the run's printed lines go.
-    console: &'console mut dyn Console,
+    console: &'host mut dyn Console,
+    /// The run's network, when it has one.
+    net: Option<&'host mut Net>,
 }
 
 impl HostHandler for EntryHost<'_>
@@ -160,8 +165,9 @@ impl HostHandler for EntryHost<'_>
     type Abort = ExitStatus;
 
     /// Stop at `Proc.exit` with its integer payload as the status; write a
-    /// `Console.print` line to the console and resume with the unit; decline
-    /// every other operation.
+    /// `Console.print` line to the console and resume with the unit; serve a
+    /// `Net` operation on the network, when the run has one; decline every
+    /// other operation.
     ///
     /// # Specification
     /// trivial.
@@ -172,6 +178,11 @@ impl HostHandler for EntryHost<'_>
     ) -> HostReply<Self::Abort>
     {
         if let Some(reply) = console::served(self.console, request, values) {
+            return reply;
+        }
+        if let Some(network) = self.net.as_deref_mut()
+            && let Some(reply) = net::served(network, request, values)
+        {
             return reply;
         }
         if request.signature.name().as_ref() != PROC || request.operation.as_ref() != EXIT {
@@ -199,17 +210,19 @@ impl<'source> Program<'source>
         self.entry
     }
 
-    /// Run `entry` with `arguments`, under a host that serves `Proc.exit` and
-    /// writes each `Console.print` line to `console`.
+    /// Run `entry` with `arguments`, under a host that serves `Proc.exit`,
+    /// writes each `Console.print` line to `console`, and serves each `Net`
+    /// operation on `net` when it is given.
     ///
     /// # Specification
     /// - requires: nothing; an entry the program cannot run is an outcome.
     /// - ensures: [`Evaluation::Unrunnable`], as [`Self::evaluate`] decides it,
     ///   before any command runs. Otherwise the entry is forced, and, when it
     ///   reads them, applied to [`argument_list`] of `arguments`; each line it
-    ///   prints is handed to `console` in order as it runs; a run that performs
-    ///   `Proc.exit` with an integer, or returns an integer, is
-    ///   [`Entered::Exited`] with that integer's low byte, one returning the
+    ///   prints is handed to `console` in order as it runs, and each `Net`
+    ///   operation it performs is served on `net`, or declined without one; a
+    ///   run that performs `Proc.exit` with an integer, or returns an integer,
+    ///   is [`Entered::Exited`] with that integer's low byte, one returning the
     ///   unit is [`Entered::Exited`] with zero, and any other end is
     ///   [`Entered::Ended`] with the evaluation [`Self::evaluate`] gives it,
     ///   [`Evaluation::Holed`] for a hole reached.
@@ -222,16 +235,19 @@ impl<'source> Program<'source>
     /// - hypothesis: L3 — an entry returning a code, one counting its
     ///   arguments, one exiting early through `Proc.exit`, one reaching a goal,
     ///   one reaching a hole after a call, one passing a hole a branch never
-    ///   reaches, and one printing two lines and returning the unit.
+    ///   reaches, one printing two lines and returning the unit, and one
+    ///   pinging an endpoint over the network and printing its answer.
     /// - witness: `evaluate::entry::tests::an_entry_runs_to_its_exit_status_1881`
     /// - witness: `evaluate::entry::tests::a_hole_reached_stops_the_entry_by_name_1881`
     /// - witness: `evaluate::entry::tests::an_entry_prints_through_its_console_2279`
+    /// - witness: `tests::run::a_script_pings_over_its_network_3186`
     #[inline]
     pub fn enter(
         &mut self,
         entry: Entry,
         arguments: &[String],
         console: &mut dyn Console,
+        net: Option<&mut Net>,
     ) -> Entered<'source>
     {
         let constant = entry.constant;
@@ -261,7 +277,7 @@ impl<'source> Program<'source>
             &self.definitions,
             command,
             (Fuel::from(RUN_BUDGET), &mut store),
-            &mut EntryHost { console },
+            &mut EntryHost { console, net },
         );
         match ran {
             Err(declined) => Entered::Ended(Evaluation::Unfinished(Unfinished::Declined(declined))),

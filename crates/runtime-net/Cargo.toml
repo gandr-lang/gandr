@@ -1,0 +1,31 @@
+[package]
+name = "gandr-runtime-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The host's network for the `Net` interface: streams to peers named by their keys, over QUIC through iroh"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "iroh", "network", "quic"]
+categories = ["network-programming"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# iroh dials and accepts; the mDNS lookup finds peers on the local network
+# when a binding asks for it; tokio runs the endpoint's thread. The pinned
+# anodized facade supplies the specification attribute.
+[dependencies]
+anodized.workspace = true
+iroh.workspace = true
+iroh-mdns-address-lookup.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

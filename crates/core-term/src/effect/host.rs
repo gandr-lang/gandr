@@ -24,6 +24,16 @@
 //! writes it to standard output; a host capturing it, as a test's does, keeps
 //! the lines instead, and the program runs unchanged under either.
 //!
+//! `Net` is a stream to a peer. `connect` takes the peer, its key spelled in
+//! hex and then any `@<ip:port>` the dialer may try, and replies a stream;
+//! `accept` takes the unit and replies the dialing peer's key and a stream;
+//! `transmit` takes a stream and a frame and replies the unit; `receive` takes
+//! a stream and replies the next frame; `disconnect` takes a stream back. The
+//! names stay off the session keywords `send`, `recv` and `close`. A stream is
+//! an integer naming a location the host holds: it never crosses, and a host
+//! refuses one it does not hold. A frame is a string because the boundary has
+//! no byte-sequence layout yet, so a frame that is not UTF-8 is refused.
+//!
 //! No two interfaces share an operation name, so an operation names its
 //! interface: [`HostSignatures::offering`] finds it, and
 //! [`HostSignatures::authority`] builds the capability authority granting a
@@ -64,8 +74,10 @@ pub const RING: &str = "Ring";
 pub const DIV: &str = "Div";
 /// The console interface: a line written to the process's output.
 pub const CONSOLE: &str = "Console";
+/// The network interface: a stream to a peer named by its key.
+pub const NET: &str = "Net";
 
-/// The seven interfaces, sharing their arena-owned payload and reply types.
+/// The eight interfaces, sharing their arena-owned payload and reply types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostSignatures
 {
@@ -83,6 +95,8 @@ pub struct HostSignatures
     pub div: EffectSig,
     /// Write a line to the console.
     pub console: EffectSig,
+    /// Open, accept, write, read and close a stream to a peer.
+    pub net: EffectSig,
 }
 
 quenchant_shape::reason_enum! {
@@ -135,7 +149,8 @@ pub fn divergence() -> EffectSig
 /// The host operations that only read, each by its interface and its name.
 /// Each observes the host and changes nothing another task could observe, so
 /// two tasks may perform them on one interface at once. Every other host
-/// operation changes the file system, the process, the ring or the console.
+/// operation changes the file system, the process, the ring, the console or
+/// a stream.
 const READING: [(&str, &str); 7] = [
     (FS, "read"),
     (FS, "glob"),
@@ -208,7 +223,7 @@ impl HostSignatures
     ///   product in place of a List changes an answer.
     /// - witness: `effect::host::tests::host_interfaces_pin_names_payloads_and_replies`
     #[spec(ensures: |ret| ret.as_ref().is_ok_and(|host|
-        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div, &host.console].iter().all(|signature|
+        [&host.exec, &host.fs, &host.proc, &host.env, &host.ring, &host.div, &host.console, &host.net].iter().all(|signature|
             signature.operations().all(|operation|
                 arena.value_type(operation.payload).is_some()
                     && arena.value_type(operation.reply).is_some()))
@@ -309,6 +324,35 @@ impl HostSignatures
             payload: string,
             reply: unit,
         }])?;
+        let accepted = arena.value_type_product(&[string, integer]);
+        let frame = arena.value_type_product(&[integer, string]);
+        let net = EffectSig::new(NET.into(), [
+            EffectOp {
+                name: "connect".into(),
+                payload: string,
+                reply: integer,
+            },
+            EffectOp {
+                name: "accept".into(),
+                payload: unit,
+                reply: accepted,
+            },
+            EffectOp {
+                name: "transmit".into(),
+                payload: frame,
+                reply: unit,
+            },
+            EffectOp {
+                name: "receive".into(),
+                payload: integer,
+                reply: string,
+            },
+            EffectOp {
+                name: "disconnect".into(),
+                payload: integer,
+                reply: unit,
+            },
+        ])?;
         Ok(Self {
             exec,
             fs,
@@ -317,16 +361,17 @@ impl HostSignatures
             ring,
             div,
             console,
+            net,
         })
     }
 
-    /// The seven interfaces, in the order the host declares them.
+    /// The eight interfaces, in the order the host declares them.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn interfaces(&self) -> [&EffectSig; 7]
+    pub const fn interfaces(&self) -> [&EffectSig; 8]
     {
         [
             &self.exec,
@@ -336,6 +381,7 @@ impl HostSignatures
             &self.ring,
             &self.div,
             &self.console,
+            &self.net,
         ]
     }
 

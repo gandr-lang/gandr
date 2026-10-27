@@ -11,7 +11,7 @@ allow-unwrap-in-tests = true
 # keeps clippy's default list.
 doc-valid-idents = ["JUnit", ".."]
 
-# `multiple_crate_versions` stays denied for every split but these four.
+# `multiple_crate_versions` stays denied for every split but these.
 #
 # `hashbrown`: petgraph 0.8.3 pins `hashbrown` 0.15 and kasuari 0.4, the
 # layout solver the terminal face's renderer links, pins `hashbrown` 0.16,
@@ -36,4 +36,46 @@ doc-valid-idents = ["JUnit", ".."]
 # terminal REPL link, pins `windows-sys` 0.60, while rustix, mio, errno and
 # rustyline resolve to 0.61; only Windows builds link either. Reversal: remove
 # the entry when a stable notify release depends on 0.61 (its 9.0 line does).
-allowed-duplicate-crates = ["foldhash", "hashbrown", "syn", "windows-sys"]
+#
+# The rest are splits inside iroh's own graph, which the network's runtime
+# (`runtime-net`) links; nothing this workspace owns reaches either side.
+# netwatch links `netdev` 0.45 and 0.46, so two of `netlink-packet-core`,
+# `netlink-packet-route`, `netlink-sys`, `jni`, `jni-sys` and, through jni
+# 0.21, `thiserror` 1 beside 2 and `thiserror-impl`; ring links `getrandom`
+# 0.2 beside rand's 0.4; aes-gcm under the QUIC stack links `cpufeatures`
+# 0.2 and `crypto-common` 0.1 beside the 0.3 and 0.2 that ed25519 links;
+# tokio-websockets links `base64` 0.22 beside hyper-util's 0.23; postcard
+# links `embedded-io` 0.4 beside 0.6; and jni 0.21 links `windows-sys` 0.45
+# on `windows-targets` 0.42 and ring `windows-sys` 0.52 on 0.52, beside
+# notify's 0.60 on 0.53, so three of `windows-targets` and of each
+# `windows_<target>` crate it selects, which only Windows builds link.
+# Reversal: remove each entry when the iroh release the root manifest pins
+# resolves to one version of it.
+allowed-duplicate-crates = [
+  "base64",
+  "cpufeatures",
+  "crypto-common",
+  "embedded-io",
+  "foldhash",
+  "getrandom",
+  "hashbrown",
+  "jni",
+  "jni-sys",
+  "netdev",
+  "netlink-packet-core",
+  "netlink-packet-route",
+  "netlink-sys",
+  "syn",
+  "thiserror",
+  "thiserror-impl",
+  "windows-sys",
+  "windows-targets",
+  "windows_aarch64_gnullvm",
+  "windows_aarch64_msvc",
+  "windows_i686_gnu",
+  "windows_i686_gnullvm",
+  "windows_i686_msvc",
+  "windows_x86_64_gnu",
+  "windows_x86_64_gnullvm",
+  "windows_x86_64_msvc",
+]

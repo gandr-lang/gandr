@@ -56,6 +56,7 @@ digraph crates {
   subgraph "cluster_runtime" {
     label = "runtime";
     "runtime-emitter";
+    "runtime-net";
     "runtime-stencils";
   }
   subgraph "cluster_surface" {
@@ -182,6 +183,7 @@ digraph crates {
   "surface-dispatcher" -> "kernel-strata";
   "surface-dispatcher" -> "kernel-term";
   "surface-dispatcher" -> "runtime-emitter";
+  "surface-dispatcher" -> "runtime-net";
   "surface-dispatcher" -> "storage-store";
   "surface-dispatcher" -> "storage-values";
   "surface-dispatcher" -> "surface-corpus";
@@ -195,6 +197,7 @@ digraph crates {
   "surface-dispatcher" -> "theory-cell-complexes";
   "surface-driver" -> "core-incremental";
   "surface-driver" -> "kernel-core";
+  "surface-driver" -> "runtime-net";
   "surface-driver" -> "storage-store";
   "surface-driver" -> "surface-diagnostics";
   "surface-driver" -> "surface-dispatcher";

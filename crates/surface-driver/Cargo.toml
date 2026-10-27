@@ -44,15 +44,17 @@ required-features = ["hotpath"]
 # under `--verbosity json`; the dispatcher reads the user's configuration
 # file's `[presentation]` table, and toml its `[kernel]` table. `check` and
 # `lock` open the storage tier's store, which a package's lock commits
-# through. hotpath profiles the benchmark report behind the `hotpath`
-# feature. A `check` keeps the kernel's verdicts: the kernel's key and
-# policy, the incremental checker's verdict store, and getrandom's entropy
-# for minting the key.
+# through. The network's runtime reads the `--net-*` flags `run` binds a
+# program's network with. hotpath profiles the benchmark report behind the
+# `hotpath` feature. A `check` keeps the kernel's verdicts: the kernel's key
+# and policy, the incremental checker's verdict store, and getrandom's
+# entropy for minting the key.
 [dependencies]
 anodized.workspace = true
 clap.workspace = true
 gandr-core-incremental.workspace = true
 gandr-kernel-core.workspace = true
+gandr-runtime-net.workspace = true
 gandr-storage-store.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true

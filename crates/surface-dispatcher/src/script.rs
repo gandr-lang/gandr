@@ -14,6 +14,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anodized::spec;
+use gandr_runtime_net::Net;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::produced_refusal;
 use gandr_surface_grammar::Pbg;
@@ -108,7 +109,10 @@ impl Ran<'_>
 }
 
 /// Run the program `composed` holds, its entry given `arguments`, unless a
-/// declaration of it was refused, each line it prints handed to `console`.
+/// declaration of it was refused.
+///
+/// Each line it prints is handed to `console`, and each `Net` operation is
+/// served on `net` when it is given.
 ///
 /// # Specification
 /// - requires: nothing.
@@ -117,7 +121,8 @@ impl Ran<'_>
 ///   a source declaring no `main` at its top level is [`Ran::NoProgram`] and
 ///   runs nothing, its last declaration included; a program with an entry
 ///   enters it once with `arguments`, writing each line it prints to `console`,
-///   in order, and [`Ran::Entered`] carries it.
+///   in order, serving its `Net` operations on `net`, and [`Ran::Entered`]
+///   carries it.
 /// - provides: the run step `gandr run` and [`run_source`] share.
 /// - fails: never; every failure is a [`Ran`].
 /// - panics: none.
@@ -159,6 +164,7 @@ pub fn execute<'source>(
     composed: &mut Composed<'source>,
     arguments: &[String],
     console: &mut dyn Console,
+    net: Option<&mut Net>,
 ) -> Ran<'source>
 {
     let Composed::Settled {
@@ -185,7 +191,7 @@ pub fn execute<'source>(
     match program.name(entry.constant) {
         Maybe::Present(name) => Ran::Entered {
             target: name,
-            entered: program.enter(entry, arguments, console),
+            entered: program.enter(entry, arguments, console, net),
         },
         Maybe::Absent(declaration_name::Absent::Undeclared) => Ran::NoProgram,
     }
@@ -229,7 +235,7 @@ pub fn run_source<'source>(
 ) -> Result<(Composed<'source>, Ran<'source>), ComposeFault<'source>>
 {
     let mut composed = compose(grammar, CorpusRoot::Strict, source, lowerings)?;
-    let ran = execute(&mut composed, &[], console);
+    let ran = execute(&mut composed, &[], console, None);
     Ok((composed, ran))
 }
 
@@ -314,6 +320,9 @@ pub struct Script
     lowerings: LoweringCount,
     /// The arguments its entry is given.
     arguments: Vec<String>,
+    /// The network its entry's `Net` operations are served on, when it has
+    /// one; boxed, since a network outweighs the rest of a script.
+    net: Option<Box<Net>>,
 }
 
 impl Script
@@ -334,6 +343,7 @@ impl Script
             laid: None,
             lowerings: LoweringCount::default(),
             arguments: Vec::new(),
+            net: None,
         }
     }
 
@@ -362,8 +372,34 @@ impl Script
         self.arguments = arguments;
     }
 
+    /// This script, its entry's `Net` operations served on `net`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a later [`Self::run`] serves each `Net` operation its entry
+    ///   performs on `net`; without a network a script declines them.
+    /// - provides: the network `gandr run` binds as its flags say.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — what the network serves is observed by the later
+    ///   run; the store itself is a move.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ping exemplar, given its network, dials an
+    ///   endpoint on loopback and prints the answer it reads back.
+    /// - witness: `tests::run::a_script_pings_over_its_network_3186`
+    #[inline]
+    pub fn network(
+        &mut self,
+        net: Net,
+    )
+    {
+        self.net = Some(Box::new(net));
+    }
+
     /// Read the source, compose it as `check` would, and run its program,
-    /// each line it prints handed to `console`.
+    /// each line it prints handed to `console` and each `Net` operation served
+    /// on the script's network.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -374,7 +410,7 @@ impl Script
     ///   [`SourceFault::Compose`], each naming the path given. Otherwise the
     ///   source is laid after the prelude alone, composed under its root, its
     ///   step built as a walk builds it, and [`execute`] runs it, its entry
-    ///   given the script's arguments.
+    ///   given the script's arguments and its network.
     /// - provides: `gandr run`.
     /// - fails: never; every failure is a [`ScriptRun`].
     /// - panics: none.
@@ -439,7 +475,12 @@ impl Script
             });
         match composed {
             Ok(mut composed) => {
-                let ran = execute(&mut composed, &self.arguments, console);
+                let ran = execute(
+                    &mut composed,
+                    &self.arguments,
+                    console,
+                    self.net.as_deref_mut(),
+                );
                 let standing = Standing::of(root, &composed);
                 ScriptRun::Source {
                     step: Step::Source {

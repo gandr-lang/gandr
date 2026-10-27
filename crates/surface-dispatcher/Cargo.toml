@@ -20,7 +20,8 @@ path = "tests/lib.rs"
 # The composition names every stage it runs: the grammar and the parser, the
 # lowering, the checker and the kernel bridge it carries, the settle
 # comparison the corpus library owns, and the run stage's focusing and
-# readback, with the emitter running a run native or on its executor. The
+# readback, with the emitter running a run native or on its executor and the
+# network's runtime serving a program's `Net` operations. The
 # diagnostics model spells the types a refusal names while the arena is at
 # hand, and builds what each step prints; the type table spells the type a
 # face asks for through the presentation printer. The `stage` verb builds the
@@ -53,6 +54,7 @@ gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-runtime-emitter.workspace = true
+gandr-runtime-net.workspace = true
 gandr-storage-store.workspace = true
 gandr-storage-values.workspace = true
 gandr-surface-corpus.workspace = true

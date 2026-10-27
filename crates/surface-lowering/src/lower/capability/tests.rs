@@ -473,9 +473,9 @@ fn an_unknown_operation_or_interface_is_refused_by_name()
     let module = lowered(
         SourceText::from(concat!(
             "def held : Cap {delete} ;\n",
-            "def row(c : Cap {read}) -> -F [Net] String { c.read(\"x\") }\n",
+            "def row(c : Cap {read}) -> -F [Radio] String { c.read(\"x\") }\n",
             "def sent(c : Cap {read}) -> -F [Fs] String { c.delete(\"x\") }\n",
-            "def scoped() -> -F Unit { handle c : Net { pure unit } with { pure(x) => pure x } }\n",
+            "def scoped() -> -F Unit { handle c : Radio { pure unit } with { pure(x) => pure x } }\n",
             "def twice() -> -F Unit { handle c : Proc { pure unit } with { pure(x) => pure x, pure(y) => pure y, oper exit(code, k) => k(unit) } }\n",
         )),
         &mut arena,
@@ -498,7 +498,7 @@ fn an_unknown_operation_or_interface_is_refused_by_name()
                     name: refused,
                     arity: HeadArity::Nullary,
                     ..
-                }) if refused == SurfaceName::from("Net")
+                }) if refused == SurfaceName::from("Radio")
             ),
             "{name}: an interface the host does not declare"
         );
