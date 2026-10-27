@@ -145,6 +145,7 @@ use crate::origin::Origin;
 use crate::origin::WrittenModel;
 use crate::resolve::Frame;
 use crate::resolve::OperandCount;
+use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::Telescope;
 use crate::resolve::type_atom;
@@ -573,6 +574,47 @@ impl<'source> Lowerer<'_, 'source>
         }
 
         Ok(())
+    }
+
+    /// The kind a type family's parameter is written with, when `binder` is
+    /// one: the lowered type of its classifier.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a binder some family's parameter introduced, the lowered
+    ///   type its classifier writes; nothing for any other binder, and for a
+    ///   classifier that did not lower.
+    /// - provides: the kind a family's parameter answers at where its body
+    ///   reads it as a value, which no judgement types: a family's body is
+    ///   expanded where it is applied, never checked where it is written.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the kind is read off the families' parameters and
+    ///   the lowered nodes, which a predicate would search again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a family's parameter written as a data type's
+    ///   argument answers at its kind, as it does in a signature.
+    /// - witness: `tests::modules::a_family_s_parameter_under_a_data_type_answers_at_its_kind_3142`
+    pub(super) fn family_parameter_kind(
+        &self,
+        binder: ScopeId,
+    ) -> Option<ValueTypeId>
+    {
+        let Maybe::Present(declared) = self.scope.declared(binder)
+        else {
+            return None;
+        };
+        let introduced = self
+            .collected
+            .families
+            .iter()
+            .flat_map(|family| &family.parameters)
+            .any(|parameter| parameter.classifier.node == declared);
+        match (introduced, self.value_type_at(declared)) {
+            (true, Maybe::Present(kind)) => Some(kind),
+            (true, Maybe::Absent(_)) | (false, _) => None,
+        }
     }
 
     /// The reading of a type member's definition `defined` under `frame`, at
