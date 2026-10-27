@@ -1,0 +1,41 @@
+# The labels an issue takes by its kind when none is given (#2902): one
+# table per `kind:` label, its `priority:` and `effort:` values. `issue:file`
+# applies them to an issue it files, a label given explicitly winning, and
+# `issue:labels --sweep` to each open issue missing one; the rule is
+# `.config/issues/labels.jq`. A kind without a table here is filed only with
+# both labels given.
+#
+# Defects are high by default for now (owner, 2026-10-26): the lanes clear
+# the board of defects between units. This table is where that changes.
+
+[kind.defect]
+priority = "high"
+effort = "easy"
+
+[kind.gap]
+priority = "medium"
+effort = "unknown"
+
+[kind.feature]
+priority = "medium"
+effort = "unknown"
+
+[kind.epic]
+priority = "medium"
+effort = "hard"
+
+[kind.performance]
+priority = "medium"
+effort = "unknown"
+
+[kind.ci]
+priority = "medium"
+effort = "unknown"
+
+[kind.documentation]
+priority = "medium"
+effort = "unknown"
+
+[kind.specification]
+priority = "medium"
+effort = "unknown"

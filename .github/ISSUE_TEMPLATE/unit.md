@@ -48,3 +48,7 @@ title: "<area>: <what the unit lands>"
 ## Not in this slice
 
 <!-- The next unit on the lane. -->
+
+## After
+
+<!-- What this unit waits on: `none`, or one line per issue, `- #n — <what it waits for>`. `mise run unit:check --fix <n>` sets each as the issue's GitHub `blocked by` dependency; a dependency is never stated in prose. -->

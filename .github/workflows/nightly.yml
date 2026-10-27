@@ -283,6 +283,34 @@ jobs:
       - name: file the causes
         run: mise run ci:recovery-file
 
+  # The dependency report (`mise run report:deps`, #2902): every open epic
+  # set blocked by its open sub-issues, then each dependency an open issue
+  # states (an `## After` item, prose naming an open issue, an epic's open
+  # sub-issue) that GitHub does not record, on one `report: dependencies`
+  # issue. Only the scheduled run writes; a dispatch prints the report. It
+  # reads the tracker alone, so this job builds nothing.
+  deps-report:
+    name: report the dependencies GitHub does not record
+    needs: ci-image-ref
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: *linux
+    permissions:
+      contents: read
+      packages: read
+      issues: write
+    container: *ci-image # zizmor: ignore[unpinned-images]
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      REPORT_FILE: ${{ github.event_name == 'schedule' && 'file' || '' }}
+    steps:
+      - *git-checkout
+      - *trust-workspace
+      - *install-policy-tools
+      - name: report the dependencies
+        run: mise run report:deps
+
   # Each lane's median job time over the newest ten merge-queue and
   # pull-request runs of ci.yml against its budget, as the job summary and on
   # one issue while any lane is over (`mise run ci:lane-budget`). Alerting,

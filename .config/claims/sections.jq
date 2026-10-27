@@ -96,3 +96,39 @@ def concern_marks:
 
 # Whether a section has content once its HTML comments are dropped.
 def filled: join("\n") | gsub("(?s)<!--.*?-->"; "") | test("\\S");
+
+# The issue's `## After` (#2902): what it waits on, as {empty, none, numbers,
+# malformed}, or null when the body has none. A content line, HTML comments
+# and blank lines dropped, is `none` or `- #n — <what it waits for>`;
+# `numbers` are the items' issues in order, `malformed` the other lines.
+def after_none: test("^\\s*none\\.?\\s*$"; "i");
+def after_item: test("^[-*] #[0-9]+ —\\s*\\S");
+def after:
+  (section("After") // null)
+  | if . == null then null
+    else (join("\n") | gsub("(?s)<!--.*?-->"; "") | split("\n") | map(select(test("\\S")))) as $lines
+    | {empty: ($lines | length == 0),
+       none: any($lines[]; after_none),
+       numbers: [$lines[] | select(after_item) | capture("^[-*] #(?<n>[0-9]+)").n | tonumber],
+       malformed: [$lines[] | select((after_none or after_item) | not)]}
+    end;
+
+# The body with `#$n` listed in its `## After`, `- #$n — $clause`: the item
+# replaces a `none` line, follows the section's last item, or opens the
+# section, appended to the body, when it has none. A body already listing it
+# is unchanged.
+def with_after($n; $clause):
+  . as $body
+  | "- #\($n) — \($clause)" as $item
+  | lines as $lines
+  | ([range(0; $lines | length) | select($lines[.] | test("^## After\\s*$"))] | first) as $start
+  | if $start == null then ($body | sub("\\s*$"; "")) + "\n\n## After\n\n\($item)\n"
+    elif (after.numbers | index($n)) != null then $body
+    else ([range($start + 1; $lines | length) | select($lines[.] | test("^## "))] | first // ($lines | length)) as $end
+    | ([range($start + 1; $end) | select($lines[.] | test("\\S"))] | last) as $last
+    | if $last == null then $lines[:$start + 1] + ["", $item] + (if $end < ($lines | length) then [""] else [] end) + $lines[$end:]
+      elif $lines[$last] | test("^\\s*none\\.?\\s*$"; "i") then $lines[:$last] + [$item] + $lines[$last + 1:]
+      else $lines[:$last + 1] + [$item] + $lines[$last + 1:]
+      end
+    | join("\n")
+    end;

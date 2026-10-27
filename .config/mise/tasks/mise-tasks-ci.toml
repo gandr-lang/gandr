@@ -1014,6 +1014,7 @@ improved=$(cut -d'|' -f5 "$scratch/kept" | grep -ci improv || true)
 } > "$scratch/ledger.md"
 if [[ -z $ledger ]]; then
   ledger=$(gh issue create --repo "$repo" --title "$ledger_title" --label collector --label area:workflow \
+    --label kind:performance --label priority:medium --label effort:unknown \
     --body-file "$scratch/ledger.md" | sed 's|.*/||')
 else
   gh issue edit "$ledger" --repo "$repo" --body-file "$scratch/ledger.md" > /dev/null
@@ -1048,7 +1049,8 @@ jq -n --slurpfile issue "$scratch/issue.json" --arg commit "${GITHUB_SHA:?}" \
 jq -r .body "$scratch/filed.json" > "$scratch/body.md"
 number=$(jq -r '.number // empty' "$scratch/filed.json")
 if [[ -z $number ]]; then
-  gh issue create --repo "$repo" --title "$title" --label kind:ci --label area:workflow --body-file "$scratch/body.md"
+  gh issue create --repo "$repo" --title "$title" --label kind:ci --label area:workflow \
+    --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
 else
   gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
   echo "updated #$number"
@@ -1105,7 +1107,7 @@ while IFS= read -r subject; do
     echo "#$pr leaves no mutant of its lines alive"
     continue
   fi
-  labels=(--label kind:gap --label collector)
+  labels=(--label kind:gap --label collector --label priority:medium --label effort:unknown)
   while IFS= read -r label; do labels+=(--label "$label"); done < <({
     gh pr view "$pr" --repo "$repo" --json labels --jq '.labels[].name | select(startswith("area:"))'
     sed -n 's/^| `crates\/\([a-z]*\)-[^`]*` | .*/\1/p' "$scratch/report.md" \
@@ -1211,7 +1213,8 @@ while IFS= read -r line; do
     echo "would file: $title ($count mutants)"
     continue
   fi
-  url=$(gh issue create --repo "$repo" --title "$title" --label kind:defect --label area:surface --label collector --body-file "$scratch/body.md")
+  url=$(gh issue create --repo "$repo" --title "$title" --label kind:defect --label area:surface --label collector \
+    --label priority:high --label effort:easy --body-file "$scratch/body.md")
   echo "filed $url: $title ($count mutants)"
 done < "$report"
 {% endraw %}'''
@@ -1475,10 +1478,18 @@ wt step copy-ignored
 # carries is refused, a wrong name being a wrong source. A filename the tree
 # carries is the tree's. Without a vault checkout, as in CI, the lines are
 # read for their shape alone.
+#
+# The dependencies (#2902): an issue is GitHub-`blocked by` each issue its
+# `## After` lists, and an epic by each open sub-issue too; the plan is
+# `.config/claims/deps.jq`, the calls `.config/claims/deps.bash`. Each one
+# missing is refused, naming `--fix`, which sets it (idempotent) and leaves
+# the rest of the check as it was. A dependency set on GitHub that neither
+# names is printed as a note, not refused: the section is the record.
 ["unit:check"]
-description = "Refuse a unit issue missing a section work needs"
+description = "Refuse a unit issue missing a section work needs, or a dependency its ## After names"
 usage = '''
 arg "<issue>" help="the issue number"
+flag "--fix" help="set each GitHub dependency the issue owes before checking"
 '''
 tools.jq = "1.8.1"
 run = '''
@@ -1490,8 +1501,29 @@ root=$(git rev-parse --show-toplevel)
 claims=$root/.config/claims
 source "$root/.config/references/vault.bash"
 concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
-body=$(gh issue view "$issue" --json body --jq .body)
+source "$claims/deps.bash"
+repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+issued=$(gh api "repos/$repo/issues/$issue" --jq '{number, labels: [.labels[].name], body: (.body // "")}')
+body=$(jq -r .body <<< "$issued")
 findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" -f "$claims/unit.jq" <<< "$body")
+subs='[]'
+if jq -e '.labels | index("kind:epic")' <<< "$issued" > /dev/null; then
+  subs=$(deps_sub_issues "$repo" "$issue")
+fi
+plan=$(jq -n --argjson issued "$issued" --argjson blocked "$(deps_blocked_by "$repo" "$issue")" --argjson subs "$subs" \
+  '$issued + {blocked_by: $blocked, sub_issues: $subs}' | jq -r -L "$claims" -f "$claims/deps.jq")
+while IFS=$'\t' read -r verb blocker why; do
+  case "$verb" in
+    set)
+      if [[ ${usage_fix:-false} == true ]]; then
+        deps_block "$repo" "$issue" "$blocker"
+      else
+        findings=$(printf '%s\n%s\n' "$findings" "#$blocker is not set as a \`blocked by\` dependency on GitHub, and $why: run \`mise run unit:check --fix $issue\`" | awk 'NF')
+      fi
+      ;;
+    extra) echo "note: #$issue is blocked by #$blocker on GitHub, and its \`## After\` does not list it" ;;
+  esac
+done <<< "$plan"
 pages=$(vault_pages)
 shown=
 if [[ $pages != null ]]; then
@@ -1523,7 +1555,10 @@ fi
 # candidate; the pick is `.config/claims/next.jq`, its cases held by
 # `check:claims`. Only an issue `unit:check` passes is picked (#2744): each
 # candidate ranked ahead of the pick that lacks a unit's sections is printed
-# on stderr as `needs sections: #n`. It adds `status:claimed` and prints the
+# on stderr as `needs sections: #n`. An issue with an open `blocked by`
+# dependency is not picked (#2902): each one ranked ahead of the pick is
+# printed on stderr as `blocked: #n by #a, #b`, its open blockers read from
+# GitHub. It adds `status:claimed` and prints the
 # claim as `#n <title>`; `--dry-run` prints it without claiming. No candidate
 # prints `no claim: <area>` and exits 1.
 ["claim:next"]
@@ -1539,6 +1574,7 @@ set -euo pipefail
 area=${usage_area:?}
 area=area:${area#area:}
 claims=$(git rev-parse --show-toplevel)/.config/claims
+source "$claims/deps.bash"
 # REST throughout: the GraphQL limit, shared by every seat's watches, runs out
 # within the hour, and a seat must still claim its next item.
 repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
@@ -1548,7 +1584,7 @@ board=$(mktemp -d)
 trap 'rm -rf "$board"' EXIT
 gh api --paginate "repos/$repo/issues?state=open&per_page=100" --jq '[.[] | select(.pull_request == null)
   | {number, title, labels: [.labels[].name],
-     body,
+     body, blocked: (.issue_dependencies_summary.blocked_by // 0),
      parent: ([.parent_issue_url // "" | capture("/repos/'"$repo"'/issues/(?<n>[0-9]+)$").n | tonumber][0])}]' | jq -s 'add // []' > "$board/issues.json"
 epics=$(jq -r --arg area "$area" '[.[] | select(.labels | index("kind:epic")) | .number] as $epics
   | [.[] | select((.labels | index($area)) and .parent != null) | .parent as $p | select($epics | index($p))] | map(.parent) | unique[]' "$board/issues.json")
@@ -1561,7 +1597,10 @@ concerns=$(sqlite3 -json :memory: ".read $(git rev-parse --show-toplevel)/ledger
 lines=$(jq -n --arg area "$area" --slurpfile issues "$board/issues.json" --argjson order "$order" '{area: $area, issues: $issues[0], order: $order}' \
   | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
 awk '/^needs sections: /' <<< "$lines" >&2
-pick=$(awk '!/^needs sections: /' <<< "$lines")
+while read -r _ issue; do
+  echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
+done < <(awk '/^blocked: /' <<< "$lines")
+pick=$(awk '!/^(needs sections|blocked): /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $area" >&2
   exit 1
@@ -1704,25 +1743,300 @@ fi
 echo "body check OK: nothing on the private-names list in ${usage_title:+the title and }${#files[@]} file(s)"
 {% endraw %}'''
 
-# The one way a seat files an issue: `issue:file <title> <body> [label]...`
-# runs `body:check` on the title and the body, then `gh issue create` with
-# each label, printing the issue's address.
+# The one way a seat or the coordinator files an issue: `issue:file <title>
+# <body> [label]...` runs `body:check` on the title and the body, then
+# `gh issue create` with each label, printing the issue's address. The labels
+# are the full set or the issue is refused (#2902): exactly one `kind:`,
+# `priority:` and `effort:`, one or more `area:`, a missing `priority:` or
+# `effort:` taking its kind's default from `.config/issues/defaults.toml`
+# and an epic keeping `kind:epic` alone (the rule
+# `.config/issues/labels.jq`). A unit (a body with `## Sources`) is refused
+# before it is filed when it lacks a section (`findings.jq`, as `unit:check`
+# reads it), and once filed has the dependencies its `## After` names set by
+# `unit:check --fix`, so no filed unit lacks them. `--epic <n>` links the
+# issue under the epic and sets the epic `blocked by` it
+# (`.config/claims/deps.bash`).
 ["issue:file"]
-description = "File an issue once its title and body name nothing private"
+description = "File an issue with its full label set once its title and body name nothing private, linked and its dependencies set"
 usage = '''
 arg "<title>" help="the issue's title"
 arg "<body>" help="the body file"
-arg "[label]..." help="labels, each `kind:…`, `area:…` or another"
+arg "[label]..." help="labels: one `kind:`, one or more `area:`, a `priority:` and an `effort:` unless the kind's default serves, any others"
+flag "--epic <n>" help="the epic to link the issue under"
 '''
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 {% raw %}#!/usr/bin/env bash
 set -euo pipefail
 body=$(realpath "${usage_body:?}")
+root=$(git rev-parse --show-toplevel)
+claims=$root/.config/claims
+source "$claims/deps.bash"
+source "$root/.config/issues/labels.bash"
+epic=${usage_epic:-}
+[[ -z $epic || $epic =~ ^[0-9]+$ ]] || { echo "issue:file: --epic takes an issue number, not \`$epic\`" >&2; exit 2; }
 mise run --quiet body:check --title "${usage_title:?}" "$body" >&2
+unit=false
+if jq -R -s -e 'split("\n") | any(test("^## Sources\\s*$"))' "$body" > /dev/null; then
+  unit=true
+  concerns=$(sqlite3 -json :memory: ".read $root/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
+  findings=$(jq -R -s -r -L "$claims" --argjson concerns "$concerns" -f "$claims/unit.jq" "$body")
+  if [[ -n $findings ]]; then
+    printf 'issue:file: the body is a unit (it has `## Sources`) and lacks what a unit issue carries (units.md § units-issue):\n' >&2
+    printf '%s\n' "$findings" | sed 's/^/  - /' >&2
+    exit 1
+  fi
+fi
 eval "labels=(${usage_label:-})"
+plan=$(labels_plan "$(printf '%s\n' "${labels[@]}" | jq -R . | jq -s -c 'map(select(. != ""))')" "$(labels_defaults)")
+refused=$(awk -F'\t' '$1 == "refuse" { print "  - " $2 }' <<< "$plan")
+if [[ -n $refused ]]; then
+  printf 'issue:file: the labels are not the full set (tracker.md § tracker-issues):\n%s\n' "$refused" >&2
+  exit 1
+fi
+while IFS=$'\t' read -r verb label; do
+  case "$verb" in
+    add)
+      labels+=("$label")
+      echo "issue:file: $label, the kind's default" >&2
+      ;;
+    remove)
+      for i in "${!labels[@]}"; do [[ ${labels[$i]} != "$label" ]] || unset 'labels[i]'; done
+      echo "issue:file: $label dropped: an epic is one kind, kind:epic" >&2
+      ;;
+  esac
+done <<< "$plan"
 flags=()
 for label in "${labels[@]}"; do flags+=(--label "$label"); done
-gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}"
+url=$(gh issue create --title "$usage_title" --body-file "$body" "${flags[@]}")
+number=${url##*/}
+repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+if [[ -n $epic ]]; then
+  deps_link "$repo" "$epic" "$number" >&2
+fi
+if [[ $unit == true ]]; then
+  mise run --quiet unit:check --fix "$number" >&2
+fi
+echo "$url"
+{% endraw %}'''
+
+# An issue's full label set, applied after the fact (#2902): `issue:labels
+# <n>...` adds each missing `priority:` and `effort:` its kind's default
+# names (`.config/issues/defaults.toml`, the rule `.config/issues/labels.jq`,
+# as `issue:file` applies them) and removes each `kind:` beside `kind:epic`,
+# and `--sweep` does so for every open issue. What the rule cannot repair (no
+# `kind:` or `area:`, a `kind:`, `priority:` or `effort:` given twice, a kind
+# without a default) is printed, exiting 1; `report:deps` lists it nightly.
+["issue:labels"]
+description = "Give each open issue its kind's missing priority: and effort:, and an epic kind:epic alone"
+usage = '''
+arg "[issue]..." help="the issues; none with --sweep"
+flag "--sweep" help="every open issue"
+'''
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+source "$root/.config/issues/labels.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+defaults=$(labels_defaults)
+eval "issues=(${usage_issue:-})"
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+if [[ ${usage_sweep:-false} == true ]]; then
+  gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
+    --jq '.[] | select(.pull_request == null) | {number, labels: [.labels[].name]} | @json' > "$scratch/issues"
+else
+  (( ${#issues[@]} > 0 )) || { echo "issue:labels takes issues, or --sweep" >&2; exit 2; }
+  for n in "${issues[@]}"; do
+    [[ $n =~ ^[0-9]+$ ]] || { echo "issue:labels takes issue numbers, not \`$n\`" >&2; exit 2; }
+    gh api "repos/$repo/issues/$n" --jq '{number, labels: [.labels[].name]} | @json'
+  done > "$scratch/issues"
+fi
+added=0
+short=0
+while IFS= read -r issue; do
+  number=$(jq -r .number <<< "$issue")
+  plan=$(labels_plan "$(jq -c .labels <<< "$issue")" "$defaults")
+  adds=()
+  removes=()
+  while IFS=$'\t' read -r verb what; do
+    case "$verb" in
+      add) adds+=(-f "labels[]=$what") ;;
+      remove) removes+=("$what") ;;
+      refuse) echo "#$number: $what" >&2; short=$((short + 1)) ;;
+    esac
+  done <<< "$plan"
+  for label in "${removes[@]}"; do
+    gh api -X DELETE "repos/$repo/issues/$number/labels/$(jq -rn --arg l "$label" '$l | @uri')" > /dev/null
+  done
+  if (( ${#adds[@]} > 0 )); then
+    gh api -X POST "repos/$repo/issues/$number/labels" "${adds[@]}" > /dev/null
+  fi
+  if (( ${#adds[@]} + ${#removes[@]} > 0 )); then
+    echo "#$number: $(awk -F'\t' '$1 == "add" || $1 == "remove" { printf "%s %s; ", ($1 == "add" ? "added" : "removed"), $2 }' <<< "$plan")"
+    added=$((added + 1))
+  fi
+done < "$scratch/issues"
+echo "issue:labels: $added issue(s) relabelled; $short problem(s) the rule cannot repair"
+(( short == 0 ))
+{% endraw %}'''
+
+# An epic's sub-issues, linked and ordered by the one task that writes the
+# order (#2902): `epic:order <epic> <n>...` links each under the epic, the
+# epic `blocked by` each open one, and orders them as given. A sequential
+# ladder takes `--chain`: each sub-issue is set `blocked by` the one before
+# it, and lists it in its `## After` (`with_after` in
+# `.config/claims/sections.jq`), the section being the record. An epic body's
+# ladder table is not read; the sub-issues' `## After` is.
+["epic:order"]
+description = "Link and order an epic's sub-issues, the epic blocked by each open one; --chain sets each blocked by the one before"
+usage = '''
+arg "<epic>" help="the epic"
+arg "<issue>..." help="its sub-issues, in order"
+flag "--chain" help="set each sub-issue blocked by the one before it and list it in its ## After"
+'''
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+epic=${usage_epic:?}
+eval "issues=(${usage_issue:?})"
+claims=$(git rev-parse --show-toplevel)/.config/claims
+source "$claims/deps.bash"
+repo=$(gh api 'repos/{owner}/{repo}' --jq .full_name)
+for n in "$epic" "${issues[@]}"; do
+  [[ $n =~ ^[0-9]+$ ]] || { echo "epic:order takes issue numbers, not \`$n\`" >&2; exit 2; }
+done
+previous=
+previous_id=
+for n in "${issues[@]}"; do
+  deps_link "$repo" "$epic" "$n"
+  id=$(deps_id "$repo" "$n")
+  if [[ -n $previous ]]; then
+    gh api -X PATCH "repos/$repo/issues/$epic/sub_issues/priority" -F sub_issue_id="$id" -F after_id="$previous_id" > /dev/null
+    if [[ ${usage_chain:-false} == true ]]; then
+      deps_block "$repo" "$n" "$previous"
+      body=$(gh api "repos/$repo/issues/$n" --jq '.body // ""')
+      edited=$(jq -n --arg body "$body" --argjson after "$previous" --argjson epic "$epic" \
+        '{body: $body, after: $after, epic: $epic}' | jq -r -L "$claims" -f "$claims/chain.jq")
+      if [[ $edited != "$body" ]]; then
+        printf '%s\n' "$edited" | gh issue edit "$n" --repo "$repo" --body-file - > /dev/null
+        printf 'listed #%s in #%s'"'"'s ## After\n' "$previous" "$n"
+      fi
+    fi
+  fi
+  previous=$n
+  previous_id=$id
+done
+printf 'ordered #%s: %s\n' "$epic" "$(printf '#%s ' "${issues[@]}")"
+{% endraw %}'''
+
+# An epic is blocked by every open sub-issue (#2902): `epic:deps <epic>...`
+# sets each dependency it lacks, `--all` for every open `kind:epic`. It is
+# idempotent; `report:deps` reruns it nightly.
+["epic:deps"]
+description = "Set each epic blocked by its open sub-issues"
+usage = '''
+arg "[epic]..." help="the epics; none with --all"
+flag "--all" help="every open kind:epic issue"
+'''
+tools.jq = "1.8.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+claims=$(git rev-parse --show-toplevel)/.config/claims
+source "$claims/deps.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+eval "epics=(${usage_epic:-})"
+if [[ ${usage_all:-false} == true ]]; then
+  mapfile -t epics < <(gh api --paginate "repos/$repo/issues?state=open&labels=kind:epic&per_page=100" --jq '.[] | select(.pull_request == null) | .number')
+fi
+(( ${#epics[@]} > 0 )) || { echo "epic:deps takes epics, or --all" >&2; exit 2; }
+for epic in "${epics[@]}"; do
+  while read -r child; do
+    deps_block "$repo" "$epic" "$child"
+  done < <(deps_sub_issues "$repo" "$epic" | jq -r --argjson self "$epic" '.[] | select(.state == "open" and .number != $self) | .number')
+done
+echo "epic:deps: ${#epics[@]} epic(s) blocked by their open sub-issues"
+{% endraw %}'''
+
+# The nightly tracker report (#2902): `report:deps` reruns `epic:deps
+# --all`, then reads every open issue for a dependency stated and not set
+# (prose naming an open issue as `after #n`, `blocked on #n`, `waits on #n`,
+# `once #n lands` or `needs #n`; an `## After` item; an epic's open
+# sub-issue) and for a label set short of one `kind:`, `area:`, `priority:`
+# and `effort:` (`.config/issues/labels.jq`), and writes them on one
+# `collector` issue, `report: dependencies`, opened by the first finding,
+# updated each night, and closed by a night with none. The rule is
+# `.config/claims/report.jq`, its cases held by `check:claims`. Only issues
+# that state a dependency, and epics, cost a dependency read. GH_REPO names
+# the repository; without REPORT_FILE set the task prints the report and
+# writes nothing.
+["report:deps"]
+description = "Report each open issue's stated dependency GitHub does not record, and each label set short, on one issue"
+tools.jq = "1.8.1"
+tools.yq = "4.54.1"
+run = '''
+{% raw %}#!/usr/bin/env bash
+set -euo pipefail
+root=$(git rev-parse --show-toplevel)
+claims=$root/.config/claims
+source "$claims/deps.bash"
+source "$root/.config/issues/labels.bash"
+repo=${GH_REPO:-$(gh api 'repos/{owner}/{repo}' --jq .full_name)}
+write=${REPORT_FILE:-}
+title='report: dependencies'
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+if [[ -n $write ]]; then
+  GH_REPO=$repo mise run --quiet epic:deps --all
+fi
+gh api --paginate "repos/$repo/issues?state=open&per_page=100" \
+  --jq '[.[] | select(.pull_request == null) | {number, title, labels: [.labels[].name], body: (.body // "")}]' | jq -s 'add // []' > "$scratch/open.json"
+: > "$scratch/issues.jsonl"
+while IFS= read -r issue; do
+  number=$(jq -r .number <<< "$issue")
+  subs='[]'
+  if jq -e '.labels | index("kind:epic")' <<< "$issue" > /dev/null; then subs=$(deps_sub_issues "$repo" "$number"); fi
+  blocked=$(deps_blocked_by "$repo" "$number" | jq -c '[.[].number]')
+  jq -c --argjson blocked "$blocked" --argjson subs "$subs" '. + {blocked_by: $blocked, sub_issues: $subs}' <<< "$issue" >> "$scratch/issues.jsonl"
+done < <(jq -c '.[] | select((.labels | index("kind:epic")) or (.body | test("(?i)\\b(after|blocked on|waits on|needs) #[0-9]|\\bonce #[0-9]+ lands")) or (.body | split("\n") | any(test("^## After\\s*$"))))' "$scratch/open.json")
+gh issue list --repo "$repo" --state all --label collector --search "\"$title\" in:title" --json number,title,state,body \
+  | jq -c --arg title "$title" '[.[] | select(.title == $title)] | first' > "$scratch/filed.json"
+labels_defaults > "$scratch/defaults.json"
+jq -n --slurpfile open "$scratch/open.json" --slurpfile issues "$scratch/issues.jsonl" --slurpfile filed "$scratch/filed.json" \
+  --slurpfile defaults "$scratch/defaults.json" \
+  '{issues: $issues, open: [$open[0][] | {number, labels}], defaults: $defaults[0], previous: ($filed[0].body // "")}' \
+  | jq -c -L "$claims" -L "$root/.config/issues" -f "$claims/report.jq" > "$scratch/report.json"
+jq -r .body "$scratch/report.json" > "$scratch/body.md"
+count=$(jq .count "$scratch/report.json")
+number=$(jq -r '.number // empty' "$scratch/filed.json")
+state=$(jq -r '.state // empty' "$scratch/filed.json")
+if [[ -z $write ]]; then
+  cat "$scratch/body.md"
+  echo "report:deps: $count finding(s); REPORT_FILE unset, nothing written" >&2
+  exit 0
+fi
+if (( count == 0 )); then
+  if [[ $state == OPEN ]]; then
+    gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+    gh issue close "$number" --repo "$repo" --reason completed > /dev/null
+    echo "closed #$number: no findings"
+  else
+    echo "report:deps: no findings"
+  fi
+elif [[ -z $number ]]; then
+  gh issue create --repo "$repo" --title "$title" --label collector --label kind:ci --label area:workflow \
+    --label priority:medium --label effort:unknown --body-file "$scratch/body.md"
+else
+  [[ $state == OPEN ]] || gh issue reopen "$number" --repo "$repo" > /dev/null
+  gh issue edit "$number" --repo "$repo" --body-file "$scratch/body.md" > /dev/null
+  echo "updated #$number: $count finding(s)"
+fi
 {% endraw %}'''
 
 # The pull request's title becomes the header of its merge commit on main,
@@ -2680,7 +2994,7 @@ while :; do
     if [[ "$sent" == true && $(jq .placed <<< "$finding") == false ]]; then
       title=$(jq -r '"stall: \(.kind) on #\(.number), whose lane `\(.lane)` no seat holds"' <<< "$finding")
       gh issue create -R "$repo" --title "$title" --body "$(printf '## Observation\n\n%s\n' "$line")" \
-        --label kind:defect --label area:workflow --label needs:triage || sent=false
+        --label kind:defect --label area:workflow --label priority:high --label effort:easy --label needs:triage || sent=false
     fi
     # A page or a filing that failed is tried again at the next reading.
     if [[ "$sent" == false ]]; then
