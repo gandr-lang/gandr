@@ -442,6 +442,101 @@ fn a_definition_whose_arm_is_a_stuck_call_steps_to_it_2832()
     );
 }
 
+/// #3042: a call whose selected arm calls a definition at another call's
+/// result, `via(inj₀ 0, x)` selecting `y <- tail(x); pick(y)`, both stuck at
+/// `x`, runs to the binds over the two calls, itself rigid; an arm that binds
+/// the stuck call and cases on it in place makes no call and is rigid.
+#[test]
+fn a_definition_whose_arm_calls_over_a_stuck_call_steps_to_it_3042()
+{
+    // def pick = thunk λx. case x { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
+    // def tail = thunk λx. case x { p => return p ; p => return p } ;
+    // def via = thunk λw. λx. case w { _ => y <- tail(x); pick(y) ; _ => return
+    // ⌜Unit⌝ } ; def inline = thunk λw. λx. case w {
+    //   _ => y <- tail(x); case y { _ => return ⌜Integer⌝ ; _ => return ⌜Unit⌝ } ;
+    //   _ => return ⌜Unit⌝
+    // } ;
+    let mut arena = CoreArena::new();
+    let integer = arena.value_type_base(BaseType::Integer);
+    let unit_type = arena.value_type_unit();
+    let integer_code = arena.value_quote(integer);
+    let unit_code = arena.value_quote(unit_type);
+    let to_integer = arena.computation_return(integer_code);
+    let to_unit = arena.computation_return(unit_code);
+    let innermost = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let picked = arena.computation_case(innermost, &[to_integer, to_unit]);
+    let pick = arena.computation_lambda(picked);
+    let pick = arena.value_thunk(pick);
+    let payload = arena.computation_return(innermost);
+    let tailed = arena.computation_case(innermost, &[payload, payload]);
+    let tail = arena.computation_lambda(tailed);
+    let tail = arena.value_thunk(tail);
+    let call = |arena: &mut CoreArena, constant: usize, arguments: &[ValueId]| {
+        let head = arena.value_constant(ConstantIndex::from(constant));
+        let mut applied = arena.computation_force(head);
+        for &argument in arguments {
+            applied = arena.computation_application(applied, argument);
+        }
+        applied
+    };
+    // Under the arm's binder, `x` is one out and `w` two; under the bind,
+    // `y` is the innermost.
+    let x_in_arm = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let w = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+    let tail_in_arm = call(&mut arena, 1, &[x_in_arm]);
+    let to_pick = call(&mut arena, 0, &[innermost]);
+    let over_tail = arena.computation_bind(tail_in_arm, to_pick);
+    let selected = arena.computation_case(w, &[over_tail, to_unit]);
+    let via = arena.computation_lambda(selected);
+    let via = arena.computation_lambda(via);
+    let via = arena.value_thunk(via);
+    let cased = arena.computation_bind(tail_in_arm, picked);
+    let selected_case = arena.computation_case(w, &[cased, to_unit]);
+    let inline = arena.computation_lambda(selected_case);
+    let inline = arena.computation_lambda(inline);
+    let inline = arena.value_thunk(inline);
+    let mut definitions = CodeDefinitions::new();
+    definitions.define(ConstantIndex::from(0_usize), pick);
+    definitions.define(ConstantIndex::from(1_usize), tail);
+    definitions.define(ConstantIndex::from(2_usize), via);
+    definitions.define(ConstantIndex::from(3_usize), inline);
+    let zero = arena.value_literal(crate::fixture::integer_literal());
+    let first = arena.value_injection(gandr_core_term::Summand::from(0_usize), zero);
+    let x = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let selecting = call(&mut arena, 2, &[first, x]);
+    let code = arena.value_returned(selecting);
+    let tail_of_x = call(&mut arena, 1, &[x]);
+    let reached = arena.computation_bind(tail_of_x, to_pick);
+    let written = arena.value_returned(reached);
+    let Maybe::Present(step) = definitions.reduce(&mut arena, code).unwrap()
+    else {
+        panic!("`via(inj₀ 0, x)` runs to the binds over the calls its arm reached");
+    };
+    assert_eq!(step.unfolded(), Unfolded::Returned(code));
+    assert_eq!(
+        gandr_core_term::equal_certificate_syntax(&arena, step.reduct(), written),
+        gandr_core_term::CertificateEquality::Equal,
+        "the run reads back to `y <- tail(x); pick(y)`: {:?}",
+        arena.value(step.reduct())
+    );
+    assert_eq!(
+        definitions.reduce(&mut arena, step.reduct()).unwrap(),
+        Maybe::Absent(unfolding::Absent::Rigid),
+        "the binds it reaches read back to themselves, so a weak head stops there"
+    );
+    assert!(
+        definitions.certify(&arena, step).is_ok(),
+        "the step is certified under its binders"
+    );
+    let casing = call(&mut arena, 3, &[first, x]);
+    let in_place = arena.value_returned(casing);
+    assert_eq!(
+        definitions.reduce(&mut arena, in_place).unwrap(),
+        Maybe::Absent(unfolding::Absent::Rigid),
+        "an arm that binds the stuck call and cases on it in place makes no call"
+    );
+}
+
 #[test]
 fn the_loose_reach_counts_only_binders_outside_the_root()
 {

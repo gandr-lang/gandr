@@ -1,0 +1,41 @@
+/// This source converts a call whose selected arm calls a definition at another call's result.
+///
+/// It pins how the checker steps a call whose arm reaches `emp(tailOf(h))`, both calls stuck at `h`.
+///
+/// The argument `tailOf(h)` is itself a call, so the arm reads back as a bind of that call ahead of the call it feeds. The checker steps the selecting call to the two calls, which convert with the same calls written out, and the kernel replays the step.
+///
+/// - see: #3042
+/// - see: #2832
+import "./data-base.gandr";
+import "./stuck-arm-call.gandr";
+
+/// This function gives the heap past the first cell, or the empty heap.
+def tailOf(h : Heap) -> Heap {
+  case h {
+    Emp => Emp,
+    Cell(_l, rest) => rest
+  }
+}
+
+/// At zero, the heap past the first cell is empty; at a successor, never.
+def viaTail(w : Nat, h : Heap) -> Type {
+  case w {
+    Zero => emp(tailOf(h)),
+    Succ(_n) => return Void
+  }
+}
+
+/// The heap past the first cell is empty, with no arm selected first.
+def tailEmpty(h : Heap) -> Type {
+  emp(tailOf(h))
+}
+
+/// This proof reads `viaTail(Zero, h)` as the calls its arm reached.
+def nested(h : Heap) -> (viaTail(Zero, h)) => emp(tailOf(h)) {
+  return fn (e) { e }
+}
+
+/// This proof reads `tailEmpty(h)` as the calls its body makes.
+def bodyNested(h : Heap) -> (tailEmpty(h)) => emp(tailOf(h)) {
+  return fn (e) { e }
+}
