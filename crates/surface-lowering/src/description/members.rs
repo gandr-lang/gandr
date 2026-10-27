@@ -73,16 +73,12 @@ impl Reader<'_, '_>
             }
             else {
                 let result = run.take()?;
-                (vec![SortRef::new("result", self.text(result).0)], vec![
-                    WrittenPort {
-                        named: Maybe::Absent(port_name::Absent::Unnamed),
-                        binders: Vec::new(),
-                        sort: WrittenSort {
-                            span: result.span,
-                            indices: Vec::new(),
-                        },
-                    },
-                ])
+                let (port, sort) = self.family_sort(Name::from("result"), result)?;
+                (vec![port], vec![WrittenPort {
+                    named: Maybe::Absent(port_name::Absent::Unnamed),
+                    binders: Vec::new(),
+                    sort,
+                }])
             }
         }
         else {
@@ -118,8 +114,9 @@ impl Reader<'_, '_>
     /// each is written.
     ///
     /// # Specification
-    /// - ensures: preserves port names, sort spellings and source order; one
-    ///   written port per port, its name tile and its sort's bytes.
+    /// - ensures: preserves port names and source order, each sort read as
+    ///   [`Self::family_sort`] reads it; one written port per port, its name
+    ///   tile and its sort's bytes.
     /// - fails: an incomplete binder is located rather than omitted.
     /// - panics: none.
     ///
@@ -143,21 +140,76 @@ impl Reader<'_, '_>
             if !run.eat(Spelling(":")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
-            let sort = run.take()?;
-            ports.push(SortRef::new(self.text(name).0, self.text(sort).0));
+            let (port, sort) = self.family_sort(Name::from(self.text(name).0), run.take()?)?;
+            ports.push(port);
             written.push(WrittenPort {
                 named: Maybe::Present(name.span),
                 binders: Vec::new(),
-                sort: WrittenSort {
-                    span: sort.span,
-                    indices: Vec::new(),
-                },
+                sort,
             });
             if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
                 return Err(run.fault(DescriptionFault::Malformed));
             }
         }
         Ok((ports, written))
+    }
+
+    /// Read the port `name`'s sort, written at `at`, as a family over the
+    /// terms it is applied to: `Nat` over none, `Skip(S(Z))` over `S(Z)`; and
+    /// where it and each of those terms are written.
+    ///
+    /// # Specification
+    /// - ensures: a sort written as one tile is its spelling over no terms; an
+    ///   application is its head's spelling over each argument, in order, read
+    ///   as [`Spot::Index`] reads a term, each argument's nodes written where
+    ///   they stand; any other sort is its whole spelling over none.
+    /// - fails: an argument that is no term is malformed.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `Malformed` for an argument that is no term.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Skip(Z)` reads as `Skip` over the constructor `Z`,
+    ///   so the operation's ports answer at the family at that index.
+    /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
+    #[spec(ensures: |result| result.as_ref().map_or(true, |read| read.0.arguments.len() == read.1.indices.len() && read.1.span == at.span))]
+    fn family_sort(
+        &self,
+        name: Name,
+        at: Placed,
+    ) -> Result<(SortRef, WrittenSort), DescriptionDiagnostic>
+    {
+        let whole = |sort: &str| {
+            (SortRef::new(name.clone(), sort), WrittenSort {
+                span: at.span,
+                indices: Vec::new(),
+            })
+        };
+        let pieces = self.pieces(at)?;
+        let mut run = Run::new(&pieces, at.span);
+        let (Some(_), Ok(head), true) = (pieces.get(1), run.take(), run.eat(Spelling("(")).0)
+        else {
+            return Ok(whole(self.text(at).0));
+        };
+        let mut terms = Vec::new();
+        let mut indices = Vec::new();
+        while !run.eat(Spelling(")")).0 {
+            let (term, nodes) = self.term(run.take()?, &BTreeSet::new(), Spot::Index)?;
+            terms.push(term);
+            indices.push(nodes);
+            if !run.eat(Spelling(",")).0 && !run.at(Spelling(")")).0 {
+                return Err(run.fault(DescriptionFault::Malformed));
+            }
+        }
+        run.end()?;
+        Ok((
+            SortRef::new(name, self.text(head).0).applied(terms),
+            WrittenSort {
+                span: at.span,
+                indices,
+            },
+        ))
     }
 
     /// Read a written rewrite face, derive its variable metadata, and keep
@@ -266,6 +318,37 @@ impl Reader<'_, '_>
         instantiable: &BTreeSet<&Name>,
     ) -> Result<(FreeTerm, WrittenTerm), DescriptionDiagnostic>
     {
+        self.term(at, instantiable, Spot::Expression)
+    }
+
+    /// Read a term written at `spot`, as [`Self::free_term`] reads one, and
+    /// keep where each node is written.
+    ///
+    /// # Specification
+    /// - ensures: as [`Self::free_term`]; at [`Spot::Index`] a capitalised
+    ///   name, which a type spells as a type name, is a constructor, alone or
+    ///   at an application's head.
+    /// - fails: as [`Self::free_term`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Self::free_term`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — `Z` and `S(Z)` in `Skip(S(Z))` read as constructor
+    ///   terms.
+    /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
+    #[spec(ensures: |result| result.is_ok() || self.tree.node(at.node).is_some())]
+    fn term(
+        &self,
+        at: Placed,
+        instantiable: &BTreeSet<&Name>,
+        spot: Spot,
+    ) -> Result<(FreeTerm, WrittenTerm), DescriptionDiagnostic>
+    {
+        let constructor = |label: &str| {
+            label == "constructor" || (spot == Spot::Index && label == "type_identifier")
+        };
         let mut pending = vec![TermFrame::Read(at)];
         // The atoms the enclosing `bind`s abstract, each with how many of them
         // abstract it.
@@ -292,7 +375,7 @@ impl Reader<'_, '_>
                                 }
                                 written.nodes.push(leaf(at.span));
                             },
-                            "constructor" => {
+                            label if constructor(label) => {
                                 terms.push(FreeTerm::ctor(self.text(at).0, []));
                                 written.nodes.push(leaf(at.span));
                             },
@@ -367,7 +450,7 @@ impl Reader<'_, '_>
                     });
                     let head_pieces = self.pieces(head)?;
                     let name = Name::from(self.text(head).0);
-                    let kind = if matches!(head_pieces.as_slice(), [Piece::Tile { label, .. }] if label.as_ref() == "constructor")
+                    let kind = if matches!(head_pieces.as_slice(), [Piece::Tile { label, .. }] if constructor(label.as_ref()))
                     {
                         TermKind::Constructor
                     }
@@ -443,6 +526,16 @@ enum TermKind
     Operation,
     /// An instantiation of a left-side variable.
     Instantiation,
+}
+
+/// Where a term is written.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Spot
+{
+    /// In an expression: a rule's side or a statement's.
+    Expression,
+    /// As an index term of a family a type applies.
+    Index,
 }
 
 /// A suspended free-term reading.

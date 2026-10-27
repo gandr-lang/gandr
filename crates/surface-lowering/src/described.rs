@@ -82,6 +82,7 @@ use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::ConstructorTag;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GroundSort;
 use gandr_surface_syntax::ByteOffset;
@@ -89,6 +90,7 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_theory_levitation::DeclPolarity;
 use gandr_theory_levitation::FreeTerm;
 use gandr_theory_levitation::Name;
+use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::TermNode;
 use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::TheoryDesc;
@@ -2062,14 +2064,15 @@ impl Typer<'_>
     /// Record every constructor, operation and rule of the unparameterised
     /// `data` family `description`, written as `written`, over `families`,
     /// the type and universe of each family the module declares, and
-    /// `constructors`, each constructor's fields and family.
+    /// `constructors`, each constructor's fields, family and tag.
     ///
     /// # Specification
     /// - requires: `written` is where the family's reader read its
     ///   constructors, operations and rules.
     /// - ensures: as the module documentation states for a data family.
-    /// - fails: never; a port whose sort names no family records nothing, nor
-    ///   does an operation with such a port.
+    /// - fails: never; a port whose sort names no family, or applies one to a
+    ///   term that is no constructor term, records nothing, nor does an
+    ///   operation with such a port.
     /// - panics: none.
     /// - executable: none — as [`Self::theory`].
     ///
@@ -2079,14 +2082,17 @@ impl Typer<'_>
     /// # Adequacy
     /// - hypothesis: L3 — `divmod`, `walk`, `half` and their rules answer at
     ///   their types and sorts, a field's sort at its family's universe and a
-    ///   one-result operation's result at the family itself.
+    ///   one-result operation's result at the family itself; an indexed
+    ///   family's operation and rule answer at the family at the index its
+    ///   ports write.
     /// - witness: `described::tests::a_data_rule_answers_each_node_at_its_sort`
+    /// - witness: `described::tests::an_indexed_family_s_operation_answers_at_its_index_2940`
     fn family(
         &mut self,
         description: &TheoryDesc<DescriptionGrade>,
         written: &WrittenMembers,
         families: &BTreeMap<Name, (ValueTypeId, ValueTypeId)>,
-        constructors: &BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId)>,
+        constructors: &BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)>,
     )
     {
         let closed = self.context(&Scope::default());
@@ -2099,7 +2105,7 @@ impl Typer<'_>
                 .map(|&(_, universe)| universe)
         };
         for (constructor, member) in description.ctors.iter().zip(&written.constructors) {
-            let Some(&(ref fields, family)) = constructors.get(&constructor.name)
+            let Some(&(ref fields, family, _)) = constructors.get(&constructor.name)
             else {
                 continue;
             };
@@ -2131,22 +2137,27 @@ impl Typer<'_>
                 .zip(&member.inputs)
                 .chain(operation.arity.outputs.iter().zip(&member.outputs));
             for (port, at) in ports {
-                if let Some(&(ty, universe)) = families.get(&port.sort) {
+                if let Some((ty, universe)) = self.port_family(port, families, constructors) {
                     if let Maybe::Present(named) = at.named {
                         self.emit(named, DescribedRole::Name, ty, closed);
                     }
                     self.emit(at.sort.span, DescribedRole::Type, universe, closed);
+                    self.index_nodes(port, &at.sort, constructors, closed);
                 }
             }
-            let sorted = |ports: &[gandr_theory_levitation::SortRef]| -> Option<Vec<ValueTypeId>> {
+            let sorted = |typer: &mut Self, ports: &[SortRef]| -> Option<Vec<ValueTypeId>> {
                 ports
                     .iter()
-                    .map(|port| families.get(&port.sort).map(|&(ty, _)| ty))
+                    .map(|port| {
+                        typer
+                            .port_family(port, families, constructors)
+                            .map(|(ty, _)| ty)
+                    })
                     .collect()
             };
             let (Some(inputs), Some(outputs)) = (
-                sorted(&operation.arity.inputs),
-                sorted(&operation.arity.outputs),
+                sorted(self, &operation.arity.inputs),
+                sorted(self, &operation.arity.outputs),
             )
             else {
                 continue;
@@ -2233,7 +2244,7 @@ impl Typer<'_>
                                     (arg, constructor.and_then(|held| held.0.get(place).copied()))
                                 })
                                 .collect();
-                            (constructor.map(|&(_, family)| family), below)
+                            (constructor.map(|&(_, family, _)| family), below)
                         },
                         TermView::Results { args } => {
                             let components: Vec<ValueTypeId> = match expected
@@ -2265,6 +2276,112 @@ impl Typer<'_>
             for (span, name) in unsorted {
                 if let Some(&ty) = variables.get(&name) {
                     self.emit(span, DescribedRole::Term, ty, closed);
+                }
+            }
+        }
+    }
+
+    /// The type and universe of the family the sort of `port` names among
+    /// `families`: the family itself over no terms, and over index terms the
+    /// family at the values they denote, as [`Self::constructed`] reads them.
+    ///
+    /// # Specification
+    /// trivial.
+    fn port_family(
+        &mut self,
+        port: &SortRef,
+        families: &BTreeMap<Name, (ValueTypeId, ValueTypeId)>,
+        constructors: &BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)>,
+    ) -> Option<(ValueTypeId, ValueTypeId)>
+    {
+        let &(ty, universe) = families.get(&port.sort)?;
+        if port.arguments.is_empty() {
+            return Some((ty, universe));
+        }
+        let Some(&ValueType::Data { declaration, .. }) = self.arena.value_type(ty)
+        else {
+            return None;
+        };
+        let mut indices = Vec::with_capacity(port.arguments.len());
+        for term in &port.arguments {
+            indices.push(self.constructed(term, constructors)?);
+        }
+        Some((self.arena.value_type_data(declaration, indices), universe))
+    }
+
+    /// The value the constructor term `term` denotes over `constructors`:
+    /// each constructor applied to as many terms as it has fields; none for
+    /// any other term.
+    ///
+    /// # Specification
+    /// trivial.
+    fn constructed(
+        &mut self,
+        term: &FreeTerm,
+        constructors: &BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)>,
+    ) -> Option<ValueId>
+    {
+        let mut pending = Vec::from([Step::Read(term.to_node())]);
+        let mut built: Vec<ValueId> = Vec::new();
+        while let Some(step) = pending.pop() {
+            match step {
+                Step::Read(node) => {
+                    let TermView::Ctor { name, args } = node.view()
+                    else {
+                        return None;
+                    };
+                    let args: Vec<TermNode<'_>> = args.collect();
+                    pending.push(Step::Apply(name, args.len()));
+                    pending.extend(args.into_iter().rev().map(Step::Read));
+                },
+                Step::Apply(name, count) => {
+                    let &(ref fields, family, tag) = constructors.get(name)?;
+                    let start = built.len().checked_sub(count)?;
+                    if fields.len() != count {
+                        return None;
+                    }
+                    let fields = built.split_off(start);
+                    built.push(self.arena.value_constructor(family, tag, fields));
+                },
+            }
+        }
+        match *built.as_slice() {
+            [value] => Some(value),
+            _ => None,
+        }
+    }
+
+    /// Record each node of the index terms `port`'s sort is applied to,
+    /// written as `written`, that a constructor of `constructors` heads, at
+    /// that constructor's family.
+    ///
+    /// # Specification
+    /// trivial.
+    fn index_nodes(
+        &mut self,
+        port: &SortRef,
+        written: &WrittenSort,
+        constructors: &BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)>,
+        context: ContextIndex,
+    )
+    {
+        for (term, nodes) in port.arguments.iter().zip(&written.indices) {
+            let mut pending = Vec::from([term.to_node()]);
+            let mut at = nodes.nodes.iter();
+            while let Some(node) = pending.pop() {
+                let Some(placed) = at.next()
+                else {
+                    break;
+                };
+                if let TermView::Ctor { name, args } = node.view() {
+                    if let Some(&(_, family, _)) = constructors.get(name) {
+                        self.emit(placed.span, DescribedRole::Term, family, context);
+                    }
+                    let first = pending.len();
+                    pending.extend(args);
+                    if let Some(children) = pending.get_mut(first ..) {
+                        children.reverse();
+                    }
                 }
             }
         }
@@ -2524,7 +2641,8 @@ impl LoweredModule<'_>
             members: BTreeMap::new(),
         };
         let mut families: BTreeMap<Name, (ValueTypeId, ValueTypeId)> = BTreeMap::new();
-        let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId)> = BTreeMap::new();
+        let mut constructors: BTreeMap<Name, (Vec<ValueTypeId>, ValueTypeId, ConstructorTag)> =
+            BTreeMap::new();
         let mut signatures: BTreeMap<Name, (ConstantIndex, &DataSignature)> = BTreeMap::new();
         let mut codatas: BTreeMap<Name, (ConstantIndex, &CodataSignature)> = BTreeMap::new();
         let mut kinds: BTreeMap<ConstantIndex, ValueTypeId> = BTreeMap::new();
@@ -2585,12 +2703,16 @@ impl LoweredModule<'_>
                 Name::from(declaration.name().as_ref()),
                 (ty, signature.kind()),
             );
-            for (name, fields) in self
+            for (tag, (name, fields)) in self
                 .constructors(index)
                 .iter()
                 .zip(signature.constructors())
+                .enumerate()
             {
-                let _first = constructors.insert(Name::from(name.as_str()), (fields.clone(), ty));
+                let _first = constructors.insert(
+                    Name::from(name.as_str()),
+                    (fields.clone(), ty, ConstructorTag::from(tag)),
+                );
             }
         }
         let code = families.get(&Name::from("Theory")).map(|&(ty, _)| ty);
