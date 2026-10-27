@@ -464,6 +464,11 @@ impl RegisteredAttribute
     pub const DEPRECATED: Self = Self("deprecated");
     /// The fields a `deprecated` record may state, each a text.
     pub const DEPRECATION_FIELDS: &'static [&'static str] = &["since", "note"];
+    /// `boundary`: the `extern "rust"` block it decorates is checked against
+    /// the rows its payload names, one per member in written order. Each
+    /// member's declared types, printed by Rust's default layout, realise its
+    /// row, or the block is refused by the first clause a member breaks.
+    pub const BOUNDARY: Self = Self("boundary");
 }
 
 impl AsRef<str> for RegisteredAttribute
@@ -697,7 +702,7 @@ pub struct AttributeRegistry;
 ///   suggestions select the earlier eligible row.
 /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
 /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
-const REGISTRY: [(&str, AttributeSchema); 14_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 15_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
@@ -724,6 +729,7 @@ const REGISTRY: [(&str, AttributeSchema); 14_usize] = [
         RegisteredAttribute::DEPRECATED.0,
         AttributeSchema::MarkerOrRecord(RegisteredAttribute::DEPRECATION_FIELDS),
     ),
+    (RegisteredAttribute::BOUNDARY.0, AttributeSchema::Names),
 ];
 
 impl AttributeRegistry
@@ -1549,27 +1555,28 @@ impl AttributeTable
     }
 
     /// File `named`, what the `attribute` entry filed under `key` names: as
-    /// worlds for `entry`, as laws for `respects`, and nothing when it names
-    /// none, which is every other attribute's case.
+    /// worlds for `entry`, as laws for `respects`, and nothing for any other
+    /// attribute, whose names its own pass reads off the payload.
     ///
     /// # Specification
     /// - requires: `named` is what the `attribute` entry filed under `key`
     ///   names.
     /// - ensures: [`Self::worlds`] at `key` answers a non-empty `named` of an
-    ///   `entry`, [`Self::laws`] a non-empty `named` of any other attribute,
-    ///   and an empty one changes nothing.
+    ///   `entry`, [`Self::laws`] one of a `respects`, and anything else changes
+    ///   nothing.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an `entry`, a `respects` and an unnamed attribute
-    ///   separate the three routes.
+    /// - hypothesis: L3 — an `entry`, a `respects` and a `boundary` separate
+    ///   the three routes.
     /// - witness: `lower::world::tests::an_entry_names_its_home_then_its_capabilities`
     /// - witness: `lower::tests::a_respects_attribute_names_its_laws_through_either_form`
+    /// - witness: `lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`
     #[spec(
         captures: count = named.len(),
         ensures: count == 0
-            || if attribute == RegisteredAttribute::ENTRY { self.worlds(key).len() == count } else { self.laws(key).len() == count },
+            || if attribute == RegisteredAttribute::ENTRY { self.worlds(key).len() == count } else if attribute == RegisteredAttribute::RESPECTS { self.laws(key).len() == count } else { true },
     )]
     #[inline]
     pub fn file_named(
@@ -1585,7 +1592,7 @@ impl AttributeTable
         if attribute == RegisteredAttribute::ENTRY {
             self.file_worlds(key, named);
         }
-        else {
+        else if attribute == RegisteredAttribute::RESPECTS {
             self.file_laws(key, named);
         }
     }
@@ -1947,6 +1954,7 @@ mod tests
                 "deprecated",
                 AttributeSchema::MarkerOrRecord(&["since", "note"]),
             ),
+            ("boundary", AttributeSchema::Names),
         ];
 
         for (spelling, schema) in expected {
@@ -2003,6 +2011,7 @@ mod tests
             ("identiy", "identity"),
             ("deprecate", "deprecated"),
             ("decompose", "decomposes"),
+            ("boundary", "boundary"),
         ];
 
         for (written, nearest) in expected {

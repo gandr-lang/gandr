@@ -369,6 +369,7 @@ pub use self::data::Generators;
 pub use self::data::WordsForm;
 pub use self::data::closed_term;
 pub use self::derive::DerivedSlot;
+pub use self::foreign::BoundarySlot;
 use self::foreign::Foreign;
 pub use self::foreign::ForeignInterface;
 pub use self::foreign::ForeignType;
@@ -774,7 +775,8 @@ pub enum Role
     Operation,
     /// A rule a theory's completion derives, `derive r : l <=> r in T`, or a
     /// lemma its proof rests on: entered in no name table, the statement read
-    /// through its theory's path `T.r`.
+    /// through its theory's path `T.r`. Also the check an extern block
+    /// carrying `boundary` takes, entered in no name table either.
     Derived,
     /// The abstract type an opaque ascription declares for one abstract
     /// component of its signature: admitted before the module's members,
@@ -1144,7 +1146,8 @@ pub enum Operand
     Operation,
     /// A rule a theory's completion derives, or a lemma its proof rests on:
     /// its type and proof minted from the plan the collection keeps for its
-    /// slot.
+    /// slot. Also an extern block's boundary check, its call minted from the
+    /// block's members and the rows its attribute names.
     Derived,
     /// A top-level `oper`, which lowers to no core term, a refusal held beside
     /// a `theory` block, or a root child that is no declaration: the half that
@@ -1577,6 +1580,8 @@ pub struct Collected<'source>
     /// declaring it and its name: read where its source reads a row or a
     /// call, ahead of the host's interface of its name.
     pub foreign: BTreeMap<(SourceIndex, EffectName), Arc<ForeignInterface>>,
+    /// Each extern block carrying `boundary`, by the slot its check takes.
+    pub boundaries: BTreeMap<SlotIndex, BoundarySlot>,
 }
 
 quenchant_shape::reason_enum! {
@@ -3036,6 +3041,7 @@ pub fn begin_collection<'source>(
         declared_uses: Vec::new(),
         reached: BTreeSet::new(),
         foreign: BTreeMap::new(),
+        boundaries: BTreeMap::new(),
     })
 }
 
@@ -3222,7 +3228,9 @@ pub fn source_pieces(
 ///   takes its slot where it is written, before the forms after it, so its
 ///   refusal is reported ahead of what a later form refuses because of it. Each
 ///   forgetting map the manifest model types of a root child ask for takes its
-///   slot before the child's own.
+///   slot before the child's own. An extern block carrying `boundary` takes the
+///   slot its check runs in where it is written, owning the attribute blocks
+///   before it.
 /// - provides: the admission order every later pass resolves names against,
 ///   which the lowering builds a source at a time, before its passes over that
 ///   source.
@@ -3439,10 +3447,12 @@ pub fn collect_source<'source>(
         }
         if former == Maybe::Present(Former::Unadmitted(Unbuilt::ExternBlock)) {
             match collector.foreign(child)? {
-                Foreign::Declared => {
-                    // The block takes no slot, so the blocks before it
+                Foreign::Declared(interface) => {
+                    // A block carrying `boundary` takes the slot its check
+                    // runs in; any other takes none, so the blocks before it
                     // decorate nothing, as before an import.
-                    if let Some(&block) = decorations.first()
+                    if !collector.boundary(child, &decorations, &interface).0
+                        && let Some(&block) = decorations.first()
                         && let Some(refusal) = strayed(collector.module_child(block))?
                     {
                         strays.push(Stray::of(block, refusal, Vec::new()));

@@ -121,10 +121,24 @@ enum Owed
 }
 
 /// Every name without an exemplar, by its spelling, and why.
-const OWED: [(&str, Owed); 62_usize] = [
+const OWED: [(&str, Owed); 64_usize] = [
     (
         "AdmissionOrder",
         Owed::Unreachable(Reason("the driver offers declarations in admission order")),
+    ),
+    (
+        "BoundaryUnrealised.Destroy",
+        Owed::Unreachable(Reason(
+            "a block's members declare fixed-width atoms, which Rust's default layout prints as \
+             needing no drop",
+        )),
+    ),
+    (
+        "BoundaryUnrealised.Unanswered",
+        Owed::Unreachable(Reason(
+            "`admitBlock` answers every pair of members and rows, so a check stopping short is an \
+             engine fault",
+        )),
     ),
     (
         "DanglingNode",

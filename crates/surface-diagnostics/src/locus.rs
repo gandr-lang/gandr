@@ -691,7 +691,7 @@ impl Annotations
         };
         labelled && ret.context.iter().all(|slot| !matches!(*slot,
             Maybe::Absent(report_context::Absent::OutsideText)))
-            && if let Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }) = refusal {
+            && if let Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. } | CorpusRefusal::BoundaryUnrealised { span, .. }) = refusal {
                 ret.primary == Maybe::Present(Annotation { span, label })
                     && ret.context == UNNAMED
             } else { true }
@@ -704,9 +704,10 @@ impl Annotations
     {
         match refusal {
             Refusal::Lowering(lowering) => Self::lowering(lowering),
-            Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }) => {
-                Self::at(span, Label::Culprit(Culprit::of(refusal)))
-            },
+            Refusal::Corpus(
+                CorpusRefusal::ExpectationOutsideFixtureRoot { span, .. }
+                | CorpusRefusal::BoundaryUnrealised { span, .. },
+            ) => Self::at(span, Label::Culprit(Culprit::of(refusal))),
             Refusal::Checking(checking) => checked(checking, declaration, origins),
         }
     }

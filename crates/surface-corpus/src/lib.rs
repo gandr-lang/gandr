@@ -196,12 +196,13 @@
 //! supports opaque return types.
 //!
 //! Adequacy names each witness and its finite input class. Source witnesses
-//! cover strict-root guards, conflicting and malformed attributes, run
-//! mismatches, refusal names and alignment failures; boundary witnesses cover
-//! numeric overflow, every tally channel and sink refusal. A later alignment
-//! error does not roll back or repeat earlier runner calls. Corpus export
-//! witnesses establish composition over the current sources, not a general
-//! semantic oracle.
+//! parse, lower and check their modules, and cover strict-root guards,
+//! conflicting and malformed attributes, run mismatches, refusal names and
+//! alignment failures. Boundary witnesses construct counters and formatters
+//! directly, and cover numeric overflow, every tally channel and sink refusal.
+//! A later alignment error does not roll back or repeat earlier runner calls.
+//! Corpus export witnesses establish composition over the current sources, not
+//! a general semantic oracle.
 //!
 //! Exemptions identify the unavailable observation: data and vocabulary
 //! declarations have no call boundary; formatters expose no readable sink;
@@ -314,11 +315,13 @@ pub use crate::expectation::Outcome;
 pub use crate::expectation::Stated;
 pub use crate::expectation::expectation_schema;
 pub use crate::expectation::normalized_call;
+pub use crate::refusal::BoundaryClause;
 pub use crate::refusal::CorpusRefusal;
 pub use crate::refusal::Refusal;
 pub use crate::refusal::RefusalName;
 pub use crate::refusal::RefusalSpelling;
 pub use crate::refusal::refusal_name;
+pub use crate::refusal::unrealised;
 pub use crate::report::ClassCounts;
 pub use crate::report::Seal;
 pub use crate::report::SettleCounts;

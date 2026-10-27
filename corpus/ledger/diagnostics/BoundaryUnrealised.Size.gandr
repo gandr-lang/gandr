@@ -1,0 +1,13 @@
+/// `BoundaryUnrealised.Size`: an `extern "rust"` block whose member declares a type of another size than its row's.
+// `Row`, `Codes`, `Code` and `admitBlock`.
+import "../../../library/std/src/boundary.gandr";
+// `U32`.
+import "../../../library/std/src/layout.gandr";
+
+/// Two `u32` to a `u32`.
+def addRow : Row = Row(Arg(Plain(U32), Arg(Plain(U32), NoCode)), Plain(U32));
+
+@[ boundary(addRow), refuses("BoundaryUnrealised.Size") ]
+extern "rust" from "counted" as Counted {
+  def add(x : u32, n : u64) -> u32;
+}

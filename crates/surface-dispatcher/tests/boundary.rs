@@ -2,8 +2,11 @@
 //! builds, each answer read back into the caller's arena.
 
 use core::convert::Infallible;
+use std::path::Path;
+use std::sync::OnceLock;
 
 use anodized::spec;
+use gandr_core_checker::HostGrant;
 use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
@@ -23,17 +26,85 @@ use gandr_runtime_emitter::HostValues;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
+use gandr_surface_dispatcher::Laid;
+use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Terminal;
 use gandr_surface_dispatcher::Unrunnable;
-use gandr_surface_dispatcher::compose;
+use gandr_surface_dispatcher::classify;
+use gandr_surface_dispatcher::judge_member;
+use gandr_surface_dispatcher::lay_out;
+use gandr_surface_dispatcher::lower_unit_source;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-/// The exemplar whose definitions the tests call.
-const ROUND_TRIP: &str = include_str!("../../../corpus/model/interop/boundary/round-trip.gandr");
+/// `text`, read as the source at `path`, laid out as one unit with the sources
+/// it imports.
+///
+/// # Specification
+/// - ensures: the unit [`lay_out`] reads for `text` at `path`, its imports
+///   resolved beside `path`.
+/// - panics: if the built-in grammar does not build.
+/// - executable: none — the layout is the dispatcher's; the calls compose it.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the exemplar's imports resolve, and a source no file
+///   holds lays out alone.
+/// - witness: `tests::boundary::a_definition_answers_the_integer_rust_passes`
+/// - witness: `tests::boundary::an_unrunnable_definition_ends_before_a_run`
+fn laid(
+    path: &Path,
+    text: SourceText<'_>,
+) -> Laid
+{
+    let grammar = built_in().expect("built-in grammar");
+    lay_out(&grammar, path, classify(path), text)
+}
+
+/// The exemplar whose definitions the tests call, laid out once with the `std`
+/// modules it imports.
+///
+/// # Specification
+/// - ensures: the unit of `round-trip.gandr` as the corpus holds it.
+/// - panics: if the exemplar does not read.
+/// - executable: none — as [`laid`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`laid`].
+/// - witness: `tests::boundary::a_definition_answers_the_integer_rust_passes`
+fn round_trip() -> &'static Laid
+{
+    static ROUND_TRIP: OnceLock<Laid> = OnceLock::new();
+    ROUND_TRIP.get_or_init(|| {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/model/interop/boundary/round-trip.gandr");
+        let text = std::fs::read_to_string(&path).expect("the exemplar reads");
+        laid(&path, SourceText::from(text.as_str()))
+    })
+}
+
+/// A definition the checker refuses, laid out alone.
+///
+/// # Specification
+/// - ensures: the unit of one definition calling `sub` on a text.
+/// - panics: none.
+/// - executable: none — as [`laid`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`laid`].
+/// - witness: `tests::boundary::an_unrunnable_definition_ends_before_a_run`
+fn refused() -> &'static Laid
+{
+    static REFUSED: OnceLock<Laid> = OnceLock::new();
+    REFUSED.get_or_init(|| {
+        laid(
+            Path::new("refused.gandr"),
+            SourceText::from("def refused(x : Integer) -> Integer { sub(\"wrong\", x) }"),
+        )
+    })
+}
 
 /// An integer the Rust caller passes to a definition or expects back.
 #[repr(transparent)]
@@ -183,11 +254,12 @@ impl HostHandler for RustSide
     }
 }
 
-/// Compose `source`, call its definition `name` on `arguments` under `host`,
-/// and answer the caller's arena beside how the call ended.
+/// Compose `laid`, call its definition `name` on `arguments` under `host`, and
+/// answer the caller's arena beside how the call ended.
 ///
 /// # Specification
-/// - requires: `source` composes and declares `name` at its top level.
+/// - requires: `laid` composes and its own source declares `name` at its top
+///   level.
 /// - ensures: the arena holding the arguments and any read-back answer, and the
 ///   terminal the real dispatcher's call ended at.
 /// - panics: if composition or the lookup of `name` fails.
@@ -201,7 +273,7 @@ impl HostHandler for RustSide
 /// - witness: `tests::boundary::an_extern_operation_no_host_answers_sticks_the_run`
 #[spec(ensures: |ref ret| !matches!(ret.1, Terminal::Ended(Evaluation::Unrunnable(Unrunnable::Undeclared(_)))))]
 fn call_under<Host>(
-    source: SourceText<'static>,
+    laid: &'static Laid,
     name: SurfaceName<'_>,
     arguments: &[Literal],
     host: &mut Host,
@@ -210,9 +282,22 @@ where
     Host: HostHandler<Abort = Infallible>,
 {
     let grammar = built_in().expect("built-in grammar");
-    let mut lowerings = LoweringCount::default();
-    let Composed::Settled { mut program, .. } =
-        compose(&grammar, CorpusRoot::Fixture, source, &mut lowerings).expect("composition")
+    let source = SourceText::from(laid.text.as_str());
+    let lowering = lower_unit_source(&grammar, source, &laid.unit, &mut LoweringCount::default())
+        .expect("the unit lowers");
+    let Lowered::Module { module, arena } = lowering.into_lowered()
+    else {
+        panic!("the unit is read as a module");
+    };
+    let Composed::Settled { mut program, .. } = judge_member(
+        CorpusRoot::Fixture,
+        (module, source),
+        arena,
+        &HostGrant::UNBOUNDED,
+        laid.base,
+    )
+    .admit()
+    .expect("composition")
     else {
         panic!("module was refused");
     };
@@ -244,7 +329,7 @@ where
 /// - witness: `tests::boundary::an_unrunnable_definition_ends_before_a_run`
 #[spec(ensures: |ref ret| !matches!(ret.1, Terminal::Ended(Evaluation::Unrunnable(Unrunnable::Undeclared(_)))))]
 fn call(
-    source: SourceText<'static>,
+    laid: &'static Laid,
     name: SurfaceName<'_>,
     arguments: &[Integer],
 ) -> (CoreArena, Terminal<'static>)
@@ -253,7 +338,7 @@ fn call(
         .iter()
         .map(|&argument| literal(argument))
         .collect();
-    call_under(source, name, &literals, &mut Declining)
+    call_under(laid, name, &literals, &mut Declining)
 }
 
 #[test]
@@ -264,11 +349,7 @@ fn a_definition_answers_the_integer_rust_passes()
         (Integer(-3), Integer(-6)),
         (Integer(0), Integer(0)),
     ] {
-        let (arena, terminal) = call(
-            SourceText::from(ROUND_TRIP),
-            SurfaceName::from("double"),
-            &[argument],
-        );
+        let (arena, terminal) = call(round_trip(), SurfaceName::from("double"), &[argument]);
         assert_eq!(
             returned(&arena, &terminal),
             Some(&Value::Literal(literal(answer))),
@@ -284,11 +365,7 @@ fn the_arguments_apply_in_the_order_passed()
         ([Integer(19), Integer(7)], Integer(12)),
         ([Integer(7), Integer(19)], Integer(-12)),
     ] {
-        let (arena, terminal) = call(
-            SourceText::from(ROUND_TRIP),
-            SurfaceName::from("less"),
-            &arguments,
-        );
+        let (arena, terminal) = call(round_trip(), SurfaceName::from("less"), &arguments);
         assert_eq!(
             returned(&arena, &terminal),
             Some(&Value::Literal(literal(answer))),
@@ -300,9 +377,7 @@ fn the_arguments_apply_in_the_order_passed()
 #[test]
 fn a_function_answered_is_not_forced()
 {
-    let (arena, terminal) = call(SourceText::from(ROUND_TRIP), SurfaceName::from("adder"), &[
-        Integer(5),
-    ]);
+    let (arena, terminal) = call(round_trip(), SurfaceName::from("adder"), &[Integer(5)]);
     assert!(
         matches!(returned(&arena, &terminal), Some(&Value::Thunk(_))),
         "{terminal:?}"
@@ -312,11 +387,7 @@ fn a_function_answered_is_not_forced()
 #[test]
 fn an_unrunnable_definition_ends_before_a_run()
 {
-    let (_, terminal) = call(
-        SourceText::from("def refused(x : Integer) -> Integer { sub(\"wrong\", x) }"),
-        SurfaceName::from("refused"),
-        &[Integer(1)],
-    );
+    let (_, terminal) = call(refused(), SurfaceName::from("refused"), &[Integer(1)]);
     assert!(
         matches!(
             terminal,
@@ -345,7 +416,7 @@ fn an_extern_operation_is_answered_by_the_rust_caller()
             received: Vec::new(),
         };
         let (arena, terminal) = call_under(
-            SourceText::from(ROUND_TRIP),
+            round_trip(),
             SurfaceName::from("quadrupled"),
             &[word(argument)],
             &mut rust,
@@ -366,7 +437,7 @@ fn an_extern_operation_is_answered_by_the_rust_caller()
 fn an_extern_operation_no_host_answers_sticks_the_run()
 {
     let (_, terminal) = call_under(
-        SourceText::from(ROUND_TRIP),
+        round_trip(),
         SurfaceName::from("quadrupled"),
         &[word(Word(5))],
         &mut Declining,

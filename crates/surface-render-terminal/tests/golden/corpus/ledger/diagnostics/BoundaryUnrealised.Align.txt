@@ -1,0 +1,7 @@
+error[BoundaryUnrealised.Align]: a type a member of the block declares differs in alignment from its row's
+   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Align.gandr:13:4
+   │
+13 │ @[ boundary(optionalRow), refuses("BoundaryUnrealised.Align") ]
+   │    ━━━━━━━━━━━━━━━━━━━━━ a row the block's members do not realise
+   │
+   ╰ note: `Aligned` is refused with BoundaryUnrealised.Align, as its expectation states

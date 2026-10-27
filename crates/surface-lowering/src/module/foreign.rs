@@ -5,9 +5,15 @@
 //! bodiless member an operation whose payload is its arguments and whose reply
 //! is its result. A row names the interface, `[Name]`, and a call performs one
 //! of its operations, `Name.f(…)`; no handler the source writes answers it, so
-//! the run offers it to its host, which the program's Rust caller supplies. The
-//! block takes no slot: like an import, it declares no name in the source's
-//! namespace, and its interface is read in the source declaring it alone.
+//! the run offers it to its host, which the program's Rust caller supplies. A
+//! block declares no name in the source's namespace, and its interface is read
+//! in the source declaring it alone.
+//!
+//! A block carrying `@[ boundary(rows) ]` takes one slot, entered in no name
+//! table: the check that each member realises the row the attribute names for
+//! it, in written order ([`BoundarySlot`]). The lowering mints its body, a call
+//! of `std.boundary`'s `admitBlock` on the members' codes and the rows. Any
+//! other block takes no slot, like an import.
 //!
 //! A member's types are the four fixed-width atoms, `u32`, `u64`, `i32` and
 //! `i64`, each crossing as itself. A member beyond them (another type, a mode,
@@ -29,6 +35,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::effect::EffectName;
 use gandr_core_term::effect::OperationName;
+use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::IntegerWidth;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -36,8 +43,17 @@ use quenchant_shape::shape::Maybe;
 
 use super::Collected;
 use super::Collector;
+use super::DeclarationSlot;
+use super::Half;
+use super::Operand;
+use super::Payload;
+use super::Role;
+use super::SlotIndex;
+use super::declaration_half;
 use super::misplaced_in;
 use super::quoted;
+use super::slot_refusal;
+use crate::attribute::RegisteredAttribute;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
 use crate::error::LoweringRefusal;
@@ -88,7 +104,7 @@ pub struct ForeignInterface
 }
 
 /// A member of an extern block, as the operation it declares: its name, its
-/// parameters' types in order, and its result's.
+/// parameters in order, and its result's type.
 ///
 /// # Specification
 /// trivial.
@@ -99,10 +115,23 @@ pub struct ForeignOperation
     pub name: OperationName,
     /// Where the member's name is written.
     pub named: Placed,
-    /// Each parameter's type, in written order.
-    pub parameters: Vec<ForeignType>,
+    /// Each parameter, in written order.
+    pub parameters: Vec<ForeignParameter>,
     /// The result's type.
     pub result: ForeignType,
+}
+
+/// A parameter of a member: where its name is written, and its type.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ForeignParameter
+{
+    /// The parameter's name tile.
+    pub named: Placed,
+    /// Its type.
+    pub ty: ForeignType,
 }
 
 /// A type a member writes: the width it spells and where it is written.
@@ -129,10 +158,33 @@ pub(super) enum Foreign<'source>
     /// refuses any form standing where a declaration does.
     Other,
     /// A block whose interface the collection keeps.
-    Declared,
+    Declared(Arc<ForeignInterface>),
     /// A block refused at its first piece beyond the form.
     Refused(LoweringRefusal<'source>),
 }
+
+/// The check an extern block carrying `boundary` takes a slot for: the
+/// interface it declares, and the attribute's payload, which names one row
+/// per member in written order.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoundarySlot
+{
+    /// The interface the block declares.
+    pub interface: Arc<ForeignInterface>,
+    /// The attribute's payload.
+    pub rows: Payload,
+}
+
+/// Whether an extern block took the slot its `boundary` attribute asks for.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(transparent)]
+pub(super) struct Bounded(pub bool);
 
 impl Collected<'_>
 {
@@ -193,7 +245,7 @@ impl<'source> Collector<'_, 'source>
     #[spec(
         captures: before = (self.collected.slots.len(), self.collected.foreign.len()),
         ensures: |ref ret| self.collected.slots.len() == before.0
-            && self.collected.foreign.len() == before.1.saturating_add(usize::from(matches!(*ret, Ok(Foreign::Declared)))),
+            && self.collected.foreign.len() == before.1.saturating_add(usize::from(matches!(*ret, Ok(Foreign::Declared(_))))),
     )]
     pub(super) fn foreign(
         &mut self,
@@ -220,7 +272,7 @@ impl<'source> Collector<'_, 'source>
     /// - witness: `lower::capability::tests::an_extern_block_beyond_the_form_is_refused_at_the_piece_2901`
     #[spec(
         captures: before = self.collected.foreign.len(),
-        ensures: |ref ret| self.collected.foreign.len() == before.saturating_add(usize::from(matches!(*ret, Foreign::Declared))),
+        ensures: |ref ret| self.collected.foreign.len() == before.saturating_add(usize::from(matches!(*ret, Foreign::Declared(_)))),
     )]
     fn read_foreign(
         &mut self,
@@ -251,8 +303,9 @@ impl<'source> Collector<'_, 'source>
                         first: first.named,
                     });
                 }
-                let _first = self.collected.foreign.insert(key, Arc::new(interface));
-                Foreign::Declared
+                let interface = Arc::new(interface);
+                let _first = self.collected.foreign.insert(key, Arc::clone(&interface));
+                Foreign::Declared(interface)
             },
             Err(refusal) => Foreign::Refused(refusal),
         }
@@ -395,7 +448,10 @@ impl<'source> Collector<'_, 'source>
                     return Err(beyond(written.span));
                 }
             }
-            parameters.push(self.width(cursor)?);
+            parameters.push(ForeignParameter {
+                named: parameter,
+                ty: self.width(cursor)?,
+            });
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
                 && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
             {
@@ -451,6 +507,96 @@ impl<'source> Collector<'_, 'source>
             .find(|width| spelled.is_some_and(|text| text.as_ref().trim() == width.as_ref()))
             .map(|width| ForeignType { width, written })
             .ok_or_else(|| beyond(written.span))
+    }
+
+    /// File the extern block `block`, which declares `interface`, as the slot
+    /// its check takes, when one of the attribute blocks `decorations`
+    /// standing before it writes `boundary`.
+    ///
+    /// # Specification
+    /// - requires: `block` is a `rust` extern block the collection declared
+    ///   `interface` from; each entry of `decorations` is an attribute block
+    ///   standing on its own before it.
+    /// - ensures: when the attributes read from `decorations` include
+    ///   `boundary`, one [`Role::Derived`] slot under the interface's name,
+    ///   entered in no name table, its definition [`Operand::Derived`]; it owns
+    ///   the block and its decorations, carries their attributes and
+    ///   documentation, and [`super::Collected::boundaries`] keeps the
+    ///   interface and the attribute's payload under it; a decoration that does
+    ///   not read refuses the slot at the block. Otherwise nothing is filed,
+    ///   and the blocks before it decorate nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a block carrying `boundary` takes one slot holding
+    ///   its attributes; a block carrying another attribute takes none.
+    /// - witness: `lower::boundary::tests::a_boundary_block_takes_the_slot_its_check_runs_in_2901`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.by_name.len()),
+        ensures: |ret| self.collected.by_name.len() == before.1
+            && self.collected.slots.len() == before.0.saturating_add(usize::from(ret.0)),
+    )]
+    pub(super) fn boundary(
+        &mut self,
+        block: Placed,
+        decorations: &[Placed],
+        interface: &Arc<ForeignInterface>,
+    ) -> Bounded
+    {
+        let mut attributes = Vec::new();
+        let mut attributed = Ok(());
+        for &decoration in decorations {
+            if attributed.is_ok() {
+                attributed = self.decoration(decoration, block.node, &mut attributes);
+            }
+        }
+        let Some(rows) = attributes
+            .iter()
+            .find(|written| written.name.as_ref() == RegisteredAttribute::BOUNDARY.as_ref())
+            .map(|written| written.payload)
+        else {
+            return Bounded(false);
+        };
+        let slot = SlotIndex(self.collected.slots.len());
+        let named = Placed {
+            node: block.node,
+            span: interface.named,
+        };
+        self.collected.slots.push(DeclarationSlot {
+            name: self.spelled(interface.named),
+            container: self.collected.top(block.span.start()),
+            role: Role::Derived,
+            constant: ConstantIndex::from(slot.0),
+            introduced_by: block,
+            named,
+            signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+            definition: Maybe::Present(Half {
+                declaration: block,
+                named,
+                operand: Operand::Derived,
+            }),
+            attributes: Vec::new(),
+            docs: Vec::new(),
+            refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+        });
+        let _fresh = self.collected.boundaries.insert(slot, BoundarySlot {
+            interface: Arc::clone(interface),
+            rows,
+        });
+        self.collected.own(block.node, slot);
+        for &decoration in decorations {
+            self.collected.own(decoration.node, slot);
+            self.document(slot, decoration.node, decoration.span.end(), block.node);
+        }
+        self.document(slot, block.node, interface.named.start(), block.node);
+        if let Some(entry) = self.collected.slots.get_mut(slot.0) {
+            entry.attributes.extend(attributes);
+            if let Err(refusal) = attributed {
+                entry.refuse(block.node, refusal);
+            }
+        }
+        Bounded(true)
     }
 
     /// The bytes `span` covers, as a name.

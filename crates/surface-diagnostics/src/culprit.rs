@@ -114,6 +114,9 @@ impl Culprit
             Refusal::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }) => {
                 Self("an expectation the strict root refuses")
             },
+            Refusal::Corpus(CorpusRefusal::BoundaryUnrealised { .. }) => {
+                Self("a row the block's members do not realise")
+            },
             Refusal::Checking(checking) => checked(checking),
         }
     }

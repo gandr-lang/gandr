@@ -76,6 +76,9 @@
 //!
 //! - `vault:01a178aa-6a53-7ec2-b60c-2de66202cf07` — lineage: the refusal
 //!   `FootprintsOverlap` of try-first 1, classed a malformed source.
+//! - `vault:01a178aa-6cd7-7ac2-a049-ee4124ad5576` — background: the parts of a
+//!   block's realizability predicate a [`BoundaryClause`] names, the witness
+//!   record's size, alignment, niche and destroy, and a function's arity.
 
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
@@ -106,6 +109,7 @@ use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
 use crate::expectation::ExpectationSchema;
+use crate::run::RunSpelling;
 
 quenchant_shape::reason_enum! {
     /// Why a spelling names no refusal.
@@ -120,13 +124,94 @@ quenchant_shape::reason_enum! {
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a boundary check's run refuses its block nothing.
+    pub mod unrealised {
+        /// The run admits the block.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The run answered `Admitted`.
+            Admitted,
+        }
+    }
+}
+
+/// The clause of a row a boundary check's run refuses its block by, as
+/// `std.boundary`'s `Clause` names it, or the run's stopping short of an
+/// admission.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BoundaryClause
+{
+    /// A member takes a different number of arguments than its row.
+    Arity,
+    /// The block declares a different number of members than its attribute
+    /// names rows.
+    Members,
+    /// A size differs.
+    Size,
+    /// An alignment differs.
+    Align,
+    /// One side keeps its discriminant in a niche and the other does not.
+    Niche,
+    /// A declared type needs drop where the row's value is handled bitwise.
+    Destroy,
+    /// The run answered no admission: it stopped short of a value, or spelled
+    /// another.
+    Unanswered,
+}
+
+impl BoundaryClause
+{
+    /// The tag a `BoundaryUnrealised` name is qualified by: the name of the
+    /// clause's constructor.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn tag(self) -> Tag
+    {
+        Tag(match self {
+            Self::Arity => "Arity",
+            Self::Members => "Members",
+            Self::Size => "Size",
+            Self::Align => "Align",
+            Self::Niche => "Niche",
+            Self::Destroy => "Destroy",
+            Self::Unanswered => "Unanswered",
+        })
+    }
+}
+
+/// Every clause a boundary check's run refuses by, in `std.boundary`'s
+/// order, then the stopped run's.
+const BOUNDARY_CLAUSES: [BoundaryClause; 7_usize] = [
+    BoundaryClause::Arity,
+    BoundaryClause::Members,
+    BoundaryClause::Size,
+    BoundaryClause::Align,
+    BoundaryClause::Niche,
+    BoundaryClause::Destroy,
+    BoundaryClause::Unanswered,
+];
+
+/// What a boundary check's run spells when it admits its block.
+const ADMITTED_RUN: &str = "Admitted";
+
+/// What a boundary check's run spells before the clause it refuses by.
+const UNREALISED_RUN: &str = "Unrealised(";
+
 /// The refusal this crate raises.
 ///
 /// # Specification
 /// - requires: the producer establishes correspondence with the source or
 ///   vocabulary it represents.
 /// - ensures: Records an expectation rejected by root admission, preserving its
-///   schema and source span.
+///   schema and source span; or a boundary check its run refuses, preserving
+///   the clause and the attribute's span.
 /// - panics: none.
 /// - executable: none — The enum carries neither its root nor source text;
 ///   `CorpusRoot::admit` establishes refusal policy and the formatting witness
@@ -138,6 +223,7 @@ quenchant_shape::reason_enum! {
 ///   These witnesses cover reachable cases, not every producer variant.
 /// - witness: `root::tests::the_admission_table_is_pinned`
 /// - witness: `refusal::tests::root_refusal_names_every_admitted_schema`
+/// - witness: `refusal::tests::a_boundary_run_names_the_clause_it_refuses_by_2901`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CorpusRefusal
 {
@@ -150,46 +236,130 @@ pub enum CorpusRefusal
         /// The bytes the attribute covers.
         span: ByteSpan,
     },
+    /// An `extern "rust"` block whose boundary check's run answers that its
+    /// members do not realise the rows its `boundary` attribute names.
+    BoundaryUnrealised
+    {
+        /// The clause the run names.
+        clause: BoundaryClause,
+        /// The bytes the attribute covers.
+        span: ByteSpan,
+    },
 }
 
 impl CorpusRefusal
 {
+    /// The refusal a boundary check's run, spelled `ran`, answers its block
+    /// with, placed at the attribute's bytes `span`.
+    ///
+    /// # Specification
+    /// - requires: `ran` spells the run of a check `std.boundary`'s
+    ///   `admitBlock` answers.
+    /// - ensures: nothing for `Admitted`; for `Unrealised(c…)` the clause the
+    ///   constructor `c` names; for any other spelling, a run that stopped
+    ///   short of an admission, [`BoundaryClause::Unanswered`].
+    /// - provides: the produced side of a boundary check's settlement.
+    /// - fails: never; a spelling naming no clause is the unanswered one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an admission, a clause with a place, one without, a
+    ///   constructor whose name a clause's begins with, and a run stopped short
+    ///   separate the answers.
+    /// - witness: `refusal::tests::a_boundary_run_names_the_clause_it_refuses_by_2901`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Absent(_) => ran.as_ref() == ADMITTED_RUN,
+        | Maybe::Present(Self::BoundaryUnrealised { clause, span: at }) => ran.as_ref() != ADMITTED_RUN && at == span
+            && (clause == BoundaryClause::Unanswered || ran.as_ref().starts_with(UNREALISED_RUN)),
+        | Maybe::Present(Self::ExpectationOutsideFixtureRoot { .. }) => false,
+    })]
+    #[inline]
+    pub fn unrealised(
+        ran: &RunSpelling,
+        span: ByteSpan,
+    ) -> Maybe<Self, unrealised::Absent>
+    {
+        let ran = ran.as_ref();
+        if ran == ADMITTED_RUN {
+            return Maybe::Absent(unrealised::Absent::Admitted);
+        }
+        let clause = ran
+            .strip_prefix(UNREALISED_RUN)
+            .and_then(|named| {
+                BOUNDARY_CLAUSES.into_iter().find(|clause| {
+                    named
+                        .strip_prefix(clause.tag().0)
+                        .is_some_and(|after| after.starts_with(['(', ')']))
+                })
+            })
+            .unwrap_or(BoundaryClause::Unanswered);
+        Maybe::Present(Self::BoundaryUnrealised { clause, span })
+    }
+
     /// Whose fact this refusal records.
     ///
     /// # Specification
     /// - requires: nothing; the function is total over the vocabulary.
-    /// - ensures: [`FailureClass::MalformedSource`] for every variant: the
-    ///   author wrote an expectation where the root admits none.
+    /// - ensures: [`FailureClass::MalformedSource`] for an expectation the
+    ///   strict root refuses, where the author wrote one the root admits none
+    ///   of, and for a clause a boundary check's run names, where the author
+    ///   declared types that do not realise the row they named;
+    ///   [`FailureClass::EngineFault`] for a check whose run answered no
+    ///   admission, which `std.boundary`'s total `admitBlock` always answers.
     /// - provides: the class a report counts the refusal under.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the strict-root admission refusal retains both
-    ///   admitted alternatives and its source position.
+    ///   admitted alternatives and its source position; a named clause and an
+    ///   unanswered run separate the boundary's two classes.
     /// - witness: `refusal::tests::root_refusal_names_every_admitted_schema`
+    /// - witness: `refusal::tests::a_boundary_run_names_the_clause_it_refuses_by_2901`
     #[spec(
-        ensures: |ret| matches!(ret, FailureClass::MalformedSource),
+        ensures: |ret| matches!(
+            (*self, ret),
+            (Self::BoundaryUnrealised { clause: BoundaryClause::Unanswered, .. }, FailureClass::EngineFault)
+                | (Self::ExpectationOutsideFixtureRoot { .. }
+                    | Self::BoundaryUnrealised { clause: BoundaryClause::Arity | BoundaryClause::Members | BoundaryClause::Size | BoundaryClause::Align | BoundaryClause::Niche | BoundaryClause::Destroy, .. },
+                    FailureClass::MalformedSource)
+        ),
     )]
     #[inline]
     #[must_use]
     pub const fn classify(&self) -> FailureClass
     {
         match *self {
-            Self::ExpectationOutsideFixtureRoot { .. } => FailureClass::MalformedSource,
+            Self::BoundaryUnrealised {
+                clause: BoundaryClause::Unanswered,
+                ..
+            } => FailureClass::EngineFault,
+            Self::ExpectationOutsideFixtureRoot { .. }
+            | Self::BoundaryUnrealised {
+                clause:
+                    BoundaryClause::Arity
+                    | BoundaryClause::Members
+                    | BoundaryClause::Size
+                    | BoundaryClause::Align
+                    | BoundaryClause::Niche
+                    | BoundaryClause::Destroy,
+                ..
+            } => FailureClass::MalformedSource,
         }
     }
 }
 
 impl fmt::Display for CorpusRefusal
 {
-    /// Writes the refusal and the schema it refuses.
+    /// Writes the refusal: the schema the strict root refuses, or the clause
+    /// a boundary check's run names.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: writes the rejected schema and names every schema admitted by
-    ///   the strict root; the source span is the diagnostic's locus and never
-    ///   appears in the text.
+    ///   the strict root; for a boundary check, the clause its run names, or
+    ///   that it answered none; the source span is the diagnostic's locus and
+    ///   never appears in the text.
     /// - fails: propagates a refusing sink as `fmt::Error`.
     /// - panics: none.
     /// - executable: none — the formatter exposes neither emitted text nor
@@ -204,6 +374,7 @@ impl fmt::Display for CorpusRefusal
     ///   exact identifier and admitted alternatives and omits the source range,
     ///   without fixing English sentence wording.
     /// - witness: `refusal::tests::root_refusal_names_every_admitted_schema`
+    /// - witness: `refusal::tests::a_boundary_run_names_the_clause_it_refuses_by_2901`
     #[inline]
     fn fmt(
         &self,
@@ -214,6 +385,15 @@ impl fmt::Display for CorpusRefusal
             Self::ExpectationOutsideFixtureRoot { schema, .. } => write!(
                 f,
                 "`{schema}` states an expectation the strict root refuses; only `checks`, `runs` and `normalizes` are admitted outside the fixture root"
+            ),
+            Self::BoundaryUnrealised {
+                clause: BoundaryClause::Unanswered,
+                ..
+            } => f.write_str("the block's boundary check answered no admission"),
+            Self::BoundaryUnrealised { clause, .. } => write!(
+                f,
+                "the block's members do not realise the rows its `boundary` attribute names: the `{}` clause fails",
+                clause.tag()
             ),
         }
     }
@@ -854,6 +1034,9 @@ pub enum RefusalName
     StaticClassifierExpected,
     /// An expectation the strict root refuses.
     ExpectationOutsideFixtureRoot,
+    /// A boundary check whose run refuses its block, qualified by the clause
+    /// the run names.
+    BoundaryUnrealised(Tag),
     /// Two rows disagree on the operation types of a shared interface.
     EffectSignatureConflict,
     /// An action the endpoint's session type does not admit.
@@ -1249,6 +1432,7 @@ impl RefusalName
             )
             .chain(MODEL_FAULTS.map(|fault| Self::UnstatedComponent(model_tag(fault))))
             .chain(MEMBER_FAULTS.map(|fault| Self::UndescribedMember(member_tag(fault))))
+            .chain(BOUNDARY_CLAUSES.map(|clause| Self::BoundaryUnrealised(clause.tag())))
             .chain([
                 Self::UnprovenLaw(LawProof::Admitted),
                 Self::GenericUncovered(GenericCoverage::Dependent),
@@ -1358,7 +1542,8 @@ impl RefusalName
         b"FamilyArgumentClassifier") | (Self::StaticLambdaArgument,
         b"StaticLambdaArgument") | (Self::StaticClassifierExpected,
         b"StaticClassifierExpected") | (Self::ExpectationOutsideFixtureRoot,
-        b"ExpectationOutsideFixtureRoot") | (Self::PathCode, b"PathCode")
+        b"ExpectationOutsideFixtureRoot") | (Self::BoundaryUnrealised(_),
+        b"BoundaryUnrealised") | (Self::PathCode, b"PathCode")
         | (Self::NotADataType, b"NotADataType")
         | (Self::DataKindNotUniverse, b"DataKindNotUniverse")
         | (Self::DataFieldLevel, b"DataFieldLevel")
@@ -1480,7 +1665,7 @@ impl RefusalName
         | (Self::DialogueInverted, b"DialogueInverted")
         | (Self::ForwardUnsupported, b"ForwardUnsupported")
         | (Self::Boundary, b"Boundary")
-    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent))
+    ) && matches!(self, Self::OutOfFragment(_) | Self::UnstatedComponent(_) | Self::UndescribedMember(_) | Self::BoundaryUnrealised(_) | Self::UnprovenLaw(LawProof::Admitted) | Self::GenericUncovered(GenericCoverage::Dependent))
         == ret.qualifier.is_some()
 },
     )]
@@ -1713,11 +1898,15 @@ impl RefusalName
             Self::StaticLambdaArgument => "StaticLambdaArgument",
             Self::StaticClassifierExpected => "StaticClassifierExpected",
             Self::ExpectationOutsideFixtureRoot => "ExpectationOutsideFixtureRoot",
+            Self::BoundaryUnrealised(_) => "BoundaryUnrealised",
         };
         let qualifier = if let Self::OutOfFragment(qualifier) = self {
             Some(qualifier)
         }
-        else if let Self::UnstatedComponent(fault) | Self::UndescribedMember(fault) = self {
+        else if let Self::UnstatedComponent(fault)
+        | Self::UndescribedMember(fault)
+        | Self::BoundaryUnrealised(fault) = self
+        {
             Some(Qualifier::Named(fault))
         }
         else if matches!(self, Self::UnprovenLaw(LawProof::Admitted)) {
@@ -1741,7 +1930,7 @@ impl RefusalName
     ///   read only with a qualifier some refusal carries: an unbuilt feature's
     ///   spelling; a boundary other than reserved and unadmitted; the run
     ///   target; a checker former; a model component's or a member's fault; a
-    ///   law's admission; a law's dependent case.
+    ///   law's admission; a law's dependent case; a boundary check's clause.
     /// - provides: the reading of a `refuses` payload.
     /// - fails: never; text naming nothing is the [`refusal_name::Absent`]
     ///   absence, which the expectation reader turns into a fixture failure.
@@ -1795,6 +1984,9 @@ impl RefusalName
                 },
                 "GenericUncovered" => (rest == DEPENDENT.0)
                     .then_some(Self::GenericUncovered(GenericCoverage::Dependent)),
+                "BoundaryUnrealised" => {
+                    tagged(&BOUNDARY_CLAUSES.map(BoundaryClause::tag)).map(Self::BoundaryUnrealised)
+                },
                 _ => None,
             }
         };
@@ -2441,6 +2633,10 @@ impl Refusal<'_>
         | (Self::Checking(CheckRefusal::DialogueInverted { .. }), RefusalName::DialogueInverted)
         | (Self::Checking(CheckRefusal::ForwardUnsupported { .. }), RefusalName::ForwardUnsupported)
         | (Self::Checking(CheckRefusal::Boundary { .. }), RefusalName::Boundary)
+    ) || matches!(
+        (*self, ret),
+        (Self::Corpus(CorpusRefusal::BoundaryUnrealised { clause, .. }), RefusalName::BoundaryUnrealised(tag))
+            if tag == clause.tag()
     )
 },
     )]
@@ -2453,6 +2649,9 @@ impl Refusal<'_>
             Self::Checking(refusal) => checking_name(refusal),
             Self::Corpus(CorpusRefusal::ExpectationOutsideFixtureRoot { .. }) => {
                 RefusalName::ExpectationOutsideFixtureRoot
+            },
+            Self::Corpus(CorpusRefusal::BoundaryUnrealised { clause, .. }) => {
+                RefusalName::BoundaryUnrealised(clause.tag())
             },
         }
     }
@@ -3044,20 +3243,92 @@ fn checking_name(refusal: CheckRefusal) -> RefusalName
 #[cfg(test)]
 mod tests
 {
+    use alloc::format;
     use alloc::string::String;
     use alloc::string::ToString as _;
     use core::fmt;
 
+    use gandr_core_term::FailureClass;
     use gandr_kernel_term::StringLiteral;
     use gandr_surface_syntax::ByteOffset;
     use quenchant_shape::shape::Maybe;
 
+    use super::BOUNDARY_CLAUSES;
+    use super::BoundaryClause;
+    use super::CorpusRefusal;
+    use super::Refusal;
     use super::RefusalName;
     use super::refusal_name;
     use crate::expectation::ExpectationSchema;
     use crate::fixture::RefusingWriter;
     use crate::fixture::span;
     use crate::root::CorpusRoot;
+    use crate::run::RunSpelling;
+
+    /// #2901: a boundary check's run is read by the clause it names: an
+    /// admission refuses nothing, a clause is read by its constructor's whole
+    /// name, and any other spelling is a run that answered none. Each
+    /// clause's refusal is named, spelled and read back as itself, and
+    /// classed by whose fact it records.
+    #[test]
+    fn a_boundary_run_names_the_clause_it_refuses_by_2901()
+    {
+        let at = span(ByteOffset::from(3_usize), ByteOffset::from(19_usize));
+        let rows = [
+            ("Admitted", None),
+            ("Unrealised(Size(Argument(1)))", Some(BoundaryClause::Size)),
+            ("Unrealised(Align(Result))", Some(BoundaryClause::Align)),
+            ("Unrealised(Arity)", Some(BoundaryClause::Arity)),
+            ("Unrealised(Members)", Some(BoundaryClause::Members)),
+            (
+                "Unrealised(Sizes(Result))",
+                Some(BoundaryClause::Unanswered),
+            ),
+            ("ran out of fuel", Some(BoundaryClause::Unanswered)),
+            ("Admitted ", Some(BoundaryClause::Unanswered)),
+        ];
+        for (ran, expected) in rows {
+            let read = match CorpusRefusal::unrealised(&RunSpelling::from(String::from(ran)), at) {
+                Maybe::Present(CorpusRefusal::BoundaryUnrealised { clause, span }) => {
+                    assert_eq!(span, at, "`{ran}` is refused at the attribute");
+                    Some(clause)
+                },
+                Maybe::Present(other) => panic!("`{ran}` is no root's refusal: {other:?}"),
+                Maybe::Absent(_) => None,
+            };
+            assert_eq!(read, expected, "`{ran}` reads as pinned");
+        }
+        for clause in BOUNDARY_CLAUSES {
+            let refusal = CorpusRefusal::BoundaryUnrealised { clause, span: at };
+            let name = Refusal::Corpus(refusal).name();
+            let spelled = name.spelling().to_string();
+            assert_eq!(spelled, format!("BoundaryUnrealised.{}", clause.tag()));
+            assert_eq!(
+                RefusalName::named_by(&StringLiteral::new(spelled)),
+                Maybe::Present(name),
+                "{clause:?} reads back as its own name"
+            );
+            assert_eq!(
+                refusal.classify(),
+                if clause == BoundaryClause::Unanswered {
+                    FailureClass::EngineFault
+                }
+                else {
+                    FailureClass::MalformedSource
+                },
+                "{clause:?} is classed by whose fact it records"
+            );
+            assert!(
+                RefusalName::closed().contains(&name),
+                "{clause:?} is a closed name the diagnostics ledger pairs"
+            );
+        }
+        assert_eq!(
+            RefusalName::named_by(&StringLiteral::new(String::from("BoundaryUnrealised"))),
+            Maybe::Absent(refusal_name::Absent::Unnamed),
+            "the bare variant names no refusal"
+        );
+    }
 
     #[test]
     fn root_refusal_names_every_admitted_schema()

@@ -1,0 +1,7 @@
+error[BoundaryUnrealised.Niche]: a type a member of the block declares keeps its discriminant in a niche where its row's does not, or the reverse
+   ╭▸ corpus/ledger/diagnostics/BoundaryUnrealised.Niche.gandr:13:4
+   │
+13 │ @[ boundary(borrowedRow), refuses("BoundaryUnrealised.Niche") ]
+   │    ━━━━━━━━━━━━━━━━━━━━━ a row the block's members do not realise
+   │
+   ╰ note: `Niched` is refused with BoundaryUnrealised.Niche, as its expectation states

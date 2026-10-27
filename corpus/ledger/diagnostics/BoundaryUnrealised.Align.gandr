@@ -1,0 +1,16 @@
+/// `BoundaryUnrealised.Align`: an `extern "rust"` block whose member declares a type of its row's size at another alignment.
+// `Row`, `Codes`, `Code` and `admitBlock`.
+import "../../../library/std/src/boundary.gandr";
+// `U32`, `Field`, `Done`, `Variant`, `NoVariant`.
+import "../../../library/std/src/layout.gandr";
+
+/// `Option<u32>`: eight bytes, aligned to four, its tag beside the payload.
+def optU32 : Code = Sum(Variant("Some", Field("0", U32, Done), Variant("None", Done, NoVariant)));
+
+/// A `u32` and an `Option<u32>` to a `u32`.
+def optionalRow : Row = Row(Arg(Plain(U32), Arg(optU32, NoCode)), Plain(U32));
+
+@[ boundary(optionalRow), refuses("BoundaryUnrealised.Align") ]
+extern "rust" from "aligned" as Aligned {
+  def add(x : u32, n : u64) -> u32;
+}

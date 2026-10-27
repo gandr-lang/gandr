@@ -700,6 +700,8 @@ mod access;
 
 mod arity;
 
+mod boundary;
+
 mod capability;
 
 mod closure;
@@ -4338,6 +4340,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.mint_presentations(sink)?;
         self.mint_operations(sink);
         self.mint_derived_rules(sink);
+        self.mint_boundaries(sink);
         self.mint_generics(sink);
         self.mint_reducts(sink);
         self.mint_forgets(sink);

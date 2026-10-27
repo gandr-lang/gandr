@@ -688,6 +688,7 @@ pub struct Expectations
                             if usize::from(count) != 0_usize
                         ))
             }
+            Maybe::Present(CorpusRefusal::BoundaryUnrealised { .. }) => false,
         }
     }
     Err(fault) => matches!(fault, SettleFault::UnreadablePayload { .. }),
