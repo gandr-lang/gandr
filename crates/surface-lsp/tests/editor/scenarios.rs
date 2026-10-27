@@ -1302,14 +1302,15 @@ fn typing_a_declaration_holds_its_diagnostics_until_its_terminator()
     );
 
     // An edit two declarations above `two` refuses it on that keystroke, and
-    // the caret leaving the unfinished declaration publishes its refusal.
-    // `three`, which names `two`, is noted as unsettled by that refusal.
+    // the caret leaving the unfinished declaration publishes its refusal,
+    // first as a refusal of form (#2875). `three`, which names `two`, is
+    // noted as unsettled by that refusal.
     assert_eq!(
         quiet.replace(at(0, 7), at(0, 7), Text("s")),
         [vec![
+            json!(["MalformedForm", line]),
             json!(["UnresolvedName", 2_i32]),
             json!(["UnknownConstant", seed_lines]),
-            json!(["MalformedForm", line]),
         ]],
         "the refusal the edit causes below publishes at once, and the declaration the caret left publishes"
     );

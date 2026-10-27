@@ -42,6 +42,7 @@ use gandr_surface_diagnostics::upstream;
 use gandr_surface_lowering::AskedRuns;
 use gandr_surface_lowering::DeprecatedUse;
 use gandr_surface_lowering::Explicitness;
+use gandr_surface_lowering::FragmentBoundary;
 use gandr_surface_lowering::InferredExit;
 use gandr_surface_lowering::InferredRun;
 use gandr_surface_lowering::LoweringRefusal;
@@ -196,7 +197,14 @@ struct Remaining<'step>
     /// The uses of deprecated declarations, each a finding, printed after
     /// the runs; none under `test`.
     deprecated: slice::Iter<'step, DeprecatedUse<'step>>,
-    /// The declarations, in admission order.
+    /// How many declarations refused for their form are still to print
+    /// before the rest; none under `test`.
+    leading: usize,
+    /// Where the last of them printed stands: its refusal's start, then its
+    /// admission position. The next one printed stands after it.
+    led: Option<(ByteOffset, usize)>,
+    /// The declarations visited after the leading ones, in admission order:
+    /// each one not refused for its form.
     declarations: slice::Iter<'step, DeclarationReport<'step>>,
     /// Every declaration of the source, visited or not: what a refusal naming
     /// an admission position is read against.
@@ -248,7 +256,10 @@ pub struct Entries<'step>
 ///   Each declaration is printed as [`shown`] decides under `verb`: nothing
 ///   when it is counted; a goal when it is a goal; when it has a line, a ledger
 ///   line if it settled, a refusal if it produced one, and an unsettled
-///   diagnostic otherwise. Declarations keep admission order.
+///   diagnostic otherwise. Under `check`, the declarations refused for their
+///   form ([`lead`]) print first, in the order their refusals stand in the
+///   source, then the rest in admission order; under `test`, declarations keep
+///   admission order.
 /// - provides: the one pass a face prints a step through, so no refusal a step
 ///   carries can reach the walk without reaching a face.
 /// - fails: never.
@@ -262,6 +273,7 @@ pub struct Entries<'step>
 ///   Other malformed step/standing combinations are not enumerated by these
 ///   fixtures.
 /// - witness: `entry::tests::each_verb_prints_its_entries`
+/// - witness: `entry::tests::a_refusal_of_form_prints_before_one_resting_on_it_2875`
 /// - witness: `entry::tests::a_shadowed_builtin_is_warned_of_under_check_alone`
 /// - witness: `entry::tests::an_inferred_exit_is_reported_where_a_lint_reaches`
 /// - witness: `entry::tests::an_inferred_run_is_reported_where_a_lint_reaches`
@@ -346,7 +358,9 @@ pub fn entries<'step>(
     | (Standing::Settled | Standing::Unsettled | Standing::Refused,
         &Composed::Settled { ref report, ref origins, ref spellings, ref failures, ref shadowed, ref inferred, ref runs, ref deprecated, .. },
         &Cursor::Declarations(ref held)) =>
-        core::ptr::eq(core::ptr::from_ref(held.declarations.as_slice()), core::ptr::from_ref(report.declarations()))
+        held.leading == report.declarations().iter().filter(|declaration| lead(verb, declaration) != Lead::Rest).count()
+            && held.led.is_none()
+            && core::ptr::eq(core::ptr::from_ref(held.declarations.as_slice()), core::ptr::from_ref(report.declarations()))
             && match verb {
                 Verb::Check(_) => core::ptr::eq(core::ptr::from_ref(held.shadowed.as_slice()), core::ptr::from_ref(shadowed.as_slice()))
                     && core::ptr::eq(core::ptr::from_ref(held.inferred.as_slice()), core::ptr::from_ref(inferred.as_slice()))
@@ -403,6 +417,12 @@ fn cursor<'step>(
                 inferred: considered(verb, inferred),
                 runs: considered(verb, runs),
                 deprecated: considered(verb, deprecated),
+                leading: report
+                    .declarations()
+                    .iter()
+                    .filter(|declaration| lead(verb, declaration) != Lead::Rest)
+                    .count(),
+                led: None,
                 declarations: report.declarations().iter(),
                 admitted: report.declarations(),
                 origins,
@@ -416,6 +436,78 @@ fn cursor<'step>(
                 Cursor::Declarations(held)
             }
         },
+    }
+}
+
+/// Where a declaration prints among a source's entries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Lead
+{
+    /// In the leading pass, refused for its form at this byte of the source.
+    Form(ByteOffset),
+    /// After the leading pass, in admission order.
+    Rest,
+}
+
+/// Where `declaration` prints under `verb`: under `check`, a declaration the
+/// lowering refused for its form leads, at its refusal's start.
+///
+/// A form the parser repaired, or one written where its position takes
+/// another (a form of another sort, an expression at the top level, a form
+/// admitted only elsewhere), is the mistake the author made. A refusal
+/// elsewhere can rest on what the repair left (a member it dropped, a name it
+/// moved out of scope), and printing that one first reports the consequence
+/// as the mistake (#2875).
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `Lead::Form` at the refusal's start exactly when `verb` is
+///   `check` and `declaration` produced a `MalformedForm` refusal or an
+///   `OutOfFragment` refusal at the `WrongSort`, `TopLevel` or `Misplaced`
+///   boundary; `Lead::Rest` otherwise.
+/// - provides: the partition [`entries`] prints a source's declarations in, and
+///   the order of its leading pass.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a source whose consequent refusal is admitted before the
+///   repaired form prints the repaired form first under `check`, and the
+///   refusals of form in source order.
+/// - witness: `entry::tests::a_refusal_of_form_prints_before_one_resting_on_it_2875`
+#[spec(ensures: |ret| matches!(ret, Lead::Form(_)) == (matches!(verb, Verb::Check(_)) && matches!(
+    declaration.produced().refusal(),
+    Maybe::Present(Refusal::Lowering(
+        LoweringRefusal::MalformedForm { .. }
+            | LoweringRefusal::OutOfFragment {
+                boundary: FragmentBoundary::WrongSort | FragmentBoundary::TopLevel | FragmentBoundary::Misplaced,
+                ..
+            }
+    ))
+)))]
+fn lead(
+    verb: Verb,
+    declaration: &DeclarationReport<'_>,
+) -> Lead
+{
+    if !matches!(verb, Verb::Check(_)) {
+        return Lead::Rest;
+    }
+    match declaration.produced().refusal() {
+        Maybe::Present(Refusal::Lowering(
+            refusal @ (LoweringRefusal::MalformedForm { .. }
+            | LoweringRefusal::OutOfFragment {
+                boundary:
+                    FragmentBoundary::WrongSort
+                    | FragmentBoundary::TopLevel
+                    | FragmentBoundary::Misplaced,
+                ..
+            }),
+        )) => match refusal.span() {
+            Maybe::Present(span) => Lead::Form(span.start()),
+            Maybe::Absent(_) => Lead::Rest,
+        },
+        Maybe::Present(_) | Maybe::Absent(_) => Lead::Rest,
     }
 }
 
@@ -790,9 +882,10 @@ impl Iterator for Entries<'_>
     ///   least one remaining candidate. Hidden declarations are skipped without
     ///   ending the traversal. Exhaustion remains exhausted on every subsequent
     ///   call.
-    /// - provides: declaration order, preceded by a lowered-source ledger line
-    ///   when present and by the source's warnings and lint findings; pending
-    ///   refusals retain their source order.
+    /// - provides: declaration order (under `check`, refusals of form first),
+    ///   preceded by a lowered-source ledger line when present and by the
+    ///   source's warnings and lint findings; pending refusals retain their
+    ///   source order.
     /// - fails: never; exhaustion is None.
     /// - panics: none.
     ///
@@ -810,16 +903,16 @@ impl Iterator for Entries<'_>
         captures: [before = match self.cursor {
             Cursor::Done => 0_usize,
             Cursor::Last(_) => 1_usize,
-            Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
-            Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()),
+            Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.leading).saturating_add(held.declarations.len()).saturating_add(1_usize),
+            Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.leading).saturating_add(held.declarations.len()),
             Cursor::Pending { ref unstatable } => unstatable.len(),
         }],
         ensures: |ref ret| {
             let remaining = match self.cursor {
                 Cursor::Done => 0_usize,
                 Cursor::Last(_) => 1_usize,
-                Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()).saturating_add(1_usize),
-                Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.declarations.len()),
+                Cursor::Lowered(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.leading).saturating_add(held.declarations.len()).saturating_add(1_usize),
+                Cursor::Declarations(ref held) => held.shadowed.len().saturating_add(held.inferred.len()).saturating_add(held.runs.len()).saturating_add(held.deprecated.len()).saturating_add(held.leading).saturating_add(held.declarations.len()),
                 Cursor::Pending { ref unstatable } => unstatable.len(),
             };
             ret.as_ref().map_or(remaining == 0_usize, |diagnostic| remaining < before && diagnostic.path.as_path() == self.path)
@@ -907,8 +1000,34 @@ impl Entries<'_>
                     self.cursor = Cursor::Declarations(held);
                     return Some(diagnose(self.path, self.text, Subject::Deprecated(used)));
                 }
-                while let Some(declaration) = held.declarations.next() {
+                let verb = self.verb;
+                while held.leading > 0 {
+                    held.leading = held.leading.saturating_sub(1);
+                    let led = held.led;
+                    let Some((place, declaration)) = held
+                        .admitted
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, declaration)| match lead(verb, declaration) {
+                            Lead::Form(at) => Some(((at, index), declaration)),
+                            Lead::Rest => None,
+                        })
+                        .filter(|&(place, _)| led.is_none_or(|led| place > led))
+                        .min_by_key(|&(place, _)| place)
+                    else {
+                        break;
+                    };
+                    held.led = Some(place);
                     if let Maybe::Present(printed) = self.declaration(declaration, &held) {
+                        let diagnostic = self.build(printed);
+                        self.cursor = Cursor::Declarations(held);
+                        return Some(diagnostic);
+                    }
+                }
+                while let Some(declaration) = held.declarations.next() {
+                    if lead(verb, declaration) == Lead::Rest
+                        && let Maybe::Present(printed) = self.declaration(declaration, &held)
+                    {
                         let diagnostic = self.build(printed);
                         self.cursor = Cursor::Declarations(held);
                         return Some(diagnostic);
@@ -1264,7 +1383,8 @@ mod tests
             .collect();
         let signature = written.find("def pair :").expect("the signature");
         assert!(
-            matches!(printed.first(), Some(&(Severity::Note, Maybe::Present(span), _)) if usize::from(span.start()) == signature),
+            printed.iter().any(|&(severity, span, _)| severity == Severity::Note
+                && matches!(span, Maybe::Present(span) if usize::from(span.start()) == signature)),
             "the signature is a note: {printed:?}"
         );
         let first = printed
@@ -1290,6 +1410,40 @@ mod tests
                 .collect::<Vec<_>>(),
             [Severity::Error],
             "a signature owing its body beside no refused form is its own error"
+        );
+    }
+
+    /// A declaration whose keyword is misspelt is read as an identifier at the
+    /// top level, a function type where a declaration stands and a block; the
+    /// declaration admitted before it, calling the name the misspelling took
+    /// out of scope, is refused because of it. Under `check` the refusals of
+    /// form print first, so the first error is the misspelt keyword, and the
+    /// call resting on them follows (#2875).
+    #[test]
+    fn a_refusal_of_form_prints_before_one_resting_on_it_2875()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let written =
+            "def f() -> Integer {\n  return g()\n}\n\nde g() -> Integer {\n  return 1\n}\n";
+        let misspelt = step(
+            Path::new("misspelt.gandr"),
+            SourceRoot::Strict,
+            SourceText::from(written),
+            Standing::Unsettled,
+            &grammar,
+        );
+        let at = |needle: &str| written.find(needle).expect("the needle");
+        assert_eq!(
+            entries(&misspelt, Verb::Check(Goals::Gated))
+                .filter(|diagnostic| diagnostic.severity == Severity::Error)
+                .map(|diagnostic| match diagnostic.span {
+                    Maybe::Present(span) => usize::from(span.start()),
+                    Maybe::Absent(_) => usize::MAX,
+                })
+                .collect::<Vec<_>>(),
+            [at("de g"), at("g() ->"), at("{\n  return 1"), at("g()")],
+            "the refusals of form print first in admission order, then the unresolved call \
+             admitted before them"
         );
     }
 
