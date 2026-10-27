@@ -177,15 +177,20 @@ impl Retirement for Watch
     /// # Specification
     /// - requires: nothing.
     /// - ensures: answers as [`Watch::poll`]: retired exactly once a submission
-    ///   for the job's slot under another key has followed the job's own.
+    ///   for the job's slot under another key has followed the job's own. A
+    ///   [`Demand::Wanted`] is the answer of the one reading made, which a
+    ///   retirement on another thread may overtake at once; a
+    ///   [`Demand::Retired`] holds from then on, retirement being monotone.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an admission run under a watch stops at its next
-    ///   declaration once its generation is retired.
+    ///   declaration once its generation is retired, and a retirement racing
+    ///   the demand never contradicts what the demand answered.
     /// - witness: `generation::tests::a_retired_slot_delivers_nothing`
+    /// - witness: `generation::tests::a_retirement_racing_demand_keeps_its_postcondition_2827`
     #[inline]
-    #[spec(ensures: |ret| matches!(ret, Demand::Wanted) == self.poll().is_ok())]
+    #[spec(ensures: |ret| matches!(ret, Demand::Wanted) || self.0.load(Ordering::Acquire))]
     fn demand(&self) -> Demand<Retired>
     {
         match self.poll() {
@@ -582,6 +587,7 @@ mod tests
 {
     use alloc::sync::Arc;
     use core::num::NonZeroUsize;
+    use core::sync::atomic::AtomicBool;
     use core::sync::atomic::AtomicUsize;
     use core::sync::atomic::Ordering;
     use std::sync::mpsc;
@@ -594,6 +600,7 @@ mod tests
     use super::Generations;
     use super::Retired;
     use super::Submitted;
+    use super::Watch;
     use super::delivery;
     use crate::pool::Pool;
     use crate::width::Threads;
@@ -847,5 +854,40 @@ mod tests
             retired.map_err(|retired| retired.to_string()),
             Err(String::from("retired by a newer submission for its slot"))
         );
+    }
+
+    #[test]
+    fn a_retirement_racing_demand_keeps_its_postcondition_2827()
+    {
+        const WATCHES: usize = 2_000;
+        let flags: Vec<Arc<AtomicBool>> =
+            core::iter::repeat_with(|| Arc::new(AtomicBool::new(false)))
+                .take(WATCHES)
+                .collect();
+        let reached = AtomicUsize::new(0);
+        std::thread::scope(|scope| {
+            let demander = scope.spawn(|| {
+                for (index, flag) in flags.iter().enumerate() {
+                    let watch = Watch(Arc::clone(flag));
+                    assert!(
+                        matches!(watch.demand(), Demand::Wanted),
+                        "a watch stands until its retirement"
+                    );
+                    reached.store(index.saturating_add(1), Ordering::Release);
+                    while matches!(watch.demand(), Demand::Wanted) {
+                        core::hint::spin_loop();
+                    }
+                }
+            });
+            for (index, flag) in flags.iter().enumerate() {
+                while reached.load(Ordering::Acquire) <= index {
+                    if demander.is_finished() {
+                        return;
+                    }
+                    std::thread::yield_now();
+                }
+                flag.store(true, Ordering::Release);
+            }
+        });
     }
 }
