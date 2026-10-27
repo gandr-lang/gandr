@@ -1565,7 +1565,9 @@ fi
 # it has. An issue with an open `blocked by`
 # dependency is not picked (#2902): each one ranked ahead of the pick is
 # printed on stderr as `blocked: #n by #a, #b`, its open blockers read from
-# GitHub. It adds `status:claimed` and prints the
+# GitHub. Each `collector` in the area is printed first, on stderr, as
+# `collector: #n (k open rows)` (#3111): never a candidate, it shows the
+# carving due. It adds `status:claimed` and prints the
 # claim as `#n <title>`; `--dry-run` prints it without claiming. No candidate
 # prints `no claim: <area>` and exits 1.
 ["claim:next"]
@@ -1603,12 +1605,13 @@ done
 concerns=$(sqlite3 -json :memory: ".read $(git rev-parse --show-toplevel)/ledger/concerns.sql" 'SELECT id FROM concern ORDER BY id;' | jq -c 'map(.id)')
 lines=$(jq -n --arg area "$area" --slurpfile issues "$board/issues.json" --argjson order "$order" '{area: $area, issues: $issues[0], order: $order}' \
   | jq -r -L "$claims" --argjson concerns "$concerns" -f "$claims/next.jq")
+awk '/^collector: /' <<< "$lines" >&2
 awk '/^needs sections: /' <<< "$lines" >&2
 while read -r _ issue; do
   echo "blocked: $issue by $(deps_open_blockers "$repo" "${issue#\#}")" >&2
 done < <(awk '/^blocked: /' <<< "$lines")
 awk '/^restate: /' <<< "$lines"
-pick=$(awk '!/^(needs sections|blocked|restate): /' <<< "$lines")
+pick=$(awk '!/^(collector|needs sections|blocked|restate): /' <<< "$lines")
 if [[ -z "$pick" ]]; then
   echo "no claim: $area" >&2
   exit 1
