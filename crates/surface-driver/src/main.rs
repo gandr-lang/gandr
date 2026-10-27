@@ -184,6 +184,9 @@
 //! - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: § quant-counts
 //!   and § quant-try-first — a hole's occurrence count under a cell's step is
 //!   reported per cell by `gandr cells`, never refused.
+//! - `vault:01a17f02-42f0-7920-bede-5615d3bade8c` — background: the compilation
+//!   ruling (§ compilation-recipe-vocabulary) — `gandr run` runs a local
+//!   artifact, the endpoint of a one-role choreography.
 //!
 //! # Output the driver cannot write is a fault
 //!
@@ -609,7 +612,8 @@ enum Command
     },
     /// Run a source as a program: check it as `check` does, then run the
     /// `main` it declares at its top level. A source declaring no `main` runs
-    /// nothing.
+    /// nothing. The program is a local artifact: the endpoint of a one-role
+    /// choreography, deployed as this process.
     ///
     /// A `main` returns the exit code, `def main() -> -F Integer`, or the
     /// unit, `def main() -> -F [Console] Unit`, for 0, and reads the

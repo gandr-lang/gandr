@@ -30,7 +30,43 @@ reason = "the package layer, its lock and its coordinates"
 name = "build"
 match = '\b(recipes?|sandbox\w*|nixpkgs|Nix derivations?|build layer)\b'
 owns = ["build-layer-owned.md", "#2765"]
-reason = "the build layer gandr owns"
+reason = "the build layer gandr owns; its recipe names a program's endpoints and their policies (crates/README.md § Compilation)"
+
+[[term]]
+name = "choreography"
+match = '\bchoreograph\w*'
+owns = ["compilation-is-a-choreographic-deployment-recipe.md"]
+reason = "a choreography is one program over named roles, the global source form projection compiles (§ compilation-recipe-vocabulary)"
+
+[[term]]
+name = "role"
+match = '\b(one-role|per-role|roles? (of|in) (a|the) choreography)\b'
+owns = ["compilation-is-a-choreographic-deployment-recipe.md"]
+reason = "a role is a participant a choreography names; each projects to one endpoint"
+
+[[term]]
+name = "projection"
+match = '\b(endpoint projection|project(s|ed|ing)? (a|the) choreography)\b'
+owns = ["compilation-is-a-choreographic-deployment-recipe.md"]
+reason = "projection is the compiler, admitted per artifact and never trusted (§ compilation-recipe-refinements)"
+
+[[term]]
+name = "endpoint"
+match = '\b(projected endpoints?|endpoints? per role|endpoint artifacts?)\b'
+owns = ["crates/README.md"]
+reason = "an endpoint is the projected program of one role and the artifact; § Compilation states the vocabulary"
+
+[[term]]
+name = "deployment"
+match = '\b(deployments? binds?|deploy(s|ed|ing)? (an?|the|one|each) (endpoint|artifact|role|recipe)s?|deployments? of (an?|the) (endpoint|artifact|recipe)s?|roles? to world keys?)\b'
+owns = ["crates/README.md"]
+reason = "a deployment binds roles to world keys, instances and discovery, and never enters an artifact's identity (§ Compilation)"
+
+[[term]]
+name = "local artifact"
+match = '\blocal artifacts?\b'
+owns = ["crates/README.md"]
+reason = "a local artifact is a one-role choreography's endpoint, the degenerate case and the only one built today (§ Compilation)"
 
 [[term]]
 name = "verdict"
