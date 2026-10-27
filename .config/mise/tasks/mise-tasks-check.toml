@@ -1310,13 +1310,17 @@ FROM reference;"); keys read $resolved"
 # `state.jq` a member's readiness (#2783), `dirty.jq` whether `pr:watch`'s
 # `DIRTY` reading is a conflict (#2854), `superseded.jq` whether a cancelled
 # check's run was superseded on its head (#2829), `prefix.jq` what a landing
-# queues (#1988), and `sweep.jq` which worktrees `wt:sweep` removes. Each case in
+# queues (#1988), `sweep.jq` which worktrees `wt:sweep` removes, and
+# `triggers.jq` whether the landing watcher reads on the events that change
+# what lands, never a schedule (#2984). Each case in
 # `.config/pr-stack/cases.json` names its program, its arguments and input,
 # and the output it must give; `prefix.jq`'s and `state.jq`'s output is its
-# raw line, the others' compact JSON.
+# raw line, the others' compact JSON. `triggers.jq` also reads
+# `.github/workflows/landing.yml`'s own `on`, refusing what it refuses.
 ["check:pr-stack"]
-description = "The stacking rule's readings give each recorded case its output"
+description = "The stacking rule's readings give each recorded case its output, and the landing watcher reads on events"
 tools.jq = "1.8.1"
+tools.yq = "4.54.1"
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1334,8 +1338,13 @@ while IFS= read -r case; do
     failed=1
   fi
 done < <(jq -c '.[]' .config/pr-stack/cases.json)
+triggers=$(yq -o=json '.on' .github/workflows/landing.yml | jq -c -f .config/pr-stack/triggers.jq | jq -r '.[] | ".github/workflows/landing.yml: \(.)"')
+if [[ -n "$triggers" ]]; then
+  printf '%s\n' "$triggers" >&2
+  failed=1
+fi
 (( failed == 0 )) || exit 1
-echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded"
+echo "pr-stack check OK: $(jq length .config/pr-stack/cases.json) cases read as recorded; the landing watcher reads on events"
 '''
 
 # The commit rules over a branch's own commits (`.config/commits/lint.bash`,

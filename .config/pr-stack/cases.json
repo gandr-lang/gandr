@@ -2657,5 +2657,30 @@
       }
     ],
     "output": "false"
+  },
+  {
+    "name": "#2984: landing on a `*/10` schedule alone, which GitHub ran hours late, is refused for the schedule and for each event it misses",
+    "program": "triggers.jq",
+    "input": { "schedule": [{ "cron": "*/10 * * * *" }], "workflow_dispatch": {} },
+    "output": "[\"`schedule`: GitHub ran this repository's schedules four to five hours late, so a reading must follow events, never a cron (#2984)\",\"no `workflow_run` of `CI` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `dequeued`: no `CI` completion marks it, so it starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `CI` completion marks it, so it starts no reading (#2984)\"]"
+  },
+  {
+    "name": "#2984: landing on `CI`'s completion, a dequeue and a draft taken back holds",
+    "program": "triggers.jq",
+    "input": {
+      "workflow_run": { "workflows": ["CI"], "types": ["completed"] },
+      "pull_request": { "types": ["dequeued", "ready_for_review"] },
+      "workflow_dispatch": {}
+    },
+    "output": "[]"
+  },
+  {
+    "name": "#2984: `CI` read on `requested` rather than `completed`, and `ready_for_review` missing, are each refused",
+    "program": "triggers.jq",
+    "input": {
+      "workflow_run": { "workflows": ["CI"], "types": ["requested"] },
+      "pull_request": { "types": ["dequeued"] }
+    },
+    "output": "[\"no `workflow_run` of `CI` on `completed`: a head turning green starts no reading (#2984)\",\"no `pull_request` on `ready_for_review`: no `CI` completion marks it, so it starts no reading (#2984)\"]"
   }
 ]

@@ -1,7 +1,8 @@
 # What the server-side landing watcher does with the open pull requests, read
 # once (#2701). `pr:watch` lands a pull request only while its seat's shell
-# lives; this reading runs on a schedule, so a green pull request is landed,
-# or its seat told, whether or not anyone is watching it.
+# lives; this reading runs whenever a `CI` run completes, a pull request
+# leaves the queue or a draft is taken back (#2984), so a green pull request
+# is landed, or its seat told, whether or not anyone is watching it.
 #
 # A pull request in the merge queue or set to enter it, held by a `pr:land`
 # (`landing`), or opened by an app is left alone. Otherwise its state is, in
