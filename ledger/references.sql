@@ -124,6 +124,7 @@ INSERT INTO reference VALUES('doi:10.1007/s00236-005-0177-z','core-session','','
 INSERT INTO reference VALUES('doi:10.1007/s00236-005-0177-z','surface-render-remote','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/0012-365x(75)90103-x','core-incremental','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/0022-4049(76)90013-x','theory-computads','','background',NULL,NULL,NULL);
+INSERT INTO reference VALUES('doi:10.1016/0168-0072(86)90053-9','theory-computads','indexing','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/0304-3975(82)90026-3','theory-path-orders','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/0304-3975(93)90054-w','theory-computads','','background',NULL,NULL,NULL);
 INSERT INTO reference VALUES('doi:10.1016/0898-1221(81)90008-0','surface-grammar','','background',NULL,NULL,NULL);

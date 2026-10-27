@@ -177,11 +177,15 @@ use gandr_theory_coherent_resolutions::normalize;
 use gandr_theory_coherent_resolutions::replay_path;
 use gandr_theory_computads::AdmittedFaceIndex;
 use gandr_theory_computads::ElaborateError;
+use gandr_theory_computads::Indexing;
 use gandr_theory_computads::PresentedRules;
 use gandr_theory_computads::Term;
 use gandr_theory_computads::TermAlphabet;
+use gandr_theory_computads::Unsorted;
 use gandr_theory_computads::command_reading;
+use gandr_theory_computads::conditioned_cell;
 use gandr_theory_computads::elaborate_call;
+use gandr_theory_computads::face_cell;
 use gandr_theory_computads::presented_reading;
 use gandr_theory_computads::read_command;
 use gandr_theory_computads::rule_keeps_growing;
@@ -1520,6 +1524,9 @@ pub enum NormalFormFault
     Uncertified,
     /// The normal form writes no term.
     Unwritable(Unwriting),
+    /// The call's operations sort it no one way: two sorts asked of one
+    /// argument do not unify, or an index no argument fixes is left.
+    Unsorted(Unsorted),
 }
 
 impl fmt::Display for NormalFormFault
@@ -1530,8 +1537,8 @@ impl fmt::Display for NormalFormFault
     /// - ensures: one phrase per fault, naming the step budget when it ran out;
     ///   a call that does not elaborate is named by its reason, a shape the
     ///   cell layer does not read yet with the issue that owes a nested
-    ///   operation, and a reason [`elaborate_call`] never returns as a call
-    ///   that does not elaborate.
+    ///   operation, a reason [`elaborate_call`] never returns as a call that
+    ///   does not elaborate, and an ill-sorted call as one.
     /// - fails: the formatting sink's error when it refuses the text.
     /// - panics: none.
     /// - executable: none — a formatter exposes no readback of the written
@@ -1542,9 +1549,10 @@ impl fmt::Display for NormalFormFault
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an unread call and a call into a refused block read
-    ///   apart.
+    ///   apart, and an ill-sorted call reads apart from one that does not
+    ///   elaborate.
     /// - witness: `coincide::tests::a_call_reads_its_normal_form_or_says_why_not`
-    /// - witness: `coincide::tests::a_call_the_cells_cannot_read_names_its_reason_and_its_issue_2855`
+    /// - witness: `coincide::tests::a_call_nesting_operations_reads_over_terms_1510`
     #[inline]
     fn fmt(
         &self,
@@ -1581,6 +1589,10 @@ impl fmt::Display for NormalFormFault
             Self::Exhausted => write!(f, "no normal form within {NORMAL_FORM_STEPS} steps"),
             Self::Uncertified => f.write_str("no normal form: the path does not replay"),
             Self::Unwritable(_) => f.write_str("no normal form: it writes no term"),
+            Self::Unsorted(_) => f.write_str(
+                "no normal form: the call is ill sorted, its operations asking one argument at \
+                 two sorts or leaving an index no argument fixes",
+            ),
         }
     }
 }
@@ -1593,10 +1605,12 @@ impl fmt::Display for NormalFormFault
 /// - ensures: the call read in the inspection notation against the block's
 ///   constructors and operations; for a presented type, read as a term and
 ///   normalized under its term store with its conditioned cells after the rest
-///   ([`PresentedRules::firing`]), and otherwise elaborated to the command its
-///   faces match and normalized under [`DeclarationCells::rewriting`]; within
-///   [`NORMAL_FORM_STEPS`] steps, its path replayed to the normal form, and the
-///   normal form read back as a term.
+///   ([`PresentedRules::firing`]); otherwise elaborated to the command its
+///   faces match and normalized under [`DeclarationCells::rewriting`], or,
+///   where the call holds an operation in a value's place, read as a term and
+///   normalized under the block's oriented rules read over terms
+///   ([`oriented_terms`]); within [`NORMAL_FORM_STEPS`] steps, its path
+///   replayed to the normal form, and the normal form read back as a term.
 /// - fails: [`NormalFormFault::Incoherent`] for a block the coincidence check
 ///   did not admit; otherwise the first step that fails, in that order.
 /// - panics: none.
@@ -1618,7 +1632,7 @@ impl fmt::Display for NormalFormFault
     let admitted = matches!(cells.coincidence, Coincidence::Orthogonal | Coincidence::Joined(_));
     match ret.as_ref() {
         Ok(normal) => admitted && read_call(description, call).as_ref() == Ok(&normal.call)
-            && matches!(normal.path, NormalPath::Terms(_)) == matches!(cells.presented, Maybe::Present(_)),
+            && (matches!(cells.presented, Maybe::Absent(_)) || matches!(normal.path, NormalPath::Terms(_))),
         Err(&NormalFormFault::Incoherent) => !admitted,
         Err(&NormalFormFault::Undescribed) => false,
         Err(_) => admitted,
@@ -1639,30 +1653,67 @@ pub fn normal_form<G>(
     }
     let call = read_call(description, call)?;
     let (path, normal) = match cells.presented {
-        Maybe::Present(ref presented) => {
-            let (path, normal) = certified_normal(
-                &*presented.firing(),
-                &Term::from(&call),
-                |term| match term.read() {
-                    Maybe::Present(written) => Ok(written),
-                    Maybe::Absent(reason) => Err(Unwriting::Term(reason)),
-                },
-            )?;
-            (NormalPath::Terms(path), normal)
-        },
+        Maybe::Present(ref presented) => over_terms(presented, &call)?,
         Maybe::Absent(presented_reading::Absent::NoTermFace) => {
-            let command = elaborate_call(&call, description.polarity, &cells.operations)
-                .map_err(NormalFormFault::NotACall)?;
-            let (path, normal) = certified_normal(&cells.rewriting(), &command, |command| {
-                match read_command(command) {
-                    Maybe::Present(written) => Ok(written),
-                    Maybe::Absent(reason) => Err(Unwriting::Command(reason)),
-                }
-            })?;
-            (NormalPath::Commands(path), normal)
+            match elaborate_call(&call, description.polarity, &cells.operations) {
+                Ok(command) => {
+                    let (path, normal) = certified_normal(
+                        &cells.rewriting(),
+                        &command,
+                        |command| match read_command(command) {
+                            Maybe::Present(written) => Ok(written),
+                            Maybe::Absent(reason) => Err(Unwriting::Command(reason)),
+                        },
+                    )?;
+                    (NormalPath::Commands(path), normal)
+                },
+                // A call holding an operation where the cell layer reads a
+                // value has no command to cut, and is read over terms under
+                // the block's oriented rules, which rewrite a call wherever
+                // it stands (#1510).
+                Err(ElaborateError::UnsupportedShape) => {
+                    over_terms(&oriented_terms(description, cells), &call)?
+                },
+                Err(error) => return Err(NormalFormFault::NotACall(error)),
+            }
         },
     };
     Ok(NormalForm { call, path, normal })
+}
+
+/// The normal form `call` reaches under the term cells `terms` holds, read
+/// with the indices they carry and written without them.
+///
+/// # Specification
+/// - ensures: the path [`certified_normal`] takes from the call as
+///   [`PresentedRules::call`] reads it, and the normal form it reaches as
+///   [`PresentedRules::written`] writes it.
+/// - fails: [`NormalFormFault::Unsorted`] for a call its operations sort no one
+///   way; otherwise as [`certified_normal`] does.
+/// - panics: none.
+///
+/// # Errors
+/// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a choice over a graded sort reaches its cut, and the same
+///   choice with its branches swapped is ill sorted.
+/// - witness: `coincide::tests::a_call_nesting_operations_reads_over_terms_1510`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |found| found.1 == terms.written(&found.1)))]
+fn over_terms(
+    terms: &PresentedRules,
+    call: &FreeTerm,
+) -> Result<(NormalPath, FreeTerm), NormalFormFault>
+{
+    let indexed = terms.call(call).map_err(NormalFormFault::Unsorted)?;
+    let (path, normal) =
+        certified_normal(&*terms.firing(), &Term::from(&indexed), |term| {
+            match term.read() {
+                Maybe::Present(written) => Ok(terms.written(&written)),
+                Maybe::Absent(reason) => Err(Unwriting::Term(reason)),
+            }
+        })?;
+    Ok((NormalPath::Terms(path), normal))
 }
 
 /// The normal form `start` reaches under `store`, its path replayed, read back
@@ -1709,6 +1760,60 @@ where
     }
     let normal = read(&normalized.normal).map_err(NormalFormFault::Unwritable)?;
     Ok((normalized.path, normal))
+}
+
+/// The block's oriented rules read over terms, where a call holding an
+/// operation in a value's place has no command the sequent cells cut.
+///
+/// # Specification
+/// - requires: `cells` is the cell gate's elaboration of `description`.
+/// - ensures: one term cell per oriented rule, in rule order, a conditioned
+///   rule of a block with a naming port among the conditioned cells, which fire
+///   after the rest, as [`elaborate_desc`'s presented reading] reads a face;
+///   over an indexed sort, each rule carrying the indices its sorting fixes
+///   ([`Indexing::face`]), a rule it fixes none of left out.
+/// - provides: the term store a nesting call normalizes under: over a block the
+///   coincidence check admitted, every left side's arguments are values or
+///   variables, so its rules overlap only where their sequent cells do.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a theory's call of operations over operations, at a plain
+///   and at an indexed sort, reaches the normal form its law gives.
+/// - witness: `coincide::tests::a_call_nesting_operations_reads_over_terms_1510`
+///
+/// [`elaborate_desc`'s presented reading]: gandr_theory_computads::PresentedRules
+#[spec(ensures: |ret| ret.faces.len().saturating_add(ret.conditioned.len()) <= cells.oriented.len())]
+fn oriented_terms<G>(
+    description: &TheoryDesc<G>,
+    cells: &DeclarationCells,
+) -> PresentedRules
+{
+    let nameable = naming_port(description).is_some();
+    let mut terms = PresentedRules {
+        store: CellStore::new(),
+        faces: Vec::with_capacity(cells.oriented.len()),
+        conditioned: Vec::new(),
+        indexing: Indexing::of(description),
+    };
+    for (index, face) in cells.oriented.iter().enumerate() {
+        let index = AdmittedFaceIndex::from(index);
+        let face = match terms.indexing {
+            Maybe::Present(ref indexing) => match indexing.face(face) {
+                Ok(indexed) => Cow::Owned(indexed),
+                Err(_unsorted) => continue,
+            },
+            Maybe::Absent(_) => Cow::Borrowed(face),
+        };
+        if nameable && bool::from(face.conditioned()) {
+            terms.conditioned.push((index, conditioned_cell(&face)));
+        }
+        else {
+            let cell = terms.store.insert(face_cell(&face));
+            terms.faces.push((index, cell));
+        }
+    }
+    terms
 }
 
 /// Read `text` as a term of the inspection notation over `description`'s

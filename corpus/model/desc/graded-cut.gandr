@@ -1,0 +1,40 @@
+// A choice that commits to its left branch once a cut stands there, over a
+// sort graded by how a computation may end: `bot` for one that cuts, `top`
+// for one that fails. The law is read on the command face; a call choosing
+// between two operations nests them where the cell layer reads values, so it
+// normalizes over terms instead, each operation carrying the grade its
+// sorting fixes, and a call whose arguments ask one grade at two places is
+// ill sorted.
+
+/// Choice with cut over a grade-indexed sort: `cutLeft` commits to the left
+/// branch whatever grade the right one stands at, so the choice between a
+/// cut and a failure reaches the cut.
+@[ normalizes("orBot(cut, fail) ~> cut") ]
+theory GradedCut {
+  sort Grade : Type;
+  sort M(g : Grade) : Type;
+
+  oper bot : () --> Grade;
+  oper top : () --> Grade;
+  oper cut : () --> M(bot());
+  oper fail : () --> M(top());
+  oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
+
+  rule cutLeft : orBot(x, y) ==> x;
+}
+
+/// The same choice nested: the inner choice is a cut's grade, so it stands
+/// left of an outer one and the outer law fires first.
+@[ normalizes("orBot(orBot(cut, fail), fail) ~> cut") ]
+theory NestedCut {
+  sort Grade : Type;
+  sort M(g : Grade) : Type;
+
+  oper bot : () --> Grade;
+  oper top : () --> Grade;
+  oper cut : () --> M(bot());
+  oper fail : () --> M(top());
+  oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
+
+  rule cutLeft : orBot(x, y) ==> x;
+}

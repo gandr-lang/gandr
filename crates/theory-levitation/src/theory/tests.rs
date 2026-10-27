@@ -1092,11 +1092,11 @@ fn the_description_is_read_off_the_value()
             .collect::<Vec<_>>(),
         [
             (Name::from("id"), vec![SortRef::new("a", "Ob")], vec![
-                SortRef::new("_1", "Hom(a, a)")
+                SortRef::new("_1", "Hom").applied([FreeTerm::var("a"), FreeTerm::var("a")])
             ]),
             (
                 Name::from("dom"),
-                vec![SortRef::new("f", "Hom(a, b)")],
+                vec![SortRef::new("f", "Hom").applied([FreeTerm::var("a"), FreeTerm::var("b")])],
                 vec![SortRef::new("_1", "Ob")]
             ),
             (Name::from("split"), vec![SortRef::new("m", "Ob")], vec![
@@ -1105,7 +1105,7 @@ fn the_description_is_read_off_the_value()
             ]),
         ],
         "each operation's ports in order, an unnamed one at its placeholder, its sort \
-         spelled from the value"
+         applied to the index terms the value codes"
     );
     assert_eq!(
         description

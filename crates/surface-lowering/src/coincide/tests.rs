@@ -4,7 +4,6 @@
 use alloc::vec::Vec;
 
 use gandr_core_term::CoreArena;
-use gandr_core_term::TrackingIssue;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SourceText;
@@ -1275,43 +1274,66 @@ def later = 7;"#,
     });
 }
 
+/// A call of operations over operations reads over terms: over a plain sort,
+/// and over a graded sort carrying the grade its failure stands at, where a
+/// failure passed for a cut is ill sorted (#1510).
 #[test]
-fn a_call_the_cells_cannot_read_names_its_reason_and_its_issue_2855()
+fn a_call_nesting_operations_reads_over_terms_1510()
 {
-    let indexed = SourceText::from(
-        r#"theory CutClosed {
+    let choices = SourceText::from(
+        r#"theory Cut {
   sort Grade : Type;
   oper bot : () --> Grade;
   oper top : () --> Grade;
   sort M(g : Grade) : Type;
   oper cut : () --> M(bot());
   oper fail : () --> M(top());
-  oper orBot : (x : M(bot()), y : M(top())) --> M(bot());
+  oper orBot : (x : M(bot()), y : M(e)) --> M(bot());
   rule cutLeft : orBot(x, y) ==> x;
 }"#,
     );
-    lowered(indexed, |module| {
-        let [ref theory, ..] = *module.declarations()
-        else {
-            panic!("the theory")
-        };
-        let fault = module
-            .normal_form(theory, CallText::from("orBot(cut, fail)"))
-            .expect_err("a call nesting operations has no cell reading yet");
-        assert_eq!(
-            fault,
-            NormalFormFault::NotACall(ElaborateError::UnsupportedShape),
-            "the indexed sort's call is read on the command face"
-        );
-        let rendered = fault.to_string();
-        assert!(
-            rendered.contains(&TrackingIssue::NESTED_OPERATION.to_string()),
-            "{rendered}: the issue that owes the nested operation is named"
-        );
-        assert_ne!(
-            rendered,
-            NormalFormFault::NotACall(ElaborateError::LhsNotOperation).to_string(),
-            "two reasons a call does not elaborate read apart"
-        );
-    });
+    let plain = SourceText::from(
+        r#"theory Plain {
+  sort N : Type;
+  oper first : () --> N;
+  oper second : () --> N;
+  oper choose : (x : N, y : N) --> N;
+  rule left : choose(x, y) ==> x;
+}"#,
+    );
+    for (source, calls) in [
+        (
+            choices,
+            &[
+                ("orBot(cut, fail)", Ok("cut")),
+                ("orBot(cut, orBot(cut, fail))", Ok("cut")),
+                (
+                    "orBot(fail, cut)",
+                    Err(NormalFormFault::Unsorted(Unsorted::Clash)),
+                ),
+            ][..],
+        ),
+        (plain, &[("choose(second, first)", Ok("second"))][..]),
+    ] {
+        lowered(source, |module| {
+            let [ref theory, ..] = *module.declarations()
+            else {
+                panic!("the theory")
+            };
+            for &(call, ref reached) in calls {
+                assert_eq!(
+                    module
+                        .normal_form(theory, CallText::from(call))
+                        .map(|reached| reached.spelling()),
+                    reached.clone().map(String::from),
+                    "{call}: the call reads over terms"
+                );
+            }
+        });
+    }
+    assert_ne!(
+        NormalFormFault::Unsorted(Unsorted::Clash).to_string(),
+        NormalFormFault::NotACall(ElaborateError::UnsupportedShape).to_string(),
+        "an ill-sorted call reads apart from one that does not elaborate"
+    );
 }

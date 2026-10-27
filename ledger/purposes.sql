@@ -3226,6 +3226,8 @@ INSERT INTO purpose VALUES('theory-computads','elaborate::elaborate_data_desc','
 INSERT INTO purpose VALUES('theory-computads','elaborate::elaborate_rule','function','Elaborate one rule face into an oriented command cell at the declaration''s polarity.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','elaborate::elaborate_theory_desc','function','Elaborate a presentation''s operations, laws, circuit rules and η laws into one store, under the shape reading.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','elaborate::read_command','function','The first-order term a command denotes: `⟨p | c⟩` read as the context `c` filled with `p`.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-computads','indexing::Indexing','struct','The operations of a description over indexed sorts, each with the implicit indices its applications carry once a term is read with its sorting.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('theory-computads','indexing::Unsorted','enum','Why a term has no sorting under a description''s operations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','instantiate::CellInstantiationError','enum','Why a stored cell could not be instantiated.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','instantiate::CircuitShift','struct','The earned identification of an instantiated two-redex circuit rule''s two sequentializations.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('theory-computads','instantiate::CircuitShiftObstruction','enum','Why an instantiated circuit rule earns no identification of its two sequentializations.',NULL,'fits','sound',NULL);
