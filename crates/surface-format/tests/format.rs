@@ -264,6 +264,31 @@ fn a_continuation_line_indents_under_its_statement()
     );
 }
 
+/// #2950: before the fix, a block opening with a comment at column 0 read its
+/// first member, indented deeper than the comment, as the comment's
+/// continuation, and laid it two columns too deep.
+#[test]
+fn a_member_after_a_column_zero_comment_starts_a_statement_2950()
+{
+    let grammar = grammar();
+    for (source, expected) in [
+        (
+            "/// T.\ntheory T {\n/// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
+            "/// T.\ntheory T {\n  /// The state.\n  sort S : Type+;\n  oper get : (k : S) --> S;\n}\n",
+        ),
+        (
+            "/// N.\ndata N : Type {\n/// Zero.\n  Z : N;\n  S : (n : N) --> N;\n}\n",
+            "/// N.\ndata N : Type {\n  /// Zero.\n  Z : N;\n  S : (n : N) --> N;\n}\n",
+        ),
+    ] {
+        assert_eq!(
+            text(&grammar, source, WIDE),
+            expected,
+            "the first member stands at the block's indentation, under its comment"
+        );
+    }
+}
+
 #[test]
 fn strings_shell_blocks_and_holes_are_copied_as_written()
 {
