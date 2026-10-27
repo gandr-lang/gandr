@@ -39,3 +39,7 @@ effort = "unknown"
 [kind.specification]
 priority = "medium"
 effort = "unknown"
+
+[kind.refactor]
+priority = "medium"
+effort = "unknown"

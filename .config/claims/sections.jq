@@ -148,3 +148,35 @@ def with_after($n; $clause):
       end
     | join("\n")
     end;
+
+# The kinds a `## Refactoring` row names (#2884, `units.md` § units-pr).
+def refactor_kinds: ["duplicate", "consolidate", "generalise", "split", "delete", "cross-cutting"];
+
+# The body's `## Refactoring` (#2884), or null when it has none: {verdict,
+# rows}. The verdict is the first content line's `yes`, `maybe` or `no`,
+# alone or before a dash and a clause, else null; HTML comments are not
+# content. Each row of the section's table, the header (`Kind`) left out, is
+# {line, kind, whereas, observation}: `whereas` the backquoted spans of the
+# second cell, or its comma-separated parts when it has none.
+def refactoring:
+  (section("Refactoring") // null)
+  | if . == null then null
+    else (join("\n") | gsub("(?s)<!--.*?-->"; "") | split("\n")) as $lines
+    | {verdict: (first($lines[] | select(test("\\S"))) // ""
+          | (capture("^\\s*(?<v>yes|maybe|no)(?:\\s+—\\s*\\S.*)?\\s*$") // {v: null}).v),
+       rows: [$lines | rows
+          | select((.cells[0] // "" | ascii_downcase) != "kind")
+          | {line, kind: (.cells[0] // ""),
+             whereas: (.cells[1] // ""
+               | if test("`") then [match("`([^`]+)`"; "g") | .captures[0].string]
+                 else [split(",")[] | gsub("^\\s+|\\s+$"; "") | select(. != "")] end),
+             observation: (.cells[2] // "")}]}
+    end;
+
+# Whether a `Where` is spelled as an item path, `crate::path` or a crate
+# alone, as rustdoc names it.
+def item_path: test("^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$");
+
+# Whether a `Where` is spelled as a repository path: a relative path with a
+# `/` or a `.`, and no `::`.
+def tree_path: test("^[.A-Za-z0-9_-][^\\s:]*$") and test("[/.]");

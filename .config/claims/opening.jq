@@ -81,6 +81,12 @@
 # anywhere else (`closed #628` in prose, a `Closes #n` line with prose after
 # it or below a heading) is refused, since GitHub closes the issue it names
 # when the pull request merges (`targets.jq`'s `strays`).
+#
+# Every body answers `## Refactoring` (#2884): from what the change did and
+# learned, is a refactoring justified? Its first line is `yes`, `maybe` or
+# `no`; a `yes` or `maybe` lists a table `| Kind | Where | Observation |`,
+# each kind one of `refactor_kinds` and each `Where` an item path or a
+# repository path, which `check:refactoring` resolves.
 
 include "targets";
 include "sections";
@@ -298,4 +304,31 @@ def keywords:
   .body | strays[]
   | "the body's line `\(.line)` carries `\(.keyword)`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again";
 
-claim, sources, citations, readings, concerns, defects, surface, keywords
+# The refusals of `## Refactoring` (#2884): the section present, its first
+# line one verdict, `yes`, `maybe` or `no`, and a `yes` or `maybe` answered
+# by a table, `| Kind | Where | Observation |`, each row a kind of
+# `refactor_kinds`, one or more `Where`, each an item path or a repository
+# path, and an observation; a `no` lists none. `check:refactoring` resolves
+# each `Where` against the workspace.
+def refactorings:
+  "`| Kind | Where | Observation |`" as $table
+  | "`\(refactor_kinds | join("`, `"))`" as $kinds
+  | (.body | refactoring) as $section
+  | if $section == null then "the body lacks `## Refactoring`: from what this change did and learned, is a refactoring justified? Write the section with its first line `yes`, `maybe` or `no`, and for `yes` or `maybe` a table \($table), each kind one of \($kinds), then run `pr:open` again"
+    elif $section.verdict == null then "the body's `## Refactoring` opens on no verdict: its first line is `yes`, `maybe` or `no`, alone or before ` — <clause>`, then run `pr:open` again"
+    elif $section.verdict == "no" then
+      ($section.rows[] | "the body's `## Refactoring` says `no` and lists the row `\(.line)`: keep the rows and say `yes` or `maybe`, or `no` alone, then run `pr:open` again")
+    elif ($section.rows | length) == 0 then "the body's `## Refactoring` says `\($section.verdict)` and has no row: add a table \($table) naming what this change found, then run `pr:open` again"
+    else
+      $section.rows[]
+      | (select(.kind | IN(refactor_kinds[]) | not)
+          | "the `## Refactoring` row `\(.line)` names the kind `\(.kind)`: write one of \($kinds), then run `pr:open` again"),
+        (select(.whereas == [])
+          | "the `## Refactoring` row `\(.line)` names no `Where`: name each item the change read or touched as `crate::path`, or a repository path, then run `pr:open` again"),
+        (.line as $line | .whereas[] | select((item_path or tree_path) | not)
+          | "the `## Refactoring` row `\($line)` names `\(.)`, neither an item path (`crate::path`) nor a repository path, then run `pr:open` again"),
+        (select(.observation | test("\\S") | not)
+          | "the `## Refactoring` row `\(.line)` gives no observation: say what this change found there, then run `pr:open` again")
+    end;
+
+claim, sources, citations, readings, concerns, defects, surface, keywords, refactorings

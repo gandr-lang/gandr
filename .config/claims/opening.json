@@ -3,7 +3,7 @@
     "name": "a branch's issue the body does not name refuses it, naming the line to add",
     "input": {
       "branch": "triage-2341-probe",
-      "body": "Counts the rows.\n\nRelated: #2341."
+      "body": "Counts the rows.\n\nRelated: #2341.\n\n## Refactoring\n\nno\n"
     },
     "output": "the body names no `Advances` or `Closes` line for #2341, the issue `triage-2341-probe` names: add `Advances #2341` for a slice, or `Closes #2341` if it finishes the issue, then run `pr:open` again"
   },
@@ -11,7 +11,7 @@
     "name": "a body advancing the branch's issue opens",
     "input": {
       "branch": "triage-2341-probe",
-      "body": "Counts the rows.\n\nAdvances #2341"
+      "body": "Counts the rows.\n\nAdvances #2341\n\n## Refactoring\n\nno\n"
     },
     "output": ""
   },
@@ -19,7 +19,7 @@
     "name": "any closing keyword in any case opens",
     "input": {
       "branch": "surface-2341-probe",
-      "body": "fixes #2341"
+      "body": "fixes #2341\n\n## Refactoring\n\nno\n"
     },
     "output": ""
   },
@@ -27,7 +27,7 @@
     "name": "a body working another issue but not the branch's is refused",
     "input": {
       "branch": "triage-2341-probe",
-      "body": "Closes #2340"
+      "body": "Closes #2340\n\n## Refactoring\n\nno\n"
     },
     "output": "the body names no `Advances` or `Closes` line for #2341, the issue `triage-2341-probe` names: add `Advances #2341` for a slice, or `Closes #2341` if it finishes the issue, then run `pr:open` again"
   },
@@ -35,7 +35,7 @@
     "name": "the branch's number is read whole",
     "input": {
       "branch": "triage-23410-probe",
-      "body": "Advances #2341"
+      "body": "Advances #2341\n\n## Refactoring\n\nno\n"
     },
     "output": "the body names no `Advances` or `Closes` line for #23410, the issue `triage-23410-probe` names: add `Advances #23410` for a slice, or `Closes #23410` if it finishes the issue, then run `pr:open` again"
   },
@@ -43,7 +43,7 @@
     "name": "a branch with no issue opens a body working some issue",
     "input": {
       "branch": "perf-index-sweep",
-      "body": "Advances #7"
+      "body": "Advances #7\n\n## Refactoring\n\nno\n"
     },
     "output": ""
   },
@@ -51,7 +51,7 @@
     "name": "a branch with no issue and a body working none is refused",
     "input": {
       "branch": "perf-index-sweep",
-      "body": "See #7 for the background."
+      "body": "See #7 for the background.\n\n## Refactoring\n\nno\n"
     },
     "output": "the body names no issue it works: add `Advances #n` for the issue the change advances, or `Closes #n` for one it finishes, then run `pr:open` again"
   },
@@ -59,7 +59,7 @@
     "name": "a source the issue names and the body lacks is refused, the missing key listed",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` — taken: `opening.jq`\n",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` — taken: `opening.jq`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2499,
@@ -73,7 +73,7 @@
     "name": "a body with no `## Sources read` is refused every key its issue names",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read: none requested\n",
+      "body": "Closes #2499\n\n## Sources read: none requested\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2499,
@@ -87,7 +87,7 @@
     "name": "a disposition left blank is refused",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` § units-pr — taken: `opening.jq`\n- `Caspar-2026-s4` — taken:\n",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` § units-pr — taken: `opening.jq`\n- `Caspar-2026-s4` — taken:\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2499,
@@ -101,7 +101,7 @@
     "name": "a disposition outside the vocabulary is refused, and an item naming no source",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` — read it\n- `Caspar-2026-s4` — n/a: no calculus here\n- the rest of the vault\n",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md` — read it\n- `Caspar-2026-s4` — n/a: no calculus here\n- the rest of the vault\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2499,
@@ -115,7 +115,7 @@
     "name": "every key dispositioned opens, one item keying two sources",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read\n\n- `units.md`, `Caspar-2026-s4` — declined: a workflow check reads no calculus\n- `tracker.md` — n/a: no issue filed\n\n## Ledger\n\n- `nothing` — whatever\n",
+      "body": "Closes #2499\n\n## Sources read\n\n- `units.md`, `Caspar-2026-s4` — declined: a workflow check reads no calculus\n- `tracker.md` — n/a: no issue filed\n\n## Ledger\n\n- `nothing` — whatever\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2499,
@@ -129,7 +129,7 @@
     "name": "an issue line naming no key is noted, and the body opens",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n",
+      "body": "Closes #2499\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2499,
@@ -143,7 +143,7 @@
     "name": "an issue with no `## Sources` asks for none",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n",
+      "body": "Closes #2499\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2499,
@@ -157,7 +157,7 @@
     "name": "a supersession is refused while the tree names the old key undemoted",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read\n\n- `Caspar-2026-s4` — taken: `sequent.rs`\n- supersedes: `Girard-1993-lu` — the S4 calculus replaces LU whole\n",
+      "body": "Closes #2499\n\n## Sources read\n\n- `Caspar-2026-s4` — taken: `sequent.rs`\n- supersedes: `Girard-1993-lu` — the S4 calculus replaces LU whole\n\n## Refactoring\n\nno\n",
       "issues": [],
       "mentions": {
         "Girard-1993-lu": [
@@ -172,7 +172,7 @@
     "name": "a supersession opens once every line naming the old key marks it demoted",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read\n\n- `Caspar-2026-s4` — taken: `sequent.rs`\n- supersedes: `Girard-1993-lu` — the S4 calculus replaces LU whole\n",
+      "body": "Closes #2499\n\n## Sources read\n\n- `Caspar-2026-s4` — taken: `sequent.rs`\n- supersedes: `Girard-1993-lu` — the S4 calculus replaces LU whole\n\n## Refactoring\n\nno\n",
       "issues": [],
       "mentions": {
         "Girard-1993-lu": ["docs/logic.md:14:`Girard-1993-lu`, demoted: `Caspar-2026-s4` leads"]
@@ -184,7 +184,7 @@
     "name": "a supersession with no confirmation is refused",
     "input": {
       "branch": "workflow-2499-sources",
-      "body": "Closes #2499\n\n## Sources read\n\n- supersedes: `Girard-1993-lu` —\n",
+      "body": "Closes #2499\n\n## Sources read\n\n- supersedes: `Girard-1993-lu` —\n\n## Refactoring\n\nno\n",
       "issues": [],
       "mentions": {}
     },
@@ -194,7 +194,7 @@
     "name": "an axis with no row, a blank, `not selected`, a bare form or `none:` is refused, naming the axis and its question, as is a row naming no axis (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` |  |\n| Locality | `descent` | not selected |\n| Place | `located` | trivial: |\n| Place | `resident` | none: no representation moves |\n| Identity | `univalence` | answered: `transport.rs` |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` |  |\n| Locality | `descent` | not selected |\n| Place | `located` | trivial: |\n| Place | `resident` | none: no representation moves |\n| Identity | `univalence` | answered: `transport.rs` |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -208,7 +208,7 @@
     "name": "every axis answered in one of the four forms opens, and a subsection's table is not read as axes (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -222,7 +222,7 @@
     "name": "an axis the issue selects answered other than `answered:` is refused until `## Sources read` departs from it (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | not applicable: no type gains a second representation |\n| Dimension | `rewriting` | not applicable: no rule is added |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | not applicable: no type gains a second representation |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -236,7 +236,7 @@
     "name": "an issue the body works whose readings are still the migration's `unstated` placeholder is refused until the seat restates them on the issue, each axis's question quoted (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n### univalent\n\n| Rule | Cell |\n| --- | --- |\n| transport | replayed |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -250,7 +250,7 @@
     "name": "a `departed:` item keyed by the axis answers a selected axis answered other than `answered:` (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Sources read\n\n- `resident` — departed: the issue expected a layout, and the change found none to move\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | not applicable: no type gains a second representation |\n| Dimension | `rewriting` | not applicable: no rule is added |\n",
+      "body": "Closes #2522\n\n## Sources read\n\n- `resident` — departed: the issue expected a layout, and the change found none to move\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | not applicable: nothing is cached or reused |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | not applicable: no type gains a second representation |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -264,7 +264,7 @@
     "name": "an issue selecting an axis by an item asks for it",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | trivial: one source, one task |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n",
+      "body": "Closes #2522\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Identity | `univalent` | answered: `transport.rs` |\n| Locality | `oracle` | trivial: a certificate with no decision |\n| Locality | `descent` | trivial: one source, one task |\n| Place | `located` | deferred: #2900 |\n| Place | `resident` | answered: `layout.rs` |\n| Dimension | `rewriting` | not applicable: no rule is added |\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -278,7 +278,7 @@
     "name": "a unit's body with no `## Readings` is refused every axis (#2955)",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n",
+      "body": "Closes #2522\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -292,7 +292,7 @@
     "name": "a body working an issue with no readings table, and with none of its own, is asked for none",
     "input": {
       "branch": "workflow-2522-readings",
-      "body": "Closes #2522\n",
+      "body": "Closes #2522\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2522,
@@ -306,7 +306,7 @@
     "name": "a module added under a concern whose sites all lie in other crates is refused",
     "input": {
       "branch": "workflow-2523-concerns",
-      "body": "Closes #2523\n\n## Concerns\n\n- `sharing` — within the memo\n",
+      "body": "Closes #2523\n\n## Concerns\n\n- `sharing` — within the memo\n\n## Refactoring\n\nno\n",
       "concerns": {
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
@@ -376,7 +376,7 @@
     "name": "the same module declared `consolidated` opens",
     "input": {
       "branch": "workflow-2523-concerns",
-      "body": "Closes #2523\n\n## Concerns\n\n- `sharing` — consolidated: the dispatcher's resharing reads core-nbe's memo\n",
+      "body": "Closes #2523\n\n## Concerns\n\n- `sharing` — consolidated: the dispatcher's resharing reads core-nbe's memo\n\n## Refactoring\n\nno\n",
       "concerns": {
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
@@ -446,7 +446,7 @@
     "name": "a crate added under a concern's id is refused, a module in a crate the concern has a site in and a test file are not",
     "input": {
       "branch": "workflow-2523-concerns",
-      "body": "Closes #2523\n",
+      "body": "Closes #2523\n\n## Refactoring\n\nno\n",
       "concerns": {
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
@@ -520,7 +520,7 @@
     "name": "an unknown concern, an item without a verdict and an item naming none are refused",
     "input": {
       "branch": "workflow-2523-concerns",
-      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — within\n- `fork` — touched\n- the workflow tasks\n",
+      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — within\n- `fork` — touched\n- the workflow tasks\n\n## Refactoring\n\nno\n",
       "concerns": {
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
@@ -590,7 +590,7 @@
     "name": "a new concern needs the row the change adds",
     "input": {
       "branch": "workflow-2523-concerns",
-      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — new concern: no fork reads a pool\n- `fork` — new concern: a second fork\n",
+      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — new concern: no fork reads a pool\n- `fork` — new concern: a second fork\n\n## Refactoring\n\nno\n",
       "concerns": {
         "ids": ["fork", "oracle", "sharing"],
         "base": ["fork", "oracle", "sharing"],
@@ -660,7 +660,7 @@
     "name": "a new concern with its row added opens, and lifts the refusal of the module it adds",
     "input": {
       "branch": "workflow-2523-concerns",
-      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — new concern: no fork reads a pool\n",
+      "body": "Closes #2523\n\n## Concerns\n\n- `pools` — new concern: no fork reads a pool\n\n## Refactoring\n\nno\n",
       "concerns": {
         "ids": ["fork", "oracle", "sharing", "pools"],
         "base": ["fork", "oracle", "sharing"],
@@ -735,7 +735,7 @@
     "name": "#2524: a defect closed with neither observation nor regression is refused, naming both",
     "input": {
       "branch": "workflow-2621-collector",
-      "body": "Fixes #2621\n",
+      "body": "Fixes #2621\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2621,
@@ -751,7 +751,7 @@
     "name": "#2524: a defect closed with an observation, its only test naming another issue, is refused naming the regression",
     "input": {
       "branch": "workflow-2621-collector",
-      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2621,
@@ -776,7 +776,7 @@
     "name": "#2524: an observation and a `.config` case citing the issue opens",
     "input": {
       "branch": "workflow-2621-collector",
-      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2621,
@@ -797,7 +797,7 @@
     "name": "#2524: a corpus `///` line citing the issue is a regression; an observation left as a comment is none",
     "input": {
       "branch": "surface-2621-probe",
-      "body": "Closes #2621\n\n## Observation\n\n<!-- the instrument and the value -->\n",
+      "body": "Closes #2621\n\n## Observation\n\n<!-- the instrument and the value -->\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2621,
@@ -818,7 +818,7 @@
     "name": "#2524: a defect only advanced, and a gap closed, ask for neither",
     "input": {
       "branch": "workflow-2621-collector",
-      "body": "Advances #2621\nCloses #2622\n",
+      "body": "Advances #2621\nCloses #2622\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2621,
@@ -839,7 +839,7 @@
     "name": "#2524: a Rust test named for the issue is a regression",
     "input": {
       "branch": "workflow-2621-collector",
-      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2621,
@@ -860,7 +860,7 @@
     "name": "#2524: a `.config` line citing the issue outside a JSON case's name is no regression",
     "input": {
       "branch": "workflow-2621-collector",
-      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n",
+      "body": "Fixes #2621\n\n## Observation\n\nOn main, `claim:next workflow --dry-run` printed `#2504`, a collector.\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2621,
@@ -885,7 +885,7 @@
     "name": "#2527: a grammar change whose body has no `### Surface form` is refused, naming the subsection and both lines",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n",
+      "body": "Closes #9999\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -901,7 +901,7 @@
     "name": "#2527: a grammar change whose surface form leaves `demand:` blank is refused, naming it",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n\n## The change\n\n### Surface form\n\n- cost: keystroke scenario 41 ms before, 42 ms after; 3 candidates, 2 windows\n- demand:\n",
+      "body": "Closes #9999\n\n## The change\n\n### Surface form\n\n- cost: keystroke scenario 41 ms before, 42 ms after; 3 candidates, 2 windows\n- demand:\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -917,7 +917,7 @@
     "name": "a grammar change stating its cost and its demand opens",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n\n### Surface form\n\n**cost:** keystroke scenario 41 ms before, 42 ms after; the molder offers 3 candidates in 2 windows\n**demand:** `corpus/model/data/vectors.gandr`\n\n## Sources read\n",
+      "body": "Closes #9999\n\n### Surface form\n\n**cost:** keystroke scenario 41 ms before, 42 ms after; the molder offers 3 candidates in 2 windows\n**demand:** `corpus/model/data/vectors.gandr`\n\n## Sources read\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -933,7 +933,7 @@
     "name": "a surface form's lines are read under its own subsection, not under the next one",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n\n### Surface form\n\n- cost: 41 ms before, 42 ms after\n\n### Elsewhere\n\n- demand: `corpus/x.gandr`\n",
+      "body": "Closes #9999\n\n### Surface form\n\n- cost: 41 ms before, 42 ms after\n\n### Elsewhere\n\n- demand: `corpus/x.gandr`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -949,7 +949,7 @@
     "name": "a change outside the parser needs no surface form",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n",
+      "body": "Closes #9999\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -965,7 +965,7 @@
     "name": "#2756: a change whose parser paths are only the goldens `corpus:goldens` records opens without a surface form",
     "input": {
       "branch": "core-9999-corpus",
-      "body": "Closes #9999\n",
+      "body": "Closes #9999\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -987,7 +987,7 @@
     "name": "#2756: a grammar change beside goldens is still refused, naming the grammar source and the golden test but no golden",
     "input": {
       "branch": "surface-9999-form",
-      "body": "Closes #9999\n",
+      "body": "Closes #9999\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 9999,
@@ -1008,7 +1008,7 @@
     "name": "a crate the change touches that cites no primary vault page of its issue is refused, naming the page and the key line (#2793)",
     "input": {
       "branch": "triage-2793-vault-mints",
-      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `lib.rs`\n- `bicontextual-core.md` — taken: `vault.jq`\n",
+      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `lib.rs`\n- `bicontextual-core.md` — taken: `vault.jq`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2793,
@@ -1042,7 +1042,7 @@
     "name": "every touched crate citing the primary vault page by its mint opens (#2793)",
     "input": {
       "branch": "triage-2793-vault-mints",
-      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `lib.rs`\n- `bicontextual-core.md` — taken: `vault.jq`\n",
+      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `lib.rs`\n- `bicontextual-core.md` — taken: `vault.jq`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2793,
@@ -1077,7 +1077,7 @@
     "name": "a primary vault page marked `read` in `## Sources read` asks no crate to cite it (#2793)",
     "input": {
       "branch": "triage-2793-vault-mints",
-      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — read: the layering, which this change keeps\n- `bicontextual-core.md` — taken: `vault.jq`\n",
+      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — read: the layering, which this change keeps\n- `bicontextual-core.md` — taken: `vault.jq`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2793,
@@ -1109,7 +1109,7 @@
     "name": "a change touching no crate's sources is asked for no vault citation (#2793)",
     "input": {
       "branch": "triage-2793-vault-mints",
-      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `vault.jq`\n- `bicontextual-core.md` — taken: `vault.jq`\n",
+      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `vault.jq`\n- `bicontextual-core.md` — taken: `vault.jq`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2793,
@@ -1141,7 +1141,7 @@
     "name": "without a vault checkout no vault citation is asked (#2793)",
     "input": {
       "branch": "triage-2793-vault-mints",
-      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `lib.rs`\n- `bicontextual-core.md` — taken: `vault.jq`\n",
+      "body": "Closes #2793\n\n## Sources read\n\n- `core-kernel-reassessment.md` `vault:01a178aa-6917-7983-b5cd-86e2af86b3ec` § layers — taken: `lib.rs`\n- `bicontextual-core.md` — taken: `vault.jq`\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2793,
@@ -1157,7 +1157,7 @@
     "name": "a closing keyword in prose is refused, naming the line: #2974's `closed #628` closed the std epic on merge (#2980)",
     "input": {
       "branch": "std-2971-string-model-owner",
-      "body": "Advances #2971\n\nThe epics workflow closed #628 when #2767 closed, so the ledger row names #2971.\n",
+      "body": "Advances #2971\n\nThe epics workflow closed #628 when #2767 closed, so the ledger row names #2971.\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2971,
@@ -1171,7 +1171,7 @@
     "name": "keyword lines at the head, with a full stop or several issues, open; a keyword quoted in a code span or a fenced block is refused, since `pr:open` and the claim lifecycle read it as a closing target (#2980)",
     "input": {
       "branch": "workflow-2980-keywords",
-      "body": "Closes #2980.\nCloses #2972, #2977\nAdvances #2973\n\nThe prose names `closed #628` only in code.\n\n```text\nthis fixes #1\n```\n",
+      "body": "Closes #2980.\nCloses #2972, #2977\nAdvances #2973\n\nThe prose names `closed #628` only in code.\n\n```text\nthis fixes #1\n```\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2980,
@@ -1197,7 +1197,7 @@
     "name": "a keyword line with prose after it, one below a heading, and an `owner/name#n` keyword are each refused (#2980)",
     "input": {
       "branch": "workflow-2980-keywords",
-      "body": "Closes #2980. Advances #2504: the sweep ticks it.\n\n## Ledger\n\nCloses #2981\n\nThis fixes gandr-lang/quenchant#5 as well.\n",
+      "body": "Closes #2980. Advances #2504: the sweep ticks it.\n\n## Ledger\n\nCloses #2981\n\nThis fixes gandr-lang/quenchant#5 as well.\n\n## Refactoring\n\nno\n",
       "issues": [
         {
           "number": 2980,
@@ -1206,5 +1206,68 @@
       ]
     },
     "output": "the body's line `Closes #2980. Advances #2504: the sweep ticks it.` carries `Closes #2980`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again\nthe body's line `Closes #2981` carries `Closes #2981`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again\nthe body's line `This fixes gandr-lang/quenchant#5 as well.` carries `fixes gandr-lang/quenchant#5`, a closing keyword: unquoted, GitHub closes the issue it names when the pull request merges, and `pr:open` and the claim lifecycle take it as closed even quoted. Name the issue without the verb (`#628 was closed by the epics workflow`), or close it on a `Closes #n` line at the head, then run `pr:open` again"
+  },
+  {
+    "name": "a body without `## Refactoring` is refused, the refusal asking the section's question (#2884)",
+    "input": {
+      "branch": "workflow-2884-refactoring",
+      "body": "Closes #2884\n\nThe change.\n\n## Ledger\n\nNone.\n",
+      "issues": []
+    },
+    "output": "the body lacks `## Refactoring`: from what this change did and learned, is a refactoring justified? Write the section with its first line `yes`, `maybe` or `no`, and for `yes` or `maybe` a table `| Kind | Where | Observation |`, each kind one of `duplicate`, `consolidate`, `generalise`, `split`, `delete`, `cross-cutting`, then run `pr:open` again"
+  },
+  {
+    "name": "a `## Refactoring` whose first line is not `yes`, `maybe` or `no` is refused (#2884)",
+    "input": {
+      "branch": "workflow-2884-refactoring",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\nperhaps, later\n",
+      "issues": []
+    },
+    "output": "the body's `## Refactoring` opens on no verdict: its first line is `yes`, `maybe` or `no`, alone or before ` — <clause>`, then run `pr:open` again"
+  },
+  {
+    "name": "a `maybe` with no table row is refused (#2884)",
+    "input": {
+      "branch": "workflow-2884-refactoring",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\nmaybe\n",
+      "issues": []
+    },
+    "output": "the body's `## Refactoring` says `maybe` and has no row: add a table `| Kind | Where | Observation |` naming what this change found, then run `pr:open` again"
+  },
+  {
+    "name": "a `no` that lists a row is refused (#2884)",
+    "input": {
+      "branch": "workflow-2884-refactoring",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\nno\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| duplicate | `.config/claims/unit.jq` | reads sections twice |\n",
+      "issues": []
+    },
+    "output": "the body's `## Refactoring` says `no` and lists the row `| duplicate | `.config/claims/unit.jq` | reads sections twice |`: keep the rows and say `yes` or `maybe`, or `no` alone, then run `pr:open` again"
+  },
+  {
+    "name": "a row with an unknown kind, no `Where`, a `Where` of neither spelling, or no observation is refused (#2884)",
+    "input": {
+      "branch": "workflow-2884-refactoring",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\nyes\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| tidy | `gandr_surface_corpus::settle` | two walks |\n| split |  | one module, two concerns |\n| delete | `the old walk` | dead since the fold |\n| consolidate | `gandr_core_nbe::machine` |  |\n",
+      "issues": []
+    },
+    "output": "the `## Refactoring` row `| tidy | `gandr_surface_corpus::settle` | two walks |` names the kind `tidy`: write one of `duplicate`, `consolidate`, `generalise`, `split`, `delete`, `cross-cutting`, then run `pr:open` again\nthe `## Refactoring` row `| split |  | one module, two concerns |` names no `Where`: name each item the change read or touched as `crate::path`, or a repository path, then run `pr:open` again\nthe `## Refactoring` row `| delete | `the old walk` | dead since the fold |` names `the old walk`, neither an item path (`crate::path`) nor a repository path, then run `pr:open` again\nthe `## Refactoring` row `| consolidate | `gandr_core_nbe::machine` |  |` gives no observation: say what this change found there, then run `pr:open` again"
+  },
+  {
+    "name": "`no` alone, or before a dash and a clause, opens (#2884)",
+    "input": {
+      "branch": "workflow-2884-refactoring",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\nno — one jq rule, beside its kin\n",
+      "issues": []
+    },
+    "output": ""
+  },
+  {
+    "name": "a `maybe` with rows of item and repository paths opens, a comment above the verdict not read as content (#2884)",
+    "input": {
+      "branch": "workflow-2884-refactoring",
+      "body": "Closes #2884\n\nThe change.\n\n## Refactoring\n\n<!-- the lane's question -->\nmaybe\n\n| Kind | Where | Observation |\n| --- | --- | --- |\n| consolidate | `gandr_core_checker::fork`, `gandr_surface_dispatcher::pool` | two pools of one concern |\n| duplicate | `.config/claims/opening.jq`, `.config/claims/unit.jq` | both read the sections' marks |\n",
+      "issues": []
+    },
+    "output": ""
   }
 ]
