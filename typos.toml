@@ -34,3 +34,6 @@ implicits = "implicits"
 # Compiler vocabulary: rustc's typed high-level IR, `THIR`, which a Rust
 # function's semantics is read at.
 thir = "thir"
+# Escape-split fragment: a roles fixture's `\\nversion`, an escaped newline
+# then a manifest's `version` key, reads its string fragment as `nversion`.
+nversion = "nversion"
