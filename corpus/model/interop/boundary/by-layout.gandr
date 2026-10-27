@@ -1,0 +1,151 @@
+// Values Rust holds cross into gandr as words, read by their layouts.
+//
+// A Rust caller lends its memory and passes a word: a list's root, or an
+// `Option<&u32>`. Gandr reads the memory behind a word only by performing
+// `Memory.word` or `Memory.half`, which the caller's host answers at the
+// addresses it lent. The block's check admits both reads against their rows
+// under Rust's default layout. No reference crosses: gandr holds each word as
+// a number.
+//
+// Each decoder reads a layout's memory type into the layout's data type. A
+// tagged word with its low bit set is the empty list, and any other addresses
+// a head and a tail. A packed word's low two bits tell the empty list, one
+// element inline, and a pointer to two elements and the rest. One `length`
+// over the list runs on each layout, transported along that layout's path.
+// `derefOr` reads the null niche: the zero word is `None`, and any other
+// addresses a `u32`. The Rust test calls these definitions and compares each
+// answer with its own.
+//
+// - see: `crates/surface-dispatcher/tests/boundary.rs` — the Rust caller
+// - see: `model/layouts/ribbit-list.gandr` — the two layouts and `length`
+// - see: `model/specification/niche-realizability.gandr` — `deref_or`'s triple
+
+// `Row`, `Code` and `admitBlock`.
+import "../../../../library/std/src/boundary.gandr";
+
+// `U32` and `U64`, the scalars a `u32` and a `u64` are coded as.
+import "../../../../library/std/src/layout.gandr";
+
+// `Nat`.
+import "../../data/data-base.gandr";
+
+// `Maybe`.
+import "../../data/data-maybe.gandr";
+
+// `Tagged`, `Packed`, their paths and `length`.
+import "../../layouts/ribbit-list.gandr";
+
+/// `word`'s row: a `u64` address to the `u64` stored there.
+pub def wordRow : Row = Row(Arg(Plain(U64), NoCode), Plain(U64));
+
+/// `half`'s row: a `u64` address to the `u32` stored there.
+pub def halfRow : Row = Row(Arg(Plain(U64), NoCode), Plain(U32));
+
+/// Reads of the Rust caller's memory at the addresses it lends. Its check
+/// admits each read against its row.
+@[ boundary((wordRow, halfRow)) ]
+extern "rust" from "memory" as Memory {
+  def word(address : u64) -> u64;
+  def half(address : u64) -> u32;
+}
+
+/// The cells any list the Rust caller lends may hold, and one more.
+def fuel : Nat = Succ(Succ(Succ(Succ(Succ(Succ(Succ(Succ(Zero))))))));
+
+/// The address `offset` bytes past the address `n`.
+def past(n : Integer, offset : Integer) -> u64 { u64.from_integer(n + offset) }
+
+/// The `i32` in a word's low four bytes.
+def low(w : u64) -> i32 { i32.from_integer(u64.to_integer(w)) }
+
+/// The tagged list at the word `w`, or `None` once `fuel` runs out.
+def rec readTagged(fuel : Nat, w : u64) -> [Memory] Maybe(Tagged) {
+  case fuel {
+    Zero => None,
+    Succ(rest) => {
+      run n <- u64.to_integer(w);
+      run bit <- int.mod(n, 2);
+      case bit == 1 {
+        true => Some(TagNil),
+        false => {
+          run h <- Memory.word(w);
+          run head <- low(h);
+          run t <- Memory.word(past(n, 8));
+          run tail <- readTagged[<](rest, t);
+          case tail {
+            None => None,
+            Some(l) => Some(TagCons(head, l))
+          }
+        }
+      }
+    }
+  }
+}
+
+/// The packed list at the word `w`, or `None` once `fuel` runs out or at the
+/// fourth tag. A pointer's cell holds two elements in its first word and the
+/// rest in its second.
+def rec readPacked(fuel : Nat, w : u64) -> [Memory] Maybe(Packed) {
+  case fuel {
+    Zero => None,
+    Succ(rest) => {
+      run n <- u64.to_integer(w);
+      run tag <- int.mod(n, 4);
+      case tag == 0 {
+        true => Some(Empty),
+        false => case tag == 1 {
+          true => Some(One(i32.from_integer(int.div(n, 4)))),
+          false => case tag == 2 {
+            true => {
+              run xy <- Memory.word(past(n, -2));
+              run m <- u64.to_integer(xy);
+              run x <- i32.from_integer(m);
+              run y <- i32.from_integer(int.div(m, 4294967296));
+              run r <- Memory.word(past(n, 6));
+              run tail <- readPacked[<](rest, r);
+              case tail {
+                None => None,
+                Some(l) => Some(Many(x, y, l))
+              }
+            },
+            false => None
+          }
+        }
+      }
+    }
+  }
+}
+
+/// The length of the tagged list at `w`, or `-1` when it does not read.
+pub def taggedLengthAt(w : u64) -> [Memory] Integer {
+  run read <- readTagged(fuel, w);
+  case read {
+    None => -1,
+    Some(l) => {
+      run f <- transport(\X. X => Integer, taggedPath, fn (l) { length(l) });
+      f(l)
+    }
+  }
+}
+
+/// The length of the packed list at `w`, or `-1` when it does not read.
+pub def packedLengthAt(w : u64) -> [Memory] Integer {
+  run read <- readPacked(fuel, w);
+  case read {
+    None => -1,
+    Some(l) => {
+      run f <- transport(\X. X => Integer, packedPath, fn (l) { length(l) });
+      f(l)
+    }
+  }
+}
+
+/// `deref_or(x: Option<&u32>, d: u32) -> u32`: `d` at the null word, and the
+/// `u32` the word addresses at any other.
+pub def derefOr(x : u64, d : u32) -> [Memory] u32 {
+  run n <- u64.to_integer(x);
+  case n == 0 {
+    true => d,
+    false => Memory.half(x)
+  }
+}

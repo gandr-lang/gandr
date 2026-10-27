@@ -12,8 +12,8 @@
 // checker holds the layout program's integer comparisons as neutrals, so
 // admission is a run here.
 //
-// - see: #2901 — not implemented: the check-time refusal of an extern
-//   declaration, `BoundaryUnrealised.<clause>`
+// - see: `ledger/diagnostics/BoundaryUnrealised.Niche.gandr` — an extern block
+//   refused at check time by the clause it fails, `BoundaryUnrealised.<clause>`
 // - see: `pathological/interop/boundary/function-row.gandr` — the predicate
 //   chosen through the layout, refused `Undecided`
 // - see: `model/specification/niche-realizability.gandr` — `deref_or`'s

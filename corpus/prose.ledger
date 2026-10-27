@@ -78,7 +78,6 @@ corpus/ledger/diagnostics/UsedAfterClose.gandr Passive 48fdba9b30261fbb
 corpus/ledger/diagnostics/ViewOfNoPlace.gandr Tense 4b9b72f4be9b6034
 corpus/ledger/features/abi-realizability.gandr Tense 0a8c7d0f162c0ae7
 corpus/ledger/features/abi-realizability.gandr Tense 25663d926c37a2e0
-corpus/ledger/features/abi-realizability.gandr Tense 5b100e5027d0efeb
 corpus/ledger/features/atom-identity.gandr Passive 6652465232bf2746
 corpus/ledger/features/atom-identity.gandr Passive 780eaa821f24c981
 corpus/ledger/features/atom-identity.gandr Tense 50c3deb814ab0f20

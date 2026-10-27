@@ -6,15 +6,16 @@
 // an operation of the interface `Boundary`, and `quadrupled` performs it. No
 // handler here answers it, so the run offers it to the Rust caller's host,
 // which calls its own `add`. The block names `add`'s row, and its check admits
-// the declared types against the row under Rust's default layout. No value
-// crosses by layout yet: the runtime holds each argument and answer as itself.
+// the declared types against the row under Rust's default layout. A `u32`
+// crosses as itself, and `by-layout.gandr` reads values by their layouts.
 //
 // The Rust test composes this source, names each definition and calls it on
 // values it builds, then reads the answer back. Each `runs` item below makes
 // the same call from gandr, so both sides state one answer. `quadrupled` has
 // none, since only the Rust caller answers `Boundary`.
 //
-// - see: #2901 — not implemented: values crossing by Rust's default layout
+// - see: `model/interop/boundary/by-layout.gandr` — values crossing by their
+//   layouts
 // - see: `crates/surface-dispatcher/tests/boundary.rs` — the Rust caller
 // - see: `library/std/src/boundary.gandr` — `admitBlock`, which the block's
 //   check runs
