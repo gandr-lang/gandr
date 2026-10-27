@@ -53,5 +53,19 @@
       "mirror\tKey-2021-one\tdemo-crate\t\tlineage\tcrates/demo-crate/README.md:9",
       "locator\tdoi:10.2222/after\tdemo-crate\t\tbackground\tcrates/demo-crate/README.md:12"
     ]
+  },
+  {
+    "name": "#3171: a key line `cargo fmt` wraps after its key is read whole, its continuation's locator left to the entry; a bare key with no dash continuation stays legacy; a wrapped line with no role is refused",
+    "files": {
+      "crates/demo-crate/src/lib.rs": "//! The crate.\n//!\n//! # References\n//!\n//! - `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems`\n//!   — exemplar: § 8.2's Lemma 9 bounds the stretch by the count\n//!   a row reports, `doi:10.1000/stretch`.\n//! - `Levy-1999-call_by_push_value`\n//!   the value/computation split, arXiv:1507.01234v2.\n//! - `Wrapped-2020-a_key_with_no_role`\n//!   — the dash wrapped, with no role.\npub mod memo;\n",
+      "crates/demo-crate/README.md": "# demo-crate\n\n## References\n\n- `Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems` — exemplar: Lemma 9's bound.\n"
+    },
+    "output": [
+      "file\t\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs",
+      "cite\tGavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems\tdemo-crate\t\texemplar\tcrates/demo-crate/src/lib.rs:6",
+      "locator\tarXiv:1507.01234\tdemo-crate\t\tbackground\tcrates/demo-crate/src/lib.rs:9",
+      "refused\ta References line gives its key a role and what it decides: - `Wrapped-2020-a_key_with_no_role` — <exemplar|lineage|background>: <what it decides>\tdemo-crate\t\t\tcrates/demo-crate/src/lib.rs:11",
+      "mirror\tGavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems\tdemo-crate\t\texemplar\tcrates/demo-crate/README.md:5"
+    ]
   }
 ]

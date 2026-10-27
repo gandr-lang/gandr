@@ -22,7 +22,10 @@
 # its `//!` and `///` lines, a block ending where another kind of line starts;
 # a README's is every line outside a code fence. A References section runs
 # from its heading to the next one; an entry of it from its `- ` line through
-# the indented lines under it.
+# the indented lines under it. A `- ` line holding the key alone, whose first
+# indented line opens with the dash, is one key line across the two: the key
+# outruns the comment width, and `cargo fmt` wraps the dash onto the next
+# line (#3171).
 
 function site(path,    rest) {
   rest = path
@@ -94,6 +97,15 @@ function refusal(key) {
   return ""
 }
 
+# The key line of `key`, `said` the text after its dash.
+function cited(key, said,    why) {
+  entry = "key"
+  why = refusal(key)
+  if (why != "") emit("refused", why, "")
+  else if (match(said, /^(exemplar|lineage|background): [^[:space:]]/)) emit(readme ? "mirror" : "cite", key, substr(said, 1, index(said, ":") - 1))
+  else emit("refused", "a References line gives its key a role and what it decides: - `" key "`" dash "<exemplar|lineage|background>: <what it decides>", "")
+}
+
 BEGIN { dash = " — " }
 
 FNR == 1 {
@@ -131,15 +143,13 @@ FNR == 1 {
   } else if (refs && text ~ /^[-*] /) {
     entry = "legacy"
     rest = substr(text, 3)
-    if (substr(rest, 1, 1) == "`" && (tick = index(substr(rest, 2), "`")) > 1 && substr(rest, tick + 2, length(dash)) == dash) {
-      entry = "key"
-      key = substr(rest, 2, tick - 1)
-      said = substr(rest, tick + 2 + length(dash))
-      why = refusal(key)
-      if (why != "") emit("refused", why, "")
-      else if (match(said, /^(exemplar|lineage|background): [^[:space:]]/)) emit(readme ? "mirror" : "cite", key, substr(said, 1, index(said, ":") - 1))
-      else emit("refused", "a References line gives its key a role and what it decides: - `" key "`" dash "<exemplar|lineage|background>: <what it decides>", "")
-    }
-  } else if (!(entry != "" && text ~ /^[[:space:]]+[^[:space:]]/)) entry = ""
+    tick = substr(rest, 1, 1) == "`" ? index(substr(rest, 2), "`") : 0
+    if (tick > 1 && substr(rest, tick + 2, length(dash)) == dash) cited(substr(rest, 2, tick - 1), substr(rest, tick + 2 + length(dash)))
+    else if (tick > 1 && substr(rest, tick + 2) ~ /^[[:space:]]*$/) { entry = "bare"; key = substr(rest, 2, tick - 1) }
+  } else if (entry == "bare" && match(text, /^[[:space:]]+— /)) {
+    cited(key, substr(text, RSTART + RLENGTH))
+  } else if (entry != "" && text ~ /^[[:space:]]+[^[:space:]]/) {
+    if (entry == "bare") entry = "legacy"
+  } else entry = ""
   if (entry != "key") locators(text)
 }

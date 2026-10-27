@@ -25,6 +25,8 @@ CREATE TABLE reference(
   CONSTRAINT "a reading has its commit, its day and its blob, or none of them" CHECK((read_commit IS NULL) = (read_date IS NULL) AND (read_date IS NULL) = (read_blob IS NULL))
 ) WITHOUT ROWID;
 INSERT INTO reference VALUES('Courant-2026-lazy_concurrent_convertibility_checker','kernel-check-memo','','background','905a22c52084a861dd032122053edbd0bda46281','2026-10-26','46dd259982ca073bd7bc09a418ba63beebeda635');
+INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','surface-dispatcher','cells','exemplar',NULL,NULL,NULL);
+INSERT INTO reference VALUES('Gavazzo-2022-quantitative_metric_rewriting_abstract_nonexpansive_graded_systems','theory-cell-complexes','','exemplar',NULL,NULL,NULL);
 INSERT INTO reference VALUES('Kovács-2022-staged_compilation_twolevel_type_theorya','surface-grammar','surface::term','lineage','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','afd9dec17cecc97902f59738297a0e8964c85ca2');
 INSERT INTO reference VALUES('Plotkin-2013-handling_algebraic_effects','core-checker','bridge','background','975f7d1352a07c3420365259b4146aabf10108ba','2026-10-26','bcd5208d8b0414d4706e2afdb774c208bf266495');
 INSERT INTO reference VALUES('Rainey-2026-localmem_typedirected_adaptive_serialization_location_contentaddressable_memory','core-sequent','','background','0c8914ce9689f88b9bb86ae0349f1c162b8a3d68','2026-10-27','8f6ba796e48eeb5dd454e59b998a36aca44c69d1');
