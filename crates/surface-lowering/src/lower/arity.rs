@@ -3242,7 +3242,8 @@ impl<'source> Lowerer<'_, 'source>
     /// - ensures: one answer per entry but the last, in written order; an entry
     ///   without a label answers no; a later entry answers yes when a node
     ///   under it is a name or a type head whose text is the label, wherever it
-    ///   stands.
+    ///   stands but as the key of a nested type list ([`Self::keyed_entries`])
+    ///   or in an entry of that list after one whose key is the label.
     /// - fails: the budget refusal, one step per node visited; the unknown-mold
     ///   refusal of a node in an entry.
     /// - panics: none.
@@ -3251,10 +3252,12 @@ impl<'source> Lowerer<'_, 'source>
     /// As stated.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a path endpoint naming the first label links it, and
-    ///   an entry naming no label leaves its link a product.
+    /// - hypothesis: L3 — a path endpoint naming the first label links it, an
+    ///   entry naming no label leaves its link a product, and a nested record
+    ///   whose own key is an earlier label leaves that label's link a product.
     /// - witness: `lower::native::tests::a_pattern_at_a_dependent_record_splits_it_under_its_motive`
     /// - witness: `lower::arity::tests::a_later_label_reading_an_earlier_one_lowers_to_nested_pairs`
+    /// - witness: `lower::arity::tests::a_nested_record_s_key_is_no_mention_of_an_outer_label_3010`
     #[spec(ensures: |ret| ret.as_ref().map_or(true, |links| links.len() == entries.len().saturating_sub(1)))]
     fn named_later(
         &mut self,
@@ -3287,20 +3290,82 @@ impl<'source> Lowerer<'_, 'source>
                     continue;
                 };
                 let placed = Placed::of(node, tree);
-                if matches!(
-                    self.form_at(placed)?,
-                    Some((_, Former::Name | Former::TypeHead))
-                ) && self.text_at(placed).as_ref() == label.as_ref()
+                let form = self.form_at(placed)?;
+                if matches!(form, Some((_, Former::Name | Former::TypeHead)))
+                    && self.text_at(placed).as_ref() == label.as_ref()
                 {
                     named = true;
                     break;
                 }
-                pending.extend(self.tree.children(node));
+                let keyed = self.keyed_entries(placed, form);
+                if keyed.is_empty() {
+                    pending.extend(self.tree.children(node));
+                    continue;
+                }
+                // A nested key binds its name rather than reading it, and
+                // one binding the label hides it from the entries after it.
+                for nested in keyed {
+                    pending.push(nested.held.at().node);
+                    if matches!(nested.key, Key::Label(bound, _) if bound.as_ref() == label.as_ref())
+                    {
+                        break;
+                    }
+                }
             }
             links.push(Dependent(named));
         }
 
         Ok(links)
+    }
+
+    /// The entries of the type list `at` is, when it is one whose keys bind:
+    /// a telescope type `#{l : A, …}` or a parenthesised type `(x : A, …)`.
+    ///
+    /// # Specification
+    /// - requires: `form` is the form `at` holds.
+    /// - ensures: the list's entries in written order, as
+    ///   [`Self::type_entries`] reads them; none for another form, a list whose
+    ///   pieces were repaired or one the read refuses.
+    /// - fails: never; a list that does not read is no list.
+    /// - panics: none.
+    /// - executable: none — the entries are read off the syntax tree, which a
+    ///   predicate could check only by repeating the read.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::named_later`].
+    /// - witness: `lower::arity::tests::a_nested_record_s_key_is_no_mention_of_an_outer_label_3010`
+    fn keyed_entries(
+        &mut self,
+        at: Placed,
+        form: Option<(FormName, Former)>,
+    ) -> Vec<Entry<'source>>
+    {
+        let (name, opener, closer) = match form {
+            Some((name, Former::TelescopeType)) => (name, TileName::RECORD, TileName::BRACE_CLOSE),
+            Some((name, Former::ParenthesizedType)) => {
+                (name, TileName::PAREN_OPEN, TileName::PAREN_CLOSE)
+            },
+            Some(_) | None => return Vec::new(),
+        };
+        let list = Site {
+            at,
+            name,
+            reading: Reading::Unread,
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, at.node, &mut scratch).and_then(|()| {
+            if let Maybe::Present(_) = scratch.repair {
+                return Ok(Vec::new());
+            }
+            let mut cursor = Cursor::new(&scratch.pieces, at.span);
+            if let Maybe::Absent(_) = cursor.tile(opener) {
+                return Ok(Vec::new());
+            }
+            self.type_entries(list, &mut cursor, closer)
+        });
+        self.scratch = scratch;
+
+        read.unwrap_or_default()
     }
 
     /// Classify a value function space whose domain list names a binder: the

@@ -1,0 +1,61 @@
+/// A record whose last field is a record sharing a label with it prints, and reprints, as a record.
+///
+/// The inner record's key binds its own field, so the outer record's label stays unread and its fields stay a record.
+///
+/// Each record type here is read back from its printed spelling, and the reading prints as the same record.
+///
+/// - see: #3010 — the reading printed again as a product
+
+/// Two text fields.
+pub type Plain = #{d : String, s : String};
+
+/// Eight fields, the last a record.
+pub type Long = #{
+  a : String,
+  b : String,
+  c : String,
+  d : String,
+  e : String,
+  f : String,
+  g : String,
+  i : Plain
+};
+
+/// A value of the long record.
+def long : Long = #{
+  a = "a",
+  b = "b",
+  c = "c",
+  d = "d",
+  e = "e",
+  f = "f",
+  g = "g",
+  i = #{d = "d", s = "s"}
+};
+
+/// Two text fields of other labels.
+pub type Other = #{x : String, y : String};
+
+/// Eight fields, the last a record of other labels.
+pub type Apart = #{
+  a : String,
+  b : String,
+  c : String,
+  d : String,
+  e : String,
+  f : String,
+  g : String,
+  i : Other
+};
+
+/// A value of the record apart.
+def apart : Apart = #{
+  a = "a",
+  b = "b",
+  c = "c",
+  d = "d",
+  e = "e",
+  f = "f",
+  g = "g",
+  i = #{x = "x", y = "y"}
+};

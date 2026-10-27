@@ -8512,6 +8512,36 @@ mod tests
         );
     }
 
+    /// #3010: a record whose last field is a record sharing a label with an
+    /// earlier field, read back, reprints with the labels it was written and
+    /// printed with.
+    #[test]
+    fn a_record_ending_in_a_record_of_a_shared_label_reprints_as_a_record_3010()
+    {
+        let source = SourceText::from(
+            "type Plain = #{d : String, s : String};\ntype Long = #{a : String, b : String, c : \
+             String, d : String, e : String, f : String, g : String, i : Plain};\ndef long : Long \
+             = #{a = \"a\", b = \"b\", c = \"c\", d = \"d\", e = \"e\", f = \"f\", g = \"g\", i = \
+             #{d = \"d\", s = \"s\"}};\n",
+        );
+        let grammar = built_in().expect("the built-in grammar builds");
+        let reads: Vec<(String, Maybe<String, super::reprinted::Absent>)> = table(source)
+            .read_back(&grammar, PageWidth::from(80_u32), Form::Sugared.into())
+            .into_iter()
+            .map(|back| (back.spelled, back.reprinted))
+            .collect();
+        assert!(
+            reads.iter().all(|&(ref spelled, ref again)| match *again {
+                Maybe::Present(ref again) => again == spelled,
+                Maybe::Absent(super::reprinted::Absent::Unspelled) => false,
+                Maybe::Absent(
+                    super::reprinted::Absent::Unlowered | super::reprinted::Absent::Unrun,
+                ) => true,
+            }),
+            "every printed type that lowers again reprints as itself: {reads:#?}"
+        );
+    }
+
     /// #1751: a dependent arrow a parameter is typed by, read back under the
     /// parameters before it, two of them dropped from the reread as no later
     /// type names them, reprints with the binder name it was written and
