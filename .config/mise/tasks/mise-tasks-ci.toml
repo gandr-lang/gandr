@@ -2399,6 +2399,13 @@ exit 2
 # its next fetch. A red check, or a restack that conflicts, is the event line
 # as before. A `landing` label a landing left on the pull request, queued or
 # merged, is taken off (#1556).
+#
+# A conflict is a `DIRTY` merge state read on two polls in a row at the same
+# head (`.config/pr-stack/dirty.jq`, #2854): GitHub recomputes the merge
+# state lazily after a push to the pull request or below it, so one reading
+# taken while its stack is restacked can be stale. A head that moved between
+# the readings starts the count again; only a repeated `DIRTY` heals or is
+# `pr-dirty`.
 ["pr:watch"]
 description = "Wait for the one event that needs a hand on a pull request"
 quiet = true
@@ -2425,6 +2432,9 @@ retry_at=0
 # A reading out of the queue after one in it counts only when the next poll
 # repeats it, so a moment between readings is no removal.
 gone=0
+# The head of the last `DIRTY` reading not yet repeated (`dirty.jq`, #2854):
+# a merge state GitHub has not recomputed since a restack is no conflict.
+dirty_seen=null
 
 # State, merge state, queued, the entry's state and head, the last removal,
 # whether it carries the `landing` label, and the pull request's head.
@@ -2545,11 +2555,19 @@ while (( SECONDS < deadline )); do
     OPEN) ;;
     *) echo "unexpected pull request state: $state" >&2; exit 2 ;;
   esac
-  if [[ "$merge_status" == DIRTY ]]; then
-    if heal; then sleep 60; continue; fi
-    echo "pr-dirty #$number"
-    exit 1
-  fi
+  verdict=$(jq -cn --arg status "$merge_status" --arg head "$head" --argjson seen "$dirty_seen" \
+    '{status: $status, head: $head, seen: $seen}' | jq -c -f "$pr_stack_dir/dirty.jq")
+  dirty_seen=$(jq -c .seen <<< "$verdict")
+  case $(jq -r .act <<< "$verdict") in
+    confirm) sleep 60; continue ;;
+    conflict)
+      if heal; then sleep 60; continue; fi
+      echo "pr-dirty #$number"
+      exit 1
+      ;;
+    clear) ;;
+    *) echo "unexpected dirty.jq verdict: $verdict" >&2; exit 2 ;;
+  esac
   job=$(red_check) || job=
   if [[ -z "$job" && "$entry_head" != - ]]; then job=$(red_entry "$entry_head") || job=; fi
   if [[ -n "$job" ]]; then echo "pr-red #$number $job"; exit 1; fi
