@@ -1161,7 +1161,7 @@ mod tests
             row("data", "data ${1:type_identifier} { \\}"),
             row("codata", "codata ${1:type_identifier} { \\}"),
             row("module", "module ${1:type_identifier} { ${2:member} \\}"),
-            row("import", "import \"${1:string_fragment}\";"),
+            row("import", "import ${1:identifier};"),
             row("world", "world ${1:identifier};"),
             row("op", "op infixl ${1:number} \"${2:string_fragment}\";"),
             row("rec", "rec { ${1:item} \\}"),

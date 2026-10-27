@@ -334,6 +334,7 @@ use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::HostGrant;
+use gandr_surface_dispatcher::ImportPath;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::Program;
@@ -951,7 +952,7 @@ pub struct Submission<'text>
     table: Maybe<TypeTable, tabled::Absent>,
     /// The path addresses the revision's own root imports write, in source
     /// order, as the session's parse of its text alone read them.
-    written: Maybe<Vec<String>, imported::Absent>,
+    written: Maybe<Vec<ImportPath>, imported::Absent>,
 }
 
 impl<'text> Submission<'text>
@@ -1084,7 +1085,7 @@ impl<'text> Submission<'text>
     ///   whether laid after its closure or alone.
     /// - witness: `tests::session::a_revision_reads_the_imports_its_own_parse_writes_2439`
     #[inline]
-    pub fn written(&self) -> Maybe<&[String], imported::Absent>
+    pub fn written(&self) -> Maybe<&[ImportPath], imported::Absent>
     {
         match self.written {
             Maybe::Present(ref written) => Maybe::Present(written.as_slice()),

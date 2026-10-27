@@ -2487,8 +2487,8 @@ fn manifested(
 /// # Specification
 /// - requires: `manifests` holds one place per package, in order.
 /// - ensures: a settled source step whose canonical path is the library of a
-///   package has that package's place set to [`Manifest::of`] its program; any
-///   other step changes nothing.
+///   package has that package's place set to [`Manifest::of`] its program and
+///   the package; any other step changes nothing.
 /// - provides: the manifest `run` reconciles after the walk.
 /// - fails: never; a library that states no manifest is the place's error.
 /// - panics: none.
@@ -2527,9 +2527,9 @@ fn read_manifest(
     if let Some(place) = packages
         .iter()
         .position(|package| package.library() == canonical)
-        .and_then(|place| manifests.get_mut(place))
+        && let (Some(package), Some(slot)) = (packages.get(place), manifests.get_mut(place))
     {
-        *place = Some(Manifest::of(program));
+        *slot = Some(Manifest::of(program, package));
     }
 }
 

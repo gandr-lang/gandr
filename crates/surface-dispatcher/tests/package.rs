@@ -251,13 +251,15 @@ fn program_of(source: SourceText<'static>) -> Program<'static>
     }
 }
 
-/// The manifest the `Package` model of `source` states.
+/// The manifest the `Package` model of `source` states, for a package of
+/// its library alone.
 ///
 /// # Specification
 /// - requires: as [`program_of`].
-/// - ensures: [`Manifest::of`] the program `source` composes to.
+/// - ensures: [`Manifest::of`] the program `source` composes to, for a scratch
+///   package whose sources hold nothing but its `lib.gandr`.
 /// - fails: never on the admitted domain.
-/// - panics: as [`program_of`].
+/// - panics: as [`program_of`], and as [`scratch`].
 /// - executable: none — reading the manifest runs the program, which a
 ///   predicate could only check by running it again; the cases observe each
 ///   outcome.
@@ -267,7 +269,12 @@ fn program_of(source: SourceText<'static>) -> Program<'static>
 /// - witness: `tests::package::a_manifest_reads_the_package_model_2687`
 fn manifest_of(source: SourceText<'static>) -> Result<Manifest, Unmanifested>
 {
-    Manifest::of(&mut program_of(source))
+    let directory = scratch(Path::new("alone"), &[Path::new("lib.gandr")]);
+    let Maybe::Present(package) = Package::discover(&directory)
+    else {
+        panic!("the scratch package is found");
+    };
+    Manifest::of(&mut program_of(source), &package)
 }
 
 /// #2687: a manifest reads the `Package` model's `name` and `version`, each
@@ -289,8 +296,10 @@ fn a_manifest_reads_the_package_model_2687()
         .render()
     );
     assert!(
-        read.render()
-            .ends_with("\n[package]\nname = \"a \\\"quoted\\\" name\"\nversion = \"0.1.0\"\n"),
+        read.render().ends_with(
+            "\n[package]\nname = \"a \\\"quoted\\\" name\"\nversion = \"0.1.0\"\nmodules = \
+                 [\n]\n"
+        ),
         "the decoded name, quoted again for TOML: {}",
         read.render()
     );
@@ -331,7 +340,7 @@ fn a_manifest_renders_its_digest_and_its_table_2687()
     ))
     .expect("the model reads")
     .render();
-    let body = "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\n";
+    let body = "\n[package]\nname = \"hello\"\nversion = \"0.1.0\"\nmodules = [\n]\n";
     assert_eq!(
         rendered,
         format!(
@@ -349,6 +358,39 @@ fn a_manifest_renders_its_digest_and_its_table_2687()
         escaped.contains("\nname = \"back\\\\slash\\nline\\ttab\"\n"),
         "a backslash, a newline and a tab escaped: {escaped}"
     );
+}
+
+/// #2687: a manifest lists every module its package's sources make, by its
+/// path, in order: a module in a directory by its directory and its stem, and
+/// nothing of the root module or of a package nested inside.
+#[test]
+fn a_manifest_lists_the_modules_its_sources_make_2687()
+{
+    let directory = scratch(Path::new("modules"), &[
+        Path::new("hello/src/lib.gandr"),
+        Path::new("hello/src/util.gandr"),
+        Path::new("hello/src/text/greet.gandr"),
+        Path::new("hello/src/text/notes.md"),
+        Path::new("hello/src/vendored/lib.gandr"),
+        Path::new("hello/src/vendored/inner.gandr"),
+    ]);
+    let Maybe::Present(package) = Package::discover(&directory.join("hello"))
+    else {
+        panic!("the package is found");
+    };
+    let rendered = Manifest::of(
+        &mut program_of(SourceText::from(
+            "module Package { def name = \"hello\" ; def version = \"0.1.0\" ; }",
+        )),
+        &package,
+    )
+    .expect("the model reads")
+    .render();
+    assert!(
+        rendered.ends_with("\nmodules = [\n  \"text.greet\",\n  \"util\",\n]\n"),
+        "each module by its path, the root and the nested package's left out: {rendered}"
+    );
+    std::fs::remove_dir_all(&directory).expect("the scratch directory is removed");
 }
 
 /// #2687: an absent manifest is written; the checker's own is unchanged on a

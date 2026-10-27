@@ -2703,7 +2703,7 @@ mod tests
               "data ${1:type_identifier} { \\}"
               "codata ${1:type_identifier} { \\}"
               "module ${1:type_identifier} { ${2:member} \\}"
-              "import \"${1:string_fragment}\";"
+              "import ${1:identifier};"
               "world ${1:identifier};"
               "op infixl ${1:number} \"${2:string_fragment}\";"
               "rec { ${1:item} \\}"

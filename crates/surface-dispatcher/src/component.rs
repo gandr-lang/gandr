@@ -132,6 +132,7 @@ use gandr_surface_lowering::ImportTarget;
 use gandr_surface_lowering::SourceIndex;
 use gandr_surface_lowering::Unit;
 use gandr_surface_lowering::UnitSource;
+use gandr_surface_lowering::WrittenImport;
 use gandr_surface_lowering::prelude;
 use gandr_surface_lowering::written_imports;
 use gandr_surface_parser::parse;
@@ -142,6 +143,7 @@ use gandr_surface_syntax::SourceText;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
+use crate::package::Package;
 use crate::root::SourceRoot;
 use crate::root::classify;
 
@@ -273,7 +275,7 @@ pub struct Laid
     /// as the lay-out read them: what [`path_imports`] reads off a parse of
     /// its text, or what [`lay_out_written`] was given; none for a source
     /// laid alone unread.
-    pub written: Vec<String>,
+    pub written: Vec<ImportPath>,
 }
 
 quenchant_shape::reason_enum! {
@@ -300,6 +302,117 @@ quenchant_shape::reason_enum! {
             /// read them.
             Unread,
         }
+    }
+}
+
+/// The directory an import's file is named relative to.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ImportBase
+{
+    /// The importing source's: a quoted path, `import "./base.gandr" ;`.
+    Importer,
+    /// The package's root module's: a module path, `import text.greet ;`,
+    /// whose file is `text/greet.gandr` beside the package's `lib.gandr`.
+    Root,
+}
+
+/// The file one path or module import names, as its source writes it, and
+/// the directory it is named relative to.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: `file` is the address with escapes decoded, or the file a module
+///   path names; `base` is what it is relative to.
+/// - panics: none.
+/// - executable: none — a data type; [`ImportPath::resolved`] carries the
+///   clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a quoted path and a module path read off one source each
+///   name their file.
+/// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ImportPath
+{
+    /// The file, as the source names it.
+    file: String,
+    /// What it is relative to.
+    base: ImportBase,
+}
+
+impl ImportPath
+{
+    /// The import of `file`, named relative to `base`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        file: String,
+        base: ImportBase,
+    ) -> Self
+    {
+        Self { file, base }
+    }
+
+    /// What the file is named relative to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn base(&self) -> ImportBase
+    {
+        self.base
+    }
+
+    /// The file a source in `directory` names: joined to `directory`, or to
+    /// the directory of the root module of the package `directory` sits in.
+    ///
+    /// # Specification
+    /// - requires: `directory` is the importing source's directory.
+    /// - ensures: an [`ImportBase::Importer`] file joined to `directory`; an
+    ///   [`ImportBase::Root`] file joined to the directory of the `lib.gandr`
+    ///   [`Package::discover`] finds from `directory`, which stands before an
+    ///   unsaved importer does, or to `directory` when it finds none: a source
+    ///   in no package is the root module of its own.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the clause reads the file system again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module path imported from a source under `src/text`
+    ///   names its file under `src`, and a quoted path its file beside the
+    ///   importer.
+    /// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
+    #[inline]
+    #[must_use]
+    pub fn resolved(
+        &self,
+        directory: &Path,
+    ) -> PathBuf
+    {
+        match self.base {
+            ImportBase::Importer => directory.join(&self.file),
+            ImportBase::Root => match Package::discover(directory) {
+                Maybe::Present(package) => package.sources().join(&self.file),
+                Maybe::Absent(_) => directory.join(&self.file),
+            },
+        }
+    }
+}
+
+impl AsRef<str> for ImportPath
+{
+    /// The file, as the source names it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        self.file.as_str()
     }
 }
 
@@ -370,7 +483,7 @@ pub struct MemberSource
     /// The root its canonical path sits under.
     pub root: SourceRoot,
     /// The path imports its reading found.
-    pub written: Vec<String>,
+    pub written: Vec<ImportPath>,
 }
 
 /// The bytes one source's own text covers in its unit's text.
@@ -442,7 +555,7 @@ struct Read
     /// What each of its path imports, in source order, came to.
     edges: Vec<Edge>,
     /// The path imports its reading found, in source order.
-    written: Vec<String>,
+    written: Vec<ImportPath>,
     /// Whether it parses.
     parse: Parse,
 }
@@ -509,7 +622,7 @@ struct Graph
     fetched: usize,
     /// The source whose path imports were given rather than read, and those
     /// imports, until the graph reads it.
-    given: Option<(Position, Vec<String>)>,
+    given: Option<(Position, Vec<ImportPath>)>,
 }
 
 /// The path `target` will have once a file is written there: its directory's
@@ -751,7 +864,7 @@ pub fn lay_out_written(
     grammar: &Pbg,
     (path, root, text): (&Path, SourceRoot, SourceText<'_>),
     shadows: &dyn Shadows,
-    written: Maybe<&[String], written::Absent>,
+    written: Maybe<&[ImportPath], written::Absent>,
 ) -> Laid
 {
     if !text.as_ref().contains(IMPORT) {
@@ -829,7 +942,7 @@ impl Laid
     pub(crate) fn alone(
         path: &Path,
         text: SourceText<'_>,
-        (named, written): (Vec<PathBuf>, Vec<String>),
+        (named, written): (Vec<PathBuf>, Vec<ImportPath>),
     ) -> Self
     {
         let base = prelude::base();
@@ -1071,7 +1184,7 @@ impl Graph
             self.parsed.absorb(parsed);
             let edges: Vec<Edge> = written
                 .iter()
-                .map(|address| self.resolve(&directory.join(address), root, shadows))
+                .map(|address| self.resolve(&address.resolved(&directory), root, shadows))
                 .collect();
             if let Some(reading) = self.read.get_mut(next) {
                 reading.parse = parse;
@@ -1617,12 +1730,13 @@ impl Component
         else {
             return Confirmation::Unconfirmed;
         };
-        let mut found: Vec<Vec<String>> = vec![Vec::new(); self.members.len()];
+        let mut found: Vec<Vec<ImportPath>> = vec![Vec::new(); self.members.len()];
         for import in written {
-            if import.address != Address::Path {
-                continue;
-            }
             let at = import.span.shifted(past).start();
+            let Some(path) = import_path(&import)
+            else {
+                continue;
+            };
             let Some(member) = self
                 .members
                 .iter()
@@ -1631,7 +1745,7 @@ impl Component
             else {
                 return Confirmation::Unconfirmed;
             };
-            member.push(String::from(import.uri.as_ref()));
+            member.push(path);
         }
         let confirmed = found
             .iter()
@@ -1677,7 +1791,7 @@ fn paths_formed(
     grammar: &Pbg,
     text: SourceText<'_>,
     parsed: &mut ParsedBytes,
-) -> Vec<String>
+) -> Vec<ImportPath>
 {
     let source = text.as_ref();
     let mut forms = String::new();
@@ -1696,13 +1810,14 @@ fn paths_formed(
     path_imports(grammar, read.tree())
 }
 
-/// The path addresses the imports at `tree`'s root write, in source order.
+/// The path and module addresses the imports at `tree`'s root write, in
+/// source order.
 ///
 /// # Specification
 /// - requires: `tree` was molded under `grammar`.
-/// - ensures: each root import whose address has no scheme, its address as
-///   written with escapes decoded; none when the root's imports do not read,
-///   its own lowering refusing it.
+/// - ensures: each root import whose address has no scheme, as [`import_path`]
+///   names it; none when the root's imports do not read, its own lowering
+///   refusing it.
 /// - provides: the reading [`lay_out_written`] is given: a parse of a source's
 ///   text, read here, names the imports its lay-out reads them as.
 /// - fails: never.
@@ -1712,26 +1827,37 @@ fn paths_formed(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the closure witnesses read a path import and a scheme
-///   import beside it.
+///   import beside it, and a module path beside a quoted path.
 /// - witness: `component::tests::an_importer_is_laid_after_what_it_imports`
 /// - witness: `component::tests::an_importer_given_its_imports_is_laid_out_as_read_2439`
+/// - witness: `component::tests::a_module_path_is_named_from_its_package_s_root_2687`
 #[inline]
 #[must_use]
 pub fn path_imports(
     grammar: &Pbg,
     tree: &SyntaxTree<'_>,
-) -> Vec<String>
+) -> Vec<ImportPath>
 {
     written_imports(grammar, tree).map_or_else(
         |_| Vec::new(),
-        |written| {
-            written
-                .into_iter()
-                .filter(|import| import.address == Address::Path)
-                .map(|import| String::from(import.uri.as_ref()))
-                .collect()
-        },
+        |written| written.iter().filter_map(import_path).collect(),
     )
+}
+
+/// The file `import` names and what it is relative to: a quoted path the
+/// importer's directory, a module path the root module's; nothing for a
+/// scheme.
+///
+/// # Specification
+/// trivial.
+fn import_path(import: &WrittenImport) -> Option<ImportPath>
+{
+    let base = match import.address {
+        Address::Path => ImportBase::Importer,
+        Address::Module => ImportBase::Root,
+        Address::Scheme => return None,
+    };
+    Some(ImportPath::new(String::from(import.uri.as_ref()), base))
 }
 
 /// The path addresses `text`'s imports write, in source order.
@@ -1754,7 +1880,7 @@ pub fn path_imports(
 fn paths_written(
     grammar: &Pbg,
     text: SourceText<'_>,
-) -> Maybe<Vec<String>, laid::Absent>
+) -> Maybe<Vec<ImportPath>, laid::Absent>
 {
     let Ok(parsed) = parse(grammar, text)
     else {
@@ -1843,7 +1969,7 @@ pub fn imports_named(
     let directory = path.parent().unwrap_or(path);
     written
         .iter()
-        .map(|address| named_path(&directory.join(address)))
+        .map(|address| named_path(&address.resolved(directory)))
         .collect()
 }
 
@@ -1860,7 +1986,7 @@ struct Held
     /// The grammar the source was parsed under.
     grammar: GrammarFingerprint,
     /// The path imports its parse writes, or that it does not parse.
-    written: Maybe<Vec<String>, laid::Absent>,
+    written: Maybe<Vec<ImportPath>, laid::Absent>,
     /// The tick of the store's clock it was last asked for at.
     used: u64,
 }
@@ -2242,7 +2368,7 @@ fn read_whole(
     grammar: &Pbg,
     text: SourceText<'_>,
     parsed: &mut ParsedBytes,
-) -> Maybe<Vec<String>, laid::Absent>
+) -> Maybe<Vec<ImportPath>, laid::Absent>
 {
     let fingerprint = grammar.fingerprint();
     {
@@ -2531,7 +2657,10 @@ mod tests
         let read = lay_out(&grammar, &main, SourceRoot::Strict, importer);
         assert_eq!(
             read.written,
-            ["./base.gandr"],
+            [super::ImportPath::new(
+                String::from("./base.gandr"),
+                super::ImportBase::Importer
+            )],
             "the parse reads the one path import"
         );
         let given = lay_out_written(
@@ -2544,7 +2673,10 @@ mod tests
             given, read,
             "given what its parse reads, it is laid out as parsed"
         );
-        let other = [String::from("./other.gandr")];
+        let other = [super::ImportPath::new(
+            String::from("./other.gandr"),
+            super::ImportBase::Importer,
+        )];
         let misread = lay_out_written(
             &grammar,
             (&main, SourceRoot::Strict, importer),
@@ -3133,12 +3265,18 @@ mod tests
                 SourceText::from(importer),
                 &mut ParsedBytes::default()
             ),
-            ["./base.gandr"],
+            [super::ImportPath::new(
+                String::from("./base.gandr"),
+                super::ImportBase::Importer
+            )],
             "the path import, the scheme import read as none"
         );
         assert_eq!(
             super::paths_written(&grammar, SourceText::from(importer)),
-            Maybe::Present(Vec::from([String::from("./base.gandr")])),
+            Maybe::Present(Vec::from([super::ImportPath::new(
+                String::from("./base.gandr"),
+                super::ImportBase::Importer
+            )])),
             "as the importer's own parse reads it"
         );
         let confirmation = |given: &str| {
@@ -3216,6 +3354,49 @@ mod tests
             named("base.gandr", base),
             Vec::<PathBuf>::new(),
             "a source that never spells `import` names nothing"
+        );
+    }
+
+    /// #2687: a module path names its file from the directory of the
+    /// package's root module, wherever its importer sits, and a quoted path
+    /// from its importer's; a source in no package is its own root module.
+    #[test]
+    fn a_module_path_is_named_from_its_package_s_root_2687()
+    {
+        let grammar = built_in().expect("the grammar builds");
+        let packaged = Scratch::new(Path::new("rooted"), &[
+            (Path::new("lib.gandr"), SourceText::from("def root = 0 ;")),
+            (
+                Path::new("greet.gandr"),
+                SourceText::from("def greeting = 1 ;"),
+            ),
+        ]);
+        std::fs::create_dir_all(packaged.0.join("text")).expect("the module directory is made");
+        let importer = "import greet ;\nimport \"./greet.gandr\" ;\ndef two = 2 ;";
+        assert_eq!(
+            imports_named(
+                &grammar,
+                &packaged.0.join("text/use.gandr"),
+                SourceText::from(importer)
+            ),
+            [
+                packaged.0.join("greet.gandr"),
+                packaged.0.join("text/greet.gandr")
+            ],
+            "the module path from the root, the quoted path from the importer"
+        );
+        let loose = Scratch::new(Path::new("loose"), &[(
+            Path::new("greet.gandr"),
+            SourceText::from("def greeting = 1 ;"),
+        )]);
+        assert_eq!(
+            imports_named(
+                &grammar,
+                &loose.0.join("use.gandr"),
+                SourceText::from("import greet ;\ndef two = 2 ;")
+            ),
+            [loose.0.join("greet.gandr")],
+            "a source in no package roots its own modules"
         );
     }
 

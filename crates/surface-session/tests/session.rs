@@ -1974,7 +1974,10 @@ fn a_revision_reads_the_imports_its_own_parse_writes_2439()
     );
     assert_eq!(
         laid.written,
-        ["./base.gandr"],
+        [gandr_surface_dispatcher::ImportPath::new(
+            String::from("./base.gandr"),
+            gandr_surface_dispatcher::ImportBase::Importer
+        )],
         "the lay-out reads the path import alone"
     );
     let slot = ClosureSlot::new();

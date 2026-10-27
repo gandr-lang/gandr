@@ -7625,17 +7625,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     }
 
     /// What `alias.selected`, written at `site`, names when `alias` is the
-    /// alias of a path import of the site's source.
+    /// alias of a path import of the site's source, or the module path a
+    /// qualified import binds, `text.greet` of `text.greet.greeting`.
     ///
     /// # Specification
-    /// - requires: `alias` is the head of the one-link path at `site` and
-    ///   `selected` its selected name.
+    /// - requires: `alias` is the head of the path at `site`, a name or a path
+    ///   of names, and `selected` its selected name.
     /// - ensures: the top-level declaration the imported source declares under
-    ///   the selected name; the unaliased absence when `alias` is no alias of
-    ///   the source or names an import of an address no source of the unit
-    ///   answers. A constructor is not selected through an alias: a selected
-    ///   name is lowercase, so a qualified constructor does not parse.
-    /// - provides: the qualified reading of an aliased import.
+    ///   the selected name; the unaliased absence when `alias`, as written, is
+    ///   no alias or module path of the source or names an import of an address
+    ///   no source of the unit answers. A constructor is not selected through
+    ///   an alias: a selected name is lowercase, so a qualified constructor
+    ///   does not parse.
+    /// - provides: the qualified reading of an aliased or qualified import.
     /// - fails: [`LoweringRefusal::UnknownMember`] for a name the imported
     ///   source does not declare; [`LoweringRefusal::UnexportedName`] for one
     ///   it keeps private or declares without a definition.
@@ -7663,7 +7665,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<Maybe<Resolved, alias_member::Absent>, LoweringRefusal<'source>>
     {
         let source = self.collected.unit.source_at(site.at.span.start());
-        let module = self.name_at(alias);
+        let module = self
+            .tree
+            .spanned(alias.span)
+            .map_or_else(|| self.name_at(alias), SurfaceName::from);
         let Maybe::Present(import) = self.collected.imports.aliased(source, module)
         else {
             return Ok(Maybe::Absent(alias_member::Absent::Unaliased));
@@ -10812,9 +10817,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Ok(());
         }
         let (head, selected) = Self::link(site, &pieces.pieces, site.at.span)?;
+        // The head is a name, or a module path a qualified import binds,
+        // `text.greet` of `text.greet.greeting`.
         let named = match self.tree.node(head.node) {
             Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
-                former: Former::Name,
+                former: Former::Name | Former::Projection,
                 ..
             }),
             None => false,
@@ -11664,7 +11671,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
             Maybe::Absent(_) => links.push((target, selected)),
         };
         let (mut target, nested, member) = Self::type_link(site, &pieces.pieces, site.at.span)?;
-        let through = matches!(nested, Maybe::Present(_));
         link(&mut links, target, nested, member);
         let headed = match self.tree.node(target.node) {
             Some(node) => matches!(shape_of(self.pbg, node)?, Shape::Form {
@@ -11673,9 +11679,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             }),
             None => false,
         };
+        // The qualifier is the head alone, `g.Mood`, or the head and the
+        // module after it, `text.greet.Mood`, when an import binds that path.
+        let qualifier = match nested {
+            Maybe::Present(module) => ByteSpan::new(target.span.start(), module.span.end())
+                .ok()
+                .map(|span| Placed { span, ..target }),
+            Maybe::Absent(_) => Some(target),
+        };
         if headed
-            && !through
-            && let Maybe::Present(resolved) = self.aliased_member(site, target, member)?
+            && let Some(qualifier) = qualifier
+            && let Maybe::Present(resolved) = self.aliased_member(site, qualifier, member)?
         {
             let none = Stretch {
                 start: self.operands.len(),

@@ -1907,6 +1907,8 @@ INSERT INTO purpose VALUES('surface-dispatcher','cells::Census','struct','The ce
 INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusFault','enum','Why a path''s cells could not be read.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','cells::CensusStep','enum','One step of a census.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Freshness','enum','How a read held of a file is known to be current.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','component::ImportBase','enum','The directory an import''s file is named relative to: the importer''s, or the package''s root module''s.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('surface-dispatcher','component::ImportPath','struct','The file a path or module import names, and the directory it is named relative to.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Laid','struct','A source''s import closure laid out as one unit.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::ParsedBytes','struct','How many bytes of source text a run has parsed.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('surface-dispatcher','component::Shadows','trait','The text an editor holds for a source, which an import of that source reads in place of the file at its path, and whether a change to a file on disk is reported.',NULL,'fits','sound',NULL);

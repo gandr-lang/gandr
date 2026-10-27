@@ -435,6 +435,11 @@ fn declarations(
     // --- module `import` -------------------------------
     // `import "URI" ;` and `import "URI" as name ;`. The URI is a plain string
     // literal, so a new scheme needs no grammar change.
+    //
+    // `import text.greet ;` names a module of the package by its path, the
+    // file `text/greet.gandr` under the package's root module, and binds it
+    // qualified, `text.greet.name`. The quote or the first identifier after
+    // `import` chooses the address, so the choice stays one token deep.
     out.push(r(
         RuleName("import_declaration"),
         Provenance("import_declaration"),
@@ -442,7 +447,13 @@ fn declarations(
         p,
         seq([
             t(TileLabel("import")),
-            dq_string(),
+            alt([
+                dq_string(),
+                seq([
+                    t(TileLabel("identifier")),
+                    repeat(seq([t(TileLabel(".")), t(TileLabel("identifier"))])),
+                ]),
+            ]),
             opt(seq([t(TileLabel("as")), t(TileLabel("identifier"))])),
             t(TileLabel(";")),
         ]),
