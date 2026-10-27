@@ -698,7 +698,8 @@ fn a_host_reads_first_order_payloads_back_identically()
 }
 
 /// A host moves a payload across by content and resumes with what it reads
-/// back at fresh addresses: a pair and a list come back equal. A thunk does
+/// back at fresh addresses: a pair, a list and a thunk come back equal, the
+/// thunk laid out at the function's site for its body (#3265). A code does
 /// not cross: the host's commit is refused by name, writes nothing, and the
 /// host declines.
 #[test]
@@ -720,10 +721,16 @@ fn a_host_crosses_a_payload_by_content_and_resumes_with_its_copy()
     let list_type = core.value_type_list(integer_type);
     let returner = core.comp_type_returner(integer_type);
     let thunk_type = core.value_type_thunk(returner);
+    let quoted = core.value_quote(integer_type);
+    let universe = core.value_type_universe(
+        gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+        gandr_kernel_strata::Level::zero(),
+    );
     for (payload, payload_type, expected) in [
         (pair, pair_type, Expected::Value(pair)),
         (list, list_type, Expected::Value(list)),
-        (thunk, thunk_type, Expected::Perform("Cross", "cross")),
+        (thunk, thunk_type, Expected::Value(thunk)),
+        (quoted, universe, Expected::Perform("Cross", "cross")),
     ] {
         let signature = EffectSig::new("Cross".into(), [EffectOp {
             name: "cross".into(),

@@ -52,6 +52,7 @@
 //! twice or never stop the run stuck, each named by the command it stopped
 //! at.
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::btree_map::Entry;
@@ -83,6 +84,7 @@ use gandr_runtime_stencils::Arity;
 use gandr_runtime_stencils::COUNT_IMMORTAL;
 use gandr_runtime_stencils::COUNT_ONE;
 use gandr_runtime_stencils::Family;
+use gandr_runtime_stencils::Flavour;
 use gandr_runtime_stencils::Header;
 use gandr_runtime_stencils::Kind;
 use gandr_runtime_stencils::RELEASE;
@@ -461,6 +463,8 @@ impl<'run, 'host> Calls<'run, 'host>
             code_table: self.code_table,
             literals: &mut self.literals,
             moved: &self.moved,
+            sites: self.sites,
+            arena: self.arena,
         }
         .laid(runtime, values)
     }
@@ -1046,6 +1050,8 @@ impl<'run, 'host> Calls<'run, 'host>
                     code_table: self.code_table,
                     literals: &mut self.literals,
                     moved: &self.moved,
+                    sites: self.sites,
+                    arena: self.arena,
                 };
                 match laying.laid(runtime, core::slice::from_ref(&reply)) {
                     Ok(words) => words.first().copied().ok_or(Refusal::Operands),
@@ -1583,6 +1589,12 @@ struct Laying<'laying>
     literals: &'laying mut Vec<Literal>,
     /// The run's objects already moved into the store.
     moved: &'laying Moved,
+    /// The function's closure sites, a thunk crossed into the run is laid
+    /// out at.
+    sites: &'laying Sites<'laying>,
+    /// The commands the function was lowered from, which name each site's
+    /// thunk.
+    arena: &'laying CommandArena,
 }
 
 impl Laying<'_>
@@ -1601,12 +1613,15 @@ impl Laying<'_>
     ///   its new row in the run's literal table, a tuple, an injection or a
     ///   datatype's constructor over its fields, any other head as a head
     ///   object naming its row in the run's head table, which it joins when the
-    ///   function's lacks it, an opaque constant as an opaque object.
+    ///   function's lacks it, an opaque constant as an opaque object, and a
+    ///   thunk as a closure at the function's site for its body, its captures
+    ///   its fields.
     /// - executable: none — the objects are memory no predicate reads.
     ///
     /// # Errors
     /// [`Unlaid::Value`] naming a value the store does not hold, or code, a
-    /// capability, a closure or a stack the run did not move out;
+    /// capability, a closure, a stack, or a thunk whose body has no site or
+    /// whose captures its site does not take, that the run did not move out;
     /// [`Unlaid::Run`] past the heap's limit.
     ///
     /// # Adequacy
@@ -1615,13 +1630,15 @@ impl Laying<'_>
     ///   and two captures bound to one value, each continuing or stopping the
     ///   run as it states; a second holder left uncounted frees the value while
     ///   it is read. A record a migration answers, which the caller's function
-    ///   never builds, is laid out under the head it joins to the table.
+    ///   never builds, is laid out under the head it joins to the table. A
+    ///   thunk a migration answers runs at the caller's site for its body.
     /// - witness: `tests::seam::a_host_reply_flows_into_the_rest_of_the_run`
     /// - witness: `tests::seam::a_host_reply_of_its_payload_keeps_its_identity`
     /// - witness: `tests::seam::a_host_abort_never_resumes_and_a_missing_reply_declines`
     /// - witness: `tests::seam::a_host_reply_sharing_a_field_counts_each_holder_3170`
     /// - witness: `tests::closed::a_shared_capture_is_laid_out_once_and_counted_twice`
     /// - witness: `tests::world::a_record_built_only_at_the_world_comes_back`
+    /// - witness: `tests::world::a_thunk_a_migration_returns_runs_at_the_caller_3265`
     fn laid(
         &mut self,
         runtime: &mut Runtime,
@@ -1644,13 +1661,19 @@ impl Laying<'_>
                     continue;
                 }
                 let value = store.value(id).ok_or(Unlaid::Value(id))?;
-                let fields: &[HeapValueId] =
-                    if let HeapValue::Constructed { ref fields, .. } = *value {
-                        fields
-                    }
-                    else {
-                        &[]
-                    };
+                let fields: Cow<'_, [HeapValueId]> = match *value {
+                    HeapValue::Constructed { ref fields, .. } => Cow::Borrowed(fields),
+                    HeapValue::Thunk { environment, .. } => {
+                        Cow::Owned(store.bound_values(environment).collect())
+                    },
+                    HeapValue::Literal(_)
+                    | HeapValue::Stack { .. }
+                    | HeapValue::Fixpoint { .. }
+                    | HeapValue::Closure { .. }
+                    | HeapValue::Opaque(_)
+                    | HeapValue::Code(_)
+                    | HeapValue::Capability => Cow::Borrowed(&[]),
+                };
                 if !entered {
                     pending.push((id, true));
                     pending.extend(
@@ -1663,7 +1686,7 @@ impl Laying<'_>
                     continue;
                 }
                 let word = self.object(runtime, id, &laid)?;
-                for &field in fields {
+                for &field in fields.iter() {
                     if fresh.contains(&field) && !held.insert(field) {
                         share(*laid.get(&field).ok_or(Unlaid::Value(field))?);
                     }
@@ -1780,8 +1803,38 @@ impl Laying<'_>
                     Family::try_from(row).map_err(width)?,
                 )?])
             },
+            HeapValue::Thunk { body, environment } => {
+                let (code, site) = self
+                    .sites
+                    .thunk(self.arena, body)
+                    .ok_or(Unlaid::Value(id))?;
+                let captures: Vec<HeapValueId> = self.store.bound_values(environment).collect();
+                if captures.len() != site.captures.len() {
+                    return Err(Unlaid::Value(id));
+                }
+                let mut words = Vec::from([
+                    Header::new(
+                        Kind::Closure,
+                        Tag::from(Flavour::Thunk),
+                        Arity::try_from(captures.len()).map_err(width)?,
+                        Family::UNNAMED,
+                    )
+                    .word(),
+                    code,
+                ]);
+                words.resize(captures.len().saturating_add(2), Word::from(0_usize));
+                // Each capture goes to the slot the site's body reads it from.
+                for (capture, slot) in captures.iter().zip(&site.captures) {
+                    let field = usize::try_from(slot.0)
+                        .ok()
+                        .and_then(|slot| slot.checked_add(2))
+                        .and_then(|field| words.get_mut(field))
+                        .ok_or(Unlaid::Value(id))?;
+                    *field = *laid.get(capture).ok_or(Unlaid::Value(*capture))?;
+                }
+                words
+            },
             HeapValue::Capability
-            | HeapValue::Thunk { .. }
             | HeapValue::Fixpoint { .. }
             | HeapValue::Closure { .. }
             | HeapValue::Stack { .. } => return Err(Unlaid::Value(id)),

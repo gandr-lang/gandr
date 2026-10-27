@@ -36,6 +36,7 @@ use alloc::collections::BTreeMap;
 
 use gandr_core_sequent::ClosedCommand;
 use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::CommandId;
 use gandr_core_sequent::ConstructorTag;
 use gandr_core_sequent::Environment;
 use gandr_core_sequent::HeapValue;
@@ -235,6 +236,37 @@ impl<'lowered> Sites<'lowered>
     ) -> Option<Owners<'lowered>>
     {
         self.owners.get(&code).copied()
+    }
+
+    /// The code word and site of a thunk suspending `body` in this function,
+    /// which a thunk crossed into the run is laid out at; none when the
+    /// function holds no such thunk.
+    ///
+    /// # Specification
+    /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a thunk a migration answers, forced at its caller,
+    ///   answers what forcing it in place answers on both tiers; a site found
+    ///   for another body runs other code.
+    /// - witness: `tests::world::a_thunk_a_migration_returns_runs_at_the_caller_3265`
+    #[inline]
+    #[must_use]
+    pub fn thunk(
+        &self,
+        arena: &CommandArena,
+        body: CommandId,
+    ) -> Option<(Word, &'lowered Site)>
+    {
+        self.by_code
+            .iter()
+            .find(|&(_, site)| {
+                matches!(
+                    arena.producer(site.producer),
+                    Some(&ProducerNode::Thunk { body: suspended }) if suspended == body
+                )
+            })
+            .map(|(&code, &site)| (code, site))
     }
 }
 
