@@ -1,5 +1,7 @@
 //! Description reader observations over the public grammar.
 
+use alloc::string::String;
+
 use gandr_surface_syntax::SourceText;
 use gandr_theory_levitation::CodeView;
 use gandr_theory_levitation::ValueTypeView;
@@ -697,6 +699,70 @@ fn a_value_function_field_is_the_function_former()
         entry.description.rules.len(),
         1,
         "and the family keeps its rule"
+    );
+}
+
+/// #3194: the formatter spells `Ā => B` explicitly as the thunked arrow
+/// `+U (Ā -> -F B)`, so a presented type written that way reads as the same
+/// function formers, its rule kept, over one domain, two, none and nested.
+#[test]
+fn the_thunked_arrow_is_the_function_former_it_spells_3194()
+{
+    let fields = [
+        ("One", "Integer => Prog", "+U (Integer -> -F Prog)"),
+        (
+            "Two",
+            "(Integer, String) => Prog",
+            "+U (Integer -> String -> -F Prog)",
+        ),
+        (
+            "Nested",
+            "Integer => Integer => Prog",
+            "+U (Integer -> -F (+U (Integer -> -F Prog)))",
+        ),
+        ("Thunk", "() => Prog", "+U (-F Prog)"),
+        ("Pure", "Integer => Integer", "+U (Integer -> -F Integer)"),
+    ];
+    let source = |thunked: bool| {
+        let mut written = String::from("data Prog : Type { Done : (x : Integer) --> Prog; ");
+        for &(name, sugared, explicit) in &fields {
+            for piece in [
+                name,
+                " : (k : ",
+                if thunked { explicit } else { sugared },
+                ") --> Prog; ",
+            ] {
+                written.push_str(piece);
+            }
+        }
+        written.push_str(
+            "Put : (s : Integer, k : Prog) --> Prog; rule Put(s, Put(u, k)) <=> Put(u, k); }",
+        );
+        written
+    };
+    let codes = |written: &str| {
+        let report = elaborated(SourceText::from(written));
+        assert_eq!(report.diagnostics, [], "every field is carried: {written}");
+        let [ref entry] = *report.declarations.as_slice()
+        else {
+            panic!("one description of {written}")
+        };
+        assert_eq!(
+            entry.description.rules.len(),
+            1,
+            "and the family keeps its rule"
+        );
+        entry
+            .description
+            .ctors
+            .iter()
+            .map(|ctor| ctor.code.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        codes(&source(true)),
+        codes(&source(false)),
+        "each thunked arrow is the former its `=>` spelling is"
     );
 }
 
