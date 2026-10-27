@@ -9,8 +9,8 @@
           "number": 10,
           "merged": "2026-10-20T10:00:00Z",
           "lane": "workflow",
-          "body": "Closes #5\n\n## Sources read\n\n- `a.jq` — taken: `decide` in `a.jq`\n- `b.md` — taken: the rule\n- `#4` — read: the earlier unit\n- `c.md` — n/a: no surface\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `descent` | answered: `fact` per pull request |\n| Dimension | `rewriting` | answered: no site named |\n\n## Refactoring\n\nno\n\n## Ledger\n\n- `row-a` — implemented\n",
-          "issue": "Brief.\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — none |\n| Locality | `oracle` | no — none |\n| Locality | `descent` | yes — the parts |\n| Place | `located` | no — none |\n| Place | `resident` | no — none |\n| Dimension | `rewriting` | yes — the rule |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — the replay |\n| `sharing` | no |\n"
+          "body": "Closes #5\n\n## Sources read\n\n- `a.jq` — taken: `decide` in `a.jq`\n- `b.md` — taken: the rule\n- `#4` — read: the earlier unit\n- `c.md` — n/a: no surface\n\n## Readings\n\n| Family | Axis | Status |\n| --- | --- | --- |\n| Locality | `descent` | answered: `fact` per pull request |\n| Dimension | `rewriting` | answered: no site named |\n| Cost | `zero-cost` | answered: no site named |\n\n## Refactoring\n\nno\n\n## Ledger\n\n- `row-a` — implemented\n",
+          "issue": "Brief.\n\n## Readings\n\n| Family | Axis | Selected |\n| --- | --- | --- |\n| Identity | `univalent` | no — none |\n| Locality | `oracle` | no — none |\n| Locality | `descent` | yes — the parts |\n| Place | `located` | no — none |\n| Place | `resident` | no — none |\n| Dimension | `rewriting` | yes — the rule |\n| Cost | `zero-cost` | no — none |\n\n## Concerns\n\n| Concern | Touched |\n| --- | --- |\n| `fork` | no |\n| `oracle` | yes — the replay |\n| `sharing` | no |\n"
         },
         {
           "number": 11,

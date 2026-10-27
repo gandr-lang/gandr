@@ -28,6 +28,7 @@ Bisect the series' hotpath reports over `main` from the last passing report to `
 | Place | `located` | no — one benchmark on one host class |
 | Place | `resident` | no — no representation changes |
 | Dimension | `rewriting` | no — no rule |
+| Cost | `zero-cost` | no — the toolchain's own time against a budget; nothing is added to a gandr artifact at run time |
 
 ## Concerns
 

@@ -26,6 +26,7 @@ Time `{{job}}`'s parts in its last run's log and split them into shares by cost:
 | Place | `located` | no — one hosted runner class |
 | Place | `resident` | no — no representation |
 | Dimension | `rewriting` | no — no rule |
+| Cost | `zero-cost` | no — a budget report adds nothing at run time |
 
 ## Concerns
 

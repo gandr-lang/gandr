@@ -9,7 +9,7 @@
 # - `## Sources`: items `` - `<key>` — <what it decides> ``, each marked
 #   primary or secondary, or `` - `<key>` — not read: <why> `` for an owner
 #   the term map routes to and the unit declines (#3158);
-# - `## Readings`: a table answering each of the six axes `yes — <what it
+# - `## Readings`: a table answering each of the seven axes `yes — <what it
 #   gives this unit>` or `no — <why it does not reach it>`, a reason on both
 #   (#2955); a refused row quotes the axis's question;
 # - `## Concerns`: a table marking each concern of `ledger/concerns.sql`
