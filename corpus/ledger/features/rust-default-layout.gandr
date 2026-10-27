@@ -1,0 +1,19 @@
+/// `rust-default-layout` computes rustc's layout of a `repr(Rust)` struct or enum as a gandr program over the type's code.
+///
+/// Implemented: a struct's fields sorted by alignment, its niche toward the start or the end as rustc chooses; an enum's niche-filled and tagged layouts, the tag widened, the smaller kept, then the larger niche, then the tagged; agreement with `rustc -Zprint-type-sizes` on every type compared.
+/// Not implemented: a field that is itself an aggregate, an array or a zero-sized type, which waits for the program to run over levitated codes (#2343); a niche beyond `bool`'s and a reference's, which needs a theory of the target.
+///
+/// rustc stays the authority on a Rust type's layout; the program is checked against what it printed.
+///
+/// - see: corpus/model/layouts/rust-default.gandr
+
+// `Field`, `Done`, `Variant`, `NoVariant`, the scalars, `structLayout` and `enumLayout`.
+import "../../model/layouts/rust-default.gandr";
+
+/// `struct Pair { flag: bool, count: u32 }` puts `count` first: rustc prints `count` at 0, `flag` at 4, in 8 bytes.
+@[ runs("Layout(8, 4, At(\"count\", 0, At(\"flag\", 4, End)))") ]
+def pairLayout() -> Layout { structLayout(Field("flag", Flag, Field("count", U32, Done))) }
+
+/// `enum Shape { Dot, Line(u16, u16) }` has no niche, so it is tagged, the tag widened to two bytes: rustc prints 6 bytes.
+@[ runs("EnumLayout(6, 2, Tag(2), Arm(\"Dot\", End, Arm(\"Line\", At(\"0\", 2, At(\"1\", 4, End)), NoArm)))") ]
+def shapeLayout() -> EnumLayout { enumLayout(Variant("Dot", Done, Variant("Line", Field("0", U16, Field("1", U16, Done)), NoVariant))) }
