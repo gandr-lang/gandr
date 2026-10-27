@@ -1,0 +1,30 @@
+// A fold whose case sits beneath a parameter after the one it recurses on is
+// read as the fixpoint, as one with the case at its root is (#2510). Programs
+// that only store, quotiented by state's put-put law, are folded by passing
+// the state: at `Store(s, Store(u, k))` the fold runs to `final(k, u)` through
+// two of its own calls, and at `Store(u, k)` through one, so the two sides of
+// the law meet from one fresh initial state. The law is the algebraic theory
+// of state's `put(s, put(u, k)) = put(u, k)` (Plotkin and Power, _Notions of
+// computation determine monads_, 2002, doi:10.1007/3-540-45931-6_24), and the
+// fold is the handler that passes the state.
+
+/// Programs that only store, quotiented by put-put: a store the next store
+/// overwrites is no store.
+pub data Stores : Type {
+  End : (x : Integer) --> Stores;
+  Store : (s : Integer, k : Stores) --> Stores;
+  rule Store(s, Store(u, k)) <=> Store(u, k);
+}
+
+/// The final state from an initial one: each store hands its state to the
+/// rest of the program, and the end returns the state it is handed.
+def rec final(p : Stores, s : Integer) -> Integer {
+  case p {
+    End(_x) => s,
+    Store(t, k) => final[<](k, t)
+  }
+}
+
+/// Three stores from zero leave the last stored.
+@[ runs("3") ]
+def finalOfThree : () => Integer = final(Store(1, Store(2, Store(3, End(0)))), 0);
