@@ -468,7 +468,8 @@ fn connection<Log>(
                     let settled = server.admitted(&mut held, &mut admissions, Awaiting::Ended);
                     // The watch follows what the published judgements' closures
                     // name before the client hears them, so a change it makes on
-                    // hearing one is seen.
+                    // hearing one is seen: polled until the system's watcher holds
+                    // the directories, which this does not wait for.
                     if let Some(ref mut watch) = *lock(disk)
                         && let Some(watched) = watch.follow(peer, &changes, server.followed(&held))
                     {
@@ -508,8 +509,8 @@ fn connection<Log>(
                     (reported.end, outcome.messages, outcome.flow)
                 },
             };
-            // The watch is armed before the client hears the judgement, so a
-            // change it makes on hearing it is seen.
+            // The watch follows before the client hears the judgement, so a
+            // change it makes on hearing it is seen, polled until armed.
             if let Some(ref mut watch) = *lock(disk)
                 && let Some(watched) = watch.follow(peer, &changes, server.followed(&held))
             {
