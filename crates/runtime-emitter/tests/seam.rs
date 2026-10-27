@@ -197,6 +197,8 @@ enum Built
     Code,
     /// The empty list, whose head no run of these programs builds.
     Nil,
+    /// The pair `(x, x)` over one fresh `x = (1, 2)`: a value two fields hold.
+    SharedPair,
 }
 
 /// What a hosted run is expected to end with.
@@ -309,6 +311,31 @@ impl HostHandler for ScriptedHost<'_>
                     Built::Nil => HeapValue::Constructed {
                         tag: ConstructorTag::ListNil,
                         fields: Box::new([]),
+                    },
+                    Built::SharedPair => {
+                        let mut integer = |digits: &str| {
+                            values
+                                .allocate(HeapValue::Literal(Literal::Integer(
+                                    IntegerLiteral::new(
+                                        Sign::NonNegative,
+                                        Magnitude::from_decimal_text(String::from(digits))
+                                            .expect("decimal field"),
+                                    ),
+                                )))
+                                .expect("the field fits")
+                        };
+                        let one = integer("1");
+                        let two = integer("2");
+                        let shared = values
+                            .allocate(HeapValue::Constructed {
+                                tag: ConstructorTag::Tuple(ProducerArity::from(2_usize)),
+                                fields: Box::new([one, two]),
+                            })
+                            .expect("the field fits");
+                        HeapValue::Constructed {
+                            tag: ConstructorTag::Tuple(ProducerArity::from(2_usize)),
+                            fields: Box::new([shared, shared]),
+                        }
                     },
                 };
                 HostReply::Resume(values.allocate(value).expect("the reply fits"))
@@ -866,6 +893,57 @@ fn a_host_reply_the_function_tables_is_the_answer()
             Expected::Value(expected),
         );
     }
+}
+
+/// A reply holding one value in two fields counts both holders:
+/// `p <- ask(()); split p as (a, b) in return (b, (3, 4))` answered with
+/// `(x, x)` over `x = (1, 2)` is `((1, 2), (3, 4))`. The branch drops the
+/// component it ignores, so an `x` counted once is freed while `b` still
+/// holds it, and `(3, 4)` takes its block: #3170.
+#[test]
+fn a_host_reply_sharing_a_field_counts_each_holder_3170()
+{
+    let mut core = CoreArena::new();
+    let unit = core.value_unit();
+    let unit_type = core.value_type_unit();
+    let integer_type = core.value_type_base(BaseType::Integer);
+    let pair_type = core.value_type_product(&[integer_type, integer_type]);
+    let reply_type = core.value_type_product(&[pair_type, pair_type]);
+    let signature = EffectSig::new("Ask".into(), [EffectOp {
+        name: "ask".into(),
+        payload: unit_type,
+        reply: reply_type,
+    }])
+    .expect("one operation");
+    let asked = core.computation_perform(signature, "ask".into(), unit);
+    let one = integer(&mut core, Digits("1"));
+    let two = integer(&mut core, Digits("2"));
+    let three = integer(&mut core, Digits("3"));
+    let four = integer(&mut core, Digits("4"));
+    let fresh = core.value_tuple(&[three, four]);
+    let kept = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let answer = core.value_tuple(&[kept, fresh]);
+    let returned = core.computation_return(answer);
+    let reply = core.value_variable(Zone::Intuitionistic, 0_u32.into());
+    let split = core.computation_split(
+        reply,
+        gandr_core_term::ComponentCount::from(2_usize),
+        returned,
+    );
+    let program = core.computation_bind(asked, split);
+    let shared = core.value_tuple(&[one, two]);
+    let expected = core.value_tuple(&[shared, fresh]);
+    assert_host(
+        &mut core,
+        program,
+        &[Offer {
+            signature: "Ask",
+            operation: "ask",
+            payload: unit,
+            answer: Answer::Built(Built::SharedPair),
+        }],
+        Expected::Value(expected),
+    );
 }
 
 /// A reply the run cannot hold declines the run naming the reply: a
