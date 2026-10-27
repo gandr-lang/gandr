@@ -2224,6 +2224,77 @@ pub fn read_pieces<'source>(
     Ok(())
 }
 
+/// Where the form at `position` itself stopped, when the parser closed it,
+/// whatever a form inside it holds.
+///
+/// # Specification
+/// - requires: `position` names a node of `tree`, molded under `pbg`.
+/// - ensures: for a form whose first repair among its own children is a minted
+///   close or a ghost end, that repair read as [`read_pieces`] reads its own
+///   before an inner form's replaces it: a ghost end as [`unended`], then
+///   [`earliest`]. Absent for any other node, and for a form whose first own
+///   repair is neither.
+/// - provides: the stop a torn declaration's operand broke at, when the repair
+///   [`read_pieces`] reports is an inner form's.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as the torn declaration that reads it.
+/// - witness: `module::tests::a_torn_declaration_is_refused_where_it_stopped_2877`
+#[spec(ensures: |ret| match ret {
+    | Maybe::Present(found) => matches!(tree.node(position).map(Node::label), Some(NodeLabel::Meld(_)))
+        && matches!(found.repair, Repair::GhostClose(_) | Repair::Unended(_) | Repair::Diverged(_))
+        && found.nested == Maybe::Absent(nested::Absent::Own),
+    | Maybe::Absent(_) => true,
+})]
+pub fn stop_of(
+    pbg: &Pbg,
+    tree: &SyntaxTree<'_>,
+    position: NodeIndex,
+) -> Maybe<Repaired, repair::Absent>
+{
+    let absent = Maybe::Absent(repair::Absent::Unrepaired);
+    if !matches!(
+        tree.node(position).map(Node::label),
+        Some(NodeLabel::Meld(_))
+    ) {
+        return absent;
+    }
+    let first = tree.children(position).find_map(|child| {
+        let held = tree.node(child)?;
+        match held.label() {
+            NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => {
+                match repair_at(pbg, tree, Placed::of(child, held)) {
+                    Maybe::Present(found) => Some(found),
+                    Maybe::Absent(_) => None,
+                }
+            },
+            NodeLabel::Tile(_)
+            | NodeLabel::Meld(_)
+            | NodeLabel::Wald
+            | NodeLabel::Space
+            | NodeLabel::Doc => None,
+        }
+    });
+    let Some(found) = first
+    else {
+        return absent;
+    };
+    let found = if found.repair == Repair::Grout(GroutShape::Postfix) {
+        unended(pbg, tree, position, found)
+    }
+    else {
+        found
+    };
+    match found.repair {
+        Repair::GhostClose(_) | Repair::Unended(_) => {
+            Maybe::Present(earliest(pbg, tree, position, found))
+        },
+        Repair::Grout(_) | Repair::Keyword(_) | Repair::Diverged(_) => absent,
+    }
+}
+
 /// The reading of the ghost end `ghost` the parser appended to the form at
 /// `form`, which never reached its last tile, or minted where a left-out tile
 /// belongs.
