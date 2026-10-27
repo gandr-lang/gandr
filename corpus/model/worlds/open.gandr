@@ -43,19 +43,19 @@ def heldCounts() -> -F (#{done : Integer, left : Integer} at seat) {
 }
 
 /// A handle to a closed thunk comes back: it captures nothing.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("thunk { 3 }") ]
 def heldThunk() -> -F ((() => Integer) at seat) {
   migrate [seat] { (hold thunk { pure 3 }) }
 }
 
 /// A handle to a record holding a closed thunk comes back, each field open.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("#{.done = 3, .later = thunk { 4 }}") ]
 def heldRecord() -> -F (#{done : Integer, later : () => Integer} at seat) {
   migrate [seat] { (hold #{done = 3, later = thunk { pure 4 }}) }
 }
 
 /// The same record without a handle comes back, each field mobile.
-@[ entry((operator, seat)) ]
+@[ entry((operator, seat)), runs("#{.done = 3, .later = thunk { 4 }}") ]
 def bareRecord() -> #{done : Integer, later : () => Integer} {
   migrate [seat] { pure #{done = 3, later = thunk { pure 4 }} }
 }

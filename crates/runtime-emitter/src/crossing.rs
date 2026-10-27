@@ -3,11 +3,13 @@
 //! into a [`Store`] at addresses fresh there.
 //!
 //! The two ends share no location. What crosses is what the checker's `Open`
-//! admits at run time: a literal of every kind, and a tuple, a record, a list,
-//! an injection, a lift or a datatype's constructor over fields that cross.
-//! Each head is one constructor on the plane: its tag, its payload in the
-//! records after its open, then its fields, then its close. Any other value is
-//! refused by name before anything is written ([`Uncrossable`]).
+//! admits at run time: a literal of every kind, a tuple, a record, a list, an
+//! injection, a lift or a datatype's constructor over fields that cross, and a
+//! thunk over captures that cross. Each head is one constructor on the plane:
+//! its tag, its payload in the records after its open, then its fields, then
+//! its close. A thunk's fields are its environment's values, innermost first.
+//! Any other value is refused by name before anything is written
+//! ([`Uncrossable`]).
 //!
 //! # Boundaries
 //!
@@ -17,9 +19,10 @@
 //!   twenty-one values, writes 7,340,029 records into 5 chunks and derefs to
 //!   2,097,151 values, in about half a second each way on a release build.
 //!   Sharing kept across a crossing needs a child pointer per shared value.
-//! - **One program.** A family crosses as its declaration's index, which names
-//!   one declaration at both ends because both run one program. A crossing
-//!   between processes names it by content.
+//! - **One program.** A family crosses as its declaration's index and a thunk
+//!   as its body's command index, each naming one declaration or one command at
+//!   both ends because both run one program. A crossing between processes names
+//!   them by content.
 //! - **The constants are the deployment's.** The codec owns its identity and
 //!   the plane's classification, every constructor a cut candidate; the
 //!   chunker's constants are the caller's, pinned by the deployment that
@@ -46,7 +49,9 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use gandr_core_sequent::CommandId;
 use gandr_core_sequent::ConstructorTag as Head;
+use gandr_core_sequent::Environment;
 use gandr_core_sequent::HeapValue;
 use gandr_core_sequent::HeapValueId;
 use gandr_core_sequent::ProducerArity;
@@ -145,6 +150,10 @@ const DATA: u8 = 0x16_u8;
 /// family's declaration index, then its fields.
 const FAMILY_DATA: u8 = 0x17_u8;
 
+/// A thunk: its body's command index and its capture count, then its
+/// captures, innermost first.
+const THUNK: u8 = 0x18_u8;
+
 /// A value that does not cross, by what it is.
 ///
 /// # Specification
@@ -154,11 +163,10 @@ pub enum Uncrossable
 {
     /// A literal stack: its frames are a run's code.
     Stack,
-    /// A thunk: its body is a command in the arena that lowered it.
-    Thunk,
-    /// A recursive thunk, as a thunk.
+    /// A recursive thunk: the checker crosses a thunk literal alone.
     Fixpoint,
-    /// A copattern object or a captured context, as a thunk.
+    /// A copattern object or a captured context: the checker crosses a thunk
+    /// literal alone.
     Closure,
     /// A constant with no body, which a run carries but never reads.
     Opaque,
@@ -484,8 +492,8 @@ impl<'store> Crossed<'store>
     }
 }
 
-/// One head of a crossing value: a literal, or a constructor whose fields
-/// follow it.
+/// One head of a crossing value: a literal, a constructor whose fields follow
+/// it, or a thunk whose captures follow it.
 ///
 /// # Specification
 /// trivial.
@@ -496,6 +504,14 @@ enum Node<'store>
     Literal(Cow<'store, Literal>),
     /// A constructor, its fields the values after it in preorder.
     Constructed(Crossed<'store>),
+    /// A thunk, its captures the values after it in preorder, innermost first.
+    Thunk
+    {
+        /// The suspended command, which names one command at both ends.
+        body: CommandId,
+        /// How many values its environment binds.
+        captures: Count,
+    },
 }
 
 impl<'store> Node<'store>
@@ -528,8 +544,17 @@ impl<'store> Node<'store>
                     pending.extend(fields.iter().rev().copied());
                     Self::Constructed(crossed)
                 },
+                HeapValue::Thunk { body, environment } => {
+                    let first = pending.len();
+                    pending.extend(store.bound_values(environment));
+                    // The innermost capture is the first field, so it goes on top.
+                    pending.get_mut(first ..).unwrap_or_default().reverse();
+                    Self::Thunk {
+                        body,
+                        captures: Count(pending.len().saturating_sub(first)),
+                    }
+                },
                 HeapValue::Stack { .. } => return Err(refused(Uncrossable::Stack)),
-                HeapValue::Thunk { .. } => return Err(refused(Uncrossable::Thunk)),
                 HeapValue::Fixpoint { .. } => return Err(refused(Uncrossable::Fixpoint)),
                 HeapValue::Closure { .. } => return Err(refused(Uncrossable::Closure)),
                 HeapValue::Opaque(_) => return Err(refused(Uncrossable::Opaque)),
@@ -548,6 +573,7 @@ impl<'store> Node<'store>
         match *self {
             Self::Literal(_) => Count(0_usize),
             Self::Constructed(ref crossed) => crossed.fields(),
+            Self::Thunk { captures, .. } => captures,
         }
     }
 
@@ -568,6 +594,11 @@ impl<'store> Node<'store>
         match *self {
             Self::Literal(ref literal) => emit_literal(literal, sink),
             Self::Constructed(ref crossed) => crossed.emit(sink),
+            Self::Thunk { body, captures } => {
+                sink.open(ConstructorTag::from(THUNK))?;
+                sink.word(CanonicalWord::from(u64::from(u32::from(body))))?;
+                sink.word(count_word(captures)?)
+            },
         }
     }
 
@@ -576,10 +607,15 @@ impl<'store> Node<'store>
     /// # Specification
     /// - requires: `laid` holds at least this node's fields, its first field on
     ///   top.
-    /// - ensures: the literal, or the constructed value over the fields popped
-    ///   in order.
+    /// - ensures: on success the literal, the constructed value over the fields
+    ///   popped in order, or the thunk over a fresh environment binding them,
+    ///   the first innermost.
+    /// - fails: the store's refusal of a binding.
     /// - panics: none.
     /// - executable: none — the pop is its own specification.
+    ///
+    /// # Errors
+    /// [`StoreFault`] — a binding `store` refuses.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`deref()`].
@@ -587,20 +623,35 @@ impl<'store> Node<'store>
     fn into_value(
         self,
         laid: &mut Vec<HeapValueId>,
-    ) -> HeapValue
+        store: &mut Store,
+    ) -> Result<HeapValue, StoreFault>
     {
-        match self {
+        let fields = |laid: &mut Vec<HeapValueId>, count: Count| {
+            let first = laid.len().saturating_sub(count.0);
+            // The first field was laid last, so it stands on top.
+            laid.drain(first ..).rev().collect::<Box<[HeapValueId]>>()
+        };
+        Ok(match self {
             Self::Literal(literal) => HeapValue::Literal(literal.into_owned()),
             Self::Constructed(crossed) => {
-                let first = laid.len().saturating_sub(crossed.fields().0);
-                // The first field was laid last, so it stands on top.
-                let fields: Box<[HeapValueId]> = laid.drain(first ..).rev().collect();
+                let fields = fields(laid, crossed.fields());
                 HeapValue::Constructed {
                     tag: crossed.into_head(),
                     fields,
                 }
             },
-        }
+            Self::Thunk { body, captures } => {
+                let captured = fields(laid, captures);
+                // Each binding becomes the innermost, so the outermost binds first.
+                let environment = captured
+                    .iter()
+                    .rev()
+                    .try_fold(Environment::EMPTY, |environment, &value| {
+                        store.bind_value(environment, value)
+                    })?;
+                HeapValue::Thunk { body, environment }
+            },
+        })
     }
 }
 
@@ -663,7 +714,9 @@ impl<'store> Crossing<'store>
     ///   followed by as many values as its head carries, as
     ///   [`Crossing::decode_tokens`] reads them.
     /// - ensures: on success one fresh value in `store` per node, each
-    ///   constructor's fields the values its fields' nodes laid, left to right.
+    ///   constructor's fields the values its fields' nodes laid, left to right,
+    ///   and each thunk's environment binding the values its captures' nodes
+    ///   laid, the first innermost.
     /// - fails: the store's refusal.
     /// - panics: none.
     /// - executable: none — the fold is its own specification.
@@ -671,7 +724,7 @@ impl<'store> Crossing<'store>
     ///   value needs no deep stack.
     ///
     /// # Errors
-    /// [`StoreFault`] — an allocation `store` refuses.
+    /// [`StoreFault`] — an allocation or a binding `store` refuses.
     ///
     /// # Adequacy
     /// - hypothesis: L2 — as [`deref()`].
@@ -684,10 +737,10 @@ impl<'store> Crossing<'store>
     {
         let mut laid: Vec<HeapValueId> = Vec::new();
         for node in self.below.into_iter().rev() {
-            let value = node.into_value(&mut laid);
+            let value = node.into_value(&mut laid, store)?;
             laid.push(store.allocate(value)?);
         }
-        let root = self.root.into_value(&mut laid);
+        let root = self.root.into_value(&mut laid, store)?;
         store.allocate(root)
     }
 }
@@ -966,6 +1019,13 @@ impl Opened
                     None
                 };
                 Crossed::Data { tag, arity, family }
+            },
+            THUNK => {
+                let body = u32::try_from(opened.count(reader)?.0)
+                    .map(CommandId::from)
+                    .map_err(|_wider| opened.refused())?;
+                let captures = opened.count(reader)?;
+                return Ok(Node::Thunk { body, captures });
             },
             _ => return Err(opened.refused()),
         };

@@ -244,9 +244,10 @@ fn a_migration_crosses_its_capture_in_and_its_answer_back()
     }
 }
 
-/// A capture that does not cross declines the run at its migration: a
-/// function only its own run can hold, `(λf. migrate [host] { (force f) 7 })
-/// (thunk { λx. return x })`.
+/// A capture that does not cross declines the run at its migration: a thunk
+/// literal of the caller's the world's code holds no site for,
+/// `(λf. migrate [host] { (force f) 7 }) (thunk { λx. return x })`, which the
+/// checker refuses, since a thunk reached through a variable carries no image.
 #[test]
 fn a_capture_that_does_not_cross_declines_at_its_migration()
 {
@@ -299,6 +300,49 @@ fn a_record_built_only_at_the_world_comes_back()
             .into(),
     );
     comes_back(&mut core, record);
+}
+
+/// A thunk a migration answers runs at its caller as it runs in place:
+/// `bind (migrate [host] { bind (return 1) (bind (return 2) (return thunk
+/// { return (m, n) })) }) (force t)` reads back `(1, 2)` on each tier, the
+/// thunk laid out at the caller's site for its body and its two captures in
+/// their order, as the same program without the migration does (#3265).
+#[test]
+fn a_thunk_a_migration_returns_runs_at_the_caller_3265()
+{
+    let mut core = CoreArena::new();
+    let one = integer(&mut core, Digits("1"));
+    let two = integer(&mut core, Digits("2"));
+    let expected = core.value_tuple(&[one, two]);
+    let program = |core: &mut CoreArena, migrated: Option<World>| {
+        let outer = core.value_variable(Zone::Intuitionistic, 1_u32.into());
+        let inner = innermost(core);
+        let pair = core.value_tuple(&[outer, inner]);
+        let suspended = core.computation_return(pair);
+        let thunk = core.value_thunk(suspended);
+        let returned = core.computation_return(thunk);
+        let second = core.computation_return(two);
+        let bound = core.computation_bind(second, returned);
+        let first = core.computation_return(one);
+        let mut body = core.computation_bind(first, bound);
+        if let Some(world) = migrated {
+            body = core.computation_world(WorldForm::Migrate { world, body });
+        }
+        let t = innermost(core);
+        let forced = core.computation_force(t);
+        core.computation_bind(body, forced)
+    };
+    for migrated in [None, Some(World::Host)] {
+        let program = program(&mut core, migrated);
+        for &tier in tiers() {
+            let (read, _) = ran(tier, &mut core, program);
+            assert_eq!(
+                CertificateEquality::Equal,
+                equal_certificate_syntax(&core, read, expected),
+                "{migrated:?} on {tier:?}"
+            );
+        }
+    }
 }
 
 /// The other heads a value the checker lets cross can hold come back from the
