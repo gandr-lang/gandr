@@ -127,6 +127,7 @@ use gandr_kernel_term::ValueTypeId;
 use quenchant_arith::arith;
 
 use crate::check;
+use crate::encoding::ConstantName;
 use crate::error::KernelError;
 use crate::levels::LevelContext;
 
@@ -1040,6 +1041,8 @@ pub struct AdmittedDeclaration
     /// its parameters' variance; the reading that admits least for anything
     /// no walk read.
     accessibility: check::Accessibility,
+    /// How a memo key names a reference to it, decided at admission.
+    key_name: ConstantName,
 }
 
 impl AdmittedDeclaration
@@ -1107,6 +1110,16 @@ impl AdmittedDeclaration
     pub(crate) const fn accessibility(&self) -> &check::Accessibility
     {
         &self.accessibility
+    }
+
+    /// How a memo key names a reference to the declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn key_name(&self) -> ConstantName
+    {
+        self.key_name
     }
 }
 
@@ -1575,12 +1588,14 @@ impl Environment
                     position,
                     Admission::Checked,
                 );
+                let key_name = self.definition_name(&declaration);
                 self.entries.push(AdmittedDeclaration {
                     declaration,
                     admission: Admission::Checked,
                     rested_on,
                     block: check::occurrence::Block::lone(position),
                     accessibility,
+                    key_name,
                 });
                 self.advance_seals(position);
                 Ok(CheckedId::new(position))
@@ -1660,6 +1675,7 @@ impl Environment
             rested_on,
             block: check::occurrence::Block::lone(position),
             accessibility: check::Accessibility::unwalked(),
+            key_name: ConstantName::Position,
         });
         self.advance_seals(position);
         CheckedId::new(position)
@@ -1868,6 +1884,9 @@ impl Environment
                     check::occurrence::Block::lone(position)
                 },
                 accessibility,
+                // A block's members name one another, and a definition its own
+                // constant, so a key names each by its position.
+                key_name: ConstantName::Position,
             });
             self.advance_seals(position);
             admitted.push(CheckedId::new(position));
@@ -2298,6 +2317,62 @@ impl Environment
             let _fresh = rested.insert(position);
         }
         rested
+    }
+
+    /// How a memo key names a reference to `declaration`, checked against
+    /// this environment and about to be admitted alone.
+    ///
+    /// # Specification
+    /// - requires: `declaration` checked against this environment's entries,
+    ///   and its content lives in its arena.
+    /// - ensures: its declared type and body, ranked by how many earlier
+    ///   entries named so carry the same type and body, when it is a plain
+    ///   definition — monomorphic, carrying no laws, relations, operation
+    ///   rules, stages, presentation or sealing provenance, and admitted while
+    ///   no atom's minting admission is open; its position otherwise.
+    /// - provides: names injective on the environment's positions, so a key
+    ///   built through them answers as one built through positions does. A
+    ///   checked definition admitted alone names only earlier constants, so
+    ///   reading references by content descends in admission order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a plain definition reads alike under either admission
+    ///   order, an axiom keeps its position, and two definitions of one type
+    ///   and body keep two names.
+    /// - witness: `encoding::tests::a_definition_reference_reads_alike_in_either_admission_order`
+    /// - witness: `encoding::tests::an_axiom_reference_keeps_its_position`
+    /// - witness: `encoding::tests::two_definitions_of_one_content_keep_two_names`
+    #[spec(ensures: |ret| match ret {
+        ConstantName::Definition { declared, body, .. } => self.manifest.is_empty()
+            && *declaration.content() == DeclarationContent::Def { declared, body },
+        ConstantName::Position => true,
+    })]
+    fn definition_name(
+        &self,
+        declaration: &Declaration,
+    ) -> ConstantName
+    {
+        let DeclarationContent::Def { declared, body } = *declaration.content()
+        else {
+            return ConstantName::Position;
+        };
+        let plain = self.manifest.is_empty()
+            && *declaration.levels() == LevelSignature::monomorphic()
+            && declaration.laws().is_empty()
+            && declaration.related().is_empty()
+            && declaration.provenance().is_empty()
+            && declaration.operation_rules().rules().is_empty()
+            && *declaration.stages() == gandr_kernel_term::StageSignature::UNQUANTIFIED
+            && declaration.presentation().rules().is_empty()
+            && declaration.presentation().cells().is_none();
+        if plain {
+            crate::encoding::name_definition(&self.arena, &self.entries, declared, body)
+        }
+        else {
+            ConstantName::Position
+        }
     }
 }
 

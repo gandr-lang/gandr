@@ -313,6 +313,7 @@ INSERT INTO reference VALUES('vault:01a15620-7fbe-7030-a3af-07ffa620eed2','surfa
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','core-term','handler::subject','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-grammar','surface::type_shell','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a16b8f-6aec-7282-b400-974aedeaa341','surface-lowering','lower::capability::theory','lineage',NULL,NULL,NULL);
+INSERT INTO reference VALUES('vault:01a178aa-6917-7983-b5cd-86e2af86b3ec','kernel-core','encoding','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-checker','capability','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-incremental','typing','lineage',NULL,NULL,NULL);
 INSERT INTO reference VALUES('vault:01a178aa-6a53-7ec2-b60c-2de66202cf07','core-term','effect::host','lineage',NULL,NULL,NULL);

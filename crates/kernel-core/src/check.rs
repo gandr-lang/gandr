@@ -6055,6 +6055,7 @@ pub(crate) fn form_declared(
     let mut memo: DefaultMemo = DefaultMemo::new();
     let mut session = SupportContext::new();
     let mut census = ExpansionCensus::new();
+    session.name_constants(judgement.entries);
     let presentations = crate::presented::Presentations::of(judgement.entries);
     let judgement = judgement.presenting(&presentations);
     // As a lone declaration's, the declared type forms through the seal rule.
@@ -6162,6 +6163,9 @@ where
     M: CheckMemo<NodeSupport, NodeOutcome>,
 {
     let declared = declaration.declared_id();
+    // Keys read a plain definition's reference by its content, so they do not
+    // depend on where the environment admitted it.
+    session.name_constants(judgement.entries);
     // A relating definition's conversions read the pairs it relates, a lawful
     // one's folds rest on its laws, and every conversion rewrites the
     // presented types admitted before it.
