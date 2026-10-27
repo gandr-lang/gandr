@@ -10,7 +10,8 @@
 //! `op(v, …, bind x . t)` as its clause applied to the payload its values
 //! make, each resumption of the clause's stack running `t` at what it is fed
 //! ([`crate::rewrite::resume_through`]). The two sides then compare by
-//! conversion, every metavariable rigid.
+//! conversion, every metavariable rigid. The same laws, oriented, rewrite
+//! the subject a scope over the theory handles before it runs ([`subject`]).
 //!
 //! # Examples
 //!
@@ -51,6 +52,8 @@ use crate::rewrite::resume_through;
 use crate::rewrite::shift_computation_under;
 use crate::syntax::ComponentCount;
 use crate::syntax::Zone;
+
+pub mod subject;
 
 #[cfg(test)]
 mod tests;

@@ -33,7 +33,8 @@ def counted() -> Integer {
 }
 
 /// Reading twice is reading once: every read answers four, so both sides of
-/// get-get continue at four twice.
+/// get-get continue at four twice. The subject normalises by get-get before
+/// it runs, so the handler answers one read and `b` is bound to `a`.
 @[ runs("8") ]
 def readTwice() -> Integer {
   handle st : StateGetGet with sort S = Integer {

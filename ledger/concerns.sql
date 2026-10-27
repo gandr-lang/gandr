@@ -10,7 +10,7 @@ CREATE TABLE concern(
 ) WITHOUT ROWID;
 INSERT INTO concern VALUES('fork','Fork','Work split across a pool: the checker states the trait and a driver hands it a pool.','core-checker::fork::Fork','#1250');
 INSERT INTO concern VALUES('oracle','Oracle','A decision the kernel asks of a module that answers with evidence the kernel checks. A metaprogram stands as one: `Eq.generic`''s derived core is judged and readmitted as if written, so the derivation itself is never trusted.',NULL,'#313');
-INSERT INTO concern VALUES('sharing','Sharing','A descent datum: positions, a coverage of which positions share, a compatibility, a gluing done once, and a certificate the kernel replays. A cell''s per-hole occurrence count is the size of one such coverage: the positions of its right side that share the subterm its left side matched at the hole.',NULL,'#2291');
+INSERT INTO concern VALUES('sharing','Sharing','A descent datum: positions, a coverage of which positions share, a compatibility, a gluing done once, and a certificate the kernel replays. A cell''s per-hole occurrence count is the size of one such coverage: the positions of its right side that share the subterm its left side matched at the hole. An effect theory''s law shares requests: the requests a scope''s subject makes in a run its left side covers, nothing but returns between them, are glued into its right side''s fewer, the law''s orientation the certificate the kernel replays with the theory and the handler''s check as a model the reason the gluing changes no answer.',NULL,'#2291');
 CREATE TABLE descent(
   mechanism     TEXT PRIMARY KEY CHECK(mechanism GLOB '[a-z]*' AND mechanism NOT GLOB '*[^a-z-]*'),
   status        TEXT NOT NULL CHECK(status IN ('built','gated','banned')),

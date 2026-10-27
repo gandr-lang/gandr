@@ -691,6 +691,9 @@ INSERT INTO purpose VALUES('core-term','handler::LawNode','enum','One node of a 
 INSERT INTO purpose VALUES('core-term','handler::ReadLaw','struct','A law of a theory read for a handler: its two sides over its metavariables.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','handler::obligation','function','Reads a side of a law through a handler''s clauses, each operation its clause''s body applied to its payload and resumed through its continuation.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','handler::read_law','function','Reads a law''s two sides for a handler whose operations arity gives, each side in preorder over the law''s metavariables.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','handler::subject::SubjectRule','struct','A law of a theory oriented as a rewrite of the subject a scope over the theory handles.',NULL,'fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','handler::subject::normalize','function','Rewrites the subject of a scope over a theory by the theory''s laws until none applies, so two requests a law glues run as one.','sharing','fits','sound',NULL);
+INSERT INTO purpose VALUES('core-term','handler::subject::subject_rule','function','Reads a law as a rewrite of a scope''s subject when its right side makes fewer of its left side''s requests, or none.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::CodomainScope','enum','Where a matched function type''s codomain stands: in the ambient context, or under the domain''s binder.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::Components','enum','The components of a matched type, or the reason it matched no former.',NULL,'fits','sound',NULL);
 INSERT INTO purpose VALUES('core-term','hole::HoleId','struct','The name of a typed hole: what a fill finds it by, split into written, nominated and wildcard halves.',NULL,'fits','sound',NULL);

@@ -25,9 +25,9 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `lower_module`, `LoweringBudget` and `Fuel`: the whole surface-to-core step under one allowance.
 - The static formers, the eager product with its pair, the infix sum, the `=>` alias and the dependent arrow `(x : A) -> C` it abbreviates, as `lower_module` writes them.
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and `DeclarationCount`: one declaration per name, in admission order.
-- `DataIndex`, `DeclarationOutcome::Data` and `LoweredModule::data`: a data declaration lowered to its native signature, its constructors applied to their fields and its values matched by a decision tree of native eliminations.
+- `DataIndex`, `DeclarationOutcome::Data` and `LoweredModule::data`: a data declaration lowered to its native signature, constructors and matches (`lower::native`).
 - `CaseOrigin`, `ArmOrigin`, `PatternSpan`, `OriginTable::case` and `OriginTable::cases`: per match, its pattern table, the syntax nodes of its scrutinee, patterns and bodies, and each pattern's span.
-- `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint over the parameter its matches take apart, its evidence the claim the source writes, and `Insertion::Fixpoint` marking the inserted fixpoint.
+- `def rec` and the descent claim `f[<]`: a recursive function lowered to one fixpoint (`lower::native`), `Insertion::Fixpoint` marking it.
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity.
 - `Scope`, `ScopeId`, `Frame`, `Bound`, `Mentioned`, `SurfaceName` and `binder_site::Absent`: the flat binder chain names resolve through, each frame carrying the type its binder was written with, whether a type names it, the span it was written at and the zone it binds in.
 - `OriginTable::binding` and `OriginTable::bindings`: the use-to-binder map, each core variable the lowering minted with the span of the binder it resolves to.
@@ -37,7 +37,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `AttributeRegistry`, `AttributeSchema`, `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`, `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and `AttributedCount`: the closed registry, its five diagnostics and the side table, filed for refused declarations too.
 - `Documentation`, `DocumentationText`, `DocLink`, `LoweredModule::documentation` and `LoweredModule::documentations`: a declaration's or a module's documentation read from both spellings into one text, filed under its form's `NodeKey`, its links resolved; the whole filing, for a consumer that keeps it past the lowering.
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration.
-- Source `?`, `?name` and the splice `~t` lower to core holes by their term position. Occurrences have distinct `HoleId`s derived from their syntax nodes, and retain the usual written origins.
+- Source `?`, `?name` and the splice `~t` lower to core holes by their term position (`lower`).
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is.
 - `InferredExit`, `Exit`, `Explicitness` and `LoweredModule::inferred_exits`: the exit a tail written without `return` or `become` takes by its polarity, listed at the tail's bytes for a face and the `explicit-exits` lint.
 - `AskedRuns`, `NestedSite`, `RunSpelling`, `RunOperand`, `InferredRun` and `LoweredModule::inferred_runs`: a computation written where a value is read, held for the checker to run or suspend, and each run it inferred, listed for the `explicit-runs` lint.
@@ -46,7 +46,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweredStructure`, `ValueComponent`, `ManifestComponent`, `manifest_type`, `Coerced`, `Container`, `Role`, `StructureIndex`, `AscriptionForm`, `LoweredModule::structures`, `LoweredModule::path_of` and `LoweredModule::structured_names`: modules flattened to named members, their stratum items and their structured names.
 - Type members `type T = τ ;`, type paths `M.T`, abstract components `type T` and `type T : κ`, and `Recognized::ModuleType`: a module's types, named inside it and through its namespace.
 - `DeclarationOutcome::Abstract`, `Sealing` and `SealedComponent`: an opaque ascription `:>` declaring one abstract type per abstract component, keyed by its site, and the atoms a sealed module exports.
-- `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from the `Theory` value `theory S` defines, a module ascribed `: Model(S)` checked against it, packed by `pack M at Model(S)`, and a theory's description and presentation handed to later passes; type members with parameters, expanding where they are applied (`module::model`).
+- `model::derive`, `ModelSignature`, `LoweredModule::theories` and `LoweredTheory`: `Model(S)` derived from the `Theory` value `theory S` defines, a module ascribed `: Model(S)` checked against it, packed by `pack M at Model(S)`, and a theory's description and presentation handed to later passes; type members with parameters (`module::model`).
 - Binary sessions: a session type read whole into one protocol; `send`, `select`, `offer` and `close`, and the statements `recv(c) as x ;` and `fork (c : S) t as d ;`, lowered to core session actions; `fork !`, `dup`, `acquire` and `release` reserved by name.
 - Worlds: `world w ;` as `DeclarationOutcome::World`, `A at w`, `hold`, `leta`, `migrate [w]`, `mobile type T` as `Mark`, `@[ entry(…) ]` as `LoweredModule::worlds`.
 
@@ -115,6 +115,8 @@ Mechanism, decisions with their alternatives and reversals, and witnesses live i
 ## References
 
 - `vault:01a178aa-6e2c-7720-a0bd-c5e1f9c4e08e` — background: the quantities design (§ quant-counts) — a finite grade and a cell's hole count are one count.
+- `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: the rows design (§ rows-rule-effects-are-theories) — a scope's subject normalises by its theory's laws.
+- `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: the effect-modalities design (§ the four laws) — which laws are rules.
 
 ## License
 

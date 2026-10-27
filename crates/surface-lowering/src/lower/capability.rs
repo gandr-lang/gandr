@@ -150,6 +150,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::Carried;
 use gandr_core_term::ComponentCount;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -170,6 +171,7 @@ use gandr_core_term::effect::capability::RegionDepth;
 use gandr_core_term::effect::host::HostSignatures;
 use gandr_core_term::handler;
 use gandr_core_term::handler::HandlerLaw;
+use gandr_core_term::handler::subject;
 use gandr_core_term::session::SessionAction;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
@@ -192,6 +194,7 @@ use super::arity::Planned;
 use super::arity::clause_body;
 use super::closed;
 use super::exhausted;
+use super::exits;
 use super::lowered;
 use super::native;
 use crate::error::FormFault;
@@ -2103,6 +2106,12 @@ impl<'source> Lowerer<'_, 'source>
         let read = theory::operations(&members, &fixed).and_then(|operations| {
             theory::laws(&members, &operations).map(|laws| (operations, laws))
         });
+        // A law the order turned rewrites from its written right side; a
+        // presentation coding no certificate turns none.
+        let turns = presentation
+            .value
+            .certificate()
+            .map_or_else(|_uncertified| Vec::new(), |certificate| certificate.turns);
         let (operations, laws) = match read {
             Ok(read) => read,
             Err((member, fault)) => {
@@ -2129,6 +2138,7 @@ impl<'source> Lowerer<'_, 'source>
             scope: site.at.node,
             name: EffectName::from(handled.as_ref()),
             theory,
+            rules: theory::rules(&members, &operations, &turns),
             operations,
             laws,
             owner,
@@ -2651,16 +2661,17 @@ impl<'source> Lowerer<'_, 'source>
     /// # Specification
     /// - requires: every node the plan names is already minted or absent.
     /// - ensures: the scope over the interface's whole signature, its subject,
-    ///   its return clause and its operation clauses — written ones in written
-    ///   order ([`Self::mint_clauses`]), or the ones its model gives in the
-    ///   theory's order ([`Self::mint_answered`]) — each body minted as a body
-    ///   a path runs through, at `origin`, with the capability's written name
-    ///   recorded as the scope's binder and each written clause's binders — the
-    ///   result, and each operation clause's payload and continuation by its
-    ///   place — as the scope's clause binders, and, for a scope over a theory,
-    ///   the theory and each sort its manifest fixes beside the type it fixes
-    ///   it to, in the order written, as the scope's theory; the first absence
-    ///   among the bodies.
+    ///   normalised by the theory's rules for a scope over a theory
+    ///   ([`normalized`]), its return clause and its operation clauses —
+    ///   written ones in written order ([`Self::mint_clauses`]), or the ones
+    ///   its model gives in the theory's order ([`Self::mint_answered`]) — each
+    ///   body minted as a body a path runs through, at `origin`, with the
+    ///   capability's written name recorded as the scope's binder and each
+    ///   written clause's binders — the result, and each operation clause's
+    ///   payload and continuation by its place — as the scope's clause binders,
+    ///   and, for a scope over a theory, the theory and each sort its manifest
+    ///   fixes beside the type it fixes it to, in the order written, as the
+    ///   scope's theory; the first absence among the bodies.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -2670,6 +2681,7 @@ impl<'source> Lowerer<'_, 'source>
     /// - witness: `lower::capability::tests::a_scope_records_where_its_clauses_bind_1439`
     /// - witness: `lower::capability::tests::a_scope_records_the_theory_and_sorts_it_handles_2382`
     /// - witness: `lower::capability::tests::a_scope_names_a_model_of_its_theory_2272`
+    /// - witness: `lower::capability::tests::a_scope_s_subject_normalises_by_its_theory_s_laws_2272`
     #[spec(ensures: |ret| match ret {
         | Maybe::Present(Lowered::Computation(id)) => sink.origins.computation(id) == Maybe::Present(origin),
         | Maybe::Present(_) => false,
@@ -2685,6 +2697,10 @@ impl<'source> Lowerer<'_, 'source>
         let subject = match self.mint_body(scoped.subject, sink, origin) {
             Maybe::Present(subject) => subject,
             Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let subject = match scoped.interface {
+            Interface::Theory(ref theory) => normalized(sink, subject, &theory.rules, origin),
+            Interface::Host(_) => subject,
         };
         let minted = match (&scoped.handlers, &scoped.interface) {
             (&Handlers::Written(ref written), _) => self.mint_clauses(written, sink, origin),
@@ -2892,6 +2908,66 @@ impl<'source> Lowerer<'_, 'source>
         );
         Some((theory.owner, laws))
     }
+}
+
+/// `subject`, the subject of a scope over a theory, normalised by `rules`,
+/// every node the rewrite mints at the origin of the node it stands for.
+///
+/// # Specification
+/// - requires: `subject` is minted and every node of it has an origin; `rules`
+///   are the theory's, read for the scope's operations.
+/// - ensures: [`subject::normalize`]'s normal form; each node it minted carries
+///   the origin of the step or the exercise it stands for, else `origin`, and
+///   each rebuilt bind the name its original binds, so a rebuilt step reads as
+///   the statement it was written as; every mark a rebuilt step's original
+///   carries, it carries.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a scope over get-get reading twice lowers its subject
+///   with one get, the second's statement keeping its origin and its name.
+/// - witness: `lower::capability::tests::a_scope_s_subject_normalises_by_its_theory_s_laws_2272`
+/// - witness: `lower::tests::every_minted_node_has_an_origin`
+#[spec(ensures: |ret| sink.arena.computation(ret).is_some())]
+fn normalized(
+    sink: &mut Sink<'_>,
+    subject: ComputationId,
+    rules: &[subject::SubjectRule],
+    origin: Origin,
+) -> ComputationId
+{
+    let mark = sink.arena.watermark();
+    let mut carried = Vec::new();
+    let normal = subject::normalize(sink.arena, subject, rules, &mut carried);
+    exits::record_copies(sink, mark, &carried, origin);
+    exits::mark_copies(sink, &carried);
+    let mut named: Vec<(ComputationId, Origin)> = carried
+        .iter()
+        .filter_map(|pair| match *pair {
+            Carried::Computation(held, written)
+                if matches!(
+                    sink.arena.computation(written),
+                    Some(&Computation::Bind(..))
+                ) =>
+            {
+                match sink.origins.binder(held) {
+                    Maybe::Present(name) => Some((written, name)),
+                    Maybe::Absent(_) => None,
+                }
+            },
+            Carried::Computation(..)
+            | Carried::Value(..)
+            | Carried::ValueType(..)
+            | Carried::CompType(..) => None,
+        })
+        .collect();
+    named.sort_unstable_by_key(|&(written, _)| written);
+    named.dedup_by_key(|&mut (written, _)| written);
+    for (written, name) in named {
+        sink.origins.record_binder(written, name);
+    }
+    normal
 }
 
 quenchant_shape::reason_enum! {

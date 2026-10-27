@@ -11,7 +11,9 @@
 //! and several are their tuple, as an exercise's arguments are. This is the
 //! correspondence between an algebraic operation `P × C^R → C` and the
 //! generic effect `P → T R` that performs it. Each law of `T` is read over
-//! those operations ([`laws`]), for the scope to be checked as a model of it.
+//! those operations ([`laws`]), for the scope to be checked as a model of it,
+//! and, from the side `T`'s order puts above the other, as a rewrite of the
+//! scope's subject ([`rules`]), which normalises by it before it runs.
 //!
 //! # Examples
 //!
@@ -31,6 +33,12 @@
 //!
 //! - Gordon Plotkin and John Power. "Algebraic Operations and Generic Effects."
 //!   _Applied Categorical Structures_ 11(1) (2003). <https://doi.org/10.1023/A:1023064908962>
+//! - `vault:01a16b8f-6aec-7282-b400-974aedeaa341` — lineage: an effect is a
+//!   theory whose rules are its equations, so a scope's subject normalises by
+//!   the theory's laws before it runs ([`rules`]).
+//! - `vault:01a178aa-a07b-7a23-bbcd-cf3893ccc160` — background: which of
+//!   state's laws are rules, get-get, put-get and put-put, and which wait on a
+//!   grade condition.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -42,11 +50,14 @@ use gandr_core_term::effect::OperationName;
 use gandr_core_term::handler;
 use gandr_core_term::handler::Arity;
 use gandr_core_term::handler::ReadLaw;
+use gandr_core_term::handler::subject;
+use gandr_core_term::handler::subject::SubjectRule;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::RuleIndex;
 use gandr_surface_syntax::NodeIndex;
 use gandr_theory_levitation::Name;
 use gandr_theory_levitation::OperationKind;
+use gandr_theory_levitation::RuleTurn;
 
 use crate::form::Placed;
 use crate::model::InterfaceFault;
@@ -75,6 +86,9 @@ pub(in crate::lower) struct TheoryInterface
     pub operations: Vec<TheoryOperation>,
     /// Each law, in the theory's order, read for the scope's clauses.
     pub laws: Vec<TheoryLaw>,
+    /// Each law the theory's order orients as a rewrite of the scope's
+    /// subject, in the theory's order.
+    pub rules: Vec<SubjectRule>,
     /// Each sort the scope's manifest fixes beside the node of the type it
     /// writes, in the order written.
     pub manifest: Vec<(Name, NodeIndex)>,
@@ -217,15 +231,7 @@ pub(in crate::lower) fn laws(
     operations: &[TheoryOperation],
 ) -> Result<Vec<TheoryLaw>, (Placed, InterfaceFault)>
 {
-    let arities: BTreeMap<Name, Arity> = operations
-        .iter()
-        .map(|operation| {
-            (Name::from(operation.name.as_ref()), Arity {
-                payload: ComponentCount::from(operation.payload.len()),
-                reply: ComponentCount::from(operation.reply.len()),
-            })
-        })
-        .collect();
+    let arities = arities(operations);
     members
         .laws
         .iter()
@@ -237,6 +243,66 @@ pub(in crate::lower) fn laws(
                     read,
                 })
                 .map_err(|_unread| (law.named, InterfaceFault::Law))
+        })
+        .collect()
+}
+
+/// The laws of the theory `members` presents, each oriented as `turns`
+/// orients it, read as rewrites of the subject of a scope that answers
+/// `operations`.
+///
+/// # Specification
+/// - requires: `turns` is the orientation the theory's rule certificate gives
+///   its written laws.
+/// - ensures: one rule per law [`subject::subject_rule`] reads, in the theory's
+///   order, each rewriting from the side the theory's order puts above the
+///   other: the written left side, or the right where `turns` marks the law
+///   turned; a law it reads as none is left out.
+/// - fails: never; a law no subject rewrite reads is left out.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — State's three laws read as three rules and a reordering
+///   law as none, and get-get marked turned is read from its right side, which
+///   grows, as none.
+/// - witness: `lower::capability::theory::tests::a_theory_s_laws_rewrite_its_scope_s_subject_2272`
+#[spec(ensures: |ret| ret.len() <= members.laws.len())]
+pub(in crate::lower) fn rules(
+    members: &Members,
+    operations: &[TheoryOperation],
+    turns: &[RuleTurn],
+) -> Vec<SubjectRule>
+{
+    let arities = arities(operations);
+    members
+        .laws
+        .iter()
+        .enumerate()
+        .filter_map(|(place, law)| {
+            let sides = match turns.get(place) {
+                Some(&RuleTurn::Turned) => (&law.right, &law.left),
+                Some(&RuleTurn::AsWritten) | None => (&law.left, &law.right),
+            };
+            subject::subject_rule(RuleIndex::from(place), sides, |name| {
+                arities.get(name).copied()
+            })
+        })
+        .collect()
+}
+
+/// The payload and reply count of each of `operations`, by name.
+///
+/// # Specification
+/// trivial.
+fn arities(operations: &[TheoryOperation]) -> BTreeMap<Name, Arity>
+{
+    operations
+        .iter()
+        .map(|operation| {
+            (Name::from(operation.name.as_ref()), Arity {
+                payload: ComponentCount::from(operation.payload.len()),
+                reply: ComponentCount::from(operation.reply.len()),
+            })
         })
         .collect()
 }
