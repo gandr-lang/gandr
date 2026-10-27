@@ -110,6 +110,7 @@ use crate::description::written::WrittenSort;
 use crate::description::written::WrittenTerm;
 use crate::lower::atom_type;
 use crate::model::Binder;
+use crate::model::BuiltinSort;
 use crate::model::Dependent;
 use crate::model::Members;
 use crate::model::ModelFault;
@@ -822,18 +823,19 @@ impl Typer<'_>
         sort: &SortTerm,
     ) -> Option<ValueTypeId>
     {
+        let builtin = sort.builtin();
+        if let Maybe::Present(BuiltinSort::Universe(ground)) = builtin {
+            return Some(
+                self.arena
+                    .value_type_universe(Sort::Ground(ground), Level::zero()),
+            );
+        }
         let code = if sort.indices.is_empty() {
-            if let Maybe::Present(ground) = sort.host_universe() {
-                return Some(
-                    self.arena
-                        .value_type_universe(Sort::Ground(ground), Level::zero()),
-                );
-            }
             let Some(index) = scope.variable(&sort.sort)
             else {
-                return match type_atom(SurfaceName::from(sort.sort.as_ref())) {
-                    Maybe::Present(atom) => Some(atom_type(self.arena, atom)),
-                    Maybe::Absent(_) => None,
+                return match builtin {
+                    Maybe::Present(BuiltinSort::Atom(atom)) => Some(atom_type(self.arena, atom)),
+                    Maybe::Present(BuiltinSort::Universe(_)) | Maybe::Absent(_) => None,
                 };
             };
             self.arena.value_variable(Zone::Intuitionistic, index)
